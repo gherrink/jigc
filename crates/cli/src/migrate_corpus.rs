@@ -473,6 +473,22 @@ pub(crate) fn migrate_committed_corpus(
                             report.blocked.push((rel_key, route));
                             continue;
                         }
+                        // THE REMOVAL REFUSAL (the recorded pick — `DECISIONS.md` → 2026-07-13
+                        // M42 Inc-5 T5: refuse, not strip). A dropped leaf is refused here, beside
+                        // the backstop and the narrowing and for the same reason: there is nothing
+                        // an operator can do to *this doc*, so the fold's halt route would be a
+                        // lie, and the repair is a schema-authoring one. The committed value stays
+                        // on disk — **No-data-loss** is a declared property of this pair.
+                        if let Some(SchemaChange::RemovedField { section, field }) = diff
+                            .iter()
+                            .find(|c| matches!(c, SchemaChange::RemovedField { .. }))
+                        {
+                            let route = removed_field_route(
+                                &rel_key, &dt.ty, section, field, k, dt.version,
+                            );
+                            report.blocked.push((rel_key, route));
+                            continue;
+                        }
                         // The v1→v2 path is the only one that can surface a `ValueRemapped`
                         // (an enum member rename needs two *different* declared enum sets;
                         // the stamp-absent path diffs `strip_stamp(to)` against `to`, whose
@@ -738,6 +754,7 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
             | SchemaChange::OptionalRelaxed { .. }
             | SchemaChange::WidenedCardinality { .. }
             | SchemaChange::NarrowedCardinality { .. }
+            | SchemaChange::RemovedField { .. }
             | SchemaChange::EnumWidened { .. }
             | SchemaChange::ValueRemapped { .. }
             | SchemaChange::FixedSlotToRepeatable { .. }
@@ -965,6 +982,36 @@ fn narrowed_cardinality_route(
          not a doc problem: restore the wider bound, or build the narrowing arm (validate every \
          committed instance against the new bound) in `crates/engine/src/schema_diff.rs` + \
          `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
+    )
+}
+
+/// The **field-removal** refusal's route: the doctype **dropped a declared leaf** between the two
+/// versions, so every committed instance may still carry a field line the current schema no longer
+/// declares (`design/corpus-migration.md` → The two silent-classification holes; the pick —
+/// *refuse, not strip* — is recorded in `DECISIONS.md` → 2026-07-13 M42 Inc-5 T5).
+///
+/// The doc's bytes are **left alone**: stripping the field line is deterministic but destroys the
+/// committed values, a knowing exception to **No-data-loss** — a *declared* property of this pair
+/// (the property census). So, like the backstop's and the narrowing's routes, the repair is a
+/// **schema-authoring** one, not a migration instruction: restore the leaf, or build the strip arm
+/// with a deliberate data-loss opt-in (purely additive — no frozen doctype has needed a removal).
+fn removed_field_route(
+    rel_key: &str,
+    ty: &str,
+    section: &str,
+    field: &str,
+    from: u32,
+    to: u32,
+) -> String {
+    format!(
+        "blocked — `{ty}` drops the declared field `{section}.{field}` between schema-version \
+         {from} and {to}, so `{rel_key}` cannot be migrated: committed instances still carry the \
+         field, and the migration never strips a value (no data loss) — migrating would stamp the \
+         doc {to} while it keeps a field the schema no longer declares. This is a schema-authoring \
+         gap, not a doc problem: restore `{section}.{field}` to the schema, or build the \
+         field-removal (strip) arm with a deliberate data-loss opt-in in \
+         `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then re-run `jigc \
+         migrate-corpus`"
     )
 }
 
@@ -2034,6 +2081,118 @@ sections:
         assert!(
             after.contains("schema-version: 1") && !after.contains("schema-version: 2"),
             "the stamp did NOT bump over a refused narrowing; got:\n{after}"
+        );
+    }
+
+    /// The v2 current shape of `linked` with the `rel` leaf **dropped entirely** — a field
+    /// removal, the refused shape (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T5).
+    fn linked_v2_removed_yaml() -> &'static [u8] {
+        b"\
+type: linked
+location: linked/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields: []
+  - id: vision
+    slot: { hint: \"v\" }
+"
+    }
+
+    /// **A removed field blocks with its own route** (the recorded pick: refuse, not strip —
+    /// `DECISIONS.md` → 2026-07-13 M42 Inc-5 T5). A below-version doc (stamp `1`, current `2`)
+    /// whose v1→v2 pair **drops a declared leaf** is reported `blocked`, its bytes **untouched**
+    /// (the committed value it still carries is never destroyed) and its stamp **still `1`** —
+    /// with a route that names the schema-authoring repair, never the prose-needing route.
+    ///
+    /// Red before T5: the classifier never saw the removal (both loops iterate v2's leaves), so
+    /// the doc rode the backstop's *unclassifiable* route — and a removal riding **alongside**
+    /// any classified change was dropped outright: migrated, restamped `2`, still carrying a
+    /// field line the current schema no longer declares.
+    #[test]
+    fn below_version_field_removal_is_refused_with_its_own_route() {
+        let repo = TempDir::new("removal");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("linked", 1, linked_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(linked_v2_removed_yaml());
+        let from =
+            crate::pack::load_prior_schema(&pack, "linked", 1).expect("the linked.v1 snapshot");
+
+        // A conformant, v1-stamped committed doc carrying a `rel` value the v2 shape no longer
+        // declares — the value a strip would destroy, and the reason the pick is to refuse.
+        let v1 = render(
+            &from,
+            &Instance {
+                title: "Hub".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![
+                            Field {
+                                key: SCHEMA_VERSION_FIELD.to_string(),
+                                value: Value::Scalar("1".to_string()),
+                            },
+                            Field {
+                                key: "rel".to_string(),
+                                value: Value::Scalar("linked:spoke-a".to_string()),
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "vision".to_string(),
+                        slot: Some("The hub links a spoke.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        write_doc(repo.path(), "linked/hub.md", &v1);
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 2)],
+            Options::default(),
+        )
+        .expect("the run completes — the refusal is a routed block, not a run failure");
+
+        assert!(
+            report.migrated.is_empty() && report.already_current.is_empty(),
+            "a removal never migrates and is never called current: {report:?}"
+        );
+        assert_eq!(
+            report.blocked.len(),
+            1,
+            "the doc is blocked, routed: {:?}",
+            report.blocked
+        );
+        assert_eq!(report.blocked[0].0, "linked/hub.md");
+        let route = &report.blocked[0].1;
+        assert!(
+            route.contains("drops the declared field") && route.contains("meta.rel"),
+            "the route names the dropped leaf; got: {route}"
+        );
+        assert!(
+            !route.contains("author the new required prose"),
+            "the prose-needing route would be a lie here; got: {route}"
+        );
+
+        // The bytes are untouched — the committed value survives — and the stamp is STILL 1.
+        let after = fs::read_to_string(repo.path().join("linked/hub.md")).expect("read");
+        assert_eq!(after, v1, "the refused doc is byte-identical");
+        assert!(
+            after.contains("rel: linked:spoke-a"),
+            "the committed value of the dropped leaf is never destroyed; got:\n{after}"
+        );
+        assert!(
+            after.contains("schema-version: 1") && !after.contains("schema-version: 2"),
+            "the stamp did NOT bump over a refused removal; got:\n{after}"
         );
     }
 

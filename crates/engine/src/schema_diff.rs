@@ -198,6 +198,31 @@ pub enum SchemaChange {
         leaf: Option<String>,
     },
 
+    /// A leaf **declared in the old schema and dropped in the new one** — at either locus (a
+    /// simple/header section's fields, a repeatable item block's). Every committed instance may
+    /// still carry the field line, which the new schema no longer declares.
+    ///
+    /// **Refused, and that is the recorded pick** (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T5;
+    /// `design/corpus-migration.md` → The two silent-classification holes, which left the shape
+    /// open): [`crate::transform::transform`] surfaces [`crate::transform::TransformError::Unsupported`]
+    /// and `jigc migrate-corpus` blocks the doc with its own route. The alternative — a strip arm
+    /// splicing the field line away — is deterministic but **destroys the committed values**, a
+    /// knowing exception to **No-data-loss**, a *declared* property of this pair (the property
+    /// census); no frozen doctype needs a removal, so building the strip is premature generality.
+    /// The refusal is **not a one-way door**: a strip arm with a deliberate data-loss opt-in stays
+    /// purely additive if a real driver appears.
+    ///
+    /// The kind exists — rather than leaving the removal to the [`Self::Unclassified`] backstop —
+    /// because the backstop is the **residual**: a removal riding *alongside* a classified change
+    /// leaves the diff non-empty, so the backstop never fires and the removal would be **silently
+    /// dropped**.
+    RemovedField {
+        /// The section that declared the dropped leaf.
+        section: String,
+        /// The dropped leaf's field id.
+        field: String,
+    },
+
     /// A change **outside the conformance-relevant structural projection** — a delta a
     /// committed doc's bytes *cannot* violate, so it is a **byte no-op** (the
     /// [`Self::WidenedCardinality`] / [`Self::Relocated`] shape: classify → fold to zero
@@ -571,22 +596,55 @@ fn card_bounds(card: Option<&str>) -> Option<(u32, Option<u32>)> {
 
 /// Diff a repeatable section's **item-block Field leaves** (matching by id): the same
 /// existing-leaf rule the simple locus applies ([`diff_leaf`] — the `card` direction and the
-/// enum `of:` direction). Non-`Field` leaves (slots, nested repeatables) and leaves present in
-/// only one block are left unclassified (the nested-repeatable edit and the added/removed item
-/// field are their own kinds — T5/T7 — and, until they land, the backstop's residual).
+/// enum `of:` direction), then the leaves `new` **drops** ([`removed_fields`] — the second locus
+/// of the removal kind). Non-`Field` leaves (slots, nested repeatables) and leaves present only in
+/// `new` are left unclassified (the nested-repeatable edit and the added item field are their own
+/// kinds — T7 — and, until they land, the backstop's residual).
 fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<SchemaChange>) {
-    let old_by_id: HashMap<&str, &Field> = old
-        .iter()
-        .filter_map(|leaf| match leaf {
-            Leaf::Field(f) => Some((f.id.as_str(), f.as_ref())),
-            _ => None,
-        })
-        .collect();
+    let old_fields: Vec<&Field> = old.iter().filter_map(item_field).collect();
+    let old_by_id: HashMap<&str, &Field> = old_fields.iter().map(|f| (f.id.as_str(), *f)).collect();
     for leaf in new {
-        if let Leaf::Field(field) = leaf
+        if let Some(field) = item_field(leaf)
             && let Some(prev) = old_by_id.get(field.id.as_str())
         {
             diff_leaf(section, prev, field, out);
+        }
+    }
+    let new_fields: Vec<&Field> = new.iter().filter_map(item_field).collect();
+    removed_fields(section, old_fields.into_iter(), new_fields.into_iter(), out);
+}
+
+/// The `Field` leaf of an item block, if this leaf is one (a slot / nested repeatable is not).
+fn item_field(leaf: &Leaf) -> Option<&Field> {
+    match leaf {
+        Leaf::Field(field) => Some(field.as_ref()),
+        _ => None,
+    }
+}
+
+/// Classify every leaf `old` declares that `new` **drops** as a [`SchemaChange::RemovedField`] —
+/// the one removal rule, shared by both loci (a simple/header section's fields and a repeatable
+/// item block's), emitted after the `new`-leaf pass in **`old`'s** document order (deterministic:
+/// the same pair always diffs identically).
+///
+/// The removal needs a kind of its own precisely because the [`SchemaChange::Unclassified`]
+/// backstop is a **residual**: a removal riding *alongside* any classified change leaves the diff
+/// non-empty, so the backstop never fires and the dropped leaf would be **silently ignored** — the
+/// doc restamped while it still carries a field line the new schema no longer declares. The driver
+/// then **refuses** it (the recorded pick: refuse, not strip — see [`SchemaChange::RemovedField`]).
+fn removed_fields<'a>(
+    section: &str,
+    old: impl Iterator<Item = &'a Field>,
+    new: impl Iterator<Item = &'a Field>,
+    out: &mut Vec<SchemaChange>,
+) {
+    let new_ids: Vec<&str> = new.map(|f| f.id.as_str()).collect();
+    for field in old {
+        if !new_ids.contains(&field.id.as_str()) {
+            out.push(SchemaChange::RemovedField {
+                section: section.to_owned(),
+                field: field.id.clone(),
+            });
         }
     }
 }
@@ -612,9 +670,9 @@ fn added_section(id: &str, new: &SectionBody, out: &mut Vec<SchemaChange>) {
     // A wholly-new repeatable section is not one of the transform kinds.
 }
 
-/// Diff a simple section's field list: classify added fields, and — for a leaf present in both
-/// schemas — the existing-leaf deltas through the shared [`diff_leaf`] rule (matching by field
-/// id; field document order is `v2`'s).
+/// Diff a simple section's field list: classify added fields, the existing-leaf deltas through the
+/// shared [`diff_leaf`] rule (matching by field id; field document order is `v2`'s), and — after
+/// that pass — the leaves `new` **drops**, through the shared [`removed_fields`] rule.
 fn diff_fields(section: &str, old: &[Field], new: &[Field], out: &mut Vec<SchemaChange>) {
     let old_by_id: HashMap<&str, &Field> = old.iter().map(|f| (f.id.as_str(), f)).collect();
     for field in new {
@@ -623,6 +681,7 @@ fn diff_fields(section: &str, old: &[Field], new: &[Field], out: &mut Vec<Schema
             None => out.push(classify_added_field(section, field)),
         }
     }
+    removed_fields(section, old.iter(), new.iter(), out);
 }
 
 /// Classify a field present only in `v2`. A field the driver can place without
@@ -1822,6 +1881,126 @@ sections:
                 SchemaChange::ProseNeeding {
                     section: "entries".to_owned(),
                     leaf: Some("owner".to_owned()),
+                },
+            ]
+        );
+    }
+
+    // ---- field removal: a kind of its own (the recorded pick is to REFUSE it, not strip) ----
+
+    /// **A leaf v2 drops classifies `[RemovedField]`** at the simple locus, naming the section +
+    /// field. Red before T5: both diff loops iterate **`v2`'s** leaves and match back into `v1`,
+    /// so a leaf only `v1` declares is *invisible* — the pair emitted nothing of its own and fell
+    /// through to the backstop's residual (and, before the backstop, to `[]` + a silent stamp
+    /// bump).
+    #[test]
+    fn a_removed_field_at_the_simple_locus_classifies_removed_field() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: owner, type: string, optional: true }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::RemovedField {
+                section: "meta".to_owned(),
+                field: "owner".to_owned(),
+            }]
+        );
+    }
+
+    /// The **second locus**: a leaf dropped from a **repeatable item block** classifies
+    /// `[RemovedField]` too — the item-block loop reads removals as the simple one does.
+    #[test]
+    fn a_removed_field_in_a_repeatable_item_block_classifies_removed_field() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: owner, type: string, optional: true }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::RemovedField {
+                section: "entries".to_owned(),
+                field: "owner".to_owned(),
+            }]
+        );
+    }
+
+    /// **Why the removal needs a kind of its own, and cannot ride the backstop.** A removal
+    /// *accompanied* by a classified change (here an added optional field) leaves the diff
+    /// **non-empty**, so the backstop's residual — which fires only when nothing classified —
+    /// **never runs**: without its own kind the removal would be silently dropped and the doc
+    /// restamped, exactly the strand the backstop exists to close. It names itself, after the
+    /// v2-leaf pass, in `v1`'s document order.
+    #[test]
+    fn a_removal_alongside_a_classified_change_still_names_itself() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: owner, type: string, optional: true }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: link, type: string, optional: true }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![
+                SchemaChange::AddedOptionalField {
+                    section: "meta".to_owned(),
+                    field: "link".to_owned(),
+                },
+                SchemaChange::RemovedField {
+                    section: "meta".to_owned(),
+                    field: "owner".to_owned(),
                 },
             ]
         );

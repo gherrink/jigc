@@ -117,8 +117,9 @@ pub enum TransformError {
     /// only slots; a `set`-derived `added-optional-field` with no static default, whose value is
     /// the deriver's, threaded in by M34 Inc-3 T4) or because it is **refused by design** (a
     /// [`SchemaChange::NarrowedCardinality`] — content-affecting, and the recorded M42 pick is to
-    /// refuse rather than restamp unchecked). Surfaced, never silently skipped, so neither an
-    /// un-built branch nor a refused kind can drop a change.
+    /// refuse rather than restamp unchecked; a [`SchemaChange::RemovedField`] — the recorded M42
+    /// pick is to refuse rather than strip committed values away). Surfaced, never silently
+    /// skipped, so neither an un-built branch nor a refused kind can drop a change.
     Unsupported {
         /// The classified kind's wire name.
         kind: &'static str,
@@ -186,6 +187,20 @@ pub fn transform(
                 // arm's door open.
                 return Err(TransformError::Unsupported {
                     kind: "narrowed-cardinality",
+                    section: section.clone(),
+                });
+            }
+            SchemaChange::RemovedField { section, .. } => {
+                // THE REMOVAL PICK — refuse, not strip (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T5;
+                // `corpus-migration.md` → The two silent-classification holes, which left the
+                // shape open). A strip arm would splice the committed field line away
+                // deterministically — and **destroy the committed values**, a knowing exception to
+                // **No-data-loss**, a declared property of this pair. No frozen doctype needs a
+                // removal, so the strip is premature generality; the *silent* hole is the actual
+                // defect, and refusing closes it at zero risk. Additive to build later if a real
+                // driver appears.
+                return Err(TransformError::Unsupported {
+                    kind: "removed-field",
                     section: section.clone(),
                 });
             }
@@ -2319,6 +2334,73 @@ sections:
                 v0: src.clone(),
             }],
             "the doc stays byte-identical v0 — no bytes, no stamp"
+        );
+    }
+
+    /// **A removed field is REFUSED** (the recorded pick — `DECISIONS.md` → 2026-07-13 M42
+    /// Inc-5 T5: *refuse, not strip*). A v2 dropping a declared leaf classifies
+    /// `[RemovedField]` through the **real classifier** and the driver blocks: stripping the
+    /// committed field line would be a knowing exception to **No-data-loss**, a *declared*
+    /// property of this pair, and no frozen doctype needs a removal — so the migration refuses
+    /// and the corpus fold halts, leaving the doc byte-identical v0 (its committed value intact).
+    ///
+    /// Red before T5: the removal was invisible to the classifier (both loops iterate `v2`'s
+    /// leaves), so the pair rode the backstop's residual — and a removal *accompanied* by any
+    /// other classified change was dropped silently, restamping a doc that keeps a field line the
+    /// current schema no longer declares.
+    #[test]
+    fn removed_field_refuses_the_transform_and_halts_the_corpus_fold() {
+        // v1 = doca (a `derived-from` ref + a body slot); v2 drops the ref leaf entirely.
+        let v1 = doca_v1();
+        let v2 = load_schema(
+            b"\
+type: doca
+sections:
+  - id: meta
+    header: true
+    fields: []
+  - id: body
+    slot: { hint: \"the body\" }
+",
+        )
+        .expect("doca v2-removed-field loads");
+        let src = doca_v0_doc(); // carries `derived-from: doca:other`
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::RemovedField {
+                section: "meta".to_string(),
+                field: "derived-from".to_string(),
+            }],
+            "a dropped leaf names itself — it is not invisible, and not the backstop's residual"
+        );
+
+        assert_eq!(
+            transform(&v1, &v2, &src, &diff),
+            Err(TransformError::Unsupported {
+                kind: "removed-field",
+                section: "meta".to_string(),
+            }),
+            "the driver refuses a removal (stripping the value would lose committed data)"
+        );
+
+        let corpus = [CorpusDoc {
+            id: "doca-a",
+            old_schema: &v1,
+            new_schema: &v2,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, Some(0), "the fold halts on the refusal");
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Untouched {
+                id: "doca-a".to_string(),
+                v0: src.clone(),
+            }],
+            "the doc stays byte-identical v0 — the committed value is never destroyed"
         );
     }
 
