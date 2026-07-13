@@ -377,14 +377,17 @@ const REL1_ITEM_JSON: &str = r#"{
   "changes": [
     {
       "category": "added",
+      "id": "added",
       "notes": "- OAuth device-code flow"
     },
     {
       "category": "fixed",
+      "id": "fixed",
       "notes": "- session fixation on logout"
     }
   ],
   "date": "<DATE1>",
+  "id": "100",
   "link": "https://example.com/compare/0.9.0...1.0.0",
   "title": "1.0.0"
 }"#;
@@ -394,14 +397,17 @@ const REL2_ITEM_JSON: &str = r#"{
   "changes": [
     {
       "category": "changed",
+      "id": "changed",
       "notes": "- new config knob"
     },
     {
       "category": "removed",
+      "id": "removed",
       "notes": "- deprecated endpoint dropped"
     }
   ],
   "date": "<DATE2>",
+  "id": "110",
   "title": "1.1.0"
 }"#;
 
@@ -412,14 +418,17 @@ const RELEASES_SECTION_JSON: &str = r#"[
     "changes": [
       {
         "category": "added",
+        "id": "added",
         "notes": "- OAuth device-code flow"
       },
       {
         "category": "fixed",
+        "id": "fixed",
         "notes": "- session fixation on logout"
       }
     ],
     "date": "<DATE1>",
+    "id": "100",
     "link": "https://example.com/compare/0.9.0...1.0.0",
     "title": "1.0.0"
   },
@@ -427,14 +436,17 @@ const RELEASES_SECTION_JSON: &str = r#"[
     "changes": [
       {
         "category": "changed",
+        "id": "changed",
         "notes": "- new config knob"
       },
       {
         "category": "removed",
+        "id": "removed",
         "notes": "- deprecated endpoint dropped"
       }
     ],
     "date": "<DATE2>",
+    "id": "110",
     "title": "1.1.0"
   }
 ]"#;
@@ -454,10 +466,12 @@ const REL1_CHANGES_PLAIN: &str = "### added
 const REL1_CHANGES_JSON: &str = r#"[
   {
     "category": "added",
+    "id": "added",
     "notes": "- OAuth device-code flow"
   },
   {
     "category": "fixed",
+    "id": "fixed",
     "notes": "- session fixation on logout"
   }
 ]"#;
@@ -832,13 +846,19 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         (&g_changed, "changed", "- new config knob"),
         (&removed, "removed", "- deprecated endpoint dropped"),
     ] {
+        // The item's minted `id` joins the pinned item object (M42) — and it is read
+        // from the EMITTED address's last segment, never rebuilt from the category:
+        // the json key is exactly the handle the address grammar takes.
+        let id = group.rsplit('/').next().expect("the emitted item address");
         assert_shows(
             repo,
             home,
             pack,
             group,
             &format!("### {category}\n\n{notes}"),
-            &format!("{{\n  \"category\": \"{category}\",\n  \"notes\": \"{notes}\"\n}}"),
+            &format!(
+                "{{\n  \"category\": \"{category}\",\n  \"id\": \"{id}\",\n  \"notes\": \"{notes}\"\n}}"
+            ),
         );
         assert_shows(
             repo,
@@ -991,15 +1011,16 @@ fn flow24_single_task_fold_in_appends_an_unreleased_entry_and_promotes() {
     );
 
     // M40 A2: the emitted SINGLE-level group address reads back verbatim in both
-    // formats — the flat witness (no fields, no nested children), byte-identical to
-    // the pre-M40 flat slice shape (the M39-Inc-2 discipline).
+    // formats — the flat witness (no fields, no nested children). Its json carries the
+    // item's minted `id` (M42 — the key that makes the contract closed under its own
+    // address grammar: it is the last segment of the EMITTED address above).
     assert_shows(
         repo,
         home,
         pack,
         &group,
         "### added\n\n- OAuth login button on the sign-in page",
-        "{\n  \"category\": \"added\",\n  \"notes\": \"- OAuth login button on the sign-in page\"\n}",
+        "{\n  \"category\": \"added\",\n  \"id\": \"added\",\n  \"notes\": \"- OAuth login button on the sign-in page\"\n}",
     );
     assert_shows(
         repo,

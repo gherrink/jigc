@@ -308,10 +308,12 @@ const PRD_JSON: &str = r#"{
     "context": "Built for solo users who abandon heavyweight planners.",
     "requirements": [
       {
+        "id": "log-a-habit-in-one",
         "statement": "Logging a habit takes a single tap from the home screen.",
         "title": "Log a habit in one tap"
       },
       {
+        "id": "show-the-current-streak",
         "statement": "The current streak is shown front and center.",
         "title": "Show the current streak"
       }
@@ -324,16 +326,23 @@ const PRD_JSON: &str = r#"{
 
 const REQUIREMENTS_JSON: &str = r#"[
   {
+    "id": "log-a-habit-in-one",
     "statement": "Logging a habit takes a single tap from the home screen.",
     "title": "Log a habit in one tap"
   },
   {
+    "id": "show-the-current-streak",
     "statement": "The current streak is shown front and center.",
     "title": "Show the current streak"
   }
 ]"#;
 
+// The item `id` is the handle every address into the item takes, and it is NOT the
+// slugified heading — the title `Log a habit in one tap` mints `log-a-habit-in-one`
+// (the word cap bites), which is exactly the address the item slice below is read at
+// (M42 — `design/doc-read-surface.md` → The item `id` closes the json contract).
 const ONE_REQUIREMENT_JSON: &str = r#"{
+  "id": "log-a-habit-in-one",
   "statement": "Logging a habit takes a single tap from the home screen.",
   "title": "Log a habit in one tap"
 }"#;

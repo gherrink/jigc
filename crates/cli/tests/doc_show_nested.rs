@@ -323,14 +323,17 @@ const WHOLE_DOC_JSON: &str = r#"{
         "changes": [
           {
             "category": "added",
+            "id": "added",
             "notes": "- OAuth device-code flow"
           },
           {
             "category": "fixed",
+            "id": "fixed",
             "notes": "- session fixation on logout"
           }
         ],
         "date": "<DATE>",
+        "id": "100",
         "link": "https://example.com/compare/0.9.0...1.0.0",
         "title": "1.0.0"
       }
@@ -344,17 +347,42 @@ const WHOLE_DOC_JSON: &str = r#"{
 const CHANGES_ARRAY_JSON: &str = r#"[
   {
     "category": "added",
+    "id": "added",
     "notes": "- OAuth device-code flow"
   },
   {
     "category": "fixed",
+    "id": "fixed",
     "notes": "- session fixation on logout"
   }
 ]"#;
 
 const CHANGE_GROUP_JSON: &str = r#"{
   "category": "added",
+  "id": "added",
   "notes": "- OAuth device-code flow"
+}"#;
+
+/// `doc show <release> --format json` — the release item object, carrying the minted
+/// `id` (`100`) that is **not** derivable from its heading (`1.0.0`): the key that
+/// closes the contract under its own address grammar (M42).
+const RELEASE_ITEM_JSON: &str = r#"{
+  "changes": [
+    {
+      "category": "added",
+      "id": "added",
+      "notes": "- OAuth device-code flow"
+    },
+    {
+      "category": "fixed",
+      "id": "fixed",
+      "notes": "- session fixation on logout"
+    }
+  ],
+  "date": "<DATE>",
+  "id": "100",
+  "link": "https://example.com/compare/0.9.0...1.0.0",
+  "title": "1.0.0"
 }"#;
 
 /// The nested changelog corpus reads back through `doc show --format json` under the
@@ -484,5 +512,30 @@ fn doc_show_json_serves_nested_changelog_content_under_the_pinned_shape() {
     assert_eq!(
         json, r#""added""#,
         "the nested id-from leaf is the item's heading as a json string",
+    );
+
+    // (6) The item `id` closes the contract under its own address grammar (M42): the
+    //     EMITTED add-item address carries the minted id, and the item object read back
+    //     at that address carries the SAME id under `id`. The id is not derivable from
+    //     the heading — the release titled `1.0.0` mints `100`, so a driver slugifying
+    //     the title would guess `1-0-0` and earn a `write.wrong-shape`.
+    assert_eq!(
+        release, "changelog:changelog#releases/100",
+        "the emitted release address carries the minted id (not the slugified title)",
+    );
+    let json = ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &["doc", "show", &release, "--format", "json"],
+            None,
+        ),
+        "doc show <release> --format json",
+    );
+    assert_eq!(
+        json,
+        RELEASE_ITEM_JSON.replace("<DATE>", &date),
+        "the item object carries its minted `id`, and every nested item carries its own",
     );
 }

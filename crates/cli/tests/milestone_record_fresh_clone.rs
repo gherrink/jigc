@@ -237,6 +237,25 @@ fn fresh_clone_reseeds_cache_from_record_and_resumes() {
         !base.is_string(),
         "the pinned json `base` must be a structured object, not the space-joined scalar; got:\n{json}",
     );
+    // Every task item carries its minted `id` — the handle a fresh-clone driver addresses
+    // the item back at (M42 — `design/doc-read-surface.md` → The item `id` closes the json
+    // contract). The witness doctype proves the key on the pinned contract's own witness.
+    let tasks = doc["sections"]["tasks"]
+        .as_array()
+        .expect("the pinned record carries a `tasks` item array");
+    let ids: Vec<&str> = tasks
+        .iter()
+        .map(|item| {
+            item["id"]
+                .as_str()
+                .unwrap_or_else(|| panic!("every item object carries its `id`; got:\n{json}"))
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["warm-the-read-cache", "evict-cold-entries"],
+        "each task item's `id` is its minted item id; got:\n{json}",
+    );
 
     // (b) A subsequent milestone op re-derives the cache from the record and continues.
     let list = run_jigc(

@@ -552,6 +552,27 @@ pub enum SchemaError {
         /// The second declared nested repeatable's id.
         second: String,
     },
+
+    /// A repeatable block declares the **reserved** item key `id` — as a block
+    /// leaf, or as the block's `id-from`. The pinned `jigc doc show --format
+    /// json` item object keys the item's minted, frozen id under `id` (the
+    /// handle every address into the item takes —
+    /// `design/doc-read-surface.md` → The item `id` closes the json contract),
+    /// so a declared `id` leaf would silently collide with it and hand a driver
+    /// a value it cannot address the item back with. Rejected loudly at
+    /// pack-load, naming the block and the declaring site (the freeze-assert
+    /// sibling pattern).
+    #[error(
+        "block `{block}` declares the reserved item key `id` (as its `{site}`): `id` is \
+         reserved for the item's minted id on the pinned `jigc doc show --format json` \
+         item object"
+    )]
+    ReservedItemIdKey {
+        /// The id of the block (section or nested-repeatable leaf) declaring it.
+        block: String,
+        /// The declaring site — `leaf` (a block leaf) or `id-from`.
+        site: String,
+    },
 }
 
 /// The maximum repeatable nesting depth: a section is `##`, so a repeatable at
@@ -561,6 +582,14 @@ pub enum SchemaError {
 /// 4). A documented cap, enforced at load (`design/changelog.md` → engine work
 /// #1; `design/structural-grammar.md` → Repetition).
 pub const MAX_NESTING_DEPTH: usize = 4;
+
+/// The item key **reserved** on every repeatable block: the pinned `jigc doc show
+/// --format json` item object keys the item's minted, frozen id under `id` — the
+/// handle every address into the item takes (`design/doc-read-surface.md` → The
+/// item `id` closes the json contract under its own address grammar). A block
+/// declaring an `id` leaf (or naming `id` as its `id-from`) would collide with
+/// that key, so it is a typed [`SchemaError::ReservedItemIdKey`] at load.
+pub const RESERVED_ITEM_ID_KEY: &str = "id";
 
 /// Parse a doc-type [`Schema`] from raw config-family YAML bytes, with **no**
 /// pack-declared types in scope — engine-native field types only.
@@ -697,7 +726,7 @@ pub fn load_schema_with_types(
             // enforcing the H6 depth cap.
             SectionBody::Repeatable { repeatable } => {
                 let owner = section.id.clone();
-                resolve_block(&mut repeatable.block, &owner, 1, pack_types)?;
+                resolve_block(repeatable, &owner, 1, pack_types)?;
             }
         }
     }
@@ -714,7 +743,7 @@ pub fn load_schema_with_types(
 /// repeatable's items depth 2, and so on. A block whose own depth exceeds the
 /// cap is a typed [`SchemaError::NestingTooDeep`].
 fn resolve_block(
-    block: &mut [Leaf],
+    repeatable: &mut Repeatable,
     owner: &str,
     depth: usize,
     pack_types: &[PackTypeDecl],
@@ -725,7 +754,7 @@ fn resolve_block(
     // Breadth guard: at most ONE nested repeatable per block. The parsed item
     // carries a single undifferentiated nested list, so a second sibling group
     // would be silently unioned with the first — reject it loudly at load.
-    let mut nested_ids = block.iter().filter_map(|leaf| match leaf {
+    let mut nested_ids = repeatable.block.iter().filter_map(|leaf| match leaf {
         Leaf::Repeatable { id, .. } => Some(id.as_str()),
         _ => None,
     });
@@ -736,17 +765,43 @@ fn resolve_block(
             second: second.to_owned(),
         });
     }
-    for leaf in block {
+    // Reserved-key guard: `id` is the pinned json item object's key for the item's
+    // minted id, so no block may declare it — as a leaf or as its `id-from`.
+    if repeatable.id_from == RESERVED_ITEM_ID_KEY {
+        return Err(SchemaError::ReservedItemIdKey {
+            block: owner.to_owned(),
+            site: "id-from".to_owned(),
+        });
+    }
+    if repeatable
+        .block
+        .iter()
+        .any(|leaf| leaf_id(leaf) == RESERVED_ITEM_ID_KEY)
+    {
+        return Err(SchemaError::ReservedItemIdKey {
+            block: owner.to_owned(),
+            site: "leaf".to_owned(),
+        });
+    }
+    for leaf in &mut repeatable.block {
         match leaf {
             Leaf::Field(field) => resolve_field_type(field, pack_types)?,
             Leaf::Repeatable { id, repeatable } => {
                 let owner = id.clone();
-                resolve_block(&mut repeatable.block, &owner, depth + 1, pack_types)?;
+                resolve_block(repeatable, &owner, depth + 1, pack_types)?;
             }
             Leaf::Slot { .. } => {}
         }
     }
     Ok(())
+}
+
+/// One block leaf's declared id, whichever kind it is.
+fn leaf_id(leaf: &Leaf) -> &str {
+    match leaf {
+        Leaf::Field(field) => &field.id,
+        Leaf::Slot { id, .. } | Leaf::Repeatable { id, .. } => id,
+    }
 }
 
 /// Resolve one field's (possibly unresolved) [`FieldType::Pack`] against the
@@ -1855,6 +1910,81 @@ sections:
                     if block == "releases" && first == "added" && second == "fixed"
             ),
             "expected MultipleNestedRepeatables naming `releases`/`added`/`fixed`, got {err:?}",
+        );
+    }
+
+    /// (M42 inc-8 T3) The `id` key is **reserved** on a repeatable block: the
+    /// pinned `doc show --format json` item object keys the item's minted id
+    /// under `id` (`design/doc-read-surface.md` → The item `id` closes the json
+    /// contract), so a pack declaring an `id` leaf — or naming `id` as the
+    /// block's `id-from` — would silently collide with it. Rejected loudly at
+    /// pack-load with a typed [`SchemaError::ReservedItemIdKey`], at every
+    /// declaring site: a top-level block's leaf, a block's `id-from`, and a
+    /// **nested** block's leaf (the guard rides the recursion).
+    #[test]
+    fn the_reserved_item_id_key_is_rejected_at_every_declaring_site() {
+        let leaf = b"\
+type: collide
+sections:
+  - id: releases
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: id, type: string }
+";
+        let err = load_schema(leaf).expect_err("an `id` leaf in a repeatable block errors");
+        assert!(
+            matches!(
+                &err,
+                SchemaError::ReservedItemIdKey { block, site }
+                    if block == "releases" && site == "leaf"
+            ),
+            "expected ReservedItemIdKey naming the `releases` block's leaf, got {err:?}",
+        );
+
+        let id_from = b"\
+type: collide
+sections:
+  - id: releases
+    repeatable:
+      id-from: id
+      block:
+        - { id: title, type: string }
+";
+        let err = load_schema(id_from).expect_err("`id-from: id` errors");
+        assert!(
+            matches!(
+                &err,
+                SchemaError::ReservedItemIdKey { block, site }
+                    if block == "releases" && site == "id-from"
+            ),
+            "expected ReservedItemIdKey naming the `releases` block's id-from, got {err:?}",
+        );
+
+        let nested = b"\
+type: collide
+sections:
+  - id: releases
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: id, type: string }
+";
+        let err = load_schema(nested).expect_err("an `id` leaf in a NESTED block errors");
+        assert!(
+            matches!(
+                &err,
+                SchemaError::ReservedItemIdKey { block, site }
+                    if block == "changes" && site == "leaf"
+            ),
+            "expected ReservedItemIdKey naming the nested `changes` block, got {err:?}",
         );
     }
 

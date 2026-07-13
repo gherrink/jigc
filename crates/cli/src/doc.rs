@@ -2317,19 +2317,29 @@ fn items_json(
     )
 }
 
-/// One repeatable item as a json object of its leaves: the `id-from` leaf keyed by its
-/// id → the item's heading value (its stable id-source), each other field keyed by leaf
-/// id (scalar → string, list → array), each slot keyed by leaf id → its trimmed prose,
-/// and each declared **nested repeatable** keyed by its block id → the array of
-/// recursive item objects (M40, `design/doc-read-surface.md` → Nested repeatables join
-/// the pin). A single bare-prose slot carries no leaf id in the parsed item, so the
-/// block names it ([`single_slot_leaf`]).
+/// One repeatable item as a json object of its leaves: the item's minted **`id`**, the
+/// `id-from` leaf keyed by its id → the item's heading value (its stable id-source),
+/// each other field keyed by leaf id (scalar → string, list → array), each slot keyed by
+/// leaf id → its trimmed prose, and each declared **nested repeatable** keyed by its
+/// block id → the array of recursive item objects (M40, `design/doc-read-surface.md` →
+/// Nested repeatables join the pin). A single bare-prose slot carries no leaf id in the
+/// parsed item, so the block names it ([`single_slot_leaf`]).
 fn item_json(
     item: &engine::parse::ParsedItem,
     repeatable: &engine::schema::Repeatable,
     source: &str,
 ) -> serde_json::Value {
     let mut map = serde_json::Map::new();
+    // The item's minted, frozen id — the handle every address into the item takes, and
+    // NOT derivable from the heading (a release titled `1.0.0` mints `100`; a retitle
+    // diverges the two permanently). Without it the contract is not closed under its own
+    // address grammar (M42, `design/doc-read-surface.md` → The item `id` closes the json
+    // contract). The key is reserved at schema load (`schema::RESERVED_ITEM_ID_KEY`), so
+    // no declared leaf below can collide with it.
+    map.insert(
+        engine::schema::RESERVED_ITEM_ID_KEY.to_owned(),
+        serde_json::Value::String(item.id.clone()),
+    );
     // The id-from leaf is the item's `###` heading (its id-source), not a bullet field,
     // so it is carried by `item.title` — key it under the block's declared `id-from`.
     map.insert(
