@@ -297,7 +297,11 @@ fn item_heading_level(depth: usize) -> usize {
 /// least one field is present. Emits `\n\n<!-- fields -->\n` then the bullet list (one
 /// `- key: value` per field, no blank line between bullets), and terminates the body
 /// with a single `\n`. With no fields, terminates the prose with a single `\n`.
-fn append_field_group(out: &mut String, fields: &[Field]) {
+///
+/// Crate-visible so the store-read path renders a **body** field-group slice through the
+/// writer's own emitter (M42 — `design/doc-read-surface.md` → a fields-only section slice
+/// serves its fields: a canonical re-emit, never a second field format).
+pub(crate) fn append_field_group(out: &mut String, fields: &[Field]) {
     if fields.is_empty() {
         out.push('\n');
         return;
@@ -314,7 +318,10 @@ fn append_field_group(out: &mut String, fields: &[Field]) {
 
 /// Emit a bare flat field block (header front-matter): one `key: value` line per
 /// field, schema order, no bullets, each terminated by `\n`.
-fn emit_bare_fields(fields: &[Field]) -> String {
+///
+/// Crate-visible for the store-read path's **header** field-group slice (see
+/// [`append_field_group`]).
+pub(crate) fn emit_bare_fields(fields: &[Field]) -> String {
     field_block::emit(&FieldBlock {
         fields: fields.to_vec(),
     })

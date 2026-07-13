@@ -524,3 +524,182 @@ fn doc_show_routes_a_non_canonical_slug_for_a_placement_singleton() {
         "the block envelope names the bad ref + its route; got:\n{stderr}",
     );
 }
+
+/// A canonical committed ADR (the shipped `write::render` shape, stamped at the adr's
+/// frozen `schema-version: 2`): its `status` **header** section is a fields-only section
+/// — the shape 11 sections across 10 shipped doctypes carry.
+const COMMITTED_ADR: &str = "\
+---
+status: accepted
+date: 2026-05-23
+schema-version: 2
+---
+
+# Single-node cache
+
+## Context
+
+Forces.
+
+## Options
+
+Alternatives were weighed and rejected.
+
+## Decision
+
+A single in-memory node.
+
+## Consequences
+
+None.
+";
+
+/// (M42 inc-8 T2) A **fields-only (header) section slice serves its fields.**
+///
+/// `jigc doc show 'adr:<slug>#status'` returned the **empty string at exit 0** — a header
+/// that genuinely carries `status`/`date`/`schema-version` answering "nothing here": the
+/// **wrong-node-exit-0** `design/doc-read-surface.md` forbids by name. Post-fix the slice
+/// serves the section's fields — plain, the field lines as the writer renders them
+/// (a canonical re-emit: a `ParsedSection` carries no field-group span); `--format json`,
+/// the leaves keyed by leaf id, shaped exactly as the whole-doc `fields` project them.
+///
+/// Proven through the REAL binary on the EMITTED bytes, for the `adr` **and** for
+/// `milestone-record` — the pinned contract's own conformance witness — plus the
+/// regression guard the fix must not disturb: a fields-only section still contributes to
+/// the whole-doc `fields` **alone** and gains no `sections` entry.
+#[test]
+fn fields_only_header_section_slice_serves_its_fields() {
+    let repo = TempDir::new("fields-only");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // This harness's cascade lists the methodology pack, whose knobs whole-file-shadow
+    // the dev base's — so `docs-root` is inert and the adr homes flat at `decisions/`.
+    let decisions = repo.path().join("decisions");
+    fs::create_dir_all(&decisions).expect("mk decisions/");
+    fs::write(decisions.join("single-node-cache.md"), COMMITTED_ADR).expect("write committed adr");
+    git(repo.path(), &["add", "decisions"]);
+    git(repo.path(), &["commit", "-q", "-m", "adr"]);
+
+    // (1) Plain: the header's field lines, as the writer renders them.
+    let plain = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:single-node-cache#status"],
+        None,
+    );
+    assert_ok(&plain, "`jigc doc show adr:single-node-cache#status`");
+    assert_eq!(
+        stdout_of(&plain).trim_end(),
+        "status: accepted\ndate: 2026-05-23\nschema-version: 2",
+        "the header slice serves its field lines, never the empty string",
+    );
+
+    // (2) `--format json`: the leaves keyed by leaf id, shaped as in `fields`.
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "show",
+            "adr:single-node-cache#status",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert_ok(&json, "`jigc doc show adr:...#status --format json`");
+    assert_eq!(
+        stdout_of(&json).trim_end(),
+        "{\n  \"date\": \"2026-05-23\",\n  \"schema-version\": \"2\",\n  \"status\": \"accepted\"\n}",
+        "a fields-only section slice is its leaves keyed by leaf id",
+    );
+
+    // (3) REGRESSION (the omitting context): the whole-doc shape is unchanged — the
+    //     fields-only section still contributes to `fields` alone, with NO `sections`
+    //     entry. A slice is a projection of the addressed node, not a relocation of it.
+    let whole = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:single-node-cache", "--format", "json"],
+        None,
+    );
+    assert_ok(
+        &whole,
+        "`jigc doc show adr:single-node-cache --format json`",
+    );
+    let whole = stdout_of(&whole);
+    let value: serde_json::Value = serde_json::from_str(&whole).expect("valid json");
+    assert_eq!(
+        value["fields"]["status"], "accepted",
+        "the header's leaves stay in the whole-doc `fields`; got:\n{whole}",
+    );
+    assert!(
+        value["sections"].get("status").is_none(),
+        "a fields-only section gains NO `sections` entry; got:\n{whole}",
+    );
+    assert_eq!(
+        value["sections"]["decision"], "A single in-memory node.",
+        "the slot sections are untouched; got:\n{whole}",
+    );
+
+    // (4) The pinned contract's own conformance witness: the `milestone-record` header.
+    //     Its `base` pin is HEAD at create — read it BEFORE the create commits the record.
+    let head = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo.path())
+        .output()
+        .expect("git rev-parse HEAD");
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["milestone", "create", "Cache rework"],
+            None,
+        ),
+        "`jigc milestone create`",
+    );
+    let sha = String::from_utf8(head.stdout)
+        .expect("utf-8 sha")
+        .trim()
+        .to_string();
+    let short = &sha[..7];
+
+    let plain = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "milestone-record:cache-rework#meta"],
+        None,
+    );
+    assert_ok(&plain, "`jigc doc show milestone-record:cache-rework#meta`");
+    assert_eq!(
+        stdout_of(&plain).trim_end(),
+        format!("base: {sha} {short}\nstatus: active\nschema-version: 2"),
+        "the witness's header slice serves its field lines",
+    );
+
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "show",
+            "milestone-record:cache-rework#meta",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert_ok(
+        &json,
+        "`jigc doc show milestone-record:...#meta --format json`",
+    );
+    assert_eq!(
+        stdout_of(&json).trim_end(),
+        format!(
+            "{{\n  \"base\": {{\n    \"sha\": \"{sha}\",\n    \"short\": \"{short}\"\n  }},\n  \"schema-version\": \"2\",\n  \"status\": \"active\"\n}}"
+        ),
+        "the witness's leaves are shaped exactly as the whole-doc `fields` project them \
+         (the compound `base` pin included)",
+    );
+}

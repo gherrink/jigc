@@ -84,8 +84,9 @@ pub fn lexical_normalize(p: &Path) -> PathBuf {
 ///
 /// - **no fragment** → the whole committed doc, byte-for-byte over the committed
 ///   source (the canonical render is the file's own bytes — the round-trip guarantee);
-/// - **`#unit`** → the section's content: a slot's opaque prose (byte-exact), or a
-///   repeatable section's rendered items;
+/// - **`#unit`** → the section's content: a slot's opaque prose (byte-exact), a
+///   repeatable section's rendered items, or a **fields-only** (header) section's field
+///   group, canonically re-emitted (M42);
 /// - **`#unit/item`** (a 2-hop fragment over a repeatable section) → that item
 ///   rendered;
 /// - **deeper hops** → the **section-qualified write grammar** (the chain alternates
@@ -261,9 +262,22 @@ fn slice_fragment(
         ));
     };
 
-    // Section-level (no further hops): a slot section slices to its prose span; a
-    // repeatable section (no slot) slices to its rendered items.
+    let declared = schema.sections.iter().find(|s| s.id == section_id);
+
+    // Section-level (no further hops): a **fields-only** (header) section slices to its
+    // field group; a slot section to its prose span; a repeatable section to its rendered
+    // items. The fields-only arm is M42: the slice used to fall through to `render_items`
+    // over a section that holds none, so a header carrying real fields answered the EMPTY
+    // STRING at exit 0 — the wrong-node-exit-0 `doc-read-surface.md` forbids by name.
     if rest.is_empty() {
+        if let Some(crate::schema::SectionBody::Simple { slot: None, .. }) =
+            declared.map(|s| &s.body)
+        {
+            return Ok(render_field_group(
+                &section.fields,
+                declared.is_some_and(|s| s.header),
+            ));
+        }
         return Ok(match &section.slot {
             Some(span) => span.slice(source).to_string(),
             None => render_items(&section.items, source),
@@ -276,10 +290,8 @@ fn slice_fragment(
     // `#<section>/<field>` targets already honour. A simple section holds no items, so
     // its one legal deeper hop is a leaf on its own field group (M42 — the read path
     // stops rejecting an address the tool itself emits).
-    let is_simple = schema
-        .sections
-        .iter()
-        .any(|s| s.id == section_id && matches!(s.body, crate::schema::SectionBody::Simple { .. }));
+    let is_simple =
+        declared.is_some_and(|s| matches!(s.body, crate::schema::SectionBody::Simple { .. }));
     if is_simple && rest.len() == 1 {
         return resolve_section_leaf(section, rest[0], address);
     }
@@ -432,6 +444,32 @@ fn resolve_section_leaf(
                     .to_string(),
             )
         })
+}
+
+/// Render a **fields-only** section's field group as the writer emits it (M42): the bare
+/// `key: value` front-matter form for the **header** section, the
+/// `<!-- fields -->`-sentinelled bullet form for a **body** field group — through the
+/// writer's own emitters, never a second field format. Empty for a section the committed
+/// doc carries no fields for (every field optional and absent).
+///
+/// This slice is a **canonical re-emit, not a byte slice**: a
+/// [`parse::ParsedSection`] carries no field-group span (the parser records the fields
+/// themselves, not a byte range over them), so the group is rendered *from the parse* —
+/// which is what the plain path promises throughout, the canonical render of the node you
+/// addressed (`design/doc-read-surface.md` → the retired byte-exactness claim). Trailing
+/// newline trimmed, so the value composes like every other slice.
+fn render_field_group(fields: &[crate::field_block::Field], header: bool) -> String {
+    if fields.is_empty() {
+        return String::new();
+    }
+    let rendered = if header {
+        write::emit_bare_fields(fields)
+    } else {
+        let mut out = String::new();
+        write::append_field_group(&mut out, fields);
+        out
+    };
+    rendered.trim_matches('\n').to_string()
 }
 
 /// Resolve the trailing **leaf** hop on the chain's `item`, against the `template`
@@ -1032,6 +1070,99 @@ A cold node loses its sessions; clients re-authenticate.
             "the block names the absent leaf: {err:?}"
         );
         assert!(err.route.is_some(), "the block carries a route");
+    }
+
+    /// A doctype with **both** fields-only shapes: a `meta` **header** (the front-matter
+    /// group, the shape 11 sections across 10 shipped doctypes carry) and a `pins`
+    /// **body** field group (the `<!-- fields -->`-sentinelled bullet form) — plus a slot
+    /// section, the context that must stay untouched.
+    const FIELDS_ONLY_YAML: &[u8] = b"\
+type: board
+location: boards/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: owner, type: string }
+      - { id: created, type: date }
+  - id: pins
+    fields:
+      - { id: base, type: string }
+  - id: notes
+    slot: { hint: \"Anything else.\" }
+";
+
+    /// The committed `board` — the canonical bytes its writer mints.
+    const COMMITTED_BOARD: &str = "\
+---
+owner: maurice
+created: 2026-07-13
+---
+
+# Pin board
+
+## Pins
+
+<!-- fields -->
+- base: 2f0c1d9
+
+## Notes
+
+Nothing pinned yet.
+";
+
+    /// (M42 inc-8 T2) A **fields-only (header) section** slice serves its **fields**.
+    /// Before: `adr:…#status` returned the **empty string at exit 0** — the
+    /// wrong-node-exit-0 `doc-read-surface.md` forbids by name, over a header that
+    /// genuinely carries `status`/`date`. The slice is a **canonical re-emit** (a
+    /// `ParsedSection` carries no field-group span): the writer's own emitters render
+    /// the group — the bare front-matter form for a header, the sentinelled bullet form
+    /// for a body field group — never a second field format.
+    #[test]
+    fn store_slices_a_fields_only_section_to_its_field_group() {
+        let root = TempRoot::new("fields-only");
+        let path = root.path().join("boards").join("pin-board.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk boards/");
+        std::fs::write(&path, COMMITTED_BOARD).expect("write committed board");
+        let mut board = BTreeMap::new();
+        board.insert(
+            "board".to_string(),
+            crate::schema::load_schema(FIELDS_ONLY_YAML).expect("board.yaml loads"),
+        );
+
+        // The header group → the bare `key: value` front-matter form.
+        let header = Address::parse("board:pin-board#meta").expect("valid");
+        assert_eq!(
+            read_slice(root.path(), &board, &header).expect("`#meta` resolves"),
+            "owner: maurice\ncreated: 2026-07-13",
+            "a header slice serves its field lines as the writer renders them",
+        );
+
+        // A body field group → the `<!-- fields -->`-sentinelled bullet form.
+        let body = Address::parse("board:pin-board#pins").expect("valid");
+        assert_eq!(
+            read_slice(root.path(), &board, &body).expect("`#pins` resolves"),
+            "<!-- fields -->\n- base: 2f0c1d9",
+            "a body field group slices to the sentinelled bullet form",
+        );
+
+        // The omitting context: a slot section still slices to its prose, unchanged.
+        let slot = Address::parse("board:pin-board#notes").expect("valid");
+        assert_eq!(
+            read_slice(root.path(), &board, &slot).expect("`#notes` resolves"),
+            "Nothing pinned yet.",
+            "a slot section is untouched by the fields-only branch",
+        );
+
+        // And the shipped header the wave names: the adr's `status` section.
+        write_committed_adr(root.path());
+        let adr = Address::parse("adr:single-node-cache#status").expect("valid");
+        assert_eq!(
+            read_slice(root.path(), &schemas(), &adr).expect("`#status` resolves"),
+            "status: accepted\ndate: 2026-05-23",
+            "the adr header slice serves its fields, never the empty string",
+        );
     }
 
     /// A committed changelog (the shipped nested-repeatable doctype) at its literal

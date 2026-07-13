@@ -1716,8 +1716,10 @@ fn apply_leaf(
 /// introspection.md` → "Reading *filled* prose stays `jigc doc show`"). Unlike the
 /// write verbs this is task-less: it resolves the cascade schema set + repo root the
 /// same way `jigc validate` does, then serves the read through the canonical parse
-/// path — plain text is the byte-exact [`engine::store::read_slice`] view; `--format
-/// json` is the pinned stable shape (a 1.0 contract, [`show_json`]). A read-side block
+/// path — plain text is the [`engine::store::read_slice`] view (the **canonical render of
+/// the addressed node**: the whole doc is the store's own bytes, a slice is re-rendered
+/// from the parse — `design/doc-read-surface.md` → the retired byte-exactness claim);
+/// `--format json` is the pinned stable shape (a 1.0 contract, [`show_json`]). A read-side block
 /// (unknown type / not-found / unparseable / a `#fragment` naming nothing) routes
 /// through the shared [`DocFailure`] envelope, non-zero exit + route, exactly like a
 /// write block.
@@ -2164,11 +2166,20 @@ fn fragment_json(
         .expect("read_slice validated the section");
     let parsed = doc.sections.iter().find(|s| &s.id == section_id);
     match &section.body {
-        // A simple section resolves at two depths: the section itself (its slot prose)
-        // and — M42 — a **leaf** on its field group (`#section/<leaf>`, the grammar's
-        // `unit/leaf` depth), which projects exactly as the whole-doc `fields` do. A
-        // deeper hop never reaches here: `read_slice` blocked it.
-        SectionBody::Simple { .. } => match rest.split_first() {
+        // A simple section resolves at two depths: the section itself — its slot prose, or
+        // (M42, a **fields-only**/header section, which has no slot) an object of its
+        // leaves keyed by leaf id, each shaped exactly as the whole-doc `fields` project
+        // them — and a **leaf** on its field group (`#section/<leaf>`, the grammar's
+        // `unit/leaf` depth). A deeper hop never reaches here: `read_slice` blocked it.
+        SectionBody::Simple { slot, .. } => match rest.split_first() {
+            None if slot.is_none() => serde_json::Value::Object(
+                parsed
+                    .map(|p| p.fields.as_slice())
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|f| (f.key.clone(), header_field_json(schema, &f.key, &f.value)))
+                    .collect(),
+            ),
             None => slot_json(parsed.and_then(|p| p.slot.as_ref()), source),
             Some((leaf, _)) => parsed
                 .and_then(|p| p.fields.iter().find(|f| &f.key == leaf))
