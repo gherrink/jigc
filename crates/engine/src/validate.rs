@@ -528,15 +528,21 @@ pub fn validate_store_families(
 /// hashes, not structure), so it must be **re-parsed**, not re-hashed.
 ///
 /// A **clean lift** of the pure task-scope [`conformance_for`] — no working area, no
-/// `FileStateRecord`, no edge index. It walks the committed store with the
-/// [`detect_committed_store`](crate::file_state::detect_committed_store) walk shape: per
-/// persisted (`location:`-bearing) schema, slug-sorted `.md`
-/// ([`committed_slugs`](crate::index::committed_slugs)), transient (location-less) types
-/// skipped — **not** the anchor-scoped `enumerate_committed_surface`, which under-walks. Per
-/// doc it synthesizes the `<type>:<slug>.md` filename + `<location>/<slug>.md` record key
-/// [`conformance_for`] expects, so parse-level findings surface too;
-/// `schema-conformance.unknown-type` can never fire here (the type comes from schema
-/// iteration, never a filename prefix).
+/// `FileStateRecord`, no edge index. It enumerates the committed store through
+/// [`crate::index::committed_instances`], the **placement-aware** enumerator its sibling walk
+/// ([`hollow_surplus_store`]) already uses: every located `<location>/<slug>.md` **and** a
+/// placement doctype's single literal `placement.file`, each carrying its `<type>:<slug>`
+/// identity (a placement singleton's `<type>:<type>`) — **not** the anchor-scoped
+/// `enumerate_committed_surface`, which under-walks. It is emphatically **not** keyed on
+/// `schema.location` alone: that guard (*"a transient type has no committed docs"*) was true
+/// pre-M38 and false since, and it dropped the whole **placement** class — where both
+/// placement doctypes at schema-version 2 live (`changelog`, `deferral-ledger`) — out of the
+/// detect-half, so `jigc validate` exited 0 over exactly the corpus `migrate-corpus` exists
+/// to upgrade (`design/storage.md` → The census; `design/validation.md` → Store-scope
+/// schema-conformance: "every committed instance" means `index::committed_instances`). The
+/// `rel_key` is the instance's repo-relative path, so a parse-level finding is attributed to
+/// the doc's real home; `schema-conformance.unknown-type` can never fire here (the type comes
+/// from schema iteration, never a filename prefix).
 ///
 /// `ref-resolves` is **not** re-emitted — it is the index-based Family 4
 /// ([`ref_resolves_store`](crate::index::ref_resolves_store)), already at store scope. So
@@ -558,12 +564,16 @@ fn schema_conformance_store(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
-        let Some(location) = schema.location.as_deref() else {
-            continue; // a transient (location-less) type has no committed docs.
-        };
-        for slug in crate::index::committed_slugs(repo_root, location) {
-            let rel_key = format!("{location}{slug}.md");
-            let Ok(bytes) = std::fs::read(repo_root.join(&rel_key)) else {
+        // `identity` is the `<type>:<slug>` URI the enumerator already derives (a placement
+        // doctype's `<type>:<type>` singleton included) — never re-derived from the path,
+        // which does not round-trip for a case-preserved literal home (`CHANGELOG.md`).
+        for (identity, path) in crate::index::committed_instances(repo_root, ty, schema) {
+            let rel_key = path
+                .strip_prefix(repo_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned();
+            let Ok(bytes) = std::fs::read(&path) else {
                 continue; // read race: skip; the next sweep re-checks.
             };
             // Mirror the pure task-scope call exactly (no BOM strip, `from_utf8_lossy`):
@@ -601,7 +611,7 @@ fn schema_conformance_store(
                         doc_findings.push(version_mismatch_break(stamp, current));
                     }
                     route_schema_conformance(&mut doc_findings, stamp, current, &rel_key);
-                    attribute_to_doc(&mut doc_findings, &format!("{ty}:{slug}"), &rel_key);
+                    attribute_to_doc(&mut doc_findings, &identity, &rel_key);
                     findings.extend(doc_findings);
                 }
                 Err(mut parse_findings) => {
@@ -630,7 +640,7 @@ fn schema_conformance_store(
                             &rel_key,
                         );
                     }
-                    attribute_to_doc(&mut parse_findings, &format!("{ty}:{slug}"), &rel_key);
+                    attribute_to_doc(&mut parse_findings, &identity, &rel_key);
                     findings.extend(parse_findings);
                 }
             }

@@ -20,10 +20,13 @@
 //! bytes plus the stamp — nothing else moves — the transient `commit` shadow migrates
 //! nothing, and a re-run reports both docs already current, byte-untouched.
 //!
-//! Deliberately NOT asserted: the detect side. The family-5 sweep walks only
-//! `location:`-bearing schemas, so the unstamped placement roadmap is verb-migratable
-//! but not `validate`-routed `migrate` — a recorded known bound, not a covered contract
-//! (`design/corpus-migration.md` → M40 revises the dichotomy).
+//! Not asserted here: the detect side (this suite's contract is the migrating verb's bytes).
+//! The bound it used to record — *"the family-5 sweep walks only `location:`-bearing schemas,
+//! so the unstamped placement roadmap is verb-migratable but not `validate`-routed"* — is
+//! **gone** as of M42 Inc-2 T1: family 5 enumerates through `index::committed_instances`, so a
+//! placement doc is detected and routed like any other (`design/validation.md` → "every
+//! committed instance"). Its detect↔fix loop is covered on the real binary in
+//! `corpus_migration.rs` → `validate_detects_the_stale_placement_changelog_then_migrate_clears_it`.
 
 use std::fs;
 use std::path::{Path, PathBuf};

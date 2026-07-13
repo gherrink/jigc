@@ -520,6 +520,114 @@ fn migrate_corpus_completes_an_interrupted_relocation() {
     );
 }
 
+/// The `jigc validate --format json` findings over `repo`, asserting the sweep succeeded.
+fn validate_findings(repo: &Path, home: &Path) -> Vec<serde_json::Value> {
+    let out = jigc(repo, home, &["validate", "--format", "json"]);
+    assert_ok(&out, "`jigc validate --format json`");
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`jigc validate` emits valid JSON");
+    report["findings"]
+        .as_array()
+        .expect("the report carries a findings array")
+        .clone()
+}
+
+/// The **blocking** `schema-conformance.*` findings a sweep raises against the doc at
+/// `identity` (the finding's stable `key.target`, whose doc half is `<type>:<slug>` — a
+/// placement singleton's `<type>:<type>` — optionally followed by a `#fragment`).
+fn blocking_conformance_on(
+    findings: &[serde_json::Value],
+    identity: &str,
+) -> Vec<serde_json::Value> {
+    findings
+        .iter()
+        .filter(|f| {
+            f["severity"] == "blocking"
+                && f["code"]
+                    .as_str()
+                    .is_some_and(|c| c.starts_with("schema-conformance."))
+                && f["key"]["target"]
+                    .as_str()
+                    .is_some_and(|t| t == identity || t.starts_with(&format!("{identity}#")))
+        })
+        .cloned()
+        .collect()
+}
+
+/// **M42 Inc-2 T1 — the fifth store family enumerates through `index::committed_instances`.**
+/// The detect↔fix loop over a **placement** doctype, end-to-end on the real binary.
+///
+/// Pre-fix, `schema_conformance_store` walked only `location:`-bearing schemas (the stale
+/// guard *"a transient (location-less) type has no committed docs"*, true pre-M38 and false
+/// since), so it dropped the whole **placement** class — which is where both placement
+/// doctypes at schema-version 2 live (`changelog`, `deferral-ledger`). Net: `jigc validate`
+/// over a corpus whose root `CHANGELOG.md` is stamped `schema-version: 1` reported **zero**
+/// schema-conformance findings and exited 0 — a false green over exactly the corpus
+/// `migrate-corpus` exists to upgrade (the fixing half outrunning the detecting half;
+/// `design/validation.md` → Store-scope schema-conformance, "every committed instance").
+///
+/// Post-fix the loop closes: **detect** (a blocking `schema-conformance.*` finding addressed
+/// at `changelog:changelog`, routed `migrate`) → **migrate** → **re-validate clean**.
+#[test]
+fn validate_detects_the_stale_placement_changelog_then_migrate_clears_it() {
+    let repo = TempDir::new("stale-placement-detect");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    // The corpus: one committed doc, a root `CHANGELOG.md` stamped schema-version 1 while the
+    // manifest is at 2 — the state a hand-moved (or partially-migrated) changelog lands in.
+    commit_root_changelog(repo.path(), STALE_ROOT_CHANGELOG_V1);
+
+    // 1. DETECT — the stale placement doc is seen, blocking-conformant-broken, routed migrate.
+    let before = validate_findings(repo.path(), home.path());
+    let stale = blocking_conformance_on(&before, "changelog:changelog");
+    assert!(
+        !stale.is_empty(),
+        "the stale placement-home changelog raises a blocking schema-conformance finding; \
+         got findings: {before:#?}",
+    );
+    for finding in &stale {
+        let route = finding["route"]
+            .as_str()
+            .unwrap_or_else(|| panic!("the finding carries a route; got: {finding:#?}"));
+        assert!(
+            route.starts_with("migrate"),
+            "a below-version placement doc routes `migrate`; got route: {route}",
+        );
+        assert!(
+            route.contains("CHANGELOG.md"),
+            "the route names the doc's literal placement home; got route: {route}",
+        );
+        assert!(
+            finding["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("`CHANGELOG.md`")),
+            "the finding is attributed to the repo-relative placement path; got: {finding:#?}",
+        );
+    }
+
+    // 2. MIGRATE — the routed verb upgrades the doc it was routed at.
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    assert_ok(&migrate, "`jigc migrate-corpus`");
+    assert_eq!(
+        fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md"),
+        MIGRATED_ROOT_CHANGELOG_V2,
+        "the routed verb migrates the doc the detector pointed at",
+    );
+
+    // 3. RE-VALIDATE — the loop closes: no blocking conformance break, no migrate route.
+    let after = validate_findings(repo.path(), home.path());
+    assert!(
+        blocking_conformance_on(&after, "changelog:changelog").is_empty(),
+        "the migrated placement doc validates clean; got findings: {after:#?}",
+    );
+    assert!(
+        !after.iter().any(|f| f["route"]
+            .as_str()
+            .is_some_and(|r| r.starts_with("migrate"))),
+        "the migrated corpus carries no migrate route; got findings: {after:#?}",
+    );
+}
+
 /// The repo's current `HEAD` sha.
 fn head(repo: &Path) -> String {
     git(repo, &["rev-parse", "HEAD"])

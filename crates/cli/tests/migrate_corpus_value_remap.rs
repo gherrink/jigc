@@ -18,13 +18,15 @@
 //!   - a **re-run** reports the doc `already-current`, byte-untouched (idempotent).
 //!   - the migrated doc **validates clean**.
 //!
-//! **The detect side — the recorded placement bound.** The done-picture's "routed migrate by
-//! the store detector" premise does **not** hold for a *placement* doctype: the family-5
-//! store-conformance sweep walks only `location:`-bearing schemas (`validate.rs` → Placement
-//! coverage; `methodology_corpus_stamp.rs` records the same bound for the placement roadmap),
-//! so a committed v1 `deferral-ledger` (`placement: docs/deferral-ledger.md`, `location:
-//! None`) is **verb-migratable but not `validate`-routed** — asserted here as the true
-//! behavior, not a false precondition. The verb migrates it regardless.
+//! **The detect side — the placement bound is GONE (M42 Inc-2 T1).** Through rc.5 the
+//! family-5 store-conformance sweep walked only `location:`-bearing schemas, so a committed
+//! v1 `deferral-ledger` (`placement: docs/deferral-ledger.md`, `location: None`) was
+//! **verb-migratable but not `validate`-routed** — a bound this test asserted (`dl_findings`
+//! empty) rather than a behavior anyone wanted. Family 5 now enumerates through
+//! `index::committed_instances` (`design/validation.md` → "every committed instance"), so the
+//! stale placement doc **is** detected and routed `migrate` at the doc the verb then fixes.
+//! The assertion flips accordingly, and is **presence**-shaped, never set-equality: other
+//! store families legitimately raise their own findings against the same doc.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -291,28 +293,36 @@ fn migrate_corpus_remaps_the_deferral_ledger_kind_byte_faithful() {
         &["commit", "-q", "-m", "seed v1 deferral-ledger"],
     );
 
-    // --- the detect side: the recorded PLACEMENT bound (verb-migratable, not validate-routed) ---
-    // Family 5 walks only `location:`-bearing schemas, so a below-version placement doc
-    // surfaces NO store finding — the true behavior, asserted rather than a false "routed
-    // migrate" precondition (the `methodology_corpus_stamp.rs` placement-roadmap precedent).
+    // --- the detect side: the stale placement doc IS routed at the verb (M42 Inc-2 T1) ---
+    // Family 5 enumerates through `index::committed_instances`, so a below-version PLACEMENT
+    // doc raises its blocking schema-conformance break routed `migrate` — at the doc
+    // `migrate-corpus` then fixes below. Presence, not set-equality: the store sweep's other
+    // families may legitimately raise their own findings against the same doc.
     let validate_before = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
     assert_ok(&validate_before, "`jigc validate` (before)");
     let before: serde_json::Value =
         serde_json::from_slice(&validate_before.stdout).expect("validate emits valid JSON");
-    let dl_findings: Vec<&serde_json::Value> = before["findings"]
+    let routed: Vec<&serde_json::Value> = before["findings"]
         .as_array()
         .expect("findings array")
         .iter()
         .filter(|f| {
-            serde_json::to_string(f)
-                .unwrap()
-                .contains("deferral-ledger")
+            f["severity"] == "blocking"
+                && f["code"]
+                    .as_str()
+                    .is_some_and(|c| c.starts_with("schema-conformance."))
+                && f["key"]["target"]
+                    .as_str()
+                    .is_some_and(|t| t.starts_with("deferral-ledger:deferral-ledger"))
+                && f["route"]
+                    .as_str()
+                    .is_some_and(|r| r.starts_with("migrate") && r.contains("deferral-ledger.md"))
         })
         .collect();
     assert!(
-        dl_findings.is_empty(),
-        "a below-version placement deferral-ledger is not validate-routed (the recorded \
-         placement bound); got: {dl_findings:?}"
+        !routed.is_empty(),
+        "the below-version placement deferral-ledger is DETECTED and routed `migrate`; got: {}",
+        before["findings"],
     );
 
     // --- migrate-corpus: the authored remap drives the first methodology v1→v2 migration ---

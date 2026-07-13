@@ -751,24 +751,6 @@ pub(crate) fn committed_instances(
     out
 }
 
-/// The committed-doc slugs of a persisted type — the `.md` file stems under
-/// `<repo_root>/<location>`, **slug-sorted** (the deterministic enumeration order). A
-/// missing / unreadable location directory yields an empty list (no committed docs yet).
-pub(crate) fn committed_slugs(repo_root: &Path, location: &str) -> Vec<String> {
-    let dir = repo_root.join(location);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    let mut slugs: Vec<String> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
-        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
-        .collect();
-    slugs.sort();
-    slugs
-}
-
 /// An **advisory** `schema-completeness.inverse-cardinality` [`Finding`] for a target doc
 /// below its inverse-card minimum — located at the deficient target's identity, naming the
 /// inverse relation (when declared) so the operator knows which obligation is unmet. Carries
