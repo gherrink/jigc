@@ -103,6 +103,77 @@ fn ok_stdout(out: &std::process::Output, what: &str) -> String {
         .to_string()
 }
 
+/// A canonical committed ADR (the shipped `write::render` shape): its `status` header
+/// section carries the `status` enum + `date` field leaves — the archetypal
+/// `#<section>/<field>` target `jigc validate` itself emits.
+const COMMITTED_ADR: &str = "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# Single-node cache\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nA single in-memory node.\n\n## Consequences\n\nNone.\n";
+
+/// (M42 inc-8 T1) The `#<section>/<leaf>` read resolves on a **non-repeatable** section
+/// — through the REAL binary, on the emitted bytes, plain **and** `--format json`.
+///
+/// This is the round-trip the tool broke: `jigc validate` emits `#<section>/<field>`
+/// targets (`schema-conformance.required-field-present` / `field-value-conformant`) and
+/// `jigc doc set-field` accepts the same string at exit 0, while `jigc doc show` answered
+/// `blocking · store.no-such-item`. The engine branch and the json projection are one
+/// atomic unit: the engine alone would turn today's honest block into a json
+/// wrong-node-exit-0 (the empty slot string), the exact class this wave closes.
+#[test]
+fn section_leaf_slice_resolves_a_field_in_a_simple_section() {
+    let repo = TempDir::new("adr-leaf");
+    let home = TempDir::new("adr-leaf-home");
+    init_repo(repo.path());
+    let adr = repo.path().join("docs").join("decisions");
+    fs::create_dir_all(&adr).expect("mk docs/decisions/");
+    fs::write(adr.join("single-node-cache.md"), COMMITTED_ADR).expect("write committed adr");
+    git(repo.path(), &["add", "docs"]);
+    git(repo.path(), &["commit", "-q", "-m", "adr"]);
+
+    // (1) Plain: the leaf's canonical rendered value (an enum leaf reads lowercase).
+    for (leaf, want) in [("status", "accepted"), ("date", "2026-05-23")] {
+        let addr = format!("adr:single-node-cache#status/{leaf}");
+        let plain = ok_stdout(
+            &run_jigc(repo.path(), home.path(), &["doc", "show", &addr]),
+            &format!("plain `{addr}`"),
+        );
+        assert_eq!(plain, want, "plain `{addr}` is the field's value");
+
+        // (2) `--format json`: the same value, shaped exactly as in `fields` (a string).
+        let json = ok_stdout(
+            &run_jigc(
+                repo.path(),
+                home.path(),
+                &["doc", "show", &addr, "--format", "json"],
+            ),
+            &format!("json `{addr}`"),
+        );
+        assert_eq!(
+            json,
+            format!("\"{want}\""),
+            "json `{addr}` is the leaf value, never the empty slot string",
+        );
+    }
+
+    // (3) An absent leaf name blocks honestly — `store.no-such-leaf` + a route, never a
+    //     wrong node at exit 0.
+    let bad = run_jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:single-node-cache#status/nope"],
+    );
+    assert!(
+        !bad.status.success(),
+        "an absent leaf must exit non-zero; stdout:\n{}",
+        String::from_utf8_lossy(&bad.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        stderr.contains("store.no-such-leaf")
+            && stderr.contains("nope")
+            && stderr.contains("route:"),
+        "the block names the absent leaf + carries a route; got:\n{stderr}",
+    );
+}
+
 #[test]
 fn item_leaf_slices_resolve_field_and_id_from_leaves() {
     let repo = TempDir::new("repo");

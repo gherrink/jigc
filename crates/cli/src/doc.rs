@@ -2164,9 +2164,17 @@ fn fragment_json(
         .expect("read_slice validated the section");
     let parsed = doc.sections.iter().find(|s| &s.id == section_id);
     match &section.body {
-        // A simple section only reaches here at the section level (`read_slice` blocks a
-        // sub-hop into a simple section), so it is the slot-prose case.
-        SectionBody::Simple { .. } => slot_json(parsed.and_then(|p| p.slot.as_ref()), source),
+        // A simple section resolves at two depths: the section itself (its slot prose)
+        // and — M42 — a **leaf** on its field group (`#section/<leaf>`, the grammar's
+        // `unit/leaf` depth), which projects exactly as the whole-doc `fields` do. A
+        // deeper hop never reaches here: `read_slice` blocked it.
+        SectionBody::Simple { .. } => match rest.split_first() {
+            None => slot_json(parsed.and_then(|p| p.slot.as_ref()), source),
+            Some((leaf, _)) => parsed
+                .and_then(|p| p.fields.iter().find(|f| &f.key == leaf))
+                .map(|f| header_field_json(schema, &f.key, &f.value))
+                .expect("read_slice validated the section leaf resolves"),
+        },
         SectionBody::Repeatable { repeatable } => {
             let items = parsed.map(|p| p.items.as_slice()).unwrap_or(&[]);
             if rest.is_empty() {

@@ -270,6 +270,20 @@ fn slice_fragment(
         });
     }
 
+    // A **leaf inside a non-repeatable section** (`#section/<leaf>`) — the grammar's
+    // `unit/leaf` depth (`structural-grammar.md` → Addressing: *"one grammar, every
+    // reference"*), which the write path (`doc set-field`) and `validate`'s emitted
+    // `#<section>/<field>` targets already honour. A simple section holds no items, so
+    // its one legal deeper hop is a leaf on its own field group (M42 — the read path
+    // stops rejecting an address the tool itself emits).
+    let is_simple = schema
+        .sections
+        .iter()
+        .any(|s| s.id == section_id && matches!(s.body, crate::schema::SectionBody::Simple { .. }));
+    if is_simple && rest.len() == 1 {
+        return resolve_section_leaf(section, rest[0], address);
+    }
+
     // 1. The whole chain as an item path: a valid chain of even length ends on a
     //    nested-section segment (the alternation starts at an item), so it slices to
     //    that item's nested items; an odd chain ends on the item itself. The parsed
@@ -383,6 +397,41 @@ fn descend_items<'a>(
             "name an item that exists in the committed section".to_string(),
         )
     })
+}
+
+/// Resolve a **leaf** hop on a **non-repeatable** `section`: the value of the field of
+/// that id in the section's own field group (the header front-matter or a body
+/// section's sentinelled trailing group), rendered canonically — the same value shape
+/// the whole-doc `fields` project.
+///
+/// A simple section's addressable leaves are exactly its fields: its prose slot *is*
+/// the section (`#<section>`), and the parser records no sub-labelled section slots. So
+/// any other name — including an optional field the committed doc does not carry — is an
+/// honest `store.no-such-leaf` block with a route (the item-leaf precedent above: the
+/// doc answers for the leaves it holds, never a wrong node at exit 0).
+fn resolve_section_leaf(
+    section: &parse::ParsedSection,
+    leaf: &str,
+    address: &str,
+) -> Result<String, Finding> {
+    section
+        .fields
+        .iter()
+        .find(|f| f.key == leaf)
+        .map(|f| f.value.render())
+        .ok_or_else(|| {
+            block(
+                "store.no-such-leaf",
+                format!(
+                    "`{address}` names no leaf `{leaf}` in section `{}`",
+                    section.id
+                ),
+                address,
+                "name a field the committed section carries (a section's prose slot is \
+                 the section itself — address it as `#<section>`)"
+                    .to_string(),
+            )
+        })
 }
 
 /// Resolve the trailing **leaf** hop on the chain's `item`, against the `template`
@@ -951,6 +1000,38 @@ A cold node loses its sessions; clients re-authenticate.
             err.route.is_some(),
             "the no-such-item block carries a route"
         );
+    }
+
+    /// (M42 inc-8 T1) A **leaf inside a non-repeatable section** — the grammar's
+    /// `unit/leaf` depth (`structural-grammar.md` → Addressing: *"one grammar, every
+    /// reference"*), which the write path and `validate`'s emitted targets both honour
+    /// and the read path did not: `adr:…#status/status` blocked `store.no-such-item`
+    /// while `doc set-field` on the same string exited 0. The header's field leaves now
+    /// resolve to their canonical rendered values, and an absent leaf name is an honest
+    /// `store.no-such-leaf` block with a route — never a wrong node at exit 0.
+    #[test]
+    fn store_slices_a_field_leaf_in_a_simple_section() {
+        let root = TempRoot::new("simple-leaf");
+        write_committed_adr(root.path());
+        let schemas = schemas();
+
+        for (leaf, want) in [("status", "accepted"), ("date", "2026-05-23")] {
+            let address =
+                Address::parse(&format!("adr:single-node-cache#status/{leaf}")).expect("valid");
+            let value = read_slice(root.path(), &schemas, &address)
+                .unwrap_or_else(|err| panic!("`#status/{leaf}` resolves; got {err:?}"));
+            assert_eq!(value, want, "`#status/{leaf}` slices to its field value");
+        }
+
+        let bad = Address::parse("adr:single-node-cache#status/nope").expect("valid");
+        let err = read_slice(root.path(), &schemas, &bad)
+            .expect_err("an absent leaf name blocks honestly");
+        assert_eq!(err.code, "store.no-such-leaf");
+        assert!(
+            err.message.contains("nope"),
+            "the block names the absent leaf: {err:?}"
+        );
+        assert!(err.route.is_some(), "the block carries a route");
     }
 
     /// A committed changelog (the shipped nested-repeatable doctype) at its literal
