@@ -41,7 +41,10 @@ struct KnobDecl {
 /// The engine-owned set of intrinsic check cascade keys — the checks whose
 /// demotion would break a load-bearing invariant of the system itself
 /// (`validation.md` → What "intrinsic" means mechanically: the ten
-/// `workflow-refs.*` checks, the four `schema-conformance.*` checks, the three
+/// `workflow-refs.*` checks, the five `schema-conformance.*` checks — the four
+/// structural ones plus `schema-version-current`, intrinsic on the trustworthiness
+/// axis (M42): a corpus below its manifest version means every other check in the
+/// sweep is adjudicating docs against a schema they were never written to — the three
 /// `pack-probe-integrity.*` meta-findings, and the `owner-artifact.present` #5 gate).
 /// The
 /// engine asserts at pack-load that every one of these knobs is **declared** and
@@ -64,6 +67,7 @@ pub const INTRINSIC_CHECK_KEYS: &[&str] = &[
     "validation.schema-conformance.required-slot-present.severity",
     "validation.schema-conformance.required-field-present.severity",
     "validation.schema-conformance.field-value-conformant.severity",
+    "validation.schema-conformance.schema-version-current.severity",
     "validation.pack-probe-integrity.timeout.severity",
     "validation.pack-probe-integrity.crash.severity",
     "validation.pack-probe-integrity.malformed-output.severity",
@@ -358,6 +362,10 @@ mod tests {
                 "blocking",
             ),
             (
+                "validation.schema-conformance.schema-version-current.severity",
+                "blocking",
+            ),
+            (
                 "validation.schema-conformance.surplus-sections-absent.severity",
                 "advisory",
             ),
@@ -601,11 +609,15 @@ mod tests {
 
     /// The shipped per-check severity surface reconciles to the
     /// [`design/validation.md`] Severity inventory (the single source of truth):
-    /// **31 per-check `validation.<probe>.<check>.severity` keys — 18 intrinsic
+    /// **32 per-check `validation.<probe>.<check>.severity` keys — 19 intrinsic
     /// (floored at `blocking`) + 13 tunable (no floor)** (`validation.md` → Severity
     /// inventory). The M15 `checkpoint-marker-not-shadowed` row joined the intrinsic
     /// set (16 → 17); the M16 `owner-artifact.present` #5 gate joins it next (17 → 18);
-    /// the M33 `schema-conformance.mention-resolves` row joins the **tunable** set
+    /// the M42 `schema-conformance.schema-version-current` row completes it (18 → 19 —
+    /// the version-currency break, minted with its own check id so a machine consumer
+    /// can act on it; intrinsic on the trustworthiness axis, see
+    /// [`schema_version_current_key_is_declared_intrinsic_blocking`]); the M33
+    /// `schema-conformance.mention-resolves` row joins the **tunable** set
     /// (9 → 10 — advisory, store-scope only, unfloored); the M40
     /// `doc-code.title-names-symbol` row joins it too (10 → 11 — the stale-heading
     /// guard, live since the long-horizon-study fix but shipped un-keyed, keyed +
@@ -613,14 +625,14 @@ mod tests {
     /// row follows (11 → 12 — the hollow-adoption advisory; its sibling `….exempt`
     /// **string** knob is not a severity key and stays outside this count); its M40
     /// sibling `schema-conformance.surplus-sections-absent` completes the wave
-    /// (12 → 13 — the trailing-surplus advisory). The 18
+    /// (12 → 13 — the trailing-surplus advisory). The 19
     /// intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is every
     /// other per-check key, including the three `doc-code.*` rows. Counted over the
     /// *embedded* bytes, so the count is the shipped surface — not a synthetic one.
     ///
     /// [`design/validation.md`]: ../../../design/validation.md
     #[test]
-    fn per_check_severity_surface_reconciles_to_the_31_18_13_inventory() {
+    fn per_check_severity_surface_reconciles_to_the_32_19_13_inventory() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
 
         // The per-check keys are the inventory rows: keyed by check, never by
@@ -635,24 +647,62 @@ mod tests {
             .collect();
         assert_eq!(
             per_check.len(),
-            31,
-            "the inventory totals 31 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
+            32,
+            "the inventory totals 32 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
         );
 
-        // 18 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
+        // 19 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
         let intrinsic = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).map(String::as_str) == Some("blocking"))
             .count();
-        assert_eq!(intrinsic, 18, "18 intrinsic checks (floored at blocking)");
-        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 18);
+        assert_eq!(intrinsic, 19, "19 intrinsic checks (floored at blocking)");
+        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 19);
 
-        // The remaining 13 are tunable (no floor) — 31 - 18.
+        // The remaining 13 are tunable (no floor) — 32 - 19.
         let tunable = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).is_none())
             .count();
         assert_eq!(tunable, 13, "13 tunable checks (unfloored)");
+    }
+
+    /// (M42 Increment 4 / T1) The version-currency break joins the **keyed** severity
+    /// surface under its own minted check id: `validation.schema-conformance.
+    /// schema-version-current.severity` is **declared** and **floored at `blocking`**
+    /// — an [`INTRINSIC_CHECK_KEYS`] member (`validation.md` → MVP check inventory,
+    /// the `schema-version-current` row; → Version-currency is itself a surfaced
+    /// break, the retraction: *intrinsic + keyed*).
+    ///
+    /// Two facts this pins. **Keyed:** without the declaration a
+    /// `scalar-set` on the key hard-aborts (`UndeclaredScalar`) and the finding is
+    /// exempt from the severity post-pass — the check would be un-tunable *and*
+    /// un-re-gradable, alone among the conformance family. **Floored:** a project
+    /// must not be able to demote it, because an unmigrated corpus means every other
+    /// check in the sweep is adjudicating docs against a schema they were never
+    /// written to — a demotion would let a project silently opt out of knowing its
+    /// own validation results are meaningless (and would silently disarm the
+    /// store-scope exit flip that keys on this code).
+    #[test]
+    fn schema_version_current_key_is_declared_intrinsic_blocking() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+
+        let key = "validation.schema-conformance.schema-version-current.severity";
+        assert!(knobs.field(key).is_some(), "{key} is declared");
+        assert_eq!(
+            knobs.base_scalars().get(key).map(String::as_str),
+            Some("blocking"),
+            "the version-currency break is blocking by default",
+        );
+        assert_eq!(
+            knobs.floors().get(key).map(String::as_str),
+            Some("blocking"),
+            "intrinsic — floored at blocking, never demotable",
+        );
+        assert!(
+            INTRINSIC_CHECK_KEYS.contains(&key),
+            "the version-currency key is an INTRINSIC_CHECK_KEYS member",
+        );
     }
 
     /// (M40 F4 half 2) The `surplus-sections-absent` severity key is declared as

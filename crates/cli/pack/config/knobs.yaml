@@ -8,10 +8,10 @@
 # not a project-overridable value, so it stays in defaults.yaml.
 # The `validation.*.severity` keys are the per-check severity surface; their
 # defaults + intrinsic-ness are governed by the single source of truth,
-# validation.md → MVP check inventory (31 checks across 9 categories — pinned by
-# engine::knobs per_check_severity_surface_reconciles_to_the_31_18_13_inventory).
-# (The engine's CHECK_INVENTORY post-pass membership set is a 28-row subset of
-# these 31 — it drops the 3 compose-time marker checks; see engine::result
+# validation.md → MVP check inventory (32 checks across 9 categories — pinned by
+# engine::knobs per_check_severity_surface_reconciles_to_the_32_19_13_inventory).
+# (The engine's CHECK_INVENTORY post-pass membership set is a 29-row subset of
+# these 32 — it drops the 3 compose-time marker checks; see engine::result
 # check_inventory_membership_count_is_stable.) The two
 # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
 # per-probe *defaults* (never a rename) so an M4-authored manifest still
@@ -137,7 +137,7 @@ validation.pack-probe-integrity.malformed-output.severity:
   default: blocking
   floor: blocking
 
-# --- schema-conformance.* (4, intrinsic) ---
+# --- schema-conformance.* (5, intrinsic) ---
 validation.schema-conformance.ref-resolves.severity:
   type: enum
   of: [blocking, warning, advisory]
@@ -154,6 +154,20 @@ validation.schema-conformance.required-field-present.severity:
   default: blocking
   floor: blocking
 validation.schema-conformance.field-value-conformant.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+# The version-currency break (M42): a MANAGED committed instance whose
+# `schema-version` stamp is below its doctype's manifest version. Its own check
+# id — a stale stamp and an invalid enum value are different facts with
+# different consequences, and the collapsed id made the break indistinguishable
+# to any machine consumer (validation.md → Version-currency is itself a surfaced
+# break, the retraction). Intrinsic and floored: an unmigrated corpus means every
+# other check in the sweep is adjudicating docs against a schema they were never
+# written to, so a demotion would let a project silently opt out of knowing its
+# own validation results are meaningless.
+validation.schema-conformance.schema-version-current.severity:
   type: enum
   of: [blocking, warning, advisory]
   default: blocking

@@ -1350,10 +1350,10 @@ mod tests {
         # not a project-overridable value, so it stays in defaults.yaml.
         # The `validation.*.severity` keys are the per-check severity surface; their
         # defaults + intrinsic-ness are governed by the single source of truth,
-        # validation.md → MVP check inventory (31 checks across 9 categories — pinned by
-        # engine::knobs per_check_severity_surface_reconciles_to_the_31_18_13_inventory).
-        # (The engine's CHECK_INVENTORY post-pass membership set is a 28-row subset of
-        # these 31 — it drops the 3 compose-time marker checks; see engine::result
+        # validation.md → MVP check inventory (32 checks across 9 categories — pinned by
+        # engine::knobs per_check_severity_surface_reconciles_to_the_32_19_13_inventory).
+        # (The engine's CHECK_INVENTORY post-pass membership set is a 29-row subset of
+        # these 32 — it drops the 3 compose-time marker checks; see engine::result
         # check_inventory_membership_count_is_stable.) The two
         # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
         # per-probe *defaults* (never a rename) so an M4-authored manifest still
@@ -1479,7 +1479,7 @@ mod tests {
           default: blocking
           floor: blocking
 
-        # --- schema-conformance.* (4, intrinsic) ---
+        # --- schema-conformance.* (5, intrinsic) ---
         validation.schema-conformance.ref-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
@@ -1496,6 +1496,20 @@ mod tests {
           default: blocking
           floor: blocking
         validation.schema-conformance.field-value-conformant.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
+        # The version-currency break (M42): a MANAGED committed instance whose
+        # `schema-version` stamp is below its doctype's manifest version. Its own check
+        # id — a stale stamp and an invalid enum value are different facts with
+        # different consequences, and the collapsed id made the break indistinguishable
+        # to any machine consumer (validation.md → Version-currency is itself a surfaced
+        # break, the retraction). Intrinsic and floored: an unmigrated corpus means every
+        # other check in the sweep is adjudicating docs against a schema they were never
+        # written to, so a demotion would let a project silently opt out of knowing its
+        # own validation results are meaningless.
+        validation.schema-conformance.schema-version-current.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
@@ -3536,6 +3550,51 @@ sections:
                     dev.floors().get(*key),
                     methodology.floors().get(*key),
                     "knob `{key}`: the demotion-lock floor must be identical across the two packs",
+                );
+            }
+        }
+
+        /// (M42 Increment 4 / T1) The minted version-currency key is declared in **both**
+        /// shipped packs, floored `blocking` in each — the mint that the parity guard
+        /// above would otherwise catch only *after* a methodology-primary project had
+        /// silently lost the key to the whole-file shadow. `validation.md` → MVP check
+        /// inventory (the `schema-version-current` row) + → Version-currency is itself a
+        /// surfaced break (the retraction: *intrinsic + keyed*).
+        ///
+        /// This is the pack-side half of the mint. The engine-side half (membership in
+        /// `INTRINSIC_CHECK_KEYS` and in `CHECK_INVENTORY`) is pinned by
+        /// `engine::knobs::schema_version_current_key_is_declared_intrinsic_blocking`
+        /// together with `engine::result::schema_version_current_is_a_check_inventory_row`.
+        #[test]
+        fn both_packs_declare_the_version_currency_severity_knob() {
+            const KEY: &str = "validation.schema-conformance.schema-version-current.severity";
+
+            for (which, pack) in [
+                ("dev", EmbeddedPack::new()),
+                ("methodology", EmbeddedPack::methodology()),
+            ] {
+                let knobs = engine::knobs::load_knobs(
+                    &pack
+                        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
+                        .unwrap_or_else(|e| panic!("{which} knobs.yaml reads back: {e}")),
+                )
+                .unwrap_or_else(|e| panic!("{which} knobs.yaml loads: {e}"));
+
+                assert!(
+                    knobs.field(KEY).is_some(),
+                    "{which}: `{KEY}` must be declared — an undeclared key hard-aborts a \
+                     `scalar-set` (UndeclaredScalar) and exempts the check from the severity \
+                     post-pass",
+                );
+                assert_eq!(
+                    knobs.base_scalars().get(KEY).map(String::as_str),
+                    Some("blocking"),
+                    "{which}: the version-currency break is blocking by default",
+                );
+                assert_eq!(
+                    knobs.floors().get(KEY).map(String::as_str),
+                    Some("blocking"),
+                    "{which}: intrinsic — floored at blocking, never demotable",
                 );
             }
         }

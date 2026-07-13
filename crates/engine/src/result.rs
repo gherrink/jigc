@@ -223,6 +223,7 @@ const CHECK_INVENTORY: &[(&str, &str)] = &[
     ("schema-conformance", "required-slot-present"),
     ("schema-conformance", "required-field-present"),
     ("schema-conformance", "field-value-conformant"),
+    ("schema-conformance", "schema-version-current"),
     ("pack-probe-integrity", "timeout"),
     ("pack-probe-integrity", "crash"),
     ("pack-probe-integrity", "malformed-output"),
@@ -1025,13 +1026,27 @@ mod tests {
         );
     }
 
+    /// (M42 Increment 4 / T1) The version-currency break is a `CHECK_INVENTORY` row —
+    /// a store-scope conformance check (the `mention-resolves` precedent), not a
+    /// compose-time marker, so the severity post-pass sees it and a project's explicit
+    /// `scalar-set` on its key re-grades it (up only — the knob is floored `blocking`;
+    /// `validation.md` → MVP check inventory, the `schema-version-current` row). Absent
+    /// this row the check would be exempt from the post-pass — declared-but-inert.
+    #[test]
+    fn schema_version_current_is_a_check_inventory_row() {
+        assert!(
+            is_inventory_check("schema-conformance", "schema-version-current"),
+            "the M42 version-currency break is a keyed store-scope check — a CHECK_INVENTORY row",
+        );
+    }
+
     /// Golden lock on the post-pass **membership** count. `CHECK_INVENTORY` is the
     /// `(probe, check)` set the M6 severity post-pass re-grades — a deliberate
-    /// **subset** of the **31** keyed `validation.<probe>.<check>.severity` checks
-    /// (`validation.md` → MVP check inventory, the single source of truth; the 31 is
+    /// **subset** of the **32** keyed `validation.<probe>.<check>.severity` checks
+    /// (`validation.md` → MVP check inventory, the single source of truth; the 32 is
     /// itself pinned over the embedded `knobs.yaml` by
-    /// `knobs::tests::per_check_severity_surface_reconciles_to_the_31_18_13_inventory`).
-    /// It carries **28** rows = the 31 keyed checks **minus the 3 compose-time marker
+    /// `knobs::tests::per_check_severity_surface_reconciles_to_the_32_19_13_inventory`).
+    /// It carries **29** rows = the 32 keyed checks **minus the 3 compose-time marker
     /// checks** deliberately excluded from the post-pass (`spawn-marker-not-shadowed`,
     /// `checkpoint-marker-not-shadowed`, `fan-out-join-paired`) — the divergence the
     /// sibling `owner_artifact_present_is_a_check_inventory_row` test names
@@ -1044,16 +1059,19 @@ mod tests {
     /// store-scope + adopt-time advisory (the `mention-resolves` precedent — keyed so a
     /// project can tune it), so it too is a member (26 → 27); its M40 sibling
     /// `schema-conformance.surplus-sections-absent` (the trailing-surplus raw-block
-    /// scan) follows the same precedent (27 → 28). By severity that is 15 intrinsic
-    /// (18 keyed intrinsic − the 3 excluded) + 13 tunable. Pinning the length
-    /// makes any inventory add/remove trip the gate, forcing `validation.md` +
+    /// scan) follows the same precedent (27 → 28); the M42
+    /// `schema-conformance.schema-version-current` row is a store-scope conformance
+    /// check under the same precedent (28 → 29 — the sibling
+    /// `schema_version_current_is_a_check_inventory_row` names it). By severity that is
+    /// 16 intrinsic (19 keyed intrinsic − the 3 excluded) + 13 tunable. Pinning the
+    /// length makes any inventory add/remove trip the gate, forcing `validation.md` +
     /// `knobs.yaml` to move in lockstep.
     #[test]
     fn check_inventory_membership_count_is_stable() {
         assert_eq!(
             CHECK_INVENTORY.len(),
-            28,
-            "the post-pass membership set is 28 rows (31 keyed checks − 3 compose-time \
+            29,
+            "the post-pass membership set is 29 rows (32 keyed checks − 3 compose-time \
              marker checks); update validation.md → MVP check inventory in lockstep",
         );
 
