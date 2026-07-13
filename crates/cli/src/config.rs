@@ -179,7 +179,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
     };
 
     // Step 1 — the key must be a declared knob (the closed surface).
-    let pack = make_pack();
+    let pack = make_pack()?;
     let knobs_bytes = pack
         .read(PackResourceKind::Config, &ResourceId::from("knobs"))
         .context("the embedded pack is missing `config/knobs`")?;
@@ -354,7 +354,7 @@ fn run_insert_step(
     };
 
     // Both write-time checks run before any write — a rejection touches nothing.
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
@@ -407,7 +407,7 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
         .with_context(|| format!("could not read source step file {}", file.display()))?;
 
     // Both write-time checks run before any write — a rejection touches nothing.
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
@@ -452,7 +452,7 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
     let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
     let step_id = at_step(&parsed);
 
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
@@ -494,7 +494,7 @@ fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<()> {
     let content = crate::doc::read_handoff(from_file)?;
 
     // Both write-time checks run before any write — a rejection touches nothing.
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     check_content_no_nested(&content).map_err(finding_to_err)?;
     check_fill_point_present(pack, &project_config, &parsed).map_err(finding_to_err)?;
@@ -537,7 +537,7 @@ fn run_fork(cwd: &Path, target: &str) -> Result<()> {
     // anchor check, and both before any byte resolution. Unlike insert/replace, the
     // forked id *is* a pack step id by design (a fork copies a pack unit), so the
     // collision is only with an existing **project** shadow — not the pack id.
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;

@@ -46,7 +46,7 @@ pub struct UnmanageReport {
 /// already-unmanaged doc reports a no-op drop and persists nothing.
 pub(crate) fn run(cwd: &Path, rel_path: &str) -> Result<UnmanageReport> {
     let repo_root = require_project_layer(cwd)?;
-    let pack = make_pack();
+    let pack = make_pack()?;
     let resolved =
         crate::start::resolve_severity_cascade(pack.as_ref(), &repo_root.join(".jigc/config"))?;
     let schemas = load_schemas(pack.as_ref(), &resolved)?;

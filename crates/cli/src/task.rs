@@ -385,7 +385,7 @@ impl TaskArea {
             jigc_home,
             jigc_root,
             dir,
-            pack: make_pack(),
+            pack: make_pack()?,
         })
     }
 

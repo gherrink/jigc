@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 /// written; nothing read here is written elsewhere.
 pub(crate) fn upgrade_in_repo(cwd: &Path) -> Result<ValidationReport> {
     let project_config = require_project_layer(cwd)?;
-    let pack = make_pack();
+    let pack = make_pack()?;
     upgrade_with_pack(&project_config, pack.as_ref())
 }
 

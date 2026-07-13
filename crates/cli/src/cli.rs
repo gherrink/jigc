@@ -784,7 +784,7 @@ fn unbaselined_identities(
 fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     let jigc_home = require_project_layer(cwd)?;
     require_doc_code_probe()?;
-    let pack = crate::pack::make_pack();
+    let pack = crate::pack::make_pack()?;
     let pack = pack.as_ref();
     let project_config = jigc_home.join(".jigc").join("config");
     let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;

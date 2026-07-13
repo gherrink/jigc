@@ -39,7 +39,7 @@ use crate::start::{CascadeDefs, load_catalog, resolve_severity_cascade};
 pub(crate) fn run(cwd: &Path) -> Result<Description> {
     let repo_root = require_project_layer(cwd)?;
     let project_config = repo_root.join(".jigc").join("config");
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
 
     // The resolved cascade's by-id `file_owner` surface is what makes the projection

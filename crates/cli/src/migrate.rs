@@ -152,7 +152,7 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<ComposedWork
     // is rejected here so a typo'd or non-migratable doctype strands no task dir (the
     // bug this guards: minting first then discovering the missing workflow left a
     // permanent orphan in `jigc task list`).
-    let pack = crate::pack::make_pack();
+    let pack = crate::pack::make_pack()?;
     ensure_migratable(pack.as_ref(), doctype)?;
 
     // Read the foreign file's bytes (the source the seam carries). Resolve the path

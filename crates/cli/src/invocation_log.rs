@@ -109,7 +109,11 @@ pub fn enabled_logs_dir() -> Option<PathBuf> {
     let ctx = crate::locate::locate(&cwd).ok()?;
     // Outside a jigc project layer (no `.jigc/config/`) there is no log — the wrapper no-ops.
     let project_config = ctx.project_config?;
-    let pack = crate::pack::make_pack();
+    // The one **deliberately non-blocking** pack-source consumer: `make_pack` fires the
+    // pack-load freeze gate, and a drifted frozen schema must not turn instrumentation
+    // into a failure surface — it silently disables the log here, while the verb itself
+    // blocks loudly on its own `make_pack()?` a moment later.
+    let pack = crate::pack::make_pack().ok()?;
     let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config).ok()?;
     if resolved.scalar(KNOB_KEY) != Some("true") {
         return None;

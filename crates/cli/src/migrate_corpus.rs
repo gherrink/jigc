@@ -167,7 +167,7 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
 /// and migrate the committed corpus — applying and landing it as far as `options` allows.
 fn migrate_in_repo(cwd: &Path, options: Options) -> Result<CorpusMigrationReport> {
     let jigc_home = require_project_layer(cwd)?;
-    let pack = pack::make_pack();
+    let pack = pack::make_pack()?;
     let pack = pack.as_ref();
     let project_config = jigc_home.join(".jigc").join("config");
     let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;

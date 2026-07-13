@@ -180,7 +180,7 @@ pub(crate) fn mint_migration_in_repo(
     let mint_id_source = migration_task_id_source(doctype, source_path);
     let minted = state::mint_task(&jigc_root, "", &mint_id_source, workflow_id, base, None)
         .map_err(finding_to_err)?;
-    let pack = make_pack();
+    let pack = make_pack()?;
     provision_migration_commit_doc(pack.as_ref(), &minted.dir, &minted.id, source_path, doctype)?;
     Ok(minted)
 }
@@ -545,7 +545,7 @@ pub fn compose_in_repo(
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
 
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     // Resolve the cascade once: phase-3 scalars (the `default-workflow` read) +
     // phase-2 file owners + the manifest's phase-4 structural deltas (`overrides.md`
@@ -587,7 +587,7 @@ pub fn compose_named_in_repo(
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
 
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     // Form D bypasses the cascade `default-workflow` knob but still resolves the
     // cascade for phase-2 file owners + the phase-4/5 deltas, so a project step
@@ -633,7 +633,7 @@ pub fn compose_named_no_intent_in_repo(
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
 
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
     // Read the named workflow's `creates-task` declaration through the cascade — the
@@ -684,7 +684,7 @@ pub fn execute_milestone_in_repo(
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
 
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
     let source = CascadeStepSource::new(pack, &resolved, &project_config);
@@ -726,7 +726,7 @@ pub(crate) fn compose_migrate_in_repo(
     workflow_id: &str,
     foreign: &str,
 ) -> Result<ComposedWorkflow> {
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     let (resolved, overrides) = resolve_cascade(pack, project_config)?;
     let defs = CascadeDefs::new(&resolved, project_config);
@@ -851,12 +851,6 @@ fn compose_drained(
     seam: Option<&str>,
     slug_override: Option<&str>,
 ) -> Result<ComposedWorkflow> {
-    // Pack-load freeze gate (M33): block an un-migrated schema-shape change before
-    // any composition — recompute each shipped doctype's schema-hash against the
-    // pack's `config/schema-manifest.yaml` and fail loudly on drift
-    // (`design/corpus-migration.md` → The enforcement gate fires at pack-load).
-    // Inert for a manifest-less pack (origin/composed/methodology test packs).
-    crate::pack::assert_schema_freeze(pack)?;
     // Scope the step source's pack-default arm to the composing workflow's origin
     // pack, so its `{{include: step:X}}` resolves against the pack that *defines*
     // the workflow — the pack-local body-reference rule (`multi-pack.md` →
@@ -1253,7 +1247,7 @@ pub fn compose_explain_in_repo(
     let _ = intent; // task-independent: the tree never embeds the intent.
     let project_config = require_project_config(start)?;
 
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
     let workflow_id = match workflow {
@@ -1663,7 +1657,7 @@ fn compose_task_workflow(
     let bound =
         RolesRecord::load(task_dir).with_context(|| format!("could not read roles for `{id}`"))?;
 
-    let pack = make_pack();
+    let pack = make_pack()?;
     let pack = pack.as_ref();
     // Resolve the live cascade up front so the definition reads below route through
     // the phase-2 file owners (a project `workflows/<id>.yaml` / `schemas/<id>.yaml`
@@ -5407,7 +5401,7 @@ mod tests {
             .expect("write workflow shadow");
         fs::write(schemas.join("adr.yaml"), "project adr\n").expect("write schema shadow");
 
-        let pack = make_pack();
+        let pack = make_pack().expect("the shipped pack passes its own freeze gate");
         let (project, _deltas, _slot_fills, _forks, _bases) =
             load_project_layer(project_config).expect("project layer loads");
         let resolved = resolve_layers(pack.as_ref(), &project).expect("cascade resolves");

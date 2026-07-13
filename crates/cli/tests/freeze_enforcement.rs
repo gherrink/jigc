@@ -339,6 +339,124 @@ fn fresh_methodology_mint_carries_schema_version_1() {
     );
 }
 
+/// Compose `[drifted-dev-copy ▸ methodology ▸ embedded-dev]` via the listed-pack
+/// mechanism — the production shape a real project uses (`packs.yaml` names pack
+/// **directories**, the trigger that discharged the M33 deferral). The methodology
+/// pack rides along so the `milestone-record` doctype resolves and `jigc milestone
+/// create` reaches its committing write path.
+fn list_packs(repo: &Path, packs: &[&Path]) {
+    let mut body = String::from("packs:\n");
+    for pack in packs {
+        body.push_str(&format!("  - {}\n", pack.display()));
+    }
+    fs::write(repo.join(".jigc").join("config").join("packs.yaml"), body)
+        .expect("write packs.yaml naming the listed packs");
+}
+
+/// A repo + home + listed **drifted** dev-pack copy (with the methodology pack
+/// composed for the `milestone-record` doctype). Every door run against it must
+/// block.
+struct DriftedProject {
+    repo: TempDir,
+    home: TempDir,
+    _pack: TempDir,
+}
+
+impl DriftedProject {
+    fn new(tag: &str) -> Self {
+        let repo = TempDir::new(&format!("{tag}-repo"));
+        let home = TempDir::new(&format!("{tag}-home"));
+        let pack = dev_pack_copy(&format!("{tag}-pack"));
+        init_repo(repo.path());
+        list_packs(repo.path(), &[pack.path(), &methodology_pack_tree()]);
+        drift_adr_schema(pack.path());
+        DriftedProject {
+            repo,
+            home,
+            _pack: pack,
+        }
+    }
+
+    /// Run one door and assert it exits non-zero naming the drifted doctype's
+    /// schema-hash mismatch — the emitted exit code + stderr are the contract.
+    fn door_blocks(&self, args: &[&str]) -> std::process::Output {
+        let out = run_listed(self.repo.path(), self.home.path(), args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success(),
+            "`jigc {}` must exit non-zero on a drifted frozen schema; stdout:\n{}\nstderr:\n{stderr}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stdout),
+        );
+        assert!(
+            stderr.contains("schema-hash mismatch"),
+            "`jigc {}` stderr must name the schema-hash mismatch; got:\n{stderr}",
+            args.join(" "),
+        );
+        assert!(
+            stderr.contains("adr"),
+            "`jigc {}` stderr must name the drifted `adr` doctype; got:\n{stderr}",
+            args.join(" "),
+        );
+        out
+    }
+}
+
+/// The M42 Inc 6 headline: the freeze assert lives in the **pack-source factory**, so
+/// a drifted frozen schema blocks **every** door — not just the compose front door it
+/// used to guard. The read/report verbs sailed past it before this task
+/// (`implementation/decisions-pending.md` → the discharged M33 deferral: the trigger
+/// "packs are ever loaded from the filesystem in production" fired at M14).
+#[test]
+fn every_read_door_blocks_on_a_drifted_frozen_schema() {
+    let project = DriftedProject::new("doors");
+
+    project.door_blocks(&["validate"]);
+    project.door_blocks(&["describe"]);
+    project.door_blocks(&["doc", "schema", "adr"]);
+    project.door_blocks(&["migrate-corpus"]);
+    // The orient front door (bare `jigc start` — no workflow, no intent): a sixth
+    // door, distinct from the composing `jigc start --workflow …` the assert already
+    // guarded.
+    project.door_blocks(&["start"]);
+}
+
+/// The **committing** door: `jigc milestone create` wrote and committed a brand-new
+/// milestone record at exit 0 over a drifted frozen schema. It must block — and land
+/// **no** record file and **no** record commit (the write is what makes this door the
+/// dangerous one; Inc 7 builds a second write verb on it).
+#[test]
+fn the_committing_milestone_door_blocks_and_writes_nothing() {
+    let project = DriftedProject::new("mcreate");
+
+    project.door_blocks(&["milestone", "create", "drift probe"]);
+
+    let records = project.repo.path().join("docs").join("milestone-records");
+    let landed: Vec<PathBuf> = fs::read_dir(&records)
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|ext| ext == "md"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        landed.is_empty(),
+        "a blocked `milestone create` must land no milestone-record file; found: {landed:?}",
+    );
+
+    let log = Command::new("git")
+        .args(["log", "--oneline"])
+        .current_dir(project.repo.path())
+        .output()
+        .expect("run git log");
+    let log = String::from_utf8_lossy(&log.stdout);
+    assert!(
+        !log.contains("chore(milestone): open record"),
+        "a blocked `milestone create` must land no record commit; git log:\n{log}",
+    );
+}
+
 /// The omitting context: a **manifest-less** pack is unchecked. The *same* schema
 /// drift that the manifest-bearing copy blocks composes clean once
 /// `config/schema-manifest.yaml` is dropped — proving the manifest is the gate, and

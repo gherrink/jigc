@@ -79,7 +79,7 @@ pub(crate) fn run(
     slug_override: Option<&str>,
 ) -> Result<RenameReport> {
     let repo_root = require_project_layer(cwd)?;
-    let pack = make_pack();
+    let pack = make_pack()?;
     let resolved =
         crate::start::resolve_severity_cascade(pack.as_ref(), &repo_root.join(".jigc/config"))?;
     let schemas = load_schemas(pack.as_ref(), &resolved)?;

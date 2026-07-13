@@ -61,7 +61,7 @@ const PACK_ID_KEY: &str = "pack-id";
 /// CLI maps the returned [`OrientationView`] to a surface via `Format → render`.
 pub fn orient(start: &Path) -> Result<OrientationView> {
     let ctx = locate::locate(start)?;
-    let pack = make_pack();
+    let pack = make_pack()?;
     orient_with(&ctx, pack.as_ref())
 }
 

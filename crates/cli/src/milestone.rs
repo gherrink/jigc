@@ -214,7 +214,7 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
         // The record's schema-version stamp value: the doctype's manifest version (the
         // same authority `doc create`'s stamp deriver reads — milestone-record is
         // manifest-frozen since M40 A1), falling back to 1 for a manifest-less pack.
-        let stamp = crate::pack::frozen_doctype_versions(make_pack().as_ref())
+        let stamp = crate::pack::frozen_doctype_versions(make_pack()?.as_ref())
             .get(MILESTONE_RECORD_TYPE)
             .copied()
             .unwrap_or(1);
@@ -719,7 +719,7 @@ fn run_add_from_spec(
 /// (a schema-load surface — the committed-store reads must match the finalize-promote
 /// write path).
 fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
-    let pack = make_pack();
+    let pack = make_pack()?;
     let mut out = BTreeMap::new();
     for id in pack.list(PackResourceKind::Schemas) {
         let bytes = pack
@@ -1606,7 +1606,7 @@ const COMMIT_TYPE: &str = "commit";
 /// cascade-resolve idiom, `crate::start::resolve_severity_cascade`).
 fn resolve_squash(repo_root: &Path) -> Result<bool> {
     let project_config = repo_root.join(".jigc").join("config");
-    let pack = make_pack();
+    let pack = make_pack()?;
     let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
     // The knob is a declared `bool`; the closed surface guarantees it resolves. Anything
     // other than `true` is the opt-in `false` (the knob's enum-of-bool is `true`/`false`).

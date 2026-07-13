@@ -1678,7 +1678,7 @@ fn apply_leaf(
 fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
     let address = parse_addr(addr)?;
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
-    let schemas = committed_schemas(make_pack().as_ref(), &jigc_home)?;
+    let schemas = committed_schemas(make_pack()?.as_ref(), &jigc_home)?;
     match format {
         Format::Json => {
             let value = show_json(&jigc_home, &schemas, &address)?;
@@ -1718,7 +1718,7 @@ fn committed_schemas(pack: &dyn PackSource, jigc_home: &Path) -> Result<BTreeMap
 /// doctype blocks with a routed finding, exactly like a read-side `show` block.
 fn run_schema(cwd: &Path, doctype: &str, format: Format) -> Result<(), DocFailure> {
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
-    let pack = make_pack();
+    let pack = make_pack()?;
     let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
     let Some(schema) = schemas.get(doctype) else {
         return Err(DocFailure::Block(Finding::graded(
@@ -2538,7 +2538,7 @@ impl ActiveTask {
                 id: id.to_string(),
                 dir,
                 jigc_home,
-                pack: make_pack(),
+                pack: make_pack()?,
             });
         }
 
@@ -2554,7 +2554,7 @@ impl ActiveTask {
                     id,
                     dir,
                     jigc_home,
-                    pack: make_pack(),
+                    pack: make_pack()?,
                 })
             }
             // Enumerate the live ids so the user can copy one into `--task <id>`
@@ -3686,7 +3686,7 @@ sections:
         // Regression witness: a still-frozen-v1 shipped doctype (`spec`) stamps 1, while the
         // M36-bumped `adr` now stamps its manifest v2 — every shipped doctype resolves to its
         // own manifest version (`design/corpus-migration.md` → the adr v1→v2 flow).
-        let shipped = make_pack();
+        let shipped = make_pack().expect("the shipped pack passes its own freeze gate");
         assert_eq!(
             stamp_schema_version(shipped.as_ref(), "spec"),
             1,

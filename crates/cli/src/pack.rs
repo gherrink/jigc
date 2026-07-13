@@ -192,10 +192,14 @@ const SCHEMA_MANIFEST_ID: &str = "schema-manifest";
 
 /// The **runtime pack-load freeze assertion** — the productive-path sibling of the
 /// build-time freeze gate ([`tests::shipped_schema_manifest_matches_the_frozen_doctype_set`])
-/// and of the intrinsic-floor knob assertion, fired on the compose front door so an
-/// un-migrated schema-shape change is **blocked**, not merely reported
+/// and of the intrinsic-floor knob assertion, fired inside the pack-source factory
+/// ([`make_pack`]) so an un-migrated schema-shape change is **blocked** at *every*
+/// door — read, report, compose and write alike — not merely reported
 /// (`design/corpus-migration.md` → The enforcement gate fires at pack-load — review
-/// Finding 3; *not* the report-only `validate` store sweep).
+/// Finding 3; *not* the report-only `validate` store sweep). It guarded only the
+/// compose front door until M42 Inc 6, which left `validate` / `describe` /
+/// `doc schema` / `migrate-corpus` clean over a drifted pack and let
+/// `jigc milestone create` **commit** a new record at exit 0.
 ///
 /// Recomputes each doctype's `schema-hash` over each **manifest-owning pack's own
 /// shipped schema shapes** and compares against that pack's manifest
@@ -440,7 +444,15 @@ pub fn read_compose_marker(project_config_dir: &std::path::Path) -> anyhow::Resu
 /// missing repo/config dir is the empty pack-set, never an error. A *malformed*
 /// `packs.yaml` is a located error surfaced by [`read_pack_list`] — propagated,
 /// not swallowed.
-pub fn make_pack() -> Box<dyn PackSource> {
+///
+/// **The freeze gate fires here** ([`assert_schema_freeze`]): the assembled pack-set
+/// is checked against each constituent's own `config/schema-manifest.yaml` before it
+/// is handed to any caller, so a drifted frozen schema blocks **every** door rather
+/// than the compose front door alone (M42 Inc 6 — the M33 deferral whose trigger,
+/// "packs are ever loaded from the filesystem in production", fired when the M14
+/// multi-pack surface started reading pack *directories* from `packs.yaml`). Inert
+/// for a manifest-less pack.
+pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     let listed = discover_pack_list().unwrap_or_else(|err| {
         // A malformed `packs.yaml` is a real authoring fault; surface it rather
         // than silently falling back to the base. (An *absent* file is `Ok(vec![])`
@@ -454,7 +466,9 @@ pub fn make_pack() -> Box<dyn PackSource> {
         eprintln!("warning: {err:#}");
         false
     });
-    make_pack_from_marker(std::env::var_os(PACK_DIR_ENV), listed, compose_methodology)
+    let pack = make_pack_from_marker(std::env::var_os(PACK_DIR_ENV), listed, compose_methodology);
+    assert_schema_freeze(pack.as_ref())?;
+    Ok(pack)
 }
 
 /// CWD-discover the project's pre-cascade pack-set: walk up from the process CWD to

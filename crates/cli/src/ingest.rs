@@ -90,7 +90,7 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
     let jigc_home = require_project_layer(cwd)?;
     let worktree = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let pack = make_pack();
+    let pack = make_pack()?;
     let resolved =
         crate::start::resolve_severity_cascade(pack.as_ref(), &jigc_home.join(".jigc/config"))?;
     let schemas = load_schemas(pack.as_ref(), &resolved)?;

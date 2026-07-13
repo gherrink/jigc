@@ -117,9 +117,12 @@ fn copy_dir_all(src: &Path, dst: &Path) {
 /// current `prd`/`adr` schemas in the clone are already the v2 shapes (repeatable
 /// `requirements`; `supersedes` at `0..*`), so the snapshots are the only prior shapes to add.
 ///
-/// The freeze gate does NOT run on the setup / migrate-corpus / validate paths (only on
-/// `compose_drained`), so the manifest's per-doctype `schema-hash` need not match the v2
-/// shapes — only the version map is read here (the same authority the detector routes against).
+/// Since M42 Inc 6 the pack-load freeze gate fires inside the pack-source factory, so it
+/// runs on **every** door this fixture drives (setup / migrate-corpus / validate), not just
+/// compose. A fixture pack must therefore be **freeze-consistent**: the overlaid `adr` shape
+/// below re-syncs its manifest `schema-hash` ([`resync_adr_manifest_hash`]) rather than
+/// riding a stale one. The version map (`schema-version`) is still the authority the
+/// detector routes against; only the hash is recomputed.
 fn build_fixture_pack(pack_dir: &Path) {
     let embedded = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack");
     copy_dir_all(&embedded, pack_dir);
@@ -165,7 +168,7 @@ sections:
 
     // Bump `prd` and `adr` to manifest version 2 (every other doctype stays v1). Each
     // `- type: <name>` block is unique, so the targeted version-line replacement is
-    // unambiguous; the real hashes are preserved (defensive — they are simply unread here).
+    // unambiguous.
     let manifest_path = pack_dir.join("config").join("schema-manifest.yaml");
     let manifest = fs::read_to_string(&manifest_path).expect("read fixture manifest");
     let manifest = manifest.replace(
@@ -181,7 +184,42 @@ sections:
             && manifest.contains("  - type: adr\n    schema-version: 2"),
         "the fixture manifest must declare prd + adr at version 2; got:\n{manifest}",
     );
-    fs::write(&manifest_path, manifest).expect("write bumped manifest");
+    fs::write(&manifest_path, resync_adr_manifest_hash(pack_dir, manifest))
+        .expect("write bumped manifest");
+}
+
+/// Re-sync the fixture manifest's `adr` `schema-hash` to the shape the fixture pack **actually
+/// ships** (the overlaid no-options `adr` above). The pack-load freeze gate recomputes each
+/// doctype's hash over the pack's own schemas at *every* door (M42 Inc 6), so a fixture that
+/// hand-edits a shape must recompute its hash or be blocked before the migration it exists to
+/// prove ever runs. Hashed exactly as the gate does: the pack's field-type declarations
+/// resolved in, then the engine's `schema-version` stamp injected (`adr` is persisted +
+/// manifest-frozen), then [`engine::manifest::schema_hash`].
+fn resync_adr_manifest_hash(pack_dir: &Path, manifest: String) -> String {
+    let field_types = fs::read_to_string(pack_dir.join("config").join("field-types.yaml"))
+        .expect("the fixture pack ships config/field-types.yaml");
+    let decls: Vec<engine::schema::PackTypeDecl> =
+        serde_yaml_ng::from_str(&field_types).expect("the pack's field-type declarations parse");
+    let bytes = fs::read(pack_dir.join("schemas").join("adr.yaml")).expect("read the fixture adr");
+    let mut schema = engine::schema::load_schema_with_types(&bytes, &decls)
+        .expect("the overlaid adr schema loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    let hash = engine::manifest::schema_hash(&schema);
+
+    let needle = "  - type: adr\n    schema-version: 2\n    schema-hash: ";
+    let at = manifest
+        .find(needle)
+        .expect("the fixture manifest declares a v2 adr entry with a hash");
+    let start = at + needle.len();
+    let end = start + hash.len();
+    let mut manifest = manifest;
+    assert!(
+        manifest[start..end].chars().all(|c| c.is_ascii_hexdigit()),
+        "the spliced span must be the adr entry's hex digest; got `{}`",
+        &manifest[start..end],
+    );
+    manifest.replace_range(start..end, &hash);
+    manifest
 }
 
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.

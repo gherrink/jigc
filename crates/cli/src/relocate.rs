@@ -93,7 +93,7 @@ pub fn run(cwd: &Path, ty: &str, from: &str, format: Format) -> Outcome {
 /// human-supplied prior home, and delegate to [`relocate_freeze_exempt`].
 fn relocate_in_repo(cwd: &Path, ty: &str, from: &str) -> Result<RelocationReport> {
     let jigc_home = crate::migrate_corpus::require_project_layer(cwd)?;
-    let pack = pack::make_pack();
+    let pack = pack::make_pack()?;
     let pack = pack.as_ref();
     let project_config = jigc_home.join(".jigc").join("config");
     let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
