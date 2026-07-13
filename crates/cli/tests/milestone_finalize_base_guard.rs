@@ -19,6 +19,18 @@
 //!           base advances and the preflight proceeds (it then blocks downstream on the
 //!           empty-commit guard, since no sub-task authored a doc — that is past the base-guard,
 //!           which is what this task refines). Before the fix this blocks with base-mismatch.
+//!
+//! M42 Increment 7 / T2 — the guard was **one predicate too narrow** (`design/team-ready-state.md`
+//! → What the base-guard is for): it required every touched path to equal **this** milestone's
+//! record path, so a *second* milestone's record-only bookkeeping (`create` / `add-task` — commits
+//! that move **no code**) wedged the first. The guard proves NO CODE moved in `base..HEAD` so the
+//! M31 worktree-combine stays sound; another milestone's record is **not code**, so it has no
+//! grounds to reject it. A third proof:
+//!
+//!   (RED)   **Interleaved bookkeeping wedges nothing.** A create → B create → A add-task →
+//!           B add-task → finalize BOTH. Before the fix this is a *symmetric deadlock* (both exit
+//!           3 with base-mismatch, unrecoverable even by `git revert`); after it, each milestone's
+//!           range is all-milestone-record paths and both finalize.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,17 +101,23 @@ fn write_compose_marker(repo: &Path) {
     .expect("write compose marker");
 }
 
-/// Run `jigc milestone <args>` with `cwd = repo` and `$HOME = home`, never inheriting a
-/// harness `JIGC_PACK_DIR` (the compose-marker path requires it ABSENT).
-fn run_milestone(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+/// Run `jigc <args>` with `cwd = repo` and `$HOME = home`, never inheriting a harness
+/// `JIGC_PACK_DIR` (the compose-marker path requires it ABSENT).
+fn run_jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
-        .arg("milestone")
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
         .env_remove("JIGC_PACK_DIR")
         .output()
         .expect("run the jigc binary")
+}
+
+/// Run `jigc milestone <args>` — see [`run_jigc`].
+fn run_milestone(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    let mut argv = vec!["milestone"];
+    argv.extend_from_slice(args);
+    run_jigc(repo, home, &argv)
 }
 
 /// Assert a `jigc milestone` invocation exited 0, surfacing stderr on failure.
@@ -164,6 +182,72 @@ fn foreign_commit_in_range_still_blocks_finalize_with_base_mismatch() {
         stderr.contains("HEAD is now"),
         "the block routes the base-mismatch divergence (external drift caught); stderr:\n{stderr}",
     );
+}
+
+/// (RED — M42 T2) Two milestones created and grown **interleaved** — the shape any real session
+/// lands in — must BOTH finalize: every commit in either one's `base..HEAD` is a milestone-record
+/// path (its own, or the other's), and another milestone's record is not code, so nothing the
+/// worktree-combine cares about moved. Before the widening this is a symmetric deadlock: each
+/// milestone's range carries the *other*'s record-only bookkeeping as a foreign path, so both exit
+/// 3 with `finalize.base-mismatch` — over commits that touched no code at all.
+#[test]
+fn interleaved_milestone_record_bookkeeping_wedges_neither_finalize() {
+    let repo = TempDir::new("interleaved");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    // A real `jigc setup` — it writes the `[dev ▸ methodology]` compose marker itself AND commits
+    // its own install files, leaving the clean tree any real project opens a milestone from. It
+    // matters here and only here: a milestone finalize commits the working tree's changes, so the
+    // bare-marker fixture's *uncommitted* `.jigc/` scaffolding would ride A's finalize as genuine
+    // new content — a non-record path in B's range, and a correct block with nothing to say about
+    // the predicate under test.
+    assert_ok(
+        &run_jigc(repo.path(), home.path(), &["setup"]),
+        "`jigc setup`",
+    );
+
+    // A create → B create → A add-task → B add-task: each milestone's record-only commits land
+    // inside the OTHER's `base..HEAD` range.
+    assert_ok(
+        &run_milestone(repo.path(), home.path(), &["create", "Cache rework"]),
+        "milestone A create",
+    );
+    assert_ok(
+        &run_milestone(repo.path(), home.path(), &["create", "Index rebuild"]),
+        "milestone B create",
+    );
+    assert_ok(
+        &run_milestone(
+            repo.path(),
+            home.path(),
+            &["add-task", "cache-rework", "Warm the read cache"],
+        ),
+        "milestone A add-task",
+    );
+    assert_ok(
+        &run_milestone(
+            repo.path(),
+            home.path(),
+            &["add-task", "index-rebuild", "Rebuild the index"],
+        ),
+        "milestone B add-task",
+    );
+
+    for milestone in ["cache-rework", "index-rebuild"] {
+        let out = run_milestone(repo.path(), home.path(), &["finalize", milestone]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !stderr.contains("HEAD is now"),
+            "`{milestone}`: another milestone's record-only bookkeeping is NOT code — it must not \
+             wedge the base-guard; stderr:\n{stderr}",
+        );
+        assert!(
+            out.status.success(),
+            "`{milestone}`: the guard advanced over the all-record range and the finalize landed; \
+             exit {:?}, stderr:\n{stderr}",
+            out.status.code(),
+        );
+    }
 }
 
 /// (GREEN — the refinement) With ONLY the milestone's own record commits in `base..HEAD`,

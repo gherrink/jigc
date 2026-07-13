@@ -432,43 +432,57 @@ fn reconcile_record_preflight(
     Ok(())
 }
 
-/// Whether `base..head` is a linear-ancestor range whose **every** commit touches ONLY this
-/// milestone's committed record path — the CLI half of the finalize base-guard refinement
-/// (`design/team-ready-state.md` → The commit model: the finalize base-guard refinement). The
-/// engine does no git I/O, so the CLI computes the verdict and feeds it to
-/// [`plan_milestone_finalize`]: (1) `base` must be a linear ancestor of `head` (else genuine
-/// divergence — a rebase/rewrite — keeps the base-mismatch block); (2) every path touched by
-/// any commit in `base..head` must be the record path (a foreign, non-record commit fails this,
-/// so external drift that would invalidate the M31 worktree-combine still blocks). Absent the
-/// `milestone-record` schema (dev-only, no methodology pack) there is no committed record path,
-/// so the range is never treated as record-only.
+/// Whether `base..head` is a linear-ancestor range whose **every** commit touches ONLY
+/// milestone-record paths — the CLI half of the finalize base-guard refinement
+/// (`design/team-ready-state.md` → The commit model: the finalize base-guard refinement, and
+/// → What the base-guard is for). The engine does no git I/O, so the CLI computes the verdict
+/// and feeds it to [`plan_milestone_finalize`]: (1) `base` must be a linear ancestor of `head`
+/// (else genuine divergence — a rebase/rewrite — keeps the base-mismatch block); (2) every path
+/// touched by any commit in `base..head` must be a milestone-record path (a foreign,
+/// **code-or-doc** commit fails this, so external drift that would invalidate the M31
+/// worktree-combine still blocks). Absent the `milestone-record` schema (dev-only, no
+/// methodology pack) there is no committed record path, so the range is never treated as
+/// record-only.
+///
+/// The predicate is **any** milestone's record path, not just this one's (M42 T2): what the
+/// guard exists to prove is that **no code moved**, and another milestone's record is not code —
+/// it cannot invalidate this milestone's combine base. Keyed on the *record path* alone, a
+/// second live milestone's ordinary record-only bookkeeping (`create` / `add-task` — commits
+/// that move nothing else) wedged the first at `finalize.base-mismatch`, and interleaved
+/// creation wedged **both**, symmetrically and unrecoverably (even `git revert` fails: the
+/// revert commit itself touches the other record). `milestone discard` depends on this too —
+/// its record-settling commit is a *foreign* record path inside a concurrent milestone's range.
 fn record_only_range(
     repo_root: &Path,
-    jigc_home: &Path,
     schemas: &BTreeMap<String, Schema>,
-    milestone_id: &str,
     base_sha: &str,
     head_sha: &str,
 ) -> Result<bool> {
     let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
         return Ok(false);
     };
-    let Some(record_path) = engine::store::canonical_path(jigc_home, schema, milestone_id) else {
+    // The record doctype's `location:` is repo-relative and already docs-root-nested by
+    // [`shipped_schemas`] (`docs/milestone-records/`) — the same prefix [`record_key`] builds a
+    // record's file-state key on. A milestone-record path is a direct `<slug>.md` child of it
+    // (exactly what [`engine::store::canonical_path`] mints), so nothing else parked under that
+    // directory passes as bookkeeping.
+    let Some(location) = schema.location.as_deref() else {
         return Ok(false);
     };
-    let record_spec = record_path
-        .strip_prefix(repo_root)
-        .unwrap_or(&record_path)
-        .to_str()
-        .with_context(|| format!("record path {record_path:?} is not valid UTF-8"))?;
+    let record_dir = location.trim_end_matches('/');
+    let is_record_path = |p: &str| {
+        p.strip_prefix(record_dir)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .is_some_and(|name| !name.contains('/') && name.ends_with(".md"))
+    };
 
     // (1) `base` must be a linear ancestor of `head` (else genuine divergence).
     if !git_is_ancestor(repo_root, base_sha, head_sha)? {
         return Ok(false);
     }
-    // (2) every path touched by any commit in `base..head` must be the record path. `git log
+    // (2) every path touched by any commit in `base..head` must be a record path. `git log
     // --name-only` lists the per-commit touched paths (a path touched then reverted still
-    // appears), so the union ⊆ {record} iff every commit's fileset ⊆ {record}. `--no-renames`
+    // appears), so the union ⊆ {records} iff every commit's fileset ⊆ {records}. `--no-renames`
     // pins the fact against the user's `diff.renames` config (the `git_changed_paths` precedent).
     let touched = crate::task::git_capture(
         repo_root,
@@ -484,7 +498,7 @@ fn record_only_range(
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
-        .all(|p| p == record_spec);
+        .all(is_record_path);
     Ok(all_record)
 }
 
@@ -1274,18 +1288,12 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     // finalize base-guard refinement; `DECISIONS.md` 2026-07-07). Per-op record commits advance
     // HEAD past the pinned base, so `base == HEAD` can never hold once record commits land. The
     // engine does no git I/O, so the CLI computes the verdict: `base..HEAD` is a linear-ancestor
-    // range whose every commit touches ONLY this milestone's record path. Any non-record
-    // (external) commit fails the check → the engine keeps the base-mismatch block, preserving
-    // the M31 worktree-combine guarantee. Only computed when the base actually trails HEAD.
-    let record_only_advance = base.sha != head
-        && record_only_range(
-            &repo_root,
-            &jigc_home,
-            &schemas,
-            milestone_id,
-            &base.sha,
-            &head,
-        )?;
+    // range whose every commit touches ONLY milestone-record paths (any milestone's — record
+    // bookkeeping is not code). Any non-record (external) commit fails the check → the engine
+    // keeps the base-mismatch block, preserving the M31 worktree-combine guarantee. Only computed
+    // when the base actually trails HEAD.
+    let record_only_advance =
+        base.sha != head && record_only_range(&repo_root, &schemas, &base.sha, &head)?;
 
     // Step 3 — the thin sibling planner over the materialized staging area (the parent of
     // `merged/docs/`): shared preflight + empty-commit guard + promote/hash sweep.
