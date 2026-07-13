@@ -592,3 +592,106 @@ fn validate_store_sweep_resolves_command_refs_pack_locally_over_two_packs() {
         );
     }
 }
+
+/// A conformant, **current** (`schema-version: 2`) `changelog` at its literal root
+/// `CHANGELOG.md` **placement** home — the committed managed doc the OOB edit below drifts.
+const ROOT_CHANGELOG: &str = "\
+---
+schema-version: 2
+---
+
+# Changelog
+
+## Unreleased Changes
+
+## Releases
+";
+
+/// The same doc after a **human hand-edit through git** — a *conformant* change (a populated
+/// `added` change-group), so **no other family** can catch it: the file↔CLI-state twin is the
+/// only detector that ever sees this edit.
+const ROOT_CHANGELOG_HAND_EDITED: &str = "\
+---
+schema-version: 2
+---
+
+# Changelog
+
+## Unreleased Changes
+
+### added  {#added}
+
+- A human hand-edited this entry in, outside the CLI.
+
+## Releases
+";
+
+/// **M42 Inc-2 T2 — the read-only file↔CLI-state twin gets its placement branch.**
+///
+/// `detect_committed_store` walked only `location:`-bearing schemas (the stale guard *"a
+/// transient (location-less) type has no committed docs"*, true pre-M38 and false since),
+/// so the whole **placement** class was invisible to `jigc validate`: an out-of-band edit to
+/// a baselined root `CHANGELOG.md` (or `VISION.md`) reported *"no findings — the committed
+/// store validates clean"*, exit 0 — a **false green over a tampered managed doc**, voiding
+/// [CLAUDE.md]'s *"out-of-band edits are detected and routed"* invariant for that class while
+/// the *mutating* twin (`reconcile_committed_store`) had carried its branch since M38.
+///
+/// Drives the shipped binary end-to-end on the real dev-pack `changelog` doctype: a committed
+/// `CHANGELOG.md` at its literal placement home, **baselined by a real landed finalize** (the
+/// preflight's committed-store sweep baseline-adopts it; the landed finalize persists the
+/// record), then hand-edited through git → `jigc validate` reports a `file-state.hash-matches`
+/// drift naming `CHANGELOG.md`, report-only (exit 0).
+#[test]
+fn validate_detects_an_oob_edit_to_a_committed_placement_doc() {
+    let repo = TempDir::new("placement-oob");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    // A committed `changelog` at its literal root placement home.
+    fs::write(repo.path().join("CHANGELOG.md"), ROOT_CHANGELOG).expect("write CHANGELOG.md");
+    git(repo.path(), &["add", "CHANGELOG.md"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "seed the root changelog"],
+    );
+
+    // A real landed finalize: its committed-store sweep baseline-adopts the pre-existing
+    // `CHANGELOG.md` and the landed finalize persists the record.
+    commit_baselined_adr(repo.path(), home.path());
+    let record = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("state")
+            .join("file-state.json"),
+    )
+    .expect("the landed finalize persisted the file-state record");
+    assert!(
+        record.contains("CHANGELOG.md"),
+        "precondition: the committed placement doc is baselined at its literal home; \
+         record:\n{record}",
+    );
+
+    // The out-of-band edit: a human rewrites the committed `CHANGELOG.md` through git,
+    // conformantly — outside the CLI.
+    fs::write(repo.path().join("CHANGELOG.md"), ROOT_CHANGELOG_HAND_EDITED)
+        .expect("apply the out-of-band edit");
+    git(repo.path(), &["add", "CHANGELOG.md"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "human edits CHANGELOG.md out of band"],
+    );
+
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        out.status.success(),
+        "a content-only sweep stays report-only (exit 0); stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("file-state.hash-matches") && stdout.contains("CHANGELOG.md"),
+        "the OOB edit to the committed placement doc must surface a file-state.hash-matches \
+         drift naming its literal home — not `no findings`; stdout:\n{stdout}",
+    );
+}

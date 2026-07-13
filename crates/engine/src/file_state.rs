@@ -468,10 +468,18 @@ pub fn reconcile_committed_store(
 /// (no absorb, no re-baseline, no edge-index touch) — so it cannot silently
 /// re-baseline the very drift the sweep exists to surface.
 ///
-/// Mirrors only the [`reconcile_committed_store`] *walk shape* — per persisted
-/// (`location:`-bearing) schema, the path-sorted `<location>/*.md` glob, the
-/// `<location>/<slug>.md` record key — and routes each **present** doc by
-/// [`FileStateRecord::get`] vs [`hash_bytes`] of the on-disk bytes:
+/// Enumerates every committed instance through [`crate::index::committed_instances`] —
+/// a located type's `<location>/*.md` files **and** a **placement** type's single literal
+/// `placement.file` — the same placement-aware enumerator its mutating twin's walk covers
+/// by hand (`file_state.rs` → the placement arm) and the store's conformance/hollow
+/// families already share. Before M42 it walked only `location:`-bearing schemas, so an
+/// out-of-band edit to a baselined `CHANGELOG.md`/`VISION.md` was **silently invisible** to
+/// `jigc validate` — the placement class fell out of the *"out-of-band edits are detected
+/// and routed"* invariant (`design/storage.md` → The census: `detect_committed_store`).
+/// Each instance's record key is its **repo-relative path** (a placement doc's is its
+/// literal `placement.file`, matching the key the mutating twin records), and each
+/// **present** doc routes by [`FileStateRecord::get`] vs [`hash_bytes`] of the on-disk
+/// bytes:
 ///
 /// - **content drift** (recorded hash ≠ on-disk hash) → exactly one blocking
 ///   `file-state.hash-matches` finding (the reused check id) carrying a
@@ -488,40 +496,34 @@ pub fn reconcile_committed_store(
 /// the twin walks on-disk docs and never enumerates recorded-but-absent paths.
 ///
 /// Read-only by construction: `record` is borrowed `&` (no mutation possible) and
-/// the only I/O is reading the committed `.md` bytes. Findings aggregate in a stable
-/// order — persisted schemas by type, then committed docs by path-sorted slug.
+/// the only I/O is reading the committed `.md` bytes — it never routes through the
+/// mutating [`reconcile_committed_store`]. Findings aggregate in a stable order —
+/// persisted schemas by type, then that type's instances in the enumerator's sorted order.
 pub fn detect_committed_store(
     record: &FileStateRecord,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     repo_root: &Path,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
-    for schema in schemas.values() {
-        let Some(location) = schema.location.as_deref() else {
-            continue; // a transient (location-less) type has no committed docs.
-        };
-        let dir = repo_root.join(location);
-        let mut slugs: Vec<String> = match std::fs::read_dir(&dir) {
-            Ok(entries) => entries
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
-                .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_owned))
-                .collect(),
-            Err(_) => Vec::new(), // no committed docs of this type yet.
-        };
-        slugs.sort();
-
-        for slug in &slugs {
-            let path = format!("{location}{slug}.md");
-            let Ok(bytes) = std::fs::read(dir.join(format!("{slug}.md"))) else {
+    for (ty, schema) in schemas {
+        for (_identity, path) in crate::index::committed_instances(repo_root, ty, schema) {
+            // The record key is the repo-relative path the mutating twin records the doc
+            // under — for a placement doc, its case-preserved literal `placement.file`
+            // (never re-derived from the path, which does not round-trip through slug
+            // derivation).
+            let key = path
+                .strip_prefix(repo_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned();
+            let Ok(bytes) = std::fs::read(&path) else {
                 continue; // read race: skip; the next sweep re-checks.
             };
             let current = hash_bytes(&bytes);
-            match record.get(&path) {
-                None => findings.push(unbaselined_finding(&path)),
+            match record.get(&key) {
+                None => findings.push(unbaselined_finding(&key)),
                 Some(recorded) if recorded == current => {}
-                Some(_) => findings.push(drift_store_finding(&path)),
+                Some(_) => findings.push(drift_store_finding(&key)),
             }
         }
     }
@@ -1803,6 +1805,104 @@ Referrers must point at the new decision.
         assert_eq!(
             record, record_before,
             "detect_committed_store must not mutate the record (no absorb, no re-baseline)"
+        );
+    }
+
+    /// (M42 inc-2 T2) The read-only twin [`detect_committed_store`] sees a **placement**
+    /// doctype's committed instance at its literal home — the *12th census site*
+    /// (`design/storage.md` → The census: `file_state::detect_committed_store`). Its
+    /// `location: None` skip dropped the whole placement class, so **`jigc validate` could
+    /// not see an out-of-band edit to `CHANGELOG.md`/`VISION.md`** — voiding
+    /// [CLAUDE.md](../../../CLAUDE.md)'s *"out-of-band edits are detected and routed"*
+    /// invariant for that class, while the *mutating* twin ([`reconcile_committed_store`])
+    /// had carried its placement branch since M38.
+    ///
+    /// Both outcomes are pinned on placement docs at their literal homes:
+    ///
+    /// - a **recorded-then-drifted** root `FOO.md` → one blocking `file-state.hash-matches`
+    ///   naming the literal path, carrying the **store-scope** route (never `reconcile …`);
+    /// - an **un-baselined** `docs/bar.md` → one advisory `file-state.un-baselined`;
+    /// - a sibling root `README.md` declared by nothing → **no** finding (exact-path
+    ///   ownership, not a root dir-glob — the non-vacuous half: the sweep visited the
+    ///   literals, and only them);
+    /// - the `record` stays **byte-identical** — detect-without-absorb survives the new
+    ///   branch (the twin must never re-baseline the drift it exists to surface).
+    #[test]
+    fn detect_committed_store_sees_placement_docs_at_their_literal_homes() {
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("foo".to_string(), adr_placement_schema("FOO.md"));
+        schemas.insert("bar".to_string(), adr_placement_schema("docs/bar.md"));
+
+        let root = TempRoot::new("detect-placement");
+        // `FOO.md`: recorded baseline ≠ on-disk bytes → drift.
+        std::fs::write(root.path().join("FOO.md"), ADR_B_EDITED_SUPERSEDES)
+            .expect("write the drifted placement doc");
+        // `docs/bar.md`: committed with no recorded hash → un-baselined.
+        std::fs::create_dir_all(root.path().join("docs")).expect("mk docs/");
+        std::fs::write(root.path().join("docs").join("bar.md"), ADR_B_BASE)
+            .expect("write the un-baselined placement doc");
+        // A sibling root `.md` no schema declares — must stay unmanaged.
+        std::fs::write(root.path().join("README.md"), "# readme\n\nnot managed\n")
+            .expect("write the README.md sibling");
+
+        let mut record = FileStateRecord::new();
+        record.record("FOO.md", hash_bytes(ADR_B_BASE.as_bytes())); // the pre-edit baseline
+        let record_before = record.clone();
+
+        let findings = detect_committed_store(&record, &schemas, root.path());
+
+        // (i) the drifted placement doc → one blocking hash-matches, store-scope route.
+        let drift: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.code == "file-state.hash-matches")
+            .collect();
+        assert_eq!(
+            drift.len(),
+            1,
+            "the OOB edit to the placement doc at its literal home is detected: {findings:?}"
+        );
+        let drift = drift[0];
+        assert_eq!(drift.severity, Severity::Blocking);
+        assert!(
+            drift.message.contains("FOO.md"),
+            "the drift names the literal placement home: {drift:?}"
+        );
+        let route = drift
+            .route
+            .as_deref()
+            .expect("the store-scope drift carries a route");
+        assert!(
+            !route.starts_with("reconcile"),
+            "the store-scope route is NOT the task-scope `reconcile <path>` variant: {route:?}"
+        );
+
+        // (ii) the un-baselined placement doc → one advisory un-baselined finding.
+        let unbaselined: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.code == "file-state.un-baselined")
+            .collect();
+        assert_eq!(
+            unbaselined.len(),
+            1,
+            "the un-baselined placement doc is surfaced, not silently clean: {findings:?}"
+        );
+        let unbaselined = unbaselined[0];
+        assert_eq!(unbaselined.severity, Severity::Advisory);
+        assert!(
+            unbaselined.message.contains("docs/bar.md"),
+            "the advisory names the literal placement home: {unbaselined:?}"
+        );
+
+        // (iii) the undeclared sibling root .md is not swept (exact-path, never a glob).
+        assert!(
+            findings.iter().all(|f| !f.message.contains("README.md")),
+            "an undeclared sibling root .md is not swept as an instance: {findings:?}"
+        );
+
+        // (iv) detect-without-absorb: the record is byte-identical across the sweep.
+        assert_eq!(
+            record, record_before,
+            "the read-only twin must not re-baseline the drift it exists to surface"
         );
     }
 

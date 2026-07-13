@@ -26,7 +26,11 @@
 //! `index::committed_instances` (`design/validation.md` → "every committed instance"), so the
 //! stale placement doc **is** detected and routed `migrate` at the doc the verb then fixes.
 //! The assertion flips accordingly, and is **presence**-shaped, never set-equality: other
-//! store families legitimately raise their own findings against the same doc.
+//! store families legitimately raise their own findings against the same doc. The
+//! **file↔CLI-state twin** joins it (M42 Inc-2 T2, the same census hole one site over): the
+//! read-only sweep now sees the placement doc too, so this never-baselined ledger surfaces
+//! its `file-state.un-baselined` advisory at its literal home — pinned here as the second
+//! detect-side assertion.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -324,6 +328,26 @@ fn migrate_corpus_remaps_the_deferral_ledger_kind_byte_faithful() {
         "the below-version placement deferral-ledger is DETECTED and routed `migrate`; got: {}",
         before["findings"],
     );
+    // The same sweep's file↔CLI-state twin now SEES the placement doc too (M42 Inc-2 T2):
+    // this committed-but-never-finalized ledger carries no baseline, so the read-only twin
+    // classifies it `un-baselined` — an advisory, at its literal placement home. Pre-fix the
+    // twin skipped every `location: None` schema, so the whole placement class was invisible
+    // to `jigc validate` (drift included — the invariant break this pins the fix of).
+    assert!(
+        before["findings"]
+            .as_array()
+            .expect("findings array")
+            .iter()
+            .any(|f| {
+                f["code"] == "file-state.un-baselined"
+                    && f["message"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("docs/deferral-ledger.md"))
+            }),
+        "the committed placement deferral-ledger is visible to the file-state twin \
+         (un-baselined, at its literal home); got: {}",
+        before["findings"],
+    );
 
     // --- migrate-corpus: the authored remap drives the first methodology v1→v2 migration ---
     let report = migrate_json(repo.path(), home.path());
@@ -377,8 +401,18 @@ fn migrate_corpus_remaps_the_deferral_ledger_kind_byte_faithful() {
                 .contains("deferral-ledger")
         })
         .collect();
+    // The content break is gone. What remains is the twin's `file-state.un-baselined`
+    // advisory — this fixture's ledger was committed by hand (git), never through a
+    // `finalize`, so it carries no baseline, and the read-only twin's designed
+    // not-yet-tracked outcome is informational ("no action needed"), never a break. It is
+    // visible *because* of the same placement fix (M42 Inc-2 T2) and is pinned positively
+    // above; asserted **exactly** here — every remaining ledger finding must be that
+    // advisory — so no real conformance break can hide behind a narrowed filter.
     assert!(
-        dl_after.is_empty(),
-        "the migrated deferral-ledger validates clean; got: {dl_after:?}"
+        dl_after
+            .iter()
+            .all(|f| f["code"] == "file-state.un-baselined" && f["severity"] == "advisory"),
+        "the migrated deferral-ledger carries no content break — at most the un-baselined \
+         advisory of a hand-committed (never finalized) doc; got: {dl_after:?}"
     );
 }
