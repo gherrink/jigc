@@ -30,6 +30,13 @@
 //! - **(fresh clone)** a clone of a managed repo — no `.jigc/state`, so **no** file-state
 //!   record at all — still reads its committed docs as **managed**: no adoption advisory,
 //!   nothing blocking.
+//! - **(the `binary-mismatch` route — T4)** a store whose `.jigc/version` stamp is stale **and**
+//!   whose corpus is stale routes at **`jigc migrate-corpus` first**, then the re-stamp. The old
+//!   route (*"align versions or re-run `jigc setup`"*) was a **false all-clear**: `jigc setup`
+//!   re-stamps `.jigc/version` and thereby **self-clears its own advisory** while the corpus
+//!   stays stale. The discriminator is the machine handle T2 minted — the
+//!   `schema-conformance.schema-version-current` finding in the same report — so a store on a
+//!   divergent binary with a **current** corpus keeps the plain align-or-re-stamp route.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -452,6 +459,144 @@ fn a_stale_v1_stamped_adr_surfaces_the_version_currency_break_and_migrate_corpus
         "the migrated corpus blocks nothing; got: {blocking:#?}",
     );
     assert_eq!(code, 0, "a migrated corpus exits 0");
+}
+
+/// Rewrite the committed binary-provenance stamp to a **different** build, so the store reads
+/// as "last written by another `jigc`" — the `store-version.binary-mismatch` precondition.
+fn stale_version_stamp(repo: &Path) {
+    let stamp = repo.join(".jigc").join("version");
+    assert!(
+        stamp.is_file(),
+        "`jigc setup` must have written the provenance stamp at {stamp:?}",
+    );
+    fs::write(&stamp, "jigc-version: 0.9.0-elsewhere\n").expect("rewrite the version stamp");
+}
+
+/// The one `store-version.binary-mismatch` advisory in a report, or `None`.
+fn binary_mismatch(findings: &[serde_json::Value]) -> Option<&serde_json::Value> {
+    let hits = by_code(findings, "store-version.binary-mismatch");
+    assert!(
+        hits.len() <= 1,
+        "the store is a singleton — at most one binary-mismatch advisory; got: {hits:#?}",
+    );
+    hits.first().copied()
+}
+
+/// (T4 — the `binary-mismatch` route stops producing a false all-clear) A store whose
+/// `.jigc/version` stamp is **stale** *and* whose committed corpus is **stale** (a v1-stamped ADR
+/// under the v2 manifest) routes at **`jigc migrate-corpus`** — the verb that actually fixes the
+/// corpus — before the re-stamp.
+///
+/// Red before this task, and driven end-to-end to prove *why*: the advisory routed only *"align
+/// versions or re-run `jigc setup`"*, and running `jigc setup` **re-stamps `.jigc/version`**,
+/// which **self-clears the advisory** — a **false all-clear**, since the corpus is still stale.
+/// This test walks exactly that path: route → `jigc setup` → re-validate, and pins that the
+/// binary-mismatch advisory is gone while the version-currency break **remains**. The route the
+/// user is handed must therefore name the corpus migration first, or the tool talks them into a
+/// green light over a stale corpus.
+#[test]
+fn a_stale_stamp_over_a_stale_corpus_routes_at_migrate_corpus_and_setup_alone_is_no_all_clear() {
+    let repo = TempDir::new("stale-stamp-stale-corpus");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), ADR_STALE_V1);
+    stale_version_stamp(repo.path());
+
+    // 1. The advisory names the verb that fixes the CORPUS, verbatim — and the re-stamp only
+    //    after it (re-stamping alone leaves the corpus stale).
+    let (code, findings) = validate_findings(repo.path(), home.path());
+    let mismatch = binary_mismatch(&findings).expect("a divergent stamp raises the advisory");
+    let route = mismatch["route"]
+        .as_str()
+        .expect("the advisory carries a route (the advisory-route floor)");
+    assert!(
+        route.contains("jigc migrate-corpus"),
+        "a store whose CORPUS is also stale must be routed at the corpus migration, verbatim; \
+         got: {route}",
+    );
+    assert!(
+        route.contains("jigc setup"),
+        "the re-stamp is still part of the route — after the migration; got: {route}",
+    );
+    assert!(
+        route.find("jigc migrate-corpus") < route.find("jigc setup"),
+        "the corpus migration comes FIRST — `jigc setup` re-stamps and self-clears this advisory, \
+         so naming it first is the false all-clear; got: {route}",
+    );
+    assert_eq!(
+        mismatch["severity"].as_str(),
+        Some("advisory"),
+        "the provenance stamp never gates: {mismatch:#?}",
+    );
+    assert_eq!(code, 0, "the binary-mismatch advisory never flips the exit");
+    assert_eq!(
+        by_code(&findings, "schema-conformance.schema-version-current").len(),
+        1,
+        "the stale corpus is the precondition of this arm; got: {findings:#?}",
+    );
+
+    // 2. Run `jigc setup` — the verb the OLD route named — and re-validate.
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // 3. The all-clear is a LIE: setup re-stamped `.jigc/version` (its own advisory is gone) but
+    //    the corpus is untouched — the version-currency break still stands. This is exactly what
+    //    the corrected route exists to stop a human from mistaking for "handled".
+    let (code, after) = validate_findings(repo.path(), home.path());
+    assert!(
+        binary_mismatch(&after).is_none(),
+        "`jigc setup` re-stamps the store, so its own advisory clears; got: {after:#?}",
+    );
+    assert_eq!(
+        by_code(&after, "schema-conformance.schema-version-current").len(),
+        1,
+        "the CORPUS is still stale after a bare re-stamp — the all-clear was never real; \
+         got: {after:#?}",
+    );
+    assert_eq!(
+        code, 0,
+        "the store sweep stays report-only here (Inc 4 flips it)"
+    );
+}
+
+/// (T4 — the omitting context) A store on a **divergent binary** whose corpus is **current** (a
+/// v2-stamped ADR under the v2 manifest) keeps the **plain** align-or-re-stamp route: the
+/// migrate-corpus route must not leak into every mismatch. The discriminator is the
+/// `schema-conformance.schema-version-current` finding in the same report — a machine handle,
+/// absent here — so a naive "always name `migrate-corpus`" fix would command a verb with nothing
+/// to do (`0 migrated, 1 already current`), the very false-route class this increment deletes.
+#[test]
+fn a_current_corpus_on_a_divergent_binary_keeps_the_plain_re_stamp_route() {
+    let repo = TempDir::new("stale-stamp-current-corpus");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), ADR_CURRENT);
+    stale_version_stamp(repo.path());
+
+    let (code, findings) = validate_findings(repo.path(), home.path());
+    assert!(
+        by_code(&findings, "schema-conformance.schema-version-current").is_empty(),
+        "the corpus is current — the precondition of this arm; got: {findings:#?}",
+    );
+
+    let mismatch = binary_mismatch(&findings).expect("a divergent stamp raises the advisory");
+    let route = mismatch["route"]
+        .as_str()
+        .expect("the advisory carries a route (the advisory-route floor)");
+    assert!(
+        !route.contains("migrate-corpus"),
+        "a CURRENT corpus is not a migration case — the route must not name `migrate-corpus`; \
+         got: {route}",
+    );
+    assert!(
+        route.contains("jigc setup"),
+        "the plain route stands: align versions, or re-run `jigc setup` to re-stamp; got: {route}",
+    );
+    assert_eq!(code, 0, "the binary-mismatch advisory never flips the exit");
 }
 
 /// (fresh clone) A **clone of a managed repo** carries **no `.jigc/state`** (it is gitignored

@@ -789,7 +789,20 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     // not match `validation_store_exit_flips`, so the exit stays 0). An absent stamp (a
     // pre-M36 store) is never false-flagged. CLI-side because `.jigc/version` is a
     // store-level fact the engine (empty by invariant) never reads.
-    if let Some(finding) = crate::setup::binary_mismatch_finding(&jigc_home) {
+    //
+    // **Schema-version-aware since M42** (`design/storage.md` → Store provenance — the check):
+    // its route was a **false all-clear** over a stale corpus — it named only "re-run `jigc
+    // setup`", which re-stamps `.jigc/version` and thereby self-clears this advisory while the
+    // committed docs stay stale. The fix keys on the **machine handle** the fifth family mints
+    // for exactly this fact — a `schema-conformance.schema-version-current` break in the
+    // just-built report — never on a route-string prefix (a coupling the Settle rejected). A
+    // stale corpus routes at `jigc migrate-corpus` first; a current one keeps the plain
+    // align-or-re-stamp route.
+    let corpus_stale = report
+        .findings
+        .iter()
+        .any(|f| f.code == engine::validate::SCHEMA_VERSION_CURRENT_CODE);
+    if let Some(finding) = crate::setup::binary_mismatch_finding(&jigc_home, corpus_stale) {
         report.findings.push(finding);
     }
 

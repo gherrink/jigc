@@ -81,26 +81,56 @@ fn read_version_stamp(repo_root: &Path) -> Option<String> {
 /// pre-M36 store — never false-flagged). Report-only + **un-keyed**: `(store-version,
 /// binary-mismatch)` is not a `CHECK_INVENTORY` row, so the severity post-pass leaves its
 /// advisory severity untouched and it never gates a transaction (`design/validation.md` →
-/// un-keyed findings; `design/storage.md` → Store provenance — the check). A version delta
+/// un-keyed findings; `design/storage.md` → Store provenance — the check). Its `target` is
+/// **`null`, and correct** — the store is a singleton, the one declared exception
+/// (`design/command-output-contract.md` → the declared non-unique exceptions). A version delta
 /// is a heads-up that two builds may resolve the cascade differently, not corruption.
-pub fn binary_mismatch_finding(jigc_home: &Path) -> Option<Finding> {
+///
+/// **Schema-version-aware since M42** (`design/storage.md` → Store provenance — the check).
+/// `corpus_stale` says whether the same sweep found the committed corpus stale (a
+/// `schema-conformance.schema-version-current` break — the machine handle, **never** a
+/// route-string match). It splits the route in two, because the un-split route was a **false
+/// all-clear**: it named only *"re-run `jigc setup`"*, and `jigc setup` **re-stamps
+/// `.jigc/version`** — self-clearing this very advisory while the corpus stayed stale, so the
+/// next `jigc validate` looked like progress.
+///   - **stale corpus** → the route names **`jigc migrate-corpus` first** (the verb that
+///     actually upgrades the docs), and the re-stamp only after it.
+///   - **current corpus** (the divergent-binary-only case) → the plain align-or-re-stamp route
+///     stands; naming `migrate-corpus` here would command a verb with nothing to do.
+pub fn binary_mismatch_finding(jigc_home: &Path, corpus_stale: bool) -> Option<Finding> {
     let recorded = read_version_stamp(jigc_home)?;
     let running = env!("CARGO_PKG_VERSION");
     if recorded == running {
         return None;
     }
+    let provenance = format!("store last written by jigc {recorded}; you are running {running}");
+    let (message, route) = if corpus_stale {
+        (
+            format!(
+                "{provenance} — and this store's committed docs are stale against {running}'s \
+                 schemas: re-stamping alone would clear this advisory while the corpus stayed stale"
+            ),
+            format!(
+                "run `jigc migrate-corpus` to upgrade the committed docs, then re-run \
+                 `jigc setup` to re-stamp the store at {running} (or align the running jigc \
+                 back to {recorded})"
+            ),
+        )
+    } else {
+        (
+            format!("{provenance} — align versions or re-run `jigc setup`"),
+            format!(
+                "align the running jigc to {recorded}, or re-run `jigc setup` to re-stamp \
+                 the store at {running}"
+            ),
+        )
+    };
     Some(Finding::graded(
         Severity::Advisory,
         "store-version.binary-mismatch",
-        format!(
-            "store last written by jigc {recorded}; you are running {running} — \
-             align versions or re-run `jigc setup`"
-        ),
+        message,
         None,
-        Some(format!(
-            "align the running jigc to {recorded}, or re-run `jigc setup` to re-stamp \
-             the store at {running}"
-        )),
+        Some(route),
     ))
 }
 
