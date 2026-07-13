@@ -488,8 +488,28 @@ pub fn reconcile_committed_store(
 /// - **un-baselined** (no recorded hash) → exactly one **advisory**
 ///   `file-state.un-baselined` finding — a distinct *not-yet-tracked* outcome,
 ///   neither drift nor silent-clean (informational on a fresh / pre-baseline
-///   store, so it does not flip the exit code).
+///   store, so it does not flip the exit code) — **unless the doc is a never-adopted
+///   foreign squatter**, below.
 /// - **in-sync** (recorded hash matches) → no finding.
+///
+/// **A foreign squatter is not un-baselined (M42).** Since the enumerator reaches
+/// **placement** homes, this twin also lands on a brownfield repo's own Keep-a-Changelog
+/// `CHANGELOG.md` — a file the user never handed to jigc — where it has **no record** and
+/// so read as *"un-baselined … no action needed — the doc is baselined on its next author
+/// or finalize"*: a promise about a file **jigc will never author**. The un-baselined
+/// advisory is a claim about a **managed** doc, so it now runs the same committed-bytes
+/// discriminator family 5 does ([`crate::validate::is_unadopted_foreign`]) and stays silent
+/// on a foreign instance — which is **never left silent overall**: family 5 gives it the one
+/// finding it earns, the `schema-conformance.unadopted-instance` adoption advisory
+/// (`design/validation.md` → *the same discriminator applies to family 3's `un-baselined`*).
+/// The suppression is scoped to the **un-baselined arm alone**: a *recorded* doc keeps both
+/// outcomes unchanged, so an OOB edit that mangles a managed doc past parsing still reports
+/// its drift and never escapes as "foreign".
+///
+/// The discriminator keys on the doc's **committed bytes** (stamp, else a parse against the
+/// current or a shipped prior shape) — never on `record` membership, which lives in
+/// gitignored `.jigc/state/` and is **empty on a fresh clone**, where every managed doc would
+/// otherwise read foreign and lose its un-baselined advisory.
 ///
 /// **Content drift on *present* docs only.** Recorded-but-now-missing docs
 /// (rename / deletion — [`detect_rename`]'s task-scope concern) are **out of scope**:
@@ -503,6 +523,8 @@ pub fn detect_committed_store(
     record: &FileStateRecord,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     repo_root: &Path,
+    versions: &std::collections::BTreeMap<String, u32>,
+    priors: &std::collections::BTreeMap<String, Vec<crate::schema::Schema>>,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
@@ -521,7 +543,23 @@ pub fn detect_committed_store(
             };
             let current = hash_bytes(&bytes);
             match record.get(&key) {
-                None => findings.push(unbaselined_finding(&key)),
+                // No record — *not-yet-baselined*, but only if the doc is jigc's to baseline.
+                // A never-adopted **foreign** file squatting at a managed home has no record
+                // for the same reason it has no stamp, and calling it un-baselined would
+                // promise a baseline on an author/finalize that will never come. Classify from
+                // the committed bytes (family 5's discriminator) and stay silent on it — it is
+                // family 5's `schema-conformance.unadopted-instance` adoption case, never a
+                // silent one.
+                None => {
+                    let source = String::from_utf8_lossy(&bytes);
+                    if !crate::validate::is_unadopted_foreign(ty, schema, &source, versions, priors)
+                    {
+                        findings.push(unbaselined_finding(&key));
+                    }
+                }
+                // A **recorded** doc is managed by construction (jigc baselined it), so both
+                // outcomes stand unclassified: an OOB edit that mangles it past parsing is
+                // drift to route, never a file to "adopt".
                 Some(recorded) if recorded == current => {}
                 Some(_) => findings.push(drift_store_finding(&key)),
             }
@@ -624,8 +662,10 @@ fn drift_store_finding(path: &str) -> Finding {
     )
 }
 
-/// The advisory **un-baselined** finding: a committed managed doc with no recorded
-/// hash, surfaced by [`detect_committed_store`]. A distinct *not-yet-tracked*
+/// The advisory **un-baselined** finding: a committed **managed** doc with no recorded
+/// hash, surfaced by [`detect_committed_store`] (its route promises a baseline *"on its next
+/// author or finalize"*, so it is emitted only for a doc jigc will in fact author — never for
+/// a foreign squatter, M42). A distinct *not-yet-tracked*
 /// outcome — neither drift nor silent-clean — so a read-only twin that cannot adopt
 /// a baseline (the mutating path's UNKNOWN resolution) never falsely reports an
 /// untracked doc as clean. Advisory + an **informational route** (the advisory-route
@@ -1747,7 +1787,16 @@ Referrers must point at the new decision.
         // Clone the record to assert byte-for-byte mutation-freedom after the call.
         let record_before = record.clone();
 
-        let findings = detect_committed_store(&record, &schemas, root.path());
+        // No `versions` ⇒ the doctype is unversioned ⇒ the managed-vs-foreign discriminator
+        // is inert here (its precondition: it answers only where a stamp can exist). These two
+        // pin the drift / un-baselined / in-sync arms, unchanged by M42.
+        let findings = detect_committed_store(
+            &record,
+            &schemas,
+            root.path(),
+            &std::collections::BTreeMap::new(),
+            &std::collections::BTreeMap::new(),
+        );
 
         // (i) the drifted doc → exactly one hash-matches finding, store-scope route.
         let drift: Vec<&Finding> = findings
@@ -1808,6 +1857,80 @@ Referrers must point at the new decision.
         );
     }
 
+    /// (M42 inc-3 T3) The **un-baselined advisory is a claim about a MANAGED doc** — and both
+    /// halves of that sentence are pinned here, over an **empty record**: the state of a
+    /// **fresh clone** of a managed repo, where `.jigc/state/` (gitignored, rebuildable) does
+    /// not exist at all.
+    ///
+    /// - the **managed** doc (unstamped, but it parses against the current shape — the v0-era
+    ///   corpus) → its `file-state.un-baselined` advisory **still fires**. This is the guard:
+    ///   the M42 suppression must reach **foreign docs only**, never a managed corpus on a
+    ///   clean checkout. Suppressing on *record membership* — the discriminator the Settle
+    ///   first reached for — would silence exactly this doc, on exactly this checkout.
+    /// - the **foreign** doc (parses against no known version of the doctype, the squatter's
+    ///   signature) → **no** un-baselined finding: its route (*"baselined on its next author
+    ///   or finalize"*) would promise an authoring that will never happen. It is not left
+    ///   silent — family 5 gives it the one finding it earns, the
+    ///   `schema-conformance.unadopted-instance` adoption advisory
+    ///   (`crates/cli/tests/managed_vs_foreign.rs`, through the real binary).
+    ///
+    /// The doctype is **versioned** here (`versions` carries it) — the discriminator's
+    /// precondition, without which the classifier is inert and the foreign arm would not be
+    /// exercised at all.
+    #[test]
+    fn detect_committed_store_suppresses_unbaselined_for_the_foreign_squatter_only() {
+        let mut schemas: std::collections::BTreeMap<String, Schema> =
+            std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr_schema());
+        // The doctype is versioned (the CLI stamps it) — so "unstamped" is evidence, and the
+        // classifier is willing to answer.
+        let versions: std::collections::BTreeMap<String, u32> =
+            [("adr".to_string(), 1u32)].into_iter().collect();
+        // No shipped prior shapes needed: the managed doc below parses against the current one.
+        let priors: std::collections::BTreeMap<String, Vec<Schema>> =
+            std::collections::BTreeMap::new();
+
+        let root = TempRoot::new("detect-twin-foreign");
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+
+        // A genuinely MANAGED, un-baselined ADR: no stamp (the v0-era corpus), but it parses.
+        let managed_path = "decisions/distributed-session-cache.md";
+        std::fs::write(decisions.join("distributed-session-cache.md"), ADR_B_BASE)
+            .expect("write managed ADR");
+        // A FOREIGN file squatting at the `adr` home: parses against no known `adr` version.
+        let foreign_path = "decisions/notes.md";
+        std::fs::write(
+            decisions.join("notes.md"),
+            "# Meeting notes\n\n## Attendees\n\n- Ada\n",
+        )
+        .expect("write foreign note");
+
+        // A FRESH CLONE: the file-state record is empty — neither doc is recorded.
+        let record = FileStateRecord::new();
+
+        let findings = detect_committed_store(&record, &schemas, root.path(), &versions, &priors);
+
+        let managed: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.message.contains(managed_path))
+            .collect();
+        assert_eq!(
+            managed.len(),
+            1,
+            "the MANAGED un-baselined doc still fires on a fresh clone (the guard): {findings:?}"
+        );
+        assert_eq!(managed[0].code, "file-state.un-baselined");
+        assert_eq!(managed[0].severity, Severity::Advisory);
+
+        assert!(
+            findings.iter().all(|f| !f.message.contains(foreign_path)),
+            "the never-adopted foreign squatter is NOT un-baselined — it is family 5's \
+             adoption case, and this advisory would promise a baseline on an author or \
+             finalize that will never touch it: {findings:?}"
+        );
+    }
+
     /// (M42 inc-2 T2) The read-only twin [`detect_committed_store`] sees a **placement**
     /// doctype's committed instance at its literal home — the *12th census site*
     /// (`design/storage.md` → The census: `file_state::detect_committed_store`). Its
@@ -1849,7 +1972,16 @@ Referrers must point at the new decision.
         record.record("FOO.md", hash_bytes(ADR_B_BASE.as_bytes())); // the pre-edit baseline
         let record_before = record.clone();
 
-        let findings = detect_committed_store(&record, &schemas, root.path());
+        // No `versions` ⇒ the doctype is unversioned ⇒ the managed-vs-foreign discriminator
+        // is inert here (its precondition: it answers only where a stamp can exist). These two
+        // pin the drift / un-baselined / in-sync arms, unchanged by M42.
+        let findings = detect_committed_store(
+            &record,
+            &schemas,
+            root.path(),
+            &std::collections::BTreeMap::new(),
+            &std::collections::BTreeMap::new(),
+        );
 
         // (i) the drifted placement doc → one blocking hash-matches, store-scope route.
         let drift: Vec<&Finding> = findings

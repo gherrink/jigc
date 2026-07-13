@@ -432,8 +432,13 @@ pub fn validate_store_families(
     }
 
     // Family 3 — file↔CLI-state, the read-only detect-without-absorb committed-store twin.
+    // It takes the same `versions` + `priors` as family 5 and asks the same committed-bytes
+    // question (`is_unadopted_foreign`): a never-adopted foreign squatter at a managed home is
+    // not an *un-baselined managed doc*, and must not be told it will be baselined on an
+    // author or finalize that will never touch it (M42; `validation.md` → the same
+    // discriminator applies to family 3's `un-baselined` advisory).
     findings.extend(crate::file_state::detect_committed_store(
-        record, schemas, repo_root,
+        record, schemas, repo_root, versions, priors,
     ));
 
     // Family 3 (cont.) — recorded-but-missing OOB-rename detection (M35, Component A;
@@ -576,27 +581,14 @@ fn schema_conformance_store(
     priors: &BTreeMap<String, Vec<Schema>>,
     workflows: &[StoreWorkflow],
 ) -> Vec<Finding> {
-    let no_priors: Vec<Schema> = Vec::new();
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
-        let ty_priors = priors.get(ty).unwrap_or(&no_priors);
         // Whether the doctype-directed adoption verb even exists for this type: `jigc migrate
         // <path> --as <ty>` composes the off-router `migrate-<ty>` workflow and hard-errors
         // ("not migratable") when the composed pack ships none — so the adoption route names
         // it only when it is there (the M40 two-tier route: never command a verb that
         // hard-errors; `design/validation.md` → the M40 two-tier route).
         let migratable = workflows.iter().any(|w| w.id == format!("migrate-{ty}"));
-        // **The discriminator runs only where the stamp exists to be absent.** Stamp-absence
-        // is the classifier's first signal, and it is only *evidence* for a doctype the CLI
-        // stamps at all — the versioned/frozen set (`versions`, the manifest map; the stamp is
-        // injected exactly there — `crates/cli/src/pack.rs` → `load_pack_schema`). For an
-        // **unversioned** doctype (a freeze-exempt / project-defined type) NO instance ever
-        // carries a stamp, so "unstamped" says nothing at all, and calling a doc of that type
-        // "never adopted by jigc" on the strength of a failed parse would be exactly the kind
-        // of unfounded claim this discriminator exists to remove: a corrupt *managed* doc would
-        // be routed at adoption instead of surfacing its break. Unversioned doctypes therefore
-        // keep the pre-M42 behavior (structural findings, un-routed).
-        let versioned = versions.contains_key(ty);
         // `identity` is the `<type>:<slug>` URI the enumerator already derives (a placement
         // doctype's `<type>:<type>` singleton included) — never re-derived from the path,
         // which does not round-trip for a case-preserved literal home (`CHANGELOG.md`).
@@ -622,7 +614,7 @@ fn schema_conformance_store(
             // to jigc against jigc's schema produces N blocking breaks routed at a verb that
             // does nothing for it. It surfaces as exactly one adoption **advisory**, addressed
             // at its **path** (it has no managed identity to claim).
-            if versioned && classify_provenance(schema, &source, ty_priors) == Provenance::Foreign {
+            if is_unadopted_foreign(ty, schema, &source, versions, priors) {
                 findings.push(unadopted_instance(ty, &rel_key, migratable));
                 continue;
             }
@@ -753,6 +745,41 @@ fn hollow_surplus_store(
         }
     }
     findings
+}
+
+/// Whether a committed instance at a managed home is a **never-adopted foreign file** — the
+/// one question **both** store families ask of the discriminator (M42): family 5's adoption
+/// arm ([`schema_conformance_store`]) *and* family 3's un-baselined advisory
+/// ([`crate::file_state::detect_committed_store`]). A foreign squatter is **one fact — the
+/// adoption case** — so a second family must not also call it *"an un-baselined managed doc,
+/// no action needed — baselined on its next author or finalize"*: a promise about a file jigc
+/// will never author (`design/validation.md` → *the same discriminator applies to family 3's
+/// `un-baselined` advisory*). Single-sourced here so the **precondition** below is stated once
+/// and cannot drift between the two callers.
+///
+/// **The precondition: it answers only where a stamp can exist.** Stamp-absence is
+/// [`classify_provenance`]'s first signal, and it is only *evidence* for a doctype the CLI
+/// stamps at all — the **versioned** set (`versions`, the manifest map; the stamp is injected
+/// exactly there — `crates/cli/src/pack.rs` → `load_pack_schema`). For an **unversioned**
+/// doctype (a freeze-exempt / project-defined type) NO instance ever carries a stamp, so
+/// "unstamped" says nothing at all, and calling a doc of that type "never adopted by jigc" on
+/// the strength of a failed parse would be exactly the kind of unfounded claim this
+/// discriminator exists to remove: a corrupt *managed* doc routed at adoption instead of
+/// surfacing its break. An unversioned doctype is therefore **never classified** — both
+/// families keep their pre-M42 behavior over it (`false` here: not foreign, i.e. adjudicated
+/// as managed, exactly as before).
+pub(crate) fn is_unadopted_foreign(
+    ty: &str,
+    schema: &Schema,
+    source: &str,
+    versions: &BTreeMap<String, u32>,
+    priors: &BTreeMap<String, Vec<Schema>>,
+) -> bool {
+    if !versions.contains_key(ty) {
+        return false;
+    }
+    let ty_priors: &[Schema] = priors.get(ty).map_or(&[], Vec::as_slice);
+    classify_provenance(schema, source, ty_priors) == Provenance::Foreign
 }
 
 /// A committed file at a managed home is one of two things, and the fifth family must not

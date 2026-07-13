@@ -296,6 +296,19 @@ fn a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrat
         "a never-adopted foreign file the user never handed to jigc must block nothing; got: {blocking:#?}",
     );
 
+    // **Exactly one finding, and it is the adoption advisory (T3).** Family 3's read-only
+    // file↔CLI-state twin reached the same squatter and called it `file-state.un-baselined`
+    // — *"no action needed — the doc is baselined on its next author or finalize"*, a promise
+    // about a file jigc will never author. One foreign file is **one** fact, and it is the
+    // adoption case; the discriminator suppresses the un-baselined arm for it too
+    // (`design/validation.md` → the same discriminator applies to family 3's `un-baselined`).
+    assert_eq!(
+        findings.len(),
+        1,
+        "a foreign squatter is exactly ONE finding — the adoption advisory, nothing else; got: \
+         {findings:#?}",
+    );
+
     let unadopted = by_code(&findings, "schema-conformance.unadopted-instance");
     assert_eq!(
         unadopted.len(),
