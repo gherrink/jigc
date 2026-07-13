@@ -311,6 +311,45 @@ impl DocCommand {
     }
 }
 
+/// The **machine-maintained refusal** (A18; `design/team-ready-state.md` → The record is
+/// not writable through the `jigc doc` verbs): a `milestone-record` has **no author-owned
+/// leaf** — every leaf is `set:`-bearing (no prose slot, no author-required field) — so no
+/// `jigc doc` **write** verb has anything legitimate to write. Unguarded, a `--task`-less
+/// `jigc doc set-field milestone-record:<id>#status --value joined` exits 0: it silently
+/// auto-selects the sole live task (a milestone sub-task), copies the committed record
+/// into that area, and stages it to promote at that sub-task's finalize — the committed
+/// record mutated outside the milestone verbs, by a verb that never consults milestone
+/// state.
+///
+/// Keyed on the doctype like its already-shipped siblings (`jigc rename`'s reslug
+/// refusal, `jigc doc retitle-item`'s item refusal — which carries its own, item-specific
+/// wording), sharing their `write.machine-maintained` code, and fired **before any bytes
+/// are read or copied in** (the `read_or_copy_in` staging is itself part of the defect).
+/// The **read** verbs (`doc show` / `doc schema`) stay open — that uniformity is why the
+/// record is a doctype rather than a raw-JSON island.
+fn machine_maintained_guard(doctype: &str, verb: &str, target: &str) -> Result<(), DocFailure> {
+    if doctype != crate::milestone::MILESTONE_RECORD_TYPE {
+        return Ok(());
+    }
+    Err(DocFailure::Block(Finding::graded(
+        Severity::Blocking,
+        "write.machine-maintained",
+        format!(
+            "{verb} rejected: `{target}` is a milestone-record — the record is \
+             machine-maintained (every leaf is CLI-`set:`, so it carries no author-owned \
+             slot or field), and no `jigc doc` write applies to it"
+        ),
+        Some(Location::addressed(target, 1, 1)),
+        Some(
+            "leave the record to the milestone verbs — `jigc milestone create` opens it, \
+             `jigc milestone add-task` appends sub-tasks, `jigc task finalize` advances a \
+             sub-task's status, `jigc milestone finalize` joins it, and `jigc milestone \
+             discard` settles an abandoned one; read it with `jigc doc show`"
+                .to_string(),
+        ),
+    )))
+}
+
 /// `jigc doc set-field <addr> --value <v>` — adjudicate + splice a field value.
 fn run_set_field(
     cwd: &Path,
@@ -321,6 +360,7 @@ fn run_set_field(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
+    machine_maintained_guard(address.r#type.as_str(), "set-field", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target = field_target(&schema, &address)
         .with_context(|| format!("no field addressed by `{addr}`"))?;
@@ -432,6 +472,7 @@ fn run_unset_field(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
+    machine_maintained_guard(address.r#type.as_str(), "set-field --unset", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target = field_target(&schema, &address)
         .with_context(|| format!("no field addressed by `{addr}`"))?;
@@ -629,6 +670,7 @@ fn run_set_slot(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
+    machine_maintained_guard(address.r#type.as_str(), "set-slot", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         slot_target(&schema, &address).with_context(|| format!("no slot addressed by `{addr}`"))?;
@@ -715,6 +757,7 @@ fn run_add_item(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
+    machine_maintained_guard(address.r#type.as_str(), "add-item", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         add_item_target(&address).with_context(|| format!("no section addressed by `{addr}`"))?;
@@ -968,6 +1011,7 @@ fn run_remove_item(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
+    machine_maintained_guard(address.r#type.as_str(), "remove-item", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
@@ -1479,6 +1523,7 @@ fn run_create(
     task_id: Option<&str>,
     format: Format,
 ) -> Result<(), DocFailure> {
+    machine_maintained_guard(type_name, "create", type_name)?;
     if let Some(slug) = slug_override
         && !engine::slug::is_slug(slug)
     {
@@ -1548,6 +1593,7 @@ fn run_author(
     task_id: Option<&str>,
     format: Format,
 ) -> Result<(), DocFailure> {
+    machine_maintained_guard(doctype, "author", doctype)?;
     let task = ActiveTask::resolve(cwd, task_id)?;
     let payload = read_handoff(from_file)?;
     let schemas = task.schemas()?;
