@@ -77,6 +77,39 @@ pub(crate) struct DoctypeMigration {
     pub docs_root: String,
 }
 
+/// The two operator flags of the commit boundary (`design/corpus-migration.md` → The commit
+/// boundary). Both `false` — the default — is the standing behaviour: apply the migration's
+/// writes, then land them in the pathspec-limited self-commit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    /// `--no-commit` — migrate and write, but stage and commit **nothing**, leaving the tree
+    /// exactly as the git-free verb left it (an unstaged delete of a relocation source, an
+    /// untracked destination), for an operator who wants to review the migration or fold it
+    /// into a larger commit.
+    pub no_commit: bool,
+    /// `--dry-run` — **suppress the write**: no migrated bytes, no relocation move, no
+    /// file-state re-baseline, and (necessarily) no commit. Not *"stop before a stage"*: there
+    /// is no operator-facing `persist` stage to skip — [`engine::state::persist`] writes the
+    /// bytes and flips the baseline in one motion — so the run simply does not apply the fold's
+    /// outcomes. The fold is pure, so the triage report is the identical one an applying run
+    /// prints.
+    pub dry_run: bool,
+}
+
+impl Options {
+    /// Whether this run **applies** the fold's outcomes to disk (bytes + relocation move +
+    /// file-state baseline). `--dry-run` is exactly the suppression of this.
+    pub(crate) fn writes(self) -> bool {
+        !self.dry_run
+    }
+
+    /// Whether this run **lands** its writes in the self-commit ([`commit_migration`]).
+    /// `--dry-run` **implies** no commit — nothing was written, so there is nothing to stage.
+    pub(crate) fn commits(self) -> bool {
+        !self.no_commit && !self.dry_run
+    }
+}
+
 /// The outcome of a corpus migration run, rendered by [`render::corpus_migration`].
 #[derive(Debug, serde::Serialize)]
 pub struct CorpusMigrationReport {
@@ -109,8 +142,12 @@ pub struct CorpusMigrationReport {
 /// agent) exits 0 — the migration writes; blocked docs are an expected interim state, not a
 /// failure. A locator error — or a **rejected commit** (a `pre-commit` hook declining the
 /// managed-doc writes) — routes to stderr and exits non-zero.
-pub fn run(cwd: &Path, format: Format) -> Outcome {
-    match migrate_in_repo(cwd) {
+///
+/// [`Options`] narrows what the run **applies**: `--no-commit` keeps the writes but lands
+/// nothing; `--dry-run` suppresses the writes too, printing the identical report an applying
+/// run would print.
+pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
+    match migrate_in_repo(cwd, options) {
         Ok(report) => {
             println!("{}", render::corpus_migration(format, &report));
             Outcome::success()
@@ -125,8 +162,8 @@ pub fn run(cwd: &Path, format: Format) -> Outcome {
 /// Locate the repo + project layer, assemble the frozen persisted doctypes' migration jobs
 /// (each carrying its current stamp-injected shape `to` + its manifest schema-version; the
 /// prior `from` is resolved per committed doc by stamp inside [`migrate_committed_corpus`]),
-/// and migrate the committed corpus.
-fn migrate_in_repo(cwd: &Path) -> Result<CorpusMigrationReport> {
+/// and migrate the committed corpus — applying and landing it as far as `options` allows.
+fn migrate_in_repo(cwd: &Path, options: Options) -> Result<CorpusMigrationReport> {
     let jigc_home = require_project_layer(cwd)?;
     let pack = pack::make_pack();
     let pack = pack.as_ref();
@@ -179,14 +216,17 @@ fn migrate_in_repo(cwd: &Path) -> Result<CorpusMigrationReport> {
     doctypes.sort_by(|a, b| a.ty.cmp(&b.ty));
 
     let jigc_root = jigc_home.join(".jigc");
-    let mut report = migrate_committed_corpus(pack, &jigc_home, &jigc_root, &doctypes)?;
+    let mut report = migrate_committed_corpus(pack, &jigc_home, &jigc_root, &doctypes, options)?;
     // THE COMMIT BOUNDARY (`design/corpus-migration.md` → The commit boundary). The per-doc
     // fold above stays **git-free** (the relocation is an `fs::rename`, not a `git mv`);
     // staging happens **once**, here, over exactly the paths the migration touched — so git's
     // rename-detection collapses the move's delete+add into the clean `R` the relocation note
     // predicts, and the operator never has to reach for the raw `git add -A` the adapter
-    // contract forbids.
-    report.commit = commit_migration(&jigc_home, &report.touched)?;
+    // contract forbids. `--no-commit` opts out of it (the writes stand, unlanded); `--dry-run`
+    // implies it (nothing was written, so there is nothing to stage).
+    if options.commits() {
+        report.commit = commit_migration(&jigc_home, &report.touched)?;
+    }
     Ok(report)
 }
 
@@ -340,11 +380,16 @@ fn git_stdout(repo_root: &Path, args: &[&str]) -> Result<String> {
 /// already authored is dropped, so it flips cleanly on a re-run). The engine fold applies
 /// them, gates each doc on conformance against the current schema, and commits only the
 /// clean ones; this writes the migrated bytes back to disk and flips the file-state baseline.
+///
+/// Under [`Options::writes`] `== false` (`--dry-run`) the fold still runs — it is **pure** —
+/// and the report is built exactly as an applying run would build it; only the on-disk
+/// application (the byte write, the relocation move, the file-state re-baseline) is suppressed.
 pub(crate) fn migrate_committed_corpus(
     pack: &dyn PackSource,
     repo_root: &Path,
     jigc_root: &Path,
     doctypes: &[DoctypeMigration],
+    options: Options,
 ) -> Result<CorpusMigrationReport> {
     let mut report = CorpusMigrationReport {
         migrated: Vec::new(),
@@ -491,39 +536,47 @@ pub(crate) fn migrate_committed_corpus(
                     continue;
                 }
 
-                // WRITE-BEFORE-REMOVE (`corpus-migration.md` → Relocation: write-to-`to`
-                // precedes remove-`from`, so an abort between strands neither copy). The
-                // gated v2 bytes land at the destination **first** — a fault here leaves the
-                // source at `id` untouched on disk (never zero copies). Only once `to`
-                // exists is the old-home source removed and the file-state re-keyed, one
-                // atomic per-doc unit.
-                engine::state::persist(&repo_root.join(target), v2.as_bytes())
-                    .with_context(|| format!("writing the migrated doc {target}"))?;
-                if moved {
-                    std::fs::remove_file(repo_root.join(id))
-                        .with_context(|| format!("removing the relocated source {id}"))?;
-                }
+                // THE DRY-RUN GATE (`corpus-migration.md` → The commit boundary: `--dry-run`).
+                // Everything above is pure (the fold, the conformance gate, the collision
+                // adjudication read from disk); everything below **applies** the outcome —
+                // the byte write, the relocation move, the file-state re-baseline. `--dry-run`
+                // suppresses exactly that, so the doc is reported migrated and the disk is
+                // left byte-identical.
+                if options.writes() {
+                    // WRITE-BEFORE-REMOVE (`corpus-migration.md` → Relocation: write-to-`to`
+                    // precedes remove-`from`, so an abort between strands neither copy). The
+                    // gated v2 bytes land at the destination **first** — a fault here leaves
+                    // the source at `id` untouched on disk (never zero copies). Only once `to`
+                    // exists is the old-home source removed and the file-state re-keyed, one
+                    // atomic per-doc unit.
+                    engine::state::persist(&repo_root.join(target), v2.as_bytes())
+                        .with_context(|| format!("writing the migrated doc {target}"))?;
+                    if moved {
+                        std::fs::remove_file(repo_root.join(id))
+                            .with_context(|| format!("removing the relocated source {id}"))?;
+                    }
 
-                // Re-baseline / re-key the file-state, paired **per doc** with this doc's
-                // write so the on-disk baseline always matches the on-disk files (the
-                // per-doc-gated transaction granularity — `corpus-migration.md` → Migration
-                // atomicity / WIP-safety; `reconciliation.md` → the file-state re-key). A
-                // **moved**, tracked doc drops its old-home key and re-registers at the
-                // destination `from → to`, so the instance re-registers and none is orphaned;
-                // an in-place tracked doc re-hashes at its key; an untracked doc adopts
-                // nothing (the migration tracks nothing it didn't already track).
-                if moved {
-                    if record.forget(id) {
-                        record.record(target.clone(), hash_bytes(v2.as_bytes()));
+                    // Re-baseline / re-key the file-state, paired **per doc** with this doc's
+                    // write so the on-disk baseline always matches the on-disk files (the
+                    // per-doc-gated transaction granularity — `corpus-migration.md` → Migration
+                    // atomicity / WIP-safety; `reconciliation.md` → the file-state re-key). A
+                    // **moved**, tracked doc drops its old-home key and re-registers at the
+                    // destination `from → to`, so the instance re-registers and none is
+                    // orphaned; an in-place tracked doc re-hashes at its key; an untracked doc
+                    // adopts nothing (the migration tracks nothing it didn't already track).
+                    if moved {
+                        if record.forget(id) {
+                            record.record(target.clone(), hash_bytes(v2.as_bytes()));
+                            record.save(jigc_root).with_context(|| {
+                                format!("saving the file-state record at {jigc_root:?}")
+                            })?;
+                        }
+                    } else if record.get(id).is_some() {
+                        record.record(id.clone(), hash_bytes(v2.as_bytes()));
                         record.save(jigc_root).with_context(|| {
                             format!("saving the file-state record at {jigc_root:?}")
                         })?;
                     }
-                } else if record.get(id).is_some() {
-                    record.record(id.clone(), hash_bytes(v2.as_bytes()));
-                    record.save(jigc_root).with_context(|| {
-                        format!("saving the file-state record at {jigc_root:?}")
-                    })?;
                 }
                 // A completed interrupted move: the destination was *itself* enumerated by the
                 // union and reported `already-current` (it is stamped current). The completion
@@ -1094,9 +1147,14 @@ sections:
         // The stamp-absent (v0) path derives `from = strip_stamp(to)` internally and never
         // touches the snapshot store, so the pack is unused here.
         let pack = crate::pack::EmbeddedPack::new();
-        let report =
-            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 1)])
-                .expect("migration runs");
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 1)],
+            Options::default(),
+        )
+        .expect("migration runs");
 
         assert_eq!(report.migrated, vec!["notes/a-note.md".to_string()]);
         assert!(
@@ -1155,8 +1213,14 @@ sections:
         write_doc(repo.path(), "notes/done-note.md", &stamped);
 
         let pack = crate::pack::EmbeddedPack::new();
-        let report = migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to, 1)])
-            .expect("migration runs");
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 1)],
+            Options::default(),
+        )
+        .expect("migration runs");
 
         assert_eq!(
             report.already_current,
@@ -1223,7 +1287,13 @@ sections:
         fs::create_dir_all(repo.path().join("notes/b.md.tmp")).expect("occupy temp sibling");
 
         let pack = crate::pack::EmbeddedPack::new();
-        let result = migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to, 1)]);
+        let result = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 1)],
+            Options::default(),
+        );
         assert!(
             result.is_err(),
             "the aborted write surfaces as an error: {result:?}"
@@ -1316,9 +1386,14 @@ sections:
         );
         write_doc(repo.path(), "memos/cache-memo.md", &v1);
 
-        let blocked_report =
-            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
-                .expect("migration runs");
+        let blocked_report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
 
         assert!(
             blocked_report.migrated.is_empty(),
@@ -1378,9 +1453,14 @@ sections:
         );
         write_doc(repo.path(), "memos/cache-memo.md", &authored);
 
-        let flipped_report =
-            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
-                .expect("re-migration runs");
+        let flipped_report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("re-migration runs");
 
         assert_eq!(
             flipped_report.migrated,
@@ -1479,9 +1559,14 @@ sections:
         );
         write_doc(repo.path(), "cards/first-card.md", &v1);
 
-        let report =
-            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
-                .expect("migration runs");
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
 
         // (d) detector/verb agree: a below-version doc is MIGRATED, never already-current.
         assert_eq!(
@@ -1509,9 +1594,14 @@ sections:
         assert_conformant_and_stable(&to, &migrated);
 
         // (c) idempotent: a re-run finds the now-stamp-2 doc already current, byte-untouched.
-        let rerun =
-            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
-                .expect("re-migration runs");
+        let rerun = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("re-migration runs");
         assert_eq!(
             rerun.already_current,
             vec!["cards/first-card.md".to_string()],
@@ -1568,8 +1658,14 @@ sections:
         );
         write_doc(repo.path(), "cards/first-card.md", &v1);
 
-        let report = migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to, 2)])
-            .expect("migration runs");
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
 
         assert!(
             report.migrated.is_empty() && report.already_current.is_empty(),
@@ -1682,9 +1778,14 @@ sections:
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
         seed.save(&jigc_root).expect("seed the baseline");
 
-        let report =
-            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
-                .expect("migration runs");
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
 
         // (a) the walk found+moved the doc at the from home; the report names the new home.
         assert_eq!(
@@ -1765,7 +1866,13 @@ sections:
         // move aborts AT the write, BEFORE the source removal (write-before-remove).
         fs::create_dir_all(repo.path().join("CHANGELOG.md.tmp")).expect("occupy temp sibling");
 
-        let result = migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to, 2)]);
+        let result = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 2)],
+            Options::default(),
+        );
         assert!(
             result.is_err(),
             "the aborted write surfaces as an error: {result:?}"
@@ -1901,9 +2008,14 @@ sections:
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
         seed.save(&jigc_root).expect("seed the baseline");
 
-        let report =
-            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
-                .expect("migration runs");
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
 
         assert_eq!(
             report.migrated,

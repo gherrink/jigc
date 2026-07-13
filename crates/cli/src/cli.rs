@@ -185,7 +185,19 @@ pub enum Command {
     /// conformance gate (the stamp flips last). A prose-needing change is routed to
     /// the agent to author, then re-run. Detect-with `jigc validate`; this migrates.
     /// Disjoint from `jigc migrate` (foreign adoption) and `jigc upgrade` (config).
-    MigrateCorpus,
+    /// The verb **lands its own migration** in a pathspec-limited commit; `--no-commit`
+    /// leaves the writes unstaged, `--dry-run` writes nothing at all.
+    MigrateCorpus {
+        /// Migrate and write, but stage and commit **nothing** — leave the migration in the
+        /// working tree, to review it or fold it into a larger commit yourself.
+        #[arg(long = "no-commit")]
+        no_commit: bool,
+
+        /// Print the triage report the migration *would* produce and change nothing: no
+        /// migrated bytes, no relocation move, no commit. Implies `--no-commit`.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+    },
 
     /// Drop a single managed doc from jigc's index and state — `jigc unmanage
     /// <path>` removes its edges and file-state baseline, leaving the file bytes on
@@ -326,7 +338,9 @@ impl Cli {
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
             Command::Migrate { path, r#as } => run_migrate(self.format, &path, &r#as),
-            Command::MigrateCorpus => run_migrate_corpus(self.format),
+            Command::MigrateCorpus { no_commit, dry_run } => {
+                run_migrate_corpus(self.format, migrate_corpus::Options { no_commit, dry_run })
+            }
             Command::Unmanage { path } => run_unmanage(self.format, &path),
             Command::Rename { old_slug, to, slug } => {
                 run_rename(self.format, &old_slug, &to, slug.as_deref())
@@ -553,7 +567,11 @@ fn run_migrate(format: Format, path: &str, doctype: &str) -> Outcome {
 /// expected interim state of the detect→block→migrate loop, not a failure). A locator error
 /// (no repo / no project layer) routes to stderr and exits non-zero
 /// (`design/corpus-migration.md` → Acceptance flows; `design/worked-examples.md` → flow 35).
-fn run_migrate_corpus(format: Format) -> Outcome {
+///
+/// `options` carries the commit boundary's two opt-outs (`design/corpus-migration.md` → The
+/// commit boundary): `--no-commit` (write, land nothing) and `--dry-run` (write nothing, land
+/// nothing — the report an applying run would print).
+fn run_migrate_corpus(format: Format, options: migrate_corpus::Options) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -561,7 +579,7 @@ fn run_migrate_corpus(format: Format) -> Outcome {
             return Outcome::failure();
         }
     };
-    migrate_corpus::run(&cwd, format)
+    migrate_corpus::run(&cwd, format, options)
 }
 
 /// Run `jigc relocate <type> --from <prior-home>` against the current working directory: the
@@ -1320,11 +1338,58 @@ mod cli_parse {
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
+    /// The bare verb, and the commit boundary's two opt-outs (M42 Inc-1 T3): `--no-commit`
+    /// (write, land nothing) and `--dry-run` (write nothing) — with `--dry-run`'s **implication**
+    /// pinned: a dry run never commits, because nothing was written for it to stage.
     #[test]
-    fn migrate_corpus_parses() {
+    fn migrate_corpus_parses_with_the_commit_boundary_flags() {
         let cli =
             Cli::try_parse_from(["jigc", "migrate-corpus"]).expect("`jigc migrate-corpus` parses");
-        assert_eq!(cli.command, Command::MigrateCorpus);
+        assert_eq!(
+            cli.command,
+            Command::MigrateCorpus {
+                no_commit: false,
+                dry_run: false,
+            },
+        );
+        // The default applies AND lands its writes — the standing behaviour.
+        assert!(migrate_corpus::Options::default().writes());
+        assert!(migrate_corpus::Options::default().commits());
+
+        let cli = Cli::try_parse_from(["jigc", "migrate-corpus", "--no-commit"])
+            .expect("`jigc migrate-corpus --no-commit` parses");
+        assert_eq!(
+            cli.command,
+            Command::MigrateCorpus {
+                no_commit: true,
+                dry_run: false,
+            },
+        );
+        let opts = migrate_corpus::Options {
+            no_commit: true,
+            dry_run: false,
+        };
+        assert!(opts.writes(), "`--no-commit` still writes the migration");
+        assert!(!opts.commits(), "`--no-commit` lands nothing");
+
+        let cli = Cli::try_parse_from(["jigc", "migrate-corpus", "--dry-run"])
+            .expect("`jigc migrate-corpus --dry-run` parses");
+        assert_eq!(
+            cli.command,
+            Command::MigrateCorpus {
+                no_commit: false,
+                dry_run: true,
+            },
+        );
+        let opts = migrate_corpus::Options {
+            no_commit: false,
+            dry_run: true,
+        };
+        assert!(!opts.writes(), "`--dry-run` suppresses the write");
+        assert!(
+            !opts.commits(),
+            "`--dry-run` IMPLIES no commit — nothing was written to stage",
+        );
     }
 
     #[test]

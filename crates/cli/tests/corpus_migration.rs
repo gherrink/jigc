@@ -756,6 +756,163 @@ fn migrate_corpus_fails_loudly_when_a_pre_commit_hook_rejects() {
     );
 }
 
+/// The `.jigc` file-state record's raw bytes (`.jigc/state/file-state.json`) — the baseline
+/// the migration flips per written doc. `None` before the record has ever been written.
+fn file_state(repo: &Path) -> Option<String> {
+    fs::read_to_string(repo.join(".jigc").join("state").join("file-state.json")).ok()
+}
+
+/// **M42 Inc-1 T3 — `--no-commit`.** The opt-out of T2's commit boundary, for an operator who
+/// wants to review the migration or fold it into a larger commit: the verb still **migrates**
+/// (bytes written, the relocation move made), but stages and commits **nothing** — the tree is
+/// left exactly as `HEAD`-today's git-free verb left it (an unstaged delete of the old home +
+/// an untracked file at the placement home), and `HEAD` is unchanged.
+#[test]
+fn migrate_corpus_no_commit_migrates_but_lands_nothing() {
+    let repo = TempDir::new("no-commit");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_v1_changelog(repo.path());
+    let base = head(repo.path());
+
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus", "--no-commit"]);
+    let out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(&migrate, "`jigc migrate-corpus --no-commit`");
+    assert!(
+        out.contains("1 migrated") && out.contains("CHANGELOG.md"),
+        "`--no-commit` still MIGRATES — it only declines to land it; stdout:\n{out}",
+    );
+
+    // The migration really happened on disk: the doc relocated + re-stamped v2.
+    assert!(
+        !repo.path().join("docs/changelog/changelog.md").exists(),
+        "the relocation move still happened under `--no-commit`; stdout:\n{out}",
+    );
+    let moved = fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md");
+    assert!(
+        moved.starts_with("---\nschema-version: 2\n---\n\n# Changelog\n"),
+        "`--no-commit` writes the migrated bytes; got:\n{moved}",
+    );
+
+    // But nothing was staged and nothing was committed: the tree carries BOTH halves of the
+    // move as working-tree changes — exactly the state the git-free verb left behind.
+    let status = porcelain(repo.path());
+    assert!(
+        status.contains("?? CHANGELOG.md"),
+        "`--no-commit` leaves the relocated file untracked (nothing staged); status:\n{status}",
+    );
+    assert!(
+        status.contains("D docs/changelog/changelog.md"),
+        "`--no-commit` leaves the old-home delete unstaged; status:\n{status}",
+    );
+    assert_eq!(
+        head(repo.path()),
+        base,
+        "`--no-commit` commits nothing — HEAD is unchanged; stdout:\n{out}",
+    );
+    assert!(
+        !out.contains("committed"),
+        "`--no-commit` names no landed commit; stdout:\n{out}",
+    );
+}
+
+/// **M42 Inc-1 T3 — `--dry-run`.** There is no operator-facing `persist` *stage* to stop before
+/// (`engine::state::persist` writes the bytes and flips the file-state baseline in one motion),
+/// so dry-run is defined as **suppressing the write**: no bytes, no relocation move, no
+/// file-state flip — and, necessarily, no commit (there is nothing on disk to stage). The
+/// triage report is produced either way, and it is the **identical** report the applying run
+/// prints — asserted byte-for-byte against `--no-commit`, the run that does exactly what
+/// dry-run describes.
+///
+/// The file-state suppression is proven **non-vacuously**: a v0 ADR is `ingest`ed first, so the
+/// record genuinely carries a baseline the applying run re-hashes — and the final assertion
+/// shows the record *does* move once the migration really runs.
+#[test]
+fn migrate_corpus_dry_run_writes_nothing_and_commits_nothing() {
+    let repo = TempDir::new("dry-run");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_v1_changelog(repo.path());
+    commit_adr(repo.path(), "alpha-decision", "Alpha decision", None);
+    // Adopt the ADR, so the file-state record carries a baseline the real migration re-hashes.
+    assert_ok(
+        &jigc(repo.path(), home.path(), &["ingest"]),
+        "`jigc ingest`",
+    );
+
+    let old_home = repo.path().join("docs/changelog/changelog.md");
+    let before_old_home = fs::read_to_string(&old_home).expect("read the v1 changelog");
+    let before_adr = fs::read_to_string(adr_path(repo.path(), "alpha-decision")).expect("read adr");
+    let before_state = file_state(repo.path()).expect("the file-state record exists after ingest");
+    assert!(
+        before_state.contains("alpha-decision"),
+        "precondition: the ingested ADR carries a file-state baseline; got:\n{before_state}",
+    );
+    let base = head(repo.path());
+    let before_status = porcelain(repo.path());
+
+    // DRY RUN — the report is produced; nothing is written, moved, re-baselined or committed.
+    let dry = jigc(repo.path(), home.path(), &["migrate-corpus", "--dry-run"]);
+    let dry_out = String::from_utf8_lossy(&dry.stdout).into_owned();
+    assert_ok(&dry, "`jigc migrate-corpus --dry-run`");
+    assert!(
+        dry_out.contains("2 migrated") && dry_out.contains("CHANGELOG.md"),
+        "the dry run reports the migration it WOULD make; stdout:\n{dry_out}",
+    );
+
+    assert_eq!(
+        fs::read_to_string(&old_home).expect("the old home still holds the v1 changelog"),
+        before_old_home,
+        "`--dry-run` writes nothing: the old home is byte-identical, and still there",
+    );
+    assert!(
+        !repo.path().join("CHANGELOG.md").exists(),
+        "`--dry-run` moves nothing: the placement home was never written; stdout:\n{dry_out}",
+    );
+    assert_eq!(
+        fs::read_to_string(adr_path(repo.path(), "alpha-decision")).expect("read adr"),
+        before_adr,
+        "`--dry-run` leaves the in-place ADR byte-identical (unstamped)",
+    );
+    assert_eq!(
+        file_state(repo.path()).expect("the file-state record"),
+        before_state,
+        "`--dry-run` never flips the file-state baseline",
+    );
+    assert_eq!(
+        head(repo.path()),
+        base,
+        "`--dry-run` implies no commit — HEAD is unchanged; stdout:\n{dry_out}",
+    );
+    assert_eq!(
+        porcelain(repo.path()),
+        before_status,
+        "`--dry-run` leaves the working tree exactly as it found it; stdout:\n{dry_out}",
+    );
+
+    // The report is the IDENTICAL triage report the applying run prints (`--no-commit` is the
+    // run that does exactly what the dry run described, and lands nothing either).
+    let real = jigc(repo.path(), home.path(), &["migrate-corpus", "--no-commit"]);
+    let real_out = String::from_utf8_lossy(&real.stdout).into_owned();
+    assert_ok(&real, "`jigc migrate-corpus --no-commit` after the dry run");
+    assert_eq!(
+        dry_out, real_out,
+        "the dry run prints the identical triage report to the run that applies it",
+    );
+
+    // Non-vacuity: the applying run DOES move the bytes and the file-state baseline the dry
+    // run left untouched.
+    assert!(
+        repo.path().join("CHANGELOG.md").exists() && !old_home.exists(),
+        "the applying run really relocates the changelog",
+    );
+    assert_ne!(
+        file_state(repo.path()).expect("the file-state record"),
+        before_state,
+        "the applying run DOES flip the file-state baseline — the dry-run assertion is not vacuous",
+    );
+}
+
 /// The false-positive guard: a corpus already stamped at the current version is a clean
 /// no-op — `jigc migrate-corpus` migrates nothing and reports the doc already current.
 #[test]
