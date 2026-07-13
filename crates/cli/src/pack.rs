@@ -466,7 +466,7 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
         eprintln!("warning: {err:#}");
         false
     });
-    let pack = make_pack_from_marker(std::env::var_os(PACK_DIR_ENV), listed, compose_methodology);
+    let pack = make_pack_from_marker(std::env::var_os(PACK_DIR_ENV), listed, compose_methodology)?;
     assert_schema_freeze(pack.as_ref())?;
     Ok(pack)
 }
@@ -520,13 +520,28 @@ fn discover_compose_marker() -> anyhow::Result<bool> {
 /// FIRST = dev-highest**, the inverse of the listed>base convention, so the real
 /// `commit`/`default-workflow` collisions resolve to dev's bytes (`design/multi-pack.md`
 /// → Embedded second pack: dev-highest). This path composes **exactly**
-/// `[dev ▸ methodology]`: any listed packs stay **inert** — the M21 bounded rule
-/// (marker + additional listed packs is out of scope), not a new feature.
+/// `[dev ▸ methodology]`.
+///
+/// **Marker set *and* a non-empty `packs:` list is a loud refusal** (M42 Inc 6 fix).
+/// Combining the marker with listed filesystem packs is **out of scope** by design —
+/// a listed pack's precedence against the two in-binary packs is a deferred
+/// composition (`design/multi-pack.md` → Embedded second pack: "combining the marker
+/// with additional listed packs is out of M21 scope"). It used to be honored by
+/// **silently discarding the whole listed set**, which is the lying-route class: in a
+/// `jigc setup`-initialized project (setup writes the marker into *every* project's
+/// `packs.yaml`) an operator's listed pack was never loaded, so a drifted frozen
+/// schema in it had nothing to check it and every door — including the committing
+/// `jigc milestone create` — ran at exit 0. A pack-set the loader cannot honor is now
+/// an error carrying both exits (drop the marker, or drop the list); the *silent* drop
+/// is gone. `jigc setup` no longer manufactures the combination
+/// (`crate::setup::write_compose_marker`).
 ///
 /// **`JIGC_PACK_DIR` supersedes the marker.** A non-empty `JIGC_PACK_DIR` is the
 /// explicit/dogfood channel: when set it selects the base and the marker does **not**
 /// fire, so the composition is exactly the pre-M21 `make_pack_from` result (e.g.
-/// methodology-alone for the dogfood). `design/worked-examples.md` flow 15.
+/// methodology-alone for the dogfood) — and, the marker being inert, listed packs
+/// compose over it exactly as on the M14 path (no refusal: nothing is dropped).
+/// `design/worked-examples.md` flow 15.
 ///
 /// **Marker absent/false** is the M14 path delegated to [`make_pack_from`]: listed
 /// packs first (highest-precedence), base last (`JIGC_PACK_DIR`/`EmbeddedPack`). With
@@ -536,7 +551,7 @@ fn make_pack_from_marker(
     pack_dir: Option<OsString>,
     listed_dirs: Vec<PathBuf>,
     compose_methodology: bool,
-) -> Box<dyn PackSource> {
+) -> anyhow::Result<Box<dyn PackSource>> {
     // `JIGC_PACK_DIR` is the explicit/dogfood channel and supersedes the marker:
     // when it selects a base the embedded `[dev ▸ methodology]` composition stays
     // inert (`design/multi-pack.md` → Embedded second pack; `worked-examples.md`
@@ -544,13 +559,31 @@ fn make_pack_from_marker(
     // through to the embedded base, matching `make_base_pack`'s own empty handling.
     let explicit_base = pack_dir.as_ref().is_some_and(|dir| !dir.is_empty());
     if compose_methodology && !explicit_base {
+        if !listed_dirs.is_empty() {
+            let listed = listed_dirs
+                .iter()
+                .map(|dir| dir.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            anyhow::bail!(
+                "unsupported pack-set in `.jigc/config/packs.yaml`: \
+                 `compose-embedded-methodology: true` cannot be combined with a `packs:` list \
+                 (listed: {listed}) — the marker composes the two in-binary packs \
+                 `[dev ▸ methodology]`, and a listed pack's precedence against that pair is a \
+                 deferred composition (`design/multi-pack.md` → Embedded second pack), so \
+                 honoring the marker would drop every listed pack\n\
+                 route: keep the listed packs by removing `compose-embedded-methodology: true` \
+                 from `.jigc/config/packs.yaml`, or keep the embedded `[dev ▸ methodology]` pair \
+                 by removing the `packs:` list"
+            );
+        }
         // Exactly `[dev ▸ methodology]`, both in-binary; dev first = dev-highest.
-        return Box::new(CompositePack::new(vec![
+        return Ok(Box::new(CompositePack::new(vec![
             Box::new(EmbeddedPack::new()),
             Box::new(EmbeddedPack::methodology()),
-        ]));
+        ])));
     }
-    make_pack_from(pack_dir, listed_dirs)
+    Ok(make_pack_from(pack_dir, listed_dirs))
 }
 
 /// The marker-free testable core: assemble the M14 composite from the `JIGC_PACK_DIR`
@@ -2370,7 +2403,8 @@ mod tests {
         /// release). Proves the two-embedded-pack path the setup marker wires.
         #[test]
         fn marker_composes_the_embedded_dev_methodology_pair() {
-            let pack = make_pack_from_marker(None, Vec::new(), true);
+            let pack = make_pack_from_marker(None, Vec::new(), true)
+                .expect("the marker composite assembles");
 
             // The methodology union resolves through the composite ...
             for id in ["planning", "roadmap"] {
@@ -2412,7 +2446,8 @@ mod tests {
         /// `dev-task`). Byte-equality against the dev base's own `read` is the proof.
         #[test]
         fn marker_resolves_collisions_dev_highest() {
-            let pack = make_pack_from_marker(None, Vec::new(), true);
+            let pack = make_pack_from_marker(None, Vec::new(), true)
+                .expect("the marker composite assembles");
             let dev = EmbeddedPack::new();
 
             let commit = pack
@@ -2453,7 +2488,8 @@ mod tests {
         /// green).
         #[test]
         fn marker_absent_is_the_base_only_floor() {
-            let pack = make_pack_from_marker(None, Vec::new(), false);
+            let pack = make_pack_from_marker(None, Vec::new(), false)
+                .expect("the no-marker composite assembles");
             let embedded = EmbeddedPack::new();
 
             assert_eq!(
@@ -2505,7 +2541,8 @@ mod tests {
 
             // Marker is set (`true`), but the base comes from `JIGC_PACK_DIR`.
             let pack =
-                make_pack_from_marker(Some(base.path().as_os_str().to_owned()), Vec::new(), true);
+                make_pack_from_marker(Some(base.path().as_os_str().to_owned()), Vec::new(), true)
+                    .expect("the JIGC_PACK_DIR composite assembles");
 
             // The `JIGC_PACK_DIR` base's own workflow resolves through the composite ...
             assert_eq!(
@@ -2531,6 +2568,69 @@ mod tests {
                 pack.read(PackResourceKind::Workflows, &ResourceId::from("planning"))
                     .is_err(),
                 "the marker must not fire under `JIGC_PACK_DIR`: methodology's `planning` must be absent",
+            );
+        }
+
+        /// **The marker never silently drops a listed pack** (M42 Inc 6). The marker +
+        /// a non-empty `packs:` list is the combination `design/multi-pack.md` puts out
+        /// of scope; it used to resolve by discarding the whole listed set — and since
+        /// `jigc setup` writes the marker into **every** project's `packs.yaml`, that
+        /// made an operator's listed pack inert in the shipped topology (its drifted
+        /// frozen schema then had nothing to check it). It is now an **error** naming
+        /// both the marker and the dropped packs, with the two exits as the route.
+        #[test]
+        fn marker_plus_a_listed_pack_is_refused_not_silently_dropped() {
+            let listed = TempDir::new();
+            let Err(err) = make_pack_from_marker(None, vec![listed.path().to_path_buf()], true)
+            else {
+                panic!(
+                    "marker + a listed pack must not assemble — the listed pack would be dropped"
+                );
+            };
+            let msg = format!("{err:#}");
+
+            assert!(
+                msg.contains("compose-embedded-methodology") && msg.contains("packs.yaml"),
+                "the refusal must name the marker and the file that carries it; got:\n{msg}",
+            );
+            assert!(
+                msg.contains(&listed.path().display().to_string()),
+                "the refusal must name the listed pack it refuses to drop; got:\n{msg}",
+            );
+            assert!(
+                msg.contains("route:"),
+                "the refusal must carry a route (drop the marker, or drop the list); got:\n{msg}",
+            );
+        }
+
+        /// The refusal is scoped to the arm that would *drop* something: under an
+        /// explicit `JIGC_PACK_DIR` the marker is already inert
+        /// ([`pack_dir_supersedes_the_marker`]), so listed packs compose over that base
+        /// on the plain M14 path — nothing is discarded, nothing is refused.
+        #[test]
+        fn marker_plus_listed_under_pack_dir_still_composes_the_m14_path() {
+            let base = TempDir::new();
+            let listed = TempDir::new();
+            let wf = listed.path().join("workflows");
+            std::fs::create_dir_all(&wf).expect("mk workflows/");
+            std::fs::write(wf.join("listed-only.yaml"), b"when: from listed\n")
+                .expect("seed listed wf");
+
+            let pack = make_pack_from_marker(
+                Some(base.path().as_os_str().to_owned()),
+                vec![listed.path().to_path_buf()],
+                true,
+            )
+            .expect("`JIGC_PACK_DIR` makes the marker inert, so the listed pack composes");
+
+            assert_eq!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("listed-only"),
+                )
+                .expect("the listed pack's workflow reads through the composite"),
+                b"when: from listed\n",
+                "the listed pack must compose over the `JIGC_PACK_DIR` base",
             );
         }
 

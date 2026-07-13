@@ -774,10 +774,11 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     //     embedded methodology pack as `[dev ▸ methodology]`, so a clean `setup` gives
     //     a real project the dev+methodology surface out of the box (M21,
     //     `design/multi-pack.md` → Embedded second pack + setup auto-wiring). A repo-
-    //     local, non-destructive parse-mutate-serialize: a hand-written `packs:` list
-    //     is preserved and the marker added; idempotent (a second setup is a byte-
-    //     identical no-op).
-    write_compose_marker(repo_root).map_err(|err| {
+    //     local, non-destructive parse-mutate-serialize; idempotent (a second setup is
+    //     a byte-identical no-op). A project that already declares a `packs:` list keeps
+    //     it and the marker is NOT written (the two cannot be combined — see
+    //     [`write_compose_marker`]); setup says so rather than silently choosing.
+    let marker_wired = write_compose_marker(repo_root).map_err(|err| {
         Finding::block(
             "setup.compose-marker",
             format!(
@@ -786,6 +787,15 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
             "ensure `.jigc/config/` is writable, then re-run `jigc setup`",
         )
     })?;
+    if !marker_wired {
+        eprintln!(
+            "warning: `.jigc/config/packs.yaml` already lists packs, so the embedded methodology \
+             pack was left unwired (a `packs:` list cannot be combined with \
+             `compose-embedded-methodology: true` — `design/multi-pack.md` → Embedded second pack)\n\
+             route: to compose the embedded `[dev ▸ methodology]` pair instead, remove the \
+             `packs:` list from `.jigc/config/packs.yaml` and re-run `jigc setup`"
+        );
+    }
 
     // 2c. Write the committed binary-provenance stamp (`design/storage.md` → Store
     //     provenance): a one-line `.jigc/version` recording which `jigc` build wrote the
@@ -1272,18 +1282,35 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
 /// The compose-marker key `pack::read_compose_marker` reads from `packs.yaml`.
 const COMPOSE_MARKER_KEY: &str = "compose-embedded-methodology";
 
+/// The listed-pack key `pack::read_pack_list` reads from the same `packs.yaml` — the
+/// M14 pack-set the compose marker cannot be combined with (see
+/// [`write_compose_marker`]).
+const PACKS_LIST_KEY: &str = "packs";
+
 /// Write the `compose-embedded-methodology: true` marker into the project layer's
-/// `<repo_root>/.jigc/config/packs.yaml` (step 2b of [`install`]).
+/// `<repo_root>/.jigc/config/packs.yaml` (step 2b of [`install`]). Returns whether the
+/// marker is wired — `false` means it was **deliberately not written** (below).
 ///
-/// **Non-destructive parse-mutate-serialize:** an existing `packs.yaml` (e.g. a
-/// hand-written `packs:` list) is parsed, the marker key is set to `true` alongside
-/// whatever it already carries, and the mapping is re-serialized — so the listed
-/// packs survive. An absent file is created carrying just the marker.
+/// **A non-empty `packs:` list wins: the marker is not written** (M42 Inc 6 fix). The
+/// marker composes the two *in-binary* packs and, per `design/multi-pack.md` →
+/// Embedded second pack, cannot be combined with listed filesystem packs — the loader
+/// refuses that pack-set loudly ([`crate::pack::make_pack`]). Writing the marker over
+/// an operator's hand-written list therefore **manufactured an unsupported
+/// configuration**: it used to make the listed packs silently inert (a drifted frozen
+/// schema in them went unchecked at every door), and under the loader's refusal it
+/// would brick every command in the project. So setup preserves the operator's
+/// declared pack-set and leaves the embedded pair unwired; [`install`] says so on
+/// stderr with the route to the other choice.
+///
+/// **Non-destructive:** an absent file is created carrying just the marker; an
+/// existing marker-only / list-free `packs.yaml` is parsed and the marker set
+/// alongside whatever else it carries (parse-mutate-serialize, the human's other keys
+/// survive). A malformed `packs.yaml` is surfaced, never clobbered.
 ///
 /// **Idempotent:** the serialized bytes are written only when they differ from what
 /// is on disk, so a second `setup` over an already-marked file is a byte-identical
 /// no-op (`serde_yaml_ng` serialization of a stable mapping is deterministic).
-fn write_compose_marker(repo_root: &Path) -> std::io::Result<()> {
+fn write_compose_marker(repo_root: &Path) -> std::io::Result<bool> {
     use serde_yaml_ng::{Mapping, Value};
 
     let config_dir = repo_root.join(".jigc").join("config");
@@ -1309,6 +1336,16 @@ fn write_compose_marker(repo_root: &Path) -> std::io::Result<()> {
         Err(e) => return Err(e),
     };
 
+    // The operator's declared pack-set is not setup's to override: a non-empty `packs:`
+    // list and the marker cannot both hold, so leave the file exactly as authored.
+    let lists_packs = mapping
+        .get(Value::from(PACKS_LIST_KEY))
+        .and_then(Value::as_sequence)
+        .is_some_and(|packs| !packs.is_empty());
+    if lists_packs {
+        return Ok(false);
+    }
+
     mapping.insert(Value::from(COMPOSE_MARKER_KEY), Value::Bool(true));
 
     let mut rendered = serde_yaml_ng::to_string(&Value::Mapping(mapping))
@@ -1321,7 +1358,7 @@ fn write_compose_marker(repo_root: &Path) -> std::io::Result<()> {
     if std::fs::read_to_string(&path).ok().as_deref() != Some(rendered.as_str()) {
         std::fs::write(&path, rendered)?;
     }
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(test)]

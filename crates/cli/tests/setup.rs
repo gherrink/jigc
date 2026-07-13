@@ -597,7 +597,16 @@ fn mode(path: &Path) -> u32 {
 /// (M21). The write is repo-local, idempotent, and non-destructive:
 ///   (i) after setup, `packs.yaml` carries `compose-embedded-methodology: true`;
 ///   (ii) a second setup leaves the file byte-identical (idempotent no-op);
-///   (iii) a pre-seeded `packs:` list survives setup, with the marker added.
+///   (iii) a pre-seeded `packs:` list survives setup **untouched, and un-marked**.
+///
+/// **(iii) reverses the M21 behavior deliberately** (M42 Inc 6). Setup used to add the
+/// marker *alongside* a hand-written `packs:` list — manufacturing the combination
+/// `design/multi-pack.md` → Embedded second pack puts out of scope, which the pack
+/// factory honored by **silently discarding the listed packs** (so an operator's pack,
+/// and any frozen-schema drift in it, went unseen at every door). The factory now
+/// refuses that pack-set, so writing the marker over a listed pack would brick the
+/// project. The operator's declared pack-set wins; setup leaves the file exactly as
+/// authored and warns on stderr with the route.
 #[test]
 fn setup_writes_compose_embedded_methodology_marker() {
     // (i) A clean setup writes the marker.
@@ -638,17 +647,15 @@ fn setup_writes_compose_embedded_methodology_marker() {
         "a second `jigc setup` must leave .jigc/config/packs.yaml byte-identical",
     );
 
-    // (iii) A pre-seeded `packs:` list survives setup (non-destructive), with the
-    //       marker added alongside it.
+    // (iii) A pre-seeded `packs:` list survives setup untouched, and the marker is NOT
+    //       added — it would make the operator's declared pack-set unloadable.
     let seeded_repo = TempDir::new("compose-marker-seeded");
     mark_repo(seeded_repo.path());
     let seeded_config = seeded_repo.path().join(".jigc/config");
     fs::create_dir_all(&seeded_config).expect("create the seeded project config dir");
-    fs::write(
-        seeded_config.join("packs.yaml"),
-        "packs:\n  - packs/local-pack\n",
-    )
-    .expect("seed a hand-written packs.yaml carrying a packs: list");
+    let seeded_bytes = "packs:\n  - packs/local-pack\n";
+    fs::write(seeded_config.join("packs.yaml"), seeded_bytes)
+        .expect("seed a hand-written packs.yaml carrying a packs: list");
 
     let out3 = run_setup(seeded_repo.path(), home.path());
     assert!(
@@ -658,24 +665,16 @@ fn setup_writes_compose_embedded_methodology_marker() {
     );
     let seeded_after = fs::read_to_string(seeded_config.join("packs.yaml"))
         .expect("the seeded packs.yaml is present after setup");
-    let seeded_parsed: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(&seeded_after).expect("the post-setup seeded packs.yaml is valid");
     assert_eq!(
-        seeded_parsed
-            .get("compose-embedded-methodology")
-            .and_then(serde_yaml_ng::Value::as_bool),
-        Some(true),
-        "setup must add the marker to a pre-seeded packs.yaml; got:\n{seeded_after}",
+        seeded_after, seeded_bytes,
+        "a pre-seeded `packs:` list must survive setup byte-identical, with NO marker added \
+         (the marker would make the listed packs unloadable); got:\n{seeded_after}",
     );
-    let listed = seeded_parsed
-        .get("packs")
-        .and_then(serde_yaml_ng::Value::as_sequence)
-        .expect("the pre-seeded `packs:` list must survive setup (non-destructive)");
+    let warning = String::from_utf8_lossy(&out3.stderr);
     assert!(
-        listed
-            .iter()
-            .any(|p| p.as_str() == Some("packs/local-pack")),
-        "the pre-seeded pack entry must survive setup; got:\n{seeded_after}",
+        warning.contains("compose-embedded-methodology") && warning.contains("route:"),
+        "setup must say it left the embedded methodology pack unwired, with the route; \
+         stderr:\n{warning}",
     );
 }
 

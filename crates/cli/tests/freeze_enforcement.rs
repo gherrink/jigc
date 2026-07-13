@@ -457,6 +457,151 @@ fn the_committing_milestone_door_blocks_and_writes_nothing() {
     );
 }
 
+/// Run the **real** `jigc setup` — the only production install path (QUICKSTART) — in
+/// `repo`. It writes `compose-embedded-methodology: true` into
+/// `.jigc/config/packs.yaml` (`crates/cli/src/setup.rs` → step 2b).
+fn run_setup(repo: &Path, home: &Path) -> std::process::Output {
+    run_listed(repo, home, &["setup"])
+}
+
+/// The topology **`jigc setup` actually creates**: the setup-written compose marker
+/// *plus* an operator-listed filesystem pack (the `packs:` list
+/// `design/multi-pack.md` → The pack-set documents). The marker composes the two
+/// in-binary packs, so a listed pack has no defined precedence against them
+/// (`design/multi-pack.md` → Embedded second pack: the combination is out of M21
+/// scope) — and it was **silently dropped**, which left the freeze gate nothing to
+/// check: over a drifted frozen `adr` every door, including the **committing**
+/// `jigc milestone create`, ran at exit 0 and landed a record commit. A declared pack
+/// the loader cannot honor must **block loudly**, never load a different pack-set than
+/// the operator declared.
+#[test]
+fn the_setup_written_marker_never_silently_drops_a_listed_pack() {
+    let repo = TempDir::new("marker-repo");
+    let home = TempDir::new("marker-home");
+    let pack = dev_pack_copy("marker-pack");
+    init_repo(repo.path());
+
+    // The production install writes the marker — assert it verbatim, so this arm is
+    // pinned to what setup really emits, not to a reconstruction of it.
+    let setup = run_setup(repo.path(), home.path());
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+    let packs_yaml = repo.path().join(".jigc").join("config").join("packs.yaml");
+    let marker = fs::read_to_string(&packs_yaml).expect("read the setup-written packs.yaml");
+    assert!(
+        marker.contains("compose-embedded-methodology: true"),
+        "`jigc setup` must write the compose marker; got:\n{marker}",
+    );
+
+    // The operator then lists their own pack alongside setup's marker bytes (verbatim),
+    // and that pack's frozen `adr` schema has drifted with no manifest bump.
+    drift_adr_schema(pack.path());
+    fs::write(
+        &packs_yaml,
+        format!("packs:\n  - {}\n{marker}", pack.path().display()),
+    )
+    .expect("list the operator's pack alongside the setup-written marker");
+
+    for args in [
+        vec!["validate"],
+        vec!["describe"],
+        vec!["doc", "schema", "adr"],
+        vec!["migrate-corpus"],
+        vec!["start"],
+        vec!["start", "--workflow", "single-task", "freeze-gate probe"],
+        vec!["milestone", "create", "drift probe"],
+    ] {
+        let out = run_listed(repo.path(), home.path(), &args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success(),
+            "`jigc {}` must exit non-zero when `packs.yaml` declares a pack the loader cannot honor; stdout:\n{}\nstderr:\n{stderr}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stdout),
+        );
+        assert!(
+            stderr.contains("compose-embedded-methodology") && stderr.contains("packs.yaml"),
+            "`jigc {}` stderr must name the unsupported `packs.yaml` combination; got:\n{stderr}",
+            args.join(" "),
+        );
+    }
+
+    // The committing door landed nothing — no record file, no record commit.
+    let records = repo.path().join("docs").join("milestone-records");
+    let landed: Vec<PathBuf> = fs::read_dir(&records)
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|ext| ext == "md"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        landed.is_empty(),
+        "a blocked `milestone create` must land no milestone-record file; found: {landed:?}",
+    );
+    let log = Command::new("git")
+        .args(["log", "--oneline"])
+        .current_dir(repo.path())
+        .output()
+        .expect("run git log");
+    let log = String::from_utf8_lossy(&log.stdout);
+    assert!(
+        !log.contains("chore(milestone): open record"),
+        "a blocked `milestone create` must land no record commit; git log:\n{log}",
+    );
+}
+
+/// The other order — `jigc setup` run **over** a project already on the M14 listed-pack
+/// path. Setup must not wire the compose marker there (the marker would make the
+/// operator's declared pack inert), so the listed pack stays loaded and the freeze gate
+/// still sees it: the same `adr` drift blocks every door naming the schema-hash
+/// mismatch. This is the independent proof the listed pack is genuinely **loaded** —
+/// the setup-written marker is what dropped it.
+#[test]
+fn setup_over_a_listed_pack_leaves_that_pack_loaded_and_freeze_checked() {
+    let repo = TempDir::new("m14-repo");
+    let home = TempDir::new("m14-home");
+    let pack = dev_pack_copy("m14-pack");
+    init_repo(repo.path());
+    list_packs(repo.path(), &[pack.path(), &methodology_pack_tree()]);
+
+    let setup = run_setup(repo.path(), home.path());
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must succeed over a project that lists packs; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+    let packs_yaml =
+        fs::read_to_string(repo.path().join(".jigc").join("config").join("packs.yaml"))
+            .expect("read packs.yaml after setup");
+    assert!(
+        !packs_yaml.contains("compose-embedded-methodology"),
+        "`jigc setup` must not wire the compose marker over a listed `packs:` list (it would make the listed packs inert); got:\n{packs_yaml}",
+    );
+    assert!(
+        packs_yaml.contains(&pack.path().display().to_string()),
+        "the operator's listed pack must survive setup; got:\n{packs_yaml}",
+    );
+
+    // The listed pack is really loaded: drift its frozen `adr` and the gate fires.
+    drift_adr_schema(pack.path());
+    let out = run_listed(repo.path(), home.path(), &["validate"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "the listed pack's drifted frozen schema must block `jigc validate`; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("schema-hash mismatch") && stderr.contains("adr"),
+        "stderr must name the drifted `adr` doctype's schema-hash mismatch; got:\n{stderr}",
+    );
+}
+
 /// The omitting context: a **manifest-less** pack is unchecked. The *same* schema
 /// drift that the manifest-bearing copy blocks composes clean once
 /// `config/schema-manifest.yaml` is dropped — proving the manifest is the gate, and
