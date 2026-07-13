@@ -1777,53 +1777,60 @@ fn compose_task_workflow(
 }
 
 /// Enumerate the committed managed store into the `store` data-value feed: for every
-/// schema that declares a `location:`, list its committed `<location>/<slug>.md`
-/// instances and key them by the location's path-facing **collection name** (the
-/// location stem, `specs/` → `specs`) — exactly the `store.specs` the
-/// `locate-from-spec` step interpolates (`workflow-dialect.md` → data-value roots;
-/// `DECISIONS.md` 2026-06-01 → the `store` root is keyed by the location stem). Each
-/// value is the committed instances as `<type>:<slug>` addresses, in sorted (stable)
-/// order.
+/// persisted schema, list its committed instances (through the shared placement-aware
+/// [`index::committed_instances`] enumerator — `storage.md` → Placement census) and key
+/// them by the doctype's path-facing **collection name**. Each value is the committed
+/// instances as `<type>:<slug>` addresses, in sorted (stable) order.
 ///
-/// This is the **CLI-locates** half of the determinism split (`VISION.md` principle
-/// #4): the CLI walks the committed working tree (the same `<location>/<slug>.md`
-/// surface `index::rebuild_committed` walks); the engine resolver consumes the fed
-/// map and does no committed-store I/O. A transient (location-less) doctype — e.g.
-/// `commit` — contributes nothing (it is never persisted as a repo file).
+/// The collection key, one per doctype ([workflow-dialect.md] → data-value roots,
+/// `store.<doctype-id>`):
+///
+/// - a **located** doctype keys by its location's trimmed **final** path component
+///   (`specs/` → `specs`, `docs/specs/` → `specs`) — exactly the `store.specs` the
+///   `locate-from-spec` step interpolates. Keying by the final segment keeps
+///   `{{store.<name>}}` stable under a `docs-root` prefix (`DECISIONS.md` 2026-06-18 —
+///   the pre-existing deviation from the doctype-id spelling, kept).
+/// - a **placement** doctype (`location: None`, homed at a literal `placement.file` —
+///   `storage.md` → Placement) keys by its **type id**: it has no location stem to key
+///   by, and its collection is the one-element `[<type>:<type>]` singleton list at that
+///   literal home (M42 — the census's 14th site: before it, the placement class fell
+///   through the transient arm below, so `{{store.changelog}}` rendered *empty text and
+///   never a finding* over a committed `CHANGELOG.md`). As with a located doctype's
+///   empty directory, an **absent** singleton contributes no key at all.
+/// - a **transient** (location-less, non-placement) doctype — e.g. `commit` — contributes
+///   nothing; it is never persisted as a repo file.
+///
+/// **One doctype per key is assumed**, not enforced — the inherited stance of the located
+/// case (`target_surface.rs` records the same assumption for `location:`); two placement
+/// doctypes cannot collide here, since a type id is unique by construction.
+///
+/// This is the **CLI-locates** half of the determinism split (`VISION.md` principle #4):
+/// the CLI walks the committed working tree (the same surface `index::rebuild_committed`
+/// walks); the engine resolver consumes the fed map and does no committed-store I/O.
 fn committed_store(
     repo_root: &Path,
     schemas: &BTreeMap<String, Schema>,
 ) -> BTreeMap<String, Vec<Address>> {
     let mut store: BTreeMap<String, Vec<Address>> = BTreeMap::new();
     for schema in schemas.values() {
-        let Some(location) = schema.location.as_deref() else {
-            continue; // a transient (location-less) type has no committed instances.
+        let key = if schema.placement.is_some() {
+            schema.ty.clone()
+        } else {
+            let Some(location) = schema.location.as_deref() else {
+                continue; // a transient (location-less) type has no committed instances.
+            };
+            let stem = location.trim_matches('/').rsplit('/').next().unwrap_or("");
+            if stem.is_empty() {
+                continue;
+            }
+            stem.to_owned()
         };
-        // The location's path-facing collection name — the trimmed **final** path
-        // component (`specs/` → `specs`, `docs/specs/` → `specs`), the key authors write
-        // as `store.<name>`. Keying by the final segment keeps `{{store.<name>}}` stable
-        // under a `docs-root` prefix (`DECISIONS.md` 2026-06-18).
-        let key = location.trim_matches('/').rsplit('/').next().unwrap_or("");
-        if key.is_empty() {
-            continue;
-        }
-        let dir = repo_root.join(location);
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue; // no committed instances of this type yet.
-        };
-        let mut slugs: Vec<String> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
-            .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_owned))
-            .collect();
-        slugs.sort();
-        let addresses: Vec<Address> = slugs
+        let addresses: Vec<Address> = index::committed_instances(repo_root, &schema.ty, schema)
             .iter()
-            .filter_map(|slug| Address::parse(&format!("{}:{slug}", schema.ty)).ok())
+            .filter_map(|(identity, _path)| Address::parse(identity).ok())
             .collect();
         if !addresses.is_empty() {
-            store.insert(key.to_owned(), addresses);
+            store.insert(key, addresses);
         }
     }
     store
@@ -3904,6 +3911,49 @@ mod tests {
         assert!(
             !store.keys().any(|k| k == "commit"),
             "a transient (location-less) doctype contributes nothing; got {store:?}",
+        );
+    }
+
+    /// **M42 Inc-2 T4 — the census's 14th site (`storage.md` → The census).** A
+    /// **placement** doctype has `location: None`, so the location-stem walk dropped it
+    /// through the transient arm: its committed singleton was invisible to the
+    /// compose-time `store` feed, and — an absent `store` key being the *empty* case,
+    /// never *unresolvable* — a workflow writing `{{store.changelog}}` composed as if no
+    /// changelog were committed, silently. The collection key of a placement doctype is
+    /// its **type id** (it has no location stem to key by), and its collection the
+    /// one-element `[<type>:<type>]` singleton list at the literal `placement.file`.
+    #[test]
+    fn committed_store_keys_a_placement_doctype_by_its_type_id() {
+        let repo = TempDir::new("committed-store-placement");
+        let pack = crate::pack::EmbeddedPack::new();
+        let resolved = no_shadow_resolved();
+        let schemas = CascadeDefs::new(&resolved, repo.path())
+            .all_schemas(&pack)
+            .expect("schemas load");
+
+        // No committed `CHANGELOG.md` yet — the placement singleton is absent, exactly as
+        // an empty location dir is: NO key (the omitting context stays inert, never a
+        // fabricated empty-slug entry).
+        let empty = committed_store(repo.path(), &schemas);
+        assert!(
+            !empty.contains_key("changelog"),
+            "an absent placement singleton must contribute no `store` key; got {empty:?}",
+        );
+
+        // The committed singleton at its literal repo-root home (`changelog`'s
+        // `placement.file` — `CHANGELOG.md`; storage.md → Placement).
+        fs::write(repo.path().join("CHANGELOG.md"), "# Changelog\n").expect("write CHANGELOG.md");
+
+        let store = committed_store(repo.path(), &schemas);
+        assert_eq!(
+            store.get("changelog").map(Vec::as_slice),
+            Some([Address::parse("changelog:changelog").expect("valid")].as_slice()),
+            "`store.changelog` lists the committed placement singleton keyed by its type id",
+        );
+        // The located enumeration is untouched by the placement branch.
+        assert!(
+            !store.contains_key("specs"),
+            "no committed specs here — the located walk is unchanged; got {store:?}",
         );
     }
 

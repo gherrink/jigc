@@ -1699,3 +1699,94 @@ fn form_d_no_task_workflow_with_no_intent_still_composes() {
         "a `creates-task: false` workflow must mint nothing — no .jigc/tasks/ dir",
     );
 }
+
+#[test]
+fn store_placement_doctype_composes_its_committed_singleton() {
+    // **M42 Inc-2 T4 — `{{store.<placement-type>}}` resolves** (`design/storage.md` →
+    // The census, the 14th site). The compose-time `store` resolver keyed only by a
+    // schema's `location` stem, so a **placement** doctype (`location: None`, homed at a
+    // literal `placement.file`) fell through the transient arm: its committed singleton
+    // was invisible, and an absent `store` key renders the *empty* case — empty text, no
+    // finding, exit 0. A pack writing `{{store.changelog}}` therefore composed a workflow
+    // reading *as if no changelog were committed*, silently. This drives the emitted
+    // bytes through the real binary: a listed filesystem pack whose step body carries
+    // `{{ store.changelog }}` must compose `> changelog:changelog` over a repo holding a
+    // committed root `CHANGELOG.md` — and, over a repo holding none, must compose inert
+    // (no address, no finding, exit 0).
+    let repo = TempDir::new("store-placement");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // A listed filesystem pack: its own command catalog (pack-local command-ref
+    // resolution), one step body reading the placement collection, and a
+    // `creates-task: false` workflow including it (nothing to mint — the step is a pure
+    // read of the committed store).
+    let listed = TempDir::new("listed-store-pack");
+    let config = listed.path().join("config");
+    let steps = listed.path().join("steps");
+    let workflows = listed.path().join("workflows");
+    fs::create_dir_all(&config).expect("mk listed config/");
+    fs::create_dir_all(&steps).expect("mk listed steps/");
+    fs::create_dir_all(&workflows).expect("mk listed workflows/");
+    fs::write(config.join("commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    fs::write(
+        steps.join("read-changelog.yaml"),
+        "The committed changelog:\n\n{{ store.changelog }}\n",
+    )
+    .expect("seed read-changelog step");
+    fs::write(
+        workflows.join("read-changelog.yaml"),
+        "---\n\
+         when: read the committed changelog singleton\n\
+         description: A read workflow surfacing the committed changelog collection.\n\
+         usage: proving `{{store.<placement-type>}}` resolves.\n\
+         creates-task: false\n\
+         ---\n\
+         {{ include: step:read-changelog }}\n",
+    )
+    .expect("seed read-changelog workflow");
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", listed.path().display()),
+    )
+    .expect("write packs.yaml naming the listed pack");
+
+    // The OMITTING context first: no committed `CHANGELOG.md` — the collection is empty,
+    // which is the *empty* case (inert), never an error.
+    let out = run_start(repo.path(), home.path(), &["--workflow", "read-changelog"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "an uncommitted placement singleton must compose inert (exit 0); got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !stdout.contains("changelog:changelog"),
+        "with no committed CHANGELOG.md the collection is empty; got:\n{stdout}",
+    );
+
+    // The committed placement singleton at its literal repo-root home.
+    fs::write(
+        repo.path().join("CHANGELOG.md"),
+        "# Changelog\n\n## Unreleased Changes\n",
+    )
+    .expect("write the committed CHANGELOG.md");
+
+    let out = run_start(repo.path(), home.path(), &["--workflow", "read-changelog"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "`--workflow read-changelog` must compose + exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    // The composed bytes carry the placement singleton as a `> <type>:<slug>` Content
+    // line — keyed by the TYPE ID (`store.changelog`), addressed by the fixed singleton
+    // slug (`changelog:changelog`).
+    assert!(
+        stdout.contains("> changelog:changelog"),
+        "`{{store.changelog}}` must surface the committed placement singleton as a \
+         `> changelog:changelog` Content line; got:\n{stdout}",
+    );
+}
