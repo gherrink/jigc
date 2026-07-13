@@ -205,13 +205,14 @@ fn fresh_clone_reseeds_cache_from_record_and_resumes() {
     let json = String::from_utf8(show.stdout).expect("utf-8 json");
     // The pinned `--format json` shape (§ The read surface): type, slug,
     // fields{base,status,schema-version} (`schema-version` joined the pinned witness
-    // fields when the M40 A1 methodology manifest froze milestone-record),
+    // fields when the M40 A1 methodology manifest froze milestone-record; **2** since the
+    // M42 Inc-7 lifecycle bump — the `status` enum widened to admit `discarded`),
     // sections{tasks:[{task-id,intent,status}…]}.
     assert!(
         json.contains("\"type\": \"milestone-record\"")
             && json.contains("\"slug\": \"cache-rework\"")
             && json.contains("\"status\": \"active\"")
-            && json.contains("\"schema-version\": \"1\"")
+            && json.contains("\"schema-version\": \"2\"")
             && json.contains("\"task-id\": \"warm-the-read-cache\"")
             && json.contains("\"intent\": \"Warm the read cache\"")
             && json.contains("\"task-id\": \"evict-cold-entries\""),

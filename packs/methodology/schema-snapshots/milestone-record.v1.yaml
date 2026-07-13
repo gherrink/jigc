@@ -1,0 +1,40 @@
+# milestone-record.v1 — the prior (pre-`discarded`) shape of the `milestone-record`
+# doctype: the `status` enum CLOSED at the two members `[active, joined]` at BOTH loci
+# (the `meta` header field and the `tasks` item block field), everything else — the
+# `location: milestone-records/` home, `id-from: title`, the `base` pin, the `task-id` /
+# `intent` item fields, and every other leaf — IDENTICAL to the current (v2) shape. This
+# is the EXACT committed v1 form a real `docs/milestone-records/<id>.md` had before the
+# M42 lifecycle bump.
+#
+# Diffed against the current (v2) milestone-record shape it classifies as exactly
+# `[EnumWidened { meta/status }, EnumWidened { tasks/status }]` — a widening is
+# recoverable from the schema pair alone and is a **byte no-op** on the corpus (`new.of ⊇
+# old.of`: every committed value is still a member and still means what it meant), so
+# `jigc migrate-corpus` value-bumps the stamp 1→2 and moves no other byte — no authored
+# map, unlike the `deferral-ledger.v1` enum-member RENAME (`ValueRemapped`), where which
+# old member maps to which new one was a semantic choice.
+#
+# The `deferral-ledger.v1.yaml` mold (the methodology pack's `load_prior_schema`
+# sourcing): a full, real, reviewable prior-schema snapshot — the determinism boundary in
+# its strongest form (two genuine declared schemas diffed, never a hand-written migration
+# recipe). See corpus-migration.md → Prior-schema sourcing + the `EnumWidened` kind;
+# team-ready-state.md → The lifecycle — active / joined / discarded (M42).
+type: milestone-record
+location: milestone-records/
+id-from: title
+description: The per-milestone team-ready state record — the shared base-SHA pin, the ordered sub-task list, and each sub-task's intent and status, resumable from a fresh clone.
+usage: a milestone is executing and its in-flight state (base, sub-tasks, statuses) must be committed and legible so a teammate or fresh session can continue it, not stranded in the gitignored workbench.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: base, type: string, set: on-create }
+      - { id: status, type: enum, of: [active, joined], set: on-transition }
+  - id: tasks
+    repeatable:
+      id-from: task-id
+      block:
+        - { id: task-id, type: string, set: on-transition }
+        - { id: intent, type: string, set: on-transition }
+        - { id: status, type: enum, of: [active, joined], set: on-transition }

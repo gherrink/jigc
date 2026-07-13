@@ -21,6 +21,20 @@
 //!            stays out of the record commit and stays staged in the index (the M30/M31
 //!            path-scoped staging discipline).
 //!
+//! **M42 Increment 7 / T1 — the schema-version 2 bump** (`design/team-ready-state.md` → The
+//! lifecycle — active / joined / discarded). The `status` enum widens to
+//! `[active, joined, discarded]` at **both** loci (the `meta` header and the `tasks` item
+//! block) so an abandoned milestone has a terminal value to flip to. A widening is a byte
+//! no-op on the corpus (`EnumWidened`, `design/corpus-migration.md`) — no committed value
+//! changes meaning — so the frozen bump adds a third proof here:
+//!
+//!   (RED-iii) **The v1 corpus migrates, and a fresh mint is born v2.** A committed
+//!             `schema-version: 1` record — carrying BOTH a `joined` and an `active` task
+//!             item, so the widening is exercised at the item locus too — migrates under
+//!             `jigc migrate-corpus` (reported migrated, exactly once) with **every byte
+//!             identical except the stamp `1` → `2`**; and `create` mints `schema-version: 2`
+//!             (RED-ii's stamp assertion, bumped).
+//!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp repo
 //! is a real `git init`, the composition is driven by the setup-written `packs.yaml` compose
 //! marker (written directly here — the exact key `make_pack` reads), and a self-cleaning
@@ -231,10 +245,11 @@ fn methodology_create_materializes_record_and_path_scoped_commits() {
     );
     // The schema-version stamp: milestone-record is manifest-frozen (M40 A1), so a fresh
     // mint must carry the stamp the store-scope validate demands — an unstamped mint is
-    // the tool creating its own blocking finding.
+    // the tool creating its own blocking finding. **Version 2 since M42 Inc 7** (the
+    // `discarded` lifecycle member widened the `status` enum at both loci).
     assert!(
-        body.contains("schema-version: 1"),
-        "the fresh record carries the `schema-version: 1` stamp its manifest-frozen \
+        body.contains("schema-version: 2"),
+        "the fresh record carries the `schema-version: 2` stamp its manifest-frozen \
          schema demands; got:\n{body}",
     );
     let (base, tasks) =
@@ -286,5 +301,145 @@ fn methodology_create_materializes_record_and_path_scoped_commits() {
         staged.lines().any(|l| l == "unrelated.txt"),
         "the pre-staged unrelated file must remain staged (path-scoped commit left it \
          untouched); got staged:\n{staged}",
+    );
+}
+
+/// (RED-iii) The **v1 → v2 corpus migration** of the `status`-enum widening, on the real
+/// binary (M42 Increment 7 / T1).
+///
+/// A committed `schema-version: 1` record — the exact byte form `create` + `add-task`
+/// minted before this bump — carrying **both** a `joined` and an `active` task item, so the
+/// widened enum is exercised at the **item** locus as well as the header. `EnumWidened` is a
+/// byte no-op on the corpus (no committed value changes meaning), so `jigc migrate-corpus`
+/// must report it migrated and leave **every byte identical except the stamp `1` → `2`** —
+/// and a re-run must report it already current, byte-untouched.
+#[test]
+fn a_committed_v1_record_migrates_to_v2_with_only_the_stamp_moving() {
+    let repo = TempDir::new("migrate");
+    let home = TempDir::new("home");
+    let head = init_repo(repo.path());
+
+    fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("mk project config");
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write compose marker");
+
+    // The v1 record, byte-for-byte as the pre-M42 binary minted it: the `base` pin (full
+    // sha + short), `status: active`, the `schema-version: 1` stamp, and two `tasks` items —
+    // one already `joined`, one still `active`.
+    let short = git(repo.path(), &["rev-parse", "--short", "HEAD"])
+        .trim()
+        .to_string();
+    let v1 = format!(
+        "---\n\
+         base: {head} {short}\n\
+         status: active\n\
+         schema-version: 1\n\
+         ---\n\
+         \n\
+         # cache-rework\n\
+         \n\
+         ## Tasks\n\
+         \n\
+         ### warm-the-read-cache  {{#warm-the-read-cache}}\n\
+         \n\
+         <!-- fields -->\n\
+         - intent: Warm the read cache\n\
+         - status: joined\n\
+         \n\
+         ### evict-cold-entries  {{#evict-cold-entries}}\n\
+         \n\
+         <!-- fields -->\n\
+         - intent: Evict the cold entries\n\
+         - status: active\n"
+    );
+    let record = repo
+        .path()
+        .join("docs")
+        .join("milestone-records")
+        .join("cache-rework.md");
+    fs::create_dir_all(record.parent().expect("record parent")).expect("mk milestone-records/");
+    fs::write(&record, &v1).expect("seed the v1 record");
+    git(repo.path(), &["add", "docs"]);
+    git(repo.path(), &["commit", "-q", "-m", "seed the v1 record"]);
+
+    // MIGRATE — the real binary, JSON report.
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["migrate-corpus", "--format", "json"])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc migrate-corpus` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("migrate-corpus --format json emits JSON");
+    let migrated: Vec<&str> = report["migrated"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`migrated` is an array; got: {report}"))
+        .iter()
+        .map(|v| v.as_str().expect("a migrated path"))
+        .collect();
+    assert_eq!(
+        migrated,
+        vec!["docs/milestone-records/cache-rework.md"],
+        "exactly the one v1 record migrates; got: {report}",
+    );
+    assert!(
+        report["blocked"]
+            .as_array()
+            .expect("`blocked` is an array")
+            .is_empty(),
+        "an enum WIDENING blocks nothing — it is a byte no-op on the corpus; got: {report}",
+    );
+
+    // The widening is a byte no-op: every byte identical except the stamp `1` → `2` — both
+    // task items keep their committed `status` values (`joined` stays joined).
+    let after = fs::read_to_string(&record).expect("read the migrated record");
+    assert_eq!(
+        after,
+        v1.replacen("schema-version: 1\n", "schema-version: 2\n", 1),
+        "the migrated record is the v1 bytes with ONLY the stamp bumped 1 → 2",
+    );
+
+    // RE-RUN — idempotent: already current, byte-untouched.
+    let rerun = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["migrate-corpus", "--format", "json"])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the jigc binary");
+    assert!(rerun.status.success(), "the re-run must exit 0");
+    let rerun: serde_json::Value =
+        serde_json::from_slice(&rerun.stdout).expect("the re-run emits JSON");
+    assert!(
+        rerun["migrated"]
+            .as_array()
+            .expect("`migrated` is an array")
+            .is_empty(),
+        "a re-run migrates nothing; got: {rerun}",
+    );
+    assert_eq!(
+        rerun["already_current"]
+            .as_array()
+            .expect("`already_current` is an array")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>(),
+        vec!["docs/milestone-records/cache-rework.md"],
+        "a re-run reports the record already current; got: {rerun}",
+    );
+    assert_eq!(
+        fs::read_to_string(&record).expect("read the record after the re-run"),
+        after,
+        "the re-run touches no byte",
     );
 }

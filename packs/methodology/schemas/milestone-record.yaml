@@ -15,16 +15,25 @@
 #
 # It carries NO LLM-authored prose slot — every leaf is machine-maintained structured
 # state (the settled pure-machine-maintained fork). The `meta` header pairs the `base`
-# SHA pin (materialized `set: on-create`) with the `status` (active/joined, materialized
-# `set: on-transition` — the M39 seam). A repeatable `tasks` section records one item
-# per sub-task: `task-id` (the item `id-from`, a plain STRING — not a managed `ref`: a
-# `task` is a work-unit, `ref-resolves` cannot walk it, the `deferral-ledger.trigger`
-# precedent), `intent`, and a per-item `status`, all CLI-materialized (so all
-# non-author-required — `set:`-bearing).
+# SHA pin (materialized `set: on-create`) with the `status` (active/joined/discarded,
+# materialized `set: on-transition` — the M39 seam). A repeatable `tasks` section records
+# one item per sub-task: `task-id` (the item `id-from`, a plain STRING — not a managed
+# `ref`: a `task` is a work-unit, `ref-resolves` cannot walk it, the
+# `deferral-ledger.trigger` precedent), `intent`, and a per-item `status`, all
+# CLI-materialized (so all non-author-required — `set:`-bearing).
+#
+# SCHEMA-VERSION 2 (M42 Inc 7) — the `status` enum WIDENS to `[active, joined, discarded]`
+# at BOTH loci (the header and the `tasks` item block). M39 pinned the lifecycle as
+# active → joined, which is the *finalize* path only: an ABANDONED milestone had no
+# terminal value to flip to, so its committed record stayed `active` forever and lied
+# about in-flight work (`design/team-ready-state.md` → The lifecycle — active / joined /
+# discarded). A widening is a byte no-op on the corpus (`EnumWidened` — no committed value
+# changes meaning), so the frozen bump's migration only moves the stamp; the prior shape
+# is `schema-snapshots/milestone-record.v1.yaml`.
 #
 # Section ids are SINGLE WORDS ONLY (`meta`/`tasks`): a multi-word id trips the logged
 # title-case reparse defect, deferred — this routes around it exactly as
-# completion-record did. Manifest-FROZEN at v1 since M40 A1 (the methodology
+# completion-record did. Manifest-FROZEN since M40 A1 (the methodology
 # schema-manifest.yaml; version-gated like the dev pack). Engine-native types only. See
 # design/team-ready-state.md; design/methodology-docs.md.
 type: milestone-record
@@ -38,11 +47,11 @@ sections:
     header: true
     fields:
       - { id: base, type: string, set: on-create }
-      - { id: status, type: enum, of: [active, joined], set: on-transition }
+      - { id: status, type: enum, of: [active, joined, discarded], set: on-transition }
   - id: tasks
     repeatable:
       id-from: task-id
       block:
         - { id: task-id, type: string, set: on-transition }
         - { id: intent, type: string, set: on-transition }
-        - { id: status, type: enum, of: [active, joined], set: on-transition }
+        - { id: status, type: enum, of: [active, joined, discarded], set: on-transition }

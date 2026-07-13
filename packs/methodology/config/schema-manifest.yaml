@@ -19,6 +19,9 @@
 # `schema-snapshots/` was ABSENT at v1 and is first populated by the M41 F4
 # `deferral-ledger` v1→v2 rename (the D/I → Decision/Idea enum-member remap — the
 # first methodology v1→v2 bump; `schema-snapshots/deferral-ledger.v1.yaml` sources it).
+# It gains its second entry at the M42 `milestone-record` v1→v2 lifecycle bump (the
+# `status` enum widened to admit `discarded` at both loci — an `EnumWidened` pair, so the
+# migration moves only the stamp; `schema-snapshots/milestone-record.v1.yaml` sources it).
 #
 # `schema-version` is the doctype's own version (v1 at the freeze); `schema-hash`
 # is engine::manifest::schema_hash of its resolved definition. Regenerate a hash
@@ -44,8 +47,8 @@ doctypes:
     schema-version: 1
     schema-hash: b26be85495e7b2c7282dee62a43dc232a096f7cb680660334448bdaf0883c0b8
   - type: milestone-record
-    schema-version: 1
-    schema-hash: d1aa55a1365137d997ce2e4c6b93c1d1ed89896bbcf8e2ece6324fff84e30207
+    schema-version: 2
+    schema-hash: bf4a6f128be398f4049dfe0960ca5b3e55ab41e89ddb75376423cfe52e477eff
   - type: research
     schema-version: 1
     schema-hash: 2801874c3c4969e06088f4e1f82ed1acb88278acd93b53c2f5ecb1f4759fbe9d

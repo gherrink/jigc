@@ -1899,10 +1899,12 @@ mod tests {
             .expect("config/schema-manifest.yaml parses as a freeze manifest");
 
         // The frozen set is exactly the ten shipped methodology schemas, each at
-        // schema-version 1 (the crystallizing v1 baseline) except `deferral-ledger`,
+        // schema-version 1 (the crystallizing v1 baseline) except two: `deferral-ledger`,
         // bumped to 2 by the M41 F4 v1→v2 `kind` enum-member rename (D/I → Decision/Idea
         // — the first methodology v1→v2 migration; `design/corpus-migration.md` → the
-        // structural-auto / value-semantic-authored distinction).
+        // structural-auto / value-semantic-authored distinction), and `milestone-record`,
+        // bumped to 2 by the M42 Inc-7 lifecycle widening (`status` gains `discarded` at
+        // both loci — an `EnumWidened` pair; `design/team-ready-state.md` → The lifecycle).
         let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
         declared.sort_unstable();
         assert_eq!(
@@ -1922,7 +1924,10 @@ mod tests {
             "the methodology freeze manifest must enumerate exactly the ten shipped schemas",
         );
         for entry in &manifest.doctypes {
-            let expected = if entry.ty == "deferral-ledger" { 2 } else { 1 };
+            let expected = match entry.ty.as_str() {
+                "deferral-ledger" | "milestone-record" => 2,
+                _ => 1,
+            };
             assert_eq!(
                 entry.schema_version, expected,
                 "methodology doctype `{}` is frozen at schema-version {expected}",
