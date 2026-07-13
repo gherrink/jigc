@@ -112,11 +112,13 @@ pub enum TransformError {
     /// A surgical-splice primitive failed — the `display-title-changed` H1 rewrite over a
     /// doc with no locatable `# H1`. Carries the underlying [`SpliceError`].
     Splice(SpliceError),
-    /// A classified change kind whose driver branch is **not built** — the
-    /// `prose-needing` **field** sub-case (a new required field; T4 mints only slots) and
-    /// a `set`-derived `added-optional-field` with no static default (its value is the
-    /// deriver's, threaded in by M34 Inc-3 T4). Surfaced, never silently skipped, so an
-    /// un-built branch blocks the migration rather than dropping a change.
+    /// A classified change kind the driver **will not apply** — either because its branch is
+    /// **not built** (the `prose-needing` **field** sub-case, a new required field: T4 mints
+    /// only slots; a `set`-derived `added-optional-field` with no static default, whose value is
+    /// the deriver's, threaded in by M34 Inc-3 T4) or because it is **refused by design** (a
+    /// [`SchemaChange::NarrowedCardinality`] — content-affecting, and the recorded M42 pick is to
+    /// refuse rather than restamp unchecked). Surfaced, never silently skipped, so neither an
+    /// un-built branch nor a refused kind can drop a change.
     Unsupported {
         /// The classified kind's wire name.
         kind: &'static str,
@@ -171,6 +173,26 @@ pub fn transform(
             SchemaChange::WidenedCardinality { .. } => {
                 // Instance-byte identity: the existing value is still valid under the
                 // widened cardinality, so no splice is needed.
+            }
+            SchemaChange::NarrowedCardinality { section, .. } => {
+                // THE NARROWING PICK — refuse (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T3;
+                // `corpus-migration.md` → The two silent-classification holes). A narrowing is
+                // **content-affecting**: a committed instance may carry more values than the new
+                // bound admits (or lack one it now demands), and nothing in the system counts a
+                // doc's edges against a `card` bound — so the design's other arm (validate every
+                // committed instance against the new bound) is net-new validation surface. The
+                // pre-M42 behaviour folded a narrowing to **zero bytes** and restamped the corpus
+                // past the gate, silently; refusing is strictly better, and leaves the validating
+                // arm's door open.
+                return Err(TransformError::Unsupported {
+                    kind: "narrowed-cardinality",
+                    section: section.clone(),
+                });
+            }
+            SchemaChange::EnumWidened { .. } => {
+                // Instance-byte identity: `new.of ⊇ old.of`, so every committed value is still a
+                // declared member — nothing to remap, no authored map needed (the
+                // widened-cardinality sibling; `corpus-migration.md` → the `EnumWidened` kind).
             }
             SchemaChange::AddedOptionalSection { section } => {
                 // Splice the empty `## Heading` slot-section at its schema-ordered home —
@@ -1997,6 +2019,124 @@ sections:
                 section: "meta".to_string(),
             }),
             "an uncovered committed value blocks loudly"
+        );
+    }
+
+    // ---- the direction-classified `of` / `card` deltas: widen folds, narrow refuses ----
+
+    /// **The enum-widening kind, end-to-end.** `[open, closed]` → `[open, closed, blocked]`
+    /// classifies through the **real classifier** to exactly `[EnumWidened]` and folds
+    /// **byte-identical**: every committed value is still a declared member, so the doc conforms
+    /// under v2 untouched and the migration restamps it. Red before T3: the pair classified
+    /// `[ValueRemapped { map: {} }]` and the driver **blocked** the doc on its committed `open`
+    /// — with no map to author, because nothing was renamed.
+    #[test]
+    fn enum_widened_folds_byte_identical_and_the_doc_still_conforms() {
+        let v1 = status_v1(); // status: enum of [open, closed]
+        let v2 = load_schema(
+            b"\
+type: note
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [open, closed, blocked] }
+  - id: body
+    slot: { hint: \"the note body\" }
+",
+        )
+        .expect("status v2-widened loads");
+        let src = status_v0_doc(); // carries `status: open`
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::EnumWidened {
+                section: "meta".to_string(),
+                field: "status".to_string(),
+            }],
+            "a widening names itself — it is not a rename, and needs no authored map"
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("an enum widening folds cleanly");
+        assert_eq!(
+            out, src,
+            "an enum widening adds no bytes (every value still declared)"
+        );
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+
+        // The corpus fold commits it (so the CLI reaches the restamp) — never a block.
+        let corpus = [CorpusDoc {
+            id: "note-a",
+            old_schema: &v1,
+            new_schema: &v2,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, None, "a byte no-op kind never blocks");
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Migrated {
+                id: "note-a".to_string(),
+                v2: src.clone(),
+            }],
+            "the doc migrates byte-identical — it restamps, it does not block"
+        );
+
+        // Determinism.
+        assert_eq!(transform(&v1, &v2, &src, &diff).expect("re-run"), out);
+    }
+
+    /// **A cardinality narrowing is REFUSED** (the recorded pick — `DECISIONS.md` → 2026-07-13
+    /// M42 Inc-5 T3). `0..*` → `0..1` classifies `[NarrowedCardinality]` and the driver blocks:
+    /// nothing in the system counts a committed instance's edges against the new bound, so the
+    /// alternative arm (validate every instance) is net-new validation surface — and folding it
+    /// as a no-op (the pre-T3 behaviour) restamps a corpus that may violate the bound, **past
+    /// the gate**. The corpus fold therefore halts, leaving the doc byte-identical v0.
+    #[test]
+    fn narrowed_cardinality_refuses_the_transform_and_halts_the_corpus_fold() {
+        // The reverse of the widening pair: v2 (0..*) is the OLD shape, v1 (0..1) the new one.
+        let v1 = spec_v2();
+        let v2 = spec_v1();
+        let src = spec_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::NarrowedCardinality {
+                section: "meta".to_string(),
+                field: "derived-from".to_string(),
+            }],
+            "a narrowing names itself — it is not the widening no-op"
+        );
+
+        assert_eq!(
+            transform(&v1, &v2, &src, &diff),
+            Err(TransformError::Unsupported {
+                kind: "narrowed-cardinality",
+                section: "meta".to_string(),
+            }),
+            "the driver refuses a narrowing (it is content-affecting, never a no-op)"
+        );
+
+        let corpus = [CorpusDoc {
+            id: "spec-a",
+            old_schema: &v1,
+            new_schema: &v2,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, Some(0), "the fold halts on the refusal");
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Untouched {
+                id: "spec-a".to_string(),
+                v0: src.clone(),
+            }],
+            "the doc stays byte-identical v0 — no bytes, no stamp"
         );
     }
 

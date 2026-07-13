@@ -455,6 +455,24 @@ pub(crate) fn migrate_committed_corpus(
                             report.blocked.push((rel_key, route));
                             continue;
                         }
+                        // THE NARROWING REFUSAL (the recorded pick — `DECISIONS.md` →
+                        // 2026-07-13 M42 Inc-5 T3). A `card` narrowing is content-affecting: a
+                        // committed instance may carry more values than the new bound admits.
+                        // Refused at classification, beside the backstop and for the same
+                        // reason — the fold's halt route ("author the prose, then re-run") would
+                        // be a lie, and folding it (the pre-M42 direction-blind behaviour)
+                        // restamps the doc past the gate. The route names the schema-authoring
+                        // repair, not a doc instruction.
+                        if let Some(SchemaChange::NarrowedCardinality { section, field }) = diff
+                            .iter()
+                            .find(|c| matches!(c, SchemaChange::NarrowedCardinality { .. }))
+                        {
+                            let route = narrowed_cardinality_route(
+                                &rel_key, &dt.ty, section, field, k, dt.version,
+                            );
+                            report.blocked.push((rel_key, route));
+                            continue;
+                        }
                         // The v1→v2 path is the only one that can surface a `ValueRemapped`
                         // (an enum member rename needs two *different* declared enum sets;
                         // the stamp-absent path diffs `strip_stamp(to)` against `to`, whose
@@ -718,6 +736,8 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
             // has no heading to collide with and is always kept.
             SchemaChange::AddedOptionalField { .. }
             | SchemaChange::WidenedCardinality { .. }
+            | SchemaChange::NarrowedCardinality { .. }
+            | SchemaChange::EnumWidened { .. }
             | SchemaChange::ValueRemapped { .. }
             | SchemaChange::FixedSlotToRepeatable { .. }
             | SchemaChange::Relocated { .. }
@@ -911,6 +931,38 @@ fn unclassifiable_change_route(rel_key: &str, ty: &str, from: u32, to: u32) -> S
          `{rel_key}` cannot be migrated (an empty diff is not a no-op: migrating would stamp the \
          doc {to} while leaving it non-conformant). This is a schema-authoring gap, not a doc \
          problem: build the transform kind for the change in `crates/engine/src/schema_diff.rs` + \
+         `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
+    )
+}
+
+/// The **cardinality-narrowing** refusal's route: the doctype tightened a field's `card` bound
+/// between the two versions, so a committed instance may carry more values than the new bound
+/// admits (or lack one it now demands) — a **content-affecting** change, never a no-op
+/// (`design/corpus-migration.md` → The two silent-classification holes; the pick — *refuse* — is
+/// recorded in `DECISIONS.md` → 2026-07-13 M42 Inc-5 T3).
+///
+/// Like the backstop's route, the repair is a **schema-authoring** one, not a migration
+/// instruction: nothing an operator or agent does to *this doc* unblocks it. Either the bump
+/// gives the narrowing back, or the pack author builds the arm that adjudicates it (validate
+/// every committed instance against the new bound — net-new validation surface, deliberately not
+/// built here). Refusing beats the pre-M42 behaviour it replaces: a direction-blind fold to zero
+/// bytes that restamped the corpus past its own gate.
+fn narrowed_cardinality_route(
+    rel_key: &str,
+    ty: &str,
+    section: &str,
+    field: &str,
+    from: u32,
+    to: u32,
+) -> String {
+    format!(
+        "blocked — `{ty}` narrows the cardinality of `{section}.{field}` between schema-version \
+         {from} and {to}, so `{rel_key}` cannot be migrated: a narrowing is content-affecting, \
+         not a no-op (a committed instance may carry more values than the new bound admits, or \
+         lack one it now demands), and no transform kind adjudicates it — migrating would stamp \
+         the doc {to} while leaving it possibly non-conformant. This is a schema-authoring gap, \
+         not a doc problem: restore the wider bound, or build the narrowing arm (validate every \
+         committed instance against the new bound) in `crates/engine/src/schema_diff.rs` + \
          `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
     )
 }
@@ -1691,6 +1743,135 @@ sections:
         assert!(
             after.contains("schema-version: 1") && !after.contains("schema-version: 2"),
             "the stamp did NOT bump over an unclassified change; got:\n{after}"
+        );
+    }
+
+    /// The v1 prior shape of the `linked` doctype: a header `rel` ref at `card: "0..*"` (a
+    /// committed instance may legitimately carry several edges).
+    fn linked_v1_yaml() -> &'static str {
+        "\
+type: linked
+location: linked/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: linked, card: \"0..*\" }
+  - id: vision
+    slot: { hint: \"v\" }
+"
+    }
+
+    /// The v2 current shape: the same `rel` **narrowed** to `card: "0..1"` — the refused
+    /// direction (the corpus may hold instances the new bound no longer admits).
+    fn linked_v2_yaml() -> &'static [u8] {
+        b"\
+type: linked
+location: linked/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: linked, card: \"0..1\" }
+  - id: vision
+    slot: { hint: \"v\" }
+"
+    }
+
+    /// **A cardinality narrowing blocks with its own route** (the recorded pick: refuse —
+    /// `DECISIONS.md` → 2026-07-13 M42 Inc-5 T3). A below-version doc (stamp `1`, current `2`)
+    /// whose v1→v2 pair narrows a `card` is reported `blocked`, its bytes **untouched** and its
+    /// stamp **still `1`** — with a route that names the schema-authoring repair, never the
+    /// prose-needing route (there is no prose to author).
+    ///
+    /// Red before T3: the pair classified `[WidenedCardinality]` (direction-blind), the fold
+    /// folded **zero bytes**, the post-fold bump stamped it `2`, and the doc — which carries
+    /// **two** committed `rel` edges the new `0..1` bound no longer admits — landed *migrated*,
+    /// past the gate, silently.
+    #[test]
+    fn below_version_card_narrowing_is_refused_with_its_own_route() {
+        let repo = TempDir::new("narrowing");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("linked", 1, linked_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(linked_v2_yaml());
+        let from =
+            crate::pack::load_prior_schema(&pack, "linked", 1).expect("the linked.v1 snapshot");
+
+        // A conformant, v1-stamped committed doc carrying TWO `rel` edges — exactly what the
+        // narrowed `0..1` bound no longer admits (the reason a narrowing is not a no-op).
+        let v1 = render(
+            &from,
+            &Instance {
+                title: "Hub".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![
+                            Field {
+                                key: SCHEMA_VERSION_FIELD.to_string(),
+                                value: Value::Scalar("1".to_string()),
+                            },
+                            Field {
+                                key: "rel".to_string(),
+                                value: Value::List(vec![
+                                    "linked:spoke-a".to_string(),
+                                    "linked:spoke-b".to_string(),
+                                ]),
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "vision".to_string(),
+                        slot: Some("The hub links both spokes.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        write_doc(repo.path(), "linked/hub.md", &v1);
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 2)],
+            Options::default(),
+        )
+        .expect("the run completes — the refusal is a routed block, not a run failure");
+
+        assert!(
+            report.migrated.is_empty() && report.already_current.is_empty(),
+            "a narrowing never migrates and is never called current: {report:?}"
+        );
+        assert_eq!(
+            report.blocked.len(),
+            1,
+            "the doc is blocked, routed: {:?}",
+            report.blocked
+        );
+        assert_eq!(report.blocked[0].0, "linked/hub.md");
+        let route = &report.blocked[0].1;
+        assert!(
+            route.contains("narrows") && route.contains("meta.rel"),
+            "the route names the narrowed leaf; got: {route}"
+        );
+        assert!(
+            !route.contains("author the new required prose"),
+            "the prose-needing route would be a lie here; got: {route}"
+        );
+
+        // The bytes are untouched and the stamp is STILL 1 — no silent bump past the gate.
+        let after = fs::read_to_string(repo.path().join("linked/hub.md")).expect("read");
+        assert_eq!(after, v1, "the refused doc is byte-identical");
+        assert!(
+            after.contains("schema-version: 1") && !after.contains("schema-version: 2"),
+            "the stamp did NOT bump over a refused narrowing; got:\n{after}"
         );
     }
 

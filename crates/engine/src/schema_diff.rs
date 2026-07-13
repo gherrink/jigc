@@ -38,14 +38,58 @@ pub enum SchemaChange {
         field: String,
     },
 
-    /// A field present in both schemas whose `card` (forward cardinality) changed
-    /// (e.g. `0..1` → `0..*`). The driver widens the stored instance's edge set.
-    /// Narrowing is data-losing and unsupported — not a separate kind; a `card`
-    /// delta is classified as a widening (the only supported direction).
+    /// A field present in both schemas whose `card` (forward cardinality) was **widened** —
+    /// the new bound admits every value the old one did (`0..1` → `0..*`), so every committed
+    /// instance is still conformant and the fold is a **byte no-op**. Fired at **both loci** —
+    /// a simple/header section's fields *and* a repeatable item block's (M42: the item locus
+    /// classified nothing at all, so the authoring matrix's ✅ for an item-block widen was a
+    /// promise the classifier never honoured).
+    ///
+    /// A `card` delta in the **other** direction is [`Self::NarrowedCardinality`], not this:
+    /// direction is classified, never assumed (`design/corpus-migration.md` → The two silent-
+    /// classification holes).
     WidenedCardinality {
         /// The section carrying the field.
         section: String,
         /// The field whose cardinality changed.
+        field: String,
+    },
+
+    /// A field present in both schemas whose `card` was **narrowed** — the new bound is
+    /// *tighter* on either end (`0..*` → `0..1`, `0..*` → `1..*`), so a committed instance may
+    /// carry more values than it now admits, or lack one it now demands. **Content-affecting,
+    /// never a no-op** — and **refused**: [`crate::transform::transform`] surfaces
+    /// [`crate::transform::TransformError::Unsupported`] and `jigc migrate-corpus` blocks the
+    /// doc with its own route (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T3 — the recorded pick).
+    ///
+    /// The refusal is the *pick*, not a gap in the classifier: nothing in the system counts a
+    /// committed instance's edges against a `card` bound (`schema_conformance` → `check_field`
+    /// type-checks each scalar and never counts), so the design's alternative arm — *validate
+    /// every committed instance against the new bound* — is net-new validation surface. Refusing
+    /// is strictly better than the pre-M42 behaviour, which classified **any** `card` delta as a
+    /// widening and folded a narrowing to zero bytes, restamping the corpus **past the gate**.
+    NarrowedCardinality {
+        /// The section carrying the field.
+        section: String,
+        /// The field whose cardinality was narrowed.
+        field: String,
+    },
+
+    /// An **enum widening**: a field present in both schemas whose `of:` member set **grew**
+    /// (`new.of ⊇ old.of`, e.g. `[active, joined]` → `[active, joined, discarded]`). Every
+    /// committed value is still a declared member, so the fold is a **byte no-op** (the
+    /// [`Self::WidenedCardinality`] sibling) and **no map is authored** — the kind *deletes* the
+    /// need for identity-map entries rather than growing the authored table.
+    ///
+    /// Only a **non-superset** `of:` delta (a genuine rename, or a member drop) stays
+    /// [`Self::ValueRemapped`]. Pre-M42 *any* `of:` delta classified as a rename, so a widening
+    /// emitted `ValueRemapped { map: {} }` and the driver blocked the doc on its first committed
+    /// value — with no map to author, because nothing was renamed
+    /// (`design/corpus-migration.md` → The classifier's holes).
+    EnumWidened {
+        /// The section carrying the enum field.
+        section: String,
+        /// The enum field whose member set grew.
         field: String,
     },
 
@@ -363,18 +407,98 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
     }
 }
 
-/// `true` iff `old`/`new` are the same enum field whose member set was **renamed** — both
-/// declare an `of:` set and the two sets differ. The classifier detects only *that* the
-/// members changed (a [`SchemaChange::ValueRemapped`]); the old→new mapping is authored by
-/// the CLI (an enum rename is unrecoverable from the schema pair alone).
-fn enum_members_renamed(old: &Field, new: &Field) -> bool {
-    old.of.is_some() && new.of.is_some() && old.of != new.of
+/// Classify the deltas of a **leaf present in both schemas** — the `card` direction and the
+/// enum `of:` direction — in document order (`card` first, then `of`). The **one** existing-leaf
+/// rule, shared by both loci: a simple/header section's fields ([`diff_fields`]) *and* a
+/// repeatable item block's ([`diff_item_fields`]). Pre-M42 the two loops disagreed — the simple
+/// one read `card` direction-blind, the item one read neither — which is why the rule lives in
+/// one function now (`design/corpus-migration.md` → The two silent-classification holes: *both
+/// loops iterate `new`'s leaves and inspect only `card` + `of`*).
+fn diff_leaf(section: &str, old: &Field, new: &Field, out: &mut Vec<SchemaChange>) {
+    let (id, field) = (section.to_owned(), new.id.clone());
+    if old.card != new.card {
+        out.push(if widens_card(old.card.as_deref(), new.card.as_deref()) {
+            SchemaChange::WidenedCardinality {
+                section: id.clone(),
+                field: field.clone(),
+            }
+        } else {
+            SchemaChange::NarrowedCardinality {
+                section: id.clone(),
+                field: field.clone(),
+            }
+        });
+    }
+    if let (Some(old_of), Some(new_of)) = (&old.of, &new.of)
+        && old_of != new_of
+    {
+        // `new.of ⊇ old.of` — every committed value is still a declared member (a widening, and
+        // a byte no-op). Anything else (a rename, a member drop) is value-semantic: the CLI
+        // authors the old→new map.
+        out.push(if old_of.iter().all(|member| new_of.contains(member)) {
+            SchemaChange::EnumWidened { section: id, field }
+        } else {
+            SchemaChange::ValueRemapped {
+                section: id,
+                field,
+                map: BTreeMap::new(),
+            }
+        });
+    }
 }
 
-/// Diff a repeatable section's **item-block Field leaves** (matching by id): classify an
-/// enum member rename on each field present in both blocks. Narrow by design — only the
-/// `value-remapped` kind is emitted; non-`Field` leaves (slots, nested repeatables) and
-/// non-enum field changes are left unclassified.
+/// Whether the `new` cardinality bound **admits every value** the `old` one did — the byte-no-op
+/// direction ([`SchemaChange::WidenedCardinality`]). True iff `new.min ≤ old.min` **and**
+/// `new.max ≥ old.max` (with `*` the greatest upper bound); an equal-bounds respelling (`card:`
+/// absent — the `"0..1"` default — spelled out explicitly) is therefore a widening, i.e. the byte
+/// no-op it in fact is, and never a false refusal.
+///
+/// Anything else is a **tightening** — a lower bound raised, an upper bound lowered, or a bound
+/// this function cannot parse (an unparseable form reads as *not* a widening, so it refuses
+/// loudly rather than folding silently — the safe direction of the very failure the backstop
+/// exists to close).
+fn widens_card(old: Option<&str>, new: Option<&str>) -> bool {
+    let (Some((old_min, old_max)), Some((new_min, new_max))) = (card_bounds(old), card_bounds(new))
+    else {
+        return false;
+    };
+    let admits_max = match (new_max, old_max) {
+        // `*` (unbounded) admits any old upper bound, including another `*`.
+        (None, _) => true,
+        // A bounded new max cannot admit an unbounded old one.
+        (Some(_), None) => false,
+        (Some(new_max), Some(old_max)) => new_max >= old_max,
+    };
+    new_min <= old_min && admits_max
+}
+
+/// Parse a declared `card:` into `(min, max)` — `max = None` meaning unbounded (`*`). The four
+/// declared forms are `"0..1"` / `"1"` / `"0..*"` / `"1..*"`, and an **absent** `card:` is the
+/// `"0..1"` default (`design/document-type-schema.md` → the schema keys; `schema.rs` →
+/// `Field::card`). An unparseable form yields `None` — the caller treats that as *not* a
+/// widening.
+fn card_bounds(card: Option<&str>) -> Option<(u32, Option<u32>)> {
+    let raw = card.unwrap_or("0..1");
+    let raw = raw.trim();
+    match raw.split_once("..") {
+        // The bare form (`"1"`) is the closed interval `[n, n]`.
+        None => raw.parse::<u32>().ok().map(|n| (n, Some(n))),
+        Some((min, max)) => {
+            let min = min.trim().parse::<u32>().ok()?;
+            let max = match max.trim() {
+                "*" => None,
+                bounded => Some(bounded.parse::<u32>().ok()?),
+            };
+            Some((min, max))
+        }
+    }
+}
+
+/// Diff a repeatable section's **item-block Field leaves** (matching by id): the same
+/// existing-leaf rule the simple locus applies ([`diff_leaf`] — the `card` direction and the
+/// enum `of:` direction). Non-`Field` leaves (slots, nested repeatables) and leaves present in
+/// only one block are left unclassified (the nested-repeatable edit and the added/removed item
+/// field are their own kinds — T5/T7 — and, until they land, the backstop's residual).
 fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<SchemaChange>) {
     let old_by_id: HashMap<&str, &Field> = old
         .iter()
@@ -386,13 +510,8 @@ fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<Sch
     for leaf in new {
         if let Leaf::Field(field) = leaf
             && let Some(prev) = old_by_id.get(field.id.as_str())
-            && enum_members_renamed(prev, field)
         {
-            out.push(SchemaChange::ValueRemapped {
-                section: section.to_owned(),
-                field: field.id.clone(),
-                map: BTreeMap::new(),
-            });
+            diff_leaf(section, prev, field, out);
         }
     }
 }
@@ -418,27 +537,14 @@ fn added_section(id: &str, new: &SectionBody, out: &mut Vec<SchemaChange>) {
     // A wholly-new repeatable section is not one of the transform kinds.
 }
 
-/// Diff a simple section's field list: classify added fields and cardinality
-/// widenings (matching by field id; field document order is `v2`'s).
+/// Diff a simple section's field list: classify added fields, and — for a leaf present in both
+/// schemas — the existing-leaf deltas through the shared [`diff_leaf`] rule (matching by field
+/// id; field document order is `v2`'s).
 fn diff_fields(section: &str, old: &[Field], new: &[Field], out: &mut Vec<SchemaChange>) {
     let old_by_id: HashMap<&str, &Field> = old.iter().map(|f| (f.id.as_str(), f)).collect();
     for field in new {
         match old_by_id.get(field.id.as_str()) {
-            Some(prev) => {
-                if prev.card != field.card {
-                    out.push(SchemaChange::WidenedCardinality {
-                        section: section.to_owned(),
-                        field: field.id.clone(),
-                    });
-                }
-                if enum_members_renamed(prev, field) {
-                    out.push(SchemaChange::ValueRemapped {
-                        section: section.to_owned(),
-                        field: field.id.clone(),
-                        map: BTreeMap::new(),
-                    });
-                }
-            }
+            Some(prev) => diff_leaf(section, prev, field, out),
             None => out.push(classify_added_field(section, field)),
         }
     }
@@ -1134,6 +1240,302 @@ sections:
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedOptionalSection {
                 section: "options".to_owned(),
+            }]
+        );
+    }
+
+    // ---- the existing-leaf `card` / `of` deltas: classified BY DIRECTION, at BOTH loci ----
+
+    /// An **enum widening** (`[a, b]` → `[a, b, c]`) on a simple field classifies to **exactly**
+    /// `[EnumWidened]` — every committed value is still a declared member, so it is a byte
+    /// no-op and **no map is authored**. Red before T3: `enum_members_renamed` fired on *any*
+    /// `of:` delta, so this emitted `ValueRemapped { map: {} }` and the driver blocked the doc
+    /// on its first committed value — with no map to author, because nothing was renamed.
+    #[test]
+    fn an_enum_widening_classifies_enum_widened_never_a_rename() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [active, joined] }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [active, joined, discarded] }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::EnumWidened {
+                section: "meta".to_owned(),
+                field: "status".to_owned(),
+            }]
+        );
+    }
+
+    /// The same widening **inside a repeatable item block** (the second locus) classifies to
+    /// **exactly** `[EnumWidened]` — the item-block leaf diff reads direction too, not only
+    /// *that* the members moved.
+    #[test]
+    fn an_enum_widening_on_an_item_block_field_classifies_enum_widened() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: kind, type: enum, of: [Decision, Idea] }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: kind, type: enum, of: [Decision, Idea, Risk] }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::EnumWidened {
+                section: "entries".to_owned(),
+                field: "kind".to_owned(),
+            }]
+        );
+    }
+
+    /// A **non-superset** `of:` delta — a genuine member rename (`[D, I]` → `[Decision, Idea]`,
+    /// the shipped `deferral-ledger` bump) — still classifies `[ValueRemapped]`: the widening
+    /// kind narrows the rename kind's extent, it does not replace it. (The two rename tests
+    /// above pin both loci; this one pins that a *member drop* — also a non-superset — lands
+    /// here rather than being mistaken for a widening.)
+    #[test]
+    fn a_dropped_enum_member_is_not_a_widening_and_stays_value_remapped() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [open, closed, void] }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [open, closed] }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::ValueRemapped {
+                section: "meta".to_owned(),
+                field: "status".to_owned(),
+                map: BTreeMap::new(),
+            }]
+        );
+    }
+
+    /// A **cardinality narrowing** (`0..*` → `0..1`) on a simple field classifies to **exactly**
+    /// `[NarrowedCardinality]` — a content-affecting change (a committed instance may carry more
+    /// values than the new bound admits), which the driver refuses. Red before T3: `diff_fields`
+    /// fired `WidenedCardinality` on **any** `card` delta, direction-blind, so a narrowing folded
+    /// to zero bytes and the doc restamped **past the gate**, silently.
+    #[test]
+    fn a_card_narrowing_classifies_narrowed_cardinality() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: t, card: \"0..*\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: t, card: \"0..1\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::NarrowedCardinality {
+                section: "meta".to_owned(),
+                field: "rel".to_owned(),
+            }]
+        );
+    }
+
+    /// A **minimum tightening** (`0..*` → `1..*`) is a narrowing too: the new bound demands a
+    /// value a committed instance may legitimately lack. Any tightening on *either* bound —
+    /// never only the upper one — is the refused direction.
+    #[test]
+    fn a_card_minimum_tightening_classifies_narrowed_cardinality() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: t, card: \"0..*\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: t, card: \"1..*\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::NarrowedCardinality {
+                section: "meta".to_owned(),
+                field: "rel".to_owned(),
+            }]
+        );
+    }
+
+    /// A `card` **widen inside a repeatable item block** classifies to **exactly**
+    /// `[WidenedCardinality]` — the byte no-op the authoring matrix has always promised. Red
+    /// before T3: `diff_item_fields` never reached `card`, so it diffed to `[]` (the promise the
+    /// classifier did not honour).
+    #[test]
+    fn an_item_block_card_widen_classifies_widened_cardinality() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: rel, type: ref, to: t, card: \"0..1\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: rel, type: ref, to: t, card: \"0..*\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::WidenedCardinality {
+                section: "entries".to_owned(),
+                field: "rel".to_owned(),
+            }]
+        );
+    }
+
+    /// A `card` **narrowing inside a repeatable item block** classifies to **exactly**
+    /// `[NarrowedCardinality]` — the item locus reads direction as the simple one does. Red
+    /// before T3: `[]` (a real break, invisible).
+    #[test]
+    fn an_item_block_card_narrowing_classifies_narrowed_cardinality() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: rel, type: ref, to: t, card: \"0..*\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: rel, type: ref, to: t, card: \"0..1\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::NarrowedCardinality {
+                section: "entries".to_owned(),
+                field: "rel".to_owned(),
+            }]
+        );
+    }
+
+    /// **The false-refusal guard on the direction rule**: spelling the *default* cardinality out
+    /// (`card:` absent — the `"0..1"` default — → an explicit `card: "0..1"`) moves the
+    /// schema-hash but changes **no bound**, so it must classify as the byte no-op
+    /// (`WidenedCardinality`, the new-⊇-old direction), never as a refused narrowing and never
+    /// as the empty diff (which the backstop would then refuse — an unshippable edit).
+    #[test]
+    fn spelling_out_the_default_card_is_the_byte_no_op_direction() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: t }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: t, card: \"0..1\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::WidenedCardinality {
+                section: "meta".to_owned(),
+                field: "rel".to_owned(),
             }]
         );
     }
