@@ -417,6 +417,24 @@ pub(crate) fn migrate_committed_corpus(
         // `set`-derived field) places it deterministically. Inert for the below-version
         // path (the stamp is already present there — it is value-bumped, not added).
         let to = with_stamp_default(&dt.to, dt.version);
+        // THE DIFF-SIDE SHAPE — docs-root-free, so the two sides of the schema-diff are
+        // comparable. `to` comes from `CascadeDefs::all_schemas`, whose last act is
+        // `apply_docs_root` (`location: docs/decisions/`), while the prior snapshot
+        // `from` stores its `location:` **raw** (`decisions/`) — and the engine's
+        // `resolved_home` is docs-root-*blind* by contract (the raw schema-declared home;
+        // resolution is the CLI's concern). Diffing the resolved `to` against the raw
+        // `from` therefore fired a **spurious** `SchemaChange::Relocated` on *every*
+        // below-version migration of a `location:`-bearing doctype under the shipped
+        // default `docs-root: docs/` — which moves nothing (it is a byte no-op, and the
+        // relocation destination is `candidate_docs`' concern, not the diff's) but is
+        // enough to make the diff non-empty, so the residual — **the empty-diff backstop**
+        // and its `PresentationOnly` sibling — was unreachable for 9 of the 14 persisted
+        // doctypes: an unclassifiable structural change silently restamped the corpus.
+        // Strip the prefix back off here and `Relocated` fires only on a genuine
+        // `location:` / `placement:` change (the docs-root knob is project config, never a
+        // schema relocation — a `config set docs-root` move routes through
+        // `crate::relocate`).
+        let to_diff = docs_root_free(&to, &dt.docs_root);
         // Each candidate is `(source, destination)` — the FROM home the walk found the
         // committed instance at, and the path the gated bytes land at
         // (`design/corpus-migration.md` → Relocation: the walk keys on the from home).
@@ -435,7 +453,9 @@ pub(crate) fn migrate_committed_corpus(
                 // migrated by the verb).
                 Some(k) => match crate::pack::load_prior_schema(pack, &dt.ty, k) {
                     Ok(from) => {
-                        let diff = schema_diff(&from, &to);
+                        // Both sides docs-root-free: `from` is the raw snapshot, `to_diff`
+                        // the raw current shape (see above).
+                        let diff = schema_diff(&from, &to_diff);
                         // THE EMPTY-DIFF BACKSTOP (`design/corpus-migration.md` → The empty-diff
                         // backstop — no silent bump). The classifier signals a schema pair whose
                         // conformance-relevant projection **moved** with **no transform kind** to
@@ -521,8 +541,11 @@ pub(crate) fn migrate_committed_corpus(
                 // Stamp absent (the v0 corpus state): the unchanged add-field path (the stamp
                 // is *added* at the current value via its `default`, so no post-fold bump).
                 None => {
-                    let from = strip_stamp(&dt.to);
-                    let changes = per_doc_changes(&schema_diff(&from, &to), &source, true);
+                    // Derived from the diff-side (docs-root-free) shape, so this pair is
+                    // docs-root-consistent by construction — the same invariant the
+                    // below-version arm restores by stripping the prefix off `to`.
+                    let from = strip_stamp(&to_diff);
+                    let changes = per_doc_changes(&schema_diff(&from, &to_diff), &source, true);
                     if changes.is_empty() {
                         // Nothing this doc needs (its shape already matches): leave it.
                         report.already_current.push(rel_key);
@@ -1036,6 +1059,36 @@ fn strip_stamp(schema: &Schema) -> Schema {
     out
 }
 
+/// A clone of `schema` with the resolved `docs-root` prefix taken **back off** its
+/// `location:` — the **schema-diff's** view of the current shape, and the inverse of
+/// [`crate::start::apply_docs_root`] (which every CLI schema-load applies).
+///
+/// The diff must run over two **docs-root-free** shapes, because the prior-schema snapshot the
+/// below-version arm loads stores its `location:` raw (a pack ships schemas, not project
+/// layouts) and the engine's home comparison is docs-root-blind by contract
+/// (`engine::schema_diff` → `resolved_home`: *"the raw schema-declared home … resolution is the
+/// CLI's concern"*). Feeding it a resolved `to` against a raw `from` made `docs-root` itself
+/// look like a relocation. `docs-root` is a **project config knob**, never a schema change: a
+/// doctype's declared home is what the pack ships, and moving the corpus because the knob moved
+/// is `crate::relocate`'s job (`config set docs-root`), not the migration's.
+///
+/// A `placement:` doctype bypasses `docs-root` entirely (`location: None` — `design/storage.md`
+/// → Placement), so this is inert for it; a flat layout (`docs_root == ""`) is inert too.
+fn docs_root_free(schema: &Schema, docs_root: &str) -> Schema {
+    let mut out = schema.clone();
+    if docs_root.is_empty() {
+        return out;
+    }
+    if let Some(raw) = out
+        .location
+        .as_deref()
+        .and_then(|home| home.strip_prefix(&format!("{docs_root}/")))
+    {
+        out.location = Some(raw.to_string());
+    }
+    out
+}
+
 /// The Framing-A route for a doc whose migration minted an empty required slot: author the
 /// prose, then re-run — the stamp flips only once the doc gates clean.
 fn prose_needing_route(rel_key: &str) -> String {
@@ -1231,19 +1284,33 @@ mod tests {
         schema
     }
 
+    /// The `docs-root` every core fixture seeds under: the **shipped default**, not the flat
+    /// repo-root layout. See [`migration`].
+    const DOCS_ROOT: &str = "docs";
+
     /// Build a [`DoctypeMigration`] from the stamp-injected current shape `to`, at `version`.
     /// The prior shape is resolved per committed doc by stamp inside
     /// [`migrate_committed_corpus`] (stamp-absent → `strip_stamp(to)`; below-version →
     /// the snapshot store), so it is not a field here.
-    fn migration(to: Schema, version: u32) -> DoctypeMigration {
+    ///
+    /// **The topology is production's** (M42 Inc-5 validation finding): the job carries the
+    /// shipped default `docs-root: docs/` **and** a `location:`-bearing `to` already resolved
+    /// under it — exactly what the verb receives, since every CLI schema-load ends in
+    /// [`crate::start::apply_docs_root`] while the prior snapshot's `location:` stays raw.
+    /// Seeding the *flat* layout instead (`docs_root: ""`, a raw `to.location`) is the M10
+    /// fixture-topology masking face: it was the one topology in which the two sides of the
+    /// schema-diff happened to be docs-root-consistent, so the whole residual arm — the
+    /// **empty-diff backstop** and `PresentationOnly` — was reachable *only* in the fixtures
+    /// and dead in the shipped default.
+    fn migration(mut to: Schema, version: u32) -> DoctypeMigration {
+        if let Some(location) = to.location.as_deref() {
+            to.location = Some(format!("{DOCS_ROOT}/{location}"));
+        }
         DoctypeMigration {
             ty: to.ty.clone(),
             to,
             version,
-            // The core tests seed at the flat repo-root home (no docs-root); the docs-root
-            // re-application on the relocation walk-home is covered end-to-end by the
-            // `corpus_migration` binary test.
-            docs_root: String::new(),
+            docs_root: DOCS_ROOT.to_string(),
         }
     }
 
@@ -1345,7 +1412,7 @@ sections:
             !v0.starts_with("---"),
             "the v0 note carries no front-matter fence"
         );
-        write_doc(repo.path(), "notes/a-note.md", &v0);
+        write_doc(repo.path(), "docs/notes/a-note.md", &v0);
 
         // The stamp-absent (v0) path derives `from = strip_stamp(to)` internally and never
         // touches the snapshot store, so the pack is unused here.
@@ -1359,14 +1426,14 @@ sections:
         )
         .expect("migration runs");
 
-        assert_eq!(report.migrated, vec!["notes/a-note.md".to_string()]);
+        assert_eq!(report.migrated, vec!["docs/notes/a-note.md".to_string()]);
         assert!(
             report.blocked.is_empty(),
             "no blockers: {:?}",
             report.blocked
         );
 
-        let migrated = fs::read_to_string(repo.path().join("notes/a-note.md")).expect("read");
+        let migrated = fs::read_to_string(repo.path().join("docs/notes/a-note.md")).expect("read");
         assert!(
             migrated.starts_with("---\nschema-version: 1\n---\n\n"),
             "the fence is introduced carrying the stamp; got:\n{migrated}"
@@ -1413,7 +1480,7 @@ sections:
                 ],
             },
         );
-        write_doc(repo.path(), "notes/done-note.md", &stamped);
+        write_doc(repo.path(), "docs/notes/done-note.md", &stamped);
 
         let pack = crate::pack::EmbeddedPack::new();
         let report = migrate_committed_corpus(
@@ -1427,10 +1494,10 @@ sections:
 
         assert_eq!(
             report.already_current,
-            vec!["notes/done-note.md".to_string()]
+            vec!["docs/notes/done-note.md".to_string()]
         );
         assert!(report.migrated.is_empty(), "nothing to migrate");
-        let after = fs::read_to_string(repo.path().join("notes/done-note.md")).expect("read");
+        let after = fs::read_to_string(repo.path().join("docs/notes/done-note.md")).expect("read");
         assert_eq!(after, stamped, "an already-current doc is byte-untouched");
     }
 
@@ -1474,20 +1541,20 @@ sections:
         };
         let a0 = note("A Note");
         let b0 = note("B Note");
-        write_doc(repo.path(), "notes/a.md", &a0);
-        write_doc(repo.path(), "notes/b.md", &b0);
+        write_doc(repo.path(), "docs/notes/a.md", &a0);
+        write_doc(repo.path(), "docs/notes/b.md", &b0);
 
         // Both docs are already tracked in the file-state baseline (the migration re-baselines
         // only docs it already tracks) at their v0 hashes.
         let mut seed = FileStateRecord::new();
-        seed.record("notes/a.md".to_string(), hash_bytes(a0.as_bytes()));
-        seed.record("notes/b.md".to_string(), hash_bytes(b0.as_bytes()));
+        seed.record("docs/notes/a.md".to_string(), hash_bytes(a0.as_bytes()));
+        seed.record("docs/notes/b.md".to_string(), hash_bytes(b0.as_bytes()));
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
         seed.save(&jigc_root).expect("seed the baseline");
 
         // Force `b`'s atomic write to fail: occupy its temp-sibling path with a directory, so
         // `persist` errors when it writes the temp file — the loop aborts after `a` is written.
-        fs::create_dir_all(repo.path().join("notes/b.md.tmp")).expect("occupy temp sibling");
+        fs::create_dir_all(repo.path().join("docs/notes/b.md.tmp")).expect("occupy temp sibling");
 
         let pack = crate::pack::EmbeddedPack::new();
         let result = migrate_committed_corpus(
@@ -1504,7 +1571,7 @@ sections:
 
         // `a` was written to disk migrated; its on-disk baseline must already reflect those
         // bytes (the per-doc commit), so a later `file-state` detect would NOT mis-report it.
-        let on_disk_a = fs::read(repo.path().join("notes/a.md")).expect("a was written");
+        let on_disk_a = fs::read(repo.path().join("docs/notes/a.md")).expect("a was written");
         assert_ne!(
             on_disk_a,
             a0.as_bytes(),
@@ -1512,7 +1579,7 @@ sections:
         );
         let record = FileStateRecord::load(&jigc_root).expect("reload baseline");
         assert_eq!(
-            record.get("notes/a.md"),
+            record.get("docs/notes/a.md"),
             Some(hash_bytes(&on_disk_a).as_str()),
             "the already-written doc `a` must be baselined to its on-disk bytes before the abort"
         );
@@ -1587,7 +1654,7 @@ sections:
                 ],
             },
         );
-        write_doc(repo.path(), "memos/cache-memo.md", &v1);
+        write_doc(repo.path(), "docs/memos/cache-memo.md", &v1);
 
         let blocked_report = migrate_committed_corpus(
             &pack,
@@ -1609,7 +1676,7 @@ sections:
             "the doc is blocked, routed to the agent: {:?}",
             blocked_report.blocked
         );
-        assert_eq!(blocked_report.blocked[0].0, "memos/cache-memo.md");
+        assert_eq!(blocked_report.blocked[0].0, "docs/memos/cache-memo.md");
         assert!(
             blocked_report.blocked[0]
                 .1
@@ -1620,7 +1687,8 @@ sections:
         // STAMP-FLIPS-LAST: the on-disk doc is byte-identical v1 — stamp NOT bumped to 2 —
         // because the value-bump is post-fold and the doc never reached a clean gate, so
         // nothing was written.
-        let still_v1 = fs::read_to_string(repo.path().join("memos/cache-memo.md")).expect("read");
+        let still_v1 =
+            fs::read_to_string(repo.path().join("docs/memos/cache-memo.md")).expect("read");
         assert_eq!(still_v1, v1, "the blocked doc is byte-identical v1");
         assert!(
             still_v1.contains("schema-version: 1") && !still_v1.contains("schema-version: 2"),
@@ -1654,7 +1722,7 @@ sections:
                 ],
             },
         );
-        write_doc(repo.path(), "memos/cache-memo.md", &authored);
+        write_doc(repo.path(), "docs/memos/cache-memo.md", &authored);
 
         let flipped_report = migrate_committed_corpus(
             &pack,
@@ -1667,11 +1735,12 @@ sections:
 
         assert_eq!(
             flipped_report.migrated,
-            vec!["memos/cache-memo.md".to_string()],
+            vec!["docs/memos/cache-memo.md".to_string()],
             "with the prose authored the doc migrates: {flipped_report:?}",
         );
         assert!(flipped_report.blocked.is_empty(), "no longer blocked");
-        let flipped = fs::read_to_string(repo.path().join("memos/cache-memo.md")).expect("read");
+        let flipped =
+            fs::read_to_string(repo.path().join("docs/memos/cache-memo.md")).expect("read");
         assert!(
             flipped.contains("schema-version: 2"),
             "the stamp flips 1→2 once the prose is authored and the doc gates clean; got:\n{flipped}"
@@ -1794,8 +1863,8 @@ sections:
         );
         // `authored` sorts before `bare`, so the run reaches the blocker only after committing
         // the migratable doc (the fold halts at the first blocker).
-        write_doc(repo.path(), "briefs/authored-brief.md", &authored);
-        write_doc(repo.path(), "briefs/bare-brief.md", &bare);
+        write_doc(repo.path(), "docs/briefs/authored-brief.md", &authored);
+        write_doc(repo.path(), "docs/briefs/bare-brief.md", &bare);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -1809,11 +1878,11 @@ sections:
         // The authored doc migrates and restamps 1 → 2, its prose byte-identical.
         assert_eq!(
             report.migrated,
-            vec!["briefs/authored-brief.md".to_string()],
+            vec!["docs/briefs/authored-brief.md".to_string()],
             "the conformant doc migrates: {report:?}"
         );
         let migrated =
-            fs::read_to_string(repo.path().join("briefs/authored-brief.md")).expect("read");
+            fs::read_to_string(repo.path().join("docs/briefs/authored-brief.md")).expect("read");
         assert!(
             migrated.contains("schema-version: 2") && migrated.contains("Cold-start latency."),
             "the stamp flips and the prose survives; got:\n{migrated}"
@@ -1829,14 +1898,15 @@ sections:
             report.blocked
         );
         let (blocked_key, route) = &report.blocked[0];
-        assert_eq!(blocked_key, "briefs/bare-brief.md");
+        assert_eq!(blocked_key, "docs/briefs/bare-brief.md");
         assert!(
             route.contains("author the new required prose"),
             "the route routes the prose, not a transform-kind build: {route}"
         );
         // STAMP-FLIPS-LAST: the blocked doc is byte-identical v1 — never restamped at a version
         // it fails the gate of (the silent strand this kind exists to close).
-        let still_v1 = fs::read_to_string(repo.path().join("briefs/bare-brief.md")).expect("read");
+        let still_v1 =
+            fs::read_to_string(repo.path().join("docs/briefs/bare-brief.md")).expect("read");
         assert_eq!(still_v1, bare, "the blocked doc is byte-identical v1");
         assert!(
             still_v1.contains("schema-version: 1") && !still_v1.contains("schema-version: 2"),
@@ -1923,7 +1993,7 @@ sections:
                 ],
             },
         );
-        write_doc(repo.path(), "ledgers/open-ledger.md", &v1);
+        write_doc(repo.path(), "docs/ledgers/open-ledger.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -1944,7 +2014,7 @@ sections:
             "the doc is blocked, routed: {:?}",
             report.blocked
         );
-        assert_eq!(report.blocked[0].0, "ledgers/open-ledger.md");
+        assert_eq!(report.blocked[0].0, "docs/ledgers/open-ledger.md");
         let route = &report.blocked[0].1;
         assert!(
             route.contains("no transform kind") && route.contains("build the transform kind"),
@@ -1953,7 +2023,8 @@ sections:
         );
 
         // The bytes are untouched and the stamp is STILL 1 — no silent bump.
-        let after = fs::read_to_string(repo.path().join("ledgers/open-ledger.md")).expect("read");
+        let after =
+            fs::read_to_string(repo.path().join("docs/ledgers/open-ledger.md")).expect("read");
         assert_eq!(after, v1, "the refused doc is byte-identical");
         assert!(
             after.contains("schema-version: 1") && !after.contains("schema-version: 2"),
@@ -2049,7 +2120,7 @@ sections:
                 ],
             },
         );
-        write_doc(repo.path(), "linked/hub.md", &v1);
+        write_doc(repo.path(), "docs/linked/hub.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -2070,7 +2141,7 @@ sections:
             "the doc is blocked, routed: {:?}",
             report.blocked
         );
-        assert_eq!(report.blocked[0].0, "linked/hub.md");
+        assert_eq!(report.blocked[0].0, "docs/linked/hub.md");
         let route = &report.blocked[0].1;
         assert!(
             route.contains("narrows") && route.contains("meta.rel"),
@@ -2082,7 +2153,7 @@ sections:
         );
 
         // The bytes are untouched and the stamp is STILL 1 — no silent bump past the gate.
-        let after = fs::read_to_string(repo.path().join("linked/hub.md")).expect("read");
+        let after = fs::read_to_string(repo.path().join("docs/linked/hub.md")).expect("read");
         assert_eq!(after, v1, "the refused doc is byte-identical");
         assert!(
             after.contains("schema-version: 1") && !after.contains("schema-version: 2"),
@@ -2157,7 +2228,7 @@ sections:
                 ],
             },
         );
-        write_doc(repo.path(), "linked/hub.md", &v1);
+        write_doc(repo.path(), "docs/linked/hub.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -2178,7 +2249,7 @@ sections:
             "the doc is blocked, routed: {:?}",
             report.blocked
         );
-        assert_eq!(report.blocked[0].0, "linked/hub.md");
+        assert_eq!(report.blocked[0].0, "docs/linked/hub.md");
         let route = &report.blocked[0].1;
         assert!(
             route.contains("drops the declared field") && route.contains("meta.rel"),
@@ -2190,7 +2261,7 @@ sections:
         );
 
         // The bytes are untouched — the committed value survives — and the stamp is STILL 1.
-        let after = fs::read_to_string(repo.path().join("linked/hub.md")).expect("read");
+        let after = fs::read_to_string(repo.path().join("docs/linked/hub.md")).expect("read");
         assert_eq!(after, v1, "the refused doc is byte-identical");
         assert!(
             after.contains("rel: linked:spoke-a"),
@@ -2279,7 +2350,7 @@ sections:
             v1.contains("schema-version: 1"),
             "the committed doc is stamped below current; got:\n{v1}"
         );
-        write_doc(repo.path(), "cards/first-card.md", &v1);
+        write_doc(repo.path(), "docs/cards/first-card.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -2293,7 +2364,7 @@ sections:
         // (d) detector/verb agree: a below-version doc is MIGRATED, never already-current.
         assert_eq!(
             report.migrated,
-            vec!["cards/first-card.md".to_string()],
+            vec!["docs/cards/first-card.md".to_string()],
             "the below-version doc migrates: {report:?}"
         );
         assert!(
@@ -2301,7 +2372,8 @@ sections:
             "never already-current or blocked: {report:?}"
         );
 
-        let migrated = fs::read_to_string(repo.path().join("cards/first-card.md")).expect("read");
+        let migrated =
+            fs::read_to_string(repo.path().join("docs/cards/first-card.md")).expect("read");
         // The stamp is value-bumped 1→2 (the v1→v2 transition).
         assert!(
             migrated.contains("schema-version: 2") && !migrated.contains("schema-version: 1"),
@@ -2326,14 +2398,14 @@ sections:
         .expect("re-migration runs");
         assert_eq!(
             rerun.already_current,
-            vec!["cards/first-card.md".to_string()],
+            vec!["docs/cards/first-card.md".to_string()],
             "the migrated doc is already-current on a re-run: {rerun:?}"
         );
         assert!(
             rerun.migrated.is_empty(),
             "nothing migrates twice: {rerun:?}"
         );
-        let after = fs::read_to_string(repo.path().join("cards/first-card.md")).expect("read");
+        let after = fs::read_to_string(repo.path().join("docs/cards/first-card.md")).expect("read");
         assert_eq!(after, migrated, "the re-run leaves the doc byte-untouched");
     }
 
@@ -2378,7 +2450,7 @@ sections:
                 ],
             },
         );
-        write_doc(repo.path(), "cards/first-card.md", &v1);
+        write_doc(repo.path(), "docs/cards/first-card.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -2394,7 +2466,7 @@ sections:
             "a missing snapshot is neither migrated nor already-current: {report:?}"
         );
         assert_eq!(report.blocked.len(), 1, "the doc is blocked: {report:?}");
-        assert_eq!(report.blocked[0].0, "cards/first-card.md");
+        assert_eq!(report.blocked[0].0, "docs/cards/first-card.md");
         assert!(
             report.blocked[0]
                 .1
@@ -2404,7 +2476,7 @@ sections:
             report.blocked[0].1
         );
         // The doc is left byte-untouched (never silently rewritten).
-        let after = fs::read_to_string(repo.path().join("cards/first-card.md")).expect("read");
+        let after = fs::read_to_string(repo.path().join("docs/cards/first-card.md")).expect("read");
         assert_eq!(after, v1, "the blocked doc is byte-untouched");
     }
 
@@ -2489,12 +2561,12 @@ sections:
             v1.starts_with("---\nschema-version: 1\n---\n\n# changelog\n"),
             "the committed doc is stamped v1 with a lowercase H1; got:\n{v1}"
         );
-        write_doc(repo.path(), "changelog/changelog.md", &v1);
+        write_doc(repo.path(), "docs/changelog/changelog.md", &v1);
 
         // The doc is tracked at its old home (the migration re-keys only what it tracks).
         let mut seed = FileStateRecord::new();
         seed.record(
-            "changelog/changelog.md".to_string(),
+            "docs/changelog/changelog.md".to_string(),
             hash_bytes(v1.as_bytes()),
         );
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
@@ -2522,7 +2594,7 @@ sections:
 
         // (c) the old-home source file is removed.
         assert!(
-            !repo.path().join("changelog/changelog.md").exists(),
+            !repo.path().join("docs/changelog/changelog.md").exists(),
             "the old-home source is removed after the move"
         );
         // (b) the doc lives at the placement home, byte-faithful: H1 fixed, stamp bumped 1→2,
@@ -2547,7 +2619,7 @@ sections:
             "the target home is baselined at the migrated bytes"
         );
         assert!(
-            record.get("changelog/changelog.md").is_none(),
+            record.get("docs/changelog/changelog.md").is_none(),
             "the old-home key is dropped (re-keyed, not orphaned)"
         );
     }
@@ -2573,11 +2645,11 @@ sections:
         let to = v1_schema(log_v2_yaml());
         let from = crate::pack::load_prior_schema(&pack, "log", 1).expect("the log.v1 snapshot");
         let v1 = log_v1_doc(&from);
-        write_doc(repo.path(), "changelog/changelog.md", &v1);
+        write_doc(repo.path(), "docs/changelog/changelog.md", &v1);
 
         let mut seed = FileStateRecord::new();
         seed.record(
-            "changelog/changelog.md".to_string(),
+            "docs/changelog/changelog.md".to_string(),
             hash_bytes(v1.as_bytes()),
         );
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
@@ -2603,7 +2675,7 @@ sections:
         // WRITE-BEFORE-REMOVE: the failed write to `to` means the source at `from` was NEVER
         // removed — the doc survives at its old home (never zero copies; nothing stranded).
         assert!(
-            repo.path().join("changelog/changelog.md").exists(),
+            repo.path().join("docs/changelog/changelog.md").exists(),
             "the from copy survives the aborted write (never zero copies)"
         );
         // The write failed before the rename, so the target home was not created.
@@ -2614,7 +2686,7 @@ sections:
         // The move never completed, so the baseline is intact — no premature re-key.
         let record = FileStateRecord::load(&jigc_root).expect("reload baseline");
         assert_eq!(
-            record.get("changelog/changelog.md"),
+            record.get("docs/changelog/changelog.md"),
             Some(hash_bytes(v1.as_bytes()).as_str()),
             "the from-home baseline is intact (re-key not applied on abort)"
         );
@@ -2655,6 +2727,9 @@ sections:
             diff,
             vec![
                 SchemaChange::Relocated {
+                    // The RAW pack-declared home — both shapes here load straight from the
+                    // pack (`load_pack_schema` / the snapshot store), docs-root-free, which
+                    // is exactly the pair the engine classifier is contracted to see.
                     from: "changelog/".to_string(),
                     to: "CHANGELOG.md".to_string(),
                 },
@@ -2720,11 +2795,11 @@ sections:
             v1.starts_with("---\nschema-version: 1\n---\n\n# changelog\n"),
             "the committed doc is v1-stamped with a lowercase H1; got:\n{v1}"
         );
-        write_doc(repo.path(), "changelog/changelog.md", &v1);
+        write_doc(repo.path(), "docs/changelog/changelog.md", &v1);
 
         let mut seed = FileStateRecord::new();
         seed.record(
-            "changelog/changelog.md".to_string(),
+            "docs/changelog/changelog.md".to_string(),
             hash_bytes(v1.as_bytes()),
         );
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
@@ -2745,7 +2820,7 @@ sections:
             "the shipped changelog relocates to its root placement home: {report:?}"
         );
         assert!(
-            !repo.path().join("changelog/changelog.md").exists(),
+            !repo.path().join("docs/changelog/changelog.md").exists(),
             "the old-home source is removed after the move"
         );
         let moved = fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("relocated home");
@@ -2762,7 +2837,7 @@ sections:
             "the target home is baselined at the migrated bytes"
         );
         assert!(
-            record.get("changelog/changelog.md").is_none(),
+            record.get("docs/changelog/changelog.md").is_none(),
             "the old-home key is dropped (re-keyed, not orphaned)"
         );
     }
@@ -2891,7 +2966,7 @@ sections:
             !v1.contains("## Tasks"),
             "the pre-bump doc carries no repeatable section; got:\n{v1}"
         );
-        write_doc(repo.path(), "plans/ship-the-limiter.md", &v1);
+        write_doc(repo.path(), "docs/plans/ship-the-limiter.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -2904,7 +2979,7 @@ sections:
 
         assert_eq!(
             report.migrated,
-            vec!["plans/ship-the-limiter.md".to_string()],
+            vec!["docs/plans/ship-the-limiter.md".to_string()],
             "the doc migrates, never blocks: {report:?}"
         );
         assert!(
@@ -2914,7 +2989,7 @@ sections:
         );
 
         let migrated =
-            fs::read_to_string(repo.path().join("plans/ship-the-limiter.md")).expect("read");
+            fs::read_to_string(repo.path().join("docs/plans/ship-the-limiter.md")).expect("read");
         assert!(
             migrated.contains("## Tasks"),
             "the repeatable heading is minted; got:\n{migrated}"
@@ -2976,7 +3051,7 @@ sections:
                 ..Default::default()
             }],
         );
-        write_doc(repo.path(), "plans/ship-the-limiter.md", &v1);
+        write_doc(repo.path(), "docs/plans/ship-the-limiter.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -2989,7 +3064,7 @@ sections:
 
         assert_eq!(
             report.migrated,
-            vec!["plans/ship-the-limiter.md".to_string()],
+            vec!["docs/plans/ship-the-limiter.md".to_string()],
             "a doc that already carries the section migrates — it is never stranded: {report:?}"
         );
         assert!(
@@ -2999,7 +3074,7 @@ sections:
         );
 
         let migrated =
-            fs::read_to_string(repo.path().join("plans/ship-the-limiter.md")).expect("read");
+            fs::read_to_string(repo.path().join("docs/plans/ship-the-limiter.md")).expect("read");
         assert_eq!(
             migrated.matches("## Tasks").count(),
             1,
@@ -3129,7 +3204,7 @@ sections:
             !v1.contains("kind:"),
             "the pre-bump doc carries no kind bullet; got:\n{v1}"
         );
-        write_doc(repo.path(), "deferrals/deferral-ledger.md", &v1);
+        write_doc(repo.path(), "docs/deferrals/deferral-ledger.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -3142,7 +3217,7 @@ sections:
 
         assert_eq!(
             report.migrated,
-            vec!["deferrals/deferral-ledger.md".to_string()],
+            vec!["docs/deferrals/deferral-ledger.md".to_string()],
             "the doc migrates, never blocks: {report:?}"
         );
         assert!(
@@ -3151,8 +3226,8 @@ sections:
             report.blocked
         );
 
-        let migrated =
-            fs::read_to_string(repo.path().join("deferrals/deferral-ledger.md")).expect("read");
+        let migrated = fs::read_to_string(repo.path().join("docs/deferrals/deferral-ledger.md"))
+            .expect("read");
         assert_eq!(
             migrated.matches("- kind: Decision").count(),
             2,
@@ -3207,7 +3282,7 @@ sections:
             .expect("the deferrals.v1 snapshot");
 
         let v1 = deferrals_doc(&from, "1");
-        write_doc(repo.path(), "deferrals/deferral-ledger.md", &v1);
+        write_doc(repo.path(), "docs/deferrals/deferral-ledger.md", &v1);
 
         let report = migrate_committed_corpus(
             &pack,
@@ -3227,7 +3302,7 @@ sections:
             1,
             "the doc is blocked with a route: {report:?}"
         );
-        assert_eq!(report.blocked[0].0, "deferrals/deferral-ledger.md");
+        assert_eq!(report.blocked[0].0, "docs/deferrals/deferral-ledger.md");
         // THE DISCRIMINATING ASSERTION — the block alone does not distinguish T7 (pre-T7 the
         // change diffed to `[]` and the *backstop* refused it with the `build the transform
         // kind` route, a schema-authoring instruction). Now the change is **named**, so the
@@ -3235,12 +3310,12 @@ sections:
         // **prose-authoring** one: the agent fills the required per-item field, then re-runs.
         assert_eq!(
             report.blocked[0].1,
-            prose_needing_route("deferrals/deferral-ledger.md"),
+            prose_needing_route("docs/deferrals/deferral-ledger.md"),
             "a named prose need routes to the author, never to `build the transform kind`"
         );
 
-        let on_disk =
-            fs::read_to_string(repo.path().join("deferrals/deferral-ledger.md")).expect("read");
+        let on_disk = fs::read_to_string(repo.path().join("docs/deferrals/deferral-ledger.md"))
+            .expect("read");
         assert_eq!(
             on_disk, v1,
             "the blocked doc is byte-identical v0 — the stamp is NOT bumped"
