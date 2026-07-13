@@ -760,6 +760,14 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     // yields the empty map (every finding un-routed).
     let versions = crate::pack::frozen_doctype_versions(pack);
 
+    // The doctype → **shipped prior-version schema shapes** map the fifth family's
+    // managed-vs-foreign classifier keys its parse-against-a-prior arm on (`design/validation.md`
+    // → The managed-vs-foreign discriminator): an **unstamped** committed doc that parses against
+    // a shape jigc once shipped is a **managed, v0-era** doc (route: the corpus migration), not a
+    // foreign file squatting at a managed home (route: adoption). Read from the pack's snapshot
+    // store; a pack that ships none yields the empty map.
+    let priors = crate::pack::prior_doctype_schemas(pack, &versions);
+
     let mut report = engine::validate::validate_store_families(
         &jigc_home,
         &schemas,
@@ -769,6 +777,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
         &workflow_source,
         &record,
         &versions,
+        &priors,
     )
     .with_context(|| format!("validating the committed store at {jigc_home:?}"))?;
 

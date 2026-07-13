@@ -155,6 +155,34 @@ pub(crate) fn frozen_doctype_versions(
     out
 }
 
+/// The composed pack-set's `doctype → shipped prior-version schema shapes` map — the
+/// **parse-against-a-prior** arm of the store sweep's managed-vs-foreign classifier
+/// (`design/validation.md` → The managed-vs-foreign discriminator; the engine's
+/// `classify_provenance`). For each versioned doctype it loads every shipped snapshot below
+/// the current manifest version (`schema-snapshots/<ty>.v<k>.yaml`, `1..current`), so an
+/// **unstamped** committed doc that parses against a shape jigc once shipped is read as a
+/// **managed, v0-era** doc — not as a foreign file to adopt.
+///
+/// Best-effort like [`frozen_doctype_versions`]: a doctype whose snapshot is absent or
+/// malformed simply contributes no prior shape (the classifier then narrows to *stamp or
+/// parses-against-current* for it), never an error — the sweep is read-only and must not fail
+/// on a pack that ships no snapshot store.
+pub(crate) fn prior_doctype_schemas(
+    pack: &dyn PackSource,
+    versions: &std::collections::BTreeMap<String, u32>,
+) -> std::collections::BTreeMap<String, Vec<Schema>> {
+    let mut out = std::collections::BTreeMap::new();
+    for (ty, current) in versions {
+        let shapes: Vec<Schema> = (1..*current)
+            .filter_map(|version| load_prior_schema(pack, ty, version).ok())
+            .collect();
+        if !shapes.is_empty() {
+            out.insert(ty.clone(), shapes);
+        }
+    }
+    out
+}
+
 /// The `config/` resource id of a pack's frozen doctype-set manifest (the M33
 /// freeze artifact). A pack that ships this file gets its declared doctype shapes
 /// checked against it at pack-load by [`assert_schema_freeze`]; a pack that omits

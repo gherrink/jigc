@@ -379,10 +379,13 @@ pub struct StoreWorkflow {
 ///
 /// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
 /// the schemas, the per-workflow definition bundles (id + bytes + origin catalog), the step
-/// source, the loaded `FileStateRecord`, and `versions` (the doctype → manifest
-/// schema-version map the CLI reads from the pack's freeze manifest — the fifth family's
-/// version-aware route keys on it; an empty map leaves every finding un-routed). Severity is
-/// the engine-owned post-pass at [`ValidationReport::new`], keyed by `(probe, check)`
+/// source, the loaded `FileStateRecord`, `versions` (the doctype → manifest schema-version
+/// map the CLI reads from the pack's freeze manifest — the fifth family's version-aware
+/// route keys on it; an empty map leaves every finding un-routed), and `priors` (the doctype
+/// → **shipped prior-version schema shapes** the CLI reads from the pack's snapshot store —
+/// the [managed-vs-foreign classifier](classify_provenance)'s parse-against-a-prior arm keys
+/// on it; an empty map narrows the classifier to *stamp or parses-against-current*). Severity
+/// is the engine-owned post-pass at [`ValidationReport::new`], keyed by `(probe, check)`
 /// identically to every other entry point (a no-delta `resolved` leaves every emitted
 /// severity untouched).
 // The CLI threads each store target's distinct determinism-boundary inputs in (the engine
@@ -400,6 +403,7 @@ pub fn validate_store_families(
     workflow_source: &dyn crate::compose::StepSource,
     record: &FileStateRecord,
     versions: &BTreeMap<String, u32>,
+    priors: &BTreeMap<String, Vec<Schema>>,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
 
@@ -502,7 +506,15 @@ pub fn validate_store_families(
     // version) — `below-version`/`stamp-absent ⇒ migrate`, `at-version ⇒ corrupt`
     // (`validation.md` → Version-aware routing). Still report-only (exit 0); the route is a
     // direction, the blocking counterpart is the transform-transaction migration gate.
-    findings.extend(schema_conformance_store(repo_root, schemas, versions));
+    // **Managed-vs-foreign (M42)**: the family now reaches placement homes, where a
+    // brownfield repo's own `CHANGELOG.md` may be a never-adopted **foreign** file. Each
+    // instance is classified from its committed bytes ([`classify_provenance`] — the stamp, a
+    // parse against the current schema, or a parse against a shipped `priors` shape); a
+    // foreign one is an **adoption** case, not an unmigrated corpus, and takes the
+    // suppressed-structure advisory arm.
+    findings.extend(schema_conformance_store(
+        repo_root, schemas, versions, priors, workflows,
+    ));
 
     // The two M40 hollow-and-surplus advisories (`schema-conformance.
     // {repeatable-populated, surplus-sections-absent}`, `validation.md` → Hollow and
@@ -561,9 +573,30 @@ fn schema_conformance_store(
     repo_root: &Path,
     schemas: &BTreeMap<String, Schema>,
     versions: &BTreeMap<String, u32>,
+    priors: &BTreeMap<String, Vec<Schema>>,
+    workflows: &[StoreWorkflow],
 ) -> Vec<Finding> {
+    let no_priors: Vec<Schema> = Vec::new();
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
+        let ty_priors = priors.get(ty).unwrap_or(&no_priors);
+        // Whether the doctype-directed adoption verb even exists for this type: `jigc migrate
+        // <path> --as <ty>` composes the off-router `migrate-<ty>` workflow and hard-errors
+        // ("not migratable") when the composed pack ships none — so the adoption route names
+        // it only when it is there (the M40 two-tier route: never command a verb that
+        // hard-errors; `design/validation.md` → the M40 two-tier route).
+        let migratable = workflows.iter().any(|w| w.id == format!("migrate-{ty}"));
+        // **The discriminator runs only where the stamp exists to be absent.** Stamp-absence
+        // is the classifier's first signal, and it is only *evidence* for a doctype the CLI
+        // stamps at all — the versioned/frozen set (`versions`, the manifest map; the stamp is
+        // injected exactly there — `crates/cli/src/pack.rs` → `load_pack_schema`). For an
+        // **unversioned** doctype (a freeze-exempt / project-defined type) NO instance ever
+        // carries a stamp, so "unstamped" says nothing at all, and calling a doc of that type
+        // "never adopted by jigc" on the strength of a failed parse would be exactly the kind
+        // of unfounded claim this discriminator exists to remove: a corrupt *managed* doc would
+        // be routed at adoption instead of surfacing its break. Unversioned doctypes therefore
+        // keep the pre-M42 behavior (structural findings, un-routed).
+        let versioned = versions.contains_key(ty);
         // `identity` is the `<type>:<slug>` URI the enumerator already derives (a placement
         // doctype's `<type>:<type>` singleton included) — never re-derived from the path,
         // which does not round-trip for a case-preserved literal home (`CHANGELOG.md`).
@@ -579,6 +612,20 @@ fn schema_conformance_store(
             // Mirror the pure task-scope call exactly (no BOM strip, `from_utf8_lossy`):
             // a non-UTF-8 instance is the parser's concern.
             let source = String::from_utf8_lossy(&bytes);
+
+            // **The managed-vs-foreign discriminator** (M42; `design/validation.md` → The
+            // managed-vs-foreign discriminator). A **foreign** file — never adopted, squatting
+            // at a managed home (the brownfield repo's own Keep-a-Changelog `CHANGELOG.md`,
+            // which the placement-aware enumerator now reaches) — is the **in-location-squatter
+            // adoption case** (`design/storage.md` → Placement), not an unmigrated corpus. Its
+            // structural findings are **suppressed**: adjudicating a file the user never handed
+            // to jigc against jigc's schema produces N blocking breaks routed at a verb that
+            // does nothing for it. It surfaces as exactly one adoption **advisory**, addressed
+            // at its **path** (it has no managed identity to claim).
+            if versioned && classify_provenance(schema, &source, ty_priors) == Provenance::Foreign {
+                findings.push(unadopted_instance(ty, &rel_key, migratable));
+                continue;
+            }
             // Parse once so the version-aware route can read the doc's stamp from the same
             // parse the conformance checks run over. Inlines the store half of
             // `conformance_for`: the type comes from schema iteration, so `unknown-type`
@@ -700,6 +747,289 @@ fn hollow_surplus_store(
         }
     }
     findings
+}
+
+/// A committed file at a managed home is one of two things, and the fifth family must not
+/// confuse them (`design/validation.md` → The managed-vs-foreign discriminator).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Provenance {
+    /// **jigc's own doc** — possibly stale (below its manifest schema-version, or v0-era and
+    /// unstamped), but adopted: it belongs to the corpus `jigc migrate-corpus` upgrades.
+    Managed,
+    /// A **never-adopted foreign file** squatting at a managed home (a brownfield repo's real
+    /// Keep-a-Changelog `CHANGELOG.md`). It belongs to the *adoption* path (`jigc ingest` /
+    /// `jigc migrate <path> --as <doctype>`), never the corpus migration.
+    Foreign,
+}
+
+/// Classify a committed instance's **provenance** from **its own committed bytes** — the
+/// three-arm discriminator (`design/validation.md` → The managed-vs-foreign discriminator):
+///
+/// 1. it carries a **schema-version stamp** ⇒ **managed** (jigc wrote it; the stamp is
+///    engine-`set:`, never authored);
+/// 2. else it **parses** against the **current** schema, or against **any shipped prior-version
+///    shape** (`priors`, the pack's `schema-snapshots/<ty>.v<k>.yaml` set) ⇒ **managed, v0-era**
+///    — the M34 headline detect case, the population that predates the stamp. This arm is
+///    load-bearing: a v0-era ADR does *not* parse against the current (v2) `adr` shape but does
+///    parse against `adr.v1`, so a current-shape-only test would call it foreign and route a
+///    managed doc at adoption;
+/// 3. else ⇒ **foreign** — it was never written by jigc under any version of this schema.
+///
+/// **It must key on the committed bytes, not on the file-state record.** The record lives in
+/// gitignored, rebuildable `.jigc/state/` (`design/storage.md` → Derived caches), so on a
+/// **fresh clone of a managed repo** it is empty — a record-keyed discriminator would read
+/// every managed doc as foreign and tell a teammate to `ingest` their own committed corpus.
+/// The stamp survives a clone; the record does not.
+///
+/// **The bound, declared with its expiry** (`design/validation.md`): stamp-absent means *both*
+/// "never adopted" *and* "v0-era managed". The parse test separates them in the ordinary case;
+/// what remains is bounded, not eliminated (a foreign file that happens to parse clean reads
+/// managed; a v0-era managed doc corrupted past parsing reads foreign). M34/M40 shipped the
+/// v0→v1 stamp migration for every persisted doctype, so the unstamped-managed population is
+/// finite pre-1.0 and empty at the 1.0 pin, after which stamp-absent means foreign, full stop.
+fn classify_provenance(schema: &Schema, source: &str, priors: &[Schema]) -> Provenance {
+    // Arm 1 — the stamp, read from the raw front matter so a doc that fails to PARSE under the
+    // current schema (the stale-but-managed case) is still recognized as jigc's own.
+    if schema_version_from_front_matter(source).is_some() {
+        return Provenance::Managed;
+    }
+    // Arms 2 + 3 — the parse test, current shape first, then each shipped prior shape.
+    if parse_sections(schema, source).is_ok()
+        || priors
+            .iter()
+            .any(|prior| parse_sections(prior, source).is_ok())
+    {
+        return Provenance::Managed;
+    }
+    Provenance::Foreign
+}
+
+/// The **adoption advisory** for a never-adopted foreign file squatting at a managed home
+/// (`schema-conformance.unadopted-instance`, M42 — un-keyed, store-scope-only, gating nothing;
+/// `design/validation.md` → Informational outcomes). It is addressed at the **file path**, not
+/// a `<type>:<slug>` URI: a foreign file has **no managed identity to claim** (the
+/// `file-state.*` path-keyed form — `design/command-output-contract.md` → the target-normal
+/// forms), and a synthesized URI would name a doc that does not exist.
+///
+/// The route obeys the **M40 two-tier rule — never command a verb that hard-errors**: the
+/// doctype-directed `jigc migrate <path> --as <ty>` is named only when the composed pack ships
+/// the `migrate-<ty>` workflow it composes (`migratable`); `jigc ingest`, the adoption front
+/// door, always applies. It deliberately does **not** name `jigc migrate-corpus` — that verb
+/// upgrades the *managed* corpus and would report this file `blocked`, doing nothing.
+fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool) -> Finding {
+    let message = format!(
+        "committed file `{rel_key}` sits at the `{ty}` home but was never adopted by jigc — it \
+         carries no schema-version stamp and parses against no known `{ty}` schema version"
+    );
+    let route = if migratable {
+        format!(
+            "adopt — run `jigc ingest` to route it, or `jigc migrate {rel_key} --as {ty}` to \
+             rewrite it into the managed `{ty}` shape; it is a foreign file, not an unmigrated \
+             managed doc"
+        )
+    } else {
+        "adopt — run `jigc ingest` to route it; it is a foreign file, not an unmigrated \
+         managed doc"
+            .to_string()
+    };
+    Finding::graded(
+        Severity::Advisory,
+        "schema-conformance.unadopted-instance",
+        message,
+        Some(Location::addressed(rel_key, 1, 1)),
+        Some(route),
+    )
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    //! The **managed-vs-foreign discriminator** ([`classify_provenance`], M42;
+    //! `design/validation.md` → The managed-vs-foreign discriminator), pinned arm by arm over
+    //! the real shipped shapes: the **current** (v2) `adr` — status header + the optional
+    //! `## Options` slot — and its shipped **prior** (v1) snapshot shape, both carrying the
+    //! injected schema-version stamp exactly as the CLI's `load_pack_schema` produces them.
+
+    use super::*;
+
+    /// The current `adr` shape (v2 — the `options` slot), stamp-injected like the CLI's load.
+    fn current_adr() -> Schema {
+        let yaml = br#"
+type: adr
+location: decisions/
+id-from: title
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+      - { id: date, type: date, set: on-create }
+  - id: context
+    slot: { hint: Forces. }
+  - id: options
+    slot: { optional: true, hint: Alternatives. }
+  - id: decision
+    slot: { hint: What. }
+  - id: consequences
+    slot: { hint: Effects. }
+"#;
+        let mut schema = crate::schema::load_schema(yaml).expect("the current adr shape loads");
+        crate::schema::inject_schema_version_stamp(&mut schema);
+        schema
+    }
+
+    /// The shipped **prior** `adr.v1` shape (no `options` slot), stamp-injected identically.
+    fn prior_adr() -> Schema {
+        let yaml = br#"
+type: adr
+location: decisions/
+id-from: title
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+      - { id: date, type: date, set: on-create }
+  - id: context
+    slot: { hint: Forces. }
+  - id: decision
+    slot: { hint: What. }
+  - id: consequences
+    slot: { hint: Effects. }
+"#;
+        let mut schema = crate::schema::load_schema(yaml).expect("the prior adr.v1 shape loads");
+        crate::schema::inject_schema_version_stamp(&mut schema);
+        schema
+    }
+
+    /// A v0-era ADR: the **prior** three-slot shape, **unstamped** (it predates the stamp).
+    const V0_ERA_ADR: &str = "\
+---
+status: accepted
+date: 2026-06-25
+---
+
+# Cache sessions in memory
+
+## Context
+
+Forces.
+
+## Decision
+
+What.
+
+## Consequences
+
+Effects.
+";
+
+    /// A **stamped** doc whose body parses against **nothing** — corrupted past parsing, yet
+    /// unmistakably jigc's own: the stamp is engine-`set:`, never authored.
+    const STAMPED_BUT_UNPARSEABLE: &str = "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 2
+---
+
+# Cache sessions in memory
+
+## Backstory
+
+Someone renamed every heading by hand.
+";
+
+    /// A real **Keep-a-Changelog** file — a foreign document that was never jigc's.
+    const FOREIGN: &str = "\
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- A new thing.
+";
+
+    /// (arm 1 — stamped) A schema-version stamp means **managed**, whatever the body does: it
+    /// is engine-written, never authored, so its presence is proof jigc wrote the doc.
+    #[test]
+    fn a_stamped_doc_is_managed_even_when_it_parses_against_nothing() {
+        let current = current_adr();
+        let priors = vec![prior_adr()];
+        assert!(
+            parse_sections(&current, STAMPED_BUT_UNPARSEABLE).is_err(),
+            "precondition: the stamped doc must NOT parse — otherwise this arm is not tested",
+        );
+        assert_eq!(
+            classify_provenance(&current, STAMPED_BUT_UNPARSEABLE, &priors),
+            Provenance::Managed,
+            "the stamp alone settles provenance — a stale/corrupt managed doc is still managed",
+        );
+    }
+
+    /// (arm 2 — unstamped, parses against the CURRENT shape) A conformant unstamped doc of the
+    /// current shape is a **managed, v0-era** doc, not a foreign file.
+    #[test]
+    fn an_unstamped_doc_that_parses_against_the_current_shape_is_managed() {
+        let current = current_adr();
+        let unstamped_current = V0_ERA_ADR.replacen(
+            "## Decision",
+            "## Options\n\nAlternatives.\n\n## Decision",
+            1,
+        );
+        assert!(
+            parse_sections(&current, &unstamped_current).is_ok(),
+            "precondition: this doc parses against the current shape",
+        );
+        assert_eq!(
+            classify_provenance(&current, &unstamped_current, &[]),
+            Provenance::Managed,
+            "a v0-era doc in the current shape is managed — even with no priors in hand",
+        );
+    }
+
+    /// (arm 2 — unstamped, parses against a shipped PRIOR shape) **The load-bearing arm.** A
+    /// v0-era ADR does **not** parse against the current (v2) shape — the optional `## Options`
+    /// slot makes `## Decision` read as a renamed section — but it **does** parse against the
+    /// shipped `adr.v1` snapshot. Without the priors arm the classifier would call jigc's own
+    /// doc foreign and route the M34 headline detect case at *adoption*, so the same input is
+    /// pinned **both** ways: managed with the prior in hand, foreign without it.
+    #[test]
+    fn an_unstamped_doc_that_parses_only_against_a_shipped_prior_is_managed() {
+        let current = current_adr();
+        let priors = vec![prior_adr()];
+        assert!(
+            parse_sections(&current, V0_ERA_ADR).is_err(),
+            "precondition: a v0-era ADR does NOT parse against the current (v2) shape",
+        );
+        assert!(
+            parse_sections(&priors[0], V0_ERA_ADR).is_ok(),
+            "precondition: it DOES parse against the shipped adr.v1 shape",
+        );
+        assert_eq!(
+            classify_provenance(&current, V0_ERA_ADR, &priors),
+            Provenance::Managed,
+            "the parse-against-a-prior arm keeps the v0-era managed corpus managed",
+        );
+        assert_eq!(
+            classify_provenance(&current, V0_ERA_ADR, &[]),
+            Provenance::Foreign,
+            "and it is LOAD-BEARING: drop the priors and the same managed doc reads foreign",
+        );
+    }
+
+    /// (arm 3 — unstamped, parses against nothing) A real Keep-a-Changelog file at a managed
+    /// home is **foreign**: never adopted, and no version of the schema ever wrote it.
+    #[test]
+    fn an_unstamped_doc_that_parses_against_no_known_version_is_foreign() {
+        let current = current_adr();
+        let priors = vec![prior_adr()];
+        assert_eq!(
+            classify_provenance(&current, FOREIGN, &priors),
+            Provenance::Foreign,
+            "a file jigc never wrote, under any shipped version, is a foreign adoption case",
+        );
+    }
 }
 
 /// Read a committed instance's per-doc **schema-version stamp** value (the
@@ -4519,6 +4849,7 @@ One sentence.
             &EmptyStepSource,
             &record,
             &BTreeMap::new(),
+            &BTreeMap::new(),
         )
         .expect("store sweep runs");
 
@@ -4585,6 +4916,7 @@ One sentence.
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .expect("store sweep runs");
@@ -4658,6 +4990,7 @@ Old notes.
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .expect("store sweep runs");
@@ -5026,6 +5359,7 @@ Effects.
             &source,
             &record,
             &BTreeMap::new(),
+            &BTreeMap::new(),
         )
         .expect("three-family store sweep runs");
 
@@ -5073,6 +5407,7 @@ Effects.
             &workflows,
             &source,
             &record,
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .expect("three-family store sweep runs with a crashing probe");
@@ -5163,6 +5498,7 @@ Slightly higher write latency for resilience.
             &EmptyStepSource,
             &record,
             &BTreeMap::new(),
+            &BTreeMap::new(),
         )
         .expect("store sweep runs");
 
@@ -5219,6 +5555,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .expect("store sweep runs");
@@ -5285,6 +5622,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .expect("store sweep runs");
@@ -5356,6 +5694,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .expect("store sweep runs");
@@ -5464,6 +5803,7 @@ sections:
             &EmptyStepSource,
             &record,
             &BTreeMap::new(),
+            &BTreeMap::new(),
         )
         .expect("store sweep runs over a conformant store");
         assert!(
@@ -5485,6 +5825,7 @@ sections:
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .expect("store sweep runs under the schema shadow");
@@ -5627,6 +5968,7 @@ Effects.
                 &EmptyStepSource,
                 &record,
                 &versions,
+                &BTreeMap::new(),
             )
             .expect("store sweep runs")
             .findings
@@ -5669,6 +6011,7 @@ Effects.
             &EmptyStepSource,
             &record,
             &versions_v1,
+            &BTreeMap::new(),
         )
         .expect("store sweep runs")
         .findings;
@@ -5714,6 +6057,7 @@ Effects.
                 &EmptyStepSource,
                 &record,
                 &versions,
+                &BTreeMap::new(),
             )
             .expect("store sweep runs");
             report
@@ -5873,6 +6217,7 @@ Effects.
             &source,
             &record,
             &BTreeMap::new(),
+            &BTreeMap::new(),
         )
         .expect("per-workflow-catalog sweep runs");
         assert!(
@@ -5896,6 +6241,7 @@ Effects.
             &dangling,
             &source,
             &record,
+            &BTreeMap::new(),
             &BTreeMap::new(),
         )
         .expect("dangling-ref sweep runs");
@@ -6464,7 +6810,8 @@ title: {title}
         std::fs::write(notes.join("alpha.md"), &alpha).expect("commit alpha");
         std::fs::write(notes.join("beta.md"), &beta).expect("commit beta");
 
-        let findings = schema_conformance_store(&root, &schemas(), &BTreeMap::new());
+        let findings =
+            schema_conformance_store(&root, &schemas(), &BTreeMap::new(), &BTreeMap::new(), &[]);
         let _ = std::fs::remove_dir_all(&root);
 
         let breaks: Vec<&Finding> = findings
