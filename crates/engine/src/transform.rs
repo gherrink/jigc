@@ -189,6 +189,13 @@ pub fn transform(
                     section: section.clone(),
                 });
             }
+            SchemaChange::OptionalRelaxed { .. } => {
+                // Instance-byte identity: a leaf relaxed to `optional: true` admits every doc the
+                // strict rule admitted — nothing can have become non-conformant, so there is
+                // nothing to splice (the widened-cardinality sibling; `corpus-migration.md` → The
+                // structural projection: the two flag deltas get named kinds). The kind exists so
+                // the change *names itself* to the backstop instead of being refused.
+            }
             SchemaChange::EnumWidened { .. } => {
                 // Instance-byte identity: `new.of ⊇ old.of`, so every committed value is still a
                 // declared member — nothing to remap, no authored map needed (the
@@ -2201,6 +2208,67 @@ sections:
                 v2: src.clone(),
             }],
             "the doc migrates (byte-identical) — it restamps, it does not strand"
+        );
+    }
+
+    /// **The `optional` relaxation folds byte-identical** (the sixth hole's safe direction). A
+    /// leaf tightened-to-loose (`optional: false → true`) cannot make a conformant doc
+    /// non-conformant, so the change classifies [`SchemaChange::OptionalRelaxed`] through the
+    /// **real classifier** and the driver folds **zero bytes** — the doc migrates and restamps
+    /// (never blocks, never strands). Red before T4: the delta was invisible to the existing-leaf
+    /// diff and fell through to the backstop's residual, which **refused** it — a legitimate,
+    /// doc-safe change made unshippable.
+    #[test]
+    fn an_optional_relaxation_folds_byte_identical_and_the_doc_migrates() {
+        let v1 = doca_v1();
+        // v2: `derived-from` relaxes to `optional: true`; nothing else moves.
+        let v2 = load_schema(
+            b"\
+type: doca
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: derived-from, type: ref, to: doca, card: \"0..1\", optional: true }
+  - id: body
+    slot: { hint: \"the body\" }
+",
+        )
+        .expect("doca v2-relaxed loads");
+        let src = doca_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::OptionalRelaxed {
+                section: "meta".to_string(),
+                leaf: Some("derived-from".to_string()),
+            }],
+            "the relaxation names itself (never the empty diff, never the backstop)"
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("the relaxation transform succeeds");
+        assert_eq!(out, src, "an `optional` relaxation folds to zero bytes");
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+        assert_eq!(transform(&v1, &v2, &src, &diff).expect("re-run"), out);
+
+        // The corpus fold commits it — the doc reaches the CLI's restamp, it does not strand.
+        let corpus = [CorpusDoc {
+            id: "doca-a",
+            old_schema: &v1,
+            new_schema: &v2,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, None, "a byte no-op kind never blocks");
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Migrated {
+                id: "doca-a".to_string(),
+                v2: src.clone(),
+            }],
         );
     }
 

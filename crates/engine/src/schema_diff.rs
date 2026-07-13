@@ -176,6 +176,28 @@ pub enum SchemaChange {
         to: String,
     },
 
+    /// An **`optional` relaxation** on a leaf present in both schemas (`optional: false → true`,
+    /// on a section's slot or on a field): every doc conformant under the strict rule is
+    /// conformant under the loose one, so the fold is a **byte no-op** (the
+    /// [`Self::WidenedCardinality`] sibling — classify → fold to zero bytes → restamp → ship).
+    ///
+    /// It is a *named kind* rather than a dropped delta because `optional` is **inside** the
+    /// conformance-relevant projection (a committed doc's bytes *can* violate requiredness — see
+    /// the tightening below), so the empty-diff backstop would otherwise **refuse** it: a
+    /// relaxation — the one direction that cannot break a single doc — would be unshippable
+    /// (`design/corpus-migration.md` → The structural projection: the two flag deltas get named
+    /// kinds).
+    ///
+    /// The **other** direction (`optional: true → false`, a *tightening*) is not this kind: it can
+    /// render a currently-conformant doc non-conformant, so it classifies [`Self::ProseNeeding`]
+    /// (or, when the leaf is not thereby author-required, [`Self::PresentationOnly`]).
+    OptionalRelaxed {
+        /// The section carrying the leaf.
+        section: String,
+        /// The field id; `None` for a section's own (anonymous) slot.
+        leaf: Option<String>,
+    },
+
     /// A change **outside the conformance-relevant structural projection** — a delta a
     /// committed doc's bytes *cannot* violate, so it is a **byte no-op** (the
     /// [`Self::WidenedCardinality`] / [`Self::Relocated`] shape: classify → fold to zero
@@ -373,17 +395,34 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
                 fields: new_fields,
             },
         ) => {
-            // A newly-introduced required slot needs prose (the slot is
-            // anonymous → `leaf: None`). An added *optional* slot leaves existing
-            // docs conformant, so it needs no transform.
-            if old_slot.is_none()
-                && let Some(s) = new_slot
-                && !s.optional
-            {
-                out.push(SchemaChange::ProseNeeding {
+            match (old_slot, new_slot) {
+                // A newly-introduced required slot needs prose (the slot is anonymous →
+                // `leaf: None`). An added *optional* slot leaves existing docs conformant, so it
+                // needs no transform.
+                (None, Some(s)) if !s.optional => out.push(SchemaChange::ProseNeeding {
                     section: id.to_owned(),
                     leaf: None,
-                });
+                }),
+                // THE SLOT-LEVEL `optional` FLAG DELTA (the sixth hole — the [`optional_flag_change`]
+                // rule at the slot locus). A slot carries no `default:`/`set:`, so a **tightening**
+                // (`true → false`) is *always* a real `ProseNeeding`: a doc that legitimately left
+                // the optional slot empty now breaks `required-slot-present`. A **relaxation** is
+                // the byte no-op kind. Either way it names itself — before T4 the delta was
+                // invisible here and fell through to the backstop's residual.
+                (Some(old), Some(new)) if old.optional != new.optional => {
+                    out.push(if new.optional {
+                        SchemaChange::OptionalRelaxed {
+                            section: id.to_owned(),
+                            leaf: None,
+                        }
+                    } else {
+                        SchemaChange::ProseNeeding {
+                            section: id.to_owned(),
+                            leaf: None,
+                        }
+                    });
+                }
+                _ => {}
             }
             diff_fields(id, old_fields, new_fields, out);
         }
@@ -416,6 +455,9 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
 /// loops iterate `new`'s leaves and inspect only `card` + `of`*).
 fn diff_leaf(section: &str, old: &Field, new: &Field, out: &mut Vec<SchemaChange>) {
     let (id, field) = (section.to_owned(), new.id.clone());
+    if old.optional != new.optional {
+        out.push(optional_flag_change(section, new));
+    }
     if old.card != new.card {
         out.push(if widens_card(old.card.as_deref(), new.card.as_deref()) {
             SchemaChange::WidenedCardinality {
@@ -444,6 +486,39 @@ fn diff_leaf(section: &str, old: &Field, new: &Field, out: &mut Vec<SchemaChange
                 map: BTreeMap::new(),
             }
         });
+    }
+}
+
+/// Classify an `optional`-flag delta on a **field** present in both schemas — the sixth hole
+/// (`design/corpus-migration.md` → The structural projection: *Inside the projection, the two flag
+/// deltas get named kinds*). The flag is **inside** the conformance-relevant projection, so a
+/// delta here must name itself or the backstop refuses it.
+///
+/// - **`false → true` (a relaxation)** — every doc conformant under the strict rule is conformant
+///   under the loose one: [`SchemaChange::OptionalRelaxed`], a byte no-op.
+/// - **`true → false` (a tightening)** — a **real** [`SchemaChange::ProseNeeding`] *iff the leaf
+///   thereby becomes author-required*: a committed doc that legitimately omits the field now
+///   breaks `required-field-present`, so it routes to the agent (Framing A).
+/// - **a tightening on a leaf that is *not* thereby author-required** — a `default:`/`set:`-carrying
+///   field, an optional `ref`, a pack-declared type: [`SchemaChange::PresentationOnly`], the
+///   out-of-projection no-op kind. **Blocking it would be a false refusal**, and the predicate is
+///   not re-derived here: it is [`crate::validate::is_author_required`] — *the very predicate the
+///   conformance gate's absent-field arm consults* — so the classifier's verdict and the gate's
+///   can never drift (the design's flat "a tighten is prose-needing" rule, refined against the
+///   gate that actually adjudicates it).
+fn optional_flag_change(section: &str, new: &Field) -> SchemaChange {
+    if new.optional {
+        SchemaChange::OptionalRelaxed {
+            section: section.to_owned(),
+            leaf: Some(new.id.clone()),
+        }
+    } else if crate::validate::is_author_required(new) {
+        SchemaChange::ProseNeeding {
+            section: section.to_owned(),
+            leaf: Some(new.id.clone()),
+        }
+    } else {
+        SchemaChange::PresentationOnly
     }
 }
 
@@ -1537,6 +1612,218 @@ sections:
                 section: "meta".to_owned(),
                 field: "rel".to_owned(),
             }]
+        );
+    }
+
+    // ---- the `optional` flag deltas (the sixth hole): relax → no-op kind; tighten →
+    // ---- `ProseNeeding` iff the leaf thereby becomes author-required
+
+    /// **The relaxation, on a field** (`optional: false → true`): every doc conformant under the
+    /// strict rule is conformant under the loose one, so it is a **byte no-op** — but it must
+    /// still *name itself*, or the backstop refuses it. Classifies to **exactly**
+    /// `[OptionalRelaxed]` naming the section + leaf. Red before T4: the flag is invisible to the
+    /// existing-leaf diff, so the pair emitted nothing and fell through to the residual — a
+    /// **false refusal** of a change that cannot break a single doc.
+    #[test]
+    fn an_optional_relax_on_a_field_classifies_optional_relaxed() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: owner, type: string }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: owner, type: string, optional: true }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::OptionalRelaxed {
+                section: "meta".to_owned(),
+                leaf: Some("owner".to_owned()),
+            }]
+        );
+    }
+
+    /// **The relaxation, on a slot** (a section's anonymous slot turned `optional: true`) — the
+    /// same no-op kind, with `leaf: None` (the [`SchemaChange::ProseNeeding`] shape).
+    #[test]
+    fn an_optional_relax_on_a_slot_classifies_optional_relaxed_with_no_leaf() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: rationale
+    slot: { hint: \"why\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: rationale
+    slot: { hint: \"why\", optional: true }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::OptionalRelaxed {
+                section: "rationale".to_owned(),
+                leaf: None,
+            }]
+        );
+    }
+
+    /// **The tightening, on a slot** (`optional: true → false`) — the sixth hole. A currently
+    /// conformant doc that legitimately left the optional slot empty is now **non-conformant**,
+    /// so it is a real [`SchemaChange::ProseNeeding`] (`leaf: None` — a section's slot is
+    /// anonymous), routed to the agent. Red before T4: it diffed to nothing and fell through to
+    /// the residual, which cannot tell a *prose* need from a missing transform kind.
+    #[test]
+    fn an_optional_tighten_on_a_slot_classifies_prose_needing() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: notes
+    slot: { hint: \"notes\", optional: true }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: notes
+    slot: { hint: \"notes\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::ProseNeeding {
+                section: "notes".to_owned(),
+                leaf: None,
+            }]
+        );
+    }
+
+    /// **The tightening, on an author-required field** — the same real `ProseNeeding`, named by
+    /// its leaf: a committed doc that legitimately omits the now-required field breaks
+    /// `required-field-present`.
+    #[test]
+    fn an_optional_tighten_on_an_author_required_field_classifies_prose_needing() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: owner, type: string, optional: true }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: owner, type: string }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::ProseNeeding {
+                section: "meta".to_owned(),
+                leaf: Some("owner".to_owned()),
+            }]
+        );
+    }
+
+    /// **The refinement the flat rule misses**: a tighten on a field carrying a `default:` renders
+    /// **no** doc non-conformant — `schema_conformance`'s absent-field arm consults
+    /// `validate::is_author_required`, which exempts a defaulted field — so blocking it would be a
+    /// **false refusal**. It classifies the out-of-projection no-op kind
+    /// ([`SchemaChange::PresentationOnly`]) and ships. The same holds for a `set:`-derived field
+    /// (the schema-version stamp's shape).
+    #[test]
+    fn an_optional_tighten_on_a_defaulted_field_is_a_no_op_never_a_block() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: kind, type: enum, of: [a, b], optional: true, default: a }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: kind, type: enum, of: [a, b], default: a }
+",
+        );
+        assert_eq!(schema_diff(&v1, &v2), vec![SchemaChange::PresentationOnly]);
+    }
+
+    /// **The second locus**: the flag deltas classify inside a **repeatable item block** too — a
+    /// relax on one item field and a tighten on another, in item-block document order. Red before
+    /// T4 at this locus as well (`diff_item_fields` reached only `card`/`of`).
+    #[test]
+    fn the_optional_flag_deltas_classify_inside_a_repeatable_item_block() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: link, type: string }
+        - { id: owner, type: string, optional: true }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: link, type: string, optional: true }
+        - { id: owner, type: string }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![
+                SchemaChange::OptionalRelaxed {
+                    section: "entries".to_owned(),
+                    leaf: Some("link".to_owned()),
+                },
+                SchemaChange::ProseNeeding {
+                    section: "entries".to_owned(),
+                    leaf: Some("owner".to_owned()),
+                },
+            ]
         );
     }
 

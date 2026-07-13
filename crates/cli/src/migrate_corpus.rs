@@ -735,6 +735,7 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
             // Every other kind splices inside an existing section (or no bytes at all), so it
             // has no heading to collide with and is always kept.
             SchemaChange::AddedOptionalField { .. }
+            | SchemaChange::OptionalRelaxed { .. }
             | SchemaChange::WidenedCardinality { .. }
             | SchemaChange::NarrowedCardinality { .. }
             | SchemaChange::EnumWidened { .. }
@@ -1627,6 +1628,167 @@ sections:
             "the authored prose survives; got:\n{flipped}"
         );
         assert_conformant_and_stable(&to, &flipped);
+    }
+
+    /// The v1 prior shape of the `brief` doctype: a required `summary` slot + an **optional**
+    /// `risks` slot — the shape a doc may legitimately leave empty.
+    fn brief_v1_yaml() -> &'static str {
+        "\
+type: brief
+location: briefs/
+id-from: title
+sections:
+  - id: summary
+    slot: { hint: \"s\" }
+  - id: risks
+    slot: { hint: \"r\", optional: true }
+"
+    }
+
+    /// The v2 current shape: `risks` **tightens** to required (`optional: true → false`) — the
+    /// sixth hole, which renders a currently-conformant doc non-conformant.
+    fn brief_v2_yaml() -> &'static [u8] {
+        b"\
+type: brief
+location: briefs/
+id-from: title
+sections:
+  - id: summary
+    slot: { hint: \"s\" }
+  - id: risks
+    slot: { hint: \"r\" }
+"
+    }
+
+    /// **The `optional: true → false` tighten, end to end** (the sixth hole; T4). Two committed
+    /// v1-stamped briefs share the bump, and the two halves of the done-picture must both hold:
+    ///
+    /// - the **authored** brief (it carries `## Risks` prose) is already conformant under the
+    ///   tightened schema, so it migrates with **zero byte work** and restamps `1 → 2`;
+    /// - the **bare** brief (it carries the `## Risks` heading and legitimately left it empty) is
+    ///   **blocked** with the Framing-A prose route, and its stamp is **NOT** bumped.
+    ///
+    /// The tighten mints nothing: T2's guard drops a `ProseNeeding` whose heading the doc already
+    /// carries (minting it would hit `generate_section`'s `AlreadyPresent` refusal and dead-end
+    /// the doc), so the shipped **per-doc conformance gate** is the adjudicator — the empty
+    /// required slot breaks `required-slot-present` and rolls the doc back.
+    ///
+    /// Red before T4: the flag delta classified **nothing**, so the pair fell through to the
+    /// backstop's residual (`Unclassified`) and **both** docs were refused with the *build the
+    /// transform kind first* route — the authored one included; before the backstop it was worse
+    /// still (the stamp bumped and the corpus stranded at v2 failing its own gate).
+    #[test]
+    fn below_version_optional_tighten_blocks_the_bare_doc_and_migrates_the_authored_one() {
+        let repo = TempDir::new("optional-tighten");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("brief", 1, brief_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(brief_v2_yaml());
+        let from =
+            crate::pack::load_prior_schema(&pack, "brief", 1).expect("the brief.v1 snapshot");
+
+        let stamp_v1 = || SectionContent {
+            id: "meta".to_string(),
+            fields: vec![Field {
+                key: SCHEMA_VERSION_FIELD.to_string(),
+                value: Value::Scalar("1".to_string()),
+            }],
+            ..Default::default()
+        };
+
+        // The AUTHORED brief — it filled the (then-optional) `risks` slot, so it is already
+        // conformant under the tightened v2 shape.
+        let authored = render(
+            &from,
+            &Instance {
+                title: "Authored Brief".to_string(),
+                sections: vec![
+                    stamp_v1(),
+                    SectionContent {
+                        id: "summary".to_string(),
+                        slot: Some("Ship the cache.".to_string()),
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "risks".to_string(),
+                        slot: Some("Cold-start latency.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        // The BARE brief — the optional slot legitimately left empty; the writer still emits its
+        // `## Risks` heading (which is what would dead-end a minting transform).
+        let bare = render(
+            &from,
+            &Instance {
+                title: "Bare Brief".to_string(),
+                sections: vec![
+                    stamp_v1(),
+                    SectionContent {
+                        id: "summary".to_string(),
+                        slot: Some("Ship the queue.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        assert!(
+            bare.contains("## Risks"),
+            "the bare brief carries the heading but no prose; got:\n{bare}"
+        );
+        // `authored` sorts before `bare`, so the run reaches the blocker only after committing
+        // the migratable doc (the fold halts at the first blocker).
+        write_doc(repo.path(), "briefs/authored-brief.md", &authored);
+        write_doc(repo.path(), "briefs/bare-brief.md", &bare);
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
+
+        // The authored doc migrates and restamps 1 → 2, its prose byte-identical.
+        assert_eq!(
+            report.migrated,
+            vec!["briefs/authored-brief.md".to_string()],
+            "the conformant doc migrates: {report:?}"
+        );
+        let migrated =
+            fs::read_to_string(repo.path().join("briefs/authored-brief.md")).expect("read");
+        assert!(
+            migrated.contains("schema-version: 2") && migrated.contains("Cold-start latency."),
+            "the stamp flips and the prose survives; got:\n{migrated}"
+        );
+        assert_conformant_and_stable(&to, &migrated);
+
+        // The bare doc is BLOCKED with the Framing-A prose route — not the backstop's
+        // *build the transform kind* route (the kind exists; the doc needs prose).
+        assert_eq!(
+            report.blocked.len(),
+            1,
+            "only the bare doc blocks: {:?}",
+            report.blocked
+        );
+        let (blocked_key, route) = &report.blocked[0];
+        assert_eq!(blocked_key, "briefs/bare-brief.md");
+        assert!(
+            route.contains("author the new required prose"),
+            "the route routes the prose, not a transform-kind build: {route}"
+        );
+        // STAMP-FLIPS-LAST: the blocked doc is byte-identical v1 — never restamped at a version
+        // it fails the gate of (the silent strand this kind exists to close).
+        let still_v1 = fs::read_to_string(repo.path().join("briefs/bare-brief.md")).expect("read");
+        assert_eq!(still_v1, bare, "the blocked doc is byte-identical v1");
+        assert!(
+            still_v1.contains("schema-version: 1") && !still_v1.contains("schema-version: 2"),
+            "the stamp did NOT flip on a doc that fails its own v2 gate; got:\n{still_v1}"
+        );
     }
 
     /// The v1 prior shape of the `ledger` doctype: a `vision` slot **and** a `retired` slot the
