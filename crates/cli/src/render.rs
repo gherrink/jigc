@@ -369,6 +369,40 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
     })
 }
 
+/// The **store-scope-only** check ids — the findings that gate **nowhere**, and which the
+/// report-only trailer must therefore never claim a task-scope gate for (`validation.md` →
+/// The trailer must not claim a gate that does not exist, M42).
+///
+/// **Derived from the emit sites, not from prose.** Each code below is emitted only on a
+/// store-scope path and by **no** task-scope path, so neither `jigc task validate` nor the
+/// `finalize` preflight (both [`engine::validate::validate_task`]) can ever see it:
+///
+/// - `schema-conformance.{mention-resolves, repeatable-populated, surplus-sections-absent,
+///   unadopted-instance}` and `schema-completeness.inverse-cardinality` — the store-only
+///   families of `validate_store_families` (`mention_resolves_store`, `hollow_surplus_store`,
+///   `schema_conformance_store`'s foreign arm, `inverse_cardinality_store`; completeness and
+///   in-prose mentions depend on *other* tasks, so they are by design never a per-task gate).
+/// - `file-state.un-baselined` — the read-only committed-store twin's UNKNOWN outcome
+///   (`file_state::detect_committed_store`); the task path *adopts* a baseline instead
+///   (`file-state.baseline-adopt`), so this code never reaches a gate.
+/// - `file-state.{orphaned-doc, unregistered-doc}` and `store-version.binary-mismatch` — the
+///   CLI-minted store advisories (`crate::cli`'s orphan tiers, `crate::setup`), un-keyed and
+///   store-scope by construction.
+///
+/// `schema-conformance.schema-version-current` gates nowhere either, but never reaches the
+/// report-only branch: it flips the exit and takes its own trailer case (above).
+const GATES_NOWHERE: &[&str] = &[
+    "schema-conformance.mention-resolves",
+    "schema-conformance.repeatable-populated",
+    "schema-conformance.surplus-sections-absent",
+    "schema-conformance.unadopted-instance",
+    "schema-completeness.inverse-cardinality",
+    "file-state.un-baselined",
+    "file-state.orphaned-doc",
+    "file-state.unregistered-doc",
+    "store-version.binary-mismatch",
+];
+
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
 /// exit-0-with-`blocking`-findings is unambiguous. Four cases, matching the three
 /// exit-flipping exceptions (`validation.md` → Exit semantics): for the
@@ -382,6 +416,14 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
 /// Probe-unreliability dominates (it taints the whole result); the unmigrated corpus is next
 /// (it taints every *content* verdict below it). Ends with a newline so the caller appends
 /// the routing footer on its own line.
+///
+/// **The report-only branch claims a gate only where one exists (M42).** Its blanket sentence
+/// — *"these gate at `jigc task validate` / `jigc task finalize`"* — is **false** for every
+/// [`GATES_NOWHERE`] code: those findings are emitted by no task-scope path, so no gate can
+/// ever see them, and a stock brownfield repo (whose only finding is the adoption advisory)
+/// was told to go look for a gate that will never fire. The branch now counts the findings
+/// that *do* carry a task-scope gate and scopes the claim to them: all → the original
+/// sentence; none → no gate claim at all; mixed → how many, and that the rest gate nowhere.
 fn store_trailer(
     report: &ValidationReport,
     probe_unreliable: bool,
@@ -403,10 +445,28 @@ fn store_trailer(
             .to_string()
     } else {
         let n = report.findings.len();
-        format!(
-            "{n} finding(s) — report-only at store scope (exit 0); these gate at \
-             `jigc task validate` / `jigc task finalize`.\n"
-        )
+        let gating = report
+            .findings
+            .iter()
+            .filter(|f| !GATES_NOWHERE.contains(&f.code.as_str()))
+            .count();
+        if gating == 0 {
+            format!(
+                "{n} finding(s) — report-only at store scope (exit 0); each gates nowhere — a \
+                 store-scope advisory, actionable through its own route above.\n"
+            )
+        } else if gating == n {
+            format!(
+                "{n} finding(s) — report-only at store scope (exit 0); these gate at \
+                 `jigc task validate` / `jigc task finalize`.\n"
+            )
+        } else {
+            format!(
+                "{n} finding(s) — report-only at store scope (exit 0); {gating} of them gate at \
+                 `jigc task validate` / `jigc task finalize`; the rest are store-scope advisories \
+                 that gate nowhere — follow each finding's route above.\n"
+            )
+        }
     }
 }
 
@@ -2903,6 +2963,105 @@ mod tests {
         let json_out = validation_store(Format::Json, &rename);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["report_only"], serde_json::Value::Bool(false));
+    }
+
+    /// **The trailer claims a gate only where one exists** (M42 Inc 4 T3; `validation.md` →
+    /// The trailer must not claim a gate that does not exist). The blanket sentence *"these
+    /// gate at `jigc task validate` / `jigc task finalize`"* is **false** for every
+    /// store-scope-only finding: those codes are emitted by no task-scope path at all, so
+    /// neither gate can ever see them. A report whose findings **all** gate nowhere must make
+    /// no gate claim; a report carrying a genuinely task-gating finding still names where it
+    /// gates; a mixed report says how many of each.
+    #[test]
+    fn render_validation_store_trailer_claims_a_gate_only_where_one_exists() {
+        use engine::finding::{Finding, Location, Severity};
+
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+
+        // Written out literally — **the contract, not a re-read of the constant**: every code a
+        // store sweep can emit that `engine::validate::validate_task` never emits (the shared
+        // body of `jigc task validate` and the `finalize` preflight). Dropping any one of these
+        // from the shipped set puts the false gate claim back on the wire for it.
+        let advisory = |code: &str| {
+            Finding::graded(
+                Severity::Advisory,
+                code,
+                format!("a store-scope finding under `{code}`"),
+                Some(Location::addressed("decisions/cache.md", 1, 1)),
+                Some("follow the finding's own route".to_string()),
+            )
+        };
+        let gate_nowhere = ValidationReport::new(
+            vec![
+                advisory("schema-conformance.mention-resolves"),
+                advisory("schema-conformance.repeatable-populated"),
+                advisory("schema-conformance.surplus-sections-absent"),
+                advisory("schema-conformance.unadopted-instance"),
+                advisory("schema-completeness.inverse-cardinality"),
+                advisory("file-state.un-baselined"),
+                advisory("file-state.orphaned-doc"),
+                advisory("file-state.unregistered-doc"),
+                advisory("store-version.binary-mismatch"),
+            ],
+            &resolved,
+        );
+
+        let agent = validation_store(Format::Agent, &gate_nowhere);
+        assert!(
+            !agent.contains("jigc task validate") && !agent.contains("jigc task finalize"),
+            "every finding here gates nowhere — the trailer must not name a gate: {agent}",
+        );
+        assert!(
+            agent.contains("report-only at store scope (exit 0)"),
+            "it is still report-only, and still says so: {agent}",
+        );
+        assert!(
+            agent.contains("9 finding(s)") && agent.contains("gates nowhere"),
+            "and it states the truth — none of them gates anywhere: {agent}",
+        );
+        // The exit contract is untouched: gating nowhere is not the same as flipping the exit.
+        assert!(!validation_store_exit_flips(&gate_nowhere));
+
+        // A genuinely task-gating finding still names where it gates.
+        let gating = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Blocking,
+                "doc-code.symbol-exists",
+                "cited symbol `evict_lru` not found",
+                Some(Location::addressed("adr:cache#status/cites-code", 1, 1)),
+                None,
+            )],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &gating);
+        assert!(
+            agent.contains("these gate at `jigc task validate` / `jigc task finalize`"),
+            "a doc-code break DOES gate at the task boundary — say so: {agent}",
+        );
+
+        // Mixed: the gate claim is scoped to the findings that carry one.
+        let mixed = ValidationReport::new(
+            vec![
+                advisory("schema-conformance.mention-resolves"),
+                Finding::graded(
+                    Severity::Blocking,
+                    "doc-code.symbol-exists",
+                    "cited symbol `evict_lru` not found",
+                    None,
+                    None,
+                ),
+            ],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &mixed);
+        assert!(
+            agent.contains("1 of them gate at `jigc task validate` / `jigc task finalize`"),
+            "the claim covers the gating finding only: {agent}",
+        );
+        assert!(
+            agent.contains("the rest are store-scope advisories that gate nowhere"),
+            "and disowns the gate for the store-scope-only one: {agent}",
+        );
     }
 
     /// The dry-run manifest renders a titled block listing each entry by kind — an

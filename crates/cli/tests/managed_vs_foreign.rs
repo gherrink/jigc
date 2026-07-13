@@ -477,6 +477,26 @@ fn a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrat
         report_only(repo.path(), home.path()),
         "and says so in the envelope — the adoption advisory is report-only",
     );
+
+    // **The trailer claims a gate only where one exists (Inc 4 T3).** This repo's one finding —
+    // the adoption advisory — is store-scope-only: no task-scope path emits that code, so it
+    // gates at neither `jigc task validate` nor `jigc task finalize`. The blanket trailer said
+    // it did. On the real binary, over the corpus the stock brownfield repo actually produces,
+    // the claim is gone.
+    let (_, text) = validate_text(repo.path(), home.path());
+    assert!(
+        !text.contains("jigc task validate") && !text.contains("jigc task finalize"),
+        "the sole finding gates nowhere — the trailer must not send the reader to a gate that \
+         will never see it; got:\n{text}",
+    );
+    assert!(
+        text.contains("report-only at store scope (exit 0)"),
+        "it is still the report-only branch, and still names the exit; got:\n{text}",
+    );
+    assert!(
+        text.contains("gates nowhere"),
+        "and states what is actually true of it; got:\n{text}",
+    );
 }
 
 /// (managed, v0-era) An **unstamped** ADR in the shipped **prior (v1)** shape is a genuinely
