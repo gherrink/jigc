@@ -192,7 +192,21 @@ pub fn enumerate_target_surface(
 /// CLI's `committed_store` / [`crate::store::canonical_path`]), parses each doc, and
 /// collects its `code-anchor` leaves via the shared [`collect_from_source`]
 /// projection (so the predicate selector + multi-valued guard apply identically to
-/// the task scope). A transient (location-less) doctype contributes nothing.
+/// the task scope). A **placement** doctype (`storage.md` → Placement) has no location
+/// dir: its one committed instance is the literal `placement.file` at the fixed
+/// `<type>:<type>` singleton identity, enumerated through the census's shared
+/// [`crate::index::committed_instances`] (M42 — before it, the whole placement class fell
+/// through the transient arm and the family reported a clean store over anchors it never
+/// read: `storage.md` → The census). A transient (location-less, non-placement) doctype
+/// contributes nothing.
+///
+/// The located glob keeps its **own** `read_dir` walk rather than routing through the
+/// shared enumerator too: `committed_instances` *swallows* a directory-read error (an
+/// unreadable `decisions/` reads as "no committed docs"), while this walk propagates it —
+/// and a store-scope sweep that cannot read a managed location must be **loud**, never a
+/// clean-looking empty. Sharing the enumerator for the placement arm (where the only I/O
+/// is an `exists()` on one literal path) costs nothing in loudness and buys the census its
+/// single home resolution.
 ///
 /// This walk **deliberately surfaces unrelated committed docs** — the inversion of
 /// the task-scope masking-trap guard ([`enumerate_target_surface`]): at task scope a
@@ -225,6 +239,37 @@ pub fn enumerate_committed_surface(
     let mut guard_findings = Vec::new();
 
     for schema in schemas.values() {
+        // A **placement** doctype (`storage.md` → Placement) has no `location:` dir to
+        // glob — its single committed instance is the literal repo-root-relative
+        // `placement.file`, addressed by the fixed `<type>:<type>` singleton slug. It is
+        // enumerated through the census's shared placement-aware enumerator
+        // ([`crate::index::committed_instances`] — the sibling family 5 and the file-state
+        // twin already route through), never a fourth hand-rolled home resolution: the
+        // identity comes from the enumerator, since a case-preserved literal home
+        // (`VISION.md`) does not round-trip through slug derivation. Keyed on
+        // `schema.location` alone (as this walk was until M42), the whole placement class
+        // dropped through the *transient* arm below and the family reported a clean store
+        // over anchors it never read (`storage.md` → The census).
+        if schema.placement.is_some() {
+            for (identity, path) in crate::index::committed_instances(repo_root, &schema.ty, schema)
+            {
+                let Some((_, slug)) = identity.split_once(':') else {
+                    continue;
+                };
+                let bytes = std::fs::read(&path)?;
+                let mut source = String::from_utf8_lossy(&bytes).into_owned();
+                crate::parse::strip_leading_bom(&mut source);
+                collect_from_source(
+                    schema,
+                    &schema.ty,
+                    slug,
+                    &source,
+                    &mut anchors,
+                    &mut guard_findings,
+                );
+            }
+            continue;
+        }
         let Some(location) = schema.location.as_deref() else {
             continue; // a transient (location-less) type has no committed instances.
         };
@@ -1280,6 +1325,133 @@ Effects.
             before, after,
             "the read-only store walk must write no FileStateRecord / edge-index \
              file (it must NOT route through reconcile_committed_store)",
+        );
+    }
+
+    /// (M42, the placement census — `storage.md` → The census, row
+    /// `target_surface::enumerate_committed_surface`.) The store walk keyed on
+    /// `schema.location` alone, so a **placement** doctype (`location: None`, homed at a
+    /// literal repo-root `placement.file` — `VISION.md`, `CHANGELOG.md`, `docs/roadmap.md`)
+    /// dropped through the *transient* arm and contributed **zero** anchors: the store-scope
+    /// `doc-code` family would report a clean store over anchors it never read. The hole was
+    /// **latent** (no shipped placement doctype declares a `code-anchor`) but it opened on a
+    /// bare schema edit, so the proof is a **synthetic** placement schema that declares one.
+    ///
+    /// Its committed literal file present, the walk must yield its `code-anchor` leaves
+    /// addressed at the fixed `<type>:<type>` singleton identity (never a slug re-derived
+    /// from the case-preserved literal path), and the **multi-valued non-silent guard** must
+    /// fire over the placement doc exactly as it does over a located one — the projection is
+    /// shared, so the class cannot be enumerated-but-unguarded.
+    #[test]
+    fn enumerate_committed_surface_reaches_a_placement_doctypes_literal_home() {
+        // A synthetic placement doctype (no shipped one declares a `code-anchor`) whose
+        // header carries both a scalar anchor and a list-valued one.
+        const PINBOARD_SCHEMA: &[u8] = b"\
+type: pinboard
+placement: { file: PINBOARD.md }
+id-from: title
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: cites-code, type: code-anchor }
+      - { id: also-cites, type: code-anchor }
+  - id: notes
+    slot: { hint: Standing notes. }
+";
+        const PINBOARD_INSTANCE: &str = "\
+---
+cites-code: crates/engine/src/index.rs#committed_instances
+also-cites: [crates/engine/src/a.rs#one, crates/engine/src/b.rs#two]
+---
+
+# Pinboard
+
+## Notes
+Standing notes.
+";
+
+        let repo = TempRoot::new("placement-surface");
+        // The committed instance lives at its literal repo-root file — never under a
+        // `<location>/` dir (a placement doctype has none).
+        std::fs::write(repo.path().join("PINBOARD.md"), PINBOARD_INSTANCE).expect("commit");
+
+        let mut schemas = BTreeMap::new();
+        schemas.insert(
+            "pinboard".to_string(),
+            load_schema_with_types(PINBOARD_SCHEMA, &dev_pack_field_types())
+                .expect("placement fixture loads"),
+        );
+
+        let before = file_set(repo.path());
+        let (anchors, guard_findings) =
+            enumerate_committed_surface(repo.path(), &schemas).expect("enumerates store");
+
+        // The scalar anchor, at the fixed `<type>:<type>` singleton identity.
+        assert_eq!(
+            anchors,
+            vec![TargetAnchor {
+                address: "pinboard:pinboard#status/cites-code".to_string(),
+                anchor_value: "crates/engine/src/index.rs#committed_instances".to_string(),
+                check_id: "symbol-exists".to_string(),
+            }],
+            "a placement doctype's committed literal home is walked, and its anchor is \
+             addressed by the fixed `<type>:<type>` singleton slug, got {anchors:?}",
+        );
+
+        // The multi-valued guard fires over the placement doc too — the class is never
+        // enumerated-but-unguarded (a silent drop would read as a false store-wide all-clear).
+        assert_eq!(
+            guard_findings.len(),
+            1,
+            "the list-valued anchor in the placement doc fires the guard: {guard_findings:?}",
+        );
+        let f = &guard_findings[0];
+        assert_eq!(f.severity, Severity::Blocking);
+        assert_eq!(f.code, "doc-code.multi-valued-anchor");
+        assert_eq!(
+            f.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("pinboard:pinboard#status/also-cites"),
+            "the guard names the offending placement doc's field address",
+        );
+
+        // Still a pure read: no record, no index, no file written.
+        assert_eq!(
+            before,
+            file_set(repo.path()),
+            "the store walk writes nothing"
+        );
+    }
+
+    /// An **absent** placement singleton contributes nothing and is not an error — the
+    /// literal-home walk lists only what exists, exactly as the located `<location>/*.md`
+    /// glob does (a repo that has not authored its `VISION.md` yet is not a broken store).
+    #[test]
+    fn enumerate_committed_surface_over_an_absent_placement_singleton_is_empty_not_an_error() {
+        const PINBOARD_SCHEMA: &[u8] = b"\
+type: pinboard
+placement: { file: PINBOARD.md }
+id-from: title
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: cites-code, type: code-anchor }
+";
+        let repo = TempRoot::new("placement-absent");
+        let mut schemas = BTreeMap::new();
+        schemas.insert(
+            "pinboard".to_string(),
+            load_schema_with_types(PINBOARD_SCHEMA, &dev_pack_field_types())
+                .expect("placement fixture loads"),
+        );
+
+        let (anchors, guard_findings) = enumerate_committed_surface(repo.path(), &schemas)
+            .expect("an absent home is not an error");
+        assert!(anchors.is_empty(), "no committed singleton, no anchors");
+        assert!(
+            guard_findings.is_empty(),
+            "and no findings: {guard_findings:?}"
         );
     }
 
