@@ -1141,10 +1141,12 @@ pub fn rename(format: Format, report: &crate::rename::RenameReport) -> String {
 
 /// Render a `jigc migrate-corpus` outcome to the surface `format` selects: `agent` /
 /// `human` emit a per-doc summary — one `migrated`/`already current` line per doc plus, for
-/// each blocked doc, its Framing-A route — followed by the routing footer; `json` emits the
-/// generic projection of the report (tooling-consumed, no footer). The verb writes the
-/// migrated docs; the CLI only formats the report the migration returns (the determinism
-/// boundary — the structural transform is CLI-owned, no LLM).
+/// each blocked doc, its Framing-A route — then the **landed commit** (the verb commits its
+/// own migration; absent when nothing was committed) and the routing footer; `json` emits the
+/// generic projection of the report (tooling-consumed, no footer), whose `commit` field
+/// carries the same sha (`null` when nothing was committed). The verb writes the migrated
+/// docs; the CLI only formats the report the migration returns (the determinism boundary —
+/// the structural transform is CLI-owned, no LLM).
 pub fn corpus_migration(
     format: Format,
     report: &crate::migrate_corpus::CorpusMigrationReport,
@@ -1166,6 +1168,14 @@ pub fn corpus_migration(
             }
             for (path, route) in &report.blocked {
                 out.push_str(&format!("  blocked    {path}\n    route: {route}\n"));
+            }
+            // The commit boundary (`design/corpus-migration.md` → The commit boundary): the
+            // verb lands its own migration, so the report names *where* it landed. Absent when
+            // nothing was committed (nothing migrated, or a re-run that staged no change).
+            if let Some(sha) = &report.commit {
+                out.push_str(&format!(
+                    "committed {sha} — only the migrated paths were staged\n"
+                ));
             }
             out.push_str(ROUTING_FOOTER);
             out

@@ -520,6 +520,242 @@ fn migrate_corpus_completes_an_interrupted_relocation() {
     );
 }
 
+/// The repo's current `HEAD` sha.
+fn head(repo: &Path) -> String {
+    git(repo, &["rev-parse", "HEAD"])
+}
+
+/// `git status --porcelain` — empty iff the tree (and index) is clean.
+fn porcelain(repo: &Path) -> String {
+    git(repo, &["status", "--porcelain"])
+}
+
+/// The commits between `base` and `HEAD`, one sha per line.
+fn commits_since(repo: &Path, base: &str) -> Vec<String> {
+    git(repo, &["rev-list", &format!("{base}..HEAD")])
+        .lines()
+        .map(str::to_string)
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// `git show --name-status --no-renames HEAD` — the landed commit's file set with the two
+/// halves of a move kept **apart** (`D old` / `A new`), so both are assertable.
+fn head_name_status(repo: &Path) -> String {
+    git(
+        repo,
+        &["show", "--name-status", "--no-renames", "--format=", "HEAD"],
+    )
+}
+
+/// **M42 Inc-1 T2 — the commit boundary.** `migrate-corpus` was git-free, so it left the
+/// operator holding an unstaged delete + an untracked relocated file (` D
+/// docs/changelog/changelog.md` + `?? CHANGELOG.md`) — landable only through the raw
+/// `git add -A && git commit` the adapter contract forbids, which is exactly what the
+/// adoption trial's agent was forced into. The verb now **lands its own migration**: a
+/// pathspec-limited self-commit carrying **both halves** of the relocation move, leaving the
+/// tree clean, and naming the commit in the report.
+#[test]
+fn migrate_corpus_commits_the_relocation_and_leaves_the_tree_clean() {
+    let repo = TempDir::new("self-commit");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_v1_changelog(repo.path());
+    let base = head(repo.path());
+
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(&migrate, "`jigc migrate-corpus`");
+
+    // The tree is CLEAN — the verb landed its own migration; nothing is left for the
+    // operator to `git add`.
+    assert_eq!(
+        porcelain(repo.path()),
+        "",
+        "the migration leaves a clean tree — it commits its own writes; stdout:\n{out}",
+    );
+
+    // Exactly ONE new commit, carrying BOTH halves of the move.
+    let landed = commits_since(repo.path(), &base);
+    assert_eq!(
+        landed.len(),
+        1,
+        "the migration lands exactly one commit; got {landed:?}\nstdout:\n{out}",
+    );
+    let names = head_name_status(repo.path());
+    assert!(
+        names.contains("A\tCHANGELOG.md"),
+        "the commit carries the ADD half of the move; got:\n{names}",
+    );
+    assert!(
+        names.contains("D\tdocs/changelog/changelog.md"),
+        "the commit carries the DELETE half of the move; got:\n{names}",
+    );
+
+    // The report names the commit it landed.
+    let sha = git(repo.path(), &["rev-parse", "--short", "HEAD"]);
+    assert!(
+        out.contains(&sha),
+        "the report names the landed commit `{sha}`; stdout:\n{out}",
+    );
+}
+
+/// The **`--format json`** half of the same contract: the report carries the landed commit
+/// as a machine-readable field (`null` when nothing was committed).
+#[test]
+fn migrate_corpus_names_the_landed_commit_in_json() {
+    let repo = TempDir::new("self-commit-json");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_v1_changelog(repo.path());
+
+    let migrate = jigc(
+        repo.path(),
+        home.path(),
+        &["migrate-corpus", "--format", "json"],
+    );
+    let out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(&migrate, "`jigc migrate-corpus --format json`");
+
+    let sha = git(repo.path(), &["rev-parse", "--short", "HEAD"]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("the report is JSON");
+    assert_eq!(
+        report["commit"].as_str(),
+        Some(sha.as_str()),
+        "the JSON report names the landed commit; stdout:\n{out}",
+    );
+
+    // A clean re-run commits nothing — the field is `null`, not a stale sha.
+    let again = jigc(
+        repo.path(),
+        home.path(),
+        &["migrate-corpus", "--format", "json"],
+    );
+    assert_ok(&again, "the `jigc migrate-corpus --format json` re-run");
+    let out2 = String::from_utf8_lossy(&again.stdout);
+    let report2: serde_json::Value =
+        serde_json::from_str(&out2).expect("the re-run report is JSON");
+    assert!(
+        report2["commit"].is_null(),
+        "a re-run that commits nothing carries a null commit; stdout:\n{out2}",
+    );
+}
+
+/// **Never a blanket `git add -A`.** An ambient dirty tree — an unrelated **untracked** file
+/// and an unrelated **unstaged** edit to a tracked file — is *not* swept into the migration's
+/// commit: the staging is pathspec-limited to the paths the migration itself touched, so both
+/// are still dirty afterwards (the M30 index-as-change-manifest discipline).
+#[test]
+fn migrate_corpus_never_sweeps_an_ambient_dirty_tree() {
+    let repo = TempDir::new("ambient-dirt");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_v1_changelog(repo.path());
+
+    // Ambient dirt, unrelated to the migration.
+    fs::write(repo.path().join("scratch.md"), "wip\n").expect("write untracked");
+    fs::write(repo.path().join("README.md"), "hello, edited\n").expect("edit tracked");
+
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(&migrate, "`jigc migrate-corpus` over an ambient dirty tree");
+
+    // Both ambient changes survive, untouched and uncommitted.
+    let status = porcelain(repo.path());
+    assert!(
+        status.contains("?? scratch.md"),
+        "the unrelated untracked file is still untracked; status:\n{status}\nstdout:\n{out}",
+    );
+    assert!(
+        status.contains("M README.md"),
+        "the unrelated unstaged edit is still unstaged; status:\n{status}\nstdout:\n{out}",
+    );
+    let names = head_name_status(repo.path());
+    assert!(
+        !names.contains("scratch.md") && !names.contains("README.md"),
+        "neither ambient path rides the migration commit; got:\n{names}",
+    );
+    // The migration itself still landed.
+    assert!(
+        names.contains("A\tCHANGELOG.md") && names.contains("D\tdocs/changelog/changelog.md"),
+        "the migration's own move still landed; got:\n{names}",
+    );
+}
+
+/// Idempotence at the commit boundary: a re-run over an already-migrated corpus stages
+/// nothing, so it commits nothing — `HEAD` is unchanged and there is no empty commit.
+#[test]
+fn migrate_corpus_re_run_commits_nothing() {
+    let repo = TempDir::new("re-run-commit");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_v1_changelog(repo.path());
+
+    let first = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    assert_ok(&first, "`jigc migrate-corpus` (the first run)");
+    let after_first = head(repo.path());
+
+    let second = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out = String::from_utf8_lossy(&second.stdout);
+    assert_ok(&second, "the `jigc migrate-corpus` re-run");
+    assert!(
+        out.contains("0 migrated"),
+        "the re-run migrates nothing; stdout:\n{out}",
+    );
+    assert_eq!(
+        head(repo.path()),
+        after_first,
+        "the re-run commits nothing — HEAD is unchanged; stdout:\n{out}",
+    );
+    assert_eq!(
+        porcelain(repo.path()),
+        "",
+        "the re-run leaves the tree clean; stdout:\n{out}",
+    );
+}
+
+/// The user's hooks are **policy** (the `finalize`/`rename` posture — never `--no-verify`):
+/// a `pre-commit` hook that rejects the commit makes the verb **fail loudly non-zero**,
+/// surfacing git's stderr verbatim, never a silent skip behind a success banner.
+#[test]
+fn migrate_corpus_fails_loudly_when_a_pre_commit_hook_rejects() {
+    let repo = TempDir::new("hook-rejects");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_v1_changelog(repo.path());
+    let base = head(repo.path());
+
+    // A rejecting hook, replacing the warn-only one `jigc setup` installed.
+    let hook = repo.path().join(".git").join("hooks").join("pre-commit");
+    fs::write(
+        &hook,
+        "#!/bin/sh\necho 'policy: no corpus commits' >&2\nexit 1\n",
+    )
+    .expect("write pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod hook");
+    }
+
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let stdout = String::from_utf8_lossy(&migrate.stdout);
+    let stderr = String::from_utf8_lossy(&migrate.stderr);
+    assert!(
+        !migrate.status.success(),
+        "a rejected commit fails the verb loudly; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("policy: no corpus commits"),
+        "git's (the hook's) own rejection is surfaced verbatim; stderr:\n{stderr}",
+    );
+    assert_eq!(
+        commits_since(repo.path(), &base).len(),
+        0,
+        "the rejected commit did not land",
+    );
+}
+
 /// The false-positive guard: a corpus already stamped at the current version is a clean
 /// no-op — `jigc migrate-corpus` migrates nothing and reports the doc already current.
 #[test]

@@ -88,13 +88,27 @@ pub struct CorpusMigrationReport {
     /// Docs that could not migrate cleanly (a prose-needing mint that blocks until
     /// authored, or a doc halted behind one), each with its route — sorted by path.
     pub blocked: Vec<(String, String)>,
+    /// The short sha of the commit the verb landed its own migration in ([`commit_migration`]),
+    /// or `None` when nothing was committed (nothing migrated, a re-run that staged no change,
+    /// or a non-git worktree). Named in both surfaces — the operator/driver reads back *where*
+    /// the migration landed (`design/corpus-migration.md` → The commit boundary).
+    pub commit: Option<String>,
+    /// The repo-relative paths the migration **touched** — every destination written *and*
+    /// every relocation source removed. The self-commit's pathspec: the removed source is not
+    /// recoverable from `migrated` (which carries only destinations), and staging the add half
+    /// alone would land a **half-migration** — the silent-partial-commit class. Internal to the
+    /// commit boundary, so it stays out of the report's serialized surface.
+    #[serde(skip)]
+    touched: Vec<String>,
 }
 
 /// Run `jigc migrate-corpus` against `cwd`: locate the repo + project layer, build the
 /// frozen persisted doctypes' v0→v1 migration jobs from the pack, migrate the committed
-/// corpus, render the report through `format`, and print it. A clean run (even with blocked
-/// docs routed to the agent) exits 0 — the migration writes; blocked docs are an expected
-/// interim state, not a failure. A locator error routes to stderr and exits non-zero.
+/// corpus, **land it in a pathspec-limited self-commit** ([`commit_migration`]), render the
+/// report through `format`, and print it. A clean run (even with blocked docs routed to the
+/// agent) exits 0 — the migration writes; blocked docs are an expected interim state, not a
+/// failure. A locator error — or a **rejected commit** (a `pre-commit` hook declining the
+/// managed-doc writes) — routes to stderr and exits non-zero.
 pub fn run(cwd: &Path, format: Format) -> Outcome {
     match migrate_in_repo(cwd) {
         Ok(report) => {
@@ -165,7 +179,144 @@ fn migrate_in_repo(cwd: &Path) -> Result<CorpusMigrationReport> {
     doctypes.sort_by(|a, b| a.ty.cmp(&b.ty));
 
     let jigc_root = jigc_home.join(".jigc");
-    migrate_committed_corpus(pack, &jigc_home, &jigc_root, &doctypes)
+    let mut report = migrate_committed_corpus(pack, &jigc_home, &jigc_root, &doctypes)?;
+    // THE COMMIT BOUNDARY (`design/corpus-migration.md` → The commit boundary). The per-doc
+    // fold above stays **git-free** (the relocation is an `fs::rename`, not a `git mv`);
+    // staging happens **once**, here, over exactly the paths the migration touched — so git's
+    // rename-detection collapses the move's delete+add into the clean `R` the relocation note
+    // predicts, and the operator never has to reach for the raw `git add -A` the adapter
+    // contract forbids.
+    report.commit = commit_migration(&jigc_home, &report.touched)?;
+    Ok(report)
+}
+
+/// The message the verb's self-commit carries (the [`crate::setup`] install-commit precedent:
+/// one fixed, conventional subject — the verb's writes are one kind of change).
+const MIGRATION_COMMIT_MESSAGE: &str =
+    "chore(jigc): migrate the managed corpus to the current schema versions";
+
+/// **Land the migration** — stage exactly `touched` (every destination written and every
+/// relocation source removed) and commit those paths, returning the short sha (`None` when
+/// nothing was committed).
+///
+/// The **mold is [`crate::setup`]'s install commit** (`setup.rs` → `commit_install`), the one
+/// other verb that commits its own writes: a **pathspec-limited** `git add -- <paths>` —
+/// **never** a blanket `git add -A`, so an ambient dirty tree is never swept in — a
+/// `git diff --cached --quiet -- <paths>` idempotence check, so a clean re-run commits nothing
+/// (no empty commit), and a **pathspec-limited** `git commit -- <paths>`, which leaves any
+/// changes the operator had already staged staged and uncommitted.
+///
+/// **The hook posture is `finalize`/`rename`'s, not setup's** — this commit is **never**
+/// `--no-verify`. Setup's `--no-verify` rests on a rationale that does *not* transfer: its
+/// commit *"carries install artifacts, not managed docs"* (and its hook must not self-trigger
+/// on the commit that installs it). This one carries **managed docs**, so the user's hooks are
+/// **policy** ([`crate::task::git_commit`] / [`crate::rename`]): a hook rejection surfaces
+/// git's stderr verbatim and **fails the run loudly**, never a silent skip behind a success
+/// banner.
+///
+/// A **non-git worktree** is the one benign skip (the migration's writes still stand; there is
+/// simply nothing to land). Every other git failure — a rejected `add`, a rejected `commit` —
+/// is an `Err`.
+fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<String>> {
+    if touched.is_empty() {
+        return Ok(None);
+    }
+    // No git work tree → nothing to land (the docs are written; the commit is the convenience).
+    if !git_ok(repo_root, &["rev-parse", "--is-inside-work-tree"]) {
+        return Ok(None);
+    }
+    let paths: Vec<&str> = touched
+        .iter()
+        .filter(|p| stageable(repo_root, p))
+        .map(String::as_str)
+        .collect();
+    if paths.is_empty() {
+        return Ok(None);
+    }
+
+    // Stage exactly those paths — never a blanket `git add -A`. A tracked-and-removed
+    // relocation source stages as its deletion here (the move's other half).
+    let mut add: Vec<&str> = vec!["add", "--"];
+    add.extend(&paths);
+    git_run(repo_root, &add)?;
+
+    // Nothing staged among our paths (a re-run over an already-migrated corpus) → no commit,
+    // no empty commit. `git diff --cached --quiet` exits 0 when there is no staged diff.
+    let mut diff: Vec<&str> = vec!["diff", "--cached", "--quiet", "--"];
+    diff.extend(&paths);
+    if git_ok(repo_root, &diff) {
+        return Ok(None);
+    }
+
+    let mut commit: Vec<&str> = vec!["commit", "-m", MIGRATION_COMMIT_MESSAGE, "--"];
+    commit.extend(&paths);
+    git_run(repo_root, &commit)?;
+
+    let sha = git_stdout(repo_root, &["rev-parse", "--short", "HEAD"])?;
+    Ok(Some(sha))
+}
+
+/// Whether git can stage `path`: it is **tracked** (so a *removed* relocation source stages as
+/// its deletion), or it exists on disk and is not gitignored (so a freshly-written destination
+/// stages as an add/modify). Anything else — an untracked source the migration removed, a doc
+/// under a gitignored tree — would make `git add` fail on a pathspec it cannot match; it is
+/// dropped from the pathspec instead, since there is nothing there for git to record.
+fn stageable(repo_root: &Path, path: &str) -> bool {
+    if git_ok(repo_root, &["ls-files", "--error-unmatch", "--", path]) {
+        return true;
+    }
+    repo_root.join(path).exists() && !git_ok(repo_root, &["check-ignore", "-q", "--", path])
+}
+
+/// Whether `git <args>` ran **and** exited 0 (a git that could not be spawned reads as `false`)
+/// — the predicate form, for the probes whose failure is a fact, not an error.
+fn git_ok(repo_root: &Path, args: &[&str]) -> bool {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(args)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+/// Run `git <args>`, bailing **loudly** with git's own stdout+stderr when it rejects — the
+/// hook-rejection channel (the `finalize`/`rename` posture: the user's hooks are policy, and
+/// their verbatim output is the correction signal).
+fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(args)
+        .output()
+        .with_context(|| format!("could not run `git {}` (is git on PATH?)", args[0]))?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "`git {}` was rejected — the migration is written to disk but NOT committed:\n{}{}",
+            args[0],
+            String::from_utf8_lossy(&out.stdout).trim(),
+            String::from_utf8_lossy(&out.stderr).trim(),
+        );
+    }
+    Ok(())
+}
+
+/// Run `git <args>` and return its trimmed stdout, bailing on a non-zero exit.
+fn git_stdout(repo_root: &Path, args: &[&str]) -> Result<String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(args)
+        .output()
+        .with_context(|| format!("could not run `git {}` (is git on PATH?)", args[0]))?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "`git {}` failed: {}",
+            args[0],
+            String::from_utf8_lossy(&out.stderr).trim(),
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// Migrate the committed corpus under `repo_root` for each [`DoctypeMigration`], per-doc
@@ -199,6 +350,8 @@ pub(crate) fn migrate_committed_corpus(
         migrated: Vec::new(),
         already_current: Vec::new(),
         blocked: Vec::new(),
+        commit: None,
+        touched: Vec::new(),
     };
 
     // Prepare every candidate doc across the corpus (heterogeneous: each carries its own
@@ -379,6 +532,14 @@ pub(crate) fn migrate_committed_corpus(
                     report.already_current.retain(|k| k != target);
                 }
                 report.migrated.push(target.clone());
+                // The self-commit's pathspec: **both** halves of the write — the destination
+                // just persisted and, for a relocation, the source just removed. Staging only
+                // the add half would land a half-migration (`design/corpus-migration.md` → The
+                // commit boundary).
+                report.touched.push(target.clone());
+                if moved {
+                    report.touched.push(id.clone());
+                }
             }
             DocOutcome::Untouched { id, .. } => {
                 let route = if result.halted_at == Some(i) {
@@ -394,6 +555,10 @@ pub(crate) fn migrate_committed_corpus(
     report.migrated.sort();
     report.already_current.sort();
     report.blocked.sort();
+    // A stable, deduped pathspec (a destination shared by a completed interrupted move is
+    // enumerated once) — the staging order never varies between runs.
+    report.touched.sort();
+    report.touched.dedup();
     Ok(report)
 }
 
