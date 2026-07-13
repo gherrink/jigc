@@ -1742,18 +1742,91 @@ fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
     let address = parse_verb_addr(pack.as_ref(), addr)?;
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
     let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
-    match format {
-        Format::Json => {
-            let value = show_json(&jigc_home, &schemas, &address)?;
-            println!("{}", render::json(&value));
-        }
+    let read = match format {
+        Format::Json => show_json(&jigc_home, &schemas, &address).map(|value| render::json(&value)),
         Format::Agent | Format::Human => {
-            let slice = engine::store::read_slice(&jigc_home, &schemas, &address)
-                .map_err(DocFailure::Block)?;
-            println!("{slice}");
+            engine::store::read_slice(&jigc_home, &schemas, &address).map_err(DocFailure::Block)
         }
+    };
+    match read {
+        Ok(out) => {
+            println!("{out}");
+            Ok(())
+        }
+        Err(failure) => Err(reroute_unadopted(
+            pack.as_ref(),
+            &jigc_home,
+            &schemas,
+            &address,
+            failure,
+        )),
     }
-    Ok(())
+}
+
+/// Split the read-side **`store.unparseable`** block's *route* on the **managed-vs-foreign
+/// discriminator** (M42, T7; `design/doc-read-surface.md` → `jigc doc list`: *"`doc show`'s
+/// block on an unregistered instance routes to adoption, not to hand-repair"*).
+///
+/// The shipped route — *"fix the committed file so it conforms to its schema"*
+/// (`engine::store::read_slice`) — is **true of a corrupted managed doc and a lie about a
+/// never-adopted foreign one**: a stock brownfield repo's own Keep-a-Changelog `CHANGELOG.md`
+/// squats at the `changelog` placement home, so `doc show changelog:changelog` sent its owner to
+/// hand-repair a file jigc never wrote, while `doc list` already called it `unregistered` and
+/// `jigc validate` already called it foreign — three surfaces, three stories about one file. The
+/// route now splits on the **one** discriminator ([`engine::validate::is_unadopted_foreign`]) and
+/// serves the **one** adoption route ([`engine::validate::adoption_route`]), so the three tell one.
+///
+/// It sits at the **verb boundary**, where the discriminator's inputs (the manifest version map,
+/// the shipped prior-version shapes) are in hand: `read_slice`'s signature and the compose-deref
+/// path are untouched — this is the read *verb*'s route, not a new engine judgement. Every
+/// non-`store.unparseable` failure (and every doc the discriminator adjudicates **managed** —
+/// the corrupt-but-stamped ADR) passes through unchanged: a blanket swap would be the
+/// mirror-image lie.
+fn reroute_unadopted(
+    pack: &dyn PackSource,
+    jigc_home: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    address: &engine::address::Address,
+    failure: DocFailure,
+) -> DocFailure {
+    let DocFailure::Block(mut finding) = failure else {
+        return failure;
+    };
+    // Only the unparseable block can name a foreign file: `is_unadopted_foreign` is `Foreign`
+    // exactly when the committed bytes parse against no known version of the schema, so a doc
+    // that reads clean (or is missing, or names a transient type) is never this case.
+    if finding.code != "store.unparseable" {
+        return DocFailure::Block(finding);
+    }
+    let ty = address.r#type.as_str();
+    let Some(schema) = schemas.get(ty) else {
+        return DocFailure::Block(finding);
+    };
+    let Some(path) = engine::store::canonical_path(jigc_home, schema, address.slug.as_str()) else {
+        return DocFailure::Block(finding);
+    };
+    let Ok(bytes) = std::fs::read(&path) else {
+        return DocFailure::Block(finding); // read race: the block stands as raised.
+    };
+    let source = String::from_utf8_lossy(&bytes);
+    let versions = crate::pack::frozen_doctype_versions(pack);
+    let priors = crate::pack::prior_doctype_schemas(pack, &versions);
+    if !engine::validate::is_unadopted_foreign(ty, schema, &source, &versions, &priors) {
+        return DocFailure::Block(finding);
+    }
+    let rel = path
+        .strip_prefix(jigc_home)
+        .unwrap_or(&path)
+        .to_string_lossy()
+        .into_owned();
+    // The M40 two-tier rule, applied here as the store sweep applies it: name the
+    // doctype-directed adoption verb only when the `migrate-<ty>` workflow it composes ships.
+    let migratable = pack
+        .list(engine::packsource::PackResourceKind::Workflows)
+        .iter()
+        .any(|id| *id == engine::packsource::ResourceId::from(format!("migrate-{ty}").as_str()));
+    finding.route = Some(engine::validate::adoption_route(ty, &rel, migratable));
+    DocFailure::Block(finding)
 }
 
 /// The cascade-resolved schema set keyed by doctype the committed-store read resolves

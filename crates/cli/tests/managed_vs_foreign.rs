@@ -1123,6 +1123,137 @@ fn a_conformance_break_on_a_baselined_committed_doc_really_does_gate_and_the_tra
     );
 }
 
+/// The `state` `jigc doc list --format json` reports for `id`, or `None` when it lists no
+/// such instance — the fourth read surface's verdict, read from its emitted bytes.
+fn listed_state(repo: &Path, home: &Path, id: &str) -> Option<String> {
+    let out = jigc(repo, home, &["doc", "list", "--format", "json"]);
+    assert_ok(&out, "`jigc doc list --format json`");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let json: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|err| panic!("`doc list --format json` must emit JSON ({err}):\n{stdout}"));
+    json["docs"]
+        .as_array()
+        .expect("the listing carries a `docs` array")
+        .iter()
+        .find(|row| row["id"].as_str() == Some(id))
+        .map(|row| {
+            row["state"]
+                .as_str()
+                .expect("every row carries a state")
+                .to_string()
+        })
+}
+
+/// The stderr of a `jigc doc show <addr>` that must **block** — the emitted block envelope
+/// (code + message + `route:`), read verbatim off the real binary.
+fn show_block_stderr(repo: &Path, home: &Path, addr: &str, format: &[&str]) -> String {
+    let mut args = vec!["doc", "show", addr];
+    args.extend_from_slice(format);
+    let out = jigc(repo, home, &args);
+    assert!(
+        !out.status.success(),
+        "`jigc doc show {addr}` {format:?} must block on a doc that does not parse; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    String::from_utf8(out.stderr).expect("utf-8 stderr")
+}
+
+/// (T7 — the **foreign** arm) `jigc doc show` over a never-adopted foreign file squatting at a
+/// managed home routes at **adoption**, not at hand-repair — and the three read/check surfaces
+/// tell **one story** about that file (`design/doc-read-surface.md` → `jigc doc list`, third
+/// bullet: *"`doc show`'s block on an unregistered instance routes to adoption"*).
+///
+/// Red before this task: `doc show changelog:changelog` blocked `store.unparseable` routed
+/// *"fix the committed file so it conforms to its schema"* — true of a corrupted **managed** doc,
+/// a **lie** about a stock brownfield repo's own Keep-a-Changelog file, whose repair is `jigc
+/// ingest` / `jigc migrate`. Meanwhile `doc list` already called it `unregistered` and `validate`
+/// already called it foreign: three surfaces, three stories, in the wave whose whole claim is
+/// that the tool's own routes tell the truth.
+///
+/// Both output formats are driven — the block rides the same envelope on the plain and the json
+/// read path, so a driver on `--format json` must not be handed the hand-repair lie either.
+#[test]
+fn doc_show_over_a_foreign_squatter_routes_at_adoption_and_the_surfaces_tell_one_story() {
+    let repo = TempDir::new("show-foreign");
+    let home = TempDir::new("home");
+    fs::write(repo.path().join("CHANGELOG.md"), KEEP_A_CHANGELOG).expect("write CHANGELOG.md");
+    setup_repo(repo.path(), home.path());
+
+    for format in [&[][..], &["--format", "json"][..]] {
+        let stderr = show_block_stderr(repo.path(), home.path(), "changelog:changelog", format);
+        assert!(
+            stderr.contains("jigc ingest"),
+            "the route names the adoption front door; got ({format:?}):\n{stderr}",
+        );
+        assert!(
+            stderr.contains("jigc migrate CHANGELOG.md --as changelog"),
+            "and the doctype-directed adoption verb, verbatim — the file's own path, so the agent \
+             runs it as emitted; got ({format:?}):\n{stderr}",
+        );
+        assert!(
+            !stderr.contains("fix the committed file so it conforms to its schema"),
+            "the hand-repair route is a LIE about a file jigc never wrote; got ({format:?}):\n\
+             {stderr}",
+        );
+        assert!(
+            !stderr.contains("migrate-corpus"),
+            "a foreign file is not an unmigrated corpus — that verb does nothing for it; got \
+             ({format:?}):\n{stderr}",
+        );
+    }
+
+    // One story, three surfaces: `doc list` says *unregistered*, `doc show` (above) says *adopt
+    // it*, `validate` says *foreign — adopt it*.
+    assert_eq!(
+        listed_state(repo.path(), home.path(), "changelog:changelog").as_deref(),
+        Some("unregistered"),
+        "the fourth read surface flags the squatter",
+    );
+    let (code, findings) = validate_findings(repo.path(), home.path());
+    assert_eq!(
+        by_code(&findings, "schema-conformance.unadopted-instance").len(),
+        1,
+        "and the sweep calls the same file foreign; got: {findings:#?}",
+    );
+    assert_eq!(code, 0, "the brownfield first-run still exits 0");
+}
+
+/// (T7 — the **managed** arm; the omitting context) The split is **real, not a blanket swap**: a
+/// **stamped** (v2, migrated) but structurally **corrupt** managed doc still blocks with the
+/// hand-repair route — *"fix the committed file so it conforms to its schema"* — and is never
+/// routed at adoption. jigc wrote this file; telling its author to `jigc migrate` it would be the
+/// mirror-image lie, and a route that sent a corrupt managed ADR through the foreign-adoption path
+/// would rewrite a doc that only needs its `## Consequences` back.
+#[test]
+fn doc_show_over_a_corrupt_managed_doc_keeps_the_repair_route() {
+    let repo = TempDir::new("show-corrupt-managed");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), ADR_V2_MISSING_CONSEQUENCES);
+
+    let stderr = show_block_stderr(
+        repo.path(),
+        home.path(),
+        "adr:cache-sessions-in-memory",
+        &[],
+    );
+    assert!(
+        stderr.contains("fix the committed file so it conforms to its schema"),
+        "a corrupt MANAGED doc is repaired, not adopted; got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("jigc ingest") && !stderr.contains("jigc migrate "),
+        "and it is never routed at the adoption verbs — jigc wrote this file; got:\n{stderr}",
+    );
+
+    // The same discriminator, the same story: `doc list` calls it managed.
+    assert_eq!(
+        listed_state(repo.path(), home.path(), "adr:cache-sessions-in-memory").as_deref(),
+        Some("managed"),
+        "the corrupt doc is jigc's own — the two surfaces agree",
+    );
+}
+
 /// Assert a `jigc` invocation succeeded.
 fn assert_ok(out: &std::process::Output, what: &str) {
     assert!(

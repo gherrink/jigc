@@ -846,17 +846,36 @@ fn classify_provenance(schema: &Schema, source: &str, priors: &[Schema]) -> Prov
 /// `file-state.*` path-keyed form — `design/command-output-contract.md` → the target-normal
 /// forms), and a synthesized URI would name a doc that does not exist.
 ///
-/// The route obeys the **M40 two-tier rule — never command a verb that hard-errors**: the
-/// doctype-directed `jigc migrate <path> --as <ty>` is named only when the composed pack ships
-/// the `migrate-<ty>` workflow it composes (`migratable`); `jigc ingest`, the adoption front
-/// door, always applies. It deliberately does **not** name `jigc migrate-corpus` — that verb
-/// upgrades the *managed* corpus and would report this file `blocked`, doing nothing.
+/// Its route is [`adoption_route`]'s — the one the read verb also serves (below).
 fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool) -> Finding {
     let message = format!(
         "committed file `{rel_key}` sits at the `{ty}` home but was never adopted by jigc — it \
          carries no schema-version stamp and parses against no known `{ty}` schema version"
     );
-    let route = if migratable {
+    Finding::graded(
+        Severity::Advisory,
+        "schema-conformance.unadopted-instance",
+        message,
+        Some(Location::addressed(rel_key, 1, 1)),
+        Some(adoption_route(ty, rel_key, migratable)),
+    )
+}
+
+/// **The route a never-adopted foreign file gets, from every surface that meets one** — the
+/// store sweep's adoption advisory ([`unadopted_instance`], above) and — since it went `pub`
+/// (M42, T7) — `jigc doc show`'s read-side block on the same file (`crates/cli/src/doc.rs` →
+/// `reroute_unadopted`; `design/doc-read-surface.md` → `jigc doc list`: *"`doc show`'s block on
+/// an unregistered instance routes to adoption, not to hand-repair"*). Single-sourced so the two
+/// surfaces cannot tell two stories about one file — the very failure this discriminator exists
+/// to close.
+///
+/// It obeys the **M40 two-tier rule — never command a verb that hard-errors**: the
+/// doctype-directed `jigc migrate <path> --as <ty>` is named only when the composed pack ships
+/// the `migrate-<ty>` workflow it composes (`migratable`); `jigc ingest`, the adoption front
+/// door, always applies. It deliberately does **not** name `jigc migrate-corpus` — that verb
+/// upgrades the *managed* corpus and would report this file `blocked`, doing nothing.
+pub fn adoption_route(ty: &str, rel_key: &str, migratable: bool) -> String {
+    if migratable {
         format!(
             "adopt — run `jigc ingest` to route it, or `jigc migrate {rel_key} --as {ty}` to \
              rewrite it into the managed `{ty}` shape; it is a foreign file, not an unmigrated \
@@ -866,14 +885,7 @@ fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool) -> Finding {
         "adopt — run `jigc ingest` to route it; it is a foreign file, not an unmigrated \
          managed doc"
             .to_string()
-    };
-    Finding::graded(
-        Severity::Advisory,
-        "schema-conformance.unadopted-instance",
-        message,
-        Some(Location::addressed(rel_key, 1, 1)),
-        Some(route),
-    )
+    }
 }
 
 #[cfg(test)]
