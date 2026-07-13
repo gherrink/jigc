@@ -31,6 +31,19 @@
 //!           B add-task → finalize BOTH. Before the fix this is a *symmetric deadlock* (both exit
 //!           3 with base-mismatch, unrecoverable even by `git revert`); after it, each milestone's
 //!           range is all-milestone-record paths and both finalize.
+//!
+//! M42 Increment 7 / T3 — the widening does **not** dissolve the constraint underneath: a
+//! milestone's base is pinned once at `create` and never re-pinned, so **landed code** invalidates
+//! it permanently, and that is the M31 worktree-combine guard doing its job. What was broken is
+//! that the block had **no route** (`design/team-ready-state.md` → What the base-guard is for →
+//! The route; `design/write-commands.md` → the unit-aware route). A fourth proof:
+//!
+//!   (RED)   **A landed-code block routes the milestone.** create → add-task ×2 → land a code
+//!           commit → `finalize` blocks (exit 3) with a route that names the *milestone* (not "the
+//!           task"), names the cause, and names both real options — land the milestone first, or
+//!           re-cut onto the new base, both labelled out-of-band git — and never offers `discard`.
+//!           Before the fix it served the *task* route: `jigc task discard <milestone-id>`, which
+//!           exits 1 with `no task` (asserted, so the dead end is on the record).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -181,6 +194,84 @@ fn foreign_commit_in_range_still_blocks_finalize_with_base_mismatch() {
     assert!(
         stderr.contains("HEAD is now"),
         "the block routes the base-mismatch divergence (external drift caught); stderr:\n{stderr}",
+    );
+}
+
+/// (RED — M42 T3) The block a **landed code commit** produces must *route*. The constraint is
+/// real (a milestone's base is pinned once at `create` and never re-pinned, so its sub-task
+/// worktrees were cut from a base HEAD no longer reflects — the M31 worktree-combine cannot be
+/// proven sound against it, `design/team-ready-state.md` → What the base-guard is for). What was
+/// broken is that it had **no route**: the task route was served to a milestone, telling the
+/// operator to `jigc task discard <milestone-id>` — a dead end (`no task`, exit 1, asserted below)
+/// that calls a milestone "the task", and whose only honest reading is *throw the work away*.
+///
+/// The milestone arm now names the **milestone**, names the **cause**, and names the two **real**
+/// options — land the milestone first, or re-cut onto the new base — both honestly labelled
+/// out-of-band git, with `discard` never offered as the exit (it settles the record of an
+/// *abandoned* milestone; there is no `jigc milestone rebase` at M42, deliberately).
+#[test]
+fn landed_code_base_mismatch_routes_the_milestone_with_real_options() {
+    let repo = TempDir::new("landed-code-route");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+    setup_milestone(repo.path(), home.path());
+
+    // Landed code after the milestone's pinned base — the real invalidation (another milestone's
+    // finalize, an ordinary `jigc task finalize`, a human's own commit all land here).
+    fs::write(repo.path().join("src.rs"), "fn main() {}\n").expect("write code file");
+    git(repo.path(), &["add", "src.rs"]);
+    git(repo.path(), &["commit", "-q", "-m", "landed code"]);
+
+    let out = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "landed code in range blocks the milestone finalize (exit 3); stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("milestone") && !stderr.contains("the task was started"),
+        "the block speaks about the MILESTONE, never \"the task\"; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("worktree"),
+        "the block names the CAUSE — the sub-task worktrees were cut from the pinned base; \
+         stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("discard"),
+        "`discard` is never offered as the exit from a milestone whose work is still wanted; \
+         stderr:\n{stderr}",
+    );
+    let route = stderr
+        .lines()
+        .find_map(|l| l.trim_start().strip_prefix("route: "))
+        .unwrap_or_else(|| panic!("the block carries a route line; stderr:\n{stderr}"));
+    assert!(
+        route.contains("jigc milestone finalize"),
+        "option 1 — land the milestone's work first; route:\n{route}",
+    );
+    assert!(
+        route.contains("re-cut"),
+        "option 2 — re-cut the milestone's work onto the new base; route:\n{route}",
+    );
+    assert!(
+        route.contains("out-of-band git"),
+        "both options are honestly labelled out-of-band git (no verb exists for either); \
+         route:\n{route}",
+    );
+
+    // The dead end the old route pointed at, verbatim: `jigc task discard` on a milestone id is
+    // not a recovery — it is not even a command that resolves.
+    let dead_end = run_jigc(
+        repo.path(),
+        home.path(),
+        &["task", "discard", "cache-rework"],
+    );
+    assert!(
+        !dead_end.status.success(),
+        "`jigc task discard <milestone-id>` is a dead end — the old route's only offered exit",
     );
 }
 

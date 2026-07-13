@@ -185,7 +185,7 @@ pub fn plan_finalize(
         return Err(vec![task_missing_finding(task_dir)]);
     }
     if base.sha != head_sha {
-        return Err(vec![base_mismatch_finding(base, head_sha)]);
+        return Err(vec![base_mismatch_finding(UnitKind::Task, base, head_sha)]);
     }
 
     // Phase 2 — validate: abort on any blocking finding, surfacing exactly those.
@@ -514,12 +514,18 @@ pub fn plan_milestone_finalize(
     // advances to HEAD. Any non-record commit in the range keeps the base-mismatch block, so
     // **external** drift (which would invalidate the M31 worktree-combine) is still caught; the
     // milestone's own record-only bookkeeping (touching no code) is tolerated. The engine does
-    // no git I/O — the CLI computes the range verdict and supplies it here.
+    // no git I/O — the CLI computes the range verdict and supplies it here. The block it raises
+    // is the MILESTONE arm of [`base_mismatch_finding`] (M42 T3): same code, a route that names
+    // the milestone, the cause, and the two real (out-of-band git) options — never `discard`.
     if !staging_dir.exists() {
         return Err(vec![task_missing_finding(staging_dir)]);
     }
     if base.sha != head_sha && !record_only_advance {
-        return Err(vec![base_mismatch_finding(base, head_sha)]);
+        return Err(vec![base_mismatch_finding(
+            UnitKind::Milestone,
+            base,
+            head_sha,
+        )]);
     }
 
     // Empty-commit guard (shared): validate-equivalent passed (the join adjudicated),
@@ -731,22 +737,74 @@ fn task_missing_finding(task_dir: &Path) -> Finding {
     )
 }
 
+/// The work-unit kind a [`base_mismatch_finding`] speaks about — one `code`, two units
+/// whose cause and whose exits are different (M42 T3; `design/write-commands.md` → The
+/// `finalize.base-mismatch` route is unit-aware).
+#[derive(Clone, Copy)]
+enum UnitKind {
+    /// A serial task ([`plan_finalize`]).
+    Task,
+    /// A milestone ([`plan_milestone_finalize`]).
+    Milestone,
+}
+
 /// The phase-1 base-pin-divergence reject (`finalize.md` → 1. Preflight: "Base pin
 /// matches HEAD"). A blocking finding carrying the divergence-routing prompt — the
-/// CLI never operates a task off its pinned base.
-fn base_mismatch_finding(base: &BasePin, head_sha: &str) -> Finding {
+/// CLI never operates a task (or a milestone) off its pinned base.
+///
+/// The route is **unit-aware** (M42 T3 — `design/team-ready-state.md` → What the base-guard
+/// is for → The route; `design/write-commands.md` → the unit-aware route). Both units share
+/// the code; nothing else about them is the same:
+///
+/// - **Task** — a serial task pinned to `<A>` while HEAD moved: switch back to `<A>`, or
+///   discard the task (a cheap, honest exit for a task — `jigc task discard`, which also
+///   re-mints). Unchanged.
+/// - **Milestone** — a milestone's base is pinned once at `create` and **never** re-pinned
+///   ([`decide_base_repin`] is consciously task-only: a task's footprint is its dirty paths +
+///   promote destinations, which the overlap test can see; a milestone's is code sitting in
+///   worktrees cut from the base, which it cannot). So any commit that moved code after the
+///   base invalidates it — the M31 worktree-combine cannot be proven sound against a HEAD
+///   whose code has moved. The route therefore names the **cause** and the two **real**
+///   options (land the milestone first, or re-cut onto the new base — both honestly labelled
+///   out-of-band git; there is no `jigc milestone rebase` at M42, deliberately deferred). It
+///   never offers `discard`: `jigc milestone discard` settles the record of an **abandoned**
+///   milestone, so routing a still-wanted one there tells the operator to destroy the work to
+///   satisfy a guard.
+fn base_mismatch_finding(unit: UnitKind, base: &BasePin, head_sha: &str) -> Finding {
+    let (message, route) = match unit {
+        UnitKind::Task => (
+            format!(
+                "the task was started at base `{}` but HEAD is now `{head_sha}`",
+                base.short
+            ),
+            format!(
+                "switch back to `{}` or discard the task with `jigc task discard`",
+                base.short
+            ),
+        ),
+        UnitKind::Milestone => (
+            format!(
+                "the milestone was pinned to base `{}` but HEAD is now `{head_sha}`, and the \
+                 commits landed since move more than milestone-record bookkeeping — the \
+                 sub-task worktrees were cut from `{}`, so combining them onto HEAD cannot be \
+                 proven sound",
+                base.short, base.short
+            ),
+            format!(
+                "land this milestone's work first (out-of-band git: return HEAD to `{}`, run \
+                 `jigc milestone finalize`, then re-land the newer commits on top), or re-cut \
+                 this milestone's work onto the new base (out-of-band git: re-provision the \
+                 sub-task worktrees from HEAD and re-apply each sub-task's staged changes)",
+                base.short
+            ),
+        ),
+    };
     Finding::graded(
         Severity::Blocking,
         "finalize.base-mismatch",
-        format!(
-            "the task was started at base `{}` but HEAD is now `{head_sha}`",
-            base.short
-        ),
+        message,
         None,
-        Some(format!(
-            "switch back to `{}` or discard the task with `jigc task discard`",
-            base.short
-        )),
+        Some(route),
     )
 }
 
@@ -1896,8 +1954,9 @@ sections:
         let adr_bytes = stage_filled_adr(&staging, "cache-strategy");
         let message = "Finalize milestone cache-rework (2 sub-tasks)\n\n- area-low\n- area-zed\n";
 
-        // (Preflight) base != supplied HEAD, and NOT a record-only advance → the SAME
-        // divergence-routing block, no plan.
+        // (Preflight) base != supplied HEAD, and NOT a record-only advance → the same
+        // divergence-routing CODE, no plan (its route is the milestone arm's — asserted in
+        // `base_mismatch_route_is_unit_aware`).
         let err = plan_milestone_finalize(
             &staging,
             &base(),
@@ -1986,6 +2045,120 @@ sections:
             plan.hash_updates.get("decisions/cache-strategy.md"),
             Some(&hash_bytes(&adr_bytes)),
             "the hash is over the materialized body bytes (the shared phase-7 set)",
+        );
+    }
+
+    /// The `finalize.base-mismatch` route is **unit-aware** (M42 T3 — `design/write-commands.md`
+    /// → The `finalize.base-mismatch` route is unit-aware; `design/team-ready-state.md` → What
+    /// the base-guard is for → The route — the actual defect). One code, two work-unit kinds,
+    /// and until M42 one route: the **task** route (*"switch back to `<A>` or discard the task
+    /// with `jigc task discard`"*) was served to a blocked **milestone** too — where
+    /// `jigc task discard <milestone-id>` is a dead end (`no task '<id>'`, exit 1) that calls a
+    /// milestone "the task", and where the only honest reading of `discard` is *throw the work
+    /// away*.
+    ///
+    /// - The **task** arm stays byte-identical (its switch-back-or-discard route is correct for
+    ///   a task, whose `discard` is a genuine, cheap exit).
+    /// - The **milestone** arm names the *milestone*, names the **cause** (commits landed after
+    ///   this milestone's base, so the sub-task worktrees were cut from a base HEAD no longer
+    ///   reflects and the combine cannot be proven sound against it), and names the two **real**
+    ///   options — land the milestone first, or re-cut onto the new base — both honestly labelled
+    ///   out-of-band git (there is no `jigc milestone rebase` at M42, deliberately). It **never**
+    ///   offers `discard`: that settles the record of an *abandoned* milestone, so routing a
+    ///   still-wanted milestone there tells the operator to destroy work to satisfy a guard.
+    #[test]
+    fn base_mismatch_route_is_unit_aware() {
+        let root = TempRoot::new("unit-aware-route");
+        let head = "ffffffffffffffffffffffffffffffffffffffff";
+
+        // The task arm — unchanged: it names the task and offers `jigc task discard`.
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+        let schema = stage_filled_commit(&task_dir, "add-rate-limiter");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+        let err = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            head,
+            &clean,
+            true,
+            &schema,
+            "add-rate-limiter",
+            &schemas(),
+        )
+        .expect_err("a base mismatch aborts the task preflight");
+        assert_eq!(err[0].code, "finalize.base-mismatch");
+        assert_eq!(
+            err[0].message,
+            format!(
+                "the task was started at base `{}` but HEAD is now `{head}`",
+                base().short
+            ),
+            "the task arm's message is unchanged",
+        );
+        assert_eq!(
+            err[0].route.as_deref(),
+            Some(
+                format!(
+                    "switch back to `{}` or discard the task with `jigc task discard`",
+                    base().short
+                )
+                .as_str()
+            ),
+            "the task arm's route is unchanged",
+        );
+
+        // The milestone arm — the same code, a different unit, a different route.
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged");
+        stage_filled_adr(&staging, "cache-strategy");
+        let err = plan_milestone_finalize(
+            &staging,
+            &base(),
+            head,
+            false,
+            "Finalize milestone cache-rework (1 sub-task)\n".to_string(),
+            true,
+            &schemas(),
+        )
+        .expect_err("a base mismatch aborts the milestone preflight");
+        assert_eq!(err.len(), 1, "one preflight finding");
+        assert_eq!(err[0].code, "finalize.base-mismatch");
+        assert_eq!(err[0].severity, Severity::Blocking);
+
+        let message = &err[0].message;
+        assert!(
+            message.contains("milestone") && !message.contains("the task"),
+            "the milestone arm names the milestone, never \"the task\": {message:?}",
+        );
+        assert!(
+            message.contains("HEAD is now") && message.contains(&base().short),
+            "the milestone arm still names the pinned base and the advanced HEAD: {message:?}",
+        );
+        assert!(
+            message.contains("worktree"),
+            "the milestone arm names the CAUSE — the worktrees were cut from the pinned base: \
+             {message:?}",
+        );
+
+        let route = err[0].route.as_deref().expect("the block carries a route");
+        assert!(
+            !route.contains("discard"),
+            "`discard` is never the exit from a base-mismatched milestone you still want: \
+             {route:?}",
+        );
+        assert!(
+            route.contains("jigc milestone finalize") && route.contains("re-cut"),
+            "the route names BOTH real options — land the milestone first, or re-cut onto the \
+             new base: {route:?}",
+        );
+        assert!(
+            route.contains("out-of-band git"),
+            "both options are honestly labelled out-of-band git (there is no verb for either): \
+             {route:?}",
         );
     }
 
