@@ -680,18 +680,50 @@ struct PreparedDoc {
 }
 
 /// The per-doc change list: the doctype's `fixed` schema-diff filtered to what this doc
-/// still needs. The schema-version stamp add-field is kept iff the doc carries no stamp; a
-/// prose-needing slot is kept iff the doc does not already carry that section heading (an
-/// already-authored slot is dropped, so the doc flips cleanly once the prose lands).
+/// still needs — **the re-run-safety filter** (`design/corpus-migration.md` → The stranding
+/// defect: a migration is not re-runnable; the property census → Re-run safety / convergence).
+/// The schema-version stamp add-field is kept iff the doc carries no stamp.
+///
+/// **Every heading-minting kind is dropped iff the doc already carries that `## Heading`.**
+/// [`engine::write::generate_section`] — the block-insert every such kind splices through —
+/// **refuses** an already-present section (`GenerateError::AlreadyPresent`), so an unfiltered
+/// kind does not duplicate the heading: it *halts the doc*, which then collects a route
+/// ("author the new required prose … then re-run") that is a **dead end** when the section is
+/// optional and already authored — there is nothing to write and re-running changes nothing.
+/// Pre-M42 only `ProseNeeding` was filtered and `_ => true` let the rest through, which
+/// **permanently stranded** any doc that had hand-authored the added optional section (live in
+/// the shipped `adr` v1→v2 `options` migration).
+///
+/// The match is **exhaustive on purpose**: a new transform kind must declare whether it mints a
+/// heading, rather than inheriting a catch-all that silently strands the docs that already carry
+/// it.
+///
+/// `ProseNeeding { leaf: Some(..) }` — a new *required field*, which mints no heading of its own
+/// — is filtered on its section's heading too, unchanged from pre-M42: dropping it hands the doc
+/// to the per-doc conformance gate, which blocks it with the right route (the missing field),
+/// rather than to `generate_section`'s refusal.
 fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> Vec<SchemaChange> {
     fixed
         .iter()
         .filter(|change| match change {
+            // The schema-version stamp: added only to a doc that carries none (a below-version
+            // doc already has it — it is value-bumped post-fold instead).
             SchemaChange::AddedOptionalField { field, .. } if field == SCHEMA_VERSION_FIELD => {
                 stamp_absent
             }
-            SchemaChange::ProseNeeding { section, .. } => !has_section_heading(source, section),
-            _ => true,
+            // THE HEADING-MINTING KINDS — dropped iff the doc already carries the heading.
+            SchemaChange::AddedOptionalSection { section }
+            | SchemaChange::ProseNeeding { section, .. } => !has_section_heading(source, section),
+            // Every other kind splices inside an existing section (or no bytes at all), so it
+            // has no heading to collide with and is always kept.
+            SchemaChange::AddedOptionalField { .. }
+            | SchemaChange::WidenedCardinality { .. }
+            | SchemaChange::ValueRemapped { .. }
+            | SchemaChange::FixedSlotToRepeatable { .. }
+            | SchemaChange::Relocated { .. }
+            | SchemaChange::DisplayTitleChanged { .. }
+            | SchemaChange::PresentationOnly
+            | SchemaChange::Unclassified => true,
         })
         .cloned()
         .collect()

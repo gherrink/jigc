@@ -175,11 +175,50 @@ A cold node loses its sessions.
     )
 }
 
+/// A **v1** `adr` that already carries a hand-authored `## Options` section at its
+/// schema-ordered home (between `## Context` and `## Decision`) — the shape an adopter who
+/// wrote the alternatives down *before* the v1→v2 bump has committed. Structurally it is
+/// already the v2 form; only the stamp is behind.
+fn adr_v1_body_with_options(title: &str) -> String {
+    format!(
+        "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 1
+---
+
+# {title}
+
+## Context
+
+Session lookups must stay sub-millisecond.
+
+## Options
+
+A shared Redis cache lost on latency budget.
+
+## Decision
+
+Keep sessions in a single in-memory node.
+
+## Consequences
+
+A cold node loses its sessions.
+"
+    )
+}
+
 /// Write + git-commit a v1 `adr` at `docs/decisions/<slug>.md`.
 fn commit_adr(repo: &Path, slug: &str, title: &str) {
+    commit_adr_body(repo, slug, &adr_v1_body(title));
+}
+
+/// Write + git-commit a verbatim `adr` body at `docs/decisions/<slug>.md`.
+fn commit_adr_body(repo: &Path, slug: &str, body: &str) {
     let dir = repo.join("docs").join("decisions");
     fs::create_dir_all(&dir).expect("mk docs/decisions/");
-    fs::write(dir.join(format!("{slug}.md")), adr_v1_body(title)).expect("write adr");
+    fs::write(dir.join(format!("{slug}.md")), body).expect("write adr");
     git(repo, &["add", "."]);
     git(repo, &["commit", "-q", "-m", "seed adr"]);
 }
@@ -324,5 +363,87 @@ fn adr_options_v1_to_v2_migration_runs_through_the_shipped_binary() {
         count(&rerun_out, "migrated   "),
         0,
         "the re-run migrates nothing; stdout:\n{rerun_out}",
+    );
+}
+
+/// **The stranding defect** (M42 Inc-5 T2; `design/corpus-migration.md` → The stranding
+/// defect: a migration is not re-runnable / the property census → Re-run safety,
+/// convergence): a committed **v1-stamped** ADR that *already carries* a hand-authored
+/// `## Options` — the partially-conformant doc every fixture in this file lacks — migrates
+/// cleanly.
+///
+/// RED before the guard generalizes: `per_doc_changes` keeps `AddedOptionalSection`
+/// unconditionally (`_ => true`), the driver's `write::generate_section` **refuses** the
+/// already-present section (`GenerateError::AlreadyPresent`), the doc halts, and it is
+/// blocked with the prose-needing route — a **dead end**, since the section is optional and
+/// already authored: there is no prose to write and re-running changes nothing. The doc can
+/// never migrate. Any adopter who hand-added `## Options` before the bump is permanently
+/// stranded.
+///
+/// Asserted over the bytes an operator sees (the emitted report line + the file on disk):
+/// `1 migrated`, **exactly one** `## Options`, the stamp value-bumped `1→2`, and every prior
+/// byte — the hand-authored Options prose included — preserved.
+#[test]
+fn an_adr_that_already_carries_options_migrates_instead_of_stranding() {
+    let repo = TempDir::new("carries");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    let before = adr_v1_body_with_options("Beta Decision");
+    commit_adr_body(repo.path(), "beta-decision", &before);
+    // Precondition: v1-stamped, and the v2 optional section is *already* there (hand-authored
+    // before the bump) — the partially-conformant shape the guard must converge.
+    assert!(
+        before.contains("schema-version: 1") && count(&before, "## Options") == 1,
+        "the seed ADR is v1-stamped and already carries `## Options`; got:\n{before}",
+    );
+
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let migrate_out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(&migrate, "`jigc migrate-corpus`");
+    assert_eq!(
+        count(&migrate_out, "migrated   docs/decisions/beta-decision.md"),
+        1,
+        "the ADR that already carries `## Options` MIGRATES (today: blocked, and forever); \
+         stdout:\n{migrate_out}",
+    );
+    assert_eq!(
+        count(&migrate_out, "  blocked    "),
+        0,
+        "nothing is blocked — the already-authored optional section is not a dead end; \
+         stdout:\n{migrate_out}",
+    );
+
+    let after = fs::read_to_string(adr_path(repo.path(), "beta-decision")).expect("read adr");
+    // The heading is minted exactly once — never re-spliced onto the one the doc carries.
+    assert_eq!(
+        count(&after, "## Options"),
+        1,
+        "exactly one `## Options` survives (no duplicate heading); got:\n{after}",
+    );
+    // The stamp is value-bumped 1->2 — the doc reaches v2, structurally untouched.
+    assert!(
+        after.contains("schema-version: 2") && !after.contains("schema-version: 1"),
+        "the adr stamp is value-bumped 1->2; got:\n{after}",
+    );
+    // Every prior byte is preserved: the doc differs from its v1 form **only** in the stamp
+    // digit (the hand-authored Options prose included).
+    assert_eq!(
+        after,
+        before.replace("schema-version: 1", "schema-version: 2"),
+        "the migration moved only the stamp digit; got:\n{after}",
+    );
+
+    // The migrated ADR is v2-conformant and carries no migrate route (it converged).
+    let reval = jigc(repo.path(), home.path(), &["validate"]);
+    let reval_out = String::from_utf8_lossy(&reval.stdout);
+    assert!(
+        reval.status.success(),
+        "re-validate exits 0; stdout:\n{reval_out}",
+    );
+    assert_eq!(
+        count(&reval_out, "route: migrate"),
+        0,
+        "the migrated ADR carries no migrate route; stdout:\n{reval_out}",
     );
 }
