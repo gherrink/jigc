@@ -68,6 +68,13 @@ const RECORD_STATUS_ACTIVE: &str = "active";
 /// header **and** every committed sub-task item to (the `set: on-transition` target).
 const RECORD_STATUS_JOINED: &str = "joined";
 
+/// The `status` value the `discard` in-place-mutate write arm settles an **abandoned**
+/// milestone's record to — the terminal that makes an abandoned milestone observable
+/// (milestone-record schema-version 2, M42; `design/team-ready-state.md` → The
+/// lifecycle). Flipped onto the header and every **non-joined** sub-task item; a
+/// genuinely [`joined`](RECORD_STATUS_JOINED) item keeps its value (it really did land).
+const RECORD_STATUS_DISCARDED: &str = "discarded";
+
 /// A milestone's persisted task list — the sub-task ids appended by `add_task`,
 /// the collection the by-task-id join enumerates (`design/storage.md` → The
 /// by-task-id join). Serialized as a JSON list in a stable, golden-locked byte
@@ -808,7 +815,7 @@ pub fn join_record(
     let source = std::fs::read_to_string(record_path)
         .map_err(|err| io_finding(milestone_id, "read the milestone record", &err))?;
     let flipped = flip_record_status_to_joined(schema, &source)
-        .map_err(|err| record_flip_finding(milestone_id, err))?;
+        .map_err(|err| record_flip_finding(milestone_id, RECORD_STATUS_JOINED, "join", err))?;
     std::fs::write(record_path, &flipped)
         .map_err(|err| io_finding(milestone_id, "write the joined milestone record", &err))?;
     Ok(flipped)
@@ -853,20 +860,131 @@ fn flip_record_status_to_joined(
     )
 }
 
+/// **Settle a `milestone-record` to `discarded` in place** — the `discard` write arm
+/// (`design/team-ready-state.md` → `jigc milestone discard <id>`, "Per-item semantics —
+/// a joined sub-task stays joined"; M42 Increment 7). Reads the **committed record** at
+/// `record_path`, settles it to the abandon terminal, and writes it back — the same
+/// direct-record-file plumbing [`join_record`] uses, returning the settled bytes (the
+/// CLI commits them record-only).
+///
+/// The [`join_record`] sibling with **one** semantic difference: the item flip is
+/// **per-item conditional**. Every `tasks` item whose committed `status` is **not**
+/// `joined` flips to `discarded`; a **genuinely joined** item is left **byte-untouched**
+/// — it really did land, its code and docs are in the history, and flipping it would make
+/// the record lie about **landed work**. The header always flips to `discarded`. So a
+/// partially-joined milestone that was then abandoned reads as exactly what happened, on
+/// both axes.
+///
+/// Each item's committed `status` is read from the record itself ([`crate::parse::ParsedItem`]'s
+/// fields) — the committed record is its own source of truth ([Engine capability 2]:
+/// the `.jigc` JSON is a rebuildable cache, never consulted here). The engine stays
+/// clock-free and LLM-free: the only value written is the `discarded` structural
+/// constant, so the transform is a pure function of (`schema`, on-disk bytes) → bytes,
+/// spliced through the byte-stable [`crate::write::set_item_field`] / [`crate::write::set_field`]
+/// path.
+///
+/// A record that does not read, does not conform, or lacks a targeted `status` leaf
+/// surfaces a routed blocking [`Finding`]; nothing partial is written (the file lands
+/// only after every splice succeeds).
+///
+/// [Engine capability 2]: join_record
+pub fn discard_record(
+    record_path: &Path,
+    schema: &crate::schema::Schema,
+    milestone_id: &str,
+) -> Result<String, Finding> {
+    let source = std::fs::read_to_string(record_path)
+        .map_err(|err| io_finding(milestone_id, "read the milestone record", &err))?;
+    let flipped = flip_record_status_to_discarded(schema, &source).map_err(|err| {
+        record_flip_finding(milestone_id, RECORD_STATUS_DISCARDED, "discard", err)
+    })?;
+    std::fs::write(record_path, &flipped)
+        .map_err(|err| io_finding(milestone_id, "write the discarded milestone record", &err))?;
+    Ok(flipped)
+}
+
+/// The pure in-place settle behind [`discard_record`]: read the committed `tasks` items
+/// from the record itself (the source of truth), select **only the non-joined** ones by
+/// their committed `status` leaf, splice each one's `status` to `discarded` via the
+/// byte-stable item-leaf splice (threading the updated bytes item by item), then splice
+/// the header `status`. A **joined** item is never named to the splice, so not one of its
+/// bytes moves. A non-conformant record, or a `status` leaf the splice cannot locate, is a
+/// [`SpliceError`](crate::write::SpliceError) the caller routes.
+fn flip_record_status_to_discarded(
+    schema: &crate::schema::Schema,
+    source: &str,
+) -> Result<String, crate::write::SpliceError> {
+    let doc = crate::parse::parse_sections(schema, source)
+        .map_err(|_| crate::write::SpliceError::NotConformant)?;
+    let item_ids: Vec<String> = doc
+        .sections
+        .iter()
+        .find(|s| s.id == RECORD_TASKS_SECTION)
+        .map(|s| {
+            s.items
+                .iter()
+                .filter(|item| !item_is_joined(item))
+                .map(|item| item.id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut body = source.to_string();
+    for item_id in &item_ids {
+        body = crate::write::set_item_field(
+            schema,
+            &body,
+            RECORD_TASKS_SECTION,
+            item_id,
+            RECORD_STATUS_FIELD,
+            RECORD_STATUS_DISCARDED,
+        )?;
+    }
+    crate::write::set_field(
+        schema,
+        &body,
+        RECORD_HEADER_SECTION,
+        RECORD_STATUS_FIELD,
+        RECORD_STATUS_DISCARDED,
+    )
+}
+
+/// Whether a committed `tasks` item **genuinely joined** — its committed `status` leaf
+/// reads [`RECORD_STATUS_JOINED`]. The one predicate that separates the `discard` arm
+/// from its `join` sibling: a joined sub-task really did land, so `discard` leaves it
+/// alone. A missing status leaf is **not** joined (a record that never claimed the work
+/// landed cannot be read as claiming it), so it settles to `discarded` like any other
+/// non-joined item.
+fn item_is_joined(item: &crate::parse::ParsedItem) -> bool {
+    item.fields
+        .iter()
+        .find(|f| f.key == RECORD_STATUS_FIELD)
+        .is_some_and(|f| f.value.render() == RECORD_STATUS_JOINED)
+}
+
 /// A blocking finding for a `status` splice failure while flipping a milestone record to
-/// `joined` — the record did not conform or a targeted `status` leaf vanished (a real
-/// fault: the record is the record arm's own materialized output). Routed to reconcile.
-fn record_flip_finding(milestone_id: &str, err: crate::write::SpliceError) -> Finding {
+/// its `target` terminal (`joined` at the `join` op, `discarded` at `discard` — named by
+/// `op`, so the route says which one to re-run) — the record did not conform or a targeted
+/// `status` leaf vanished (a real fault: the record is the record arms' own materialized
+/// output). Routed to reconcile.
+fn record_flip_finding(
+    milestone_id: &str,
+    target: &str,
+    op: &str,
+    err: crate::write::SpliceError,
+) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "milestone.record-flip",
-        format!("could not flip milestone record `{milestone_id}` to joined: {err:?}"),
+        format!("could not flip milestone record `{milestone_id}` to {target}: {err:?}"),
         Some(Location::addressed(
             format!("milestone-record:{milestone_id}"),
             1,
             1,
         )),
-        Some("reconcile the milestone record, then re-run the join".to_string()),
+        Some(format!(
+            "reconcile the milestone record, then re-run the {op}"
+        )),
     )
 }
 
@@ -3838,6 +3956,205 @@ schema-version: 1
                 item.title
             );
         }
+    }
+
+    /// A committed record whose sub-task items carry the given statuses — the fixture
+    /// the discard arm's per-item semantics need (the `join` arm can only produce
+    /// all-`joined`). Builds it through the production write arms (create → append ×N)
+    /// and then flips exactly the items that should read `joined` through the same
+    /// byte-stable item-leaf splice the arms use, so the fixture bytes are the bytes a
+    /// real partially-joined record would carry.
+    fn record_with_item_statuses(
+        schema: &crate::schema::Schema,
+        milestone_id: &str,
+        tasks: &[(&str, &str, &str)],
+    ) -> String {
+        let base = BasePin {
+            sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
+            short: "1f2e3d4".to_string(),
+        };
+        let mut body = render_fresh_record(schema, milestone_id, &base, 1);
+        for (task_id, intent, _) in tasks {
+            body = append_task_item(schema, &body, task_id, intent).expect("the sub-task appends");
+        }
+        for (task_id, _, status) in tasks {
+            if *status != RECORD_STATUS_ACTIVE {
+                body = crate::write::set_item_field(
+                    schema,
+                    &body,
+                    RECORD_TASKS_SECTION,
+                    task_id,
+                    RECORD_STATUS_FIELD,
+                    status,
+                )
+                .expect("the fixture item status splices");
+            }
+        }
+        body
+    }
+
+    /// The record's `status` leaves, in document order: the header first, then one per
+    /// `tasks` item (each paired with its item id) — read back through the parser, so
+    /// the assertion reads what a consumer of the committed record would read.
+    fn record_statuses(
+        schema: &crate::schema::Schema,
+        source: &str,
+    ) -> (Option<String>, Vec<(String, String)>) {
+        let doc = crate::parse::parse_sections(schema, source)
+            .expect("the record re-parses against its schema");
+        let header = doc
+            .sections
+            .iter()
+            .find(|s| s.id == RECORD_HEADER_SECTION)
+            .and_then(|s| s.fields.iter().find(|f| f.key == RECORD_STATUS_FIELD))
+            .map(|f| f.value.render());
+        let items = doc
+            .sections
+            .iter()
+            .find(|s| s.id == RECORD_TASKS_SECTION)
+            .map(|s| {
+                s.items
+                    .iter()
+                    .map(|i| {
+                        (
+                            i.id.clone(),
+                            i.fields
+                                .iter()
+                                .find(|f| f.key == RECORD_STATUS_FIELD)
+                                .map(|f| f.value.render())
+                                .expect("every sub-task item carries a status leaf"),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        (header, items)
+    }
+
+    /// T4 done-criterion (`design/team-ready-state.md` → `jigc milestone discard <id>`,
+    /// "Per-item semantics — a joined sub-task stays joined"; M42 Increment 7): over a
+    /// committed record whose items are `[joined, active]`, [`discard_record`] flips the
+    /// header **and the non-joined item** to `discarded` and leaves the **genuinely
+    /// joined** item's bytes **IDENTICAL** — it really did land, and flipping it would
+    /// make the record lie about landed work.
+    ///
+    /// The red the `join` sibling would fail: its unconditional loop flips *every* item,
+    /// so it would rewrite the joined sub-task too.
+    #[test]
+    fn discard_flips_non_joined_items_and_header_leaving_a_joined_item_byte_identical() {
+        let schema = milestone_record_schema();
+        let committed = record_with_item_statuses(
+            &schema,
+            "cache-rework",
+            &[
+                ("warm-cache", "Warm the read cache", RECORD_STATUS_JOINED),
+                ("evict-cold", "Evict cold entries", RECORD_STATUS_ACTIVE),
+            ],
+        );
+
+        // The committed record on disk — discard writes it directly, exactly as join does.
+        let root = TempRoot::new("discard");
+        let record_path = root.path().join("cache-rework.md");
+        std::fs::write(&record_path, &committed).expect("stage the committed record");
+
+        let discarded = discard_record(&record_path, &schema, "cache-rework")
+            .expect("the discard settles the record");
+
+        // The write hit disk: the file bytes ARE the returned bytes.
+        assert_eq!(
+            std::fs::read_to_string(&record_path).expect("read back the discarded record"),
+            discarded,
+            "the discard arm writes the committed record directly"
+        );
+
+        // Per-item semantics + byte-stability in one assertion: the settled record is the
+        // committed one with EXACTLY the non-joined status values flipped. Every
+        // `status: joined` byte survives untouched (there is one — the landed sub-task),
+        // so the joined item's bytes are IDENTICAL.
+        assert_eq!(
+            discarded,
+            committed.replace("status: active", "status: discarded"),
+            "discard flips only the non-joined status values; every other byte survives"
+        );
+        assert_eq!(
+            discarded.matches("status: joined").count(),
+            1,
+            "the genuinely joined sub-task still reads `joined` after the discard"
+        );
+
+        // Read back through the parser: header discarded, the joined item still joined,
+        // the active item discarded.
+        let (header, items) = record_statuses(&schema, &discarded);
+        assert_eq!(
+            header.as_deref(),
+            Some(RECORD_STATUS_DISCARDED),
+            "the header status settles to discarded"
+        );
+        assert_eq!(
+            items,
+            vec![
+                ("warm-cache".to_string(), RECORD_STATUS_JOINED.to_string()),
+                (
+                    "evict-cold".to_string(),
+                    RECORD_STATUS_DISCARDED.to_string()
+                ),
+            ],
+            "a genuinely joined sub-task stays joined; every non-joined one is discarded"
+        );
+
+        // Byte-stability of the in-place rewrite: `render(parse(out)) == out`.
+        let instance = crate::write::instance_from_source(&schema, &discarded)
+            .expect("the discarded record re-parses into an instance");
+        assert_eq!(
+            crate::write::render(&schema, &instance),
+            discarded,
+            "the discarded record is byte-stable: render(parse(x)) == x"
+        );
+    }
+
+    /// T4 done-criterion (same design section): an **all-joined** record — every
+    /// sub-task landed before the milestone was abandoned — flips the **header alone**;
+    /// not one item byte moves.
+    #[test]
+    fn discard_of_an_all_joined_record_flips_the_header_alone() {
+        let schema = milestone_record_schema();
+        let committed = record_with_item_statuses(
+            &schema,
+            "cache-rework",
+            &[
+                ("warm-cache", "Warm the read cache", RECORD_STATUS_JOINED),
+                ("evict-cold", "Evict cold entries", RECORD_STATUS_JOINED),
+            ],
+        );
+
+        let root = TempRoot::new("discard-all-joined");
+        let record_path = root.path().join("cache-rework.md");
+        std::fs::write(&record_path, &committed).expect("stage the committed record");
+
+        let discarded = discard_record(&record_path, &schema, "cache-rework")
+            .expect("the discard settles the record");
+
+        // The header is the ONLY `status: active` in an all-joined record, so this is the
+        // header-alone flip stated as bytes: both items survive byte-identical.
+        assert_eq!(
+            discarded,
+            committed.replace("status: active", "status: discarded"),
+            "an all-joined record flips the header alone; not one item byte moves"
+        );
+        let (header, items) = record_statuses(&schema, &discarded);
+        assert_eq!(header.as_deref(), Some(RECORD_STATUS_DISCARDED));
+        assert!(
+            items.iter().all(|(_, s)| s == RECORD_STATUS_JOINED),
+            "every landed sub-task still reads joined: {items:?}"
+        );
+
+        let instance = crate::write::instance_from_source(&schema, &discarded)
+            .expect("the discarded record re-parses into an instance");
+        assert_eq!(
+            crate::write::render(&schema, &instance),
+            discarded,
+            "the discarded record is byte-stable: render(parse(x)) == x"
+        );
     }
 
     /// T4 done-criterion (`design/team-ready-state.md` → Engine capability 2
