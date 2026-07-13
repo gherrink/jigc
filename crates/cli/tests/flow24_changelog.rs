@@ -341,33 +341,35 @@ fn assert_show_blocks(repo: &Path, home: &Path, pack: &Path, addr: &str, code: &
 // ---- `<DATE2>` interpolated — the `date` field is `set: on-create`) ----
 
 /// `doc show <rel1>` plain — the release item slice carries its field group + the
-/// nested change-groups (self-rooted at `###`, anchorless — the T1 fix).
-const REL1_ITEM_PLAIN: &str = "### 1.0.0
+/// nested change-groups (self-rooted at `###` — the T1 fix), each heading in the
+/// writer's exact canonical form: title, two spaces, the frozen `{#id}` anchor (M42
+/// inc-8 T4 — the id an agent addresses the item back by, at every depth).
+const REL1_ITEM_PLAIN: &str = "### 1.0.0  {#100}
 
 <!-- fields -->
 - date: <DATE1>
 - link: https://example.com/compare/0.9.0...1.0.0
 
-#### added
+#### added  {#added}
 
 - OAuth device-code flow
 
-#### fixed
+#### fixed  {#fixed}
 
 - session fixation on logout";
 
 /// `doc show <rel2>` plain — no `link` line (the absent optional field), and the
 /// run-2 groups.
-const REL2_ITEM_PLAIN: &str = "### 1.1.0
+const REL2_ITEM_PLAIN: &str = "### 1.1.0  {#110}
 
 <!-- fields -->
 - date: <DATE2>
 
-#### changed
+#### changed  {#changed}
 
 - new config knob
 
-#### removed
+#### removed  {#removed}
 
 - deprecated endpoint dropped";
 
@@ -453,11 +455,11 @@ const RELEASES_SECTION_JSON: &str = r#"[
 
 /// `doc show <rel1>/changes` plain — the nested ARRAY slices self-rooted (each group
 /// at `###`, like a section-level item list).
-const REL1_CHANGES_PLAIN: &str = "### added
+const REL1_CHANGES_PLAIN: &str = "### added  {#added}
 
 - OAuth device-code flow
 
-### fixed
+### fixed  {#fixed}
 
 - session fixation on logout";
 
@@ -848,14 +850,16 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
     ] {
         // The item's minted `id` joins the pinned item object (M42) — and it is read
         // from the EMITTED address's last segment, never rebuilt from the category:
-        // the json key is exactly the handle the address grammar takes.
+        // the json key is exactly the handle the address grammar takes. The PLAIN slice
+        // carries that same id as the heading's frozen `{#id}` anchor (M42 inc-8 T4), so
+        // both formats hand back the handle you address the item by.
         let id = group.rsplit('/').next().expect("the emitted item address");
         assert_shows(
             repo,
             home,
             pack,
             group,
-            &format!("### {category}\n\n{notes}"),
+            &format!("### {category}  {{#{id}}}\n\n{notes}"),
             &format!(
                 "{{\n  \"category\": \"{category}\",\n  \"id\": \"{id}\",\n  \"notes\": \"{notes}\"\n}}"
             ),
@@ -1019,7 +1023,7 @@ fn flow24_single_task_fold_in_appends_an_unreleased_entry_and_promotes() {
         home,
         pack,
         &group,
-        "### added\n\n- OAuth login button on the sign-in page",
+        "### added  {#added}\n\n- OAuth login button on the sign-in page",
         "{\n  \"category\": \"added\",\n  \"id\": \"added\",\n  \"notes\": \"- OAuth login button on the sign-in page\"\n}",
     );
     assert_shows(

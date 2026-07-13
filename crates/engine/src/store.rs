@@ -550,22 +550,30 @@ fn render_item(item: &ParsedItem, source: &str) -> String {
 }
 
 /// Render one repeatable item at nesting `depth` — the read-path mirror of the
-/// writer's `render_item_at` body shape, **anchorless** (no `{#id}` anchors): the
-/// `<#…> <title>` heading at level `2 + depth` (depth 1 → `###`; the schema loader
-/// caps nesting at H6), then — for a multi-slot template — each slot under its
-/// `<#…> <Leaf-Title>` sub-heading one level deeper, or — for a single bare-prose
-/// slot — the slot prose beneath the heading; then the item's sentinelled per-item
-/// **field group** (only when fields are present), then — recursively — its
-/// **nested** items one level deeper (the M22 multi-level shape; M40 — nested
-/// content joins the plain slice, `design/doc-read-surface.md` → Nested repeatables
-/// join the pin). A **flat** item (no fields, no nested children) renders
-/// byte-identically to the pre-M40 form, so compose-deref flat output (e.g.
-/// `{{@task.spec#criteria}}`) is unchanged.
+/// writer's `render_item_at` body shape: the `<#…> <title>  {#id}` heading at level
+/// `2 + depth` (depth 1 → `###`; the schema loader caps nesting at H6), then — for a
+/// multi-slot template — each slot under its `<#…> <Leaf-Title>` sub-heading one level
+/// deeper, or — for a single bare-prose slot — the slot prose beneath the heading; then
+/// the item's sentinelled per-item **field group** (only when fields are present), then
+/// — recursively — its **nested** items one level deeper (the M22 multi-level shape;
+/// M40 — nested content joins the plain slice, `design/doc-read-surface.md` → Nested
+/// repeatables join the pin).
+///
+/// The heading carries the item's frozen **`{#id}` anchor**, two spaces before it — the
+/// writer's exact canonical form (M42 — `design/doc-read-surface.md` → the retired
+/// byte-exactness claim). The render was anchorless by design until M42, which withheld
+/// from every plain read (and every compose-time `{{@task.spec#criteria}}` deref) the one
+/// value an agent needs in order to *address the item back*: its id, which is not
+/// derivable from the heading (a release titled `1.0.0` mints `100`, and a retitle
+/// diverges the two permanently by design). The re-rooting of a nested slice is *not*
+/// repaired here and stays — lifting a sub-tree out of its document re-heads it — so this
+/// is the canonical render of the addressed node, never a byte slice.
 fn render_item_at(item: &ParsedItem, source: &str, depth: usize) -> String {
     let hashes = "#".repeat(2 + depth);
+    let heading = format!("{hashes} {}  {{#{}}}", item.title.trim(), item.id);
     let mut out = if !item.slots.is_empty() {
         let leaf_hashes = "#".repeat(3 + depth);
-        let mut out = format!("{hashes} {}", item.title.trim());
+        let mut out = heading;
         for (leaf_id, span) in &item.slots {
             out.push_str(&format!(
                 "\n\n{leaf_hashes} {}\n\n{}",
@@ -577,13 +585,9 @@ fn render_item_at(item: &ParsedItem, source: &str, depth: usize) -> String {
     } else {
         match &item.slot {
             Some(span) => {
-                format!(
-                    "{hashes} {}\n\n{}",
-                    item.title.trim(),
-                    span.slice(source).trim()
-                )
+                format!("{heading}\n\n{}", span.slice(source).trim())
             }
-            None => format!("{hashes} {}", item.title.trim()),
+            None => heading,
         }
     };
     if !item.fields.is_empty() {
@@ -820,11 +824,11 @@ A cold node loses its sessions; clients re-authenticate.
             .expect("committed spec criteria slice resolves");
 
         insta::assert_snapshot!(rendered, @r"
-        ### Rejects the 101st request
+        ### Rejects the 101st request  {#rejects-burst}
 
         The gateway rejects the 101st request in a rolling 60s window.
 
-        ### Recovers after the window
+        ### Recovers after the window  {#recovers}
 
         The next window admits requests again.
         ");
@@ -983,10 +987,47 @@ A cold node loses its sessions; clients re-authenticate.
             Address::parse("spec:gateway-rate-limiting#criteria/rejects-burst").expect("valid");
         let item = read_slice(root.path(), &schemas(), &address).expect("item slice resolves");
         insta::assert_snapshot!(item, @r"
-        ### Rejects the 101st request
+        ### Rejects the 101st request  {#rejects-burst}
 
         The gateway rejects the 101st request in a rolling 60s window.
         ");
+    }
+
+    /// (M42 inc-8 T4) The plain slice renders each item heading in the writer's **exact
+    /// canonical form** — `<#…> <title>  {#id}`, two spaces before the frozen anchor —
+    /// so the identity an agent needs in order to address the item back survives the
+    /// read. Before M42 `render_item_at` was anchorless by design, and the id was
+    /// reachable only from the raw markdown the adapter rule forbids reading
+    /// (`design/doc-read-surface.md` → the retired byte-exactness claim: "M42 restores
+    /// the `{#id}` anchor on rendered item headings"). The anchor rides at **every**
+    /// depth: a top-level criteria item and a nested changelog change-group alike.
+    #[test]
+    fn store_item_slices_carry_the_frozen_id_anchor() {
+        let root = TempRoot::new("item-anchor");
+        let spec = root.path().join("specs").join("gateway-rate-limiting.md");
+        std::fs::create_dir_all(spec.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&spec, COMMITTED_SPEC).expect("write committed spec");
+        write_committed_changelog(root.path());
+
+        let item = Address::parse("spec:gateway-rate-limiting#criteria/rejects-burst").expect("ok");
+        assert_eq!(
+            read_slice(root.path(), &schemas(), &item).expect("item slice resolves"),
+            "### Rejects the 101st request  {#rejects-burst}\n\nThe gateway rejects the 101st \
+             request in a rolling 60s window.",
+            "the item slice heads with the writer's canonical `<title>  {{#id}}` form",
+        );
+
+        let release = Address::parse("changelog:changelog#releases/1-0-0").expect("ok");
+        let rendered =
+            read_slice(root.path(), &schemas(), &release).expect("release slice resolves");
+        assert!(
+            rendered.starts_with("### 1.0.0  {#1-0-0}\n"),
+            "the release item heads with its frozen anchor, got:\n{rendered}",
+        );
+        assert!(
+            rendered.contains("#### Added  {#added}\n"),
+            "the nested change-group carries its anchor one level deeper, got:\n{rendered}",
+        );
     }
 
     /// (M39 inc-1 T1) A **3-hop leaf slice** (`spec:…#criteria/<id>/statement`) returns
@@ -1206,10 +1247,11 @@ Nothing pinned yet.
 
     /// GOLDEN (M40 inc-6 T1): a committed changelog's `#releases` **section slice**
     /// carries each release's `date` field group plus its nested `#### <group>`
-    /// headings and notes — the plain slice mirrors the writer's item body shape
-    /// anchorlessly ([doc-read-surface.md](../../../design/doc-read-surface.md) →
-    /// Nested repeatables join the pin). Before M40 the fields + nested content were
-    /// silently dropped (only the whole-doc plain read was complete).
+    /// headings and notes — the plain slice mirrors the writer's item body shape, down
+    /// to the frozen `{#id}` anchor on every heading (M42 inc-8 T4)
+    /// ([doc-read-surface.md](../../../design/doc-read-surface.md) → Nested repeatables
+    /// join the pin). Before M40 the fields + nested content were silently dropped (only
+    /// the whole-doc plain read was complete).
     #[test]
     fn store_slices_a_changelog_releases_section_with_fields_and_nested_groups() {
         let root = TempRoot::new("changelog-releases");
@@ -1220,25 +1262,25 @@ Nothing pinned yet.
             .expect("committed changelog releases slice resolves");
 
         insta::assert_snapshot!(rendered, @r"
-        ### 1.1.0
+        ### 1.1.0  {#1-1-0}
 
         <!-- fields -->
         - date: 2026-07-01
 
-        #### Added
+        #### Added  {#added}
 
         - OAuth device-code flow
 
-        ### 1.0.0
+        ### 1.0.0  {#1-0-0}
 
         <!-- fields -->
         - date: 2026-06-14
 
-        #### Added
+        #### Added  {#added}
 
         - initial release
 
-        #### Fixed
+        #### Fixed  {#fixed}
 
         - session fixation on logout
         ");
@@ -1257,16 +1299,16 @@ Nothing pinned yet.
             .expect("committed changelog release-item slice resolves");
 
         insta::assert_snapshot!(rendered, @r"
-        ### 1.0.0
+        ### 1.0.0  {#1-0-0}
 
         <!-- fields -->
         - date: 2026-06-14
 
-        #### Added
+        #### Added  {#added}
 
         - initial release
 
-        #### Fixed
+        #### Fixed  {#fixed}
 
         - session fixation on logout
         ");
@@ -1290,11 +1332,11 @@ Nothing pinned yet.
             .expect("the canonical nested-section address resolves on read");
 
         insta::assert_snapshot!(rendered, @r"
-        ### Added
+        ### Added  {#added}
 
         - initial release
 
-        ### Fixed
+        ### Fixed  {#fixed}
 
         - session fixation on logout
         ");
@@ -1315,7 +1357,7 @@ Nothing pinned yet.
             .expect("the canonical nested-item address resolves on read");
 
         insta::assert_snapshot!(rendered, @r"
-        ### Added
+        ### Added  {#added}
 
         - initial release
         ");
