@@ -318,6 +318,152 @@ fn help_output_bytes_equals_emitted_help_length() {
     );
 }
 
+/// Knob ON (M42, T7): a **hook-rejected finalize** is identifiable in the log — its record
+/// carries the route-exempt error identity `finalize.commit-rejected`, while
+/// `jigc task finalize <absent-id>` (the other exit-1, no-findings failure) carries none.
+/// Before this, both bailed as unstructured `anyhow` errors logging `finding_codes: []` at
+/// exit 1 — **byte-identical in the log** (`design/finalize.md` → "A failed finalize must be
+/// legible in the invocation log"). The two records must be distinguishable from the log
+/// alone, so the assertion pins exactly that: same exit code, same (empty) `finding_codes`,
+/// different `error_code`.
+#[test]
+fn hook_rejected_finalize_is_identifiable_absent_task_is_not() {
+    let repo = TempDir::new("rejected");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    enable_log(repo.path(), home.path());
+
+    // Mint a task and fill its commit doc, so finalize reaches the commit phase (phase 6)
+    // rather than blocking at validate (phase 2).
+    let intent = "reject me";
+    let task = "reject-me";
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", intent],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start` must mint the task; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    for (addr, value) in [
+        (format!("commit:{task}#type"), "feat"),
+        (format!("commit:{task}#scope"), "cache"),
+    ] {
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &["doc", "set-field", &addr, "--value", value],
+        );
+        assert!(
+            out.status.success(),
+            "`jigc doc set-field {addr}` must succeed; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+    for (addr, prose) in [
+        (format!("commit:{task}#summary"), "name the rejection\n"),
+        (format!("commit:{task}#body"), "A log-legibility change.\n"),
+    ] {
+        // `set-slot` reads prose from a file (or `-`); the source lives outside the repo so it
+        // never enters the tree the finalize commits.
+        let source = home.path().join("prose.md");
+        fs::write(&source, prose).expect("write the slot prose");
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-slot",
+                &addr,
+                "--from-file",
+                source.to_str().expect("utf-8 path"),
+            ],
+        );
+        assert!(
+            out.status.success(),
+            "`jigc doc set-slot {addr}` must succeed; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+    fs::write(repo.path().join("code.txt"), "the task's work\n").expect("write code.txt");
+    git(repo.path(), &["add", "code.txt"]);
+
+    // A `pre-commit` hook that rejects the commit — the failure class the RC adoption trial
+    // hit, and the one the log could not name.
+    let hook = repo.path().join(".git").join("hooks").join("pre-commit");
+    fs::create_dir_all(hook.parent().expect("hooks dir")).expect("create hooks dir");
+    fs::write(
+        &hook,
+        "#!/bin/sh\necho 'lint: trailing whitespace' 1>&2\nexit 1\n",
+    )
+    .expect("write pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod the hook");
+    }
+
+    let rejected = jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    assert!(
+        !rejected.status.success(),
+        "a hook-rejected finalize exits non-zero; stdout:\n{}",
+        String::from_utf8_lossy(&rejected.stdout),
+    );
+
+    let absent = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", "no-such-task"],
+    );
+    assert!(
+        !absent.status.success(),
+        "finalizing an absent task exits non-zero",
+    );
+
+    let records = log_records(repo.path());
+    let rejected_rec =
+        record_with_arg(&records, task).expect("the hook-rejected finalize is logged");
+    let absent_rec =
+        record_with_arg(&records, "no-such-task").expect("the absent-task finalize is logged");
+
+    // The two failures are indistinguishable on every OTHER field — same exit code, same
+    // (empty) finding codes. So `error_code` is the discriminator, or nothing is.
+    assert_eq!(
+        rejected_rec["exit_code"], absent_rec["exit_code"],
+        "the two finalize failures share an exit code (that is why the log needs the error \
+         identity); rejected={rejected_rec}, absent={absent_rec}",
+    );
+    assert_eq!(
+        rejected_rec["finding_codes"].as_array().map(Vec::len),
+        Some(0),
+        "a hook rejection is an operational error, not a Finding — no finding codes (git's \
+         stderr stays verbatim and unwrapped); got {rejected_rec}",
+    );
+    assert_eq!(
+        absent_rec["finding_codes"].as_array().map(Vec::len),
+        Some(0),
+        "an absent task logs no finding codes either; got {absent_rec}",
+    );
+
+    assert_eq!(
+        rejected_rec["error_code"].as_str(),
+        Some("finalize.commit-rejected"),
+        "the hook-rejected finalize NAMES its rejection in the log; got {rejected_rec}",
+    );
+    assert!(
+        rejected_rec["error_code"] != absent_rec["error_code"],
+        "the two failures are distinguishable from the log alone; rejected={rejected_rec}, \
+         absent={absent_rec}",
+    );
+    assert!(
+        absent_rec["error_code"].is_null(),
+        "an unstructured operational error carries no error identity (null, not a borrowed \
+         one); got {absent_rec}",
+    );
+}
+
 /// Knob OFF (the default): nothing is written — no `.jigc/logs/` file appears.
 #[test]
 fn knob_off_writes_nothing() {

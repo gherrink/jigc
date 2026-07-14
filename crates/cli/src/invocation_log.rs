@@ -4,13 +4,14 @@
 //! Two pieces, both **CLI-side** so the engine stays clock-free and ships empty by
 //! invariant:
 //!
-//! - [`Outcome`] — the readable `{code, finding_codes}` a dispatch handler returns instead
-//!   of the opaque, write-only [`std::process::ExitCode`]. `main()` converts it to an
-//!   `ExitCode` at the process edge; before that, the log wrapper reads the numeric exit
-//!   code and the finding codes off it.
+//! - [`Outcome`] — the readable `{code, finding_codes, error_code}` a dispatch handler
+//!   returns instead of the opaque, write-only [`std::process::ExitCode`]. `main()` converts
+//!   it to an `ExitCode` at the process edge; before that, the log wrapper reads the numeric
+//!   exit code, the finding codes, and the error identity off it.
 //! - [`log_invocation`] — the opt-in JSONL append. A `bool` cascade knob `invocation-log`
 //!   (default **OFF**) gates it; when ON, one record `{timestamp, argv, exit_code,
-//!   duration_ms, finding_codes}` is appended to `.jigc/logs/invocations.jsonl` per run.
+//!   duration_ms, finding_codes, output_bytes, binary_version, error_code}` is appended to
+//!   `.jigc/logs/invocations.jsonl` per run.
 //!   The knob is resolved from the project cascade **independent of argv** (the wrapper must
 //!   log clap-rejected usage errors too), and the whole path **no-ops outside a jigc project
 //!   layer**. Best-effort throughout — a logging failure never perturbs the invocation.
@@ -38,7 +39,20 @@ pub struct Outcome {
     /// The machine-actionable codes of the findings this invocation surfaced (empty when the
     /// run raised none). Populated on the report-bearing verbs (validate / finalize).
     pub finding_codes: Vec<String>,
+    /// The **route-exempt error identity** of an operational failure that carries no `Finding`
+    /// — `None` on every other run (M42, `design/finalize.md` → "A failed finalize must be
+    /// legible in the invocation log"). It exists so the log can name *why* a failed run
+    /// failed: a hook-rejected `finalize` and a `finalize <absent-id>` are both exit-1 with no
+    /// findings, and were byte-identical in the log. It is deliberately **not** a `Finding` —
+    /// that would force a mandatory route under the M41 advisory-route floor and would wrap
+    /// git's hook stderr, which `design/finalize.md`:78 pins as verbatim and unwrapped. Like
+    /// `binary_version` (M40 A3) it is log-only: an additive record field, no envelope change.
+    pub error_code: Option<&'static str>,
 }
+
+/// The error identity of a **commit-phase rejection** — the user's `pre-commit` / `commit-msg`
+/// hook (or git itself) refused the commit, so no commit was made and the task survives intact.
+pub const ERROR_COMMIT_REJECTED: &str = "finalize.commit-rejected";
 
 impl Outcome {
     /// A clean run — exit 0, no findings.
@@ -46,14 +60,28 @@ impl Outcome {
         Self {
             code: 0,
             finding_codes: Vec::new(),
+            error_code: None,
         }
     }
 
-    /// An operational failure — exit 1, no findings.
+    /// An operational failure — exit 1, no findings, **no error identity** (the unstructured
+    /// `anyhow` bail: "no such task", a locator error, …).
     pub fn failure() -> Self {
         Self {
             code: 1,
             finding_codes: Vec::new(),
+            error_code: None,
+        }
+    }
+
+    /// An operational failure that **names itself** — exit 1, no findings, carrying the
+    /// route-exempt [`error_code`](Outcome::error_code) the log records (e.g.
+    /// [`ERROR_COMMIT_REJECTED`]).
+    pub fn error(error_code: &'static str) -> Self {
+        Self {
+            code: 1,
+            finding_codes: Vec::new(),
+            error_code: Some(error_code),
         }
     }
 
@@ -63,6 +91,7 @@ impl Outcome {
         Self {
             code,
             finding_codes: Vec::new(),
+            error_code: None,
         }
     }
 
@@ -72,6 +101,7 @@ impl Outcome {
         Self {
             code,
             finding_codes: findings.iter().map(|f| f.code.clone()).collect(),
+            error_code: None,
         }
     }
 
@@ -97,6 +127,7 @@ pub fn log_invocation(logs_dir: &Path, duration: Duration, outcome: &Outcome, ou
         duration.as_millis(),
         &outcome.finding_codes,
         output_bytes,
+        outcome.error_code,
     );
 }
 
@@ -139,6 +170,11 @@ struct Record<'a> {
     /// The running binary's own `CARGO_PKG_VERSION` (M40 A3) — a log spanning an upgrade
     /// attributes each record to the binary that wrote it.
     binary_version: &'static str,
+    /// The route-exempt error identity of a `Finding`-less operational failure — `null` on
+    /// every other record (M42 T7). Without it a hook-rejected `finalize` and a
+    /// `finalize <absent-id>` are indistinguishable in the log (both exit 1, both
+    /// `finding_codes: []`).
+    error_code: Option<&'static str>,
 }
 
 /// Append one JSONL line to `<logs_dir>/invocations.jsonl`, creating `logs_dir` on demand.
@@ -151,6 +187,7 @@ fn append_record(
     duration_ms: u128,
     finding_codes: &[String],
     output_bytes: u128,
+    error_code: Option<&'static str>,
 ) -> std::io::Result<()> {
     use std::io::Write;
     std::fs::create_dir_all(logs_dir)?;
@@ -162,6 +199,7 @@ fn append_record(
         finding_codes,
         output_bytes,
         binary_version: env!("CARGO_PKG_VERSION"),
+        error_code,
     };
     let mut line = serde_json::to_string(&record).map_err(std::io::Error::other)?;
     line.push('\n');

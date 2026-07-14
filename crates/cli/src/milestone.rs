@@ -1301,6 +1301,7 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
         Outcome {
             code: 1,
             finding_codes,
+            error_code: None,
         }
     }
 }

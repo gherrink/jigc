@@ -28,7 +28,7 @@
 //! determinism boundary unaffected — the engine carries the data, the CLI formats).
 
 use crate::cli::Format;
-use crate::invocation_log::Outcome;
+use crate::invocation_log::{self, Outcome};
 use crate::pack::make_pack;
 use crate::render;
 use anyhow::{Context, Result, bail};
@@ -1006,9 +1006,17 @@ impl TaskArea {
                 // so the same re-run lands the commit once the hook is satisfied
                 // (`design/finalize.md` → 6. Commit). Framed HERE because the task `id` is
                 // in hand here — `git_commit` never sees it.
+                // It also carries a **route-exempt error identity** into the invocation log
+                // (M42 T7, `design/finalize.md` → "A failed finalize must be legible in the
+                // invocation log"): without it this record is byte-identical to a
+                // `finalize <absent-id>` (exit 1, `finding_codes: []`), so the one failed-
+                // finalize class the RC adoption trial hit is the one the log cannot name.
+                // Log-only, deliberately NOT a `Finding` — a Finding would force a mandatory
+                // route (the M41 advisory-route floor) and wrap the hook's stderr, which the
+                // design pins as verbatim and unwrapped.
                 if let Some(rejected) = err.downcast_ref::<CommitRejected>() {
                     eprintln!("{}", render::commit_rejected(format, id, &rejected.0));
-                    return Ok(Outcome::failure());
+                    return Ok(Outcome::error(invocation_log::ERROR_COMMIT_REJECTED));
                 }
                 eprintln!("{}", render::operational_error(format, &err));
                 Ok(Outcome::failure())
