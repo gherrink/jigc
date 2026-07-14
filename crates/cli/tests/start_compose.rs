@@ -84,7 +84,12 @@ jigc start --workflow <chosen> \"<intent>\"
 /// byte-identical to the pre-increment baseline (`overrides.md` → Read-side
 /// determinism invariant; Resolution algorithm). Captured from the binary before
 /// the wiring landed.
+///
+/// The view opens with the frontend's `task minted:` header (M42) — this compose mints
+/// `add-rate-limiter` (`workflow-dialect.md` → The `task minted:` header).
 const NO_DELTA_SINGLE_TASK_GOLDEN: &str = "\
+task minted: add-rate-limiter
+
 Reason about the change. The intent is:
 add rate limiter
 

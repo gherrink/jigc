@@ -162,9 +162,21 @@ fn recompose_via_task_is_byte_identical_to_the_mint_capture() {
         &["start", "--task", "add-rate-limiter"],
     );
 
+    // The mint capture opens with the frontend's `task minted: <id>` header (M42) — an
+    // invocation fact (this run minted the id), not view state, so a recompose (which
+    // mints nothing) carries none (`workflow-dialect.md` → The `task minted:` header).
+    // The determinism claim is about the composed *view*: below the header, byte-identical.
+    let minted_view = mint
+        .strip_prefix("task minted: add-rate-limiter\n\n")
+        .unwrap_or_else(|| panic!("the mint announces the id it minted; got:\n{mint}"));
+    assert!(
+        !recompose_a.contains("task minted:"),
+        "the recompose mints nothing — it announces no mint; got:\n{recompose_a}",
+    );
     assert_eq!(
-        mint, recompose_a,
-        "the `--task` recompose must be BYTE-IDENTICAL to the original successful mint",
+        minted_view, recompose_a,
+        "the `--task` recompose must be BYTE-IDENTICAL to the original successful mint \
+         (below the mint header)",
     );
     assert_eq!(
         recompose_a, recompose_b,

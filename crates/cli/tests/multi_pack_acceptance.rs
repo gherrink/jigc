@@ -379,7 +379,12 @@ fn multi_pack_pack_header_names_both_packs_highest_first() {
 /// test-first one), and `{{cli.set-commit-summary}}`/`{{cli.create-adr}}` — `create-adr`
 /// exists ONLY in dev's catalog (methodology's lacks it). Asserted byte-identical to the
 /// dev single-pack compose: co-composition leaves the loser pack's workflow untouched.
+///
+/// The view opens with the frontend's `task minted:` header (M42) — this compose mints
+/// `add-a-thing` (`workflow-dialect.md` → The `task minted:` header).
 const DEV_SINGLE_TASK_UNDER_METHODOLOGY_GOLDEN: &str = "\
+task minted: add-a-thing
+
 Reason about the change. The intent is:
 add a thing
 
@@ -455,7 +460,12 @@ create-gates: adr, changelog
 /// `-summary`/`-body` command-refs — methodology's `set-field`/`set-slot` verb split, NOT
 /// dev's single `set-commit-summary`. Asserted byte-identical to methodology composing
 /// alone: the winner pack's workflow is unperturbed by the co-composed dev base below it.
+///
+/// The view opens with the frontend's `task minted:` header (M42) — this compose mints
+/// `add-rate-limiter` (`workflow-dialect.md` → The `task minted:` header).
 const METHODOLOGY_DEV_TASK_GOLDEN: &str = "\
+task minted: add-rate-limiter
+
 Scope the task before touching code. The intent is:
 
 add rate limiter
@@ -964,11 +974,19 @@ fn flow17_consolidated_acceptance_over_the_real_dev_x_methodology_pair() {
         String::from_utf8_lossy(&first.stderr),
     );
     let first_out = String::from_utf8(first.stdout).expect("utf-8");
+    // The fresh golden opens with the `task minted: <id>` header the frontend appends on a
+    // *mint* (M42); a resume mints nothing and announces nothing (`workflow-dialect.md` →
+    // The `task minted:` header). The body-resolution claim is about the composed *view*:
+    // the golden below its header is exactly what the resume must emit.
+    let fresh_view = DEV_SINGLE_TASK_UNDER_METHODOLOGY_GOLDEN
+        .strip_prefix(&format!("task minted: {det_task}\n\n"))
+        .expect("the fresh golden opens with the mint header");
     assert_eq!(
-        first_out, DEV_SINGLE_TASK_UNDER_METHODOLOGY_GOLDEN,
+        first_out, fresh_view,
         "(6a) resume of a loser-pack workflow must compose DEV's OWN-pack body \
-         (direct-edit implement + create-adr), identical to the fresh golden — NOT \
-         methodology's (the precedence winner): mint == resume on body-reference resolution",
+         (direct-edit implement + create-adr), identical to the fresh golden (below its \
+         mint header) — NOT methodology's (the precedence winner): mint == resume on \
+         body-reference resolution",
     );
     let second = run(repo.path(), home.path(), &["start", "--task", det_task]);
     assert!(

@@ -523,13 +523,15 @@ fn resolve_research_advisory(text: String, advise: bool) -> String {
 }
 
 /// A composed workflow **plus** the CLI-side presentation facts the pinned composed-output
-/// JSON contract does not carry (M42) — today the composing workflow's **create-gates**.
+/// JSON contract does not carry (M42) — the composing workflow's **create-gates**, and
+/// whether *this* invocation **minted** the task it composed over.
 ///
-/// The contract is exactly `{task, text}` (`design/command-output-contract.md` §1), so a
-/// gate list cannot ride the engine's [`ComposedWorkflow`] (every field of which projects
-/// into that JSON). It rides here instead, next to it: the CLI renderer appends the
-/// `create-gates:` line to agent/human text only — the same frontend-appended mold as the
-/// routing footer — and projects the [`ComposedWorkflow`] alone on `--format json`.
+/// The contract is exactly `{task, text}` (`design/command-output-contract.md` §1), so
+/// neither fact can ride the engine's [`ComposedWorkflow`] (every field of which projects
+/// into that JSON). They ride here instead, next to it: the CLI renderer appends the
+/// `task minted:` header and the `create-gates:` line to agent/human text only — the same
+/// frontend-appended mold as the routing footer — and projects the [`ComposedWorkflow`]
+/// alone on `--format json`.
 #[derive(Debug)]
 pub struct Composition {
     /// The composed view — the pinned `{task, text}` JSON projection, verbatim.
@@ -538,6 +540,12 @@ pub struct Composition {
     /// (the `create-gates:` presentation line). Empty for a gate-less workflow
     /// (`quick-fix`, a `creates-task: false` router) — which renders no line at all.
     pub gates: Vec<String>,
+    /// Whether **this invocation** minted [`view.task`](ComposedWorkflow::task) — the fact
+    /// the `task minted: <id>` header states. It is *not* `view.task.is_some()`: a resume
+    /// / sub-agent re-entry carries the **given** id (minted by an earlier invocation), and
+    /// a header there would announce a mint that never happened. `false` on every
+    /// re-compose and on the `creates-task: false` (router) arm, which mints nothing at all.
+    pub minted: bool,
 }
 
 /// The composing workflow's create-gate doctypes, in declaration order — the source of the
@@ -819,6 +827,9 @@ pub(crate) fn compose_migrate_in_repo(
             ..composed
         },
         gates: create_gates(&def),
+        // The `jigc migrate` verb minted this task in *this* invocation (just above the
+        // compose), so the announcement is true here exactly as on the front door.
+        minted: true,
     })
 }
 
@@ -1095,6 +1106,9 @@ fn compose_core(
     };
     let composed = compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err)?;
     Ok(Composition {
+        // The fresh front door mints iff the workflow is `creates-task: true` (the arm
+        // above that sets `task_id`), so on this path the mint *is* the presence of an id.
+        minted: task_id.is_some(),
         view: ComposedWorkflow {
             task: task_id,
             text: resolve_research_advisory(composed.text, advise_research),
@@ -1808,6 +1822,10 @@ fn compose_task_workflow(
         // A resumed task carries the same gates its workflow granted at mint — the
         // announcement re-shows on every re-compose, exactly like the routing footer.
         gates: create_gates(&def),
+        // ...but the *mint* announcement does not: an earlier invocation minted this id,
+        // and the caller supplied it. A `task minted:` header here would state a mint that
+        // did not happen (`design/workflow-dialect.md` → The `task minted:` header).
+        minted: false,
     })
 }
 

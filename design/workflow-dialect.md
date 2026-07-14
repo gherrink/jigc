@@ -147,6 +147,16 @@ create-gates: adr, changelog
 
 Same mold, same rationale: CLI-emitted after step content, never authored by a step body, and **absent from the JSON projection** (the composed-output contract is pinned at exactly `{task, text}` — [command-output-contract.md](command-output-contract.md) §1 — so the gate list is *presentation*, never a key). Before it, the **only** surface in the binary that named a task's gates was the `create.gate-blocked` **refusal** ([write-commands.md](write-commands.md) → The create-gate): an agent learned its gates by tripping one, and a step that instructs a `doc create` the composing workflow does not gate is a prompt the binary refuses (the rc.5 trial's changelog defect). A workflow that grants **no** gate (`quick-fix`, a `creates-task: false` router) emits **no line at all** — omitted, never printed as `none`. The line and the refusal read the same `allows-create` declaration, so they cannot disagree.
 
+**The `task minted:` header (M42).** The same mold at the *other* end: a compose that **mints** opens its agent/human text with one header line naming the id it minted, above the step content:
+
+```
+task minted: add-a-rate-limiter
+```
+
+The id is the handle every subsequent call in the loop requires (`jigc doc … --task <id>`, `jigc task finalize <id>`). It has been *structurally* surfaced since M41 (the composed-output contract's `task` key — [command-output-contract.md](command-output-contract.md) §1), but on the surface an agent actually **reads**, it appeared only *inside* a `Run:` command string in some step's body — a fact stated nowhere, merely derivable from a command. So the header is presentation, exactly like the gates line and the footer: frontend-appended, never authored by a step body, and **absent from the JSON projection** (which is pinned at `{task, text}` and already carries the id).
+
+It announces a **mint**, so it renders exactly where one happened — the work-minting `jigc start` forms and the `jigc migrate` verb (which mints before it composes). Two composes carry a task id but mint nothing, and neither prints the header: a **resume** / sub-agent re-entry (`jigc start --task <id>`, `jigc workflow … --task <id>`) re-composes an id the *caller supplied* and an earlier invocation minted, and the `creates-task: false` router compose has no id at all. Keying the header on the id's *presence* rather than on the mint would announce a mint that never happened — the shape of falsehood this wave exists to retire.
+
 **Honest boundary.** Recognition of these four markers is **convention**, not parser-enforced on the agent side — agents read the emitted text as humans do, and the markers' job is to be unambiguous *to a reader*, not to be machine-parsed downstream. Consistent with [VISION.md](../VISION.md) principle #3 (compliance is by ergonomics, not sandbox). The CLI guarantees the *shape* of the emitted text; reading it as intended is the agent's responsibility.
 
 **Data-values are full graph navigation, no logic** — and the path syntax turns on one rule that disambiguates the connectors:

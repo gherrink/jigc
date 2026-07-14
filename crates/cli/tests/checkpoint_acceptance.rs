@@ -347,11 +347,27 @@ fn resume_re_compose_is_byte_identical_to_a_fresh_compose() {
     );
     let resume_out = String::from_utf8(resume.stdout).expect("utf-8 stdout");
 
+    // The one legitimate difference is the frontend's `task minted:` header (M42): the
+    // FRESH compose minted `<slug>` in *that* invocation and announces it; the resume
+    // minted nothing (the caller supplied the id) and announces nothing
+    // (`workflow-dialect.md` → The `task minted:` header). The header states an
+    // invocation fact, never view state — so it is peeled off the oracle, and everything
+    // below it (step content, directives, gates, footer) must still match byte-for-byte.
+    let header = format!("task minted: {slug}\n\n");
+    let fresh_view = fresh.strip_prefix(&header).unwrap_or_else(|| {
+        panic!("the FRESH compose mints `{slug}` and opens with its header; got:\n{fresh}")
+    });
+    assert!(
+        !resume_out.contains("task minted:"),
+        "the resume mints nothing — it must announce no mint; got:\n{resume_out}",
+    );
+
     assert_eq!(
-        resume_out, fresh,
-        "resume of a checkpoint workflow must be byte-identical to a FRESH compose — the \
-         checkpoint adds halting, not progress state (the stateless restart re-derives the \
-         same view; the FRESH compose is the oracle, never a second resume)",
+        resume_out, fresh_view,
+        "resume of a checkpoint workflow must be byte-identical to a FRESH compose (below \
+         the mint header) — the checkpoint adds halting, not progress state (the stateless \
+         restart re-derives the same view; the FRESH compose is the oracle, never a second \
+         resume)",
     );
     // Both carry the same halt verdict: the directive composes in BOTH.
     assert!(

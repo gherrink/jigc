@@ -124,7 +124,12 @@ fn run_start(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
 /// `{{fill: extra-guidance}}` point to the pack `implement` step must compose to
 /// **this** exact baseline (an unfilled point → empty default; the line collapses,
 /// no blank line left behind). The marquee constraint of T6.
+///
+/// The view opens with the frontend's `task minted:` header (M42) — this compose mints
+/// `add-rate-limiter` (`workflow-dialect.md` → The `task minted:` header).
 const NO_FILL_SINGLE_TASK_GOLDEN: &str = "\
+task minted: add-rate-limiter
+
 Reason about the change. The intent is:
 add rate limiter
 

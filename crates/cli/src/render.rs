@@ -125,22 +125,22 @@ pub fn orientation_clean(
 }
 
 /// Render a composed workflow to the surface `format` selects: `agent` / `human`
-/// emit the engine's four-class composed text, then the [`create_gates_line`], then
-/// the routing footer (`design/workflow-dialect.md` → Routing footer — every composed
-/// workflow output in agent-text and human-pretty ends with the one-line footer);
-/// `json` emits the **generic** JSON projection of the [`ComposedWorkflow`](engine::compose::ComposedWorkflow) with
-/// **no** footer and **no** gates line (consumed by tooling, not the agent's reading
-/// flow).
+/// emit the [`minted_header`], then the engine's four-class composed text, then the
+/// [`create_gates_line`], then the routing footer (`design/workflow-dialect.md` →
+/// Routing footer — every composed workflow output in agent-text and human-pretty ends
+/// with the one-line footer); `json` emits the **generic** JSON projection of the
+/// [`ComposedWorkflow`](engine::compose::ComposedWorkflow) with **no** footer and
+/// **no** presentation lines (consumed by tooling, not the agent's reading flow).
 ///
-/// Both trailing lines are appended here, in the frontend — never by the engine, which
-/// stays presentation-free (the engine view carries the footerless text). The composed
+/// All three presentation lines are appended here, in the frontend — never by the engine,
+/// which stays presentation-free (the engine view carries the bare text). The composed
 /// text already ends with a trailing newline; the gates line and the footer follow it,
-/// each on its own line.
+/// each on its own line, and the header precedes it.
 ///
-/// The gates ride on the CLI-side [`Composition`], **not** on the engine's composed view:
-/// the composed-output JSON is pinned at exactly `{task, text}`
-/// (`design/command-output-contract.md` §1), so the agent-facing gate list is
-/// presentation, and adds no key to the contract.
+/// The header + gates ride on the CLI-side [`Composition`], **not** on the engine's
+/// composed view: the composed-output JSON is pinned at exactly `{task, text}`
+/// (`design/command-output-contract.md` §1), so the agent-facing gate list and mint
+/// announcement are presentation, and add no key to the contract.
 ///
 /// Wired into the `jigc start "<intent>"` dispatch (`crate::cli::run_compose`),
 /// which mints a task and emits this composed view.
@@ -151,9 +151,12 @@ pub fn composed(format: Format, view: &Composition) -> String {
         Format::Json => json(&view.view),
         Format::Agent | Format::Human => {
             let text = &view.view.text;
+            let header = minted_header(view);
             let gates = create_gates_line(&view.gates);
-            let mut out =
-                String::with_capacity(text.len() + gates.len() + ROUTING_FOOTER.len() + 1);
+            let mut out = String::with_capacity(
+                header.len() + text.len() + gates.len() + ROUTING_FOOTER.len() + 1,
+            );
+            out.push_str(&header);
             out.push_str(text);
             if !text.ends_with('\n') {
                 out.push('\n');
@@ -162,6 +165,26 @@ pub fn composed(format: Format, view: &Composition) -> String {
             out.push_str(ROUTING_FOOTER);
             out
         }
+    }
+}
+
+/// The `task minted: <id>` header a **work-minting** compose opens with (M42) — the id
+/// every subsequent call in the loop requires (`jigc doc … --task <id>`, `jigc task
+/// finalize <id>`), stated on its own line.
+///
+/// Before it, agent text revealed the minted id **only inside a `Run:` command string** in
+/// some step's body — structurally present in `--format json` since M41-V2, but never
+/// *stated* on the surface an agent actually reads.
+///
+/// It states a **mint**, so it renders exactly where this invocation minted the id — keyed
+/// on [`Composition::minted`], **not** on `view.task.is_some()`: a resume / sub-agent
+/// re-entry carries the *given* id and mints nothing, and a `creates-task: false` compose
+/// (the router) mints nothing at all. Both render **no bytes** — the omitting context stays
+/// inert, and the composed text opens exactly as before.
+fn minted_header(view: &Composition) -> String {
+    match (view.minted, view.view.task.as_deref()) {
+        (true, Some(id)) => format!("task minted: {id}\n\n"),
+        _ => String::new(),
     }
 }
 
@@ -2058,6 +2081,7 @@ mod tests {
         let granting = Composition {
             view: view.clone(),
             gates: vec!["adr".to_string(), "changelog".to_string()],
+            minted: true,
         };
 
         let agent = composed(Format::Agent, &granting);
@@ -2075,6 +2099,7 @@ mod tests {
         let gateless = Composition {
             view: view.clone(),
             gates: Vec::new(),
+            minted: true,
         };
         let bare = composed(Format::Agent, &gateless);
         assert!(!bare.contains("create-gates"), "got:\n{bare}");
@@ -2087,6 +2112,62 @@ mod tests {
         assert!(!json_out.contains("create-gates"));
         let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, view);
+    }
+
+    /// A **work-minting** compose opens agent/human text with the `task minted: <id>`
+    /// header (M42) — the id the loop's every subsequent call needs, stated rather than
+    /// buried inside a step body's `Run:` string. It is keyed on the *mint*, not on the
+    /// id's presence: a **re-compose** (resume / sub-agent re-entry) carries the given id
+    /// but minted nothing, and a `creates-task: false` compose has no id at all — both
+    /// render no header. The pinned `{task, text}` JSON never carries it.
+    #[test]
+    fn render_composed_agent_text_announces_only_a_real_mint() {
+        let text = "Reason about the change.\n".to_string();
+        let minted = Composition {
+            view: ComposedWorkflow {
+                task: Some("add-rate-limiter".to_string()),
+                text: text.clone(),
+            },
+            gates: Vec::new(),
+            minted: true,
+        };
+
+        let agent = composed(Format::Agent, &minted);
+        assert!(
+            agent.starts_with("task minted: add-rate-limiter\n\nReason about the change.\n"),
+            "the header opens the view, above the composed text; got:\n{agent}",
+        );
+        assert_eq!(composed(Format::Human, &minted), agent);
+
+        // A re-compose carries the *given* id — announcing a mint here would state one
+        // that never happened.
+        let resumed = Composition {
+            view: ComposedWorkflow {
+                task: Some("add-rate-limiter".to_string()),
+                text: text.clone(),
+            },
+            gates: Vec::new(),
+            minted: false,
+        };
+        let re = composed(Format::Agent, &resumed);
+        assert!(!re.contains("task minted"), "got:\n{re}");
+        assert!(re.starts_with("Reason about the change.\n"), "got:\n{re}");
+
+        // The `creates-task: false` (router) arm mints nothing and has no id: inert.
+        let router = Composition {
+            view: ComposedWorkflow { task: None, text },
+            gates: Vec::new(),
+            minted: false,
+        };
+        let routed = composed(Format::Agent, &router);
+        assert!(!routed.contains("task minted"), "got:\n{routed}");
+
+        // The pinned contract is untouched — presentation adds no key, and no bytes.
+        let json_out = composed(Format::Json, &minted);
+        assert!(!json_out.contains("task minted"), "got:\n{json_out}");
+        let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(back.task.as_deref(), Some("add-rate-limiter"));
+        assert!(!back.text.contains("task minted"));
     }
 
     /// The `--explain` tree renders to agent-text as the workflow line (winning
