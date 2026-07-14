@@ -875,6 +875,13 @@ fn parse_items(
     // The `seen` set is per-parent (this call only) — anchor uniqueness is
     // parent-scoped (review finding C1), so it resets on each recursion.
     let mut seen: Vec<String> = Vec::new();
+    // The ids already *reported* as duplicated, per-parent alongside `seen`. A duplicated id
+    // is **one** defect and **one** repair, so it is reported once — on the first re-occurrence
+    // — however many extra heads carry it (`command-output-contract.md` → the
+    // parse-`conformance.*` sub-table). Reporting per extra occurrence would emit N-1
+    // byte-identical `(code, target)` keys into one slice: a degenerate key, which the
+    // membership test forbids.
+    let mut reported_duplicate: Vec<String> = Vec::new();
 
     for (idx, (head_start, content_start, raw)) in item_heads.iter().enumerate() {
         let head_line = line_of(source, *head_start);
@@ -916,11 +923,14 @@ fn parse_items(
             AnchorRead::Ok(id) => id,
         };
         if seen.iter().any(|s| s == &id) {
-            findings.push(Finding::blocking(
-                "conformance.item-anchor-duplicate",
-                format!("duplicate `{{#id}}` anchor `{{#{id}}}` in repeatable section"),
-                Location::addressed(id.clone(), head_line, 1),
-            ));
+            if !reported_duplicate.iter().any(|s| s == &id) {
+                findings.push(Finding::blocking(
+                    "conformance.item-anchor-duplicate",
+                    format!("duplicate `{{#id}}` anchor `{{#{id}}}` in repeatable section"),
+                    Location::addressed(id.clone(), head_line, 1),
+                ));
+                reported_duplicate.push(id.clone());
+            }
             continue;
         }
         seen.push(id.clone());
@@ -2141,6 +2151,79 @@ Body two.
             .find(|f| f.code == "conformance.item-anchor-duplicate")
             .expect("a duplicate-anchor finding");
         insta::assert_debug_snapshot!("duplicate_anchor", f);
+    }
+
+    /// The **dominant real shape** — a copy-pasted item, i.e. three heads on one id — and the
+    /// half the single-occurrence fixtures never fed: the finding collapses **per duplicated
+    /// id**, not per extra occurrence (`command-output-contract.md` → the parse-`conformance.*`
+    /// sub-table: *"several items sharing one id collapse, correctly — one duplicated id is one
+    /// defect, one repair"*). Red before the producer collapsed: three heads emitted **two**
+    /// byte-identical `(code, target)` keys into one slice — a degenerate key in release, and a
+    /// panic at the seam in debug — falsifying the closure claim over ordinary corpus content.
+    #[test]
+    fn three_items_on_one_anchor_collapse_to_one_finding() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### First  {#dup}
+Body one.
+
+### Second  {#dup}
+Body two.
+
+### Third  {#dup}
+Body three.
+";
+        let findings = parse_sections(&spec_schema(), src).expect_err("duplicate anchor blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.item-anchor-duplicate"),
+            [Some("criteria/dup")],
+            "three heads on one id are ONE defect and ONE repair — one finding, not two: \
+             {findings:#?}",
+        );
+        // The seam, run over the real multi-occurrence slice (not a hand-built pair): the
+        // uniqueness half of the membership test must hold on what the producer actually emits.
+        crate::finding::debug_assert_targets_declared(&findings);
+    }
+
+    /// The nested-parent variant of the same collapse: three `#### Added {#added}` groups within
+    /// **one** release. The per-parent `seen` scope (C1) is unchanged — what collapses is the
+    /// *reporting*, once per duplicated id per parent.
+    #[test]
+    fn three_nested_groups_on_one_anchor_collapse_to_one_finding() {
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+#### Added  {#added}
+
+- a second added group, same anchor, same parent
+
+#### Added  {#added}
+
+- a third added group, same anchor, same parent
+";
+        let findings = parse_sections(&changelog_schema(), src)
+            .expect_err("three #added within one release blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.item-anchor-duplicate"),
+            [Some("releases/1-2-0/added")],
+            "the nested duplicate collapses per (parent, id) too: {findings:#?}",
+        );
+        crate::finding::debug_assert_targets_declared(&findings);
     }
 
     /// Conformance golden: a repeatable item whose `{#id}` is not a well-formed
