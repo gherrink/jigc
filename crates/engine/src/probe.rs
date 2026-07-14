@@ -249,6 +249,7 @@ pub struct ProbeRun {
 pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
     match run.status {
         ProbeRunStatus::TimedOut => vec![meta_finding(
+            probe_id,
             "timeout",
             format!("probe `{probe_id}` exceeded its time budget and was killed"),
         )],
@@ -260,6 +261,7 @@ pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
             match serde_json::from_slice::<ProbeResponse>(&run.stdout) {
                 Ok(response) => response.findings,
                 Err(err) => vec![meta_finding(
+                    probe_id,
                     "malformed-output",
                     format!("probe `{probe_id}` exited 0 but emitted unparseable output: {err}"),
                 )],
@@ -268,6 +270,7 @@ pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
         ProbeRunStatus::Exited { code } => {
             let exit = code.map_or_else(|| "signal".to_string(), |c| c.to_string());
             vec![meta_finding(
+                probe_id,
                 "crash",
                 format!(
                     "probe `{probe_id}` exited non-zero (exit-code {exit}) with no usable output"
@@ -280,14 +283,24 @@ pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
 /// Build one intrinsic-blocking `pack-probe-integrity` meta-finding: a descriptive
 /// `probe-failure` `code` carrying the human reason, re-keyed via [`Finding::with_check`]
 /// onto the canonical `(probe, check) = ("pack-probe-integrity", <reason>)` handle the
-/// post-pass + floor lock on. No [`Location`] — a misbehaving subprocess has no source
-/// coordinate the engine can cite.
-fn meta_finding(reason: &str, message: String) -> Finding {
+/// post-pass + floor lock on.
+///
+/// It is **located at the offending probe's id** — the **pack-resource** target form
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → the form
+/// table), which is what makes the finding's stable key `(code, target)` discriminating.
+/// A misbehaving subprocess has no *source coordinate* the engine can cite, but it has an
+/// identity, and it is in hand at every call: all three reasons share the one descriptive
+/// `probe-failure` code, so without the probe id **every** misbehaving probe in a sweep
+/// collides on one key — on the family that is *also* the store-scope exit-flip class, the
+/// one an operator most needs to tell apart. A run yields at most one status per probe, so
+/// the probe id alone restores uniqueness (the failure *reason* stays on the `(probe,
+/// check)` severity handle, where the post-pass and the floor read it).
+fn meta_finding(probe_id: &str, reason: &str, message: String) -> Finding {
     Finding::graded(
         crate::finding::Severity::Blocking,
         "pack-probe-integrity.probe-failure",
         message,
-        None,
+        Some(crate::finding::Location::addressed(probe_id, 1, 1)),
         None,
     )
     .with_check(reason)
@@ -846,6 +859,87 @@ mod tests {
         assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
         assert_eq!(findings[0].probe, "pack-probe-integrity");
         assert_eq!(findings[0].check, "malformed-output");
+    }
+
+    /// **Two misbehaving probes in one sweep are two distinct findings** (the M42
+    /// done-criterion): a timed-out `doc-code` and a crashed `commit-msg` yield findings
+    /// whose stable `key.target`s are their **probe ids**, so a driver can tell them
+    /// apart, dedupe them, and eventually acknowledge them separately
+    /// ([command-output-contract.md](../../../design/command-output-contract.md) → the
+    /// form table, the pack-resource row). Red before M42: both keyed `(code, null)` —
+    /// one degenerate key for every misbehaving probe in a sweep, on the family that is
+    /// *also* the store-scope exit-flip class, i.e. the one an operator most needs to tell
+    /// apart. The `(probe, check)` severity handle carries the *reason* and is unchanged;
+    /// `key` is `(code, target)` and all three reasons share one descriptive `code`, so
+    /// the probe id is what restores uniqueness.
+    #[test]
+    fn two_misbehaving_probes_in_one_sweep_key_at_their_own_probe_ids() {
+        let mut findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: Vec::new(),
+                status: ProbeRunStatus::TimedOut,
+            },
+        );
+        findings.extend(ingest_probe_run(
+            "commit-msg",
+            &ProbeRun {
+                stdout: Vec::new(),
+                status: ProbeRunStatus::Exited { code: Some(2) },
+            },
+        ));
+
+        assert_eq!(findings.len(), 2, "one per probe: {findings:?}");
+        let keys: Vec<_> = findings.iter().map(Finding::key).collect();
+        assert_ne!(
+            keys[0], keys[1],
+            "two misbehaving probes must not collide on one key: {keys:?}",
+        );
+        assert_eq!(
+            keys.iter()
+                .map(|k| k.target.clone())
+                .collect::<Vec<Option<String>>>(),
+            vec![Some("doc-code".to_string()), Some("commit-msg".to_string()),],
+            "each meta-finding targets the probe it is about: {keys:?}",
+        );
+        assert_eq!(
+            keys.iter().map(|k| k.code.as_str()).collect::<Vec<_>>(),
+            vec![
+                "pack-probe-integrity.probe-failure",
+                "pack-probe-integrity.probe-failure",
+            ],
+            "the descriptive code is shared — only the target discriminates",
+        );
+
+        // The `(probe, check)` severity handle is the failure *reason*, untouched.
+        assert_eq!(
+            findings
+                .iter()
+                .map(|f| (f.probe.as_str(), f.check.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("pack-probe-integrity", "timeout"),
+                ("pack-probe-integrity", "crash"),
+            ],
+        );
+    }
+
+    /// A **malformed-output** meta-finding keys at its probe id too — the third reason
+    /// shares the one descriptive `code`, so the target is the whole discriminator across
+    /// all three (`timeout` / `crash` / `malformed-output`).
+    #[test]
+    fn malformed_output_meta_finding_keys_at_the_probe_id() {
+        let findings = ingest_probe_run(
+            "commit-msg",
+            &ProbeRun {
+                stdout: b"not json {".to_vec(),
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        assert_eq!(findings[0].check, "malformed-output");
+        assert_eq!(findings[0].key().target.as_deref(), Some("commit-msg"));
     }
 
     /// The engine **never panics** on any misbehavior — sweep every adversarial shape
