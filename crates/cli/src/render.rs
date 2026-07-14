@@ -1537,8 +1537,21 @@ pub fn corpus_migration(
             for path in &report.already_current {
                 out.push_str(&format!("  current    {path}\n"));
             }
-            for (path, route) in &report.blocked {
-                out.push_str(&format!("  blocked    {path}\n    route: {route}\n"));
+            // A refused doc is a real `Finding` (M42 completion audit, Finding 2): it names its
+            // stable target (the doc's path), the `migrate-corpus.*` code a driver keys on, the
+            // diagnosis, and — separately — the route. The two halves print on their own lines:
+            // fusing them is what let the route carry a diagnosis and say nothing actionable.
+            for finding in &report.blocked {
+                let path = finding
+                    .location
+                    .as_ref()
+                    .and_then(|l| l.address.as_deref())
+                    .unwrap_or("<unaddressed>");
+                out.push_str(&format!("  blocked    {path}\n"));
+                out.push_str(&format!("    {}: {}\n", finding.code, finding.message));
+                if let Some(route) = &finding.route {
+                    out.push_str(&format!("    route: {route}\n"));
+                }
             }
             // The commit boundary (`design/corpus-migration.md` → The commit boundary): the
             // verb lands its own migration, so the report names *where* it landed. Absent when

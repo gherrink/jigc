@@ -118,6 +118,20 @@ fn assert_ok(out: &std::process::Output, what: &str) {
     );
 }
 
+/// Assert a `jigc migrate-corpus` run that **refused a doc** exits **non-zero** (M42 completion
+/// audit, Finding 2). A refusal used to exit 0 — so a run in which every doc was refused reported
+/// success, the three "refuse loudly" classes were inaudible, and `validate` (exit 1, *run
+/// migrate-corpus*) → `migrate-corpus` (exit 0) → `validate` was an infinite CI loop. The corpus
+/// is **not migrated** when a doc is blocked, and the caller must hear so.
+fn assert_refused(out: &std::process::Output, what: &str) {
+    assert!(
+        !out.status.success(),
+        "{what} refused a doc, so it must exit NON-ZERO; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
 /// Make `root` a real git repo with identity, then run `jigc setup` over it.
 fn setup_repo(repo: &Path, home: &Path) {
     git(repo, &["init", "-q"]);
@@ -453,7 +467,7 @@ fn migrate_corpus_never_overwrites_a_different_doc_at_the_placement_home() {
 
     let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
     let out = String::from_utf8_lossy(&migrate.stdout);
-    assert_ok(
+    assert_refused(
         &migrate,
         "`jigc migrate-corpus` over the both-homes conflict",
     );
@@ -1099,7 +1113,7 @@ fn migrate_corpus_dry_run_reports_the_collision_the_applying_run_reports() {
     // DRY RUN — the preview.
     let dry = jigc(repo.path(), home.path(), &["migrate-corpus", "--dry-run"]);
     let dry_out = String::from_utf8_lossy(&dry.stdout).into_owned();
-    assert_ok(
+    assert_refused(
         &dry,
         "`jigc migrate-corpus --dry-run` over the collision topology",
     );
@@ -1125,7 +1139,7 @@ fn migrate_corpus_dry_run_reports_the_collision_the_applying_run_reports() {
     // The applying run (`--no-commit` does exactly what the dry run described, landing nothing).
     let real = jigc(repo.path(), home.path(), &["migrate-corpus", "--no-commit"]);
     let real_out = String::from_utf8_lossy(&real.stdout).into_owned();
-    assert_ok(&real, "`jigc migrate-corpus --no-commit` after the dry run");
+    assert_refused(&real, "`jigc migrate-corpus --no-commit` after the dry run");
     assert_eq!(
         dry_out, real_out,
         "the dry run prints the identical triage report to the run that applies it — on the \

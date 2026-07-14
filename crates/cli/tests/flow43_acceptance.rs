@@ -928,14 +928,25 @@ fn a_schema_bump_with_no_transform_kind_blocks_the_migration() {
     git(repo.path(), &["commit", "-q", "-m", "seed a v2 adr"]);
 
     let out = jigc_with_pack(repo.path(), home.path(), pack.path(), &["migrate-corpus"]);
-    assert_ok(
-        &out,
-        "`jigc migrate-corpus` (a routed block is an interim state)",
-    );
     let report = stdout_of(&out);
+    // **A REFUSED MIGRATION EXITS NON-ZERO** (M42 completion audit, Finding 2). This asserted
+    // success on the rationale that *a routed block is an interim state* — but the run migrated
+    // **nothing** and still reported success, so the refusal was inaudible to a machine and
+    // `validate` (exit 1, *run `jigc migrate-corpus`*) → `migrate-corpus` (exit 0) → `validate`
+    // looped forever. The *doc* is an interim state; the *run* failed to do what it was asked.
+    assert!(
+        !out.status.success(),
+        "a refused migration exits NON-ZERO; stdout:\n{report}",
+    );
     assert!(
         report.contains("0 migrated") && report.contains("1 blocked"),
         "an unclassifiable structural change is REFUSED, never migrated; stdout:\n{report}",
+    );
+    // The refusal is a real finding — a `migrate-corpus.*` code, a diagnosis, and a route naming
+    // the real repair (build the kind), never a prose-authoring dead end.
+    assert!(
+        report.contains("migrate-corpus.unclassified-change"),
+        "the refusal carries its machine code; stdout:\n{report}",
     );
     assert!(
         report.contains("no transform kind") && report.contains("build the transform kind"),

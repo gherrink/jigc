@@ -202,17 +202,21 @@ fn migrate_json(repo: &Path, home: &Path) -> serde_json::Value {
     serde_json::from_slice(&out.stdout).expect("migrate-corpus --format json emits valid JSON")
 }
 
-/// The report's string array under `key` (a `blocked` entry is a `(path, route)` pair; the
-/// others are bare paths).
+/// The paths the report lists under `key`. `migrated` / `already_current` are bare path strings;
+/// a `blocked` entry is a **`Finding`** (M42 completion audit, Finding 2 — it was an untyped
+/// `[path, route]` tuple), whose path is its stable `key.target`.
 fn paths(report: &serde_json::Value, key: &str) -> Vec<String> {
     report[key]
         .as_array()
         .unwrap_or_else(|| panic!("`{key}` is an array; got: {report}"))
         .iter()
         .map(|v| {
-            v.as_str()
-                .map(str::to_string)
-                .unwrap_or_else(|| v[0].as_str().expect("path").to_string())
+            v.as_str().map(str::to_string).unwrap_or_else(|| {
+                v["key"]["target"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("a blocked finding carries a path target; got: {v}"))
+                    .to_string()
+            })
         })
         .collect()
 }

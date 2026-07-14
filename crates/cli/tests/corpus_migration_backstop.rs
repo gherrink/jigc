@@ -221,9 +221,15 @@ fn the_empty_diff_backstop_fires_at_the_default_docs_root() {
     let out = jigc(repo.path(), home.path(), pack.path(), &["migrate-corpus"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // **A REFUSED MIGRATION EXITS NON-ZERO** (M42 completion audit, Finding 2). This asserted
+    // `success()` on the rationale that *a routed block is an expected interim state, not a run
+    // failure* — but the run exited 0 having migrated **nothing**, so the loudest refusal in the
+    // verb was inaudible to a machine, and `validate` (exit 1, *run `jigc migrate-corpus`*) →
+    // `migrate-corpus` (exit 0) → `validate` was an infinite CI loop. The doc is an interim
+    // state; the *run* is a failure — it did not do what it was asked.
     assert!(
-        out.status.success(),
-        "a routed block is an expected interim state, not a run failure; \
+        !out.status.success(),
+        "a refused migration must exit NON-ZERO — it migrated nothing; \
          stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 
@@ -234,6 +240,12 @@ fn the_empty_diff_backstop_fires_at_the_default_docs_root() {
     assert!(
         stdout.contains("blocked    docs/decisions/alpha.md"),
         "the refused doc is named at its docs-root home; stdout:\n{stdout}",
+    );
+    // The refusal is a real finding: a `migrate-corpus.*` code a driver keys on, the diagnosis,
+    // and — separately — the route naming the real repair (build the kind), never a prose dead end.
+    assert!(
+        stdout.contains("migrate-corpus.unclassified-change"),
+        "the refusal carries its machine code; stdout:\n{stdout}",
     );
     assert!(
         stdout.contains("no transform kind") && stdout.contains("build the transform kind"),
@@ -280,9 +292,10 @@ fn the_verdict_is_the_same_under_a_flat_docs_root() {
 
     let out = jigc(repo.path(), home.path(), pack.path(), &["migrate-corpus"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
+    // Same verdict, same exit: the flat layout refuses the doc, so it too exits non-zero.
     assert!(
-        out.status.success(),
-        "the flat-layout run completes; stdout:\n{stdout}\nstderr:\n{}",
+        !out.status.success(),
+        "the flat-layout run refuses the doc, so it exits NON-ZERO; stdout:\n{stdout}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
     assert!(
@@ -298,5 +311,85 @@ fn the_verdict_is_the_same_under_a_flat_docs_root() {
         fs::read_to_string(dir.join("alpha.md")).expect("read the adr"),
         V2_ADR,
         "the refused doc is byte-identical under the flat layout too",
+    );
+}
+
+/// **A refusal is machine-readable, and the detect→migrate loop terminates** (M42 completion
+/// audit, Finding 2).
+///
+/// The three Increment-5 refusal classes are the ones the roadmap calls *"refuse loudly"*, and
+/// they were **inaudible to a machine**: the run exited **0** having migrated nothing, and the
+/// blocked list was untyped `[path, route]` string tuples — no `code`, no `key`, no
+/// `(code, target)` — i.e. entirely outside the finding-key contract Increment 9 exists to close.
+/// Combined with Increment 4's `validate` exit flip that is an **infinite CI loop**: `validate` →
+/// exit 1, *"run `jigc migrate-corpus`"* → `migrate-corpus` → exit **0 (success)** → `validate` →
+/// exit 1 → forever, with **nothing machine-readable naming why**.
+///
+/// So a refused migration exits non-zero, and its blocked entries are real `Finding`s riding the
+/// structural serialization seam — each with a `migrate-corpus.*` code, the stable `(code, target)`
+/// key, a message and a route.
+#[test]
+fn a_refused_migration_exits_non_zero_and_its_blocked_entries_are_findings() {
+    let repo = TempDir::new("repo-json");
+    let home = TempDir::new("home");
+    let pack = pack_with_an_unclassifiable_adr_bump("pack-json");
+    init_repo(repo.path());
+    commit_v2_adr(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        pack.path(),
+        &["migrate-corpus", "--format", "json"],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    // 1. THE EXIT — a run that migrated nothing and refused a doc is not a success.
+    assert!(
+        !out.status.success(),
+        "a refused migration exits NON-ZERO (pre-fix: 0, so validate→migrate→validate looped \
+         forever); stdout:\n{stdout}",
+    );
+
+    // 2. THE ENVELOPE — the blocked entry is a Finding, not a `[path, route]` string tuple.
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("`--format json` emits valid JSON");
+    let blocked = report["blocked"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`blocked` is an array; got: {report}"));
+    assert_eq!(blocked.len(), 1, "one doc was refused; got: {report}");
+    let finding = &blocked[0];
+
+    assert_eq!(finding["severity"], "blocking");
+    assert_eq!(finding["code"], "migrate-corpus.unclassified-change");
+    // THE STABLE KEY — `(code, target)`, the pair a driver dedupes/tracks a finding by. `target`
+    // is the doc's path: the subject of a migration refusal is the FILE the verb could not
+    // rewrite, and during a relocation two files can contest one `<type>:<slug>` URI (which is
+    // exactly what the destination-collision refusal reports), so the path is what discriminates.
+    assert_eq!(finding["key"]["code"], "migrate-corpus.unclassified-change");
+    assert_eq!(finding["key"]["target"], "docs/decisions/alpha.md");
+    // The route is a route — the repair, not the diagnosis fused into it.
+    assert!(
+        finding["route"]
+            .as_str()
+            .expect("a refusal carries a route")
+            .contains("build the transform kind"),
+        "the route names the repair; got: {finding}",
+    );
+    assert!(
+        finding["message"]
+            .as_str()
+            .expect("a refusal carries a message")
+            .contains("no transform kind"),
+        "the message carries the diagnosis; got: {finding}",
+    );
+
+    // 3. NOTHING SILENTLY MIGRATED — the refusal is the whole outcome.
+    assert!(
+        report["migrated"]
+            .as_array()
+            .expect("`migrated` is an array")
+            .is_empty(),
+        "nothing migrated; got: {report}",
     );
 }

@@ -49,6 +49,7 @@ use crate::pack;
 use crate::render;
 use anyhow::{Context, Result};
 use engine::file_state::{FileStateRecord, hash_bytes};
+use engine::finding::{Finding, Findings, Location, Severity};
 use engine::packsource::PackSource;
 use engine::schema::{SCHEMA_VERSION_FIELD, Schema, SectionBody};
 use engine::schema_diff::{SchemaChange, schema_diff};
@@ -120,9 +121,20 @@ pub struct CorpusMigrationReport {
     pub migrated: Vec<String>,
     /// Docs already at the current schema-version (skipped, byte-untouched), sorted.
     pub already_current: Vec<String>,
-    /// Docs that could not migrate cleanly (a prose-needing mint that blocks until
-    /// authored, or a doc halted behind one), each with its route — sorted by path.
-    pub blocked: Vec<(String, String)>,
+    /// Docs that could not migrate cleanly — **real [`Finding`]s**, sorted by target
+    /// ([`blocked_finding`]; M42 completion audit, Finding 2). A refusal is the verb's
+    /// machine-actionable output: each carries a `migrate-corpus.*` `code`, the stable
+    /// `(code, target)` key a driver dedupes on, and a route. They ride the structural
+    /// serialization seam ([`Findings`]), so they cannot be projected without one
+    /// (`design/command-output-contract.md` → The membership test).
+    ///
+    /// They shipped as untyped `(path, route)` string tuples — **inaudible to a machine**:
+    /// no code, no key, entirely outside the finding-key contract — while the run
+    /// nonetheless exited **0**, so `validate` (exit 1, *"run migrate-corpus"*) →
+    /// `migrate-corpus` (exit 0) → `validate` was an **infinite CI loop with nothing
+    /// machine-readable naming why**. A non-empty `blocked` now **exits non-zero**
+    /// ([`run`]).
+    pub blocked: Findings,
     /// The short sha of the commit the verb landed its own migration in ([`commit_migration`]),
     /// or `None` when nothing was committed (nothing migrated, a re-run that staged no change,
     /// or a non-git worktree). Named in both surfaces — the operator/driver reads back *where*
@@ -138,12 +150,29 @@ pub struct CorpusMigrationReport {
 }
 
 /// Run `jigc migrate-corpus` against `cwd`: locate the repo + project layer, build the
-/// frozen persisted doctypes' v0→v1 migration jobs from the pack, migrate the committed
-/// corpus, **land it in a pathspec-limited self-commit** ([`commit_migration`]), render the
-/// report through `format`, and print it. A clean run (even with blocked docs routed to the
-/// agent) exits 0 — the migration writes; blocked docs are an expected interim state, not a
-/// failure. A locator error — or a **rejected commit** (a `pre-commit` hook declining the
-/// managed-doc writes) — routes to stderr and exits non-zero.
+/// frozen persisted doctypes' migration jobs from the pack, migrate the committed corpus,
+/// **land it in a pathspec-limited self-commit** ([`commit_migration`]), render the report
+/// through `format`, and print it. A locator error — or a **rejected commit** (a `pre-commit`
+/// hook declining the managed-doc writes) — routes to stderr and exits non-zero.
+///
+/// # A refused migration exits non-zero (M42 completion audit, Finding 2)
+///
+/// The exit is **0 iff nothing is blocked**. It used to be 0 *unconditionally* on any `Ok`,
+/// on the rationale that *blocked docs are an expected interim state, not a failure* — so a
+/// run in which **every doc was refused** reported success. That is wrong twice over:
+///
+/// - the three Increment-5 refusal classes (the empty-diff backstop, the narrowing refusal,
+///   the removed-field refusal) are the ones the roadmap calls **"refuse loudly"** — and a
+///   refusal that exits 0 is not loud, it is *inaudible*;
+/// - combined with the M42 `validate` exit-flip it is an **infinite CI loop**: `validate` →
+///   exit 1, *"run `jigc migrate-corpus`"* → `migrate-corpus` → exit **0** → `validate` →
+///   exit 1 → forever. Something has to say *"this did not work"*, and the verb that refused
+///   is the one that knows.
+///
+/// The interim-state intuition was not wrong about the *docs* — a blocked doc is genuinely a
+/// waypoint, and the migration's other writes still land and still commit. It was wrong about
+/// the **run**: a corpus with a refused doc in it is **not migrated**, and the caller that
+/// asked for it to be migrated must hear so. The findings carry the *why* machine-readably.
 ///
 /// [`Options`] narrows what the run **applies**: `--no-commit` keeps the writes but lands
 /// nothing; `--dry-run` suppresses the writes too, printing the identical report an applying
@@ -152,7 +181,13 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
     match migrate_in_repo(cwd, options) {
         Ok(report) => {
             println!("{}", render::corpus_migration(format, &report));
-            Outcome::success()
+            if report.blocked.is_empty() {
+                Outcome::success()
+            } else {
+                // Non-zero, carrying the refusal codes into the invocation log — the
+                // `validate` store-sweep precedent (`Outcome::with_findings`).
+                Outcome::with_findings(1, &report.blocked)
+            }
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
@@ -405,7 +440,7 @@ pub(crate) fn migrate_committed_corpus(
     let mut report = CorpusMigrationReport {
         migrated: Vec::new(),
         already_current: Vec::new(),
-        blocked: Vec::new(),
+        blocked: Findings::default(),
         commit: None,
         touched: Vec::new(),
     };
@@ -475,9 +510,9 @@ pub(crate) fn migrate_committed_corpus(
                         // the prior snapshot the diff needs, which is why the refusal lives here —
                         // a *migration refusal*, not a build error.
                         if diff.contains(&SchemaChange::Unclassified) {
-                            let route =
-                                unclassifiable_change_route(&rel_key, &dt.ty, k, dt.version);
-                            report.blocked.push((rel_key, route));
+                            report.blocked.push(unclassifiable_change_finding(
+                                &rel_key, &dt.ty, k, dt.version,
+                            ));
                             continue;
                         }
                         // THE NARROWING REFUSAL (the recorded pick — `DECISIONS.md` →
@@ -492,10 +527,9 @@ pub(crate) fn migrate_committed_corpus(
                             .iter()
                             .find(|c| matches!(c, SchemaChange::NarrowedCardinality { .. }))
                         {
-                            let route = narrowed_cardinality_route(
+                            report.blocked.push(narrowed_cardinality_finding(
                                 &rel_key, &dt.ty, section, field, k, dt.version,
-                            );
-                            report.blocked.push((rel_key, route));
+                            ));
                             continue;
                         }
                         // THE REMOVAL REFUSAL (the recorded pick — `DECISIONS.md` → 2026-07-13
@@ -508,10 +542,9 @@ pub(crate) fn migrate_committed_corpus(
                             .iter()
                             .find(|c| matches!(c, SchemaChange::RemovedField { .. }))
                         {
-                            let route = removed_field_route(
+                            report.blocked.push(removed_field_finding(
                                 &rel_key, &dt.ty, section, field, k, dt.version,
-                            );
-                            report.blocked.push((rel_key, route));
+                            ));
                             continue;
                         }
                         // The v1→v2 path is the only one that can surface a `ValueRemapped`
@@ -539,8 +572,9 @@ pub(crate) fn migrate_committed_corpus(
                         });
                     }
                     Err(_) => {
-                        let route = missing_snapshot_route(&rel_key, &dt.ty, k);
-                        report.blocked.push((rel_key, route));
+                        report
+                            .blocked
+                            .push(missing_snapshot_finding(&rel_key, &dt.ty, k));
                     }
                 },
                 // Stamp absent (the v0 corpus state): the add-field path (the stamp is *added*
@@ -633,7 +667,7 @@ pub(crate) fn migrate_committed_corpus(
                     if existing.is_some_and(|existing| existing != v2.as_bytes()) {
                         report
                             .blocked
-                            .push((id.clone(), destination_collision_route(id, target)));
+                            .push(destination_collision_finding(id, target));
                         continue;
                     }
                 }
@@ -700,19 +734,22 @@ pub(crate) fn migrate_committed_corpus(
                 }
             }
             DocOutcome::Untouched { id, .. } => {
-                let route = if result.halted_at == Some(i) {
-                    prose_needing_route(id)
+                report.blocked.push(if result.halted_at == Some(i) {
+                    prose_needing_finding(id)
                 } else {
-                    deferred_route(id)
-                };
-                report.blocked.push((id.clone(), route));
+                    deferred_finding(id)
+                });
             }
         }
     }
 
     report.migrated.sort();
     report.already_current.sort();
-    report.blocked.sort();
+    // Sorted by the stable target (the doc's path) — the findings collection is the seam, so
+    // it is re-wrapped rather than sorted in place.
+    let mut blocked = std::mem::take(&mut report.blocked).into_vec();
+    blocked.sort_by(|a, b| a.key().target.cmp(&b.key().target));
+    report.blocked = blocked.into();
     // A stable, deduped pathspec (a destination shared by a completed interrupted move is
     // enumerated once) — the staging order never varies between runs.
     report.touched.sort();
@@ -957,14 +994,51 @@ fn stamp_section_id(schema: &Schema) -> Option<String> {
         })
 }
 
-/// The route for a below-version stamped doc whose prior-shape snapshot is **not shipped**:
-/// the migration cannot source the `from` it would diff against, so the doc is blocked (never
-/// a silent `already-current` — the detector routes it `migrate`). Ship the snapshot, re-run.
-fn missing_snapshot_route(rel_key: &str, ty: &str, stamp: u32) -> String {
-    format!(
-        "blocked — `{rel_key}` is stamped schema-version {stamp}, below current, but no prior-schema \
-         snapshot `schema-snapshots/{ty}.v{stamp}.yaml` is shipped to source the migration from; \
-         ship the snapshot, then re-run `jigc migrate-corpus`"
+/// **The one refusal envelope** — a blocking [`Finding`] for a doc the migration could not
+/// migrate, targeted at the doc's **filesystem path** (M42 completion audit, Finding 2).
+///
+/// # Why the path, and not the doc's `<type>:<slug>` URI
+///
+/// The URI is the target form for every *content* family, and a committed managed doc has one —
+/// so this is a deliberate choice, not an oversight. The subject of a migration refusal is the
+/// **file the verb could not move or rewrite**, and during a relocation the URI is precisely the
+/// thing that is *contested*: two files — the prior-home strand and the placement home — can
+/// claim one identity, which is the entire content of [`destination_collision_finding`]. Keyed on
+/// the URI, those two refusals would **collide on one `(code, target)`**; keyed on the path they
+/// discriminate, and the operator reads back exactly the file to repair. It joins the declared
+/// **file-path** form beside `file-state.*`, `finalize.promote-clobber` and
+/// `schema-conformance.unadopted-instance` — each there for the same reason: the finding is about
+/// a file whose managed identity is absent or contested
+/// (`design/command-output-contract.md` → the six declared target forms).
+///
+/// `message` carries the diagnosis, `route` the repair — never the two fused, so a driver can act
+/// on the route alone.
+fn blocked_finding(code: &str, path: &str, message: String, route: String) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        code,
+        message,
+        Some(Location::addressed(path, 1, 1)),
+        Some(route),
+    )
+}
+
+/// A below-version stamped doc whose prior-shape snapshot is **not shipped**: the migration
+/// cannot source the `from` it would diff against, so the doc is blocked (never a silent
+/// `already-current` — the detector routes it `migrate`). Ship the snapshot, re-run.
+fn missing_snapshot_finding(rel_key: &str, ty: &str, stamp: u32) -> Finding {
+    blocked_finding(
+        "migrate-corpus.missing-snapshot",
+        rel_key,
+        format!(
+            "`{rel_key}` is stamped schema-version {stamp}, below current, but no prior-schema \
+             snapshot `schema-snapshots/{ty}.v{stamp}.yaml` is shipped to source the migration \
+             from"
+        ),
+        format!(
+            "ship the prior-schema snapshot `schema-snapshots/{ty}.v{stamp}.yaml`, then re-run \
+             `jigc migrate-corpus`"
+        ),
     )
 }
 
@@ -978,14 +1052,20 @@ fn missing_snapshot_route(rel_key: &str, ty: &str, stamp: u32) -> String {
 /// build the missing transform kind, then re-run. Refusing beats the alternative the backstop
 /// exists to kill — folding zero bytes, bumping the stamp, and stranding the whole corpus at a
 /// version it does not conform to.
-fn unclassifiable_change_route(rel_key: &str, ty: &str, from: u32, to: u32) -> String {
-    format!(
-        "blocked — `{ty}` changed its conformance-relevant structure between schema-version \
-         {from} and {to}, but the schema-diff classifies no transform kind for that change, so \
-         `{rel_key}` cannot be migrated (an empty diff is not a no-op: migrating would stamp the \
-         doc {to} while leaving it non-conformant). This is a schema-authoring gap, not a doc \
-         problem: build the transform kind for the change in `crates/engine/src/schema_diff.rs` + \
+fn unclassifiable_change_finding(rel_key: &str, ty: &str, from: u32, to: u32) -> Finding {
+    blocked_finding(
+        "migrate-corpus.unclassified-change",
+        rel_key,
+        format!(
+            "`{ty}` changed its conformance-relevant structure between schema-version {from} and \
+             {to}, but the schema-diff classifies no transform kind for that change, so \
+             `{rel_key}` cannot be migrated (an empty diff is not a no-op: migrating would stamp \
+             the doc {to} while leaving it non-conformant). This is a schema-authoring gap, not a \
+             doc problem"
+        ),
+        "build the transform kind for the change in `crates/engine/src/schema_diff.rs` + \
          `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
+            .to_string(),
     )
 }
 
@@ -1001,23 +1081,31 @@ fn unclassifiable_change_route(rel_key: &str, ty: &str, from: u32, to: u32) -> S
 /// every committed instance against the new bound — net-new validation surface, deliberately not
 /// built here). Refusing beats the pre-M42 behaviour it replaces: a direction-blind fold to zero
 /// bytes that restamped the corpus past its own gate.
-fn narrowed_cardinality_route(
+fn narrowed_cardinality_finding(
     rel_key: &str,
     ty: &str,
     section: &str,
     field: &str,
     from: u32,
     to: u32,
-) -> String {
-    format!(
-        "blocked — `{ty}` narrows the cardinality of `{section}.{field}` between schema-version \
-         {from} and {to}, so `{rel_key}` cannot be migrated: a narrowing is content-affecting, \
-         not a no-op (a committed instance may carry more values than the new bound admits, or \
-         lack one it now demands), and no transform kind adjudicates it — migrating would stamp \
-         the doc {to} while leaving it possibly non-conformant. This is a schema-authoring gap, \
-         not a doc problem: restore the wider bound, or build the narrowing arm (validate every \
-         committed instance against the new bound) in `crates/engine/src/schema_diff.rs` + \
-         `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
+) -> Finding {
+    blocked_finding(
+        "migrate-corpus.narrowed-cardinality",
+        rel_key,
+        format!(
+            "`{ty}` narrows the cardinality of `{section}.{field}` between schema-version {from} \
+             and {to}, so `{rel_key}` cannot be migrated: a narrowing is content-affecting, not a \
+             no-op (a committed instance may carry more values than the new bound admits, or lack \
+             one it now demands), and no transform kind adjudicates it — migrating would stamp \
+             the doc {to} while leaving it possibly non-conformant. This is a schema-authoring \
+             gap, not a doc problem"
+        ),
+        format!(
+            "restore the wider bound on `{section}.{field}`, or build the narrowing arm (validate \
+             every committed instance against the new bound) in \
+             `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then re-run \
+             `jigc migrate-corpus`"
+        ),
     )
 }
 
@@ -1031,23 +1119,29 @@ fn narrowed_cardinality_route(
 /// (the property census). So, like the backstop's and the narrowing's routes, the repair is a
 /// **schema-authoring** one, not a migration instruction: restore the leaf, or build the strip arm
 /// with a deliberate data-loss opt-in (purely additive — no frozen doctype has needed a removal).
-fn removed_field_route(
+fn removed_field_finding(
     rel_key: &str,
     ty: &str,
     section: &str,
     field: &str,
     from: u32,
     to: u32,
-) -> String {
-    format!(
-        "blocked — `{ty}` drops the declared field `{section}.{field}` between schema-version \
-         {from} and {to}, so `{rel_key}` cannot be migrated: committed instances still carry the \
-         field, and the migration never strips a value (no data loss) — migrating would stamp the \
-         doc {to} while it keeps a field the schema no longer declares. This is a schema-authoring \
-         gap, not a doc problem: restore `{section}.{field}` to the schema, or build the \
-         field-removal (strip) arm with a deliberate data-loss opt-in in \
-         `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then re-run `jigc \
-         migrate-corpus`"
+) -> Finding {
+    blocked_finding(
+        "migrate-corpus.removed-field",
+        rel_key,
+        format!(
+            "`{ty}` drops the declared field `{section}.{field}` between schema-version {from} \
+             and {to}, so `{rel_key}` cannot be migrated: committed instances still carry the \
+             field, and the migration never strips a value (no data loss) — migrating would stamp \
+             the doc {to} while it keeps a field the schema no longer declares. This is a \
+             schema-authoring gap, not a doc problem"
+        ),
+        format!(
+            "restore `{section}.{field}` to the schema, or build the field-removal (strip) arm \
+             with a deliberate data-loss opt-in in `crates/engine/src/schema_diff.rs` + \
+             `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
+        ),
     )
 }
 
@@ -1147,25 +1241,58 @@ fn prose_needing_route(rel_key: &str) -> String {
     )
 }
 
+/// A doc whose migration **minted an empty required slot** — the Framing-A prose handoff: the
+/// structural splice landed in the scratch buffer but the doc cannot gate clean until an agent
+/// authors the prose, so it rolls back byte-identical and is routed to the author.
+fn prose_needing_finding(rel_key: &str) -> Finding {
+    blocked_finding(
+        "migrate-corpus.prose-needed",
+        rel_key,
+        format!(
+            "`{rel_key}`'s migration mints a new **required** prose slot, which no transform can \
+             fill (the CLI owns structure; the prose is the agent's — the determinism boundary), \
+             so the doc does not gate clean and its bytes are rolled back untouched"
+        ),
+        prose_needing_route(rel_key),
+    )
+}
+
 /// The route for the **both-homes destination collision** (M42 — the walk union): a
 /// prior-home instance whose relocation destination already holds a *different* document. The
 /// migration refuses to overwrite it — **No-data-loss** is a declared property of the corpus
 /// migration, and no deterministic merge of two documents exists — so the doc is blocked and
 /// the operator reconciles the two homes by hand (`design/corpus-migration.md` → the union).
-fn destination_collision_route(rel_key: &str, target: &str) -> String {
-    format!(
-        "blocked — `{rel_key}` relocates to `{target}`, which already holds a *different* \
-         document; the migration never overwrites it (no data loss). Fold the content of \
-         `{rel_key}` into `{target}` through the write verbs, delete `{rel_key}`, then re-run \
-         `jigc migrate-corpus`"
+fn destination_collision_finding(rel_key: &str, target: &str) -> Finding {
+    blocked_finding(
+        "migrate-corpus.destination-collision",
+        rel_key,
+        format!(
+            "`{rel_key}` relocates to `{target}`, which already holds a *different* document; the \
+             migration never overwrites it (no data loss), and no deterministic merge of two \
+             documents exists"
+        ),
+        format!(
+            "fold the content of `{rel_key}` into `{target}` through the write verbs, delete \
+             `{rel_key}`, then re-run `jigc migrate-corpus`"
+        ),
     )
 }
 
-/// The route for a doc left untouched behind the run's first blocker (WIP-safety: the fold
-/// halts at the first blocked doc, never half-transforming the rest).
-fn deferred_route(rel_key: &str) -> String {
-    format!(
-        "deferred — `{rel_key}` will migrate once the blocker above is resolved; re-run `jigc migrate-corpus`"
+/// A doc left untouched **behind the run's first blocker** (WIP-safety: the fold halts at the
+/// first blocked doc, never half-transforming the rest). Not a defect of *this* doc — it simply
+/// has not been reached — but it did not migrate, so it is reported and it holds the exit.
+fn deferred_finding(rel_key: &str) -> Finding {
+    blocked_finding(
+        "migrate-corpus.deferred",
+        rel_key,
+        format!(
+            "`{rel_key}` was not reached — the fold halts at the run's first blocked doc rather \
+             than half-transforming the rest (WIP-safety), so this doc is untouched"
+        ),
+        format!(
+            "resolve the blocker reported above, then re-run `jigc migrate-corpus` — `{rel_key}` \
+             migrates once the fold can reach it"
+        ),
     )
 }
 
@@ -1455,6 +1582,26 @@ The read path only.
             source,
             "migrated doc must round-trip byte-identical"
         );
+    }
+
+    /// A blocked doc's **stable target** — its filesystem path, read off the refusal finding's
+    /// address (M42 completion audit, Finding 2: the report's blocked entries were untyped
+    /// `(path, route)` tuples; they are real [`Finding`]s now, and this is the old `.0`).
+    fn blocked_path(finding: &Finding) -> &str {
+        finding
+            .location
+            .as_ref()
+            .and_then(|l| l.address.as_deref())
+            .expect("a refusal finding carries its path target")
+    }
+
+    /// A blocked doc's **route** — the repair half of its refusal finding (the old `.1`, minus
+    /// the diagnosis, which now lives in `message`).
+    fn blocked_route(finding: &Finding) -> &str {
+        finding
+            .route
+            .as_deref()
+            .expect("a refusal finding carries a route")
     }
 
     /// A header-less doctype (`note`): no `---` block until the stamp introduces one.
@@ -1770,13 +1917,13 @@ sections:
             "the doc is blocked, routed to the agent: {:?}",
             blocked_report.blocked
         );
-        assert_eq!(blocked_report.blocked[0].0, "docs/memos/cache-memo.md");
+        let blocked = &blocked_report.blocked[0];
+        assert_eq!(blocked_path(blocked), "docs/memos/cache-memo.md");
+        assert_eq!(blocked.code, "migrate-corpus.prose-needed");
         assert!(
-            blocked_report.blocked[0]
-                .1
-                .contains("re-run `jigc migrate-corpus`"),
+            blocked_route(blocked).contains("re-run `jigc migrate-corpus`"),
             "the route is Framing-A author-then-re-run: {}",
-            blocked_report.blocked[0].1
+            blocked_route(blocked)
         );
         // STAMP-FLIPS-LAST: the on-disk doc is byte-identical v1 — stamp NOT bumped to 2 —
         // because the value-bump is post-fold and the doc never reached a clean gate, so
@@ -1991,8 +2138,10 @@ sections:
             "only the bare doc blocks: {:?}",
             report.blocked
         );
-        let (blocked_key, route) = &report.blocked[0];
-        assert_eq!(blocked_key, "docs/briefs/bare-brief.md");
+        let blocked = &report.blocked[0];
+        assert_eq!(blocked_path(blocked), "docs/briefs/bare-brief.md");
+        assert_eq!(blocked.code, "migrate-corpus.prose-needed");
+        let route = blocked_route(blocked);
         assert!(
             route.contains("author the new required prose"),
             "the route routes the prose, not a transform-kind build: {route}"
@@ -2108,12 +2257,19 @@ sections:
             "the doc is blocked, routed: {:?}",
             report.blocked
         );
-        assert_eq!(report.blocked[0].0, "docs/ledgers/open-ledger.md");
-        let route = &report.blocked[0].1;
+        let blocked = &report.blocked[0];
+        assert_eq!(blocked_path(blocked), "docs/ledgers/open-ledger.md");
+        assert_eq!(blocked.code, "migrate-corpus.unclassified-change");
         assert!(
-            route.contains("no transform kind") && route.contains("build the transform kind"),
+            blocked.message.contains("no transform kind"),
+            "the diagnosis names the unclassifiable change; got: {}",
+            blocked.message
+        );
+        assert!(
+            blocked_route(blocked).contains("build the transform kind"),
             "the route names the real repair (build the kind first), not a migration \
-             instruction; got: {route}"
+             instruction; got: {}",
+            blocked_route(blocked)
         );
 
         // The bytes are untouched and the stamp is STILL 1 — no silent bump.
@@ -2235,12 +2391,15 @@ sections:
             "the doc is blocked, routed: {:?}",
             report.blocked
         );
-        assert_eq!(report.blocked[0].0, "docs/linked/hub.md");
-        let route = &report.blocked[0].1;
+        let blocked = &report.blocked[0];
+        assert_eq!(blocked_path(blocked), "docs/linked/hub.md");
+        assert_eq!(blocked.code, "migrate-corpus.narrowed-cardinality");
         assert!(
-            route.contains("narrows") && route.contains("meta.rel"),
-            "the route names the narrowed leaf; got: {route}"
+            blocked.message.contains("narrows") && blocked.message.contains("meta.rel"),
+            "the diagnosis names the narrowed leaf; got: {}",
+            blocked.message
         );
+        let route = blocked_route(blocked);
         assert!(
             !route.contains("author the new required prose"),
             "the prose-needing route would be a lie here; got: {route}"
@@ -2343,12 +2502,16 @@ sections:
             "the doc is blocked, routed: {:?}",
             report.blocked
         );
-        assert_eq!(report.blocked[0].0, "docs/linked/hub.md");
-        let route = &report.blocked[0].1;
+        let blocked = &report.blocked[0];
+        assert_eq!(blocked_path(blocked), "docs/linked/hub.md");
+        assert_eq!(blocked.code, "migrate-corpus.removed-field");
         assert!(
-            route.contains("drops the declared field") && route.contains("meta.rel"),
-            "the route names the dropped leaf; got: {route}"
+            blocked.message.contains("drops the declared field")
+                && blocked.message.contains("meta.rel"),
+            "the diagnosis names the dropped leaf; got: {}",
+            blocked.message
         );
+        let route = blocked_route(blocked);
         assert!(
             !route.contains("author the new required prose"),
             "the prose-needing route would be a lie here; got: {route}"
@@ -2560,14 +2723,14 @@ sections:
             "a missing snapshot is neither migrated nor already-current: {report:?}"
         );
         assert_eq!(report.blocked.len(), 1, "the doc is blocked: {report:?}");
-        assert_eq!(report.blocked[0].0, "docs/cards/first-card.md");
+        let blocked = &report.blocked[0];
+        assert_eq!(blocked_path(blocked), "docs/cards/first-card.md");
+        assert_eq!(blocked.code, "migrate-corpus.missing-snapshot");
         assert!(
-            report.blocked[0]
-                .1
-                .contains("schema-snapshots/card.v1.yaml")
-                && report.blocked[0].1.contains("re-run `jigc migrate-corpus`"),
+            blocked_route(blocked).contains("schema-snapshots/card.v1.yaml")
+                && blocked_route(blocked).contains("re-run `jigc migrate-corpus`"),
             "the route names the missing snapshot + the re-run: {}",
-            report.blocked[0].1
+            blocked_route(blocked)
         );
         // The doc is left byte-untouched (never silently rewritten).
         let after = fs::read_to_string(repo.path().join("docs/cards/first-card.md")).expect("read");
@@ -3396,16 +3559,20 @@ sections:
             1,
             "the doc is blocked with a route: {report:?}"
         );
-        assert_eq!(report.blocked[0].0, "docs/deferrals/deferral-ledger.md");
+        let blocked = &report.blocked[0];
+        assert_eq!(blocked_path(blocked), "docs/deferrals/deferral-ledger.md");
         // THE DISCRIMINATING ASSERTION — the block alone does not distinguish T7 (pre-T7 the
         // change diffed to `[]` and the *backstop* refused it with the `build the transform
         // kind` route, a schema-authoring instruction). Now the change is **named**, so the
         // adjudicator is the per-doc conformance gate and the route is the actionable
         // **prose-authoring** one: the agent fills the required per-item field, then re-runs.
         assert_eq!(
-            report.blocked[0].1,
-            prose_needing_route("docs/deferrals/deferral-ledger.md"),
+            blocked.code, "migrate-corpus.prose-needed",
             "a named prose need routes to the author, never to `build the transform kind`"
+        );
+        assert_eq!(
+            blocked_route(blocked),
+            prose_needing_route("docs/deferrals/deferral-ledger.md"),
         );
 
         let on_disk = fs::read_to_string(repo.path().join("docs/deferrals/deferral-ledger.md"))
