@@ -36,7 +36,7 @@
 use crate::cascade::{
     Anchor, SlotFillDelta, StructuralBasis, StructuralDelta, StructuralTarget, TrackedForkDelta,
 };
-use crate::finding::Finding;
+use crate::finding::{Finding, Location, Severity};
 use crate::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
 
 /// The recorded delta surfaces the classifier reconciles — the M5-relevant members
@@ -203,14 +203,37 @@ fn declared_knob_keys(pack: &dyn PackSource) -> Vec<String> {
 /// a scalar-set never conflicts, so this is its sole non-clean outcome.
 fn scalar_set_orphaned(key: &str) -> Finding {
     let target_str = format!("scalar:{key}");
-    Finding::block(
+    delta_block(
         "override-default.scalar-set-orphaned",
+        &target_str,
         format!(
             "scalar-set target `{target_str}` is no longer a declared knob in the current pack"
         ),
         format!("drop this delta, or re-target `{target_str}` to a current knob key"),
     )
     .with_check("target-exists")
+}
+
+/// One blocking `override-default` [`Finding`] **located at the delta's target string** — the
+/// **sixth target form**, the cascade delta target
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → The sixth form).
+///
+/// Every emitter below already *computes* the delta's identity string (`scalar:<knob-key>` /
+/// `step:<step-id>#<fill-id>` / `workflow:<workflow-id>#<step-id>`) and spends it on the
+/// message + the route; [`Finding::block`] hard-sets `location: None`, so it never reached the
+/// finding's [`Finding::key`] and **every `override-default` finding of a given code projected
+/// the degenerate key `(code, null)`** — two orphaned scalar-sets rode one `jigc upgrade
+/// --format json` array with byte-identical keys. A delta has no id of its own, so the target
+/// string *is* its identity (`overrides.md` → Classify): it is what a driver must tell the
+/// findings apart by, and it is now the key's `target`.
+fn delta_block(code: &str, target_str: &str, message: String, route: String) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        code,
+        message,
+        Some(Location::addressed(target_str, 1, 1)),
+        Some(route),
+    )
 }
 
 /// The slot's-existence question (`overrides.md` → Upgrade reconciliation,
@@ -252,8 +275,9 @@ fn slot_fill_orphaned_if_point_absent(
 /// (worked-examples flow 7 → the `step:locate#hints` orphaned route).
 fn slot_fill_orphaned(delta: &SlotFillDelta) -> Finding {
     let target_str = format!("step:{}#{}", delta.target.step_id, delta.target.fill_id);
-    Finding::block(
+    delta_block(
         "override-default.slot-fill-orphaned",
+        &target_str,
         format!(
             "slot-fill target `{target_str}` is no longer a declared `{{{{fill:}}}}` point in the current pack"
         ),
@@ -305,8 +329,9 @@ fn conflict_if_changed(
 /// review the human acts on (`overrides.md` → conflict → blocks with a review route).
 fn conflict(target: &StructuralTarget) -> Finding {
     let target_str = render_target(target);
-    Finding::block(
+    delta_block(
         "override-default.content-changed",
+        &target_str,
         format!("override target `{target_str}` changed in the current pack since it was recorded"),
         format!(
             "review the change on `{target_str}`: keep your override, re-target it, or drop it"
@@ -323,8 +348,9 @@ fn conflict(target: &StructuralTarget) -> Finding {
 /// equal and silently mask every conflict — `overrides.md` → Backward-compat).
 fn needs_rebasing(target: &StructuralTarget) -> Finding {
     let target_str = render_target(target);
-    Finding::block(
+    delta_block(
         "override-default.needs-rebasing",
+        &target_str,
         format!(
             "override target `{target_str}` has no recorded base-hash (an older manifest); its basis cannot be compared"
         ),
@@ -354,8 +380,9 @@ fn orphaned_if_absent(target: &StructuralTarget, pack: &dyn PackSource) -> Optio
 /// current pack omits, identified by its target string and routed to remove/re-target.
 fn orphaned(target: &StructuralTarget) -> Finding {
     let target_str = render_target(target);
-    Finding::block(
+    delta_block(
         "override-default.target-exists",
+        &target_str,
         format!("override target `{target_str}` no longer exists in the current pack"),
         format!("remove or re-target the delta on `{target_str}`"),
     )
@@ -1187,5 +1214,83 @@ mod tests {
                 finding.code
             );
         }
+    }
+
+    /// **The sixth target form — the cascade delta target** (M42,
+    /// [command-output-contract.md](../../../design/command-output-contract.md) → The sixth
+    /// form). Every one of the five emitters *computes* the delta's identity string and spent
+    /// it on the message + the route alone, calling [`Finding::block`] — which hard-sets
+    /// `location: None` — so all five projected the degenerate key `(code, null)`. The
+    /// identity string now rides the finding's [`Location::address`], so `Finding::key`'s
+    /// `target` discriminates per delta. Each of the three delta-kind variants is asserted:
+    /// `scalar:<knob-key>`, `step:<step-id>#<fill-id>`, `workflow:<workflow-id>#<step-id>`.
+    #[test]
+    fn every_emitted_finding_keys_at_its_delta_target() {
+        let target = StructuralTarget {
+            workflow_id: "single-task".to_owned(),
+            anchor: Anchor::At("locate".to_owned()),
+        };
+
+        let cases: Vec<(Finding, &str)> = vec![
+            (scalar_set_orphaned("legacy-knob"), "scalar:legacy-knob"),
+            (
+                slot_fill_orphaned(&slot_fill("locate", "hints")),
+                "step:locate#hints",
+            ),
+            (orphaned(&target), "workflow:single-task#locate"),
+            (conflict(&target), "workflow:single-task#locate"),
+            (needs_rebasing(&target), "workflow:single-task#locate"),
+        ];
+
+        for (finding, expected_target) in cases {
+            assert_eq!(
+                finding.key().target.as_deref(),
+                Some(expected_target),
+                "`{}` keys at its delta target",
+                finding.code
+            );
+        }
+    }
+
+    /// **The collision that lives inside a single document.** Two orphaned `scalar-set`
+    /// deltas classify in **one** `classify` call, so `jigc upgrade --format json` emits both
+    /// in one findings array; at HEAD both projected `{"code": "override-default.
+    /// scalar-set-orphaned", "target": null}` — byte-identical keys a driver deserializing
+    /// the array cannot tell apart (every other family in the M42 sweep needs *two*
+    /// invocations to collide). Each now keys at its own `scalar:<key>`.
+    #[test]
+    fn two_orphaned_scalar_sets_in_one_report_carry_distinct_keys() {
+        // v2's closed surface declares neither recorded key.
+        let v2 = FakePack::new("v2", &[]).with_knob_keys(&["default-workflow"]);
+
+        let scalars = vec!["legacy-knob".to_owned(), "retired-knob".to_owned()];
+        let deltas = RecordedDeltas {
+            structural: &[],
+            forks: &[],
+            bases: &[],
+            slot_fills: &[],
+            scalars: &scalars,
+        };
+
+        let findings = classify(deltas, &v2);
+
+        assert_eq!(findings.len(), 2, "both dropped keys orphan: {findings:?}");
+        let keys: Vec<_> = findings.iter().map(Finding::key).collect();
+        assert_eq!(
+            keys[0].target.as_deref(),
+            Some("scalar:legacy-knob"),
+            "the first orphaned scalar-set keys at its own knob key: {:?}",
+            keys[0]
+        );
+        assert_eq!(
+            keys[1].target.as_deref(),
+            Some("scalar:retired-knob"),
+            "the second orphaned scalar-set keys at its own knob key: {:?}",
+            keys[1]
+        );
+        assert_ne!(
+            keys[0], keys[1],
+            "two orphaned scalar-sets in ONE report must not collide on one key",
+        );
     }
 }
