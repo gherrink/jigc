@@ -165,8 +165,8 @@ impl ProbeResponse {
 /// probe reads its serialized form from the path-ref (inc 3) — the serde form is the
 /// shared contract, unit-proven by [`tests::snapshot_round_trips_through_serde`].
 ///
-/// **Field order is pinned** (`anchors` then `working_tree_root`) — a doc-elaboration
-/// pin within the locked snapshot model ([DECISIONS.md](../../../DECISIONS.md)
+/// **Field order is pinned** (`anchors`, `working_tree_root`, then `root_kind`) — a
+/// doc-elaboration pin within the locked snapshot model ([DECISIONS.md](../../../DECISIONS.md)
 /// 2026-06-06, M10 inc-2 / T3): the serialized form is a stable contract a probe is
 /// built against, so a reorder is a breaking change a golden must catch.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -174,19 +174,46 @@ pub struct EffectiveStateSnapshot {
     /// The enumerated target surface — every `code-anchor` leaf over the task's
     /// effective-state docs, address-sorted ([`crate::target_surface::enumerate_target_surface`]).
     pub anchors: Vec<TargetAnchor>,
-    /// The working-tree root the anchors' `<path>#<symbol>` values resolve against
+    /// The code-tree root the anchors' `<path>#<symbol>` values resolve against
     /// (the code is read from here directly, never copied into the snapshot).
     pub working_tree_root: PathBuf,
+    /// **Which** root [`working_tree_root`](Self::working_tree_root) is — so a finding can
+    /// name the tree it actually read (`validation.md` → The finding must name the root it
+    /// read, and route to `git add`).
+    pub root_kind: RootKind,
+}
+
+/// The **kind** of code tree a [`EffectiveStateSnapshot`] hands the probe — the
+/// discriminator that keeps a `doc-code` finding's message and route honest about what
+/// was read (`validation.md`:279). The two roots are correct by design (`validation.md`:265):
+/// task scope adjudicates the tree `finalize` commits, store scope the tree on disk. What
+/// the probe cannot know from the path alone is *which*, so the engine says it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RootKind {
+    /// The **materialized git index** — exactly the bytes `finalize` commits (task scope).
+    /// A file present on disk but never `git add`ed is *absent* here, and the only repair
+    /// is `git add`.
+    StagedIndex,
+    /// The **on-disk working tree** — the task-less store sweep's root, which has no index
+    /// to commit.
+    WorkingTree,
 }
 
 impl EffectiveStateSnapshot {
-    /// Build the snapshot from the enumerated `anchors` and the `working_tree_root`
-    /// they resolve against — the engine's materialization step (the wire carries it
-    /// by path-ref out-of-process; inc 3 writes the path-ref hand-off).
-    pub fn new(anchors: Vec<TargetAnchor>, working_tree_root: PathBuf) -> Self {
+    /// Build the snapshot from the enumerated `anchors`, the `working_tree_root` they
+    /// resolve against, and **which kind of root** that is — the engine's materialization
+    /// step (the wire carries it by path-ref out-of-process; inc 3 writes the path-ref
+    /// hand-off).
+    pub fn new(
+        anchors: Vec<TargetAnchor>,
+        working_tree_root: PathBuf,
+        root_kind: RootKind,
+    ) -> Self {
         Self {
             anchors,
             working_tree_root,
+            root_kind,
         }
     }
 }
@@ -537,12 +564,17 @@ mod tests {
 
     /// Serialization is unit-proven (the T3 done-criterion): the snapshot serialises and
     /// **deserialises back equal** (serialize → deserialize → equal), and its JSON pins
-    /// the field order (`anchors` then `working_tree_root`) the wire contract carries —
-    /// a reorder or a serde-attribute slip breaks the golden. This is the shared form an
-    /// in-process and a subprocess probe both consume.
+    /// the field order (`anchors`, `working_tree_root`, `root_kind`) the wire contract
+    /// carries — a reorder or a serde-attribute slip breaks the golden. This is the shared
+    /// form an in-process and a subprocess probe both consume; `root_kind` is what lets the
+    /// probe's finding name the root it read (`validation.md`:279).
     #[test]
     fn snapshot_round_trips_through_serde() {
-        let snapshot = EffectiveStateSnapshot::new(sample_anchors(), PathBuf::from("/repo/root"));
+        let snapshot = EffectiveStateSnapshot::new(
+            sample_anchors(),
+            PathBuf::from("/repo/root"),
+            RootKind::StagedIndex,
+        );
 
         let json = serde_json::to_string_pretty(&snapshot).expect("serialises");
         let back: EffectiveStateSnapshot = serde_json::from_str(&json).expect("deserialises");
@@ -566,7 +598,8 @@ mod tests {
               "check_id": "criterion-maps-to-test"
             }
           ],
-          "working_tree_root": "/repo/root"
+          "working_tree_root": "/repo/root",
+          "root_kind": "staged-index"
         }
         "#);
     }
@@ -635,7 +668,8 @@ mod tests {
         )
         .expect("present file");
 
-        let snapshot = EffectiveStateSnapshot::new(sample_anchors(), root.clone());
+        let snapshot =
+            EffectiveStateSnapshot::new(sample_anchors(), root.clone(), RootKind::WorkingTree);
 
         // Cross the wire: materialized -> serialized -> deserialized (the bytes the
         // path-ref carries). The probe consumes the DESERIALIZED snapshot, never the live one.

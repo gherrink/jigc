@@ -80,11 +80,36 @@ struct ProbeEffectiveState {
 
 /// The read-only **effective-state snapshot** the engine materialized — the re-declared
 /// projection of `engine::probe::EffectiveStateSnapshot` (the pinned field order
-/// `anchors` then `working_tree_root`).
+/// `anchors`, `working_tree_root`, `root_kind`).
 #[derive(Debug, Deserialize)]
 struct EffectiveStateSnapshot {
     anchors: Vec<TargetAnchor>,
     working_tree_root: PathBuf,
+    root_kind: RootKind,
+}
+
+/// **Which** tree `working_tree_root` is — the re-declared projection of
+/// `engine::probe::RootKind`. The probe cannot tell a materialized index from a working
+/// tree by looking at it, so the engine says which it handed over, and every finding names
+/// the root it actually read ([validation.md] → The finding must name the root it read, and
+/// route to `git add`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum RootKind {
+    /// The materialized git index — the tree `finalize` commits (task scope).
+    StagedIndex,
+    /// The on-disk working tree (the task-less store sweep).
+    WorkingTree,
+}
+
+impl RootKind {
+    /// The root's name, as a finding's message says it.
+    fn tree(self) -> &'static str {
+        match self {
+            RootKind::StagedIndex => "the staged index",
+            RootKind::WorkingTree => "the working tree",
+        }
+    }
 }
 
 /// One `(target-address, anchor-value, check-id)` pair — the re-declared projection of
@@ -140,27 +165,33 @@ struct Location {
 }
 
 impl Finding {
-    /// One blocking `doc-code.<check_id>` finding for an anchor whose **file** is absent,
-    /// addressed at the target the engine enumerated. `probe` / `check` split from the
-    /// dotted code.
-    fn dangling_file(anchor: &TargetAnchor, file: &str) -> Self {
+    /// One blocking `doc-code.<check_id>` finding for an anchor whose **file** is absent
+    /// **from the root the engine handed over** — named, never assumed: at task scope that
+    /// root is the materialized index (a file on disk but never `git add`ed is absent
+    /// there), at store scope the working tree. Addressed at the target the engine
+    /// enumerated; `probe` / `check` split from the dotted code.
+    fn dangling_file(anchor: &TargetAnchor, root: RootKind, file: &str) -> Self {
         Self::dangling(
             anchor,
+            root,
             format!(
-                "anchor `{}` resolves to no file (`{file}` is absent from the working tree)",
+                "anchor `{}` resolves to no file (`{file}` is absent from {})",
                 anchor.anchor_value,
+                root.tree(),
             ),
         )
     }
 
     /// One blocking `doc-code.<check_id>` finding for an anchor whose file is present but
-    /// whose `#symbol` resolves to no named item (at any nesting).
-    fn dangling_symbol(anchor: &TargetAnchor, file: &str, symbol: &str) -> Self {
+    /// whose `#symbol` resolves to no named item (at any nesting) in the root read.
+    fn dangling_symbol(anchor: &TargetAnchor, root: RootKind, file: &str, symbol: &str) -> Self {
         Self::dangling(
             anchor,
+            root,
             format!(
-                "anchor `{}` resolves to no symbol (`{symbol}` is absent from `{file}`)",
+                "anchor `{}` resolves to no symbol (`{symbol}` is absent from `{file}` in {})",
                 anchor.anchor_value,
+                root.tree(),
             ),
         )
     }
@@ -168,9 +199,10 @@ impl Finding {
     /// One blocking `doc-code.criterion-maps-to-test` finding for an anchor whose `#symbol`
     /// resolves to a real named item that is **not** a `#[test]` fn — the is-a-test
     /// predicate failed (T3).
-    fn not_a_test(anchor: &TargetAnchor, file: &str, symbol: &str) -> Self {
+    fn not_a_test(anchor: &TargetAnchor, root: RootKind, file: &str, symbol: &str) -> Self {
         let mut finding = Self::dangling(
             anchor,
+            root,
             format!(
                 "anchor `{}` maps to no test (`{symbol}` in `{file}` is not a `#[test]` fn)",
                 anchor.anchor_value,
@@ -246,11 +278,30 @@ impl Finding {
     /// symbol-exists floor — the universal `finalize` floor's block, `design/validation.md`
     /// → Scope = effective state): the finding's `location.address` already names the
     /// citing doc + field and the `message` names the anchor + symbol + file, so the route
-    /// states the two ways out — update the citation to match the renamed/moved code, or
-    /// restore what it cites. This turns a blocked `finalize` into a *productively* blocked
+    /// states the ways out. This turns a blocked `finalize` into a *productively* blocked
     /// one (the weaker model can act on it), uniform across the task surface, the blast
     /// radius, and the store sweep (`not_a_test` overrides it with its own repair).
-    fn dangling(anchor: &TargetAnchor, message: String) -> Self {
+    ///
+    /// **The route is root-aware** ([validation.md] → The finding must name the root it
+    /// read, and route to `git add`). At task scope the adjudicated root is the **staged
+    /// index**, so the dominant dangle is code that is written and *correct* but never `git
+    /// add`ed — for which "update the citation … or revert the change" commands **both of
+    /// the wrong repairs** and corrupts a correct citation. So the staged-index route leads
+    /// with `git add` and keeps the citation/restore repairs behind it; the working-tree
+    /// route (the store sweep, which has no index) is unchanged — there, `git add` would
+    /// fix nothing.
+    fn dangling(anchor: &TargetAnchor, root: RootKind, message: String) -> Self {
+        let restore = "update the citation to match the renamed/moved code, or restore the \
+                       cited symbol (e.g. revert the change)";
+        let route = match root {
+            // Present-but-unstaged is not observable from the index tree alone, so the route
+            // states the case rather than adjudicating it.
+            RootKind::StagedIndex => format!(
+                "if the cited code is on disk but unstaged, `git add` it — finalize adjudicates \
+                 the staged index, not the working tree; otherwise {restore}"
+            ),
+            RootKind::WorkingTree => restore.to_string(),
+        };
         Self {
             severity: Severity::Blocking,
             probe: "doc-code".to_string(),
@@ -262,11 +313,7 @@ impl Finding {
                 line: 1,
                 col: 1,
             }),
-            route: Some(
-                "update the citation to match the renamed/moved code, or restore the cited \
-                 symbol (e.g. revert the change)"
-                    .to_string(),
-            ),
+            route: Some(route),
         }
     }
 }
@@ -280,10 +327,12 @@ fn split_anchor(anchor_value: &str) -> (&str, Option<&str>) {
     }
 }
 
-/// Resolve every anchor against the working tree: the file before any `#` must exist; a
-/// `#symbol` on a present `.rs` file must additionally resolve to a named item (at any
-/// nesting) via tree-sitter. Each unresolvable anchor emits one blocking finding.
+/// Resolve every anchor against the code tree the engine handed over (`working_tree_root`,
+/// of kind `root_kind`): the file before any `#` must exist; a `#symbol` on a present `.rs`
+/// file must additionally resolve to a named item (at any nesting) via tree-sitter. Each
+/// unresolvable anchor emits one blocking finding **naming the root it read**.
 fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
+    let root = snapshot.root_kind;
     snapshot
         .anchors
         .iter()
@@ -300,7 +349,7 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
                 return Some(Finding::symlink_anchor(anchor, file));
             }
             if !path.exists() {
-                return Some(Finding::dangling_file(anchor, file));
+                return Some(Finding::dangling_file(anchor, root, file));
             }
             let symbol = symbol?;
             let src = std::fs::read_to_string(&path).ok()?;
@@ -333,7 +382,7 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
             if !resolved {
                 // The symbol is absent — the floor of every `#symbol` check, including
                 // `criterion-maps-to-test` (whose predicate is symbol existence + is-a-test).
-                return Some(Finding::dangling_symbol(anchor, file, symbol));
+                return Some(Finding::dangling_symbol(anchor, root, file, symbol));
             }
             // The symbol resolves. `criterion-maps-to-test` additionally requires the
             // is-a-test predicate (a `#[test]` fn); `symbol-exists` is satisfied here. The
@@ -346,7 +395,7 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
             if anchor.check_id == "criterion-maps-to-test" {
                 if grammar == resolve::Grammar::Rust {
                     if !resolve::test_fn_exists_in_rust(&src, symbol) {
-                        return Some(Finding::not_a_test(anchor, file, symbol));
+                        return Some(Finding::not_a_test(anchor, root, file, symbol));
                     }
                 } else {
                     return Some(Finding::unsupported_language(anchor, file));
@@ -434,6 +483,7 @@ mod tests {
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor_with_check(&format!("{file}#{symbol}"), check_id)],
             working_tree_root: root,
+            root_kind: RootKind::WorkingTree,
         };
         check_anchors(&snapshot)
     }
@@ -473,6 +523,7 @@ deploy() {
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("link.rs#real")],
             working_tree_root: root,
+            root_kind: RootKind::WorkingTree,
         };
         let findings = check_anchors(&snapshot);
         assert_eq!(findings.len(), 1, "exactly one finding, got {findings:?}");
@@ -540,6 +591,7 @@ deploy() {
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("script.pl")],
             working_tree_root: root,
+            root_kind: RootKind::WorkingTree,
         };
         assert!(check_anchors(&snapshot).is_empty());
     }
@@ -552,6 +604,7 @@ deploy() {
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("ghost.pl#thing")],
             working_tree_root: root,
+            root_kind: RootKind::WorkingTree,
         };
         let findings = check_anchors(&snapshot);
         assert_eq!(findings.len(), 1);
@@ -566,8 +619,66 @@ deploy() {
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("ghost#deploy")],
             working_tree_root: root,
+            root_kind: RootKind::WorkingTree,
         };
         assert_eq!(check_anchors(&snapshot).len(), 1);
+    }
+
+    #[test]
+    fn a_dangling_finding_names_the_root_it_read_and_routes_by_root_kind() {
+        // The same absent file, adjudicated over the two roots the engine hands over
+        // ([validation.md] → The finding must name the root it read, and route to `git add`).
+        // Under the **staged index** (task scope) the dominant cause is code on disk but
+        // never `git add`ed, so the message names the index and the route leads with `git
+        // add`; under the **working tree** (the task-less store sweep) `git add` would fix
+        // nothing, so the message names the working tree and the citation/restore route
+        // stands. Neither generation may claim the other's root.
+        let dangle = |root_kind: RootKind| {
+            let root = temp_root();
+            let snapshot = EffectiveStateSnapshot {
+                anchors: vec![anchor("src/feature.rs#feature")],
+                working_tree_root: root,
+                root_kind,
+            };
+            let mut findings = check_anchors(&snapshot);
+            assert_eq!(findings.len(), 1, "exactly one finding, got {findings:?}");
+            findings.remove(0)
+        };
+
+        let index = dangle(RootKind::StagedIndex);
+        assert!(
+            index.message.contains("is absent from the staged index")
+                && !index.message.contains("working tree"),
+            "the task-scope finding names the index it read, never the working tree it did \
+             not: {}",
+            index.message,
+        );
+        assert!(
+            index
+                .route
+                .as_deref()
+                .is_some_and(|r| r.contains("`git add`")),
+            "the staged-index route names `git add` — the repair for a present-but-unstaged \
+             file: {:?}",
+            index.route,
+        );
+
+        let tree = dangle(RootKind::WorkingTree);
+        assert!(
+            tree.message.contains("is absent from the working tree")
+                && !tree.message.contains("staged index"),
+            "the store-scope finding names the working tree it read: {}",
+            tree.message,
+        );
+        assert!(
+            tree.route.as_deref().is_some_and(|r| {
+                r.starts_with("update the citation to match the renamed/moved code")
+                    && !r.contains("git add")
+            }),
+            "the working-tree route keeps the citation/restore repair — `git add` fixes nothing \
+             there: {:?}",
+            tree.route,
+        );
     }
 
     // The non-Rust `criterion-maps-to-test` truth table ([validation.md] → Multi-language

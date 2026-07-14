@@ -40,7 +40,7 @@ use crate::field_block::Field;
 use crate::file_state::{FileStateRecord, file_state};
 use crate::finding::{Finding, Location, Severity};
 use crate::parse::{Document, ParsedItem, ParsedSection, parse_sections};
-use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, ingest_probe_run};
+use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, RootKind, ingest_probe_run};
 use crate::result::ValidationReport;
 use crate::schema::{Field as SchemaField, FieldType, Schema, Section, SectionBody};
 use crate::target_surface::{enumerate_committed_surface, enumerate_target_surface};
@@ -1240,7 +1240,10 @@ fn store_doc_code(
     // Materialize the snapshot to a fresh temp-dir scratch file — task-less, so it must
     // NOT land under a managed `location:` (`validation.md` → the scratch path is a temp
     // dir). Removed before returning; never committed.
-    let snapshot = EffectiveStateSnapshot::new(anchors, repo_root.to_path_buf());
+    // The store sweep is task-less: there is no index to commit, so its root IS the
+    // on-disk working tree — and its findings say so (`validation.md`:279).
+    let snapshot =
+        EffectiveStateSnapshot::new(anchors, repo_root.to_path_buf(), RootKind::WorkingTree);
     let scratch = store_scratch_path();
     std::fs::write(&scratch, serde_json::to_vec(&snapshot)?)?;
 
@@ -1469,7 +1472,17 @@ fn run_doc_code_probe(
     // The representative target the wire envelope carries (the probe reads the full set from
     // the snapshot). `anchors` is non-empty here, so the first is always present.
     let target = anchors[0].address.clone();
-    let snapshot = EffectiveStateSnapshot::new(anchors.to_vec(), code_tree_root.to_path_buf());
+    // Task scope always adjudicates a **materialized** tree, never the working tree: the
+    // index sweep reads the staged set `finalize` commits, and the base sweep reads the
+    // materialized HEAD versions of the same set (its content findings are only compared
+    // by address — subtracted or kept — never rendered). So the root kind the probe reports
+    // is the staged index, and a cited file present on disk but unstaged routes to `git add`
+    // (`validation.md`:279).
+    let snapshot = EffectiveStateSnapshot::new(
+        anchors.to_vec(),
+        code_tree_root.to_path_buf(),
+        RootKind::StagedIndex,
+    );
     std::fs::write(snapshot_path, serde_json::to_vec(&snapshot)?)?;
     let request = ProbeRequest::new(
         DOC_CODE_PROBE,

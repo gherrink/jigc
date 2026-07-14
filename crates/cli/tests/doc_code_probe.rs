@@ -19,7 +19,7 @@
 use cli::invoke::{self, ProbeOutcome, ProbeStatus};
 use engine::finding::Severity;
 use engine::probe::{
-    EffectiveStateSnapshot, ProbeRequest, ProbeRun, ProbeRunStatus, ingest_probe_run,
+    EffectiveStateSnapshot, ProbeRequest, ProbeRun, ProbeRunStatus, RootKind, ingest_probe_run,
 };
 use engine::target_surface::TargetAnchor;
 use std::fs;
@@ -132,7 +132,11 @@ fn doc_code_probe_blocks_missing_file_passes_present_and_bare_path() {
 
     // Materialize + serialize the snapshot to a temp file the request points at.
     let scratch = TempDir::new("scratch");
-    let snapshot = EffectiveStateSnapshot::new(sample_anchors(), root.path().to_path_buf());
+    let snapshot = EffectiveStateSnapshot::new(
+        sample_anchors(),
+        root.path().to_path_buf(),
+        RootKind::WorkingTree,
+    );
     let snapshot_path = scratch.path().join("snapshot.json");
     fs::write(
         &snapshot_path,
@@ -195,7 +199,8 @@ fn run_symbol_fixture(
     .expect("write fixture .rs");
 
     let scratch = TempDir::new("symscratch");
-    let snapshot = EffectiveStateSnapshot::new(anchors, root.path().to_path_buf());
+    let snapshot =
+        EffectiveStateSnapshot::new(anchors, root.path().to_path_buf(), RootKind::WorkingTree);
     let snapshot_path = scratch.path().join("snapshot.json");
     fs::write(
         &snapshot_path,
@@ -312,7 +317,8 @@ fn raw_stdout_for_fixture(file_body: &str, anchors: Vec<TargetAnchor>) -> Vec<u8
     .expect("write fixture .rs");
 
     let scratch = TempDir::new("detscratch");
-    let snapshot = EffectiveStateSnapshot::new(anchors, root.path().to_path_buf());
+    let snapshot =
+        EffectiveStateSnapshot::new(anchors, root.path().to_path_buf(), RootKind::WorkingTree);
     let snapshot_path = scratch.path().join("snapshot.json");
     fs::write(
         &snapshot_path,
@@ -491,7 +497,8 @@ fn run_lang_fixture(
     fs::write(&abs, file_body.as_bytes()).expect("write fixture file");
 
     let scratch = TempDir::new("langscratch");
-    let snapshot = EffectiveStateSnapshot::new(anchors, root.path().to_path_buf());
+    let snapshot =
+        EffectiveStateSnapshot::new(anchors, root.path().to_path_buf(), RootKind::WorkingTree);
     let snapshot_path = scratch.path().join("snapshot.json");
     fs::write(
         &snapshot_path,
@@ -859,7 +866,8 @@ fn run_two_file_fixture(
     }
 
     let scratch = TempDir::new("orderscratch");
-    let snapshot = EffectiveStateSnapshot::new(anchors, root.path().to_path_buf());
+    let snapshot =
+        EffectiveStateSnapshot::new(anchors, root.path().to_path_buf(), RootKind::WorkingTree);
     let snapshot_path = scratch.path().join("snapshot.json");
     fs::write(
         &snapshot_path,
