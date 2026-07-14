@@ -37,13 +37,16 @@ use std::path::{Component, Path, PathBuf};
 /// the active task's working area.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum DocCommand {
-    /// Mint a new managed instance (agent-initiated, create-gated). The id-source
-    /// is supplied inline; the CLI mints + places per the schema.
+    /// Mint a new managed instance (agent-initiated, create-gated). The title the
+    /// slug is minted from is supplied inline with `--title` — always literally
+    /// `--title`, whatever the doctype's `id-from` field is named; the CLI mints +
+    /// places per the schema.
     Create {
         /// The doctype to create (e.g. `adr`).
         r#type: String,
-        /// The id-source the slug is minted from (inline, the `--<id-source>`
-        /// form; `--title "…"` is the MVP surface for the title-slugged types).
+        /// The title the slug is minted from — the flag is always literally
+        /// `--title`, whatever the doctype's `id-from` field is named
+        /// (`design/write-commands.md` → The argument convention).
         #[arg(long)]
         title: String,
         /// Override the minted doc slug (`<type>:<slug>`), decoupling the id from the

@@ -54,11 +54,16 @@ pub enum Format {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     /// Start or resume work. Bare `jigc start` orients (read-only); an `<intent>`
-    /// mints a task and composes the default workflow; `--task <id>` resumes an
-    /// existing task and re-composes it.
+    /// composes the cascade's `default-workflow` — shipped as the `router`, a
+    /// `creates-task: false` selection pass that routes the intent to a
+    /// work-workflow and mints **nothing**; `jigc start --workflow <X> "<intent>"`
+    /// composes `<X>` and mints the task iff `<X>` declares `creates-task: true`;
+    /// `--task <id>` resumes an existing task and re-composes it.
     Start {
-        /// Optional task intent. Absent → orient (read-only); present →
-        /// compose the default workflow with `{{task.intent}}` = `<intent>`.
+        /// Optional task intent. Absent → orient (read-only); present → compose the
+        /// cascade's `default-workflow` with `{{task.intent}}` = `<intent>`, minting
+        /// a task iff that workflow declares `creates-task: true` (the shipped
+        /// default, the `router`, does not — it routes to the workflow that does).
         intent: Option<String>,
 
         /// Compose a named workflow explicitly, bypassing the cascade default.
@@ -260,9 +265,9 @@ pub enum Command {
 
 impl Cli {
     /// Dispatch the parsed command: bare `start` (no `intent`) runs the
-    /// read-only orientation end-to-end; an `<intent>` mints a task and composes
-    /// the cascade's default workflow (`design/write-commands.md` → Task
-    /// origination).
+    /// read-only orientation end-to-end; an `<intent>` composes the cascade's
+    /// default workflow, minting a task iff that workflow declares
+    /// `creates-task: true` (`design/write-commands.md` → Task origination).
     pub fn dispatch(self) -> Outcome {
         match self.command {
             // `--explain` short-circuits the compose path: it renders the
