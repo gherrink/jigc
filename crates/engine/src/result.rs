@@ -1103,6 +1103,57 @@ mod tests {
         );
     }
 
+    /// The membership test is a **uniqueness** predicate, not a presence one — the half the
+    /// seam did not check (`command-output-contract.md` → The membership test): the closure
+    /// claim is *"`(code, target)` is unique-per-instance"*, so two findings sharing one key
+    /// in one emitted slice falsify it at the pin, and a driver deserializing the array
+    /// cannot tell them apart. `required-slot-present` shipped exactly that (three
+    /// byte-identical keys for one pristine ADR) *through* a seam whose bar was only
+    /// "has an address". Red before the uniqueness pass existed: the collision sailed through.
+    #[test]
+    #[should_panic(expected = "collide on one key")]
+    fn the_report_seam_fires_on_a_colliding_key() {
+        use crate::finding::Location;
+
+        let resolved = no_delta_resolved();
+        let collide = |line| {
+            Finding::graded(
+                Severity::Blocking,
+                "schema-conformance.required-slot-present",
+                "required slot is empty",
+                Some(Location::addressed("adr:pick-a-db", line, 1)),
+                Some("run `jigc doc set-slot …`".to_owned()),
+            )
+        };
+
+        let _ = ValidationReport::new(vec![collide(12), collide(20)], &resolved);
+    }
+
+    /// The other half of the uniqueness predicate: a **declared non-unique** code passes the
+    /// seam at one key, deliberately collapsed below its subject's granularity
+    /// (`command-output-contract.md` → The declared non-unique exceptions). Two anchor-less
+    /// items in one section *are* two findings on one key — the discriminator is precisely
+    /// the identity that is missing.
+    #[test]
+    fn the_report_seam_passes_a_declared_non_unique_collision() {
+        use crate::finding::Location;
+
+        let resolved = no_delta_resolved();
+        let anchorless = |line| {
+            Finding::graded(
+                Severity::Blocking,
+                "conformance.item-anchor-missing",
+                "item has no `{#id}` anchor",
+                Some(Location::addressed("spec:my-spec#criteria", line, 1)),
+                None,
+            )
+        };
+
+        let report = ValidationReport::new(vec![anchorless(9), anchorless(14)], &resolved);
+
+        assert_eq!(report.findings.len(), 2);
+    }
+
     /// Golden lock on the post-pass **membership** count. `CHECK_INVENTORY` is the
     /// `(probe, check)` set the M6 severity post-pass re-grades — a deliberate
     /// **subset** of the **32** keyed `validation.<probe>.<check>.severity` checks

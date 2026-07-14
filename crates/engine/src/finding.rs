@@ -144,7 +144,7 @@ impl Location {
 /// and changes only through `jigc rename`. Derived — never stored — from a finding's `code`
 /// and its [`Location::address`] ([`Finding::key`]), so it cannot drift from the address the
 /// finding carries.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FindingKey {
     /// The dotted finding id (`<probe>.<check>`) — per-code dedup granularity.
     pub code: String,
@@ -173,20 +173,69 @@ pub fn is_declared_singleton(code: &str) -> bool {
         || code.starts_with("uninstall.")
 }
 
+/// Whether `code` is a **declared non-unique exception** — a code whose key is *deliberately
+/// collapsed below its subject's granularity*, so two instances sharing one `(code, target)`
+/// in one emitted slice are the pin, not a defect
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → The declared
+/// non-unique exceptions). Each carries a **non-null** target; what it forgoes is the
+/// sub-discriminator, and each forgoes it for a stated reason — this is its **one home**:
+///
+/// - `conformance.item-anchor-missing` — an item with no anchor **has no identity**: the key
+///   that would discriminate is precisely the thing the finding reports missing.
+/// - `conformance.item-slot-delimiter-shadowed`, `conformance.slot-setext-heading`,
+///   `conformance.slot-heading-depth` — the subject is a **slot's prose**; the only
+///   sub-discriminator on offer is prose text, and a prose-derived key churns under exactly
+///   the edits the key exists to survive.
+/// - every `workflow-refs.*` — keyed at the **pack resource**: a workflow-def load failure
+///   means the pack is broken, a defect a pack author fixes once, not a corpus finding a
+///   driver tracks across sweeps.
+///
+/// Anything else that collides is a degenerate key, and [`debug_assert_targets_declared`]
+/// says so at the seam.
+pub fn is_declared_non_unique(code: &str) -> bool {
+    matches!(
+        code,
+        "conformance.item-anchor-missing"
+            | "conformance.item-slot-delimiter-shadowed"
+            | "conformance.slot-setext-heading"
+            | "conformance.slot-heading-depth"
+    ) || code.starts_with("workflow-refs.")
+}
+
 /// The **membership test, made mechanical** — the check the contract's third obligation owes
 /// ([command-output-contract.md](../../../design/command-output-contract.md) → The membership
-/// test): *every `Finding` reaching a serialization funnel carries `Some(Location::address)`,
-/// except the declared singletons.* A finding is in the envelope-projecting set **iff** it is
-/// serialized as a `Finding` — [`Finding`]'s `Serialize` writes `key` unconditionally and
-/// derives `key.target` from [`Location::address`], so a null address **is** a null key. Call
-/// it at each of the three funnels (`ValidationReport`'s `findings[]`, a `DocAck`'s
-/// `findings[]`, the bare-`Finding` `setup_block`); a family that forgets its target form then
-/// fails the suite instead of shipping a degenerate key.
+/// test). A finding is in the envelope-projecting set **iff** it is serialized as a `Finding` —
+/// [`Finding`]'s `Serialize` writes `key` unconditionally and derives `key.target` from
+/// [`Location::address`], so a null address **is** a null key. Call it at each of the three
+/// funnels (`ValidationReport`'s `findings[]`, a `DocAck`'s `findings[]`, the bare-`Finding`
+/// `setup_block`).
+///
+/// It checks the closure claim itself — *`(code, target)` is **unique-per-instance*** — which
+/// is **two** properties, and checking only the first is how the class reopens:
+///
+/// 1. **Present** — every finding carries `Some(Location::address)`, except the
+///    [`is_declared_singleton`] codes (at most one instance can exist, so `(code, null)` is
+///    already unique).
+/// 2. **Discriminating** — no two findings in one emitted slice share one `(code, target)`,
+///    except the [`is_declared_non_unique`] codes (collapsed on purpose, with a reason).
+///
+/// The presence half alone passes a **degenerate** key: `schema-conformance.required-slot-present`
+/// shipped three byte-identical `(code, adr:<slug>)` keys for one pristine ADR *through* this
+/// seam, because its target was non-null — under-discriminating, never address-less. A driver
+/// deserializing that array cannot tell the findings apart, which is exactly what the key
+/// exists to let it do. So the seam is keyed on the property the contract **claims**
+/// (*discriminating*), not on the symptom that made the class visible (*null*).
 ///
 /// Debug-only (`debug_assert`): the obligation is an invariant of jigc's **own** finding
 /// producers — a build-time property the whole test suite exercises through the seam — not a
 /// runtime condition on user input, so it must never turn a user's finding into a panic.
 pub fn debug_assert_targets_declared(findings: &[Finding]) {
+    // Cheap enough to skip entirely in release: `debug_assert!` compiles its condition out,
+    // but the uniqueness pass is a statement, so gate it the same way.
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let mut seen: std::collections::HashSet<FindingKey> = std::collections::HashSet::new();
     for finding in findings {
         debug_assert!(
             finding.carries_declared_target(),
@@ -194,6 +243,19 @@ pub fn debug_assert_targets_declared(findings: &[Finding]) {
              of the six declared target forms, or declare it an exception \
              (design/command-output-contract.md → The membership test)",
             finding.code,
+        );
+        if is_declared_non_unique(&finding.code) {
+            continue;
+        }
+        let key = finding.key();
+        let target = key.target.clone().unwrap_or_else(|| "null".to_owned());
+        debug_assert!(
+            seen.insert(key),
+            "two findings reaching one serialization funnel collide on one key \
+             (`{}`, `{}`) — give the code a discriminating `#<fragment>`, or declare it \
+             non-unique (design/command-output-contract.md → The membership test)",
+            finding.code,
+            target,
         );
     }
 }
@@ -294,10 +356,12 @@ impl Finding {
         }
     }
 
-    /// Whether this finding honours the target obligation: it carries a discriminating
-    /// `key.target` (a [`Location::address`] in one of the six declared forms), **or** its
-    /// code is a [`is_declared_singleton`] exception. The predicate
-    /// [`debug_assert_targets_declared`] enforces at every serialization funnel.
+    /// Whether this finding honours the **presence** half of the target obligation: it carries
+    /// a `key.target` (a [`Location::address`] in one of the six declared forms), **or** its
+    /// code is a [`is_declared_singleton`] exception. Presence alone is *not* the closure
+    /// claim — a non-null target can still fail to discriminate — so
+    /// [`debug_assert_targets_declared`] pairs this with a **uniqueness** pass over the slice
+    /// at every serialization funnel; the two halves together are the membership test.
     pub fn carries_declared_target(&self) -> bool {
         self.key().target.is_some() || is_declared_singleton(&self.code)
     }
