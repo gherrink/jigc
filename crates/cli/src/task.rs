@@ -122,7 +122,7 @@ impl TaskCommand {
             TaskCommand::List => run_list(cwd, format),
             TaskCommand::Diff { id } => run_diff(cwd, &id),
             TaskCommand::Validate { id } => return run_validate(cwd, &id, format),
-            TaskCommand::Discard { id } => run_discard(cwd, &id),
+            TaskCommand::Discard { id } => run_discard(cwd, &id, format),
             TaskCommand::Finalize {
                 id,
                 approve,
@@ -130,7 +130,7 @@ impl TaskCommand {
             } => {
                 return run_finalize(cwd, &id, format, approve, dry_run);
             }
-            TaskCommand::Bind { role, addr, id } => run_bind(cwd, &role, &addr, &id),
+            TaskCommand::Bind { role, addr, id } => run_bind(cwd, &role, &addr, &id, format),
         };
         match result {
             Ok(()) => Outcome::success(),
@@ -254,14 +254,29 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> Outcome {
 }
 
 /// `jigc task discard <id>` — remove the task's working area, abandoning it
-/// (`design/write-commands.md` → Lifecycle: abandon). Idempotent: an already-absent
-/// area is not an error.
-fn run_discard(cwd: &Path, id: &str) -> Result<()> {
+/// (`design/write-commands.md` → Lifecycle: abandon), and ack the removal
+/// (`design/command-output-contract.md` §2 → The task-state verbs join the envelope).
+///
+/// **Not idempotent** — an already-absent area rejects at [`TaskArea::resolve`] (exit 1,
+/// the start-a-task route), which runs *before* any removal could. The prior claim of
+/// idempotence here was false, and it stood behind a `discarded` effect key on the ack
+/// that could only ever have held the constant `true`; the distinction it wanted —
+/// *removed* vs *was already gone* — already lives one layer up, in **exit 0 + this ack**
+/// vs **exit 1 + the error envelope** (`design/command-output-contract.md` §2 → the
+/// ⚠ correction).
+fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
-    if task.dir.exists() {
-        std::fs::remove_dir_all(&task.dir)
-            .with_context(|| format!("could not discard task `{id}` at {:?}", task.dir))?;
-    }
+    std::fs::remove_dir_all(&task.dir)
+        .with_context(|| format!("could not discard task `{id}` at {:?}", task.dir))?;
+    println!(
+        "{}",
+        render::task_ack(
+            format,
+            &render::TaskAck::Discarded {
+                task: id.to_string(),
+            },
+        )
+    );
     Ok(())
 }
 
@@ -278,9 +293,33 @@ fn run_discard(cwd: &Path, id: &str) -> Result<()> {
 /// else reject with the mismatch; (5) record the binding in the task's
 /// `roles.json` (last-write-wins). The agent supplies only the which-doc choice;
 /// recording the binding stays the CLI's (the determinism boundary holds).
-fn run_bind(cwd: &Path, role: &str, addr: &str, id: &str) -> Result<()> {
+///
+/// The landed binding is acked (`design/command-output-contract.md` §2 → The task-state
+/// verbs join the envelope): the ack's `target` is stamped from the **parsed** address
+/// [`TaskArea::bind`] hands back, never the raw `addr` argument — the raw string may be a
+/// bare singleton address, which the parse normalizes to the `<type>:<slug>` URI form.
+fn run_bind(cwd: &Path, role: &str, addr: &str, id: &str, format: Format) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
-    task.bind(role, addr)
+    let address = task.bind(role, addr)?;
+    println!(
+        "{}",
+        render::task_ack(
+            format,
+            &render::TaskAck::Bound {
+                task: id.to_string(),
+                role: role.to_string(),
+                address: format!("{}:{}", address.r#type.as_str(), address.slug.as_str()),
+                target: render::AckTarget {
+                    doctype: address.r#type.as_str().to_string(),
+                    slug: address.slug.as_str().to_string(),
+                    section: None,
+                    item: None,
+                    leaf: None,
+                },
+            },
+        )
+    );
+    Ok(())
 }
 
 /// The commit doctype name — the task's workflow-provisioned doc whose sink is the
@@ -1049,7 +1088,10 @@ impl TaskArea {
     /// 3. `<addr>` parses + its canonical committed path exists else `no such doc <addr>`;
     /// 4. the address's `<type>` equals the role's declared `type` else the mismatch;
     /// 5. record `role -> <addr>` in `roles.json` (last-write-wins).
-    fn bind(&self, role: &str, addr: &str) -> Result<()> {
+    ///
+    /// Hands the **parsed** address back to the caller, which stamps the ack's `target`
+    /// from it (the URI normal form), never from the raw `addr` argument.
+    fn bind(&self, role: &str, addr: &str) -> Result<Address> {
         let def = self.workflow_def()?;
 
         // Step 2 — the role must be one the workflow declares as a `reads` role.
@@ -1095,7 +1137,7 @@ impl TaskArea {
         roles
             .save(&self.dir)
             .with_context(|| format!("could not record the binding for task at {:?}", self.dir))?;
-        Ok(())
+        Ok(address)
     }
 
     /// Load the task's own minting workflow definition — the source the `reads`

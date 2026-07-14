@@ -915,6 +915,65 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
     }
 }
 
+/// A successful **task-state** mutation's confirmation — the ack `jigc task bind` and
+/// `jigc task discard` join at M42 (`design/command-output-contract.md` §2 → The
+/// task-state verbs join the envelope). Both mutate durable state and confirmed it with
+/// silence in *every* format; "success is silence" is not a posture, it is the absence
+/// of one.
+///
+/// The envelope is the write-ack shape ([`DocAck`]) with the subject a doc-write does not
+/// have: the **work unit** — `task`, the id. Neither verb writes managed content, so the
+/// intrinsic single-doc advisory has nothing to compute over; the `findings` key is
+/// emitted as the empty array anyway, so a driver deserializes one envelope shape.
+pub enum TaskAck {
+    /// A `task bind` bound the doc at `target` to the task's `role`. `address` is the
+    /// bound doc's URI (the agent-text line); `target` is that address decomposed —
+    /// `doctype` + `slug` only, a bind targets a whole doc — stamped from the **parsed**
+    /// address, never the raw CLI argument.
+    Bound {
+        task: String,
+        role: String,
+        address: String,
+        target: AckTarget,
+    },
+    /// A `task discard` removed the task's working area. It carries no `target` (it
+    /// addresses no doc) and **no effect key**: discarding an absent id never reaches the
+    /// removal (it rejects at `TaskArea::resolve`, exit 1), so a `discarded` key could
+    /// only ever hold the constant `true`. "Removed" vs "was already gone" is carried one
+    /// layer up — exit 0 + this ack vs exit 1 + the error envelope
+    /// (`design/command-output-contract.md` §2 → the ⚠ correction).
+    Discarded { task: String },
+}
+
+/// Render a successful task-state verb's confirmation ([`TaskAck`]) to the surface
+/// `format` selects: `agent` / `human` emit a terse one-line ack (symmetric with the
+/// bare-line doc acks), `json` the structured envelope (`op` + `task` + `findings`, plus
+/// `role` + the decomposed `target` on a bind).
+pub fn task_ack(format: Format, ack: &TaskAck) -> String {
+    match format {
+        Format::Json => match ack {
+            TaskAck::Bound {
+                task, role, target, ..
+            } => json(&serde_json::json!({
+                "op": "task-bind", "task": task, "role": role, "target": target,
+                "findings": [],
+            })),
+            TaskAck::Discarded { task } => json(&serde_json::json!({
+                "op": "task-discard", "task": task, "findings": [],
+            })),
+        },
+        Format::Agent | Format::Human => match ack {
+            TaskAck::Bound {
+                task,
+                role,
+                address,
+                ..
+            } => format!("bound {role} = {address} (task {task})"),
+            TaskAck::Discarded { task } => format!("discarded task {task}"),
+        },
+    }
+}
+
 /// The agent-text display of a shaped ack value: a scalar → its bare string, a list →
 /// the inline `[a, b]` form (the on-disk authoring shape), so the terse confirmation
 /// reads naturally where the JSON ack carries the structured `value`.
