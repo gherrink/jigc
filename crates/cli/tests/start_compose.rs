@@ -1374,10 +1374,20 @@ fn form_d_implement_from_spec_mints_and_composes_the_locate_from_spec_step() {
     );
 
     // `{{@task.spec#criteria}}` resolves empty on the first compose — nothing is
-    // bound yet, so it emits no `> spec:...#criteria` content line.
+    // bound yet, so it emits no criteria CONTENT line (a `> ` blockquote sliced from a
+    // committed spec: the item's `> ### <title>  {#id}` heading + its statement). The
+    // property is asserted over the rendered slice, not over the bare `#criteria`
+    // substring: since M42 Inc 11 the step's prose names the `#criteria` **address** —
+    // the `maps-to-test` write it demands — while the slice itself stays unresolved.
     assert!(
-        !stdout.contains("#criteria"),
+        !stdout
+            .lines()
+            .any(|line| line.starts_with("> ") && line.contains("#criteria")),
         "on the first compose the spec role is unbound, so {{@task.spec#criteria}} must resolve empty; got:\n{stdout}",
+    );
+    assert!(
+        !stdout.lines().any(|line| line.starts_with("> ###")),
+        "on the first compose no criterion item may render — the spec role is unbound; got:\n{stdout}",
     );
 
     assert!(
