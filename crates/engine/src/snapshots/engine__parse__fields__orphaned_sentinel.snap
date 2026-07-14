@@ -10,7 +10,9 @@ Finding {
     message: "`<!-- fields -->` sentinel without a following bullet list",
     location: Some(
         Location {
-            address: None,
+            address: Some(
+                "context",
+            ),
             line: 11,
             col: 1,
         },

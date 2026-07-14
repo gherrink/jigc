@@ -10,7 +10,9 @@ Finding {
     message: "`#### Note` in multi-slot item prose shadows the item-slot delimiter; slot prose must not start a line with `#### ` (use `#####`+ or rephrase)",
     location: Some(
         Location {
-            address: None,
+            address: Some(
+                "milestones/m16-self-hosting",
+            ),
             line: 11,
             col: 1,
         },

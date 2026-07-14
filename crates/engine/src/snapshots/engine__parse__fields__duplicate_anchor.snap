@@ -10,7 +10,9 @@ Finding {
     message: "duplicate `{#id}` anchor `{#dup}` in repeatable section",
     location: Some(
         Location {
-            address: None,
+            address: Some(
+                "criteria/dup",
+            ),
             line: 12,
             col: 1,
         },

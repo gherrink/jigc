@@ -10,7 +10,9 @@ Finding {
     message: "malformed `{#id}` anchor `{#Bad Id}` (must be a slug `[a-z0-9-]`)",
     location: Some(
         Location {
-            address: None,
+            address: Some(
+                "criteria/Bad Id",
+            ),
             line: 9,
             col: 1,
         },

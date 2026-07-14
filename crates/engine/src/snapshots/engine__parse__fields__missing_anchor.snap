@@ -10,7 +10,9 @@ Finding {
     message: "repeatable item `A criterion with no anchor` has no `{#id}` anchor",
     location: Some(
         Location {
-            address: None,
+            address: Some(
+                "criteria",
+            ),
             line: 9,
             col: 1,
         },

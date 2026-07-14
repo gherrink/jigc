@@ -10,7 +10,9 @@ Finding {
     message: "heading at schema-reserved depth `###` in slot prose at line 11; use a deeper level or rephrase",
     location: Some(
         Location {
-            address: None,
+            address: Some(
+                "context",
+            ),
             line: 11,
             col: 1,
         },

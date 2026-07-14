@@ -1629,6 +1629,12 @@ fn owner_artifact_present(
     let Ok(doc) = parse_sections(schema, source) else {
         return Vec::new();
     };
+    // The subject is a **node inside a managed doc**, so the finding keys in URI normal form
+    // — the same `<type>:<slug>` identity [`conformance_for`] flips to, never the
+    // `<location>/<slug>.md` filesystem path (which breaks on `jigc rename` and is not the
+    // addressing grammar; `command-output-contract.md` → the target forms). This gate emits
+    // its own address, so the flip happens here rather than in [`attribute_to_doc`].
+    let identity = filename.strip_suffix(".md").unwrap_or(filename);
     let mut findings = Vec::new();
     for section in &schema.sections {
         let SectionBody::Simple { fields, .. } = &section.body else {
@@ -1655,7 +1661,7 @@ fn owner_artifact_present(
                         declared.id, section.id
                     ),
                     Some(Location::addressed(
-                        format!("{rel_key}#{}/{}", section.id, declared.id),
+                        format!("{identity}#{}/{}", section.id, declared.id),
                         1,
                         1,
                     )),
@@ -4509,8 +4515,11 @@ The audit landed green.
             assert_eq!(f.severity, Severity::Blocking, "{label}: must block");
             assert_eq!(
                 f.location.as_ref().and_then(|l| l.address.as_deref()),
-                Some("docs/completion-record:m16.md#meta/owner-artifact"),
-                "{label}: the finding addresses the owner-artifact field",
+                Some("completion-record:m16#meta/owner-artifact"),
+                "{label}: the finding addresses the owner-artifact field in **URI normal \
+                 form** — the doc-node target form, never the `<location>/<slug>.md` \
+                 filesystem path (M42 Inc 9 T5; `command-output-contract.md` → the target \
+                 forms: a node inside a managed doc takes the URI)",
             );
         }
     }
@@ -6931,6 +6940,93 @@ title: {title}
                 (loc.line, loc.col),
                 (bare_loc.line, bare_loc.col),
                 "line/col preserved verbatim for {slug}",
+            );
+        }
+    }
+
+    /// A `note` whose front matter carries **two undeclared keys** and whose required
+    /// `## Body` section is **absent** — three parse-`conformance.*` findings over one doc,
+    /// the exact input the family's degenerate key collapsed.
+    const NOTE_TWO_UNKNOWN_FIELDS: &str = "\
+---
+title: Cache it
+alpha: 1
+beta: 2
+---
+
+# Cache it
+";
+
+    /// (M42 Inc 9 T5 — the collision, at the key) **Two `conformance.unknown-field`
+    /// findings in one doc carry DISTINCT stable keys.** Before the fragment work the
+    /// family set no address below the doc, so [`attribute_to_doc`] addressed both at the
+    /// bare `note:cache-it` and a driver deserializing the findings array saw
+    /// `(conformance.unknown-field, note:cache-it)` **twice, byte-identical** — it could
+    /// neither dedupe them nor tell them apart (`command-output-contract.md` → the
+    /// parse-conformance sub-table: `unknown-field` → `#<section>/<field-key>`).
+    ///
+    /// Asserted on the **emitted** key ([`Finding::key`] — the `(code, target)` the envelope
+    /// projects), not on a reconstructed address.
+    #[test]
+    fn two_unknown_fields_in_one_doc_carry_distinct_keys() {
+        let findings = conformance_for(
+            "note:cache-it.md",
+            &schemas(),
+            "notes/cache-it.md",
+            NOTE_TWO_UNKNOWN_FIELDS,
+        );
+        let keys: Vec<crate::finding::FindingKey> = findings
+            .iter()
+            .filter(|f| f.code == "conformance.unknown-field")
+            .map(|f| f.key())
+            .collect();
+        let targets: Vec<Option<&str>> = keys.iter().map(|k| k.target.as_deref()).collect();
+        assert_eq!(
+            targets,
+            [
+                Some("note:cache-it#meta/alpha"),
+                Some("note:cache-it#meta/beta")
+            ],
+            "each unknown key keys at its own `<type>:<slug>#<section>/<field-key>`: \
+             {findings:#?}",
+        );
+        assert_ne!(keys[0], keys[1], "and the two keys are therefore distinct");
+    }
+
+    /// (M42 Inc 9 T5 — HAZARD 2, the gate regression) The fragment work must **keep the
+    /// `<type>:<slug>` identity hop** at the head of every address. The CLI's store trailer
+    /// (`crates/cli/src/render.rs` → `gates_at_task`) splits a per-doc conformance finding's
+    /// address on `#` and joins the **identity half** against the un-baselined committed
+    /// docs, to decide whether a gate exists for it: an un-baselined doc's conformance break
+    /// is graded *advisory* by the reconciler at task scope, so the trailer must not claim a
+    /// gate. Adding fragments is safe (the join splits them off); **dropping the identity
+    /// prefix would silently break the join** — every un-baselined doc's break would start
+    /// claiming a gate that never fires.
+    ///
+    /// So: every parse-`conformance.*` finding the emit path produces addresses its doc,
+    /// identity-first — fragment or no fragment.
+    #[test]
+    fn every_conformance_finding_keeps_the_doc_identity_at_the_head_of_its_address() {
+        let findings = conformance_for(
+            "note:cache-it.md",
+            &schemas(),
+            "notes/cache-it.md",
+            NOTE_TWO_UNKNOWN_FIELDS,
+        );
+        assert!(
+            findings.len() >= 3,
+            "two unknown keys + the missing `## Body` section: {findings:#?}",
+        );
+        for f in &findings {
+            let target = f
+                .key()
+                .target
+                .unwrap_or_else(|| panic!("every parse-conformance finding is keyed: {f:#?}"));
+            let identity = target.split('#').next().expect("split yields the head");
+            assert_eq!(
+                identity, "note:cache-it",
+                "the un-baselined join is on the identity half of the address — dropping the \
+                 `<type>:<slug>` hop would silently break the gate claim: {f:#?}",
             );
         }
     }

@@ -10,7 +10,9 @@ Finding {
     message: "unknown field key `nonsense`",
     location: Some(
         Location {
-            address: None,
+            address: Some(
+                "context/nonsense",
+            ),
             line: 12,
             col: 1,
         },

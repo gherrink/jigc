@@ -220,18 +220,23 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
             ));
         }
         // Read the front-matter fields from the metadata block (if present),
-        // validating each key against the header section's declared fields.
+        // validating each key against the header section's declared fields. The
+        // block's findings are collected apart so the **header section hop** can be
+        // prefixed onto each ([`prefix_hop`] — the outward assembly).
         let header = &schema.sections[idx];
         let declared = declared_field_keys(header);
+        let mut header_findings = Vec::new();
         let header_fields = match blocks.first() {
             Some(Block::Metadata { content }) => {
                 block_cursor = 1;
-                read_field_block(source, content.clone(), &declared, &mut findings)
+                read_field_block(source, content.clone(), &declared, &mut header_findings)
             }
             // Absent front-matter is a finalize/field concern, not a block-structure
             // conformance error at this layer.
             _ => Vec::new(),
         };
+        prefix_hop(&mut header_findings, &header.id);
+        findings.append(&mut header_findings);
         parsed.push(ParsedSection {
             id: header.id.clone(),
             slot: None,
@@ -267,6 +272,11 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
         .collect();
 
     for (i, section) in body_sections.iter().enumerate() {
+        // This section's findings, collected apart so the **section hop** can be prefixed
+        // onto each one on the way out ([`prefix_hop`] — the outward assembly; this loop
+        // is the only place that holds `section.id`).
+        let mut section_findings: Vec<Finding> = Vec::new();
+
         let Some(Block::Heading {
             text,
             line,
@@ -274,14 +284,13 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
             ..
         }) = headings.get(i).copied()
         else {
-            findings.push(Finding::blocking(
+            section_findings.push(Finding::blocking(
                 "conformance.section-missing",
                 format!("required section heading `## {}` is missing", section.id),
-                // `#<section>` fragment so the store-scope path→URI flip
-                // ([`crate::validate`] `attribute_to_doc`) keys each missing section
-                // distinctly (`command-output-contract.md` → section-missing → `#<section>`).
-                Location::addressed(section.id.clone(), 1, 1),
+                Location::at(1, 1),
             ));
+            prefix_hop(&mut section_findings, &section.id);
+            findings.append(&mut section_findings);
             continue;
         };
 
@@ -289,7 +298,7 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
         // trimmed) — sections match by their schema-fixed headings, not position
         // alone, so a renamed heading is a located error.
         if !heading_matches(text, &section.id) {
-            findings.push(Finding::blocking(
+            section_findings.push(Finding::blocking(
                 "conformance.section-renamed",
                 format!(
                     "section heading {text:?} does not match required section `{}`",
@@ -314,7 +323,7 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
                     region_end,
                     repeatable,
                     1,
-                    &mut findings,
+                    &mut section_findings,
                 );
                 parsed.push(ParsedSection {
                     id: section.id.clone(),
@@ -331,9 +340,12 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
                 let span = trim_span(source, *content_start, slot_end);
 
                 // Heading-depth ceiling inside the located slot span. A section slot
-                // reserves `##` (sections) + `###` (items) — `reserved_max = 3`.
+                // reserves `##` (sections) + `###` (items) — `reserved_max = 3`. The
+                // violation's subject is the section's own slot prose, so it takes no hop
+                // below the section (`command-output-contract.md` → the owning slot's
+                // address; declared non-unique, per slot).
                 for v in ceiling_violations(&blocks, span.start, span.end, 3) {
-                    findings.push(v);
+                    section_findings.push(v);
                 }
 
                 // Read a trailing field group (sentinel + following list), if any,
@@ -345,7 +357,7 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
                     *content_start,
                     region_end,
                     &declared,
-                    &mut findings,
+                    &mut section_findings,
                 );
 
                 let slot = slot.as_ref().map(|_| span);
@@ -358,12 +370,41 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
                 });
             }
         }
+
+        prefix_hop(&mut section_findings, &section.id);
+        findings.append(&mut section_findings);
     }
 
     if findings.is_empty() {
         Ok(Document { sections: parsed })
     } else {
         Err(findings)
+    }
+}
+
+/// Prefix one address `hop` onto every finding in `findings` — the outward-assembly step
+/// that gives each parse-`conformance.*` finding its **discriminating fragment**
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → the
+/// parse-conformance sub-table).
+///
+/// No parse helper receives the address it sits under, so the fragment is assembled
+/// **outward**, at the boundary that holds each hop: the innermost helper sets the
+/// leaf/item hop it holds ([`read_field_block_str`]'s field key, [`parse_item_slots`]'s
+/// slot leaf, [`parse_items`]'s item id), [`parse_sections`] prefixes the section hop (it
+/// is the only fn holding `section.id`), and [`crate::validate`]'s `attribute_to_doc`
+/// prefixes the `<type>:<slug>` doc hop. Three stages, one address, no signature churn.
+///
+/// A finding with no address yet becomes addressed at the bare `hop`; one that already
+/// carries an inner hop is extended to `<hop>/<inner>`.
+fn prefix_hop(findings: &mut [Finding], hop: &str) {
+    for finding in findings {
+        let Some(location) = finding.location.as_mut() else {
+            continue; // a parse finding is always located; nothing to hang an address on.
+        };
+        location.address = Some(match location.address.as_deref() {
+            Some(inner) => format!("{hop}/{inner}"),
+            None => hop.to_string(),
+        });
     }
 }
 
@@ -762,7 +803,12 @@ fn read_field_block_str(
                     findings.push(Finding::blocking(
                         "conformance.unknown-field",
                         unknown_field_message(&field.key, declared),
-                        Location::at(base_line, 1),
+                        // The **field-key hop** — the innermost hop this helper holds. Two
+                        // undeclared keys in one field group would otherwise carry one key
+                        // (`command-output-contract.md` → the parse-conformance sub-table:
+                        // `unknown-field` → `#<section>/<field-key>`); the outer hops are
+                        // prefixed by [`parse_items`] / [`parse_sections`].
+                        Location::addressed(field.key.clone(), base_line, 1),
                     ));
                 }
             }
@@ -838,7 +884,13 @@ fn parse_items(
             .map(|(s, _, _)| *s)
             .unwrap_or(region_end);
 
-        // The frozen `{#id}` anchor, re-scanned from the raw heading source.
+        // The frozen `{#id}` anchor, re-scanned from the raw heading source. The three
+        // anchor breaks carry **no item hop** — they are raised *before* an item identity
+        // exists — so they are pushed straight to the caller's set, where the section hop
+        // (and, under nesting, the parent item's) is prefixed. Each sets what it holds:
+        // the malformed anchor text / the duplicated id, and nothing for the missing
+        // anchor (declared non-unique — the discriminator is the thing that is missing;
+        // `command-output-contract.md` → the parse-conformance sub-table).
         let id = match extract_anchor(raw) {
             AnchorRead::Missing => {
                 findings.push(Finding::blocking(
@@ -857,7 +909,7 @@ fn parse_items(
                     format!(
                         "malformed `{{#id}}` anchor `{{#{found}}}` (must be a slug `[a-z0-9-]`)"
                     ),
-                    Location::at(head_line, 1),
+                    Location::addressed(found, head_line, 1),
                 ));
                 continue;
             }
@@ -867,11 +919,16 @@ fn parse_items(
             findings.push(Finding::blocking(
                 "conformance.item-anchor-duplicate",
                 format!("duplicate `{{#id}}` anchor `{{#{id}}}` in repeatable section"),
-                Location::at(head_line, 1),
+                Location::addressed(id.clone(), head_line, 1),
             ));
             continue;
         }
         seen.push(id.clone());
+
+        // From here the item HAS an identity, so everything its body raises — its slots,
+        // its ceiling violations, its field group, its nested items — is collected apart
+        // and carries this item's hop out ([`prefix_hop`]).
+        let mut item_findings: Vec<Finding> = Vec::new();
 
         // When the item nests a repeatable, the item's *own* leaves (slot/fields)
         // occupy only the region before the first nested sub-item heading (one level
@@ -897,14 +954,17 @@ fn parse_items(
                 body_end,
                 item_level,
                 &item_template.slot_ids,
-                findings,
+                &mut item_findings,
             );
             (None, slots)
         } else if item_template.has_slot() {
             let span = trim_span(source, *content_start, body_end);
-            for v in ceiling_violations(blocks, span.start, span.end, item_level) {
-                findings.push(v);
-            }
+            // A single-slot item's prose belongs to its one slot leaf, so a ceiling
+            // violation carries that **leaf hop** — the owning slot's address
+            // (`command-output-contract.md` → the parse-conformance sub-table).
+            let mut ceiling = ceiling_violations(blocks, span.start, span.end, item_level);
+            prefix_hop(&mut ceiling, &item_template.slot_ids[0]);
+            item_findings.append(&mut ceiling);
             (Some(span), Vec::new())
         } else {
             (None, Vec::new())
@@ -921,7 +981,7 @@ fn parse_items(
             *content_start,
             leaf_end,
             &item_template.field_keys,
-            findings,
+            &mut item_findings,
         );
 
         // Nested repeatables: each declared nested leaf parses its own items one
@@ -937,9 +997,14 @@ fn parse_items(
                 item_end,
                 nested,
                 depth + 1,
-                findings,
+                &mut item_findings,
             ));
         }
+
+        // This item's hop, prefixed onto everything its body raised (a nested item's own
+        // hop is already inside, so the address nests: `<item>/<nested>/<leaf>`).
+        prefix_hop(&mut item_findings, &id);
+        findings.append(&mut item_findings);
 
         items.push(ParsedItem {
             id,
@@ -1009,7 +1074,10 @@ fn parse_item_slots(
                     "multi-slot item is missing its `#### {}` sub-heading",
                     title_case(leaf_id)
                 ),
-                Location::at(line_of(source, from), 1),
+                // The **leaf hop** — several declared leaves can be missing from one item,
+                // so each keys at its own `(item, leaf)` (`command-output-contract.md` →
+                // the parse-conformance sub-table). [`parse_items`] prefixes the item hop.
+                Location::addressed(leaf_id.clone(), line_of(source, from), 1),
             ));
             continue;
         };
@@ -2458,6 +2526,346 @@ A short burst above the limit is tolerated for 2s.
         assert_eq!(
             rl.fields[0].value,
             Value::Scalar("`test/rate_limit_spec.rb#burst`".into())
+        );
+    }
+
+    /// The address each finding of `code` carries (the fragment the outward assembly
+    /// installed), for the fragment sub-table below. `None` when the code carries no
+    /// address at all (the bare-doc row).
+    fn fragments<'a>(findings: &'a [Finding], code: &str) -> Vec<Option<&'a str>> {
+        findings
+            .iter()
+            .filter(|f| f.code == code)
+            .map(|f| f.location.as_ref().and_then(|l| l.address.as_deref()))
+            .collect()
+    }
+
+    /// (M42 Inc 9 T5 — the collision the family was named for) **Two unknown fields in
+    /// one section carry DISTINCT fragments.** Before the outward assembly, every
+    /// `conformance.unknown-field` in a doc set **no** address, so the store-scope
+    /// `path→URI` flip addressed them all at the bare `type:slug` and a driver saw one
+    /// key for both (`command-output-contract.md` → the parse-conformance sub-table:
+    /// `unknown-field` → `#<section>/<field-key>`).
+    #[test]
+    fn two_unknown_fields_in_one_section_carry_distinct_fragments() {
+        let src = "\
+---
+status: proposed
+date: 2026-05-31
+alpha: 1
+beta: 2
+---
+
+# A decision
+
+## Context
+Forces.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+We decided.
+
+## Consequences
+Fine.
+";
+        let findings = parse_sections(&adr_schema(), src).expect_err("two unknown keys block");
+        assert_eq!(
+            fragments(&findings, "conformance.unknown-field"),
+            [Some("status/alpha"), Some("status/beta")],
+            "each unknown key keys at its own `#<section>/<field-key>`, so the two \
+             findings do not collide on one `(code, target)`: {findings:#?}",
+        );
+    }
+
+    /// (M42 Inc 9 T5) The parse-`conformance.*` sub-table, code by code
+    /// (`command-output-contract.md` → the parse-conformance sub-table). Each fixture
+    /// trips one code; the assertion is the **fragment the finding carries** — the half
+    /// of the stable key that discriminates two instances inside one doc. The doc hop
+    /// (`type:slug`) is prefixed one stage further out, by
+    /// [`crate::validate`]'s `attribute_to_doc`.
+    #[test]
+    fn conformance_findings_carry_the_pinned_fragment() {
+        // `section-missing` → `#<section>`; `section-renamed` → `#<section>`.
+        let src = "\
+---
+status: proposed
+date: 2026-05-31
+---
+
+# A decision
+
+## Contextt
+Forces.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+We decided.
+";
+        let findings = parse_sections(&adr_schema(), src).expect_err("renamed + missing block");
+        assert_eq!(
+            fragments(&findings, "conformance.section-renamed"),
+            [Some("context")],
+            "the renamed heading keys at its section: {findings:#?}",
+        );
+        assert_eq!(
+            fragments(&findings, "conformance.section-missing"),
+            [Some("consequences")],
+            "the missing section keys at its section: {findings:#?}",
+        );
+
+        // `orphaned-sentinel` → `#<section>`.
+        let src = "\
+---
+status: proposed
+date: 2026-05-31
+---
+
+# A decision
+
+## Context
+Forces.
+
+<!-- fields -->
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+We decided.
+
+## Consequences
+Fine.
+";
+        let findings = parse_sections(&adr_schema(), src).expect_err("an orphaned sentinel blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.orphaned-sentinel"),
+            [Some("context")],
+            "the orphaned sentinel keys at its section's field group: {findings:#?}",
+        );
+
+        // `malformed-field-block` → `#<section>`.
+        let src = "\
+---
+status: proposed
+date: 2026-05-31
+---
+
+# A decision
+
+## Context
+Forces.
+
+<!-- fields -->
+- no separator here
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+We decided.
+
+## Consequences
+Fine.
+";
+        let findings = parse_sections(&adr_schema(), src).expect_err("a malformed block blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.malformed-field-block"),
+            [Some("context")],
+            "the malformed field block keys at its section: {findings:#?}",
+        );
+
+        // `slot-setext-heading` / `slot-heading-depth` in a **section** slot → the
+        // owning slot's address, `#<section>` (declared non-unique, per slot).
+        let src = "\
+---
+status: proposed
+date: 2026-05-31
+---
+
+# A decision
+
+## Context
+Setext
+======
+
+### Too shallow
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+We decided.
+
+## Consequences
+Fine.
+";
+        let findings = parse_sections(&adr_schema(), src).expect_err("slot headings block");
+        assert_eq!(
+            fragments(&findings, "conformance.slot-setext-heading"),
+            [Some("context")],
+            "a section slot's setext heading keys at the owning slot: {findings:#?}",
+        );
+        assert_eq!(
+            fragments(&findings, "conformance.slot-heading-depth"),
+            [Some("context")],
+            "a section slot's reserved-depth heading keys at the owning slot: {findings:#?}",
+        );
+
+        // `item-anchor-missing` → `#<section>` (declared non-unique: the item has no
+        // identity — that IS the finding).
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### A criterion with no anchor
+Body.
+";
+        let findings = parse_sections(&spec_schema(), src).expect_err("a missing anchor blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.item-anchor-missing"),
+            [Some("criteria")],
+            "an anchor-less item keys at its section — the discriminator is the thing \
+             that is missing: {findings:#?}",
+        );
+
+        // `item-anchor-malformed` → `#<section>/<found>` (the malformed anchor text).
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### A criterion  {#Bad Id}
+Body.
+";
+        let findings = parse_sections(&spec_schema(), src).expect_err("a malformed anchor blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.item-anchor-malformed"),
+            [Some("criteria/Bad Id")],
+            "the malformed anchor keys at the text it found: {findings:#?}",
+        );
+
+        // `item-anchor-duplicate` → `#<section>/<id>` (the duplicated id).
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### First  {#dup}
+Body one.
+
+### Second  {#dup}
+Body two.
+";
+        let findings = parse_sections(&spec_schema(), src).expect_err("a duplicate anchor blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.item-anchor-duplicate"),
+            [Some("criteria/dup")],
+            "the duplicate keys at the duplicated id — one duplicated id is one defect: \
+             {findings:#?}",
+        );
+
+        // A **single-slot item**'s slot prose: the ceiling violation keys at the owning
+        // slot, `#<section>/<item>/<leaf>`.
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+
+Setext
+======
+";
+        let findings =
+            parse_sections(&spec_schema(), src).expect_err("a setext heading in item prose blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.slot-setext-heading"),
+            [Some("criteria/rate-limit/statement")],
+            "an item slot's setext heading keys at the owning slot — item hop from \
+             `parse_items`, leaf hop from the item's slot leaf: {findings:#?}",
+        );
+
+        // `item-slot-label-missing` → `#<section>/<item>/<leaf>`;
+        // `item-slot-delimiter-shadowed` → `#<section>/<item>` (declared non-unique).
+        let src = "\
+# Roadmap
+
+## Milestones
+
+### M16 self-hosting  {#m16-self-hosting}
+
+#### Proves
+
+Closes the self-hosting loop.
+
+#### Note
+
+This stray heading is prose, not a slot delimiter.
+";
+        let findings =
+            parse_sections(&two_slot_schema(), src).expect_err("a shadowed delimiter blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.item-slot-label-missing"),
+            [Some("milestones/m16-self-hosting/decomposition")],
+            "the missing slot sub-heading keys at its `(item, leaf)`: {findings:#?}",
+        );
+        assert_eq!(
+            fragments(&findings, "conformance.item-slot-delimiter-shadowed"),
+            [Some("milestones/m16-self-hosting")],
+            "the shadowing prose keys at the item that owns it: {findings:#?}",
+        );
+    }
+
+    /// (M42 Inc 9 T5) `conformance.header-not-first` is the sub-table's one **bare-doc**
+    /// row: the subject is the doc's section order, one per doc by construction, so it
+    /// carries **no fragment** and keys at the bare `type:slug`.
+    #[test]
+    fn header_not_first_carries_no_fragment() {
+        let yaml = b"\
+type: odd
+id-from: title
+sections:
+  - id: body
+    slot: { hint: \"x\" }
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+";
+        let schema = crate::schema::load_schema(yaml).expect("a header-second schema loads");
+        let src = "\
+# Odd
+
+## Body
+Prose.
+";
+        let findings = parse_sections(&schema, src).expect_err("a header-second schema blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.header-not-first"),
+            [None],
+            "the whole doc's section order is the subject — one per doc, no discriminator \
+             needed: {findings:#?}",
         );
     }
 }
