@@ -3,5 +3,9 @@ fails for the right reason — the assertion you care about, not an incidental
 compile error standing in for it. Only then write the minimal implementation
 that makes it pass. Refactor while green, touching only what this task needs.
 
+`git add` your code edits as you work — test and implementation both. finalize
+commits only what you have staged, so anything you leave unstaged is silently
+left out of the commit.
+
 This ordering is yours to police: nothing here enforces that the test was
 observed failing before the implementation. Hold the discipline yourself.

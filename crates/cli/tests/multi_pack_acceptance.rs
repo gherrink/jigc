@@ -471,6 +471,10 @@ fails for the right reason — the assertion you care about, not an incidental
 compile error standing in for it. Only then write the minimal implementation
 that makes it pass. Refactor while green, touching only what this task needs.
 
+`git add` your code edits as you work — test and implementation both. finalize
+commits only what you have staged, so anything you leave unstaged is silently
+left out of the commit.
+
 This ordering is yours to police: nothing here enforces that the test was
 observed failing before the implementation. Hold the discipline yourself.
 
@@ -480,8 +484,13 @@ you finalize. Use whatever the project's configured gate is; do not assume a
 particular toolchain. A green gate is what separates a finished change from one
 that merely compiles in your head.
 
-Land the change as exactly one logical commit. finalize renders the commit; it
-does not fill it, so set the commit header and prose first.
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first.
 
 Set the Conventional-Commits type:
 
@@ -491,11 +500,11 @@ Set the scope — the area this change touches:
 
 Run: `jigc doc set-field commit:add-rate-limiter#scope --value <SCOPE> --task add-rate-limiter`
 
-Stage the subject line:
+Set the subject line:
 
 Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
 
-Stage the body — why this change:
+Set the body — why this change:
 
 Run: `jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter`
 
