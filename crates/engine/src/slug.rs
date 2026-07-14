@@ -12,7 +12,8 @@
 //! knows the type name and the set of already-minted siblings. Here, an input
 //! that normalizes away entirely yields `""`.
 //!
-//! The rule, in order:
+//! The rule, in order — steps 1–5 are [`renormalize`] (the **recognition** rule,
+//! and the one separator map), which [`slugify`] (the **mint** rule) composes over:
 //! 1. lowercase (ASCII case-fold),
 //! 2. transliterate the common Latin accented letters to ASCII (`café`→`cafe`),
 //! 3. map spaces and `_` to `-`,
@@ -117,15 +118,29 @@ pub fn is_slug(s: &str) -> bool {
         && !s.contains("--")
 }
 
-/// Normalize an id-source into a frozen content-slug.
+/// **Renormalize** text to slug shape — steps 1–5 only: case-fold, transliterate,
+/// separator-map, strip, collapse. The **one** separator map: [`slugify`] composes
+/// over it, and every *recognition* site calls it directly.
 ///
-/// See the [module docs](self) for the full rule. Pure and total: every input
-/// maps to a valid slug (`^[a-z0-9-]*$`); an input with no slug-able content
-/// maps to `""` (the caller supplies the type-name fallback).
-pub fn slugify(id_source: &str) -> String {
+/// This is the **recognition** rule, and it is the true inverse of the writer's
+/// heading rendering (which splits a frozen id on `-`, capitalizes each word, and
+/// joins with a space): `renormalize` lowercases and maps the space back, with no
+/// cap and no stopword drop in between — so `renormalize(heading_text(id)) == id`
+/// holds **by construction** for every well-formed slug ([`is_slug`]).
+///
+/// [`slugify`] must **never** be used to recognize an existing id. It is the *mint*
+/// rule, and since the M41 F5 edge-stopword drop it is **not** a fixed point of
+/// every valid slug: a frozen section id like `in-scope` renders `## In Scope`,
+/// which `slugify` maps to `scope` — under a `slugify`-based compare that section
+/// reads as *renamed* and aborts the whole-doc parse. The four production
+/// recognition sites are `parse::heading_matches`, `write::present_body_sections`,
+/// `validate::surplus_sections_absent`'s positional compare, and the CLI's
+/// `migrate_corpus::has_section_heading` (`design/storage.md` → Identity → *The slug
+/// rule is itself a versioned rule*).
+pub fn renormalize(text: &str) -> String {
     // 1–4: case-fold, transliterate, separator-map, strip.
-    let mut out = String::with_capacity(id_source.len());
-    for ch in id_source.chars() {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
         match ch {
             ' ' | '_' => out.push('-'),
             'a'..='z' | '0'..='9' | '-' => out.push(ch),
@@ -140,7 +155,21 @@ pub fn slugify(id_source: &str) -> String {
     }
 
     // 5: collapse runs of '-' and trim.
-    let collapsed = collapse_dashes(&out);
+    collapse_dashes(&out)
+}
+
+/// Normalize an id-source into a frozen content-slug — the **mint** rule.
+///
+/// See the [module docs](self) for the full rule: [`renormalize`] (steps 1–5) plus
+/// the mint-time caps and the edge-stopword drop. Pure and total: every input maps
+/// to a valid slug (`^[a-z0-9-]*$`); an input with no slug-able content maps to `""`
+/// (the caller supplies the type-name fallback).
+///
+/// Mint only. To *recognize* an id already minted (a heading read back off disk, an
+/// authored anchor), use [`renormalize`] / [`is_slug`] — never `slugify`.
+pub fn slugify(id_source: &str) -> String {
+    // 1–5: the one separator map.
+    let collapsed = renormalize(id_source);
 
     // 6–7: cap at the first MAX_WORDS words (always a '-' boundary).
     let capped = cap_words(&collapsed);
@@ -737,32 +766,16 @@ mod tests {
             out.split('-').count()
         );
         assert!(!out.ends_with('-'), "trailing dash: {out:?}");
-        // The cut must land on a word boundary: the truncated slug is a
-        // dash-joined prefix of the full (uncapped) word sequence.
-        let full = slugify_uncapped(input);
+        // The cut must land on a word boundary: the truncated slug is a dash-joined
+        // prefix of the full (uncapped) word sequence. The oracle is the **production**
+        // `renormalize` — steps 1–5, the uncapped slug — never a hand-copied shadow of
+        // the separator map (which drifts silently on a rule change, and was this
+        // test's oracle until M42 inc 10 killed it *by use*).
+        let full = renormalize(input);
         assert!(
             full.starts_with(&out) && full.as_bytes().get(out.len()) == Some(&b'-'),
             "cut not at a '-' boundary: out={out:?} full={full:?}"
         );
-    }
-
-    /// The full slug with the length cap *not* applied — for asserting the cap
-    /// cuts on a real boundary. Mirrors steps 1–5 of [`slugify`].
-    fn slugify_uncapped(s: &str) -> String {
-        let mut out = String::new();
-        for ch in s.chars() {
-            match ch {
-                ' ' | '_' => out.push('-'),
-                'a'..='z' | '0'..='9' | '-' => out.push(ch),
-                'A'..='Z' => out.push(ch.to_ascii_lowercase()),
-                _ => {
-                    if let Some(f) = transliterate(ch) {
-                        out.push_str(f);
-                    }
-                }
-            }
-        }
-        collapse_dashes(&out)
     }
 
     /// Regression (M41 Inc8 F5 reconciliation): the char backstop (step 8) can

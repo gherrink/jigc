@@ -1871,13 +1871,17 @@ pub fn surplus_sections_absent(schema: &Schema, source: &str) -> Vec<Finding> {
     if h2s.len() <= body_ids.len() {
         return Vec::new(); // no surplus (a missing section is section-missing's territory).
     }
-    // Trailing only: when any of the first N H2s does not slug-match its positional
-    // section id, the surplus sits BETWEEN required sections and the parse trips
-    // `conformance.section-renamed` — this check must not double-fire.
+    // Trailing only: when any of the first N H2s does not match its positional section
+    // id, the surplus sits BETWEEN required sections and the parse trips
+    // `conformance.section-renamed` — this check must not double-fire. The compare is
+    // the *recognition* rule (`slug::renormalize`, the same inverse `parse::heading_matches`
+    // uses), never the *mint* rule: `slugify` caps and drops edge stopwords, so it would
+    // read a conformant `## In Scope` as a mismatch and silently drop this advisory for
+    // every doc of that doctype.
     if body_ids
         .iter()
         .zip(&h2s)
-        .any(|(id, (text, _))| crate::slug::slugify(text) != **id)
+        .any(|(id, (text, _))| crate::slug::renormalize(text) != **id)
     {
         return Vec::new();
     }
@@ -3686,6 +3690,47 @@ Old notes.
         assert_eq!(
             location.line, 12,
             "located at the first surplus heading (`## Legacy Planning Notes`)",
+        );
+    }
+
+    /// M42 inc 10, the validate-site arm: the positional heading compare that
+    /// decides whether the surplus is *trailing* recognizes a heading by
+    /// **renormalizing** it, never by re-running the *mint* rule. Under a
+    /// `slugify`-based compare, a schema whose first body section id carries a
+    /// leading edge stopword (`in-scope` → `## In Scope` → `slugify` yields
+    /// `scope`) reads as a positional mismatch, so the check returns empty and the
+    /// trailing-surplus advisory is **silently lost** on every doc of that doctype.
+    #[test]
+    fn edge_stopword_section_id_still_reports_trailing_surplus() {
+        const BRIEF_YAML: &[u8] = b"\
+type: brief
+location: briefs/
+id-from: title
+sections:
+  - id: in-scope
+    slot: { hint: What this covers. }
+";
+        let schema = load_schema(BRIEF_YAML).expect("brief schema loads");
+        let src = "\
+# Brief
+
+## In Scope
+The read path only.
+
+## Legacy Planning Notes
+Old notes the positional parse never visits.
+";
+        let findings = surplus_sections_absent(&schema, src);
+        assert_eq!(
+            findings.len(),
+            1,
+            "the trailing surplus must still be reported over an edge-stopword \
+             section id; got {findings:?}",
+        );
+        assert!(
+            findings[0].message.contains("1 trailing surplus"),
+            "the surplus count is in the message: {}",
+            findings[0].message,
         );
     }
 

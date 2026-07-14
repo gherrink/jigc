@@ -850,13 +850,16 @@ fn authored_remap(ty: &str, section: &str, field: &str) -> Option<BTreeMap<Strin
 }
 
 /// Whether `source` carries a body section heading (`## …`) matching `section_id` under the
-/// engine's heading↔id rule (`slugify(heading) == id`) — the same inverse the parser uses,
-/// so a multi-word id round-trips. Used to decide whether a prose-needing slot is already
+/// engine's heading↔id **recognition** rule (`slug::renormalize(heading) == id`) — the same
+/// inverse the parser uses, so a multi-word id round-trips. Never the *mint* rule
+/// (`slugify`, which caps and drops edge stopwords): this is the migration engine's own
+/// idempotency guard, and reading an authored `## In Scope` as absent would route a doc back
+/// for prose it already carries. Used to decide whether a prose-needing slot is already
 /// authored (independent of a full parse, which a still-incomplete doc fails).
 fn has_section_heading(source: &str, section_id: &str) -> bool {
     source.lines().any(|line| {
         line.strip_prefix("## ")
-            .is_some_and(|text| engine::slug::slugify(text.trim()) == section_id)
+            .is_some_and(|text| engine::slug::renormalize(text.trim()) == section_id)
     })
 }
 
@@ -1274,6 +1277,35 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// M42 inc 10, the migration engine's own arm: [`has_section_heading`] — the guard that
+    /// decides whether a prose-needing slot is **already authored** (the idempotency guard of
+    /// the tool that would have to repair a slug-rule change) — recognizes a heading by
+    /// **renormalizing** it, never by re-running the *mint* rule. Under a `slugify`-based
+    /// compare a section id carrying a leading edge stopword (`in-scope` → `## In Scope` →
+    /// `slugify` yields `scope`) reads as **absent** even when authored, so a re-run would
+    /// route the doc back for authoring it already has.
+    #[test]
+    fn has_section_heading_recognizes_an_edge_stopword_section_id() {
+        let source = "\
+# Brief
+
+## In Scope
+The read path only.
+";
+        assert!(
+            has_section_heading(source, "in-scope"),
+            "an authored `## In Scope` must be seen as the `in-scope` section",
+        );
+        // Multi-word (no stopword) and single-word ids keep working; a genuinely absent
+        // section still reads absent.
+        assert!(has_section_heading(
+            "## Unreleased Changes\n",
+            "unreleased-changes"
+        ));
+        assert!(has_section_heading("## Context\n", "context"));
+        assert!(!has_section_heading("## Context\n", "decision"));
     }
 
     /// Load a schema, then inject the engine schema-version stamp — the CLI pack-loader's

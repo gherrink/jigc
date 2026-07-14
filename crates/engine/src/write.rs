@@ -346,7 +346,11 @@ fn section_content<'a>(instance: &'a Instance, id: &str) -> Option<&'a SectionCo
 /// matches headings case-insensitively, so we render a Title-Cased heading
 /// (`Context`, `Body`) and the round-trip still parses. A hyphenated id Title-Cases
 /// each word.
-fn heading_text(id: &str) -> String {
+///
+/// Crate-visible so the *recognition* side ([`crate::parse`]'s `heading_matches`,
+/// which renormalizes a heading back to its id) can be fenced against the rendering
+/// rule it inverts, over the real shipped section-id population.
+pub(crate) fn heading_text(id: &str) -> String {
     id.split('-')
         .map(|word| {
             let mut chars = word.chars();
@@ -3258,9 +3262,11 @@ fn render_generated_section(section: &Section, slot: Option<&str>, fields: &[Fie
 }
 
 /// The present body sections, as `(schema id, heading start offset)` pairs in source
-/// order. A present heading is an `## H2` whose text matches a schema **body** section
-/// id (case-insensitive). Built without requiring a clean conformant parse — the
-/// target section is, by construction, absent.
+/// order. A present heading is an `## H2` whose text **renormalizes** to a schema
+/// **body** section id ([`crate::slug::renormalize`] — the recognition rule, never the
+/// mint rule: `slugify` caps and drops edge stopwords, so it would read a present
+/// `## In Scope` as absent and duplicate the `in-scope` section). Built without
+/// requiring a clean conformant parse — the target section is, by construction, absent.
 fn present_body_sections(schema: &Schema, source: &str) -> Vec<(String, usize)> {
     let body_ids: Vec<&str> = schema
         .sections
@@ -3278,7 +3284,7 @@ fn present_body_sections(schema: &Schema, source: &str) -> Vec<(String, usize)> 
         } = &block
             && let Some(id) = body_ids
                 .iter()
-                .find(|id| crate::slug::slugify(text) == **id)
+                .find(|id| crate::slug::renormalize(text) == **id)
         {
             present.push((id.to_string(), range.start));
         }
@@ -4496,6 +4502,51 @@ sections:
             render(&schema, &reparsed),
             out,
             "add_item under a multi-word section is byte-stable",
+        );
+    }
+
+    /// M42 inc 10, the splice path's arm of the same rule: `add-item` into a present
+    /// section whose id carries a **leading edge stopword** (`## In Scope`, id
+    /// `in-scope`) appends under the existing heading rather than generating a
+    /// duplicate home. `present_body_sections` recognizes a heading by
+    /// **renormalizing** it (`slug::renormalize`), never by re-running the *mint*
+    /// rule — `slugify("In Scope") == "scope"`, so a `slugify`-based compare reports
+    /// the section absent and duplicates it.
+    #[test]
+    fn add_item_into_present_edge_stopword_section_does_not_duplicate_the_heading() {
+        let yaml = b"\
+type: brief
+id-from: title
+sections:
+  - id: in-scope
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: note, slot: {} }
+";
+        let schema = crate::schema::load_schema(yaml).expect("schema loads");
+        let src = "\
+# Brief
+
+## In Scope
+";
+        let out = add_item(&schema, src, "in-scope", "Read path", None, &[])
+            .expect("item appends under the present edge-stopword section");
+        assert_eq!(
+            out.matches("## In Scope").count(),
+            1,
+            "the edge-stopword section heading must NOT be duplicated; got:\n{out}",
+        );
+        assert!(
+            out.contains("### Read path  {#read-path}"),
+            "the item is appended under the existing section; got:\n{out}",
+        );
+        let reparsed = instance_from_source(&schema, &out).expect("result re-parses");
+        assert_eq!(
+            render(&schema, &reparsed),
+            out,
+            "add_item under an edge-stopword section is byte-stable",
         );
     }
 

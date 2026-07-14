@@ -417,13 +417,18 @@ fn is_header_section(section: &crate::schema::Section) -> bool {
 ///
 /// The section id is a frozen slug; the writer renders it as a Title-Cased heading
 /// (hyphen-split words joined by a space — [`crate::write`] `heading_text`). The
-/// match is the **true inverse**: re-slug the heading text and compare to the
-/// (already-slugged) id, so a multi-word id like `unreleased-changes` ↔ heading
-/// `Unreleased Changes` round-trips. For a single-word id (`context`) this reduces
-/// to the prior lowercased compare (`slugify("Context") == "context"`), and an
+/// match is the **true inverse**: [`crate::slug::renormalize`] the heading text (the
+/// separator map alone) and compare to the (already-slugged) id, so a multi-word id
+/// like `unreleased-changes` ↔ heading `Unreleased Changes` round-trips. For a
+/// single-word id (`context`) this reduces to a lowercased compare, and an
 /// out-of-band upper-case heading (`## CONTEXT`) stays tolerated.
+///
+/// **Recognition, never the mint rule** (M42 inc 10): `slugify` also caps and drops
+/// edge stopwords, so it is not the inverse of `heading_text` — a frozen id like
+/// `in-scope` renders `## In Scope`, which `slugify` maps to `scope`, and this
+/// compare would report the section *renamed* and abort the whole-doc parse.
 fn heading_matches(text: &str, section_id: &str) -> bool {
-    crate::slug::slugify(text) == section_id
+    crate::slug::renormalize(text) == section_id
 }
 
 /// A coarse block: the structural events the schema mapping cares about, each with
@@ -1352,6 +1357,7 @@ fn ceiling_violations(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
@@ -1683,6 +1689,152 @@ Each service drops its local limiter.
             .filter(|id| *id != "status")
             .collect();
         assert_eq!(body_ids, ["context", "options", "decision", "consequences"]);
+    }
+
+    /// A throwaway single-slot doctype whose one body section id carries a
+    /// **leading edge stopword** (`in-scope`) — the shape the *mint* rule
+    /// mangles. Loaded through the real YAML path so the test drives the
+    /// production parser, not a hand-built `Schema`.
+    fn edge_stopword_section_schema() -> Schema {
+        let yaml = b"\
+type: brief
+location: notes/
+id-from: title
+sections:
+  - id: title
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: in-scope
+    slot: { hint: \"What this brief covers.\" }
+";
+        crate::schema::load_schema(yaml).expect("edge-stopword schema loads")
+    }
+
+    /// M42 inc 10: a **frozen section id** is recognized by *renormalizing* its
+    /// rendered heading — never by re-running the **mint** rule over it.
+    ///
+    /// The mint rule drops a leading edge stopword (M41 F5), so re-slugging the
+    /// heading of a section id like `in-scope` does **not** recover the id:
+    /// `in-scope` renders `## In Scope`, which `slugify` maps to `scope` — and a
+    /// heading↔id compare built on `slugify` therefore reports the section
+    /// *renamed* and aborts the whole-doc parse (blocking
+    /// `conformance.section-renamed`). Latent today only because no shipped id
+    /// trips it — luck, not a fence. Recognition uses `slug::renormalize` (the
+    /// separator map, no cap, no stopword drop), which is the true inverse of the
+    /// writer's `heading_text`.
+    #[test]
+    fn edge_stopword_section_id_round_trips() {
+        let src = "\
+---
+title: Cache rewrite
+---
+
+# Cache rewrite
+
+## In Scope
+
+The read path only.
+";
+        let schema = edge_stopword_section_schema();
+        let doc = parse_sections(&schema, src)
+            .expect("an edge-stopword section id parses clean (no `conformance.section-renamed`)");
+        assert!(
+            doc.sections.iter().any(|s| s.id == "in-scope"),
+            "the edge-stopword section mapped: {:?}",
+            doc.sections.iter().map(|s| &s.id).collect::<Vec<_>>()
+        );
+
+        let instance = crate::write::instance_from_source(&schema, src)
+            .expect("conformant doc reads to an instance");
+        assert_eq!(
+            crate::write::render(&schema, &instance),
+            src,
+            "an edge-stopword section id round-trips byte-stable"
+        );
+
+        // The hazard the parse above would otherwise hit, pinned at the unit: the
+        // *mint* rule is not the inverse of `heading_text` — the *recognition* rule is.
+        assert_eq!(
+            crate::slug::slugify("In Scope"),
+            "scope",
+            "the mint rule drops the leading edge stopword — it cannot recognize `in-scope`"
+        );
+        assert!(
+            heading_matches("In Scope", "in-scope"),
+            "the rendered heading of a frozen `in-scope` section must match its id"
+        );
+    }
+
+    /// The **real population**, not a sample: every section id shipped by **both**
+    /// packs (the dev pack + the methodology pack) must be recognized from its own
+    /// rendered heading — `heading_matches(heading_text(id), id)`, the writer's
+    /// rule composed with the parser's. Read off the shipped schema YAML on disk,
+    /// so a *new* doctype (or a renamed section) joins the population automatically
+    /// rather than waiting for someone to remember this list.
+    #[test]
+    fn every_shipped_section_id_is_recognized_from_its_rendered_heading() {
+        let engine_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let pack_dirs = [
+            engine_dir.join("../cli/pack/schemas"),
+            engine_dir.join("../../packs/methodology/schemas"),
+        ];
+
+        let mut checked = 0usize;
+        for dir in &pack_dirs {
+            let entries = std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {dir:?}: {e}"));
+            let mut saw_schema = false;
+            for entry in entries {
+                let path = entry.expect("dir entry").path();
+                if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+                    continue;
+                }
+                saw_schema = true;
+                let bytes = std::fs::read(&path).expect("read schema");
+                let schema = crate::schema::load_schema_with_types(
+                    &bytes,
+                    &crate::schema::dev_pack_field_types(),
+                )
+                .unwrap_or_else(|e| panic!("{path:?} loads: {e:?}"));
+                for section in &schema.sections {
+                    let heading = crate::write::heading_text(&section.id);
+                    assert!(
+                        heading_matches(&heading, &section.id),
+                        "{path:?}: section `{}` renders `## {heading}`, which the parser \
+                         does not recognize as `{}` — the doc would abort with \
+                         `conformance.section-renamed`",
+                        section.id,
+                        section.id,
+                    );
+                    checked += 1;
+                }
+            }
+            assert!(saw_schema, "no schema YAML found under {dir:?}");
+        }
+        assert!(
+            checked >= 29,
+            "the shipped section-id population shrank to {checked} — did a pack move?"
+        );
+    }
+
+    proptest! {
+        /// The recognition round-trip holds **by construction** for every
+        /// well-formed slug (`is_slug`): `heading_text` splits on `-`, capitalizes,
+        /// and joins with a space; the recognizer lowercases and maps the space
+        /// back — no cap, no stopword drop, nothing lossy in between. (The
+        /// exhaustive fence over the *shipped* ids is the arm above; this ranges
+        /// over the ids a pack could ship.)
+        #[test]
+        fn recognition_round_trips_every_well_formed_slug(
+            id in "[a-z0-9]{1,9}(-[a-z0-9]{1,9}){0,5}"
+        ) {
+            prop_assert!(crate::slug::is_slug(&id), "generator produced a non-slug: {:?}", id);
+            let heading = crate::write::heading_text(&id);
+            prop_assert!(
+                heading_matches(&heading, &id),
+                "`## {}` is not recognized as `{}`", heading, id
+            );
+        }
     }
 }
 
