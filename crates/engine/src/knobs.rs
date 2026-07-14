@@ -273,6 +273,13 @@ mod tests {
             // invocation-log — the opt-in in-repo invocation log (M36), bool,
             // default false (OFF); tunable, no floor.
             ("invocation-log", "false"),
+            // changelog-recording (1, tunable; M42 — the granted-and-unused changelog
+            // gate: advisory by default, promotable to `blocking` with one cascade
+            // line, validation.md → The changelog-gate advisory).
+            (
+                "validation.changelog-recording.gate-granted-unused.severity",
+                "advisory",
+            ),
             // commit-rendering (2, advisory-by-default convention checks).
             (
                 "validation.commit-rendering.line-limit-body.severity",
@@ -609,8 +616,8 @@ mod tests {
 
     /// The shipped per-check severity surface reconciles to the
     /// [`design/validation.md`] Severity inventory (the single source of truth):
-    /// **32 per-check `validation.<probe>.<check>.severity` keys — 19 intrinsic
-    /// (floored at `blocking`) + 13 tunable (no floor)** (`validation.md` → Severity
+    /// **33 per-check `validation.<probe>.<check>.severity` keys — 19 intrinsic
+    /// (floored at `blocking`) + 14 tunable (no floor)** (`validation.md` → Severity
     /// inventory). The M15 `checkpoint-marker-not-shadowed` row joined the intrinsic
     /// set (16 → 17); the M16 `owner-artifact.present` #5 gate joins it next (17 → 18);
     /// the M42 `schema-conformance.schema-version-current` row completes it (18 → 19 —
@@ -625,14 +632,18 @@ mod tests {
     /// row follows (11 → 12 — the hollow-adoption advisory; its sibling `….exempt`
     /// **string** knob is not a severity key and stays outside this count); its M40
     /// sibling `schema-conformance.surplus-sections-absent` completes the wave
-    /// (12 → 13 — the trailing-surplus advisory). The 19
+    /// (12 → 13 — the trailing-surplus advisory); the M42
+    /// `changelog-recording.gate-granted-unused` row closes it (13 → 14 — the
+    /// granted-and-unused changelog gate: advisory by default, keyed precisely so a
+    /// project that means it promotes the skip to `blocking` with one cascade line,
+    /// `validation.md` → The changelog-gate advisory). The 19
     /// intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is every
     /// other per-check key, including the three `doc-code.*` rows. Counted over the
     /// *embedded* bytes, so the count is the shipped surface — not a synthetic one.
     ///
     /// [`design/validation.md`]: ../../../design/validation.md
     #[test]
-    fn per_check_severity_surface_reconciles_to_the_32_19_13_inventory() {
+    fn per_check_severity_surface_reconciles_to_the_33_19_14_inventory() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
 
         // The per-check keys are the inventory rows: keyed by check, never by
@@ -647,8 +658,8 @@ mod tests {
             .collect();
         assert_eq!(
             per_check.len(),
-            32,
-            "the inventory totals 32 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
+            33,
+            "the inventory totals 33 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
         );
 
         // 19 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
@@ -659,12 +670,12 @@ mod tests {
         assert_eq!(intrinsic, 19, "19 intrinsic checks (floored at blocking)");
         assert_eq!(INTRINSIC_CHECK_KEYS.len(), 19);
 
-        // The remaining 13 are tunable (no floor) — 32 - 19.
+        // The remaining 14 are tunable (no floor) — 33 - 19.
         let tunable = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).is_none())
             .count();
-        assert_eq!(tunable, 13, "13 tunable checks (unfloored)");
+        assert_eq!(tunable, 14, "14 tunable checks (unfloored)");
     }
 
     /// (M42 Increment 4 / T1) The version-currency break joins the **keyed** severity

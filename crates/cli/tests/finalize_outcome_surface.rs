@@ -297,6 +297,12 @@ fn seed_in_sync(repo: &Path, task: &str) {
 /// The clean scenario: a commit-only task whose preflight report is **empty**.
 /// Asserts the finalize lands and returns its stdout — which must carry the
 /// positive no-findings signal.
+///
+/// Minted on **`quick-fix`** — the commit-only workflow (`allows-create: []`). Since
+/// M42 a `single-task` finalize that records no changelog entry carries the
+/// `changelog-recording.gate-granted-unused` advisory by design (`design/validation.md`
+/// → The changelog-gate advisory), so a gate-granting workflow is no longer the *empty*
+/// report this scenario is about.
 fn landed_clean_finalize(format: Option<&str>) -> String {
     let repo = TempDir::new("clean");
     let home = TempDir::new("home");
@@ -306,7 +312,7 @@ fn landed_clean_finalize(format: Option<&str>) -> String {
     let out = jigc(
         repo.path(),
         home.path(),
-        &["start", "--workflow", "single-task", "add rate limiter"],
+        &["start", "--workflow", "quick-fix", "add rate limiter"],
     );
     assert_ok(&out, "`jigc start` (clean task)");
     // A staged code change (M30 G5) so the per-task narrowing has something to commit —
@@ -805,6 +811,11 @@ fn landed_finalize_advisories_carry_a_route() {
 /// one distinct code file (the agent's authored change) so its commit is never
 /// empty — a second commit-only task in the same repo would otherwise have nothing
 /// for git to commit.
+///
+/// Minted on **`quick-fix`** — literally the commit-only workflow (`allows-create: []`),
+/// so the report stays empty: since M42 a *gate-granting* workflow that records no
+/// changelog entry carries the `changelog-recording.gate-granted-unused` advisory by
+/// design (`design/validation.md` → The changelog-gate advisory).
 fn land_commit_only(
     repo: &Path,
     home: &Path,
@@ -812,7 +823,7 @@ fn land_commit_only(
     intent: &str,
     format: Option<&str>,
 ) -> std::process::Output {
-    let out = jigc(repo, home, &["start", "--workflow", "single-task", intent]);
+    let out = jigc(repo, home, &["start", "--workflow", "quick-fix", intent]);
     assert_ok(&out, &format!("`jigc start` ({task})"));
     fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
     git(repo, &["add", &format!("{task}.txt")]); // M30 G5 — the agent stages its own edit.

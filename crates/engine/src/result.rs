@@ -241,6 +241,7 @@ const CHECK_INVENTORY: &[(&str, &str)] = &[
     ("doc-code", "criterion-maps-to-test"),
     ("doc-code", "title-names-symbol"),
     ("owner-artifact", "present"),
+    ("changelog-recording", "gate-granted-unused"),
 ];
 
 /// Whether a `(probe, check)` is a keyed inventory row — the membership test that
@@ -1172,11 +1173,11 @@ mod tests {
 
     /// Golden lock on the post-pass **membership** count. `CHECK_INVENTORY` is the
     /// `(probe, check)` set the M6 severity post-pass re-grades — a deliberate
-    /// **subset** of the **32** keyed `validation.<probe>.<check>.severity` checks
-    /// (`validation.md` → MVP check inventory, the single source of truth; the 32 is
+    /// **subset** of the **33** keyed `validation.<probe>.<check>.severity` checks
+    /// (`validation.md` → MVP check inventory, the single source of truth; the 33 is
     /// itself pinned over the embedded `knobs.yaml` by
-    /// `knobs::tests::per_check_severity_surface_reconciles_to_the_32_19_13_inventory`).
-    /// It carries **29** rows = the 32 keyed checks **minus the 3 compose-time marker
+    /// `knobs::tests::per_check_severity_surface_reconciles_to_the_33_19_14_inventory`).
+    /// It carries **30** rows = the 33 keyed checks **minus the 3 compose-time marker
     /// checks** deliberately excluded from the post-pass (`spawn-marker-not-shadowed`,
     /// `checkpoint-marker-not-shadowed`, `fan-out-join-paired`) — the divergence the
     /// sibling `owner_artifact_present_is_a_check_inventory_row` test names
@@ -1192,16 +1193,20 @@ mod tests {
     /// scan) follows the same precedent (27 → 28); the M42
     /// `schema-conformance.schema-version-current` row is a store-scope conformance
     /// check under the same precedent (28 → 29 — the sibling
-    /// `schema_version_current_is_a_check_inventory_row` names it). By severity that is
-    /// 16 intrinsic (19 keyed intrinsic − the 3 excluded) + 13 tunable. Pinning the
+    /// `schema_version_current_is_a_check_inventory_row` names it); the M42
+    /// `changelog-recording.gate-granted-unused` row is a **finalize-scope** advisory
+    /// (the granted-and-unused changelog gate — keyed precisely so a project can
+    /// promote it to `blocking` with one cascade line, `validation.md` → The
+    /// changelog-gate advisory), so it too is a member (29 → 30). By severity that is
+    /// 16 intrinsic (19 keyed intrinsic − the 3 excluded) + 14 tunable. Pinning the
     /// length makes any inventory add/remove trip the gate, forcing `validation.md` +
     /// `knobs.yaml` to move in lockstep.
     #[test]
     fn check_inventory_membership_count_is_stable() {
         assert_eq!(
             CHECK_INVENTORY.len(),
-            29,
-            "the post-pass membership set is 29 rows (32 keyed checks − 3 compose-time \
+            30,
+            "the post-pass membership set is 30 rows (33 keyed checks − 3 compose-time \
              marker checks); update validation.md → MVP check inventory in lockstep",
         );
 

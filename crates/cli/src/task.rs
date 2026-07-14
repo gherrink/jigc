@@ -327,6 +327,24 @@ fn run_bind(cwd: &Path, role: &str, addr: &str, id: &str, format: Format) -> Res
 /// provisioned under `commit:<task-id>`, so the commit slug is the task id.
 const COMMIT_TYPE: &str = "commit";
 
+/// The changelog doctype name — the create-gate the finalize-scope
+/// `changelog-recording.gate-granted-unused` check keys on (`design/validation.md` →
+/// The changelog-gate advisory). A `singleton`, so its slug is fixed to the type id.
+const CHANGELOG_TYPE: &str = "changelog";
+
+/// The number of repeatable **items** a doc source carries, at every nesting depth —
+/// the structural reading of *"a changelog entry"* (a release, an unreleased
+/// change-group, a nested category group under a release). A source that does not parse
+/// counts **zero**: a malformed doc is validation's business, never this advisory's.
+fn changelog_entry_count(schema: &Schema, source: &str) -> usize {
+    fn nested(items: &[engine::parse::ParsedItem]) -> usize {
+        items.iter().map(|item| 1 + nested(&item.items)).sum()
+    }
+    engine::parse::parse_sections(schema, source)
+        .map(|doc| doc.sections.iter().map(|s| nested(&s.items)).sum())
+        .unwrap_or(0)
+}
+
 /// `jigc task finalize <id>` — execute the commit boundary (`design/finalize.md` →
 /// 5. Stage / 6. Commit / 7. Post-commit; `design/worked-examples.md` → flow #4).
 ///
@@ -741,6 +759,21 @@ impl TaskArea {
         // `design/reconciliation.md` → Persistence of the shifted baseline); a blocked
         // branch drops it.
         let (report, swept) = self.validate()?;
+
+        // The finalize-scope `changelog-recording` check (M42 Settle fork 6;
+        // `design/validation.md` → The changelog-gate advisory) — merged into the report
+        // BEFORE `plan_finalize` reads it, so a project that promotes the key to
+        // `blocking` with one cascade line actually gates on it (the M6 post-pass runs at
+        // the single `ValidationReport::new` construction point, and is idempotent over
+        // already-assigned findings).
+        let report = match self.changelog_gate_advisory(id, &schemas)? {
+            None => report,
+            Some(finding) => {
+                let mut findings = report.findings.into_vec();
+                findings.push(finding);
+                engine::result::ValidationReport::new(findings, &self.severity_cascade()?)
+            }
+        };
 
         // A migration task is identified once by the staged source seam: it selects the
         // stage policy (`MigrationFixed`), gates the review block, and — read here, ahead
@@ -1161,6 +1194,104 @@ impl TaskArea {
             )
             .with_context(|| format!("the recorded workflow `{workflow_id}` reads back"))?;
         load_workflow_def(&bytes).map_err(finding_to_err)
+    }
+
+    /// The **granted-and-unused changelog gate** finding (M42 Settle fork 6;
+    /// `design/validation.md` → The changelog-gate advisory): the task's minting
+    /// workflow **grants** the `changelog` create-gate and the task authored **no**
+    /// changelog entry. `None` when the gate is absent (the omitting context — the check
+    /// is inert, never an error) or when an entry was authored.
+    ///
+    /// It keys on the **gate**, never on the diff: whether a change is "user-facing" is
+    /// judgment, and the determinism boundary forbids the CLI from making it
+    /// (`VISION.md` → the determinism boundary). The pack decides which workflows record
+    /// a changelog by granting the gate; this only reports that a granted gate went
+    /// unused. Advisory by default, but an **inventory row** — a project that means it
+    /// (the trial's *"if it matters, gate it"*) promotes it to `blocking` with one
+    /// cascade line, and the M6 post-pass gates on it with no code change.
+    ///
+    /// **An entry is an item.** "Authored" is read structurally — the staged changelog
+    /// carries *more* items than the committed one, at any nesting depth
+    /// ([`changelog_entry_count`]) — so a bare `jigc doc create changelog` (a copy-in of
+    /// the committed body, or an empty skeleton when none is committed) is **not** an
+    /// entry and the advisory still fires: create-and-abandon is precisely the silent
+    /// skip this check exists to surface.
+    ///
+    /// [Keys at the task](work_unit_location) — the finding's subject is the *work
+    /// unit*, so a `null` target would collapse every skipped changelog in the corpus
+    /// onto one `(code, target)` key (`command-output-contract.md` → the form table, the
+    /// work-unit row).
+    fn changelog_gate_advisory(
+        &self,
+        id: &str,
+        schemas: &BTreeMap<String, Schema>,
+    ) -> Result<Option<Finding>> {
+        // A pack-set shipping no `changelog` doctype cannot grant the gate.
+        let Some(schema) = schemas.get(CHANGELOG_TYPE) else {
+            return Ok(None);
+        };
+        // The gate lives on the task's MINTING workflow. A task minted before the
+        // workflow record existed carries none — no gate, no finding (never a fault: this
+        // check is an advisory, not a state assertion).
+        let Some(workflow_id) = state::read_workflow_id(&self.dir)
+            .with_context(|| format!("could not read the recorded workflow of task `{id}`"))?
+        else {
+            return Ok(None);
+        };
+        let bytes = self
+            .pack
+            .read(
+                PackResourceKind::Workflows,
+                &ResourceId::from(workflow_id.as_str()),
+            )
+            .with_context(|| format!("the recorded workflow `{workflow_id}` reads back"))?;
+        let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
+        if !def
+            .allows_create
+            .iter()
+            .any(|gate| gate.doc_type == CHANGELOG_TYPE)
+        {
+            return Ok(None);
+        }
+
+        // The singleton stages at its fixed slug (= the type id); its committed home is
+        // the placement literal (`CHANGELOG.md`), absent until a first entry lands.
+        let staged_path = state::instance_path(&self.dir, CHANGELOG_TYPE, CHANGELOG_TYPE);
+        let staged = match std::fs::read_to_string(&staged_path) {
+            Ok(body) => Some(body),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+            Err(err) => {
+                return Err(err)
+                    .with_context(|| format!("reading the staged changelog at {staged_path:?}"));
+            }
+        };
+        if let Some(staged) = staged {
+            let committed = match canonical_path(&self.jigc_home, schema, CHANGELOG_TYPE) {
+                Some(path) if path.is_file() => std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading the committed changelog at {path:?}"))?,
+                _ => String::new(),
+            };
+            if changelog_entry_count(schema, &staged) > changelog_entry_count(schema, &committed) {
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(Finding::graded(
+            Severity::Advisory,
+            "changelog-recording.gate-granted-unused",
+            format!(
+                "workflow `{workflow_id}` grants the `changelog` create-gate and this \
+                 task recorded no changelog entry",
+            ),
+            Some(work_unit_location(id)),
+            Some(format!(
+                "if the change is user-facing, record it — `jigc doc create changelog \
+                 --title Changelog --task {id}`, then `jigc doc add-item \
+                 changelog:changelog#unreleased-changes --title <category> --task {id}` \
+                 (after a landed commit: `jigc start --workflow record-change \
+                 \"<what changed>\"`); if it is not user-facing, no action is needed",
+            )),
+        )))
     }
 
     /// The staged managed-doc instances under the working area's `docs/`, in
