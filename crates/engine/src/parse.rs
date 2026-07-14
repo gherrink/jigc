@@ -796,10 +796,21 @@ fn read_field_block_str(
     match crate::field_block::parse(block) {
         Ok(fb) => {
             let mut out = Vec::new();
+            // The undeclared keys already *reported* in this block. A **repeated** undeclared
+            // key is **one** defect and **one** repair (delete the stray line), so it is
+            // reported once — however many lines carry it — exactly as a duplicated `{#id}`
+            // anchor is ([`parse_items`]'s `reported_duplicate`). Reporting per *line* would
+            // emit N byte-identical `(code, target)` keys into one slice: two lines carrying
+            // one key address at one `#<section>/<field-key>` **by construction**, so the
+            // fragment cannot discriminate them. That is a degenerate key, which the
+            // membership test forbids ([`crate::finding::debug_assert_targets_declared`]) —
+            // and the contract's declared granularity for this code is per `(section, key)`,
+            // not per line (`command-output-contract.md` → the parse-conformance sub-table).
+            let mut reported_unknown: Vec<String> = Vec::new();
             for field in fb.fields {
                 if declared.iter().any(|d| d == &field.key) {
                     out.push(field);
-                } else {
+                } else if !reported_unknown.iter().any(|k| k == &field.key) {
                     findings.push(Finding::blocking(
                         "conformance.unknown-field",
                         unknown_field_message(&field.key, declared),
@@ -810,6 +821,7 @@ fn read_field_block_str(
                         // prefixed by [`parse_items`] / [`parse_sections`].
                         Location::addressed(field.key.clone(), base_line, 1),
                     ));
+                    reported_unknown.push(field.key);
                 }
             }
             out
@@ -2697,6 +2709,49 @@ Fine.
             [Some("status/alpha"), Some("status/beta")],
             "each unknown key keys at its own `#<section>/<field-key>`, so the two \
              findings do not collide on one `(code, target)`: {findings:#?}",
+        );
+    }
+
+    /// (M42 Inc 9 — the repeated key) **One repeated unknown key is ONE finding.** The
+    /// sibling of the test above, and the case it did not cover: two unknown keys that are
+    /// *the same key* address at the same `#<section>/<field-key>` **by construction**, so a
+    /// finding per *line* emitted two byte-identical `(code, target)` keys into one JSON
+    /// array — the exact collision the contract pins as impossible for the code it calls
+    /// "the collision the family was named for". Collapse at the producer, as
+    /// `item-anchor-duplicate` already does one row over: a repeated key is **one defect and
+    /// one repair** (delete the stray line), and the contract's declared granularity for
+    /// this code is per `(section, key)` — not per line.
+    #[test]
+    fn a_repeated_unknown_field_key_reports_once() {
+        let src = "\
+---
+status: proposed
+date: 2026-05-31
+owner: alice
+owner: bob
+---
+
+# A decision
+
+## Context
+Forces.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+We decided.
+
+## Consequences
+Fine.
+";
+        let findings = parse_sections(&adr_schema(), src).expect_err("an unknown key blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.unknown-field"),
+            [Some("status/owner")],
+            "the repeated key `owner` is one defect and one repair, so it is reported ONCE — \
+             reporting per line emits two byte-identical `(code, target)` keys into one \
+             emitted slice, which the membership test forbids: {findings:#?}",
         );
     }
 
