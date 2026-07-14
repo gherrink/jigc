@@ -942,6 +942,7 @@ fn migration_targets_canonical_destination(
 /// describe` surface (`write-commands.md` → The create-gate, step 3). Mirrors the
 /// proven-good `migrate --as <bad>` model — name the set, route to a real recovery,
 /// never a nonexistent micro-verb. Route-bearing per the settled block-payload shape.
+/// Keys at the [bare doctype id](doctype_scoped_location).
 fn unknown_doctype_finding(
     type_name: &str,
     schemas: &std::collections::BTreeMap<String, Schema>,
@@ -954,9 +955,21 @@ fn unknown_doctype_finding(
             "unknown doctype `{type_name}`; known doctypes: [{}]",
             set.join(", ")
         ),
-        None,
+        Some(doctype_scoped_location(type_name)),
         Some("run `jigc describe` to see the doctypes you can author".to_string()),
     )
+}
+
+/// The [`Location`] of a **doctype-scoped** create block — a block whose subject is a
+/// *doctype*, not a doc: no instance exists and none is going to (the gate refused it /
+/// the type is unknown / the title slugs to nothing), so its stable key targets the
+/// **bare doctype id** (`adr`), never a synthesized `type:<slug>` URI that would address
+/// nothing ([command-output-contract.md](../../../design/command-output-contract.md) →
+/// the form table, the doctype-scoped-blocks row). Without it, two distinct blocked
+/// creates in one gate-less task collide on one `(code, null)` key. It is the form the
+/// read path already emits for a doctype-scoped block (`store.unknown-type`).
+fn doctype_scoped_location(type_name: &str) -> Location {
+    Location::addressed(type_name, 1, 1)
 }
 
 /// The serial-collision block for an existing instance id: a blocking finding naming
@@ -977,7 +990,8 @@ fn instance_collision_finding(address: &str) -> Finding {
 /// The empty-title block for a non-singleton `create` whose title slugs to nothing
 /// (`--title ""`, `--title "!!!"`): left unguarded it mints a degenerate `<ty>:<ty>`.
 /// Mirrors `rename`'s slug-derivation guard (`crates/cli/src/rename.rs`); routes to
-/// supply a non-empty `--title` (its slug becomes the doc id).
+/// supply a non-empty `--title` (its slug becomes the doc id). Keys at the
+/// [bare doctype id](doctype_scoped_location).
 fn empty_title_finding(type_name: &str) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -985,7 +999,7 @@ fn empty_title_finding(type_name: &str) -> Finding {
         format!(
             "`jigc doc create {type_name}` needs a title that yields an id, but the given title is empty or slugs to nothing"
         ),
-        None,
+        Some(doctype_scoped_location(type_name)),
         Some("re-run with a non-empty `--title` (its slug becomes the doc id)".to_string()),
     )
 }
@@ -993,6 +1007,7 @@ fn empty_title_finding(type_name: &str) -> Finding {
 /// The structured create-gate block (`write-commands.md` → The create-gate, step 5):
 /// a blocking finding naming the disallowed type + the allowed set, carrying the
 /// loosen `run-command` route (the cascade-set config delta the agent can act on).
+/// Keys at the [bare doctype id](doctype_scoped_location).
 fn gate_blocked_finding(type_name: &str, gate: &[crate::compose::AllowsCreate]) -> Finding {
     let allowed: Vec<&str> = gate.iter().map(|e| e.doc_type.as_str()).collect();
     Finding::graded(
@@ -1002,7 +1017,7 @@ fn gate_blocked_finding(type_name: &str, gate: &[crate::compose::AllowsCreate]) 
             "the workflow does not allow `jigc doc create {type_name}` in-task; allowed doctypes: [{}]",
             allowed.join(", ")
         ),
-        None,
+        Some(doctype_scoped_location(type_name)),
         Some(format!(
             "to loosen, add `{type_name}` to `allows-create` in project config"
         )),
@@ -2233,6 +2248,139 @@ sections:
         )
         .expect_err("an unknown type rejects before the gate");
         assert_eq!(unknown.code, "create.unknown-doctype");
+    }
+
+    /// (M42 inc-9 T1) The **doctype-scoped** create blocks key at the **bare doctype
+    /// id** (`command-output-contract.md` → the form table, the doctype-scoped-blocks
+    /// row). Their subject is a doctype, not a doc — no instance exists and none is
+    /// going to — so the key's `target` is `adr`/`spec`, never `null` and never a
+    /// synthesized `type:slug` URI that would address nothing. Without it, two
+    /// distinct blocked creates in one gate-less task (`allows-create: []`) collide on
+    /// one `(code, null)` key and a driver cannot tell them apart. The URI-addressed
+    /// `create.serial-collision` is untouched (its subject *is* an instance).
+    #[test]
+    fn doctype_scoped_create_blocks_key_at_the_bare_doctype_id() {
+        let root = TempRoot::new("doctype-key");
+        let task_dir = root.path().join("tasks").join("k");
+        // `commit` (from the shared helper) plus two more known doctypes — shape is
+        // irrelevant to every edge below, only the *type name* is.
+        let mut all = schemas();
+        all.insert("adr".to_string(), commit_schema());
+        all.insert("spec".to_string(), commit_schema());
+
+        // The gate-less workflow (`allows-create: []`, e.g. `quick-fix`): two real,
+        // distinct blocked creates must carry two distinct keys.
+        let adr_blocked = create_gated(
+            &task_dir,
+            &all,
+            &[],
+            "adr",
+            "Cache strategy",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("a gate-less workflow blocks every create");
+        let spec_blocked = create_gated(
+            &task_dir,
+            &all,
+            &[],
+            "spec",
+            "Auth flow",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("a gate-less workflow blocks every create");
+        assert_eq!(adr_blocked.code, "create.gate-blocked");
+        assert_eq!(spec_blocked.code, "create.gate-blocked");
+        assert_eq!(
+            adr_blocked.key().target.as_deref(),
+            Some("adr"),
+            "the gate-block keys at the bare doctype id: {adr_blocked:?}"
+        );
+        assert_eq!(
+            spec_blocked.key().target.as_deref(),
+            Some("spec"),
+            "the gate-block keys at the bare doctype id: {spec_blocked:?}"
+        );
+        assert_ne!(
+            adr_blocked.key(),
+            spec_blocked.key(),
+            "two blocked creates in one gate-less task must not collide on one key"
+        );
+
+        // `create.unknown-doctype` — the unknown type *is* the subject.
+        let unknown = create_gated(
+            &task_dir,
+            &all,
+            &[],
+            "wormhole",
+            "x",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("an unknown type rejects before the gate");
+        assert_eq!(unknown.code, "create.unknown-doctype");
+        assert_eq!(
+            unknown.key().target.as_deref(),
+            Some("wormhole"),
+            "the unknown-doctype block keys at the bare doctype id: {unknown:?}"
+        );
+
+        // `create.empty-title` — reached through the gate-admitting path (it fires
+        // *after* the gate), so the gate must admit the type.
+        let gate = [crate::compose::AllowsCreate {
+            doc_type: "commit".to_string(),
+            as_role: "commit".to_string(),
+        }];
+        let empty = create_gated(
+            &task_dir,
+            &all,
+            &gate,
+            "commit",
+            "!!!",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("a title that slugs to nothing rejects");
+        assert_eq!(empty.code, "create.empty-title");
+        assert_eq!(
+            empty.key().target.as_deref(),
+            Some("commit"),
+            "the empty-title block keys at the bare doctype id: {empty:?}"
+        );
+
+        // The instance-scoped sibling is untouched: its subject *is* a doc, so it
+        // keeps the doc-URI form.
+        create(
+            &task_dir,
+            &all,
+            "commit",
+            "Add rate limiter",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("the first create mints");
+        let collide = create(
+            &task_dir,
+            &all,
+            "commit",
+            "Add rate limiter",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("a serial collision rejects");
+        assert_eq!(collide.code, "create.serial-collision");
+        assert_eq!(
+            collide.key().target.as_deref(),
+            Some("commit:add-rate-limiter"),
+            "the serial collision keeps the doc-URI target: {collide:?}"
+        );
     }
 
     /// The done-criterion (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding at

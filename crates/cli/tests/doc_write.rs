@@ -1102,3 +1102,61 @@ fn clean_write_reports_no_findings_and_omits_completeness() {
         "a clean write emits findings:[] — no surplus, and completeness stays store-scope; got:\n{stdout}"
     );
 }
+
+/// (M42 inc-9 T1) The **doctype-scoped** create block keys at the bare doctype id,
+/// through the real binary (`design/command-output-contract.md` → the form table, the
+/// doctype-scoped-blocks row). Under the gate-less `quick-fix` workflow
+/// (`allows-create: []`) *every* `jigc doc create` is blocked — so two blocked creates
+/// in one task are two distinct real events, and their `key.target`s must discriminate
+/// (`adr` vs `spec`), not collide on `null`.
+#[test]
+fn a_gate_less_task_keys_each_blocked_create_at_its_doctype() {
+    let (repo, home) = started_repo_on("quick-fix", "Fix the typo");
+
+    let blocked_key = |doctype: &str| -> serde_json::Value {
+        let out = run_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "create",
+                doctype,
+                "--title",
+                "Some Title",
+                "--format",
+                "json",
+            ],
+            None,
+        );
+        assert!(
+            !out.status.success(),
+            "`jigc doc create {doctype}` must be gate-blocked under `quick-fix`; stdout:\n{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+        let envelope: serde_json::Value =
+            serde_json::from_str(stderr.trim()).expect("the block envelope is json");
+        let findings = envelope["findings"]
+            .as_array()
+            .unwrap_or_else(|| panic!("findings is an array; got:\n{stderr}"));
+        let finding = findings
+            .iter()
+            .find(|f| f["code"] == "create.gate-blocked")
+            .unwrap_or_else(|| panic!("the gate-block rides the envelope; got:\n{stderr}"));
+        finding["key"].clone()
+    };
+
+    let adr = blocked_key("adr");
+    let spec = blocked_key("spec");
+    assert_eq!(
+        adr["target"], "adr",
+        "the blocked `adr` create keys at the bare doctype id; got: {adr}"
+    );
+    assert_eq!(
+        spec["target"], "spec",
+        "the blocked `spec` create keys at the bare doctype id; got: {spec}"
+    );
+    assert_ne!(
+        adr, spec,
+        "two blocked creates in one gate-less task must carry distinct keys"
+    );
+}
