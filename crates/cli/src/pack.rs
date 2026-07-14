@@ -218,7 +218,11 @@ const SCHEMA_MANIFEST_ID: &str = "schema-manifest";
 /// An **absent** manifest is skipped (no owners → `Ok(())`) — the
 /// field-types-absent precedent ([`pack_field_types`]): a seeded / composed pack
 /// that ships no manifest stays unchecked, so only a pack that opts into the freeze
-/// is held to it.
+/// is held to it. That opt-out is **wholesale**, and it is the only one: a pack that
+/// *does* ship a manifest is held to all of it, including the `slug-rule:` block —
+/// an omitted block is [`engine::manifest::ManifestError::SlugRuleUndeclared`], not a
+/// second, quieter opt-out (M42 audit; `design/storage.md` → Identity → *The slug rule
+/// is itself a versioned rule*).
 pub fn assert_schema_freeze(pack: &dyn PackSource) -> anyhow::Result<()> {
     use anyhow::Context;
 
@@ -3207,12 +3211,17 @@ sections:
 
             /// A `schema-manifest.yaml` body over `(type, schema-version,
             /// schema-hash)` entries, serialized through the engine model so the
-            /// on-disk key spelling can never drift from the deserializer. It
-            /// declares **no** `slug-rule:` block — these fixtures freeze doctype
-            /// *shapes*, and an absent slug rule is unchecked (the opt-in gate).
+            /// on-disk key spelling can never drift from the deserializer. It declares
+            /// the slug rule the engine ships, because **every** manifest must (M42
+            /// audit — an absent block is `SlugRuleUndeclared`, no longer a silent
+            /// opt-out); these fixtures exercise the doctype-*shape* arms, so they
+            /// declare the identity rule truthfully and let those arms be what fires.
             fn manifest_yaml(entries: &[(&str, u32, String)]) -> Vec<u8> {
                 let manifest = engine::manifest::Manifest {
-                    slug_rule: None,
+                    slug_rule: Some(engine::manifest::SlugRule {
+                        version: engine::slug::SLUG_RULE_VERSION,
+                        hash: engine::slug::rule_fingerprint().to_string(),
+                    }),
                     doctypes: entries
                         .iter()
                         .map(|(ty, version, hash)| engine::manifest::ManifestEntry {

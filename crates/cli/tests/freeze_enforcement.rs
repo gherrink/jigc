@@ -482,6 +482,69 @@ fn a_drifted_slug_rule_blocks_every_door() {
     project.door_blocks(&["start"]);
 }
 
+/// **Delete** the copied manifest's whole `slug-rule:` block — the third silencer,
+/// and the cheapest one: [`drift_slug_rule_hash`]'s route says *re-pin the hash*, but
+/// an author (or an agent) who instead removes three lines got the gate to go quiet
+/// entirely. A pack opts out of the freeze by shipping **no manifest** (a visible,
+/// wholesale act — [`manifest_less_pack_is_unaffected`]); a manifest that freezes
+/// doctype *shapes* may not quietly decline to declare the rule the ids inside them
+/// are *minted* by.
+fn delete_slug_rule_block(pack: &Path) {
+    let path = pack.join("config").join("schema-manifest.yaml");
+    let body = fs::read_to_string(&path).expect("read the copied schema-manifest.yaml");
+    let mut out = String::new();
+    let mut dropping = false;
+    let mut hit = false;
+    for line in body.lines() {
+        if line.starts_with("slug-rule:") {
+            dropping = true;
+            hit = true;
+            continue;
+        }
+        // The block's own body is indented; the next unindented key ends it.
+        if dropping {
+            if line.starts_with(' ') {
+                continue;
+            }
+            dropping = false;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    assert!(
+        hit,
+        "the shipped manifest must declare a `slug-rule:` block to delete"
+    );
+    assert!(
+        !out.lines().any(|line| line.starts_with("slug-rule:")),
+        "the declared block must be gone from the rewritten manifest; got:\n{out}"
+    );
+    fs::write(&path, out).expect("write the slug-rule-less schema-manifest.yaml");
+}
+
+/// The M42 completion-audit LOW: a manifest that **omits** `slug-rule:` asserted
+/// nothing, so the fence [`a_drifted_slug_rule_blocks_every_door`] builds could be
+/// silenced by deleting it — and a third-party / project pack authored without the
+/// key inherited **no fence at all** over the one change no migration can repair.
+/// "Absent means unchecked" is the exact shape M42 has been bitten by repeatedly: a
+/// fence that only fires on the members it happens to know about is not a fence
+/// (`DECISIONS.md` → 2026-07-14, *a census cannot enforce a predicate*). Every door
+/// must block, and the route must hand the author the block to paste.
+#[test]
+fn a_manifest_omitting_the_slug_rule_blocks_every_door() {
+    let project = DriftedProject::with(
+        "slugless",
+        delete_slug_rule_block,
+        &["declares no `slug-rule:` block", "slug-rule:"],
+    );
+
+    project.door_blocks(&["validate"]);
+    project.door_blocks(&["describe"]);
+    project.door_blocks(&["doc", "schema", "adr"]);
+    project.door_blocks(&["migrate-corpus"]);
+    project.door_blocks(&["start"]);
+}
+
 /// The control (the omitting context's twin): an **unmutated** listed pack — whose
 /// manifests declare the slug rule the engine really ships — runs every one of those
 /// doors clean. Without this arm, a fence that blocked *unconditionally* would pass the

@@ -97,9 +97,14 @@ pub struct SlugRule {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
-    /// The declared slug rule. **Absent = unchecked** — the manifest-less
-    /// precedent (a seeded / composed pack that opts out stays inert, never
-    /// errors); a pack that declares it opts into the gate.
+    /// The declared slug rule. **Required** — an absent block is
+    /// [`ManifestError::SlugRuleUndeclared`], not a silent opt-out (M42 audit): a
+    /// manifest that freezes doctype *shapes* is held to the rule the ids inside them
+    /// are *minted* by. `Option` in the *model* only, so the omission surfaces as that
+    /// routed error rather than an unroutable parse failure — and so this struct's
+    /// `deny_unknown_fields` (which already blocks a *misspelled* key) does not reward
+    /// the omission it punishes the typo for. Opting out of the freeze stays a
+    /// pack-level, wholesale act: ship no `schema-manifest.yaml`.
     #[serde(rename = "slug-rule", default, skip_serializing_if = "Option::is_none")]
     pub slug_rule: Option<SlugRule>,
 
@@ -176,6 +181,29 @@ pub enum ManifestError {
         /// The version the engine's rule ships at.
         shipped: u32,
     },
+
+    /// The manifest declares **no** `slug-rule:` block at all — the *third* silencer,
+    /// and the cheapest one. [`SlugRuleHashMismatch`](ManifestError::SlugRuleHashMismatch)
+    /// catches the drift and [`SlugRuleVersionMismatch`](ManifestError::SlugRuleVersionMismatch)
+    /// stops a re-pinned hash from buying silence — but *deleting three lines* bought
+    /// the same silence outright, and a third-party manifest authored without the key
+    /// inherited no fence at all.
+    ///
+    /// Opting out of the freeze is a **pack-level, wholesale** act (ship no
+    /// `schema-manifest.yaml` — that pack is skipped entirely). A manifest that freezes
+    /// doctype *shapes* may not quietly decline to declare the rule the ids inside
+    /// those doctypes are *minted* by: that is the one change no migration can repair,
+    /// so an absent declaration is precisely the case that must block rather than wave
+    /// through. The route carries the block to paste.
+    #[error(
+        "the freeze manifest declares no `slug-rule:` block — a manifest that freezes doctype shapes must also declare the identity-mint rule the ids inside them are derived by (`engine::slug::slugify`), because a slug-rule change cannot be migrated after the fact: it splits the corpus into two permanent id generations. Declare the rule this engine ships:\n\nslug-rule:\n  version: {shipped_version}\n  hash: {shipped_hash}\n\n(the values of `engine::slug::SLUG_RULE_VERSION` + `engine::slug::rule_fingerprint()`; a pack that ships no `config/schema-manifest.yaml` at all opts out of the freeze entirely)"
+    )]
+    SlugRuleUndeclared {
+        /// The slug-rule version the engine ships — the value the manifest owes.
+        shipped_version: u32,
+        /// The fingerprint the engine recomputed — the value the manifest owes.
+        shipped_hash: String,
+    },
 }
 
 /// Verify a shipped doctype-set against the freeze manifest.
@@ -199,7 +227,9 @@ pub enum ManifestError {
 /// The declared **slug rule** ([`SlugRule`]) is checked **first**, before any
 /// doctype: it is the rule the ids *inside* every doctype are minted by, so a
 /// drift there is the more fundamental breach (and, unlike a schema-shape change,
-/// one no migration can repair). An absent `slug-rule:` block is unchecked.
+/// one no migration can repair). Its declaration is **required** — an absent
+/// `slug-rule:` block blocks ([`ManifestError::SlugRuleUndeclared`]); a pack opts out
+/// of the freeze by shipping no manifest, never by omitting a key from one.
 pub fn check(manifest: &Manifest, schemas: &BTreeMap<String, Schema>) -> Result<(), ManifestError> {
     check_slug_rule(manifest.slug_rule.as_ref())?;
 
@@ -256,11 +286,17 @@ pub fn check(manifest: &Manifest, schemas: &BTreeMap<String, Schema>) -> Result<
 ///   *anti-silencing* arm, so re-pinning the hash alone cannot quiet the gate: the
 ///   rule change still owes its declared bump, in every shipped manifest.
 ///
-/// `None` (no `slug-rule:` block) is **unchecked** — the manifest-less precedent:
-/// a pack opts into the gate by declaring the rule.
+/// `None` (no `slug-rule:` block) is the **third** arm and blocks too
+/// ([`ManifestError::SlugRuleUndeclared`]) — otherwise the two arms above are
+/// silenceable by deleting them, and a manifest authored without the key inherits no
+/// fence at all. The pack-level opt-out (ship no manifest) is untouched; a manifest
+/// that freezes doctype shapes is held to the rule that mints the ids inside them.
 fn check_slug_rule(declared: Option<&SlugRule>) -> Result<(), ManifestError> {
     let Some(rule) = declared else {
-        return Ok(());
+        return Err(ManifestError::SlugRuleUndeclared {
+            shipped_version: crate::slug::SLUG_RULE_VERSION,
+            shipped_hash: crate::slug::rule_fingerprint().to_string(),
+        });
     };
     if rule.version != crate::slug::SLUG_RULE_VERSION {
         return Err(ManifestError::SlugRuleVersionMismatch {
@@ -323,9 +359,23 @@ sections:
         schemas.into_iter().map(|s| (s.ty.clone(), s)).collect()
     }
 
-    /// A manifest whose entries' hashes match the supplied schemas (version 1),
-    /// declaring **no** slug rule (the unchecked, opted-out shape).
+    /// A **well-formed** manifest: entries' hashes match the supplied schemas
+    /// (version 1), and the slug rule the engine actually ships is declared — the
+    /// shape every production manifest carries, and the only shape [`check`] passes.
     fn manifest_for(schemas: &[Schema]) -> Manifest {
+        Manifest {
+            slug_rule: Some(SlugRule {
+                version: crate::slug::SLUG_RULE_VERSION,
+                hash: crate::slug::rule_fingerprint().to_string(),
+            }),
+            ..manifest_without_slug_rule(schemas)
+        }
+    }
+
+    /// The same manifest with the `slug-rule:` block **omitted** — the shape that
+    /// used to be silently unchecked and now blocks
+    /// ([`absent_slug_rule_block_blocks_loudly`]).
+    fn manifest_without_slug_rule(schemas: &[Schema]) -> Manifest {
         Manifest {
             slug_rule: None,
             doctypes: schemas
@@ -336,18 +386,6 @@ sections:
                     schema_hash: schema_hash(s),
                 })
                 .collect(),
-        }
-    }
-
-    /// The same manifest, declaring the slug rule the engine actually ships (the
-    /// shape both production packs carry).
-    fn manifest_with_slug_rule(schemas: &[Schema]) -> Manifest {
-        Manifest {
-            slug_rule: Some(SlugRule {
-                version: crate::slug::SLUG_RULE_VERSION,
-                hash: crate::slug::rule_fingerprint().to_string(),
-            }),
-            ..manifest_for(schemas)
         }
     }
 
@@ -417,7 +455,7 @@ sections:
     #[test]
     fn matching_slug_rule_passes() {
         let schemas = vec![widget(), gadget()];
-        let manifest = manifest_with_slug_rule(&schemas);
+        let manifest = manifest_for(&schemas);
         assert_eq!(check(&manifest, &schema_map(schemas)), Ok(()));
     }
 
@@ -429,7 +467,7 @@ sections:
     #[test]
     fn slug_rule_hash_drift_blocks_naming_the_recomputed_hash() {
         let schemas = vec![widget(), gadget()];
-        let mut manifest = manifest_with_slug_rule(&schemas);
+        let mut manifest = manifest_for(&schemas);
         manifest.slug_rule = Some(SlugRule {
             version: crate::slug::SLUG_RULE_VERSION,
             hash: "0".repeat(64),
@@ -464,7 +502,7 @@ sections:
     #[test]
     fn slug_rule_version_mismatch_blocks_even_with_a_correct_hash() {
         let schemas = vec![widget(), gadget()];
-        let mut manifest = manifest_with_slug_rule(&schemas);
+        let mut manifest = manifest_for(&schemas);
         let stale = crate::slug::SLUG_RULE_VERSION + 1;
         manifest.slug_rule = Some(SlugRule {
             version: stale,
@@ -486,16 +524,69 @@ sections:
         );
     }
 
-    /// The omitting context (the manifest-less precedent, applied within the
-    /// manifest): a manifest with **no** `slug-rule:` block is **unchecked** — inert,
-    /// never an error — so every pack that has not opted in (and every fixture)
-    /// stays green.
+    /// The **third silencer**, and the one the other two arms left open: a manifest
+    /// that simply **omits** the `slug-rule:` block must block loudly, not wave
+    /// through. The hash arm catches a drift and the version arm stops a re-pinned
+    /// hash from buying silence — but *deleting three lines* bought the same silence
+    /// more cheaply, and it is the cheapest "fix" an agent staring at a
+    /// [`SlugRuleHashMismatch`](ManifestError::SlugRuleHashMismatch) can reach for.
+    /// A pack opts out of the freeze by shipping **no manifest**; a manifest that
+    /// freezes doctype shapes is held to the rule the ids inside them are minted by.
     #[test]
-    fn absent_slug_rule_block_is_unchecked() {
+    fn absent_slug_rule_block_blocks_loudly() {
         let schemas = vec![widget(), gadget()];
-        let manifest = manifest_for(&schemas); // no slug-rule block
+        let manifest = manifest_without_slug_rule(&schemas);
         assert_eq!(manifest.slug_rule, None);
-        assert_eq!(check(&manifest, &schema_map(schemas)), Ok(()));
+
+        let err =
+            check(&manifest, &schema_map(schemas)).expect_err("an undeclared slug rule must block");
+        assert_eq!(
+            err,
+            ManifestError::SlugRuleUndeclared {
+                shipped_version: crate::slug::SLUG_RULE_VERSION,
+                shipped_hash: crate::slug::rule_fingerprint().to_string(),
+            }
+        );
+
+        // The route must be *actionable*: name the key, the version, and the hash —
+        // the pack author reading stderr has the block to paste, not a research task.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("slug-rule:"),
+            "the message must name the missing key; got: {msg}"
+        );
+        assert!(
+            msg.contains(&format!("version: {}", crate::slug::SLUG_RULE_VERSION)),
+            "the message must name the shipped version; got: {msg}"
+        );
+        assert!(
+            msg.contains(crate::slug::rule_fingerprint()),
+            "the message must name the shipped fingerprint; got: {msg}"
+        );
+    }
+
+    /// The **omission is not a typo**: `deny_unknown_fields` already blocks a
+    /// *misspelled* `slug_rule:` key loudly. Before this fix the strict-shape posture
+    /// punished the typo and rewarded the omission — the asymmetry that made "absent =
+    /// unchecked" incoherent. Both now block; this pins the pair.
+    #[test]
+    fn a_misspelled_and_an_omitted_slug_rule_key_both_block() {
+        // Misspelled → a loud *parse* failure (deny_unknown_fields).
+        let misspelled = "\
+slug_rule:
+  version: 2
+  hash: deadbeef
+doctypes: []
+";
+        serde_yaml_ng::from_str::<Manifest>(misspelled)
+            .expect_err("a misspelled slug-rule key must not deserialize");
+
+        // Omitted → parses (the key is optional in the *model*), and blocks at `check`.
+        let omitted: Manifest = serde_yaml_ng::from_str("doctypes: []\n").expect("parses");
+        assert!(
+            check(&omitted, &BTreeMap::new()).is_err(),
+            "an omitted slug-rule block must block at the gate"
+        );
     }
 
     /// The on-disk key spelling is part of the contract: `slug-rule: { version, hash }`
