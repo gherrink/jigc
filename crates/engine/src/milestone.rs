@@ -75,6 +75,14 @@ const RECORD_STATUS_JOINED: &str = "joined";
 /// genuinely [`joined`](RECORD_STATUS_JOINED) item keeps its value (it really did land).
 const RECORD_STATUS_DISCARDED: &str = "discarded";
 
+/// The lifecycle's **terminal** statuses — the two values a settled record's header can
+/// read (`design/team-ready-state.md` → The lifecycle): [`joined`](RECORD_STATUS_JOINED),
+/// written by `milestone finalize` when the work landed, and
+/// [`discarded`](RECORD_STATUS_DISCARDED), written by `milestone discard` when it was
+/// abandoned. Both mean the same operational thing — **the milestone is over, and it has
+/// no workbench** — which is the whole content of [`is_terminal_status`].
+const RECORD_TERMINAL_STATUSES: [&str; 2] = [RECORD_STATUS_JOINED, RECORD_STATUS_DISCARDED];
+
 /// A milestone's persisted task list — the sub-task ids appended by `add_task`,
 /// the collection the by-task-id join enumerates (`design/storage.md` → The
 /// by-task-id join). Serialized as a JSON list in a stable, golden-locked byte
@@ -621,6 +629,17 @@ pub fn read_back_record(
 /// loss. When both cache files are already present this is a **no-op** (the live
 /// cache is authoritative for the session; staleness is not this arm's concern).
 ///
+/// **A record in a terminal state does not re-seed a workbench** ([`terminal_status`];
+/// `design/team-ready-state.md` → The lifecycle). Continuation is for a milestone that is
+/// still *in flight*: once the record has settled — `discarded` (abandoned) or `joined`
+/// (landed) — the milestone is over, there is nothing to continue, and the cache has
+/// nothing to rebuild *for*. Re-seeding it would resurrect the very `.jigc/milestones/<id>/`
+/// the terminal op tore down, from which `provision` re-provisions worktrees at the settled
+/// base and `add-task` appends an `active` sub-task to a settled record — the lying committed
+/// record back again. So a terminal record is a routed blocking [`Finding`] here, and because
+/// **every** milestone verb passes through this primitive before its own guards, that one
+/// refusal is what makes both terminals terminal (M42 completion-audit HIGH).
+///
 /// The live cache-resolve wiring (the CLI reading through this on every milestone op)
 /// and the full fresh-clone `.jigc` delete are Inc 4; this is the engine primitive
 /// they call.
@@ -633,6 +652,13 @@ pub fn reseed_cache_from_record(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("milestone-record");
+    // **The terminal predicate — a record in a terminal state does not re-seed a workbench.**
+    // Checked FIRST, ahead of the cache-present no-op: the refusal is a property of the
+    // *record*, not of the cache's absence, so an interrupted teardown (record settled, the
+    // area's removal never reached) refuses here too rather than running on a live cache.
+    if let Some(status) = terminal_status(schema, record_source) {
+        return Err(terminal_milestone_finding(id, &status));
+    }
     if milestone_dir.join(BASE_PIN_FILE).exists() && milestone_dir.join(TASKS_FILE).exists() {
         return Ok(());
     }
@@ -644,6 +670,107 @@ pub fn reseed_cache_from_record(
     std::fs::write(milestone_dir.join(TASKS_FILE), tasks.to_bytes())
         .map_err(|err| io_finding(id, "re-seed the task list cache", &err))?;
     Ok(())
+}
+
+/// The **header `status`** a committed record reads — whatever it says (`active`, `joined`,
+/// `discarded`), read from the record itself, which is the source of truth for a milestone's
+/// lifecycle ([Engine capability 2]; the `.jigc` JSON cache carries no status at all, which is
+/// exactly why the workbench's presence or absence can never answer this question —
+/// `design/team-ready-state.md` → The lifecycle).
+///
+/// `None` when the record does not conform or carries no header `status` leaf. A *missing*
+/// status is deliberately **not** read as terminal: the callers that gate on this refuse work,
+/// and refusing on an unreadable record would strand a milestone whose real fault is a
+/// malformed record — that fault surfaces through the ordinary read-back path
+/// ([`read_back_record`]), which routes it to reconcile.
+///
+/// [Engine capability 2]: reseed_cache_from_record
+pub fn record_status(schema: &crate::schema::Schema, source: &str) -> Option<String> {
+    let doc = crate::parse::parse_sections(schema, source).ok()?;
+    doc.sections
+        .iter()
+        .find(|s| s.id == RECORD_HEADER_SECTION)
+        .and_then(|s| s.fields.iter().find(|f| f.key == RECORD_STATUS_FIELD))
+        .map(|f| f.value.render())
+}
+
+/// Whether a record's header `status` has **settled** — [`joined`](RECORD_STATUS_JOINED) or
+/// [`discarded`](RECORD_STATUS_DISCARDED). The two differ in *why* the milestone is over
+/// (its work landed / it was abandoned) and the record says which, but they are **one state**
+/// operationally: the milestone is over and has no workbench. Every guard in this family keys
+/// on that one predicate rather than on either member, so neither terminal can be secured
+/// while the other leaks.
+pub fn is_terminal_status(status: &str) -> bool {
+    RECORD_TERMINAL_STATUSES.contains(&status)
+}
+
+/// The record's header `status` **when it is terminal** — [`record_status`] filtered through
+/// [`is_terminal_status`]; the guard predicate itself.
+pub fn terminal_status(schema: &crate::schema::Schema, source: &str) -> Option<String> {
+    record_status(schema, source).filter(|s| is_terminal_status(s))
+}
+
+/// The blocking finding a **settled** milestone's verbs refuse with (`design/team-ready-state.md`
+/// → The lifecycle): the milestone is over — `discarded` (abandoned) or `joined` (landed) — so it
+/// has no workbench, and none may be rebuilt for it.
+///
+/// The route names the surface that *can* still serve the operator: the committed record is the
+/// source of truth and stays fully readable through `jigc doc show`
+/// (`design/doc-read-surface.md`) — the settled record, its sub-tasks and their statuses, all of
+/// it. What is refused is *operating* on a milestone that is over, never *reading* it. New work
+/// starts as a new milestone (the settled record keeps the id).
+pub fn terminal_milestone_finding(milestone_id: &str, status: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.terminal",
+        format!(
+            "milestone `{milestone_id}` is `{status}` — a settled milestone is over and has no workbench"
+        ),
+        Some(Location::addressed(
+            format!("milestone:{milestone_id}"),
+            1,
+            1,
+        )),
+        Some(format!(
+            "read the settled record with `jigc doc show milestone-record:{milestone_id}`; new work starts a new milestone (`jigc milestone create \"<title>\"`)"
+        )),
+    )
+}
+
+/// The blocking finding `milestone create` refuses an **already-owned id** with: a committed
+/// record already lives at the minted slug's canonical home (`design/team-ready-state.md` → The
+/// lifecycle; M42 completion-audit HIGH).
+///
+/// The mint's own collision check reads the **workbench** (`.jigc/milestones/<id>/`), which is
+/// gitignored, disposable, and *absent by design* in two legitimate states — a fresh clone of an
+/// in-flight milestone, and a settled one whose terminal op tore it down. So the workbench cannot
+/// answer *"is this id taken?"*; only the committed record can, and it is the record — never the
+/// cache — that a re-mint would **overwrite**. `status` is the existing record's header status
+/// (`None` if it does not read), which decides the route: a **live** record is *continued*, a
+/// **settled** one is over and its id is spent.
+pub fn record_exists_finding(milestone_id: &str, status: Option<&str>) -> Finding {
+    let reads = status
+        .map(|s| format!(" (its record reads `{s}`)"))
+        .unwrap_or_default();
+    let route = match status {
+        Some(s) if is_terminal_status(s) => format!(
+            "that milestone is over — its record is settled at `{s}` and re-minting the id would overwrite it; create this one under a different title (or read the settled record with `jigc doc show milestone-record:{milestone_id}`)"
+        ),
+        _ => format!(
+            "continue it with `jigc milestone add-task {milestone_id} \"<intent>\"`, or create this one under a different title"
+        ),
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.record-exists",
+        format!("milestone `{milestone_id}` already has a committed record{reads}"),
+        Some(Location::addressed(
+            format!("milestone:{milestone_id}"),
+            1,
+            1,
+        )),
+        Some(route),
+    )
 }
 
 /// A blocking finding for a record that could not be read back into operational
@@ -1686,7 +1813,11 @@ fn isolation_finding(milestone_id: &str, sub_id: &str, address: &str) -> Finding
 
 /// Slug the title into the milestone id, applying the empty → type-name
 /// (`milestone`) fallback — the same discipline as `state::mint_id`.
-fn mint_id(title: &str) -> String {
+///
+/// `pub` for the CLI's pre-mint id-is-taken guard, which must resolve the record home of the
+/// **exact id this mint will produce** — deriving the slug a second way would guard a different
+/// path than the mint writes (`design/team-ready-state.md` → The lifecycle).
+pub fn mint_id(title: &str) -> String {
     let slug = crate::slug::slugify(title);
     if slug.is_empty() {
         crate::slug::slugify("milestone")
@@ -4251,5 +4382,96 @@ schema-version: 1
             cache_tasks.enumerate(),
             "the re-seeded tasks.json enumerates identically"
         );
+    }
+
+    /// **The terminal predicate** (`design/team-ready-state.md` → The lifecycle — a terminal
+    /// record has no workbench; M42 completion-audit HIGH): a record whose header `status` has
+    /// settled — `discarded` **or** `joined` — **does not re-seed a workbench**. The reseed is
+    /// the fresh-clone continuation path, and a settled milestone is not continuable: rebuilding
+    /// its cache resurrects the very `.jigc/milestones/<id>/` the terminal ops tore down, from
+    /// which `provision` re-provisions worktrees at the settled base and `add-task` appends an
+    /// `active` sub-task to a settled record.
+    ///
+    /// Red before the fix: [`reseed_cache_from_record`] consulted only the two cache files and
+    /// never the record's `status`, so it rebuilt the cache from a **discarded** record just as
+    /// happily as from a live one — and the same for `joined` (the sibling terminal `milestone
+    /// finalize` writes; the identical hole, not a second special case).
+    ///
+    /// **Both cache states** are asserted, because the refusal is a property of the *record*, not
+    /// of the cache's absence: an interrupted teardown (record committed, `remove_dir_all` never
+    /// reached) leaves a live cache under a settled record, and the verbs must refuse there too.
+    #[test]
+    fn a_terminal_record_never_reseeds_a_workbench() {
+        let schema = milestone_record_schema();
+        let active = record_with_item_statuses(
+            &schema,
+            "cache-rework",
+            &[("warm-cache", "Warm the read cache", RECORD_STATUS_ACTIVE)],
+        );
+
+        for terminal in [RECORD_STATUS_DISCARDED, RECORD_STATUS_JOINED] {
+            let settled = crate::write::set_field(
+                &schema,
+                &active,
+                RECORD_HEADER_SECTION,
+                RECORD_STATUS_FIELD,
+                terminal,
+            )
+            .expect("the fixture header status splices");
+            assert_eq!(
+                terminal_status(&schema, &settled).as_deref(),
+                Some(terminal),
+                "the fixture record reads as settled at `{terminal}`"
+            );
+            assert_eq!(
+                terminal_status(&schema, &active),
+                None,
+                "a live record is not terminal"
+            );
+
+            // (a) The fresh-clone shape: no cache at all. The reseed REFUSES and writes nothing —
+            // the workbench the terminal op tore down stays torn down.
+            let root = TempRoot::new(&format!("terminal-{terminal}"));
+            let dir = root.path().join("milestones").join("cache-rework");
+            let finding = reseed_cache_from_record(&dir, &schema, &settled)
+                .expect_err("a settled record must refuse to re-seed a workbench");
+            assert_eq!(finding.code, "milestone.terminal");
+            assert_eq!(finding.severity, Severity::Blocking);
+            assert!(
+                finding.message.contains("cache-rework") && finding.message.contains(terminal),
+                "the refusal names the milestone and its terminal: {}",
+                finding.message,
+            );
+            assert!(
+                finding
+                    .route
+                    .as_deref()
+                    .is_some_and(|r| r.contains("jigc doc show milestone-record:cache-rework")),
+                "the refusal routes to the committed record's read surface: {:?}",
+                finding.route,
+            );
+            assert!(
+                !dir.join(BASE_PIN_FILE).exists() && !dir.join(TASKS_FILE).exists(),
+                "the refused reseed writes NO cache file — the workbench is not resurrected",
+            );
+
+            // (b) The interrupted-teardown shape: a live cache under a settled record. The
+            // refusal is a property of the RECORD, so it fires here too (the cache-present
+            // early-return must not slip past the terminal).
+            std::fs::create_dir_all(&dir).expect("stage the leftover cache dir");
+            std::fs::write(
+                dir.join(BASE_PIN_FILE),
+                render_base_pin(&BasePin {
+                    sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
+                    short: "1f2e3d4".to_string(),
+                }),
+            )
+            .expect("stage base.json");
+            std::fs::write(dir.join(TASKS_FILE), TaskList::default().to_bytes())
+                .expect("stage tasks.json");
+            let finding = reseed_cache_from_record(&dir, &schema, &settled)
+                .expect_err("a settled record refuses even when a stale cache survived");
+            assert_eq!(finding.code, "milestone.terminal");
+        }
     }
 }

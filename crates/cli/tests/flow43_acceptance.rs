@@ -34,8 +34,10 @@
 //!   (5) **A schema bump with no transform kind BLOCKS** — never a silent stamp-bump over a
 //!       corpus the new schema does not fit.
 //!
-//!   (6) **Abandoning a milestone settles the record** — and a genuinely **joined** sub-task
-//!       stays `joined` (it really did land).
+//!   (6) **Abandoning a milestone settles the record** — and the terminal **holds**: the verbs
+//!       refuse afterwards, so nothing rebuilds the workbench the teardown removed (the M42
+//!       completion-audit HIGH — the arm asserted the settled *snapshot* and never ran a verb
+//!       after the discard, while the claim it makes is a *lifecycle invariant*).
 //!
 //!   (7) **`validate` emits → `doc show` reads.** The target string the sweep emits, fed back
 //!       **verbatim**, resolves — the read path honours the address grammar validate emits.
@@ -994,13 +996,23 @@ fn item_status(body: &str, sub: &str) -> String {
 }
 
 /// **Arm 6.** A milestone abandoned mid-flight: `jigc milestone discard --force` **settles the
-/// committed record** to the `discarded` terminal in one record-only commit and tears the
-/// workbench down — while a **genuinely joined** sub-task stays `joined` (it really did land;
-/// flipping it would lie about landed work). Red on rc.5: `status: active` forever, on the record
-/// *and* every task item, with **no verb that could settle it** — a lying committed record and a
+/// committed record** to the `discarded` terminal in one record-only commit, tears the workbench
+/// down — and the terminal **holds**: the milestone verbs refuse afterwards, so nothing rebuilds
+/// the workbench the teardown removed. Red on rc.5: `status: active` forever, on the record *and*
+/// every task item, with **no verb that could settle it** — a lying committed record and a
 /// skippable completion.
+///
+/// **The second half is the M42 completion-audit HIGH.** Settling the record and removing the
+/// workbench are a *snapshot*; the claim — *abandoning a milestone leaves no lying committed
+/// record* — is a **lifecycle invariant**, and this arm originally asserted the snapshot and
+/// stopped. It never ran a milestone verb after the discard. It had to: the workbench reseed (the
+/// fresh-clone continuation path) rebuilt `.jigc/milestones/<id>/` from the committed record
+/// without ever reading its `status`, so `provision` re-provisioned worktrees at the abandoned
+/// base and `add-task` appended an **active** sub-task to the **discarded** record — both exit 0.
+/// The lying record was back. So the arm now exercises the invariant it claims, on both terminals
+/// (`joined` had the identical hole — same predicate, same fix).
 #[test]
-fn discarding_a_milestone_settles_the_record_and_keeps_a_joined_subtask() {
+fn discarding_a_milestone_settles_the_record_and_the_terminal_holds() {
     let (repo, home) = setup_repo("abandon");
     let repo = repo.path();
     let home = home.path();
@@ -1010,8 +1022,6 @@ fn discarding_a_milestone_settles_the_record_and_keeps_a_joined_subtask() {
         vec!["milestone", "create", "Cache rework"],
         vec!["milestone", "add-task", milestone, "Warm the read cache"],
         vec!["milestone", "add-task", milestone, "Evict cold entries"],
-        vec!["milestone", "finalize", milestone],
-        vec!["milestone", "add-task", milestone, "Purge stale keys"],
         vec!["milestone", "provision", milestone],
     ] {
         assert_ok(
@@ -1021,17 +1031,16 @@ fn discarding_a_milestone_settles_the_record_and_keeps_a_joined_subtask() {
     }
 
     let record_rel = format!("docs/milestone-records/{milestone}.md");
+    let area = repo.join(".jigc").join("milestones").join(milestone);
     let before = fs::read_to_string(repo.join(&record_rel)).expect("the committed record");
-    assert_eq!(
-        item_status(&before, "warm-the-read-cache"),
-        "joined",
-        "precondition: the first sub-task genuinely joined:\n{before}",
-    );
-    assert_eq!(
-        item_status(&before, "purge-stale-keys"),
-        "active",
-        "precondition: the third sub-task never joined:\n{before}",
-    );
+    for sub in ["warm-the-read-cache", "evict-cold-entries"] {
+        assert_eq!(
+            item_status(&before, sub),
+            "active",
+            "precondition: `{sub}` is in flight:\n{before}",
+        );
+    }
+    assert!(area.is_dir(), "precondition: the workbench is live");
     let commits = commit_count(repo);
 
     let discard = jigc(
@@ -1048,16 +1057,13 @@ fn discarding_a_milestone_settles_the_record_and_keeps_a_joined_subtask() {
         "discarded",
         "the abandoned milestone's record settles to the terminal:\n{after}",
     );
-    assert_eq!(
-        item_status(&after, "warm-the-read-cache"),
-        "joined",
-        "a genuinely joined sub-task STAYS joined — it really did land:\n{after}",
-    );
-    assert_eq!(
-        item_status(&after, "purge-stale-keys"),
-        "discarded",
-        "the never-joined sub-task settles to discarded:\n{after}",
-    );
+    for sub in ["warm-the-read-cache", "evict-cold-entries"] {
+        assert_eq!(
+            item_status(&after, sub),
+            "discarded",
+            "the never-joined sub-task `{sub}` settles to discarded:\n{after}",
+        );
+    }
     assert!(
         !after.contains("status: active"),
         "no recorded status survives un-settled:\n{after}",
@@ -1076,12 +1082,48 @@ fn discarding_a_milestone_settles_the_record_and_keeps_a_joined_subtask() {
         "and that commit records ONLY the milestone record",
     );
     assert!(
-        !repo
-            .join(".jigc")
-            .join("milestones")
-            .join(milestone)
-            .exists(),
+        !area.exists(),
         "the workbench is torn down — `.jigc/milestones/<id>/` had no reachable remover at all",
+    );
+
+    // The invariant, not the snapshot: the terminal REFUSES the verbs that would resurrect the
+    // milestone or mutate its settled record. Before the fix, both of these exited 0 — the
+    // teardown was not a guard, because the reseed put the workbench straight back.
+    for args in [
+        vec!["milestone", "provision", milestone],
+        vec!["milestone", "add-task", milestone, "Purge stale keys"],
+        vec!["milestone", "execute", milestone],
+        vec!["milestone", "finalize", milestone],
+    ] {
+        let out = jigc(repo, home, &args, None);
+        assert!(
+            !out.status.success(),
+            "`jigc {}` on a discarded milestone must REFUSE; got exit 0\nstdout:\n{}",
+            args.join(" "),
+            stdout_of(&out),
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("discarded")
+                && stderr.contains(&format!("jigc doc show milestone-record:{milestone}")),
+            "`jigc {}`: the refusal names the terminal and routes to the record's read surface; \
+             stderr:\n{stderr}",
+            args.join(" "),
+        );
+    }
+    assert!(
+        !area.exists(),
+        "no verb rebuilds the abandoned milestone's workbench",
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join(&record_rel)).expect("the record after the refusals"),
+        after,
+        "and the settled record is byte-identical — no `active` sub-task was appended to it",
+    );
+    assert_eq!(
+        commit_count(repo),
+        commits + 1,
+        "a refused verb commits nothing",
     );
 }
 

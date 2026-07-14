@@ -398,8 +398,18 @@ fn f1_committed_vision_reads_and_recomposes_both_groundings() {
 /// **Arm 2.** `milestone create → add-task ×2 → finalize` (the join-commit boundary) yields
 /// the committed `milestone-record` with the base pin + both sub-tasks + the header flipped
 /// `joined`; a **fresh clone** (delete `.jigc/`) reads it via `jigc doc show
-/// milestone-record:<id> --format json` (the pinned 1.0 shape) and continues — a subsequent
-/// milestone op re-derives the demoted cache from the committed record.
+/// milestone-record:<id> --format json` (the pinned 1.0 shape) and continues an **in-flight**
+/// milestone — a milestone op re-derives its demoted cache from the committed record.
+///
+/// **Continuation is of the un-joined** (`design/team-ready-state.md` → Engine capability 2:
+/// *"resumes un-joined tasks from scratch — joined tasks are done"*). This arm used to demo the
+/// resume by running `list-tasks` on the **joined** milestone — a milestone with nothing left to
+/// continue — and so quietly asserted that a *settled* record rebuilds a workbench, which is the
+/// hole the M42 completion audit found (the reseed never read the record's `status`, so a
+/// `joined`/`discarded` milestone came straight back: `provision` re-provisioned its worktrees,
+/// `add-task` appended an `active` sub-task to it). The arm now carries a **second, in-flight**
+/// milestone — the real fresh-clone case — and asserts the settled one **refuses**: a fresh clone
+/// *reads* a milestone that is over, and *continues* one that is not.
 #[test]
 fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
     let repo = TempDir::new("team");
@@ -460,6 +470,14 @@ fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
         "the header + both items flipped to joined; got:\n{joined}",
     );
 
+    // A SECOND milestone, left **in flight** (created, one sub-task, never finalized) — this is
+    // what a fresh clone *continues*. The first one is over: its work landed.
+    assert_ok(&milestone(&["create", "Ship the cache"]), "create #2");
+    assert_ok(
+        &milestone(&["add-task", "ship-the-cache", "Ship it"]),
+        "add-task on the in-flight milestone",
+    );
+
     // ── Fresh clone: drop ALL of `.jigc/`, restore only the *tracked* bits a clone carries. ──
     fs::remove_dir_all(repo.path().join(".jigc")).expect("rm -rf .jigc");
     git(repo.path(), &["checkout", "--", ".jigc"]);
@@ -468,8 +486,13 @@ fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
         .join(".jigc")
         .join("milestones")
         .join("cache-rework");
+    let live_cache = repo
+        .path()
+        .join(".jigc")
+        .join("milestones")
+        .join("ship-the-cache");
     assert!(
-        !cache.exists(),
+        !cache.exists() && !live_cache.exists(),
         "the WIP cache must be absent after the fresh-clone simulation",
     );
 
@@ -534,24 +557,50 @@ fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
         "the pinned json `base` must be a structured object, not the space-joined scalar; got:\n{json}",
     );
 
-    // Continue: a subsequent milestone op re-derives the demoted cache from the committed
-    // record and lists the sub-tasks (resume-from-scratch).
+    // Continue — the IN-FLIGHT milestone: a milestone op on the fresh clone re-derives its
+    // demoted cache from the committed record and lists its sub-tasks (resume-from-scratch).
     let list = jigc(
+        repo.path(),
+        home.path(),
+        &["milestone", "list-tasks", "ship-the-cache"],
+        None,
+    );
+    assert_ok(&list, "fresh-clone `list-tasks` (resume the in-flight one)");
+    let out = stdout_of(&list);
+    assert!(
+        out.contains("ship-it"),
+        "fresh-clone `list-tasks` emits the re-derived sub-task ids; got:\n{out}",
+    );
+    assert!(
+        live_cache.join("tasks.json").is_file() && live_cache.join("base.json").is_file(),
+        "the milestone op re-seeded `.jigc/milestones/ship-the-cache/{{base,tasks}}.json` from \
+         the committed record",
+    );
+
+    // And the SETTLED one is over: the fresh clone reads it (above) but does not continue it.
+    // The terminal refusal is what stops the reseed from rebuilding a workbench for a milestone
+    // whose work already landed — from which `provision` would re-provision worktrees at the
+    // landed base and `add-task` would append an `active` sub-task to a `joined` record.
+    let resume_settled = jigc(
         repo.path(),
         home.path(),
         &["milestone", "list-tasks", "cache-rework"],
         None,
     );
-    assert_ok(&list, "fresh-clone `list-tasks` (resume)");
-    let out = stdout_of(&list);
     assert!(
-        out.contains("evict-cold-entries") && out.contains("warm-the-read-cache"),
-        "fresh-clone `list-tasks` emits the re-derived sub-task ids; got:\n{out}",
+        !resume_settled.status.success(),
+        "a JOINED milestone is over — a milestone op must refuse it; got exit 0\nstdout:\n{}",
+        stdout_of(&resume_settled),
+    );
+    let stderr = String::from_utf8_lossy(&resume_settled.stderr);
+    assert!(
+        stderr.contains("joined") && stderr.contains("jigc doc show milestone-record:cache-rework"),
+        "the refusal names the terminal and routes to the read surface that DID serve it; \
+         stderr:\n{stderr}",
     );
     assert!(
-        cache.join("tasks.json").is_file() && cache.join("base.json").is_file(),
-        "the milestone op re-seeded `.jigc/milestones/cache-rework/{{base,tasks}}.json` from \
-         the committed record",
+        !cache.exists(),
+        "and no workbench is rebuilt for the settled milestone",
     );
 }
 

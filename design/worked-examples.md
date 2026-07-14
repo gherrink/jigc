@@ -2734,11 +2734,18 @@ $ jigc migrate-corpus       # `adr` bumped 2→3 with a field-`type:` change no 
 > corpus migration: 0 migrated, 0 already current, 1 blocked
 >   blocked    docs/decisions/alpha.md — no transform kind … → build the transform kind first
 
-# ── Arm 6 · abandoning a milestone SETTLES the record — and a joined sub-task stays joined. ──
+# ── Arm 6 · abandoning a milestone SETTLES the record — and the terminal HOLDS. ──
 $ jigc milestone discard cache-rework --force
-> discarded milestone:cache-rework (3 sub-task(s); workbench removed)   # ONE record-only commit
-# docs/milestone-records/cache-rework.md: header `discarded` · warm-the-read-cache `joined` (it really did land)
-#                                          · purge-stale-keys `discarded`   # rc.5: `active` forever, no verb to settle it
+> discarded milestone:cache-rework (2 sub-task(s); workbench removed)   # ONE record-only commit
+# docs/milestone-records/cache-rework.md: header `discarded` · every non-joined item `discarded`
+#                                                              # rc.5: `active` forever, no verb to settle it
+$ jigc milestone provision cache-rework        # …and the settled milestone STAYS settled
+> milestone `cache-rework` is `discarded` — a settled milestone is over and has no workbench
+>   route: read the settled record with `jigc doc show milestone-record:cache-rework`; new work starts a new milestone
+# exit 1 · no workbench rebuilt, no worktree re-provisioned, the record byte-identical
+# Before the M42 completion-audit fix: exit 0 — the reseed rebuilt the workbench from the discarded
+# record itself, so `provision` re-provisioned worktrees and `add-task` appended an ACTIVE sub-task
+# to a DISCARDED record. The teardown was never a guard. (Same hole at the `joined` terminal.)
 
 # ── Arm 7 · validate EMITS → doc show READS (the same address, verbatim). ──
 $ jigc validate --format json
@@ -2767,7 +2774,7 @@ $ jigc doc create adr --title "Probe Decision" --task work-the-arm  # the emitte
 3. **An OOB edit to the managed `VISION.md` is detected at store scope.** A placement doctype is managed *at* its literal repo-root file; the read-only file↔CLI-state twin now walks that class, so a human's out-of-band edit to a baselined `VISION.md` surfaces one `file-state.hash-matches` drift naming the file and routing a human review — report-only at store scope (exit 0). Red before the census: silently invisible, voiding *"out-of-band edits are detected and routed"* for the whole placement class.
 4. **A doc that already carries the optional section migrates cleanly.** A v1-stamped ADR carrying a hand-authored `## Options` migrates (`1 migrated`, `0 blocked`), the heading survives **exactly once**, and the only byte that moves is the stamp digit `1`→`2`. Red on rc.5 — and *shipped*: the heading re-splice was refused, the doc halted, and the route was a dead end (author the new required prose — for a section that is optional and already authored), stranding every such adopter permanently.
 5. **A schema bump with no transform kind blocks the migration.** A dev-pack copy bumps `adr` 2→3 with a change no kind classifies (a field's `type:`, inside the conformance-relevant structural projection): the migration reports `0 migrated, 1 blocked`, routes at *build the transform kind*, and leaves the doc **byte-identical** — never the silent stamp-bump that strands the corpus at *v3-failing-its-own-gate*.
-6. **Abandoning a milestone settles the record — and preserves a joined sub-task.** `jigc milestone discard --force` flips the record header and every **non-joined** item to `discarded` in exactly **one record-only commit**, leaves a genuinely **joined** sub-task reading `joined` (it really did land; flipping it would lie about landed work), and tears the workbench down (`.jigc/milestones/<id>/` had no reachable remover at all). Red on rc.5: `status: active` forever, with no verb that could settle it.
+6. **Abandoning a milestone settles the record — and the terminal holds.** `jigc milestone discard --force` flips the record header and every **non-joined** item to `discarded` in exactly **one record-only commit** and tears the workbench down (`.jigc/milestones/<id>/` had no reachable remover at all). Red on rc.5: `status: active` forever, with no verb that could settle it. **And the settled milestone stays settled** — every milestone verb refuses it, routed to the record's read surface. Red on the M42 build itself (the completion-audit HIGH): the teardown was not a guard, because the fresh-clone reseed rebuilt the workbench **from the discarded record**, so `provision` re-provisioned worktrees and `add-task` appended an `active` sub-task to a `discarded` record, both at exit 0 — the lying record restored by the tool. The same hole sat at the `joined` terminal; one predicate closes both ([team-ready-state.md](team-ready-state.md) → The terminal is terminal).
 7. **`validate` emits → `doc show` reads.** The sweep's finding target is an address in the one structural grammar (`adr:cache-sessions#status/status`); fed back **verbatim** to `jigc doc show`, it resolves to the offending value. Red on rc.5: the same string that `doc set-field` accepted, `doc show` refused with `store.no-such-item` — the read contract was not closed under the address grammar its own validator emits.
 8. **A methodology `dev-task` composes the staging contract.** The composed body carries `` `git add` `` **and its consequence** (finalize commits only what you staged) — the verified root cause of the trial's silent partial commits, where the methodology pack composed zero mentions of it. The **omitting context** holds: `increment` composes neither step, so the contract is **inert** there, never leaked and never an error.
 9. **`implement-from-spec` prints no command the binary refuses.** Every `jigc doc create …` line the workflow composes is **run verbatim** and **admitted** by the gate it composes under, and it composes **zero** `doc create changelog` lines — the prompt that instructed a create the binary answered with `create.gate-blocked` is gone.

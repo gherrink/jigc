@@ -2,11 +2,11 @@
 //! terminal verb (`design/team-ready-state.md` → `jigc milestone discard <id>` — the three
 //! properties; `design/write-commands.md` → Abandoning a milestone). It settles the committed
 //! record to the `discarded` terminal (T1's schema-version-2 enum member, through T4's per-item
-//! flip: a **genuinely joined** sub-task stays `joined`), lands ONE record-only commit, and tears
-//! the workbench down — the sub-task areas, the registered fan-out worktrees, **and**
-//! `.jigc/milestones/<id>/`, which had no reachable remover at all.
+//! flip), lands ONE record-only commit, and tears the workbench down — the sub-task areas, the
+//! registered fan-out worktrees, **and** `.jigc/milestones/<id>/`, which had no reachable remover
+//! at all.
 //!
-//! Four proofs, driving the REAL binary against throwaway git repos:
+//! Seven proofs, driving the REAL binary against throwaway git repos:
 //!
 //!   (RED-i)   **The dirty-worktree refusal.** A file written into a provisioned sub-task
 //!             worktree makes `discard` REFUSE (exit non-zero, naming the worktree and the dirty
@@ -15,11 +15,11 @@
 //!             the commit lands first — destroys the file silently at exit 0 on the abandon path,
 //!             where the work is by definition uncommitted (the M31 WIP-safety shape).
 //!
-//!   (RED-ii)  **`--force` settles + tears down.** Exit 0; the committed record's header reads
-//!             `status: discarded`, a genuinely joined sub-task still reads `joined`, the active
-//!             one reads `discarded`; EXACTLY ONE record-only commit lands (unrelated staged and
-//!             untracked WIP in the main checkout untouched); and `.jigc/milestones/<id>/`, the
-//!             sub-task areas, and the registered worktrees are all gone.
+//!   (RED-ii)  **`--force` settles + tears down.** Exit 0; the committed record's header and every
+//!             in-flight sub-task read `status: discarded`; EXACTLY ONE record-only commit lands
+//!             (unrelated staged and untracked WIP in the main checkout untouched); and
+//!             `.jigc/milestones/<id>/`, the sub-task areas, and the registered worktrees are all
+//!             gone.
 //!
 //!   (RED-iii) **An unknown milestone id routes and removes nothing** — a live milestone's
 //!             workbench and record survive a discard aimed at an id that does not exist.
@@ -27,6 +27,22 @@
 //!   (RED-iv)  **Dev-only degrades** (the omitting context): with no methodology pack there is no
 //!             `milestone-record` schema, so `discard` settles no record and lands NO commit —
 //!             and still tears the whole workbench down, exit 0.
+//!
+//! And the three the M42 completion audit's HIGH added — **the terminal is actually terminal**
+//! (`design/team-ready-state.md` → The lifecycle). The teardown was never a *guard*: the workbench
+//! reseed (the M39 fresh-clone continuation path) rebuilt `.jigc/milestones/<id>/` from the
+//! committed record without ever reading its `status`, so the settled milestone came straight back:
+//!
+//!   (RED-v)   **A `discarded` milestone refuses every verb** — `provision` no longer
+//!             re-provisions worktrees at the abandoned base, `add-task` no longer appends an
+//!             **active** sub-task to a **discarded** record (both exit 0 before the fix).
+//!
+//!   (RED-vi)  **A `joined` milestone refuses every verb** — the same hole at the *other*
+//!             terminal, closed by the same predicate, not a second special case.
+//!
+//!   (RED-vii) **`create` refuses an id a committed record already owns** — the mint's collision
+//!             check reads the *workbench*, which a terminal op has just removed, so re-creating a
+//!             settled milestone's title **overwrote its committed record** at exit 0.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -63,10 +79,23 @@ impl Drop for TempDir {
     }
 }
 
-/// The milestone under test, and its sub-tasks: two that genuinely **joined** (a real
-/// `milestone finalize` flipped them) and one still **active** (added after that finalize).
+/// The milestone under test and its three sub-tasks — all **active**.
+///
+/// The retired fixture built a *partially-joined* milestone by running `finalize` and then
+/// `add-task`. That sequence is **not a legitimate flow**: `finalize` joins the whole milestone
+/// and `joined` is a **terminal** — the add-task only worked because the workbench reseed never
+/// consulted the record's status (the M42 completion-audit HIGH, fixed here). A `joined` item
+/// under a live header is therefore not reachable through the verbs at all, so `discard`'s
+/// per-item rule (*a genuinely joined sub-task stays `joined`*) is proven where it is reachable:
+/// the engine unit tests over a directly-constructed record
+/// (`engine::milestone::tests::discard_flips_non_joined_items_and_header_leaving_a_joined_item_byte_identical`).
 const MILESTONE: &str = "cache-rework";
-const JOINED_SUBS: [&str; 2] = ["warm-the-read-cache", "evict-cold-entries"];
+const SUBS: [&str; 3] = [
+    "warm-the-read-cache",
+    "evict-cold-entries",
+    "purge-stale-keys",
+];
+/// The sub-task whose worktree carries the abandon path's uncommitted WIP.
 const ACTIVE_SUB: &str = "purge-stale-keys";
 
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
@@ -216,63 +245,50 @@ fn item_status(body: &str, sub: &str) -> String {
         })
 }
 
-/// A **partially-joined** milestone, built entirely through the production verbs on a
-/// `[dev ▸ methodology]` repo: create → add-task ×2 → **finalize** (both sub-tasks and the header
-/// flip to `joined`) → add-task (a third, `active`) → provision (one worktree per sub-task). The
-/// committed record therefore carries exactly what the discard's per-item rule is about — landed
-/// work alongside work that never landed — and the workbench (milestone area, the new sub-task's
-/// area, three registered worktrees) is live.
-fn setup_partially_joined_milestone(repo: &Path, home: &Path) {
+/// A **live, mid-flight** milestone, built entirely through the production verbs on a
+/// `[dev ▸ methodology]` repo: create → add-task ×3 → provision (one worktree per sub-task). The
+/// committed record reads `active` on the header and on every item, and the workbench (the
+/// milestone area, the sub-task areas, three registered worktrees) is live — the state the abandon
+/// path exists for, and the state every terminal test below settles *from*.
+fn setup_live_milestone(repo: &Path, home: &Path) {
     assert_ok(
         &run_milestone(repo, home, &["create", "Cache rework"]),
         "`jigc milestone create`",
     );
-    assert_ok(
-        &run_milestone(repo, home, &["add-task", MILESTONE, "Warm the read cache"]),
-        "add-task #1",
-    );
-    assert_ok(
-        &run_milestone(repo, home, &["add-task", MILESTONE, "Evict cold entries"]),
-        "add-task #2",
-    );
-    assert_ok(
-        &run_milestone(repo, home, &["finalize", MILESTONE]),
-        "`jigc milestone finalize` (the two sub-tasks genuinely join)",
-    );
-    assert_ok(
-        &run_milestone(repo, home, &["add-task", MILESTONE, "Purge stale keys"]),
-        "add-task #3 (after the join — still active)",
-    );
+    for (sub, intent) in SUBS.iter().zip([
+        "Warm the read cache",
+        "Evict cold entries",
+        "Purge stale keys",
+    ]) {
+        assert_ok(
+            &run_milestone(repo, home, &["add-task", MILESTONE, intent]),
+            &format!("add-task `{sub}`"),
+        );
+    }
     assert_ok(
         &run_milestone(repo, home, &["provision", MILESTONE]),
         "`jigc milestone provision`",
     );
 
-    // The pre-discard record: the header + both finalized sub-tasks read `joined`, the third
-    // reads `active` (the fixture the per-item rule needs, minted by the production verbs).
+    // The pre-discard record: nothing has landed, so the header and every item read `active`.
     let body = read_record(repo);
     assert_eq!(
         header_status(&body),
-        "joined",
+        "active",
         "pre-discard header:\n{body}"
     );
-    for sub in JOINED_SUBS {
+    for sub in SUBS {
         assert_eq!(
             item_status(&body, sub),
-            "joined",
-            "pre-discard: `{sub}` genuinely joined:\n{body}",
+            "active",
+            "pre-discard: `{sub}` is in flight:\n{body}",
         );
     }
-    assert_eq!(
-        item_status(&body, ACTIVE_SUB),
-        "active",
-        "pre-discard: `{ACTIVE_SUB}` never joined:\n{body}",
-    );
-    // The live workbench: the milestone area, the active sub-task's area, three worktrees.
+    // The live workbench: the milestone area, the sub-task areas, three worktrees.
     assert!(milestone_area(repo).is_dir(), "the milestone area is live");
     assert!(
         subtask_area(repo, ACTIVE_SUB).is_dir(),
-        "the active sub-task's working area is live",
+        "the sub-task working areas are live",
     );
     assert_eq!(
         registered_fanout_worktrees(repo).len(),
@@ -290,7 +306,7 @@ fn a_dirty_subtask_worktree_refuses_the_discard() {
     let home = TempDir::new("home");
     init_repo(repo.path());
     write_compose_marker(repo.path());
-    setup_partially_joined_milestone(repo.path(), home.path());
+    setup_live_milestone(repo.path(), home.path());
 
     // Uncommitted work in the fanned sub-agent's worktree — by definition uncommitted on the
     // abandon path (nothing has been committed for it, and nothing will be).
@@ -348,16 +364,16 @@ fn a_dirty_subtask_worktree_refuses_the_discard() {
     );
 }
 
-/// (RED-ii) `--force` settles the record (header `discarded`, a genuinely joined sub-task still
-/// `joined`, the active one `discarded`) in EXACTLY ONE record-only commit — unrelated staged and
-/// untracked WIP untouched — and tears the whole workbench down.
+/// (RED-ii) `--force` settles the record (the header and every in-flight sub-task to `discarded`)
+/// in EXACTLY ONE record-only commit — unrelated staged and untracked WIP untouched — and tears
+/// the whole workbench down.
 #[test]
 fn force_settles_the_record_and_tears_the_workbench_down() {
     let repo = TempDir::new("force");
     let home = TempDir::new("home");
     init_repo(repo.path());
     write_compose_marker(repo.path());
-    setup_partially_joined_milestone(repo.path(), home.path());
+    setup_live_milestone(repo.path(), home.path());
 
     // The sub-agent's uncommitted work — `--force` is the explicit consent to destroy it.
     fs::write(
@@ -401,18 +417,13 @@ fn force_settles_the_record_and_tears_the_workbench_down() {
         "discarded",
         "the header settles to the abandon terminal:\n{after}",
     );
-    for sub in JOINED_SUBS {
+    for sub in SUBS {
         assert_eq!(
             item_status(&after, sub),
-            "joined",
-            "a genuinely joined sub-task STAYS joined — it really did land:\n{after}",
+            "discarded",
+            "every never-joined sub-task settles to discarded:\n{after}",
         );
     }
-    assert_eq!(
-        item_status(&after, ACTIVE_SUB),
-        "discarded",
-        "the never-joined sub-task settles to discarded:\n{after}",
-    );
     assert!(
         !after.contains("status: active"),
         "no recorded status survives un-settled:\n{after}",
@@ -445,7 +456,7 @@ fn force_settles_the_record_and_tears_the_workbench_down() {
         "discard removes every registered fan-out worktree; still registered: {:?}",
         registered_fanout_worktrees(repo.path()),
     );
-    for sub in JOINED_SUBS.iter().chain([ACTIVE_SUB].iter()) {
+    for sub in SUBS {
         assert!(
             !worktree_dir(repo.path(), sub).exists(),
             "the `{sub}` worktree checkout is gone from disk",
@@ -461,7 +472,7 @@ fn an_unknown_milestone_id_routes_and_removes_nothing() {
     let home = TempDir::new("home");
     init_repo(repo.path());
     write_compose_marker(repo.path());
-    setup_partially_joined_milestone(repo.path(), home.path());
+    setup_live_milestone(repo.path(), home.path());
 
     let before = read_record(repo.path());
     let pre_count = commit_count(repo.path());
@@ -545,5 +556,182 @@ fn dev_only_discard_tears_down_the_workbench_with_no_record_commit() {
     assert!(
         registered_fanout_worktrees(repo.path()).is_empty(),
         "dev-only discard removes the registered fan-out worktree",
+    );
+}
+
+/// **The terminal predicate, through the binary** (`design/team-ready-state.md` → The lifecycle —
+/// a terminal record has no workbench; M42 completion-audit HIGH). Run every milestone verb that
+/// reads through the workbench cache against a **settled** milestone: each must REFUSE — naming
+/// the terminal and routing to the committed record's read surface — resurrect **no** workbench,
+/// register **no** worktree, leave the record **byte-identical**, and land **no** commit.
+///
+/// `add-from-spec` is aimed at a **nonexistent** spec on purpose: the terminal refusal must fire
+/// **before** the verb's own guards, so the operator is told the milestone is settled rather than
+/// being sent off to fix a spec address that was never the problem.
+fn assert_every_verb_refuses(repo: &Path, home: &Path, terminal: &str) {
+    let before = read_record(repo);
+    let pre_count = commit_count(repo);
+
+    for args in [
+        vec!["add-task", MILESTONE, "Another thing"],
+        vec!["add-from-spec", MILESTONE, "spec:no-such-spec"],
+        vec!["list-tasks", MILESTONE],
+        vec!["provision", MILESTONE],
+        vec!["execute", MILESTONE],
+        vec!["join", MILESTONE],
+        vec!["finalize", MILESTONE],
+        vec!["discard", MILESTONE, "--force"],
+    ] {
+        let what = format!("`jigc milestone {}`", args.join(" "));
+        let out = run_milestone(repo, home, &args);
+        assert!(
+            !out.status.success(),
+            "{what} on a `{terminal}` milestone must REFUSE; got exit 0\nstdout:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(MILESTONE) && stderr.contains(terminal),
+            "{what}: the refusal names the milestone and its terminal; stderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(&format!("jigc doc show milestone-record:{MILESTONE}")),
+            "{what}: the refusal routes to the committed record's read surface; stderr:\n{stderr}",
+        );
+
+        // The workbench stays torn down — the reseed is what resurrected it.
+        assert!(
+            !milestone_area(repo).exists(),
+            "{what}: the settled milestone's workbench must NOT be rebuilt",
+        );
+        assert!(
+            registered_fanout_worktrees(repo).is_empty(),
+            "{what}: no worktree may be re-provisioned at a settled milestone's base; registered: {:?}",
+            registered_fanout_worktrees(repo),
+        );
+        assert_eq!(
+            read_record(repo),
+            before,
+            "{what}: the settled record is byte-identical after the refusal",
+        );
+        assert_eq!(
+            commit_count(repo),
+            pre_count,
+            "{what}: a refused verb commits nothing",
+        );
+    }
+}
+
+/// (RED-v) **`discarded` is actually terminal.** After the abandon, every milestone verb refuses:
+/// the record cannot gain an `active` sub-task, and `provision` cannot re-provision the worktrees
+/// the teardown removed.
+///
+/// Red before the fix: the teardown was **not a guard**. `reseed_cache` rebuilt
+/// `.jigc/milestones/<id>/` from the committed record whenever the cache was absent — the M39
+/// fresh-clone continuation path — and never consulted the record's `status`. So `provision`
+/// re-provisioned worktrees at the abandoned base (exit 0) and `add-task` appended an **active**
+/// sub-task to a **discarded** record (exit 0): the lying committed record was back, and the
+/// worktree hazard the teardown was added for was reopened.
+#[test]
+fn a_discarded_milestone_refuses_every_verb() {
+    let repo = TempDir::new("terminal-discarded");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+    setup_live_milestone(repo.path(), home.path());
+
+    assert_ok(
+        &run_milestone(repo.path(), home.path(), &["discard", MILESTONE, "--force"]),
+        "`jigc milestone discard --force`",
+    );
+    assert_eq!(
+        header_status(&read_record(repo.path())),
+        "discarded",
+        "precondition: the record settled to the abandon terminal",
+    );
+
+    assert_every_verb_refuses(repo.path(), home.path(), "discarded");
+}
+
+/// (RED-vi) **`joined` is terminal too — the same hole, not a second special case.** After
+/// `milestone finalize` lands the work and removes the workbench, every milestone verb refuses:
+/// nothing re-provisions worktrees at the landed base, and no `active` sub-task is appended to a
+/// record that says the milestone joined.
+///
+/// Red before the fix: identical to the `discarded` sibling — `reseed_cache` rebuilt the cache
+/// from the **joined** record. `add-task` after a finalize was so thoroughly accepted that Inc 7's
+/// own fixture (`setup_partially_joined_milestone`, now retired) *used* it to mint its
+/// "partially-joined" record. Both terminals are fixed by **one** predicate — a record in a
+/// terminal state does not re-seed a workbench.
+#[test]
+fn a_joined_milestone_refuses_every_verb() {
+    let repo = TempDir::new("terminal-joined");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+    setup_live_milestone(repo.path(), home.path());
+
+    assert_ok(
+        &run_milestone(repo.path(), home.path(), &["finalize", MILESTONE]),
+        "`jigc milestone finalize` (the sub-tasks genuinely join)",
+    );
+    assert_eq!(
+        header_status(&read_record(repo.path())),
+        "joined",
+        "precondition: the record settled to the landed terminal",
+    );
+    assert!(
+        !milestone_area(repo.path()).exists(),
+        "precondition: a landed finalize removes the milestone area",
+    );
+
+    assert_every_verb_refuses(repo.path(), home.path(), "joined");
+}
+
+/// (RED-vii) **The identity door.** `milestone create` mints against the **workbench** collision
+/// check (`.jigc/milestones/<id>/` exists) — which a terminal op has just removed — so re-creating
+/// a settled milestone's title **overwrote its committed record** with a fresh `active` one,
+/// destroying a settled record (a *landed* one, in the `joined` case) with no warning, exit 0. The
+/// committed record — not the disposable cache — owns a milestone's identity, so `create` refuses
+/// when a record already owns the id.
+#[test]
+fn create_refuses_when_a_committed_record_already_owns_the_id() {
+    let repo = TempDir::new("terminal-create");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+    setup_live_milestone(repo.path(), home.path());
+
+    assert_ok(
+        &run_milestone(repo.path(), home.path(), &["discard", MILESTONE, "--force"]),
+        "`jigc milestone discard --force`",
+    );
+    let settled = read_record(repo.path());
+    let pre_count = commit_count(repo.path());
+
+    let out = run_milestone(repo.path(), home.path(), &["create", "Cache rework"]);
+    assert!(
+        !out.status.success(),
+        "re-creating a settled milestone's id must REFUSE; got exit 0\nstdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(MILESTONE) && stderr.contains("discarded"),
+        "the refusal names the id and the record's status; stderr:\n{stderr}",
+    );
+    assert_eq!(
+        read_record(repo.path()),
+        settled,
+        "the settled record is NOT overwritten by a fresh mint",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        pre_count,
+        "the refused create commits nothing",
+    );
+    assert!(
+        !milestone_area(repo.path()).exists(),
+        "the refused create mints no workbench",
     );
 }

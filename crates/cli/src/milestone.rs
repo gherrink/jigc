@@ -209,6 +209,15 @@ impl MilestoneCommand {
 /// with that single shared base and an empty task list. Ensures `.jigc/.gitignore`
 /// lists `milestones/` (the area is disposable runtime state). Returns the summary
 /// line; a serial collision surfaces as the engine's routed blocking finding.
+///
+/// **A milestone's id belongs to its committed record, not to its workbench** (M42
+/// completion-audit HIGH; `design/team-ready-state.md` → The lifecycle). [`mint_milestone`]'s
+/// collision check reads the gitignored `.jigc/milestones/<id>/` area — which is *legitimately
+/// absent* both on a fresh clone of an in-flight milestone and after a terminal op tore it down —
+/// so it cannot see that the slug is taken, and the record materialization below would then
+/// **overwrite the committed record** of a milestone that was abandoned, or one whose work
+/// landed. So `create` refuses **first** when a record already owns the slug
+/// ([`guard_record_free`]), before HEAD is read or any area is minted.
 fn run_create(cwd: &Path, title: &str) -> Result<String> {
     // The base pin is the *worktree* HEAD; the `.jigc/` area binds to jigc_home (the main
     // checkout), so all worktrees share one `.jigc/` (M31 Inc 2 / WF3).
@@ -217,9 +226,6 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     crate::gitignore::ensure(&jigc_root)?;
-    let base = read_head(&repo_root)?;
-
-    let minted = mint_milestone(&jigc_root, title, base).map_err(finding_to_err)?;
 
     // The record-home split (`design/team-ready-state.md` → The `milestone-record` doctype;
     // The commit model): under a `[dev ▸ methodology]` project the composed cascade resolves
@@ -227,6 +233,16 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
     // land a **record-only** path-scoped commit. Dev-only (no methodology pack) resolves no
     // such schema → degrade to today's no-record, no-extra-commit behavior.
     let schemas = shipped_schemas(&jigc_home)?;
+
+    // The id-is-taken guard, ahead of every write: no area minted, no HEAD read, no record
+    // overwritten. Inert dev-only (no record home exists to collide with).
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        guard_record_free(&jigc_home, schema, title)?;
+    }
+
+    let base = read_head(&repo_root)?;
+    let minted = mint_milestone(&jigc_root, title, base).map_err(finding_to_err)?;
+
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         // The record's schema-version stamp value: the doctype's manifest version (the
         // same authority `doc create`'s stamp deriver reads — milestone-record is
@@ -586,18 +602,25 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) ->
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 
-    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
-    // the engine reads through it, so `add-task` on a fresh clone (no `.jigc/` WIP) continues the
-    // milestone (`design/team-ready-state.md` → Engine capability 2 (read-back)). No-op once the
-    // cache exists / dev-only (no record).
-    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
-
     // Reconcile preflight (T6): before ANY mutation (the cache append below or the record
     // overwrite), conflict-block if the committed record drifted out-of-band, leaving both the
     // cache and the record untouched (`design/team-ready-state.md` → F3). Inert dev-only.
+    //
+    // **Ahead of the reseed's terminal guard, on purpose** (`design/team-ready-state.md` → The
+    // lifecycle): drift is diagnosed BEFORE the drifted content is interpreted. A hand edit to
+    // the machine-owned `status` leaf can write `joined`/`discarded` into the record, and reading
+    // the lifecycle off tampered bytes would tell the operator *"this milestone is over"* about a
+    // milestone nobody joined or abandoned — a route that lies, from the wave that exists to stop
+    // routes lying. The drift block names the real cause and routes to reconcile.
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         reconcile_record_preflight(&jigc_home, &jigc_root, schema, milestone_id)?;
     }
+
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the engine reads through it, so `add-task` on a fresh clone (no `.jigc/` WIP) continues the
+    // milestone (`design/team-ready-state.md` → Engine capability 2 (read-back)). No-op once the
+    // cache exists / dev-only (no record). Refuses a settled record (the terminal guard).
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
     let added = add_task(&jigc_root, milestone_id, intent, workflow).map_err(finding_to_err)?;
 
@@ -686,18 +709,19 @@ fn run_add_from_spec(
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 
-    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
-    // the mint reads through it, so `add-from-spec` on a fresh clone seeds onto the continued
-    // milestone (`design/team-ready-state.md` → Engine capability 2 (read-back)). No-op once the
-    // cache exists / dev-only (no record).
-    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
-
     // Reconcile preflight (T6): before any mutation, conflict-block if the committed record
     // drifted out-of-band, leaving both the cache and the record untouched
-    // (`design/team-ready-state.md` → F3). Inert dev-only.
+    // (`design/team-ready-state.md` → F3). Inert dev-only. Ahead of the reseed's terminal guard —
+    // drift is diagnosed before the drifted content is interpreted (the `add-task` note).
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         reconcile_record_preflight(&jigc_home, &jigc_root, schema, milestone_id)?;
     }
+
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the mint reads through it, so `add-from-spec` on a fresh clone seeds onto the continued
+    // milestone (`design/team-ready-state.md` → Engine capability 2 (read-back)). No-op once the
+    // cache exists / dev-only (no record). Refuses a settled record (the terminal guard).
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
     let added = add_from_spec(
         &jigc_root,
@@ -785,6 +809,43 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 /// engine reseed ([`engine::milestone::reseed_cache_from_record`]) is itself a no-op when both
 /// cache files are already present (the live session's cache stays authoritative), so calling
 /// this on every op is cheap and side-effect-free once the cache exists.
+///
+/// **It is also the terminal guard** (M42 completion-audit HIGH; `design/team-ready-state.md` →
+/// The lifecycle). Because *every* milestone verb calls this before its own guards, the engine's
+/// *"a record in a terminal state does not re-seed a workbench"* refusal is inherited by all of
+/// them at one site: a `discarded` or `joined` milestone is over, and `add-task` / `add-from-spec`
+/// / `list-tasks` / `provision` / `execute` / `join` / `finalize` / `discard` all block here with
+/// `milestone.terminal`, routed to the committed record's read surface. Before that refusal
+/// existed, this function was the **resurrection**: it rebuilt the workbench that `discard`'s
+/// teardown (and `finalize`'s) had just removed, straight out of the settled record.
+/// **Refuse a `create` whose id a committed record already owns** — the identity half of the
+/// terminal predicate (M42 completion-audit HIGH; `design/team-ready-state.md` → The lifecycle).
+/// Resolves the record home of the **exact id the mint will produce**
+/// ([`engine::milestone::mint_id`] — never a second slug derivation) and blocks when a record
+/// already lives there, naming its status so the route can distinguish a milestone to *continue*
+/// from one that is *over* ([`engine::milestone::record_exists_finding`]).
+///
+/// Called by `create` only. Every other verb targets an id that must **already** exist, so their
+/// guard is the opposite one ([`reseed_cache`]).
+fn guard_record_free(jigc_home: &Path, schema: &Schema, title: &str) -> Result<()> {
+    let milestone_id = engine::milestone::mint_id(title);
+    let Some(record_path) = engine::store::canonical_path(jigc_home, schema, &milestone_id) else {
+        return Ok(());
+    };
+    if !record_path.exists() {
+        return Ok(());
+    }
+    // The status is decoration on the block (the *existence* is the refusal), so an unreadable
+    // record degrades to a status-less message rather than masking the collision.
+    let status = std::fs::read_to_string(&record_path)
+        .ok()
+        .and_then(|source| engine::milestone::record_status(schema, &source));
+    Err(finding_to_err(engine::milestone::record_exists_finding(
+        &milestone_id,
+        status.as_deref(),
+    )))
+}
+
 fn reseed_cache(
     jigc_home: &Path,
     jigc_root: &Path,
@@ -1063,9 +1124,19 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 
+    // (1) The reconcile preflight — a drifted committed record conflict-blocks before ANY
+    // mutation, leaving the record and the workbench untouched (`design/team-ready-state.md` → F3).
+    // Inert dev-only. Ahead of the reseed's terminal guard — drift is diagnosed before the drifted
+    // content is interpreted (the `add-task` note).
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        reconcile_record_preflight(&jigc_home, &jigc_root, schema, milestone_id)?;
+    }
+
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
     // the `dir.is_dir()` guard + task-list read, so a teammate on a fresh clone can abandon a
     // milestone whose workbench they never had (`design/team-ready-state.md` → Engine capability 2).
+    // An **already-settled** record refuses here (the terminal guard): a milestone that is over is
+    // not abandoned twice, and re-running the settle would land an empty record-only commit.
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
     let dir = milestone_dir(&jigc_root, milestone_id);
@@ -1076,13 +1147,6 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
     }
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
-
-    // (1) The reconcile preflight — a drifted committed record conflict-blocks before ANY
-    // mutation, leaving the record and the workbench untouched (`design/team-ready-state.md` → F3).
-    // Inert dev-only.
-    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
-        reconcile_record_preflight(&jigc_home, &jigc_root, schema, milestone_id)?;
-    }
 
     // (2) The dirty-worktree guard — the abandon path's WIP safety
     // (`design/team-ready-state.md` → Abandon refuses on a dirty worktree). The teardown's
@@ -1394,10 +1458,20 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 
+    // Reconcile preflight (T6), hoisted ahead of the reseed's terminal guard — drift is diagnosed
+    // before the drifted content is interpreted (the `add-task` note). The finalize status-flip
+    // runs this again at its own write site ([`flip_record_for_finalize`]), which is where T6
+    // places it; a clean record makes the second call a no-op.
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        reconcile_record_preflight(&jigc_home, &jigc_root, schema, milestone_id)?;
+    }
+
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
     // the `dir.is_dir()` guard + base-pin/task-list reads + the engine `materialize`'s internal
     // cache reads, so `finalize` on a fresh clone re-derives the milestone shape and joins the
-    // recorded sub-tasks (`design/team-ready-state.md` → Engine capability 2 (read-back)).
+    // recorded sub-tasks (`design/team-ready-state.md` → Engine capability 2 (read-back)). A
+    // **settled** record refuses here (the terminal guard): a landed milestone is not re-joined,
+    // and an abandoned one is not finalized.
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
     let dir = milestone_dir(&jigc_root, milestone_id);
