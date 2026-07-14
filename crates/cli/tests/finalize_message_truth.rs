@@ -13,7 +13,11 @@
 //! - **(b)** against a repo with a **rejecting `pre-commit` hook**, finalize exits
 //!   non-zero with git's **verbatim** hook stderr **and** the sentence `task <id> is
 //!   intact` — and the claim is *proved*, not just printed: removing the hook and
-//!   re-running the **same** `jigc task finalize <id>` lands the commit.
+//!   re-running the **same** `jigc task finalize <id>` lands the commit;
+//! - **(c)** the forecast is *checked against reality*: with jigc's **own** config layer
+//!   dirty (`jigc config set …`), the left-out set the **dry-run** forecasts, the set the
+//!   **pre-commit** advisory names, and the **landed residual** are one and the same — a
+//!   path the finalize itself stages is never named "left-out (… git add to include)".
 
 use std::fs;
 use std::io::Write;
@@ -155,6 +159,19 @@ fn seed_task(repo: &Path, home: &Path, intent: &str) -> String {
     task
 }
 
+/// The left-out paths a finalize surface names: the shared `left_out_lines` section is a
+/// header line followed by one 4-space-indented path per entry (an *included* manifest line
+/// carries only 2), so the block reads off any of the three surfaces identically.
+fn left_out_paths(surface: &str) -> Vec<String> {
+    surface
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("left-out ("))
+        .skip(1)
+        .take_while(|line| line.starts_with("    "))
+        .map(|line| line.trim().to_string())
+        .collect()
+}
+
 /// (a) The `left-out` advisory prints **before** the commit (M42): one staged file, one
 /// unstaged tracked edit → the advisory names the unstaged file ahead of the
 /// `finalized <hash>` line, and the commit still lands (a print refuses nothing).
@@ -282,5 +299,103 @@ fn hook_rejection_says_the_task_is_intact_and_the_rerun_lands() {
     assert!(
         committed.lines().any(|line| line == "code.txt"),
         "the still-staged code rides the re-run's commit; files:\n{committed}",
+    );
+}
+
+/// (c) The forecast must not lie about the paths **jigc itself stages**. With jigc's own
+/// git-tracked config layer dirty (`jigc config set docs-root docs` writes an untracked
+/// `.jigc/config/manifest.yaml`, which `stage_index_honoring` unconditionally `git add`s),
+/// the three surfaces must name **one** left-out set: the `--dry-run` forecast, the
+/// pre-commit advisory, and the landed residual. The config file belongs in the *commit*,
+/// never under "left-out (unstaged/untracked — git add to include)" — an instruction to
+/// `git add` a path the CLI owns and stages. The genuine unstaged user file still appears.
+#[test]
+fn the_pre_commit_left_out_equals_the_landed_residual_when_jigcs_config_is_dirty() {
+    let repo = TempDir::new("config-dirty");
+    let home = TempDir::new("home-config-dirty");
+    init_repo(repo.path());
+    let task = seed_task(repo.path(), home.path(), "own the config layer");
+
+    // jigc's own config layer goes dirty — the CLI owns it, and finalize stages it.
+    ok_stdout(
+        repo.path(),
+        home.path(),
+        &["config", "set", "docs-root", "docs"],
+        "jigc config set docs-root",
+    );
+    let config = "  .jigc/config/manifest.yaml";
+    assert!(
+        git(
+            repo.path(),
+            &["status", "--porcelain", "--untracked-files=all"]
+        )
+        .lines()
+        .any(|line| line.ends_with(".jigc/config/manifest.yaml")),
+        "the premise: jigc's config layer is dirty going into the finalize",
+    );
+
+    // The agent stages its code and leaves a genuine unstaged edit behind.
+    fs::write(repo.path().join("staged.txt"), "the task's work\n").expect("write staged.txt");
+    git(repo.path(), &["add", "staged.txt"]);
+    fs::write(repo.path().join("README.md"), "hello\nunstaged WIP\n").expect("edit README.md");
+
+    let dry_run = ok_stdout(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", &task, "--dry-run"],
+        "jigc task finalize --dry-run",
+    );
+    let stdout = ok_stdout(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", &task],
+        "jigc task finalize",
+    );
+    let landed_at = stdout
+        .find("finalized ")
+        .unwrap_or_else(|| panic!("the finalize must land and say so; stdout:\n{stdout}"));
+
+    let forecast = left_out_paths(&dry_run);
+    let pre_commit = left_out_paths(&stdout[..landed_at]);
+    let landed = left_out_paths(&stdout[landed_at..]);
+
+    // One truth, three surfaces — the forecast is what the commit actually leaves behind.
+    assert_eq!(
+        pre_commit, landed,
+        "the pre-commit left-out set must BE the landed residual; dry-run:\n{dry_run}\n---\n\
+         finalize:\n{stdout}",
+    );
+    assert_eq!(
+        forecast, pre_commit,
+        "the --dry-run forecast must name the same set; dry-run:\n{dry_run}\n---\n\
+         finalize:\n{stdout}",
+    );
+    assert!(
+        !pre_commit
+            .iter()
+            .any(|path| path == ".jigc/config/manifest.yaml"),
+        "jigc must never tell the agent to `git add` the config layer IT stages; left-out:\n\
+         {pre_commit:?}\nfinalize:\n{stdout}",
+    );
+    assert!(
+        pre_commit.iter().any(|path| path == "README.md"),
+        "the genuine unstaged user edit is still named; left-out:\n{pre_commit:?}",
+    );
+
+    // …because the commit carries it: the config layer landed, the unstaged edit did not.
+    let committed = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        committed
+            .lines()
+            .any(|line| line == ".jigc/config/manifest.yaml"),
+        "the config layer rides the commit (which is WHY it is not left out); files:\n{committed}",
+    );
+    assert!(
+        stdout[landed_at..].contains(config.trim()),
+        "the landed manifest names the config layer as an included member; stdout:\n{stdout}",
+    );
+    assert!(
+        !committed.lines().any(|line| line == "README.md"),
+        "the unstaged edit stays out of the commit; files:\n{committed}",
     );
 }

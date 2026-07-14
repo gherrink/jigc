@@ -1020,11 +1020,15 @@ impl TaskArea {
     /// the file-set the commit would carry (B1 dirty-tree sweep), built from repo state
     /// alone (no stage, no commit). Mirrors the two stage paths:
     ///
-    /// - **Non-migration** (`git add --all`): start from the working tree (`git status
-    ///   --porcelain --untracked-files=all`), mapping `??`→untracked / modified / deleted;
-    ///   then ADD each promotion `destination` as `promoted` (the staged docs live in the
-    ///   gitignored working area, absent from `git status`) and each tracked retirement as
-    ///   `deleted`. A promotion wins the dedup over any same-path working-tree entry.
+    /// - **Non-migration** (`IndexHonoring`): start from the working tree (`git status
+    ///   --porcelain --untracked-files=all`) and split each dirty path by its porcelain
+    ///   columns — X (index) → `included`, Y (worktree) → `left_out` — **except** the paths
+    ///   [`stage_index_honoring`] `git add`s itself (the `.jigc/config` / `.jigc/.gitignore`
+    ///   config layer + the `.jigc/version` stamp), which are `included` whichever column is
+    ///   dirty: jigc stages them, so they are never left behind (M42). Then ADD each
+    ///   promotion `destination` as `promoted` (the staged docs live in the gitignored
+    ///   working area, absent from `git status`) and each tracked retirement as `deleted`.
+    ///   A promotion wins the dedup over any same-path working-tree entry.
     /// - **Migration** (`stage_migration`'s narrowed pathspec): exactly its set — promotions
     ///   (`promoted`), tracked retirements (`deleted`), and the jigc-tracked config layer
     ///   `.jigc/config` / `.jigc/.gitignore` (`modified`). No user WIP.
@@ -1082,8 +1086,21 @@ impl TaskArea {
         // the commit, the Y (worktree) column is **left out** (unstaged/untracked WIP the
         // agent must `git add` to include). A staged-then-further-modified (`MM`) path is
         // non-blank in both columns, so it appears in **both** sets.
+        //
+        // …with ONE exception the columns alone cannot see: [`stage_index_honoring`] adds
+        // **jigc's own contributions** to the index before the commit, so a dirty path under
+        // that narrowed pathspec is *included*, never left behind — predicting it "left-out
+        // (git add to include)" would state a falsehood AND tell the agent to stage a path
+        // the CLI owns and is staging itself (M42; the migration branch above already
+        // accounts for its own stage — this is the un-swept sibling).
         let promoted_set: std::collections::HashSet<&str> =
             promoted.iter().map(String::as_str).collect();
+        // The stage's own pathspecs, guarded exactly as it guards them — except the version
+        // stamp, which `stage_index_honoring` REFRESHES before the existence guard, so it is
+        // present at stage time whatever this prediction sees now.
+        let mut jigc_staged =
+            existing_pathspecs(&self.repo_root, &[".jigc/config", ".jigc/.gitignore"]);
+        jigc_staged.push(crate::setup::VERSION_STAMP_PATH.to_owned());
         let mut included: Vec<ManifestEntry> = Vec::new();
         let mut left_out: Vec<ManifestEntry> = Vec::new();
         for (code, path) in git_status_entries(&self.repo_root)? {
@@ -1094,6 +1111,22 @@ impl TaskArea {
             let mut columns = code.chars();
             let x = columns.next().unwrap_or(' ');
             let y = columns.next().unwrap_or(' ');
+            // jigc stages this one itself (a `git add -- <spec>` matches the file and, for a
+            // directory spec like `.jigc/config`, everything under it) — so it rides the
+            // commit whichever column is dirty: an untracked one is `added`, otherwise the
+            // index column when it is already staged, else the worktree column jigc will stage.
+            if jigc_staged
+                .iter()
+                .any(|spec| path == *spec || path.starts_with(&format!("{spec}/")))
+            {
+                let kind = match (x, y) {
+                    ('?', _) => ManifestKind::Added,
+                    (' ', _) => column_kind(y),
+                    _ => column_kind(x),
+                };
+                included.push(ManifestEntry { path, kind });
+                continue;
+            }
             // X names the staged change the commit carries. `?` (untracked) is not in the
             // index, so it never counts as included.
             if x != ' ' && x != '?' {
