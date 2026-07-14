@@ -235,7 +235,7 @@ fn commit_changelog(repo: &Path, home: &Path, pack: &Path) -> String {
         ),
         "jigc start --workflow record-change",
     );
-    let task = "cut-100";
+    let task = "cut-1-0-0";
     let created = ok_stdout(
         run_jigc(
             repo,
@@ -333,7 +333,7 @@ const WHOLE_DOC_JSON: &str = r#"{
           }
         ],
         "date": "<DATE>",
-        "id": "100",
+        "id": "1-0-0",
         "link": "https://example.com/compare/0.9.0...1.0.0",
         "title": "1.0.0"
       }
@@ -364,8 +364,10 @@ const CHANGE_GROUP_JSON: &str = r#"{
 }"#;
 
 /// `doc show <release> --format json` — the release item object, carrying the minted
-/// `id` (`100`) that is **not** derivable from its heading (`1.0.0`): the key that
-/// closes the contract under its own address grammar (M42).
+/// `id` (`1-0-0`), the key that closes the contract under its own address grammar (M42).
+/// A frozen id is READ here, never re-derived: it can diverge from the heading (a
+/// retitle-item, the mint-time word cap, a `-2` collision suffix — and, permanently,
+/// the generation-1 corpus where this same `1.0.0` heading carries the id `100`).
 const RELEASE_ITEM_JSON: &str = r#"{
   "changes": [
     {
@@ -380,7 +382,7 @@ const RELEASE_ITEM_JSON: &str = r#"{
     }
   ],
   "date": "<DATE>",
-  "id": "100",
+  "id": "1-0-0",
   "link": "https://example.com/compare/0.9.0...1.0.0",
   "title": "1.0.0"
 }"#;
@@ -516,12 +518,13 @@ fn doc_show_json_serves_nested_changelog_content_under_the_pinned_shape() {
 
     // (6) The item `id` closes the contract under its own address grammar (M42): the
     //     EMITTED add-item address carries the minted id, and the item object read back
-    //     at that address carries the SAME id under `id`. The id is not derivable from
-    //     the heading — the release titled `1.0.0` mints `100`, so a driver slugifying
-    //     the title would guess `1-0-0` and earn a `write.wrong-shape`.
+    //     at that address carries the SAME id under `id`. A driver must READ the id, never
+    //     re-derive it: the mint rule is versioned (slug-rule-version 2 maps the dots →
+    //     `1-0-0`; generation 1 stripped them → `100`, and those frozen ids stay), so a
+    //     driver slugifying the title guesses at whichever generation minted the corpus.
     assert_eq!(
-        release, "changelog:changelog#releases/100",
-        "the emitted release address carries the minted id (not the slugified title)",
+        release, "changelog:changelog#releases/1-0-0",
+        "the emitted release address carries the minted id (read back, not re-derived)",
     );
     let json = ok_stdout(
         run_jigc(

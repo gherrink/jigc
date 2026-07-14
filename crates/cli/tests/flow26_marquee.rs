@@ -620,7 +620,10 @@ fn flow26_red_remove_item_retracts_nested_change_group_byte_stable() {
     setup_and_migrate(repo.path(), home.path(), &pack, "HISTORY.md", FOREIGN);
     author_via_batch(repo.path(), home.path(), &pack, TASK, HAPPY_PAYLOAD);
 
-    // 1.2.0 carries `changed` + `fixed`; retract the `changed` group.
+    // 1.2.0 carries `changed` + `fixed`; retract the `changed` group. The release id
+    // is `1-2-0` — the dot is a SEPARATOR at slug-rule-version 2 (it was stripped at
+    // version 1, minting `120`, which collided with a release literally titled `120`;
+    // `design/storage.md` → Identity → The slug rule is itself a versioned rule).
     let removed = run_jigc(
         repo.path(),
         home.path(),
@@ -628,7 +631,7 @@ fn flow26_red_remove_item_retracts_nested_change_group_byte_stable() {
         &[
             "doc",
             "remove-item",
-            "changelog:changelog#releases/120/changes/changed",
+            "changelog:changelog#releases/1-2-0/changes/changed",
             "--task",
             TASK,
         ],

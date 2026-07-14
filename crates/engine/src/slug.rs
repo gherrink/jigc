@@ -16,7 +16,8 @@
 //! and the one separator map), which [`slugify`] (the **mint** rule) composes over:
 //! 1. lowercase (ASCII case-fold),
 //! 2. transliterate the common Latin accented letters to ASCII (`café`→`cafe`),
-//! 3. map spaces and `_` to `-`,
+//! 3. map the **separators** — space, `_`, `/`, `.` — to `-` (the `/`·`.` half is
+//!    the [rule-version-2 fork](#the-rule-is-itself-versioned-m42)),
 //! 4. strip every remaining char outside `[a-z0-9-]`,
 //! 5. collapse runs of `-` and trim leading/trailing `-`,
 //! 6. cap at the first ~5 words (dash-separated), dropping the rest, then drop
@@ -50,6 +51,15 @@
 //! [`crate::manifest::check`] blocks loudly on a drift
 //! ([design/storage.md](../../../design/storage.md) → Identity → *The slug rule is
 //! itself a versioned rule (M42)*).
+//!
+//! **Version 2 (M42) is the first fork**: `/` and `.` join the separator map
+//! (step 3) instead of being stripped. Under generation 1 a slash **fused two
+//! words** (`auth/session` → `authsession`) and a dot **collided** (`1.0` and `10`
+//! both minted `10` — live in a changelog whose release ids are minted from version
+//! strings). Under generation 2 they map to `-` like a space. The split is
+//! **permanent**: ids minted under generation 1 keep their bytes (they are frozen
+//! anchors and frozen paths), and there is no migration — so the corpus, not the
+//! rule, carries the history.
 
 use crate::file_state::hash_bytes;
 
@@ -142,7 +152,7 @@ pub fn renormalize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {
-            ' ' | '_' => out.push('-'),
+            ' ' | '_' | '/' | '.' => out.push('-'),
             'a'..='z' | '0'..='9' | '-' => out.push(ch),
             'A'..='Z' => out.push(ch.to_ascii_lowercase()),
             _ => {
@@ -372,7 +382,11 @@ fn cap_chars(s: &str) -> String {
 /// frozen paths), and no transform kind can re-mint an id, so there is no
 /// migration to reconcile them. The version is what makes that split a
 /// *declared* event rather than a discovered one.
-pub const SLUG_RULE_VERSION: u32 = 1;
+///
+/// **2** (M42): `/` and `.` map to `-` instead of being stripped — see the [module
+/// docs](self#the-rule-is-itself-versioned-m42). **1** was the M39 word-capped rule
+/// as first shipped; a corpus older than this bump carries generation-1 ids forever.
+pub const SLUG_RULE_VERSION: u32 = 2;
 
 /// The **fingerprint of the slug rule**: the lowercase-hex `blake3` digest of
 /// `slugify`'s behaviour over a *generated* input vector — the identity-mint
@@ -386,7 +400,9 @@ pub const SLUG_RULE_VERSION: u32 = 1;
 /// - every **printable ASCII** char, alone and framed (`a<c>b`) — so a change to
 ///   the separator map, the strip set, or the case-fold moves the hash (the two
 ///   frames separate "what does this char *become*" from "what does it do
-///   *between* two words": `/` is stripped today, so `a/b` fuses to `ab`);
+///   *between* two words": under generation 1 `/` was stripped, so `a/b` fused to
+///   `ab`; under generation 2 it separates, so `a/b` is `a-b` — and this vector is
+///   what made that fork move the hash at every door);
 /// - every [`TRANSLITERATE`] entry, in both frames — so adding, removing, or
 ///   re-pointing a fold moves the hash;
 /// - every [`EDGE_STOPWORDS`] word at each of the three positions (leading,
@@ -501,16 +517,14 @@ mod tests {
             ("combining-mark-alone", "\u{0301}"),
             ("transliterates-to-dash", "–—‒"),
             ("transliterates-to-uppercase", "Đorđe ẞ"),
-            // M42 Inc 10 T1 — the census EXTENDED over the characters the rule
-            // change (T3) touches, pinning **today's broken outputs** so the fork
-            // reads as a reviewable diff rather than an unpinned surprise. `/` and
-            // `.` are *stripped*, not mapped: a slash **fuses two words**, and a
-            // dotted version number **collides** with its dot-free neighbour
-            // (`1.0` and `10` both mint `10` — live in a changelog whose release
-            // ids are minted from version strings).
-            ("slash-fuses-words", "auth/session"),
-            ("dotted-version-collides", "1.0"),
-            ("dot-free-collision-partner", "10"),
+            // M42 Inc 10 — the separator fork, at slug-rule-version 2: `/` and `.`
+            // MAP to `-` (they were stripped under generation 1, where a slash
+            // fused two words and `1.0`/`10` minted one colliding id). T1 pinned
+            // the broken outputs here so the fork lands as a reviewable diff; these
+            // four lines are that diff.
+            ("slash-separates-words", "auth/session"),
+            ("dotted-version-keeps-its-dots", "1.0"),
+            ("dot-free-former-collision-partner", "10"),
             ("path-like-id-source", "src/main.rs"),
         ];
         let table: Vec<String> = cases
@@ -551,10 +565,10 @@ mod tests {
         combining-mark-alone: "\u{301}" -> ""
         transliterates-to-dash: "–—‒" -> ""
         transliterates-to-uppercase: "Đorđe ẞ" -> "ore"
-        slash-fuses-words: "auth/session" -> "authsession"
-        dotted-version-collides: "1.0" -> "10"
-        dot-free-collision-partner: "10" -> "10"
-        path-like-id-source: "src/main.rs" -> "srcmainrs"
+        slash-separates-words: "auth/session" -> "auth-session"
+        dotted-version-keeps-its-dots: "1.0" -> "1-0"
+        dot-free-former-collision-partner: "10" -> "10"
+        path-like-id-source: "src/main.rs" -> "src-main-rs"
         "#);
     }
 
@@ -565,6 +579,45 @@ mod tests {
         assert_eq!(slugify("café"), "cafe");
         assert_eq!(slugify("Add rate limiter"), "add-rate-limiter");
         assert_eq!(slugify(""), "");
+    }
+
+    /// **The M42 fork (slug-rule-version 2).** `/` and `.` are *separators*, not
+    /// noise: they map to `-` like a space, rather than being stripped. Both halves
+    /// are defects of the generation-1 rule, and both are id-level:
+    ///
+    /// - a slash **fuses two words** (`auth/session` → `authsession`), so a
+    ///   path-shaped id-source mints an unreadable id;
+    /// - a dot **collides** (`1.0` and `10` both minted `10`) — live in a changelog
+    ///   whose release ids are minted from version strings, so `1.0.0` and `100` are
+    ///   one id.
+    ///
+    /// The separator map lives in [`renormalize`] (the one map), so *recognition*
+    /// forks with the mint in lockstep — the two rules cannot drift apart.
+    #[test]
+    fn slash_and_dot_are_separators_at_rule_version_2() {
+        // The slash no longer fuses.
+        assert_eq!(slugify("auth/session"), "auth-session");
+        assert_eq!(slugify("src/main.rs"), "src-main-rs");
+
+        // The dotted-version collision class is gone: the two inputs that minted
+        // one id now mint two.
+        assert_ne!(
+            slugify("1.0"),
+            slugify("10"),
+            "the dotted-version collision class survives"
+        );
+        assert_eq!(slugify("1.0"), "1-0");
+        assert_eq!(slugify("10"), "10");
+        assert_eq!(slugify("1.0.0"), "1-0-0");
+
+        // The one map: recognition forks with the mint (no cap, no stopword drop).
+        assert_eq!(renormalize("auth/session"), "auth-session");
+        assert_eq!(renormalize("1.0.0"), "1-0-0");
+
+        // The declared version says so — the rule change and the version bump are
+        // one event, and the pack-load fence checks this integer against every
+        // shipped manifest.
+        assert_eq!(SLUG_RULE_VERSION, 2);
     }
 
     /// The char backstop: a single long-word id-source (no `-` for the word cap
@@ -714,10 +767,15 @@ mod tests {
     }
 
     /// The fingerprint is a stable 64-hex digest that **moves when the rule moves**
-    /// — the property the pack-load gate rests on. Proven against the *exact* change
-    /// T3 ships (`/` and `.` mapped to `-`): re-running the generated vector under
-    /// that variant rule yields a different digest, so the gate cannot sleep through
-    /// it.
+    /// — the property the pack-load gate rests on. Proven against the *generation-1*
+    /// rule (`/` and `.` **stripped**, the shape this rule shipped as until the M42
+    /// fork): re-running the generated vector under that rule yields a different
+    /// digest, so the fence could not — and did not — sleep through the fork.
+    ///
+    /// The variant reconstructs generation 1 by pre-stripping the two chars the
+    /// fork added to the separator map: with them gone from the input, generation
+    /// 2's map has nothing to map, so `slugify` reproduces generation-1 output
+    /// exactly.
     #[test]
     fn fingerprint_moves_when_the_rule_changes() {
         let today = rule_fingerprint();
@@ -728,19 +786,16 @@ mod tests {
         );
         assert_eq!(today, rule_fingerprint(), "fingerprint not stable");
 
-        // The T3 variant rule, applied over the same generated vector.
-        let variant: Vec<String> = fingerprint_inputs()
+        // The generation-1 rule, applied over the same generated vector.
+        let generation_1: Vec<String> = fingerprint_inputs()
             .iter()
             .map(|input| {
-                let mapped: String = input
-                    .chars()
-                    .map(|c| if c == '/' || c == '.' { '-' } else { c })
-                    .collect();
-                format!("{input:?} -> {:?}", slugify(&mapped))
+                let stripped: String = input.chars().filter(|c| *c != '/' && *c != '.').collect();
+                format!("{input:?} -> {:?}", slugify(&stripped))
             })
             .collect();
         assert_ne!(
-            hash_bytes(variant.join("\n").as_bytes()),
+            hash_bytes(generation_1.join("\n").as_bytes()),
             today,
             "the fingerprint is blind to the `/`·`.` separator mapping"
         );

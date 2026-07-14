@@ -7,10 +7,13 @@
 //! The multi-level authoring path is net-new engine, so the verb sequence was spiked
 //! against the rebuilt binary at build (M16 exercise-don't-infer). The spike confirmed
 //! a load-bearing fact the design's illustrative notation glossed: the version-title
-//! slugger DROPS dots, so `add-item --title "1.0.0"` mints id `100` (not `1-0-0`).
-//! Every downstream address here is therefore driven from the EMITTED `add-item`
-//! address verbatim — never a reconstructed `1-0-0` form — so the test asserts the
-//! bytes an agent would actually run (the masking-test guard).
+//! slugger DROPPED dots, so `add-item --title "1.0.0"` minted id `100` — colliding with
+//! a release literally titled `100`. **That is the M42 fork**: at slug-rule-version 2 a
+//! dot is a SEPARATOR, so the id is `1-0-0` (`design/storage.md` → Identity → The slug
+//! rule is itself a versioned rule). Every downstream address here is still driven from
+//! the EMITTED `add-item` address verbatim — never a reconstructed form — so the test
+//! asserts the bytes an agent would actually run (the masking-test guard), and the fork
+//! showed up here as the emitted address moving, not as a test rewritten to agree.
 //!
 //! The emitted nested-item address is the canonical **section-qualified** form (review
 //! finding S1, `design/changelog.md` → engine work #1): `#releases/<id>/changes/<cat>`,
@@ -344,7 +347,7 @@ fn assert_show_blocks(repo: &Path, home: &Path, pack: &Path, addr: &str, code: &
 /// nested change-groups (self-rooted at `###` — the T1 fix), each heading in the
 /// writer's exact canonical form: title, two spaces, the frozen `{#id}` anchor (M42
 /// inc-8 T4 — the id an agent addresses the item back by, at every depth).
-const REL1_ITEM_PLAIN: &str = "### 1.0.0  {#100}
+const REL1_ITEM_PLAIN: &str = "### 1.0.0  {#1-0-0}
 
 <!-- fields -->
 - date: <DATE1>
@@ -360,7 +363,7 @@ const REL1_ITEM_PLAIN: &str = "### 1.0.0  {#100}
 
 /// `doc show <rel2>` plain — no `link` line (the absent optional field), and the
 /// run-2 groups.
-const REL2_ITEM_PLAIN: &str = "### 1.1.0  {#110}
+const REL2_ITEM_PLAIN: &str = "### 1.1.0  {#1-1-0}
 
 <!-- fields -->
 - date: <DATE2>
@@ -389,7 +392,7 @@ const REL1_ITEM_JSON: &str = r#"{
     }
   ],
   "date": "<DATE1>",
-  "id": "100",
+  "id": "1-0-0",
   "link": "https://example.com/compare/0.9.0...1.0.0",
   "title": "1.0.0"
 }"#;
@@ -409,7 +412,7 @@ const REL2_ITEM_JSON: &str = r#"{
     }
   ],
   "date": "<DATE2>",
-  "id": "110",
+  "id": "1-1-0",
   "title": "1.1.0"
 }"#;
 
@@ -430,7 +433,7 @@ const RELEASES_SECTION_JSON: &str = r#"[
       }
     ],
     "date": "<DATE1>",
-    "id": "100",
+    "id": "1-0-0",
     "link": "https://example.com/compare/0.9.0...1.0.0",
     "title": "1.0.0"
   },
@@ -448,7 +451,7 @@ const RELEASES_SECTION_JSON: &str = r#"[
       }
     ],
     "date": "<DATE2>",
-    "id": "110",
+    "id": "1-1-0",
     "title": "1.1.0"
   }
 ]"#;
@@ -501,7 +504,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         ),
         "jigc start --workflow record-change (run 1)",
     );
-    let task1 = "cut-100";
+    let task1 = "cut-1-0-0";
 
     let created = ok_stdout(
         run_jigc(
@@ -518,7 +521,8 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         "the singleton cold-mints at the fixed slug = the type id",
     );
 
-    // The version-title slugger drops dots → id `100`; drive the EMITTED address verbatim.
+    // The version-title slugger MAPS dots (slug-rule-version 2) → id `1-0-0`; drive the
+    // EMITTED address verbatim regardless.
     let rel1 = ok_stdout(
         run_jigc(
             repo,
@@ -620,7 +624,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         ),
         "jigc start --workflow record-change (run 2)",
     );
-    let task2 = "cut-110";
+    let task2 = "cut-1-1-0";
 
     ok_stdout(
         run_jigc(
@@ -635,7 +639,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
     // Bar 3: the warm copy-in preserves the prior 1.0.0 release in the working area.
     let warm_staged = staged_changelog(repo, task2);
     assert!(
-        warm_staged.contains("### 1.0.0  {#100}")
+        warm_staged.contains("### 1.0.0  {#1-0-0}")
             && warm_staged.contains("- OAuth device-code flow"),
         "warm create copies the committed 1.0.0 release in; staged:\n{warm_staged}",
     );
@@ -766,7 +770,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
     );
     // Bar 3: BOTH releases + their nested groups are present after the warm append.
     assert!(
-        committed2.contains("### 1.0.0  {#100}") && committed2.contains("### 1.1.0  {#110}"),
+        committed2.contains("### 1.0.0  {#1-0-0}") && committed2.contains("### 1.1.0  {#1-1-0}"),
         "both releases are present after warm append; committed:\n{committed2}",
     );
     assert!(
@@ -1108,7 +1112,7 @@ fn flow24_nested_undeclared_field_blocks_at_validate_and_finalize() {
         ),
         "jigc start --workflow record-change",
     );
-    let task = "cut-100";
+    let task = "cut-1-0-0";
 
     ok_stdout(
         run_jigc(
