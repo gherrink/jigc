@@ -1799,13 +1799,19 @@ pub fn orientation_unset() -> String {
 ///
 /// **Free-prose renderer** — net-new, distinct from every other (line-structured)
 /// arm. `agent` / `human` emit the projection as **discursive prose paragraphs**:
-/// the woven definition sentences flow as running prose under light *unkeyed*
-/// section transitions ("The workflows you can compose here …", "The doc-types you
-/// can author …", "And the commands jigc gives you …"), the routing footer last.
-/// The shape is deliberately **hostile to parsing** (the non-contractual format
-/// contract — `introspection.md` → Non-contractual by design): no key-shaped lines,
-/// no bullet rows, no per-definition extractable handle — describe is a menu, not an
-/// API. `json` still routes through the generic serde renderer, but that projection
+/// **one blank-line-separated paragraph per narrated definition**, under light
+/// *unkeyed* section transitions ("The workflows you can compose here …", "The
+/// doc-types you can author …", "And the commands jigc gives you …") that lead their
+/// group's first paragraph, the routing footer last. The shape is deliberately
+/// **hostile to parsing** (the non-contractual format contract — `introspection.md`
+/// → Non-contractual by design): no key-shaped lines, no bullet rows, no
+/// per-definition extractable handle — a blank line is none of those, it is only a
+/// reading aid, so the paragraph break keeps the posture while sparing the reader the
+/// wall a whole-group `join(" ")` printed. describe is a menu, not an API. The
+/// command hints stay one paragraph: they are short one-line sentences, and breaking
+/// each onto its own line would edge the surface toward the `id → hint` table the
+/// format contract forbids. `json` still routes through the generic serde renderer,
+/// but that projection
 /// is **not** the surface this command's contract is about (describe's whole point is
 /// not to be JSON-shaped — `introspection.md` → Command surface); it carries no
 /// footer (tooling-consumed).
@@ -1837,12 +1843,12 @@ pub fn describe(format: Format, description: &Description) -> String {
 
             if !workflows.is_empty() {
                 out.push_str("The workflows you can compose here. ");
-                out.push_str(&workflows.join(" "));
+                out.push_str(&workflows.join("\n\n"));
                 out.push_str("\n\n");
             }
             if !doctypes.is_empty() {
                 out.push_str("The doc-types you can author. ");
-                out.push_str(&doctypes.join(" "));
+                out.push_str(&doctypes.join("\n\n"));
                 out.push_str("\n\n");
             }
             if !description.commands.is_empty() {

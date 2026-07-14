@@ -89,6 +89,26 @@ fn describe_stdout(repo: &Path, home: &Path) -> String {
     String::from_utf8(out.stdout).expect("utf-8 stdout")
 }
 
+/// Run the built `jigc describe --format json` binary, returning the parsed
+/// projection — the *definition inventory* the prose surface must narrate. Used to
+/// derive the expected definition count from the real pack rather than hard-coding
+/// it (the pack grows every wave).
+fn describe_json(repo: &Path, home: &Path) -> serde_json::Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["describe", "--format", "json"])
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc describe --format json` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    serde_json::from_slice(&out.stdout).expect("describe --format json emits valid JSON")
+}
+
 const ROUTING_FOOTER: &str =
     "— jigc · run `jigc start` for orientation; all writes through `jigc`.";
 
@@ -334,6 +354,87 @@ fn describe_never_doubles_the_reach_for_it_lead() {
         !out.contains("Reach for it when Reach for it"),
         "a doubled 'Reach for it when Reach for it' lead leaked — the authored usage carries a redundant lead the weave then duplicates; got:\n{out}",
     );
+}
+
+#[test]
+fn describe_breaks_a_paragraph_per_definition() {
+    // M42 Increment 12, T4 — describe stops printing a wall. The prose surface used to
+    // join every definition of a group with a single space, so ~15 workflow narrations
+    // landed as ONE unreadable paragraph. Each narrated definition now gets its own
+    // blank-line-separated paragraph (`design/introspection.md` → Non-contractual by
+    // design: a blank line is *not* an extractable handle — no key, no bullet, no
+    // delimiter — so the hostile-to-parsing posture is preserved while the menu becomes
+    // readable).
+    //
+    // Driven over the EMITTED bytes of the real binary, with the expected definition
+    // count taken from the binary's own `--format json` inventory (the pack grows every
+    // wave — a hard-coded count would rot).
+    let repo = TempDir::new("paragraphs");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let json = describe_json(repo.path(), home.path());
+    let definitions = json["definitions"]
+        .as_array()
+        .expect("the projection carries a definitions array");
+    assert!(
+        definitions.len() > 2,
+        "the shipped pack must narrate several definitions for this test to mean anything; got {}",
+        definitions.len(),
+    );
+
+    let out = describe_stdout(repo.path(), home.path());
+    let body = out.trim_end().trim_end_matches(ROUTING_FOOTER);
+    let paragraphs: Vec<&str> = body
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    // (1) The paragraph floor: at least one paragraph per definition (plus the lead-in
+    // and the command paragraph). A wall fails here — the old output had 3 paragraphs
+    // for 20+ definitions.
+    assert!(
+        paragraphs.len() >= definitions.len(),
+        "the prose must break a paragraph per definition: {} paragraphs for {} definitions\n--- output ---\n{out}",
+        paragraphs.len(),
+        definitions.len(),
+    );
+
+    // (2) The load-bearing half: no paragraph welds two narrations together. Each
+    // definition's woven prose sits in exactly one paragraph, and that paragraph
+    // carries no other definition's prose.
+    for definition in definitions {
+        let id = definition["id"].as_str().expect("a definition id");
+        let prose = definition["prose"].as_str().expect("a definition prose");
+        let carriers: Vec<&&str> = paragraphs.iter().filter(|p| p.contains(prose)).collect();
+        assert_eq!(
+            carriers.len(),
+            1,
+            "`{id}`'s narration must appear in exactly one paragraph; found {} carrying it\n--- output ---\n{out}",
+            carriers.len(),
+        );
+        let carrier = carriers[0];
+        for other in definitions {
+            let other_id = other["id"].as_str().expect("a definition id");
+            if other_id == id {
+                continue;
+            }
+            let other_prose = other["prose"].as_str().expect("a definition prose");
+            assert!(
+                !carrier.contains(other_prose),
+                "`{id}` and `{other_id}` are welded into one wall paragraph:\n{carrier}",
+            );
+        }
+    }
+
+    // (3) The posture holds: paragraph breaks introduce no key-shaped line, no bullet
+    // row, no extractable per-definition delimiter.
+    assert_non_contractual_prose(&out).unwrap_or_else(|why| {
+        panic!(
+            "the paragraphed projection must stay hostile-to-parsing: {why}\n--- output ---\n{out}"
+        )
+    });
 }
 
 #[test]
