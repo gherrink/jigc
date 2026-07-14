@@ -31,9 +31,16 @@
 //! `null` is **not** a default for "no address yet": every finding that reaches a
 //! serialization funnel carries one of the six declared target forms, and `null` is a
 //! **declared singleton value** — reserved for the codes [`is_declared_singleton`] names,
-//! whose emission path can yield at most one instance. [`debug_assert_targets_declared`]
-//! enforces that at the funnels (the contract's third obligation — the closure claim is a
-//! check, not a promise).
+//! whose emission path can yield at most one instance.
+//!
+//! **The seam is structural, not a funnel list.** The membership predicate is *a finding
+//! projects a key **iff** it is serialized as a `Finding`* — so the guard lives **on the
+//! serialization**: [`Finding`]'s `Serialize` impl asserts the **presence** half itself, and
+//! the [`Findings`] collection newtype — the sanctioned way a *set* of findings serializes —
+//! asserts the **uniqueness** half, which needs the set. Neither can be bypassed, and there
+//! is nothing to enumerate: a new surface that serializes a finding passes the check *by
+//! construction* (the M42 lesson, one level up — a hand-listed set of funnels is a census,
+//! and a census rots as the set grows; the funnel list missed `jigc ingest`'s triage row).
 //!
 //! `probe` / `check` are the **structured severity handle** the M6 post-pass keys on
 //! ([validation.md](../../../design/validation.md) → Severity assignment — the M6
@@ -135,6 +142,34 @@ impl Location {
     }
 }
 
+/// The **`path→URI` flip**: re-address every finding in `findings` at the owning doc's
+/// `identity` (its `<type>:<slug>` URI — a **placement** doctype's `<type>:<type>` singleton
+/// included), turning the bare per-instance checks' fragment-only / absent addresses into the
+/// URI normal form the stable key is defined in
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → The stable
+/// finding key). A fragment-bearing address becomes `<identity>#<fragment>`; a fragment-less
+/// or location-less finding is addressed at the bare `<identity>`. **`line`/`col` are
+/// preserved** — re-addressing never moves the source coordinate the check raised.
+///
+/// **Precondition**: the findings are *raw* per-instance output (a parse / conformance sweep
+/// against one doc), whose addresses are fragment-only — never already-flipped URIs, which
+/// would double-prefix. Every producer that holds a doc's identity flips at that boundary:
+/// the store + task conformance sweeps (`validate::attribute_to_doc`, which prefixes the
+/// message with the doc's path on the way through) and `jigc ingest`'s near-miss row
+/// re-derivation — so one defect in one doc projects **one** key, whichever verb reports it.
+pub fn readdress_to_uri(findings: &mut [Finding], identity: &str) {
+    for finding in findings {
+        let uri = match finding.location.as_ref().and_then(|l| l.address.as_deref()) {
+            Some(fragment) => format!("{identity}#{fragment}"),
+            None => identity.to_string(),
+        };
+        match &mut finding.location {
+            Some(location) => location.address = Some(uri),
+            None => finding.location = Some(Location::addressed(uri, 1, 1)),
+        }
+    }
+}
+
 /// The **stable per-instance identity** of a [`Finding`] — the `(code, target)` pair a
 /// driver dedupes/tracks a finding across sweeps by, and a future acknowledge-ledger keys
 /// on ([command-output-contract.md](../../../design/command-output-contract.md) → The
@@ -210,34 +245,32 @@ pub fn is_declared_non_unique(code: &str) -> bool {
     ) || code.starts_with("workflow-refs.")
 }
 
-/// The **membership test, made mechanical** — the check the contract's third obligation owes
+/// The **discriminating half** of the membership test, over one emitted slice
 /// ([command-output-contract.md](../../../design/command-output-contract.md) → The membership
-/// test). A finding is in the envelope-projecting set **iff** it is serialized as a `Finding` —
-/// [`Finding`]'s `Serialize` writes `key` unconditionally and derives `key.target` from
-/// [`Location::address`], so a null address **is** a null key. Call it at each of the three
-/// funnels (`ValidationReport`'s `findings[]`, a `DocAck`'s `findings[]`, the bare-`Finding`
-/// `setup_block`).
+/// test): no two findings in `findings` share one `(code, target)`, except the
+/// [`is_declared_non_unique`] codes (collapsed on purpose, with a reason).
 ///
-/// It checks the closure claim itself — *`(code, target)` is **unique-per-instance*** — which
-/// is **two** properties, and checking only the first is how the class reopens:
+/// The closure claim — *`(code, target)` is **unique-per-instance*** — is **two** properties,
+/// and checking only the first is how the class reopens. The *presence* half rides on
+/// [`Finding`]'s own `Serialize` (a finding cannot be projected without it); *uniqueness*
+/// needs the **set**, so it cannot live in a single element's `serialize` — it lives here, on
+/// [`Findings`]'s `Serialize`, the sanctioned way a collection of findings projects.
 ///
-/// 1. **Present** — every finding carries `Some(Location::address)`, except the
-///    [`is_declared_singleton`] codes (at most one instance can exist, so `(code, null)` is
-///    already unique).
-/// 2. **Discriminating** — no two findings in one emitted slice share one `(code, target)`,
-///    except the [`is_declared_non_unique`] codes (collapsed on purpose, with a reason).
-///
-/// The presence half alone passes a **degenerate** key: `schema-conformance.required-slot-present`
-/// shipped three byte-identical `(code, adr:<slug>)` keys for one pristine ADR *through* this
+/// Presence alone passes a **degenerate** key: `schema-conformance.required-slot-present`
+/// shipped three byte-identical `(code, adr:<slug>)` keys for one pristine ADR *through* the
 /// seam, because its target was non-null — under-discriminating, never address-less. A driver
 /// deserializing that array cannot tell the findings apart, which is exactly what the key
-/// exists to let it do. So the seam is keyed on the property the contract **claims**
+/// exists to let it do. So this half is keyed on the property the contract **claims**
 /// (*discriminating*), not on the symptom that made the class visible (*null*).
 ///
 /// Debug-only (`debug_assert`): the obligation is an invariant of jigc's **own** finding
 /// producers — a build-time property the whole test suite exercises through the seam — not a
 /// runtime condition on user input, so it must never turn a user's finding into a panic.
-pub fn debug_assert_targets_declared(findings: &[Finding]) {
+///
+/// Public because a container that holds findings **indirectly** (a report of rows, each
+/// carrying an `Option<Finding>` — `jigc ingest`'s triage report) cannot reach [`Findings`]'s
+/// impl but still emits one slice; it runs this over its own set from its own `Serialize`.
+pub fn debug_assert_keys_discriminate(findings: &[Finding]) {
     // Cheap enough to skip entirely in release: `debug_assert!` compiles its condition out,
     // but the uniqueness pass is a statement, so gate it the same way.
     if !cfg!(debug_assertions) {
@@ -245,13 +278,6 @@ pub fn debug_assert_targets_declared(findings: &[Finding]) {
     }
     let mut seen: std::collections::HashSet<FindingKey> = std::collections::HashSet::new();
     for finding in findings {
-        debug_assert!(
-            finding.carries_declared_target(),
-            "finding `{}` reaches a serialization funnel with no `key.target` — give it one \
-             of the six declared target forms, or declare it an exception \
-             (design/command-output-contract.md → The membership test)",
-            finding.code,
-        );
         if is_declared_non_unique(&finding.code) {
             continue;
         }
@@ -259,12 +285,90 @@ pub fn debug_assert_targets_declared(findings: &[Finding]) {
         let target = key.target.clone().unwrap_or_else(|| "null".to_owned());
         debug_assert!(
             seen.insert(key),
-            "two findings reaching one serialization funnel collide on one key \
-             (`{}`, `{}`) — give the code a discriminating `#<fragment>`, or declare it \
-             non-unique (design/command-output-contract.md → The membership test)",
+            "two findings in one serialized slice collide on one key (`{}`, `{}`) — give the \
+             code a discriminating `#<fragment>`, or declare it non-unique \
+             (design/command-output-contract.md → The membership test)",
             finding.code,
             target,
         );
+    }
+}
+
+/// A **collection of findings, as it serializes** — the one sanctioned way a *set* of
+/// [`Finding`]s projects ([command-output-contract.md](../../../design/command-output-contract.md)
+/// → The membership test). Its `Serialize` runs [`debug_assert_keys_discriminate`] over the
+/// slice and then projects it as a plain JSON array — byte-identical to the `Vec<Finding>` it
+/// replaces, so no wire shape moves.
+///
+/// It exists so the uniqueness half of the membership test has a **structural** home: the
+/// property needs the set, so it cannot ride an element's `serialize` — but a *list of places
+/// to call a checker* is a census, and M42's lesson is that a census rots. A findings
+/// collection that projects through this type **cannot** skip the check; a driver therefore
+/// never receives an array whose keys it cannot tell apart.
+///
+/// Transparent on the wire and derefs to `[Finding]`, so it reads like the `Vec` it wraps.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct Findings(Vec<Finding>);
+
+impl Serialize for Findings {
+    /// The **uniqueness half of the seam** — run over the set, then project the plain array
+    /// (each element's own `Serialize` runs the presence half).
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        debug_assert_keys_discriminate(&self.0);
+        self.0.serialize(serializer)
+    }
+}
+
+impl Findings {
+    /// The wrapped findings, by value — for the (rare) consumer that must own the `Vec`.
+    pub fn into_vec(self) -> Vec<Finding> {
+        self.0
+    }
+
+    /// Append a finding to the collection — the post-report append the CLI's store sweep does
+    /// (the binary-mismatch / orphan advisories it derives outside the engine families). The
+    /// seam is unaffected: the checks ride the projection, not the construction.
+    pub fn push(&mut self, finding: Finding) {
+        self.0.push(finding);
+    }
+}
+
+impl From<Vec<Finding>> for Findings {
+    fn from(findings: Vec<Finding>) -> Self {
+        Self(findings)
+    }
+}
+
+impl FromIterator<Finding> for Findings {
+    fn from_iter<I: IntoIterator<Item = Finding>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for Findings {
+    type Item = Finding;
+    type IntoIter = std::vec::IntoIter<Finding>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Findings {
+    type Item = &'a Finding;
+    type IntoIter = std::slice::Iter<'a, Finding>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl std::ops::Deref for Findings {
+    type Target = [Finding];
+    fn deref(&self) -> &[Finding] {
+        &self.0
     }
 }
 
@@ -334,10 +438,24 @@ impl Serialize for Finding {
     /// findings envelope). Hand-written rather than derived so `key` is computed at
     /// projection time from `code` + [`Location::address`] — a single source of truth that
     /// cannot drift from the address the finding carries.
+    ///
+    /// **This is the seam.** The membership predicate is *a finding projects a key iff it is
+    /// serialized as a `Finding`* — so the **presence** half of the membership test is
+    /// asserted right here, on the projection itself, where it cannot be bypassed and there
+    /// is nothing to enumerate (the uniqueness half needs the set: [`Findings`]). Debug-only,
+    /// like every other clause of the test: this is an invariant of jigc's **own** producers,
+    /// never a runtime condition on user input.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
+        debug_assert!(
+            self.carries_declared_target(),
+            "finding `{}` is serialized with no `key.target` — give it one of the six declared \
+             target forms, or declare it an exception (design/command-output-contract.md → The \
+             membership test)",
+            self.code,
+        );
         use serde::ser::SerializeStruct;
         let mut st = serializer.serialize_struct("Finding", 8)?;
         st.serialize_field("severity", &self.severity)?;
@@ -366,10 +484,11 @@ impl Finding {
 
     /// Whether this finding honours the **presence** half of the target obligation: it carries
     /// a `key.target` (a [`Location::address`] in one of the six declared forms), **or** its
-    /// code is a [`is_declared_singleton`] exception. Presence alone is *not* the closure
-    /// claim — a non-null target can still fail to discriminate — so
-    /// [`debug_assert_targets_declared`] pairs this with a **uniqueness** pass over the slice
-    /// at every serialization funnel; the two halves together are the membership test.
+    /// code is a [`is_declared_singleton`] exception. Asserted on every projection by
+    /// [`Finding`]'s `Serialize`. Presence alone is *not* the closure claim — a non-null target
+    /// can still fail to discriminate — so [`Findings`]'s `Serialize` pairs it with the
+    /// **uniqueness** pass over the slice ([`debug_assert_keys_discriminate`]); the two halves
+    /// together are the membership test.
     pub fn carries_declared_target(&self) -> bool {
         self.key().target.is_some() || is_declared_singleton(&self.code)
     }
@@ -462,19 +581,27 @@ mod tests {
     /// The pinned envelope (`DECISIONS.md` 2026-05-31 → Finding shape; re-pinned M6
     /// for the `(probe, check)` handle): a blocking finding with a `code`, a located
     /// `message`, and no route projects to exactly `{severity:"blocking", probe, check,
-    /// code, message, location:{line,col}, route:null}` — in that field order, no stray
-    /// keys, `address` omitted when absent, `route` kept as `null`. The `probe`/`check`
-    /// handle derives from the `code`'s `<prefix>.<suffix>` split (here the exempt
-    /// parser code `conformance.heading-missing` → `("conformance", "heading-missing")`
-    /// — it still *carries* a handle, it is merely not post-passed). The golden pins
-    /// the serialized string (not a key-sorted value), so it also locks field *order*;
-    /// a rename, a reorder, or a serde-attribute slip breaks it. That is the contract.
+    /// code, key, message, location:{address,line,col}, route:null}` — in that field order,
+    /// no stray keys, `route` kept as `null`. The `probe`/`check` handle derives from the
+    /// `code`'s `<prefix>.<suffix>` split (here the exempt parser code
+    /// `conformance.heading-missing` → `("conformance", "heading-missing")` — it still
+    /// *carries* a handle, it is merely not post-passed). The golden pins the serialized
+    /// string (not a key-sorted value), so it also locks field *order*; a rename, a reorder,
+    /// or a serde-attribute slip breaks it. That is the contract.
+    ///
+    /// The finding is **addressed**, because that is the only shape a non-exempt finding can
+    /// be *projected* in: the presence half of the membership test rides this very
+    /// `Serialize`, so an address-less `conformance.*` finding cannot reach a driver at all
+    /// (the parser emits fragment-only addresses; the owning doc's identity is flipped in by
+    /// `validate::attribute_to_doc` before the projection — the URI form pinned here). The
+    /// legitimate `target: null` shape — a **declared singleton** — is pinned by
+    /// `result::tests::the_report_seam_passes_the_declared_singleton`.
     #[test]
     fn finding_json_projection_is_the_pinned_envelope() {
         let finding = Finding::blocking(
             "conformance.heading-missing",
             "required section heading `## Decision` is missing",
-            Location::at(1, 1),
+            Location::addressed("adr:pick-a-db#decision", 1, 1),
         );
 
         let json = serde_json::to_string_pretty(&finding).expect("serializes");
@@ -487,16 +614,96 @@ mod tests {
           "code": "conformance.heading-missing",
           "key": {
             "code": "conformance.heading-missing",
-            "target": null
+            "target": "adr:pick-a-db#decision"
           },
           "message": "required section heading `## Decision` is missing",
           "location": {
+            "address": "adr:pick-a-db#decision",
             "line": 1,
             "col": 1
           },
           "route": null
         }
         "#);
+    }
+
+    /// **The seam is structural** (M42 Inc 9, the fix): the presence half of the membership
+    /// test rides [`Finding`]'s own `Serialize`, so a finding with no `key.target` cannot be
+    /// projected **at all** — not through a report, not through a write ack, not through a
+    /// triage row, not through a surface invented next year. There is no funnel list to keep
+    /// current: the check is on the projection, and *being projected* is what makes a finding a
+    /// member. Red before the move: the same finding serialized happily to `target: null`
+    /// anywhere outside the three hand-listed funnels (which is how `jigc ingest` slipped
+    /// through).
+    #[test]
+    #[should_panic(expected = "is serialized with no `key.target`")]
+    fn serializing_a_targetless_finding_fires_the_seam() {
+        let degenerate = Finding::blocking(
+            "conformance.unknown-field",
+            "undeclared field key `bogus-key`",
+            Location::at(12, 1),
+        );
+
+        let _ = serde_json::to_string(&degenerate);
+    }
+
+    /// A **declared singleton** is the one legal `target: null` — its emission path yields at
+    /// most one instance, so `(code, null)` is already unique-per-instance. It projects
+    /// through the same seam untouched (the exception list is a list of *exceptions to a
+    /// rule*, checkable from the code alone — not a list of *places to check*).
+    #[test]
+    fn serializing_a_declared_singleton_passes_the_seam() {
+        let singleton = Finding::block(
+            "setup.repo-root",
+            "`jigc setup` must run inside a git repository",
+            "run `git init` first",
+        );
+
+        let json = serde_json::to_value(&singleton).expect("a declared singleton projects");
+        assert_eq!(json["key"]["target"], serde_json::Value::Null);
+    }
+
+    /// The **uniqueness half**, on the collection newtype: a [`Findings`] cannot be projected
+    /// with two findings sharing one `(code, target)` — the property needs the *set*, so it
+    /// lives on the only sanctioned way a set of findings serializes. Same structural bar as
+    /// the presence half: you cannot hand a driver an array whose keys it cannot tell apart.
+    #[test]
+    #[should_panic(expected = "collide on one key")]
+    fn serializing_colliding_findings_fires_the_seam() {
+        let collide = |line| {
+            Finding::graded(
+                Severity::Blocking,
+                "schema-conformance.required-slot-present",
+                "required slot is empty",
+                Some(Location::addressed("adr:pick-a-db", line, 1)),
+                None,
+            )
+        };
+        let findings = Findings::from(vec![collide(12), collide(20)]);
+
+        let _ = serde_json::to_string(&findings);
+    }
+
+    /// The newtype moves **no wire shape**: a [`Findings`] projects as the plain JSON array the
+    /// `Vec<Finding>` it replaced did — the check is invisible to every consumer.
+    #[test]
+    fn findings_project_as_the_plain_array() {
+        let finding = Finding::blocking(
+            "conformance.heading-missing",
+            "required section heading `## Decision` is missing",
+            Location::addressed("adr:pick-a-db#decision", 1, 1),
+        );
+        let wrapped = Findings::from(vec![finding.clone()]);
+
+        assert_eq!(
+            serde_json::to_value(&wrapped).expect("serializes"),
+            serde_json::json!([serde_json::to_value(&finding).expect("serializes")]),
+            "a findings collection is a plain array on the wire — the seam adds no key",
+        );
+        let back: Findings =
+            serde_json::from_value(serde_json::to_value(&wrapped).expect("serializes"))
+                .expect("deserializes");
+        assert_eq!(back, wrapped, "and it round-trips");
     }
 
     /// The stable key carries the finding's URI `target` when it has one: an addressed

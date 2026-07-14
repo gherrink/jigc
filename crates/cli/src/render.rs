@@ -14,7 +14,7 @@ use crate::ingest::IngestReport;
 use crate::setup::{InstallCommit, SetupSummary, UninstallSummary};
 use crate::task::TaskListRow;
 use engine::compose::ComposedWorkflow;
-use engine::finding::{Finding, Severity};
+use engine::finding::{Finding, Findings, Severity};
 use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
 use engine::result::{NextStep, Orientation, OrientationView, ResolutionTree, ValidationReport};
@@ -755,34 +755,34 @@ pub enum DocAck {
         address: String,
         target: AckTarget,
         value: serde_json::Value,
-        findings: Vec<Finding>,
+        findings: Findings,
     },
     /// A `set-field --unset` cleared the field at `address`/`target` (its line/bullet
     /// removed). No `value` key — the effect is the field's absence, read back via `doc show`.
     UnsetField {
         address: String,
         target: AckTarget,
-        findings: Vec<Finding>,
+        findings: Findings,
     },
     /// A `set-slot` spliced `chars` characters of prose at `address`/`target`.
     Slot {
         address: String,
         target: AckTarget,
         chars: usize,
-        findings: Vec<Finding>,
+        findings: Findings,
     },
     /// A `remove-item` dropped the item at `address`/`target`.
     RemovedItem {
         address: String,
         target: AckTarget,
-        findings: Vec<Finding>,
+        findings: Findings,
     },
     /// A `retitle-item` retitled the item at `address`/`target` (anchor frozen) to `title`.
     RetitledItem {
         address: String,
         target: AckTarget,
         title: String,
-        findings: Vec<Finding>,
+        findings: Findings,
     },
     /// A `create` minted a whole doc at `address`/`target`. The target is the head only
     /// (`doctype`+`slug`, no fragment); its effect is the whole created doc, read back via
@@ -790,7 +790,7 @@ pub enum DocAck {
     Created {
         address: String,
         target: AckTarget,
-        findings: Vec<Finding>,
+        findings: Findings,
     },
     /// An `add-item` minted the item at `address`/`target`. `target.item` is the **minted**
     /// leaf-most id (the new item, not the bare section — the contract's "add-item's target
@@ -798,7 +798,7 @@ pub enum DocAck {
     AddedItem {
         address: String,
         target: AckTarget,
-        findings: Vec<Finding>,
+        findings: Findings,
     },
     /// An `author` authored a whole doc at `address`/`target`. The target is the head only
     /// (`doctype`+`slug`), like [`DocAck::Created`]; its effect is the whole authored doc,
@@ -806,7 +806,7 @@ pub enum DocAck {
     Authored {
         address: String,
         target: AckTarget,
-        findings: Vec<Finding>,
+        findings: Findings,
     },
 }
 
@@ -829,33 +829,15 @@ pub struct AckTarget {
     pub leaf: Option<String>,
 }
 
-impl DocAck {
-    /// The intrinsic single-doc advisories this ack carries — every variant has them, and
-    /// they are what the ack's `findings[]` projects (the second serialization funnel).
-    fn findings(&self) -> &[Finding] {
-        match self {
-            DocAck::Field { findings, .. }
-            | DocAck::UnsetField { findings, .. }
-            | DocAck::Slot { findings, .. }
-            | DocAck::RemovedItem { findings, .. }
-            | DocAck::RetitledItem { findings, .. }
-            | DocAck::Created { findings, .. }
-            | DocAck::AddedItem { findings, .. }
-            | DocAck::Authored { findings, .. } => findings,
-        }
-    }
-}
-
 /// Render a successful single-write `jigc doc` verb confirmation ([`DocAck`]) to the
 /// surface `format` selects: `agent` / `human` emit a terse one-line confirmation (no
 /// footer — symmetric with the bare line `doc create` / `doc add-item` emit); `json`
 /// emits a small structured ack object on stdout (the house serde-object shape, like
 /// [`milestone`]), so an agent on `--format json` gets a parseable confirmation.
 pub fn doc_ack(format: Format, ack: &DocAck) -> String {
-    // The membership test at the second serialization funnel — the ack's `findings[]`
-    // (`command-output-contract.md` → The membership test): each carries a declared
-    // `key.target`, or it would ship a degenerate key to a driver.
-    engine::finding::debug_assert_targets_declared(ack.findings());
+    // No seam call: the ack's `findings[]` is a `Findings`, so the membership test rides its
+    // projection (`command-output-contract.md` → The membership test) — the presence half on
+    // each `Finding`, the uniqueness half on the collection.
     match format {
         Format::Json => match ack {
             // The command-output contract (`design/command-output-contract.md` §2):
@@ -1086,11 +1068,10 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
 /// footer. A hard block is a blocking finding carrying a route (`DECISIONS.md`
 /// 2026-05-31), so this is the same envelope `validate` blocks surface through.
 pub fn setup_block(format: Format, finding: &Finding) -> String {
-    // The membership test at the third serialization funnel — the bare `Finding`
+    // No seam call: a bare `Finding` carries the presence half on its own `Serialize`
     // (`command-output-contract.md` → The membership test). Every `setup.*` / `uninstall.*`
-    // code is a **declared singleton** (one finding per invocation), so this seam passes
-    // them at `target: null` by the pin; anything else riding it owes a target.
-    engine::finding::debug_assert_targets_declared(std::slice::from_ref(finding));
+    // code is a **declared singleton** (one finding per invocation), so the projection passes
+    // them at `target: null` by the pin; anything else riding this surface owes a target.
     match format {
         Format::Json => json(finding),
         Format::Agent | Format::Human => {
@@ -1801,13 +1782,14 @@ mod tests {
         ]))
     }
 
-    /// The membership test at the **ack seam** — the second serialization funnel
-    /// (`command-output-contract.md` → The membership test): a `DocAck`'s `findings[]`
-    /// projects the pinned envelope, so an address-less non-exempt finding riding a write
-    /// ack would ship `key.target: null`. [`doc_ack`] fires on it. Red before the check
-    /// existed.
+    /// The membership test **through the write-ack surface** (`command-output-contract.md` →
+    /// The membership test): a `DocAck`'s `findings[]` projects the pinned envelope, so an
+    /// address-less non-exempt finding riding a write ack would ship `key.target: null`.
+    /// [`doc_ack`] fires on it — and since the fix it fires **without this surface knowing the
+    /// seam exists**: the check rides `Finding`'s own `Serialize`, so it cannot be bypassed and
+    /// no funnel has to remember to call it (the census, retired).
     #[test]
-    #[should_panic(expected = "reaches a serialization funnel with no `key.target`")]
+    #[should_panic(expected = "is serialized with no `key.target`")]
     fn the_ack_seam_fires_on_an_address_less_finding() {
         let degenerate = Finding::graded(
             engine::finding::Severity::Advisory,
@@ -1829,13 +1811,12 @@ mod tests {
                     leaf: None,
                 },
                 chars: 12,
-                findings: vec![degenerate],
+                findings: vec![degenerate].into(),
             },
         );
     }
 
-    /// The membership test at the **`setup_block` seam** — the third funnel, which
-    /// serializes a *bare* `Finding` (the funnel the two-funnel picture missed). Every
+    /// The membership test **through the bare-`Finding` surface** (`setup_block`). Every
     /// `setup.*` code is a **declared singleton** (fail-fast `Result<_, Finding>`: at most
     /// one per invocation), so it passes the check with `target: null` — by the pin, not by
     /// omission (`command-output-contract.md` → The declared singleton exception).
@@ -2506,7 +2487,7 @@ mod tests {
         );
         let outcome = JoinOutcome {
             overlay,
-            findings: Vec::new(),
+            findings: Vec::new().into(),
         };
 
         let agent = milestone_join(Format::Agent, "cache-rework", &outcome);

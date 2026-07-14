@@ -2199,9 +2199,11 @@ Body three.
             "three heads on one id are ONE defect and ONE repair — one finding, not two: \
              {findings:#?}",
         );
-        // The seam, run over the real multi-occurrence slice (not a hand-built pair): the
-        // uniqueness half of the membership test must hold on what the producer actually emits.
-        crate::finding::debug_assert_targets_declared(&findings);
+        // The seam, run over the real multi-occurrence slice (not a hand-built pair) and
+        // through the **real projection** — serializing the producer's own output as a
+        // `Findings` is what a driver receives, and both halves of the membership test ride
+        // that serialization (presence on each `Finding`, uniqueness on the collection).
+        assert_seam_passes(&findings);
     }
 
     /// The nested-parent variant of the same collapse: three `#### Added {#added}` groups within
@@ -2235,7 +2237,7 @@ Body three.
             [Some("releases/1-2-0/added")],
             "the nested duplicate collapses per (parent, id) too: {findings:#?}",
         );
-        crate::finding::debug_assert_targets_declared(&findings);
+        assert_seam_passes(&findings);
     }
 
     /// Conformance golden: a repeatable item whose `{#id}` is not a well-formed
@@ -2297,7 +2299,7 @@ Body two.
              one key by declaration: {findings:#?}",
         );
         // The seam, over the real emitted slice: the collision is the pin, not a defect.
-        crate::finding::debug_assert_targets_declared(&findings);
+        assert_seam_passes(&findings);
     }
 
     /// Regression golden (F5): a valid slug that is **not** a `slugify` fixed
@@ -2660,6 +2662,21 @@ A short burst above the limit is tolerated for 2s.
             rl.fields[0].value,
             Value::Scalar("`test/rate_limit_spec.rb#burst`".into())
         );
+    }
+
+    /// Drive a producer's real emitted slice through the **real projection** — the membership
+    /// test rides the serialization itself (the presence half on [`Finding`]'s `Serialize`, the
+    /// uniqueness half on [`crate::finding::Findings`]'s), so serializing is exactly what a
+    /// driver does and exactly what the seam checks. Debug builds panic on a violation, which
+    /// is the assertion.
+    ///
+    /// These parse findings are **pre-flip** (fragment-only addresses — the owning doc's
+    /// identity is threaded in downstream by `validate::attribute_to_doc`), so what the seam
+    /// exercises here is the *discriminating* half: distinct fragments where the contract owes
+    /// them, a declared collapse where it does not.
+    fn assert_seam_passes(findings: &[Finding]) {
+        serde_json::to_string(&crate::finding::Findings::from(findings.to_vec()))
+            .expect("the emitted slice projects through the findings seam");
     }
 
     /// The address each finding of `code` carries (the fragment the outward assembly

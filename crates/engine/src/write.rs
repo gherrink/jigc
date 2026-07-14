@@ -5850,6 +5850,18 @@ Each service drops its local limiter.
         )
         .expect_err("`rejected` is not a declared status member ⇒ abort");
         assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        // The **outward target stamp** the CLI applies before any write finding is projected
+        // (`cli::doc::stamp_target`): the engine's write constructors hold a section + a field,
+        // never a `type:slug`, so they emit `Location::at(line, col)` with **no** address, and
+        // the CLI — which holds the parsed write address — stamps it on the way out. A raw
+        // engine write finding is therefore not projectable at all (the presence half of the
+        // membership test rides `Finding`'s own `Serialize`), so the golden pins what a driver
+        // actually receives, not an intermediate the product never emits.
+        let mut finding = finding;
+        crate::finding::readdress_to_uri(
+            std::slice::from_mut(&mut finding),
+            "adr:rate-limit-at-the-gateway#status",
+        );
         insta::assert_snapshot!(
             "malformed_enum_finding",
             serde_json::to_string_pretty(&finding).unwrap()
@@ -6431,6 +6443,18 @@ Each service drops its local limiter.
         assert_eq!(finding.code, "write.slot-heading-depth");
         // The located finding names the offending line (line 3 within the prose).
         assert_eq!(finding.location.as_ref().unwrap().line, 3);
+        // The **outward target stamp** the CLI applies before any write finding is projected
+        // (`cli::doc::stamp_target`): the engine's write constructors hold a section + a field,
+        // never a `type:slug`, so they emit `Location::at(line, col)` with **no** address, and
+        // the CLI — which holds the parsed write address — stamps it on the way out. A raw
+        // engine write finding is therefore not projectable at all (the presence half of the
+        // membership test rides `Finding`'s own `Serialize`), so the golden pins what a driver
+        // actually receives, not an intermediate the product never emits.
+        let mut finding = finding;
+        crate::finding::readdress_to_uri(
+            std::slice::from_mut(&mut finding),
+            "adr:rate-limit-at-the-gateway#decision",
+        );
         insta::assert_snapshot!(
             "set_slot_ceiling_finding",
             serde_json::to_string_pretty(&finding).unwrap()

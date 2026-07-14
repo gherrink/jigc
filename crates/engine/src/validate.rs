@@ -1582,17 +1582,13 @@ fn conformance_for(
 /// The task-scope `unknown-type` arm and the store `route`-labeler already carry `rel_key`,
 /// so they are left untouched.
 fn attribute_to_doc(findings: &mut [Finding], identity: &str, rel_key: &str) {
-    for finding in findings {
+    for finding in findings.iter_mut() {
         finding.message = format!("`{rel_key}`: {}", finding.message);
-        let uri = match finding.location.as_ref().and_then(|l| l.address.as_deref()) {
-            Some(fragment) => format!("{identity}#{fragment}"),
-            None => identity.to_string(),
-        };
-        match &mut finding.location {
-            Some(location) => location.address = Some(uri),
-            None => finding.location = Some(Location::addressed(uri, 1, 1)),
-        }
     }
+    // The address half is the shared `path→URI` flip ([`engine::finding::readdress_to_uri`]) —
+    // the same one `jigc ingest`'s near-miss row applies, so a defect keys identically
+    // whichever verb reports it.
+    crate::finding::readdress_to_uri(findings, identity);
 }
 
 /// The intrinsic #5 **owner-artifact presence gate** over one staged instance's
@@ -6070,6 +6066,7 @@ Effects.
             )
             .expect("store sweep runs")
             .findings
+            .into_vec()
         };
 
         // The pre-`options` v0 ADR fails to parse under v2 (section-renamed/missing); every

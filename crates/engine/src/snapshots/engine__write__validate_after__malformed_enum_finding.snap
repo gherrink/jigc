@@ -9,10 +9,11 @@ expression: "serde_json::to_string_pretty(&finding).unwrap()"
   "code": "write.malformed-value",
   "key": {
     "code": "write.malformed-value",
-    "target": null
+    "target": "adr:rate-limit-at-the-gateway#status"
   },
   "message": "write rejected: \"rejected\" is not a member of enum \"status\" (allowed: proposed, accepted, superseded)",
   "location": {
+    "address": "adr:rate-limit-at-the-gateway#status",
     "line": 1,
     "col": 1
   },

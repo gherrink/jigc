@@ -34,7 +34,7 @@
 //! seam carries no `Resolved`: routing through it changes nothing about how `upgrade`'s
 //! findings already tune.
 
-use crate::finding::Finding;
+use crate::finding::{Finding, Findings};
 use crate::override_default::{RecordedDeltas, classify};
 use crate::packsource::PackSource;
 use crate::result::SCHEMA_VERSION;
@@ -110,8 +110,10 @@ pub struct ProbeEffectiveState {
 /// as [`ProbeRequest`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProbeResponse {
-    /// The findings the probe emits — the engine's one [`Finding`] shape.
-    pub findings: Vec<Finding>,
+    /// The findings the probe emits — the engine's one [`Finding`] shape, carried in the
+    /// [`Findings`] collection projection (the uniqueness half of the membership test rides
+    /// its `Serialize`; the wire shape is the plain array, unchanged).
+    pub findings: Findings,
     /// The wire-contract schema version (mirrors the request's marker).
     pub schema_version: u32,
 }
@@ -142,7 +144,7 @@ impl ProbeResponse {
     /// shape a well-behaved probe emits (T3 deserializes the probe's stdout into this).
     pub fn new(findings: Vec<Finding>) -> Self {
         Self {
-            findings,
+            findings: findings.into(),
             schema_version: SCHEMA_VERSION,
         }
     }
@@ -259,7 +261,7 @@ pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
             // is `malformed-output`, never "no findings", so a probe that silently did
             // nothing cannot masquerade as a pass.
             match serde_json::from_slice::<ProbeResponse>(&run.stdout) {
-                Ok(response) => response.findings,
+                Ok(response) => response.findings.into_vec(),
                 Err(err) => vec![meta_finding(
                     probe_id,
                     "malformed-output",

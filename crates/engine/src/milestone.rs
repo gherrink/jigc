@@ -23,7 +23,7 @@
 //! (jigc-root, title, base) → on-disk effect, golden-testable. No sub-task is
 //! minted here — `add_task` (the next task) is the incremental populator.
 
-use crate::finding::{Finding, Location, Severity};
+use crate::finding::{Finding, Findings, Location, Severity};
 use crate::state::BasePin;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -1017,8 +1017,11 @@ pub struct MergedDoc {
 pub struct JoinOutcome {
     /// The merged staged docs, keyed by `<type>:<slug>` address (id-sorted iteration).
     pub overlay: std::collections::BTreeMap<String, MergedDoc>,
-    /// The join's findings, in a stable order (empty in the skeleton increment).
-    pub findings: Vec<Finding>,
+    /// The join's findings, in a stable order (empty in the skeleton increment). A
+    /// [`Findings`] — the sanctioned findings-collection projection, carrying the uniqueness
+    /// half of the membership test on its `Serialize` (`command-output-contract.md` → The
+    /// membership test); it derefs to `[Finding]` and its wire shape is the plain array.
+    pub findings: Findings,
 }
 
 /// **The by-task-id join skeleton** (edge-index lifecycle **site 4**;
@@ -1398,7 +1401,10 @@ fn fold_areas(
     // total order is byte-stable across any input permutation.
     findings.sort_by(|a, b| (&a.code, &a.message).cmp(&(&b.code, &b.message)));
 
-    Ok(JoinOutcome { overlay, findings })
+    Ok(JoinOutcome {
+        overlay,
+        findings: findings.into(),
+    })
 }
 
 /// Resolve one `created` instance of a colliding slug at position `nth` (1-based, in

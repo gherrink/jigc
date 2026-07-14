@@ -73,9 +73,27 @@ pub struct TriageRow {
 
 /// The triage report — the discovered candidates classified, in sorted candidate
 /// order (the deterministic report order [`git_candidates`] yields).
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug)]
 pub struct IngestReport {
     pub rows: Vec<TriageRow>,
+}
+
+impl serde::Serialize for IngestReport {
+    /// **The uniqueness half of the membership test, for the fourth emitting surface.** A row's
+    /// `finding` projects as a [`Finding`], so its *presence* half rides that impl — but the
+    /// emitted **slice** here is the report's rows, and the report holds its findings
+    /// *indirectly* (one `Option<Finding>` per row), so it cannot project through
+    /// [`engine::finding::Findings`]. It runs the same check over its own set, from its own
+    /// `Serialize` — the guard is on the projection, not on a caller who must remember to call
+    /// it (`design/command-output-contract.md` → The membership test).
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let findings: Vec<Finding> = self.rows.iter().filter_map(|r| r.finding.clone()).collect();
+        engine::finding::debug_assert_keys_discriminate(&findings);
+        let mut st = serializer.serialize_struct("IngestReport", 1)?;
+        st.serialize_field("rows", &self.rows)?;
+        st.end()
+    }
 }
 
 /// Run the ingestion scan against `cwd`: locate the repo + project layer, load the
@@ -304,16 +322,43 @@ fn near_miss_finding(rel_path: &str, source: &str, home: &Schema) -> Finding {
     };
     let route = format!("reconcile {rel_path} against the `{}` schema", home.ty);
     match detail {
-        Some(finding) => Finding::graded(
-            Severity::Blocking,
-            finding.code,
-            finding.message,
+        Some(finding) => {
+            // The re-derived finding keeps the **code** the parse/conformance sweep raised, so
+            // it must keep that code's **target form** too: `jigc validate` reports the same
+            // defect in the same doc, and one defect projects one `(code, target)` key —
+            // whichever verb reports it (`command-output-contract.md` → the stable finding
+            // key). So the raw fragment address rides the shared `path→URI` flip against the
+            // candidate's managed identity, exactly as the store sweep's `attribute_to_doc`
+            // does; it is **not** re-stamped at the file path, which produced a second key for
+            // one defect (M42 Inc 9 fix).
+            let mut finding = Finding::graded(
+                Severity::Blocking,
+                finding.code,
+                finding.message,
+                finding
+                    .location
+                    .or_else(|| Some(Location::at(1, 1)))
+                    .map(|loc| match loc.address {
+                        Some(fragment) => Location::addressed(fragment, loc.line, loc.col),
+                        None => Location::at(loc.line, loc.col),
+                    }),
+                Some(route),
+            );
+            match home_identity(rel_path, home) {
+                Some(identity) => {
+                    engine::finding::readdress_to_uri(std::slice::from_mut(&mut finding), &identity)
+                }
+                // A candidate under a `location:` dir but not **at** the canonical home (a
+                // nested subdirectory the store enumerator never reaches) has no managed
+                // identity to claim, so it keeps the **path form** — the declared exception
+                // `file-state.*` / `ingest.*` already use.
+                None => {
+                    let (line, col) = finding.location.map_or((1, 1), |loc| (loc.line, loc.col));
+                    finding.location = Some(Location::addressed(rel_path, line, col));
+                }
+            }
             finding
-                .location
-                .map(|loc| Location::addressed(rel_path, loc.line, loc.col))
-                .or_else(|| Some(Location::addressed(rel_path, 1, 1))),
-            Some(route),
-        ),
+        }
         // Defensive: a needs-reconcile under a location dir always has a failing gate,
         // so this branch is not reached in practice. Surface a generic routed block
         // rather than panic, keeping the report total.
@@ -325,6 +370,27 @@ fn near_miss_finding(rel_path: &str, source: &str, home: &Schema) -> Finding {
             Some(route),
         ),
     }
+}
+
+/// The candidate's **managed identity** (`<type>:<slug>`) when `rel_path` sits at `schema`'s
+/// **canonical home** — the same identity the store enumerator would mint for it
+/// ([`engine::index::committed_instances`]), so a finding raised over the candidate keys
+/// exactly as the store sweep's finding over the committed doc does.
+///
+/// - a **placement** doctype's literal `placement.file` → the `<type>:<type>` singleton;
+/// - a **direct child** `.md` of the doctype's `location:` dir → `<type>:<file-stem>`;
+/// - anything else (a *nested* `.md` under the location dir, which the store enumerator's
+///   flat `read_dir` never reaches, so no committed instance would ever bear this identity)
+///   → `None`: a genuinely unidentifiable candidate, which keeps the path-form target.
+fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
+    let ty = &schema.ty;
+    if let Some(placement) = &schema.placement {
+        return (rel_path == placement.file).then(|| format!("{ty}:{ty}"));
+    }
+    let dir = schema.location.as_deref()?.trim_end_matches('/');
+    let rest = rel_path.strip_prefix(&format!("{dir}/"))?;
+    let slug = rest.strip_suffix(".md")?;
+    (!slug.is_empty() && !slug.contains('/')).then(|| format!("{ty}:{slug}"))
 }
 
 /// Re-derive the routed finding for a **wrong-location** doc: conformant against a

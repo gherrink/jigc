@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::cascade::{LayerKind, Resolved};
-use crate::finding::{Finding, Severity};
+use crate::finding::{Finding, Findings, Severity};
 
 /// The result-contract schema version. Bumped only when the JSON projection of a
 /// public result type changes in a way an external consumer must notice.
@@ -186,8 +186,11 @@ impl OrientationView {
 pub struct ValidationReport {
     /// The result-contract schema version (see [`SCHEMA_VERSION`]).
     pub schema_version: u32,
-    /// Every finding the probes raised over the scope, in sweep order.
-    pub findings: Vec<Finding>,
+    /// Every finding the probes raised over the scope, in sweep order. A [`Findings`] — the
+    /// sanctioned findings-collection projection, which carries the uniqueness half of the
+    /// membership test on its `Serialize` (`command-output-contract.md` → The membership
+    /// test); it derefs to `[Finding]`, and its wire shape is the plain array.
+    pub findings: Findings,
 }
 
 /// The MVP check inventory as the `(probe, check)` **membership set** — the keyed
@@ -285,14 +288,13 @@ impl ValidationReport {
     /// cascade the post-pass is a no-op and output is byte-identical.
     pub fn new(mut findings: Vec<Finding>, resolved: &Resolved) -> Self {
         assign_severity(&mut findings, resolved);
-        // The membership test at the first serialization funnel: every finding this report
-        // projects carries a declared `key.target` (`command-output-contract.md` → The
-        // membership test). `ValidationReport::new` is the single constructor, so this is
-        // the natural seam.
-        crate::finding::debug_assert_targets_declared(&findings);
+        // No seam call here: the membership test rides the **serialization** itself — the
+        // presence half on `Finding`'s `Serialize`, the uniqueness half on `Findings`'s
+        // (`command-output-contract.md` → The membership test). A funnel that has to remember
+        // to call a checker is a census, and a census rots.
         Self {
             schema_version: SCHEMA_VERSION,
-            findings,
+            findings: findings.into(),
         }
     }
 
@@ -933,7 +935,7 @@ mod tests {
         let report = ValidationReport::new(vec![drift.clone(), line_limit.clone()], &resolved);
 
         assert_eq!(
-            report.findings,
+            report.findings.to_vec(),
             vec![drift, line_limit],
             "a no-delta cascade leaves every finding byte-identical"
         );
@@ -1013,7 +1015,7 @@ mod tests {
         let report = ValidationReport::new(vec![advisory.clone()], &resolved);
 
         assert_eq!(
-            report.findings,
+            report.findings.to_vec(),
             vec![advisory],
             "the exempt advisory flows through byte-identical, keeping its Advisory severity",
         );
@@ -1057,14 +1059,15 @@ mod tests {
         );
     }
 
-    /// The membership test, mechanically enforced at the **report seam**
-    /// (`command-output-contract.md` → The membership test / obligation #3): a `Finding`
-    /// that reaches a serialization funnel with **no** `Location::address` projects
-    /// `key.target: null` — a degenerate key — so [`ValidationReport::new`], the single
-    /// constructor of the first funnel, fires on it. Red before the check existed: the
-    /// address-less finding sailed through and shipped a null key.
+    /// The membership test, mechanically enforced **on the projection**
+    /// (`command-output-contract.md` → The membership test / obligation #3): a `Finding` that
+    /// is serialized with **no** `Location::address` projects `key.target: null` — a
+    /// degenerate key — and the check rides `Finding`'s own `Serialize`, so *rendering the
+    /// report* fires on it. It is the **serialization** that is checked, not the construction:
+    /// building a report is not shipping one, and a check bolted to a hand-listed set of
+    /// funnels is a census (M42's lesson — the census missed `jigc ingest`).
     #[test]
-    #[should_panic(expected = "reaches a serialization funnel with no `key.target`")]
+    #[should_panic(expected = "is serialized with no `key.target`")]
     fn the_report_seam_fires_on_an_address_less_finding() {
         use crate::finding::Location;
 
@@ -1077,7 +1080,8 @@ mod tests {
             Some("run `jigc doc set-field …`".to_owned()),
         );
 
-        let _ = ValidationReport::new(vec![degenerate], &resolved);
+        let report = ValidationReport::new(vec![degenerate], &resolved);
+        let _ = serde_json::to_string(&report);
     }
 
     /// The other half of the predicate: a **declared singleton exception** passes the seam
@@ -1095,7 +1099,7 @@ mod tests {
 
         let report = ValidationReport::new(vec![singleton.clone()], &resolved);
 
-        assert_eq!(report.findings, vec![singleton]);
+        assert_eq!(report.findings.to_vec(), vec![singleton]);
         assert_eq!(
             serde_json::to_value(&report.findings[0]).expect("serializes")["key"]["target"],
             serde_json::Value::Null,
@@ -1126,7 +1130,10 @@ mod tests {
             )
         };
 
-        let _ = ValidationReport::new(vec![collide(12), collide(20)], &resolved);
+        // Uniqueness needs the **set**, so it rides `Findings`' `Serialize` — the report's
+        // `findings[]` is one, and projecting it is what hands a driver the array.
+        let report = ValidationReport::new(vec![collide(12), collide(20)], &resolved);
+        let _ = serde_json::to_string(&report);
     }
 
     /// The other half of the uniqueness predicate: a **declared non-unique** code passes the
@@ -1152,6 +1159,15 @@ mod tests {
         let report = ValidationReport::new(vec![anchorless(9), anchorless(14)], &resolved);
 
         assert_eq!(report.findings.len(), 2);
+        let json: serde_json::Value = serde_json::from_str(
+            &serde_json::to_string(&report).expect("projects through the seam"),
+        )
+        .expect("valid JSON");
+        assert_eq!(
+            json["findings"].as_array().expect("a plain array").len(),
+            2,
+            "the declared collapse passes the seam and projects both findings",
+        );
     }
 
     /// Golden lock on the post-pass **membership** count. `CHECK_INVENTORY` is the

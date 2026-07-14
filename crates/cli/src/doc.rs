@@ -21,7 +21,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use engine::address::{Address, Fragment};
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::field_block::Value;
-use engine::finding::{Finding, Location, Severity};
+use engine::finding::{Finding, Findings, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::{FieldType, Leaf, Repeatable, Schema, SectionBody};
 use engine::state;
@@ -1602,7 +1602,7 @@ fn run_create(
             &render::DocAck::Created {
                 address: created.address,
                 target,
-                findings: Vec::new(),
+                findings: Findings::default(),
             },
         )
     );
@@ -2671,20 +2671,10 @@ fn field_json(value: &Value) -> serde_json::Value {
 /// `required-slot`) + the cross-doc / subprocess families are deliberately excluded — they
 /// answer "is the *corpus* complete," which one mid-authoring write cannot adjudicate — so
 /// `findings: []` means "no intrinsic single-doc advisory," not "validated."
-fn write_ack_findings(schema: &Schema, edited: &str, doctype: &str, slug: &str) -> Vec<Finding> {
+fn write_ack_findings(schema: &Schema, edited: &str, doctype: &str, slug: &str) -> Findings {
     let mut findings = engine::validate::surplus_sections_absent(schema, edited);
-    let identity = format!("{doctype}:{slug}");
-    for finding in &mut findings {
-        let uri = match finding.location.as_ref().and_then(|l| l.address.as_deref()) {
-            Some(fragment) => format!("{identity}#{fragment}"),
-            None => identity.clone(),
-        };
-        match &mut finding.location {
-            Some(location) => location.address = Some(uri),
-            None => finding.location = Some(Location::addressed(uri, 1, 1)),
-        }
-    }
-    findings
+    engine::finding::readdress_to_uri(&mut findings, &format!("{doctype}:{slug}"));
+    findings.into()
 }
 
 /// Stamp the doc head (`doctype` + `slug`) of a write-ack's decomposed `target`
