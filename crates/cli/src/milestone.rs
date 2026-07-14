@@ -1358,7 +1358,7 @@ fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Outcome 
         Ok(code) => code,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
+            crate::task::finalize_failure_outcome(&err)
         }
     }
 }
@@ -1583,7 +1583,9 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
             Err(err) => {
                 remove_worktrees(&repo_root, &jigc_home, &list);
                 eprintln!("{}", render::operational_error(format, &err));
-                Ok(Outcome::failure())
+                // A rejected chain names itself in the invocation log (the route-exempt
+                // commit-phase identity), while git's stderr above stays verbatim.
+                Ok(crate::task::finalize_failure_outcome(&err))
             }
         }
     } else {

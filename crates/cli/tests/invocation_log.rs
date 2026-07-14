@@ -392,18 +392,7 @@ fn hook_rejected_finalize_is_identifiable_absent_task_is_not() {
 
     // A `pre-commit` hook that rejects the commit — the failure class the RC adoption trial
     // hit, and the one the log could not name.
-    let hook = repo.path().join(".git").join("hooks").join("pre-commit");
-    fs::create_dir_all(hook.parent().expect("hooks dir")).expect("create hooks dir");
-    fs::write(
-        &hook,
-        "#!/bin/sh\necho 'lint: trailing whitespace' 1>&2\nexit 1\n",
-    )
-    .expect("write pre-commit hook");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod the hook");
-    }
+    install_rejecting_hook(repo.path());
 
     let rejected = jigc(repo.path(), home.path(), &["task", "finalize", task]);
     assert!(
@@ -462,6 +451,159 @@ fn hook_rejected_finalize_is_identifiable_absent_task_is_not() {
         "an unstructured operational error carries no error identity (null, not a borrowed \
          one); got {absent_rec}",
     );
+}
+
+/// Install a `pre-commit` hook that rejects every commit — the commit-phase (phase 6)
+/// failure class the RC adoption trial hit, and the one the log could not name.
+fn install_rejecting_hook(repo: &Path) {
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::create_dir_all(hook.parent().expect("hooks dir")).expect("create hooks dir");
+    fs::write(
+        &hook,
+        "#!/bin/sh\necho 'lint: trailing whitespace' 1>&2\nexit 1\n",
+    )
+    .expect("write pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod the hook");
+    }
+}
+
+/// Stage a sub-task's authored doc body in its isolated working area
+/// (`.jigc/tasks/<sub>/docs/<address>.md` + its provenance bit) — what a fanned-out
+/// sub-agent leaves for the by-task-id join to merge, so the milestone boundary has a real
+/// tree diff to commit (the `milestone.rs` suite's `stage_doc` precedent).
+fn stage_subtask_doc(repo: &Path, sub: &str, address: &str, body: &str) {
+    let docs = repo.join(".jigc").join("tasks").join(sub).join("docs");
+    fs::create_dir_all(&docs).expect("mk the sub-area docs/");
+    fs::write(docs.join(format!("{address}.md")), body).expect("write the staged body");
+    let manifest = docs.join("provenance.json");
+    let mut record: serde_json::Value = match fs::read_to_string(&manifest) {
+        Ok(s) => serde_json::from_str(&s).expect("the provenance manifest parses"),
+        Err(_) => serde_json::json!({ "docs": {} }),
+    };
+    record["docs"][address] = serde_json::Value::String("created".to_string());
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&record).expect("serialize the manifest"),
+    )
+    .expect("write the provenance manifest");
+}
+
+/// Knob ON: the **fan-out / milestone** finalize arm carries the same error identity as the
+/// per-task one — a hook-rejected `jigc milestone finalize` logs `finalize.commit-rejected`
+/// while `jigc milestone finalize <absent-id>` logs none. Without it the two are
+/// byte-identical in the log on `(exit_code, finding_codes, error_code)` — the L1 defect
+/// (`design/finalize.md` → "A failed finalize must be legible in the invocation log": the
+/// requirement is *a finalize that did not commit*, not *a per-task finalize*).
+///
+/// Run over **both** commit modes: `squash: true` (the default single aggregate commit, whose
+/// rejection is raised inside the shared executor) and `squash: false` (the per-sub-task commit
+/// chain, whose rejection aborts the chain in its dedicated worktree) — the identity is a
+/// property of the *finalize*, so it must not depend on the knob.
+#[test]
+fn hook_rejected_milestone_finalize_is_identifiable_absent_milestone_is_not() {
+    for squash in ["true", "false"] {
+        let repo = TempDir::new("ms-rejected");
+        let home = TempDir::new("home");
+        setup_repo(repo.path(), home.path());
+        enable_log(repo.path(), home.path());
+
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &["config", "set", "finalize.fan-out.squash", squash],
+        );
+        assert!(
+            out.status.success(),
+            "`jigc config set finalize.fan-out.squash {squash}` must succeed; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+
+        // Mint a milestone + one sub-task, and stage a created ADR in the sub-area so the
+        // boundary reaches the commit phase (phase 6) with a real diff rather than blocking
+        // earlier on the empty-diff backstop.
+        for args in [
+            vec!["milestone", "create", "Cache rework"],
+            vec!["milestone", "add-task", "cache-rework", "Area low"],
+        ] {
+            let out = jigc(repo.path(), home.path(), &args);
+            assert!(
+                out.status.success(),
+                "`jigc {}` must succeed; stderr:\n{}",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+        stage_subtask_doc(
+            repo.path(),
+            "area-low",
+            "adr:eviction-policy",
+            "---\nstatus: accepted\ndate: 2026-07-14\n---\n\n# Eviction policy\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n",
+        );
+
+        install_rejecting_hook(repo.path());
+
+        let rejected = jigc(
+            repo.path(),
+            home.path(),
+            &["milestone", "finalize", "cache-rework"],
+        );
+        assert!(
+            !rejected.status.success(),
+            "a hook-rejected milestone finalize exits non-zero (squash: {squash}); stdout:\n{}",
+            String::from_utf8_lossy(&rejected.stdout),
+        );
+        assert!(
+            String::from_utf8_lossy(&rejected.stderr).contains("`git commit` was rejected"),
+            "the rejection surfaces git's hook channel verbatim (squash: {squash}); stderr:\n{}",
+            String::from_utf8_lossy(&rejected.stderr),
+        );
+
+        let absent = jigc(
+            repo.path(),
+            home.path(),
+            &["milestone", "finalize", "no-such-milestone"],
+        );
+        assert!(
+            !absent.status.success(),
+            "finalizing an absent milestone exits non-zero (squash: {squash})",
+        );
+
+        let records = log_records(repo.path());
+        // `record_with_arg` reads the LAST record carrying the needle — the finalize, not the
+        // earlier create/add-task.
+        let rejected_rec = record_with_arg(&records, "cache-rework")
+            .expect("the hook-rejected milestone finalize is logged");
+        let absent_rec = record_with_arg(&records, "no-such-milestone")
+            .expect("the absent-milestone finalize is logged");
+
+        // The two failures are indistinguishable on every OTHER field — same exit code, same
+        // (empty) finding codes. So `error_code` is the discriminator, or nothing is.
+        assert_eq!(
+            rejected_rec["exit_code"], absent_rec["exit_code"],
+            "the two milestone-finalize failures share an exit code (squash: {squash}); \
+             rejected={rejected_rec}, absent={absent_rec}",
+        );
+        assert_eq!(
+            rejected_rec["finding_codes"].as_array().map(Vec::len),
+            Some(0),
+            "a hook rejection is an operational error, not a Finding (squash: {squash}); got \
+             {rejected_rec}",
+        );
+        assert_eq!(
+            rejected_rec["error_code"].as_str(),
+            Some("finalize.commit-rejected"),
+            "the hook-rejected milestone finalize NAMES its rejection in the log (squash: \
+             {squash}); got {rejected_rec}",
+        );
+        assert!(
+            absent_rec["error_code"].is_null(),
+            "an unstructured operational error carries no borrowed identity (squash: {squash}); \
+             got {absent_rec}",
+        );
+    }
 }
 
 /// Knob OFF (the default): nothing is written — no `.jigc/logs/` file appears.

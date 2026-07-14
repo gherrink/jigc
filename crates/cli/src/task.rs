@@ -1500,8 +1500,12 @@ pub(crate) fn execute_finalize_plan(
             Ok(Outcome::success())
         }
         Err(err) => {
+            // The `squash: true` milestone boundary's commit-phase rejection: git's stderr
+            // stays verbatim-raw (the hook output IS the correction signal), and the run names
+            // itself in the invocation log — the fan-out arm of the same error identity the
+            // per-task finalize carries.
             eprintln!("{}", render::operational_error(format, &err));
-            Ok(Outcome::failure())
+            Ok(finalize_failure_outcome(&err))
         }
     }
 }
@@ -1881,6 +1885,25 @@ impl std::fmt::Display for CommitRejected {
 }
 
 impl std::error::Error for CommitRejected {}
+
+/// Map a failed finalize to its [`Outcome`]: a **commit-phase rejection** ([`CommitRejected`])
+/// carries the route-exempt error identity [`ERROR_COMMIT_REJECTED`](invocation_log::ERROR_COMMIT_REJECTED)
+/// into the invocation log; every other (unstructured `anyhow`) failure carries none.
+///
+/// Shared by **every** finalize arm — the shared executor ([`execute_finalize_plan`], the
+/// `squash: true` milestone boundary) and the `squash: false` chain + dispatch arms in
+/// `milestone.rs` — because the requirement is about *a finalize that did not commit*, not
+/// about the per-task one: a hook-rejected `jigc milestone finalize` was byte-identical in the
+/// log to `jigc milestone finalize <absent-id>` (both exit 1, `finding_codes: []`), exactly the
+/// gap the per-task arm closed (`design/finalize.md` → "A failed finalize must be legible in the
+/// invocation log"). The rendering is untouched: git's hook stderr stays verbatim.
+pub(crate) fn finalize_failure_outcome(err: &anyhow::Error) -> Outcome {
+    if err.downcast_ref::<CommitRejected>().is_some() {
+        Outcome::error(invocation_log::ERROR_COMMIT_REJECTED)
+    } else {
+        Outcome::failure()
+    }
+}
 
 /// Emit the **pre-commit** `left-out` advisory (M42, `design/finalize.md` → "The `left-out`
 /// advisory prints BEFORE the commit too") — nothing at all when the commit leaves nothing
