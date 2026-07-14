@@ -330,6 +330,7 @@ pub fn validation(format: Format, report: &ValidationReport) -> String {
         report,
         "no findings — the task validates clean",
         None,
+        None,
     )
 }
 
@@ -401,6 +402,7 @@ pub fn validation_store(
                 report,
                 "no findings — the committed store validates clean",
                 Some(&trailer),
+                Some(unbaselined),
             )
         }
     }
@@ -455,8 +457,15 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
 ///   CLI-minted store advisories (`crate::cli`'s orphan tiers, `crate::setup`), un-keyed and
 ///   store-scope by construction.
 ///
-/// `schema-conformance.schema-version-current` gates nowhere either, but never reaches the
-/// report-only branch: it flips the exit and takes its own trailer case (above).
+/// - `schema-conformance.schema-version-current` — the version-currency break
+///   (`validate_store_families`' fifth family, managed arm). It gates **nowhere** in the system:
+///   at task scope a stale committed doc downgrades to `advisory ·
+///   reconciliation.conformance-block`, and a finalize over a stale corpus was proven to commit.
+///   It never reaches the *trailer's* report-only branch (its presence takes the unmigrated-corpus
+///   case above), but it **does** reach the **per-finding gate label** (M42 Inc 12 / T5) — which
+///   is why it belongs on this list rather than in the trailer's branch alone: it is blocking and
+///   `Location`-less, so without it the label would be granted (the conservative
+///   no-address-no-suppression direction) and claim a finalize gate that does not exist.
 ///
 /// **This list is necessary but not sufficient** — it answers *"can any task-scope path emit this
 /// **code**?"*, while the claim the trailer makes is about a **finding**: *does a gate exist for
@@ -472,6 +481,7 @@ const GATES_NOWHERE: &[&str] = &[
     "file-state.orphaned-doc",
     "file-state.unregistered-doc",
     "store-version.binary-mismatch",
+    engine::validate::SCHEMA_VERSION_CURRENT_CODE,
 ];
 
 /// Whether a **gate exists for this finding** — the criterion the report-only trailer's claim
@@ -505,6 +515,9 @@ const GATES_NOWHERE: &[&str] = &[
 /// A finding addressed at nothing, or at a doc that is not a committed instance, takes no
 /// suppression — the conservative direction: the claim is only ever *withdrawn* on a proof that
 /// no gate exists, never granted on the absence of one.
+///
+/// [`gates_at_finalize`] narrows this to the findings whose gate is a **finalize block** — the
+/// claim the per-finding label makes.
 fn gates_at_task(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool {
     if GATES_NOWHERE.contains(&finding.code.as_str()) {
         return false;
@@ -520,6 +533,27 @@ fn gates_at_task(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool {
     };
     let identity = address.split('#').next().unwrap_or(address);
     !unbaselined.contains(identity)
+}
+
+/// Whether **this** store-scope finding is one a `finalize` will actually stop on — the claim the
+/// per-finding gate label makes (M42 Inc 12 / T5; `validation.md` → The trailer must not claim a
+/// gate that does not exist, whose closing note pins this label as a *dependency* on that fix,
+/// never a papercut: printed over the un-corrected criterion it would put the false gate claim on
+/// **every row**).
+///
+/// The store sweep prints each finding at its **cascade severity** while exiting 0, so `blocking ·`
+/// on its own tells the reader nothing about whether anything ever *stops* on it. Two conditions,
+/// both necessary:
+///
+/// 1. **A gate exists for the finding at all** — [`gates_at_task`], the trailer's own criterion
+///    (the store-scope-only codes, and the un-baselined-committed-doc discriminator).
+/// 2. **The finding's cascade severity is `blocking`.** A `warning`/`advisory` finding is surfaced
+///    at the task boundary but never blocks the transaction, so labelling it *"gates at finalize"*
+///    would be exactly the falsehood this label exists to retire (the cascade can demote any
+///    non-intrinsic check — `flow13_contract_and_severity.rs` demotes a `doc-code` break to
+///    `warning`, and that demoted row must claim no gate).
+fn gates_at_finalize(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool {
+    matches!(finding.severity, Severity::Blocking) && gates_at_task(finding, unbaselined)
 }
 
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
@@ -595,12 +629,19 @@ fn store_trailer(
 /// Shared body for the validation views: emit one line per finding (or `clean_line`
 /// when the report is empty), then an optional `trailer` (only when findings are present),
 /// followed by the routing footer; JSON is the generic projection with no footer. The
-/// scope-dependent surfaces are the clean line and the trailer.
+/// scope-dependent surfaces are the clean line, the trailer, and the per-finding gate label.
+///
+/// `store_gates` is `Some(unbaselined)` for the **store** view only (M42 Inc 12 / T5): each
+/// finding that a `finalize` would actually stop on ([`gates_at_finalize`]) renders `blocking
+/// (gates at finalize) · …` rather than a bare `blocking ·` that exits 0. The **task** view passes
+/// `None` — there the severity token already *is* the verdict (`blocking` blocks the transaction
+/// in hand), so a gate label would be noise, and the surface stays byte-identical.
 fn validation_scoped(
     format: Format,
     report: &ValidationReport,
     clean_line: &str,
     trailer: Option<&str>,
+    store_gates: Option<&BTreeSet<String>>,
 ) -> String {
     match format {
         Format::Json => json(report),
@@ -611,7 +652,8 @@ fn validation_scoped(
                 out.push('\n');
             } else {
                 for finding in &report.findings {
-                    out.push_str(&finding_line(finding));
+                    let gates = store_gates.is_some_and(|u| gates_at_finalize(finding, u));
+                    out.push_str(&finding_line(finding, gates));
                 }
                 if let Some(trailer) = trailer {
                     out.push_str(trailer);
@@ -1091,8 +1133,14 @@ fn ack_value_display(value: &serde_json::Value) -> String {
 /// block-payload envelope — a hard block is a blocking finding carrying a route).
 /// A route-less **advisory** is purely informational, and says so — the agent must
 /// never be left inferring whether output wants something from it.
-fn finding_line(finding: &Finding) -> String {
+///
+/// `gates` annotates the severity token as `blocking (gates at finalize)` (M42 Inc 12 / T5) — the
+/// **store** view's per-finding gate label, decided by [`gates_at_finalize`]. Every other surface
+/// passes `false`: at task scope the severity token already *is* the verdict, and the `setup` /
+/// `ingest` finding lines are not store-sweep rows at all.
+fn finding_line(finding: &Finding, gates: bool) -> String {
     let severity = match finding.severity {
+        Severity::Blocking if gates => "blocking (gates at finalize)",
         Severity::Blocking => "blocking",
         Severity::Warning => "warning",
         Severity::Advisory => "advisory",
@@ -1170,7 +1218,7 @@ pub fn setup_block(format: Format, finding: &Finding) -> String {
     match format {
         Format::Json => json(finding),
         Format::Agent | Format::Human => {
-            let mut out = finding_line(finding);
+            let mut out = finding_line(finding, false);
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -1307,7 +1355,7 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
                 }
                 if let Some(finding) = &row.finding {
                     out.push_str("  ");
-                    out.push_str(&finding_line(finding));
+                    out.push_str(&finding_line(finding, false));
                 }
             }
             // The collapsed unmanaged summary — one line per directory, in sorted
@@ -2586,7 +2634,7 @@ mod tests {
             None,
         );
         assert_eq!(
-            finding_line(&routeless),
+            finding_line(&routeless, false),
             "advisory · file-state.baseline-adopt — baseline adopted: `docs/x.md`   (no action needed)\n",
             "a route-less advisory must end with the no-action cue",
         );
@@ -2599,7 +2647,7 @@ mod tests {
             Some("ingest or move the file".to_string()),
         );
         assert!(
-            !finding_line(&routed).contains("no action needed"),
+            !finding_line(&routed, false).contains("no action needed"),
             "a routed advisory's route is its action cue — no suffix",
         );
 
@@ -2611,7 +2659,7 @@ mod tests {
             None,
         );
         assert!(
-            !finding_line(&blocking).contains("no action needed"),
+            !finding_line(&blocking, false).contains("no action needed"),
             "a blocking finding is always actionable — no suffix",
         );
     }
@@ -3270,7 +3318,7 @@ mod tests {
         );
         let agent = validation_store(Format::Agent, &content, &BTreeSet::new());
         insta::assert_snapshot!(agent, @r"
-        blocking · doc-code.symbol-exists — cited symbol `evict_lru` not found
+        blocking (gates at finalize) · doc-code.symbol-exists — cited symbol `evict_lru` not found
         1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
@@ -3534,6 +3582,73 @@ mod tests {
             !agent.contains("jigc task validate"),
             "the identity is the address up to the `#` — a sliced address is the same doc: \
              {agent}",
+        );
+    }
+
+    /// **The per-finding gate label claims a finalize block only where one lands** (M42 Inc 12 /
+    /// T5; `validation.md` → The trailer must not claim a gate that does not exist, whose closing
+    /// note pins this label as a dependency on that fix). The store sweep prints every finding at
+    /// its **cascade** severity while exiting 0, so `blocking ·` alone says nothing about whether
+    /// anything ever *stops* on it — the label answers that, per row. Two suppressions the
+    /// end-to-end arms (`crates/cli/tests/validate_command.rs`) cannot reach:
+    ///
+    /// - a **cascade-demoted** finding: `warning`/`advisory` is surfaced at the task boundary but
+    ///   blocks no transaction, so *"gates at finalize"* would be false (the cascade demotes
+    ///   `doc-code` breaks in the field — `flow13_contract_and_severity.rs`);
+    /// - the **version-currency break**: blocking, `Location`-less, and it gates **nowhere** (at
+    ///   task scope a stale doc downgrades to an advisory), so the conservative
+    ///   no-address-no-suppression direction would hand it the label unless the code is on
+    ///   [`GATES_NOWHERE`] — the reason it is listed there and not only in the trailer's branch.
+    #[test]
+    fn render_validation_store_gate_label_names_only_a_gate_that_lands() {
+        use engine::finding::{Finding, Location, Severity};
+
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+        let doc_code = |severity: Severity| {
+            Finding::graded(
+                severity,
+                "doc-code.symbol-exists",
+                "cited symbol `evict_lru` not found",
+                Some(Location::addressed("adr:cache#status/cites-code", 1, 1)),
+                None,
+            )
+        };
+
+        // A cascade-DEMOTED break over the very doc whose blocking twin earns the label: no
+        // transaction stops on a warning, so no gate is claimed.
+        let demoted = ValidationReport::new(vec![doc_code(Severity::Warning)], &resolved);
+        let agent = validation_store(Format::Agent, &demoted, &BTreeSet::new());
+        assert!(
+            agent.starts_with("warning · doc-code.symbol-exists"),
+            "a demoted finding renders at its cascade severity, unlabelled — `finalize` never \
+             stops on it: {agent}",
+        );
+        assert!(
+            !agent.contains("gates at finalize"),
+            "and it must claim no finalize gate: {agent}",
+        );
+
+        // The version-currency break — blocking, address-less, gating nowhere in the system.
+        let stale = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Blocking,
+                engine::validate::SCHEMA_VERSION_CURRENT_CODE,
+                "field `schema-version` is schema-version 1, below the current schema-version 2",
+                None,
+                Some("run `jigc migrate-corpus` to upgrade it".to_string()),
+            )],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &stale, &BTreeSet::new());
+        assert!(
+            !agent.contains("gates at finalize"),
+            "a stale-corpus break gates NOWHERE (task scope downgrades it to an advisory) — the \
+             row must not send the reader to `finalize`: {agent}",
+        );
+        assert!(
+            agent.contains("blocking · schema-conformance.schema-version-current"),
+            "it still renders at its bare cascade severity — the exit flip is the trailer's \
+             claim, not the row's: {agent}",
         );
     }
 

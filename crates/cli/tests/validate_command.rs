@@ -418,3 +418,192 @@ fn validate_injected_probe_failure_exits_non_zero() {
         "a probe-integrity run is not report-only; json:\n{value}",
     );
 }
+
+/// A **current (v2-stamped), conformant** `adr` whose `supersedes` names an ADR that is not in
+/// the store — a **dangling committed forward edge**, the store sweep's fourth family. Stamped
+/// at the `adr` manifest's current version so the corpus is *migrated* (no version-currency
+/// break, so the report-only trailer branch is the one under test).
+const ADR_DANGLING_REF: &str = "\
+---
+status: accepted
+date: 2026-06-25
+supersedes: adr:no-such-decision
+schema-version: 2
+---
+
+# Cache sessions in memory
+
+## Context
+
+Session lookups must stay sub-millisecond.
+
+## Options
+
+A distributed cache was weighed and rejected on latency.
+
+## Decision
+
+Keep sessions in a single in-memory node.
+
+## Consequences
+
+A cold node loses its sessions.
+";
+
+/// A **current (v2-stamped) but non-conformant** `adr`: `## Consequences` removed, so it fails to
+/// parse under the current shape and the store family's parse-failure arm raises `conformance.*`
+/// **directly over the committed doc**. Left **un-baselined** (no `FileStateRecord` entry — the
+/// fresh-clone / brownfield state): at task scope the reconciler grades exactly this doc
+/// *advisory*, so the break gates **nowhere**.
+const ADR_UNBASELINED_NONCONFORMANT: &str = "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 2
+---
+
+# Cache sessions in memory
+
+## Context
+
+Session lookups must stay sub-millisecond.
+
+## Options
+
+A distributed cache was weighed and rejected on latency.
+
+## Decision
+
+Keep sessions in a single in-memory node.
+";
+
+/// Seed a real git repo with the `.jigc/config/` project layer and one committed `adr` body at
+/// the doctype's canonical home — no code anchors, so the store sweep's verdict is the doc's
+/// own, not the probe's.
+fn seed_adr_store(repo: &Path, body: &str) {
+    git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+
+    fs::create_dir_all(repo.join("docs/decisions")).expect("mk decisions");
+    fs::write(repo.join(ADR_REL), body).expect("write adr");
+
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+    fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
+}
+
+/// The seeded ADR's repo-relative home (`id-from: title` over the fixture's H1).
+const ADR_REL: &str = "docs/decisions/cache-sessions-in-memory.md";
+
+/// Baseline the file-state record for `rel` at its current raw-byte hash — the committed-store
+/// baseline that makes the reconciler grade a drift on this doc **blocking** at task scope (the
+/// `flow37_rename.rs` idiom).
+fn baseline_file_state(repo: &Path, rel: &str) {
+    use engine::file_state::{FileStateRecord, hash_bytes};
+    let mut record = FileStateRecord::new();
+    let bytes = fs::read(repo.join(rel)).expect("read the managed doc to baseline");
+    record.record(rel, hash_bytes(&bytes));
+    record
+        .save(&repo.join(".jigc"))
+        .expect("save the file-state baseline");
+}
+
+/// **A store-scope finding says where it gates** (M42 Inc 12 / T5; `design/validation.md` → The
+/// trailer must not claim a gate that does not exist). The store sweep prints each finding at its
+/// **cascade** severity — `blocking · …` — while exiting 0, so the severity token alone cannot
+/// tell a reader whether anything will ever *stop* on it. The per-finding label carries the
+/// trailer's own (Inc 4) gate criterion onto the row: a finding that really does gate at the task
+/// boundary renders `blocking (gates at finalize) · <code> — …`.
+///
+/// The gating arm: a **baselined** committed ADR whose `supersedes` dangles. At task scope this
+/// doc's drift reaches `reconcile_committed_store`'s **blocking** arm, so the gate is real and the
+/// label is earned.
+#[test]
+fn validate_labels_a_gating_store_finding_with_the_gate_it_carries() {
+    let repo = TempDir::new("gates-at-finalize");
+    seed_adr_store(repo.path(), ADR_DANGLING_REF);
+    baseline_file_state(repo.path(), ADR_REL);
+
+    let out = jigc(repo.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        stdout.contains("blocking (gates at finalize) · schema-conformance.ref-resolves"),
+        "a dangling ref over a baselined committed doc DOES gate at the task boundary — the row \
+         must say so; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    // The store sweep is still report-only for content: the label names the gate, it is not one.
+    assert!(
+        out.status.success(),
+        "a content-only finding over a migrated corpus stays exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("these gate at `jigc task validate` / `jigc task finalize`"),
+        "the trailer's claim and the row's label are one criterion; stdout:\n{stdout}",
+    );
+
+    // The **JSON severity token is unchanged** — the label is a text-surface affordance, never a
+    // break of the machine contract (`command-output-contract.md`).
+    let out = jigc(repo.path(), &["validate", "--format", "json"]);
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
+    let findings = value["findings"].as_array().expect("a findings array");
+    let ref_finding = findings
+        .iter()
+        .find(|f| f["code"] == "schema-conformance.ref-resolves")
+        .expect("the dangling-ref finding rides the JSON report");
+    assert_eq!(
+        ref_finding["severity"], "blocking",
+        "the JSON severity token stays the bare cascade severity; json:\n{value}",
+    );
+}
+
+/// The **non**-gating arm of the same label (M42 Inc 12 / T5): an **un-baselined** non-conformant
+/// committed ADR. The store sweep raises the parse-failure `conformance.*` break directly over the
+/// committed doc, but at task scope the reconciler grades an un-baselined nonconformant file
+/// *advisory* — nothing gates on it, ever — so the row must print the **bare** `blocking` token and
+/// the trailer must claim no gate. (This is the dominant `jigc validate` corpus: `.jigc/state/` is
+/// gitignored, so every committed doc in a fresh clone is un-baselined.)
+#[test]
+fn validate_leaves_a_gateless_store_finding_unlabelled() {
+    let repo = TempDir::new("gates-nowhere");
+    seed_adr_store(repo.path(), ADR_UNBASELINED_NONCONFORMANT);
+
+    let out = jigc(repo.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        stdout.contains("blocking · conformance."),
+        "the parse-failure break renders at its bare cascade severity; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        !stdout.contains("(gates at finalize)"),
+        "no gate exists for a break over an un-baselined committed doc — the row must not claim \
+         one; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("jigc task validate") && !stdout.contains("jigc task finalize"),
+        "and the trailer must claim none either; stdout:\n{stdout}",
+    );
+
+    // The JSON severity token is unchanged here too — the two surfaces do not diverge.
+    let out = jigc(repo.path(), &["validate", "--format", "json"]);
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
+    let findings = value["findings"].as_array().expect("a findings array");
+    let break_finding = findings
+        .iter()
+        .find(|f| {
+            f["code"]
+                .as_str()
+                .is_some_and(|c| c.starts_with("conformance."))
+        })
+        .expect("the parse-failure break rides the JSON report");
+    assert_eq!(
+        break_finding["severity"], "blocking",
+        "the JSON severity token stays the bare cascade severity; json:\n{value}",
+    );
+}
