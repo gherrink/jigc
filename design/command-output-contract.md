@@ -47,10 +47,16 @@ The acknowledgement a successful managed-write emits ([render.rs](../crates/cli/
 { "op": "task-bind",    "task": "<task-id>", "role": "<role>",
   "target": { "doctype": "adr", "slug": "use-rust" }, "findings": [] }
 
-{ "op": "task-discard", "task": "<task-id>", "discarded": true, "findings": [] }
+{ "op": "task-discard", "task": "<task-id>", "findings": [] }
 ```
 
-- The **subject of a task-state verb is a work unit, not a doc**, so it carries **`task`** — the task id — where a doc-write carries only `target`. `task-bind` *also* carries `target`: the bound doc, decomposed exactly as above (a bind targets a whole doc, so `doctype` + `slug` only) plus the `role` it was bound to — the two values the bind actually established. `task-discard` carries no `target` (it addresses no doc) and reports its effect key **`discarded`**: `false` on the idempotent already-absent no-op ([task.rs:257-266](../crates/cli/src/task.rs) — an absent area is not an error), so "removed" and "was already gone" stop being indistinguishable.
+- The **subject of a task-state verb is a work unit, not a doc**, so it carries **`task`** — the task id — where a doc-write carries only `target`. `task-bind` *also* carries `target`: the bound doc, decomposed exactly as above (a bind targets a whole doc, so `doctype` + `slug` only) plus the `role` it was bound to — the two values the bind actually established. **`task-discard` carries no `target`** (it addresses no doc) **and no effect key.**
+
+  > **⚠ Correction — a recorded rationale that was not checked (2026-07-14).** This bullet first pinned a `discarded` effect key, *"`false` on the idempotent already-absent no-op (`task.rs:257-266` — an absent area is not an error), so 'removed' and 'was already gone' stop being indistinguishable."* **The premise is false**, and Increment 9's planner **halted the build rather than pin it**: `jigc task discard <absent-id>` **exits 1** with `{"error": "no task …"}`. `TaskArea::resolve` (`task.rs:374-390`) bails before `run_discard`'s `if task.dir.exists()` guard ever runs — **that guard is dead code, and `run_discard`'s own doc comment claiming idempotence is false** (it is corrected in the same increment; a lying comment authorizes the next wrong pin). So `discarded` was unreachable-as-`false` and could only ever hold the constant `true` — **a dead key, one increment from a 1.0 freeze.**
+  >
+  > **The key also solved a non-problem.** "Removed" and "was already gone" were *never* indistinguishable: **exit 0 + the ack** says removed; **exit 1 + the error envelope** says it was already gone. Engaging the rationale rather than overruling it: the distinction it wanted **already exists, one layer up**, and no key is needed to carry it.
+  >
+  > **And making it reachable would have been worse than dead.** An idempotent discard exits 0 on *any* absent id — including a **milestone** id, which `milestone_finalize_base_guard.rs:266-275` asserts must **fail** (*"the dead end the old route pointed at, verbatim"*), and which is the very dead end Increment 7's unit-aware route fix is **justified by**. It would turn an honest dead end into a **lying route** — the disease this wave exists to cure. *This is the fifth un-enumerated-sibling / unchecked-rationale catch of M42, and the first one caught by the build refusing to proceed.*
 - **`findings`** is `[]` on both: neither verb writes managed content, so the intrinsic single-doc advisory scoped above has nothing to compute over. The key is present anyway — every ack carries `op` + `findings`, so a driver deserializes one envelope shape.
 - Both verbs also gain a **one-line plain-text ack**; "success is silence" is not a posture, it is an absence of one.
 
@@ -160,6 +166,10 @@ The key is **`(code, target)`**:
 | `render-io` | `:790` | **the staged commit doc** (takes `path`) | **the file path** |
 | `migration-no-replacement` | `:688` | **the foreign source file** (takes `source_path`) | **the file path** |
 | `forward-ref-dangling` | `finding.rs:467` | the dangling edge | already URI-addressed — no change |
+| **`nothing-staged`** | **`cli/task.rs:1640`** | the task | **`task:<id>`** |
+| **`stage-failed`** | **`cli/task.rs:1654`** | the task | **`task:<id>`** |
+
+> **⚠ The last two rows are the fifth un-enumerated sibling this wave has caught — and Increment 9's planner found them, not the design pass.** The sweep enumerated `finalize.*` by grepping **`crates/engine/src/finalize.rs`** and reported *nine* codes. **Two more live in the CLI** (`crates/cli/src/task.rs`), are `Finding::block(…)` with **no location**, and sat in no row — so the family is **eleven** codes plus `forward-ref-dangling`, which is the "twelve" the roadmap names. The census was scoped to a *file* when the family is scoped to a *concept*. That is the same shape as the `schema.location` census (which was scoped to `location` and missed `prior.location`) and the pack-prose census (which was scoped to the dev pack and missed the methodology pack). **The lesson, now three-for-three: a census keyed on where you expect the members to live will miss the ones that live somewhere else.** Key it on what the members *are*.
 
 The identifier is **in hand at every one of the ten constructors**; each spends it on the message and passes `None` for the location. Pure plumbing.
 
