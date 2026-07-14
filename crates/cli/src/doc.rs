@@ -341,6 +341,10 @@ impl DocCommand {
 /// are read or copied in** (the `read_or_copy_in` staging is itself part of the defect).
 /// The **read** verbs (`doc show` / `doc schema`) stay open — that uniformity is why the
 /// record is a doctype rather than a raw-JSON island.
+///
+/// `target` is the refusal's declared key target: the **doc URI** (parsed normal form) for
+/// an address-bearing write verb, the **bare doctype id** for `create` / `author`
+/// (`design/command-output-contract.md` → the form table).
 fn machine_maintained_guard(doctype: &str, verb: &str, target: &str) -> Result<(), DocFailure> {
     if doctype != crate::milestone::MILESTONE_RECORD_TYPE {
         return Ok(());
@@ -374,7 +378,12 @@ fn run_set_field(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_verb_addr(task.pack.as_ref(), addr)?;
-    machine_maintained_guard(address.r#type.as_str(), "set-field", addr)?;
+    // The **parsed** address in URI normal form — the target every block on this write keys
+    // at (`design/command-output-contract.md` → the `write.*` row). Never the raw `addr`: a
+    // bare singleton head is legal at the verb boundary, so `vision#thesis` would key a
+    // slug-less address no driver can resolve.
+    let uri = address.to_string();
+    machine_maintained_guard(address.r#type.as_str(), "set-field", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target = field_target(&schema, &address)
         .with_context(|| format!("no field addressed by `{addr}`"))?;
@@ -389,7 +398,7 @@ fn run_set_field(
     let ack_target = field_ack_target(&address, &target);
     let value_json = field_json(&engine::field_block::parse_value(value));
 
-    let edited = apply_field_target(&schema, &source, target, addr, value)
+    let edited = apply_field_target(&schema, &source, target, &uri, value)
         .map_err(|e| repoint_empty_value(e, addr, value))?;
 
     persist(&path, &edited)?;
@@ -424,14 +433,14 @@ fn apply_field_target(
     schema: &Schema,
     source: &str,
     target: FieldTarget,
-    addr: &str,
+    uri: &str,
     value: &str,
 ) -> Result<String, DocFailure> {
     // The set-field id-from guard (`design/write-commands.md` → The set-field id-from
     // guard): a heading-derived field is never written through `set-field` — living
     // here, the per-leaf verb AND the `doc author` batch (via `apply_leaf`) inherit
     // the reject in one place, killing the or-insert corruption shapes.
-    if let Some(finding) = id_from_field_guard(schema, &target, addr, value) {
+    if let Some(finding) = id_from_field_guard(schema, &target, uri, value) {
         return Err(DocFailure::Block(finding));
     }
     Ok(match target {
@@ -442,20 +451,13 @@ fn apply_field_target(
             &field,
             &Value::Scalar(value.to_string()),
         )
-        .map_err(|f| block(&f, "set-field", addr))?,
+        .map_err(|f| block(&f, "set-field", uri))?,
         FieldTarget::Item {
             section,
             item,
             field,
-        } => set_item_field_or_insert(schema, source, &section, &item, &field, value).map_err(
-            |e| {
-                block(
-                    &engine::write::generate_error_finding(&e),
-                    "set-field",
-                    addr,
-                )
-            },
-        )?,
+        } => set_item_field_or_insert(schema, source, &section, &item, &field, value)
+            .map_err(|e| block(&engine::write::generate_error_finding(&e), "set-field", uri))?,
         FieldTarget::NestedItem {
             section,
             items,
@@ -463,13 +465,7 @@ fn apply_field_target(
         } => {
             let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
             set_nested_item_field_or_insert(schema, source, &section, &item_ids, &field, value)
-                .map_err(|e| {
-                    block(
-                        &engine::write::generate_error_finding(&e),
-                        "set-field",
-                        addr,
-                    )
-                })?
+                .map_err(|e| block(&engine::write::generate_error_finding(&e), "set-field", uri))?
         }
     })
 }
@@ -486,7 +482,8 @@ fn run_unset_field(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_verb_addr(task.pack.as_ref(), addr)?;
-    machine_maintained_guard(address.r#type.as_str(), "set-field --unset", addr)?;
+    let uri = address.to_string();
+    machine_maintained_guard(address.r#type.as_str(), "set-field --unset", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target = field_target(&schema, &address)
         .with_context(|| format!("no field addressed by `{addr}`"))?;
@@ -495,7 +492,7 @@ fn run_unset_field(
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     let ack_target = field_ack_target(&address, &target);
-    let edited = apply_unset_target(&schema, &source, target, addr)?;
+    let edited = apply_unset_target(&schema, &source, target, &uri)?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -527,9 +524,9 @@ fn apply_unset_target(
     schema: &Schema,
     source: &str,
     target: FieldTarget,
-    addr: &str,
+    uri: &str,
 ) -> Result<String, DocFailure> {
-    let map = |f: &Finding| block(f, "set-field", addr);
+    let map = |f: &Finding| block(f, "set-field", uri);
     Ok(match target {
         FieldTarget::Section { section, field } => {
             engine::write::unset_field_validated(schema, source, &section, &field)
@@ -586,13 +583,14 @@ fn repoint_empty_value(failure: DocFailure, addr: &str, value: &str) -> DocFailu
 fn id_from_field_guard(
     schema: &Schema,
     target: &FieldTarget,
-    addr: &str,
+    uri: &str,
     value: &str,
 ) -> Option<Finding> {
     use engine::schema::FieldType;
 
-    // The doc head (`<type>:<slug>`) the route addresses are rebuilt from.
-    let (doc, _) = addr.split_once('#')?;
+    // The doc head (`<type>:<slug>`) the route addresses — and the finding's own key
+    // target — are rebuilt from.
+    let doc = doc_head(uri);
     let (repeatable, field, item_path, dest) = match target {
         // No shipped simple section carries an id-from; the guard is item-scoped.
         FieldTarget::Section { .. } => return None,
@@ -669,7 +667,14 @@ fn id_from_field_guard(
             "set-field rejected: `{field}` is the heading-derived id-from field of item \
              `{item_path}` — its value lives in the item heading, not a field bullet"
         ),
-        Some(Location::addressed(format!("{item_path}/{field}"), 1, 1)),
+        // The FULL URI, not the bare `<section>/<item>/<field>` fragment it emitted — a
+        // half-normalized target is the same broken key one step short
+        // (`design/command-output-contract.md` → the `write.*` row).
+        Some(Location::addressed(
+            format!("{doc}#{item_path}/{field}"),
+            1,
+            1,
+        )),
         Some(route),
     ))
 }
@@ -684,7 +689,8 @@ fn run_set_slot(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_verb_addr(task.pack.as_ref(), addr)?;
-    machine_maintained_guard(address.r#type.as_str(), "set-slot", addr)?;
+    let uri = address.to_string();
+    machine_maintained_guard(address.r#type.as_str(), "set-slot", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         slot_target(&schema, &address).with_context(|| format!("no slot addressed by `{addr}`"))?;
@@ -697,7 +703,7 @@ fn run_set_slot(
     // The decomposed ack target, before `target` is consumed by the apply.
     let ack_target = slot_ack_target(&address, &target);
 
-    let edited = apply_slot_target(&schema, &source, target, addr, &prose)?;
+    let edited = apply_slot_target(&schema, &source, target, &uri, &prose)?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -729,18 +735,18 @@ fn apply_slot_target(
     schema: &Schema,
     source: &str,
     target: SlotTarget,
-    addr: &str,
+    uri: &str,
     prose: &str,
 ) -> Result<String, DocFailure> {
     Ok(match target {
         SlotTarget::Section(section) => set_slot_validated(schema, source, &section, prose)
-            .map_err(|f| block(&f, "set-slot", addr))?,
+            .map_err(|f| block(&f, "set-slot", uri))?,
         SlotTarget::Item {
             section,
             item,
             leaf,
         } => set_item_slot(schema, source, &section, &item, &leaf, prose)
-            .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?,
+            .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", uri))?,
         SlotTarget::NestedItem {
             section,
             items,
@@ -748,7 +754,7 @@ fn apply_slot_target(
         } => {
             let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
             set_nested_item_slot(schema, source, &section, &item_ids, &leaf, prose)
-                .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?
+                .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", uri))?
         }
     })
 }
@@ -771,7 +777,8 @@ fn run_add_item(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_verb_addr(task.pack.as_ref(), addr)?;
-    machine_maintained_guard(address.r#type.as_str(), "add-item", addr)?;
+    let uri = address.to_string();
+    machine_maintained_guard(address.r#type.as_str(), "add-item", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         add_item_target(&address).with_context(|| format!("no section addressed by `{addr}`"))?;
@@ -784,7 +791,7 @@ fn run_add_item(
     let ack_target = add_item_ack_target(&address, &target, title);
 
     let (edited, minted_path) =
-        apply_add_item_target(&schema, &source, target, addr, title, task.is_migration()?)?;
+        apply_add_item_target(&schema, &source, target, &uri, title, task.is_migration()?)?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -835,7 +842,7 @@ fn apply_add_item_target(
     schema: &Schema,
     source: &str,
     target: AddItemTarget,
-    addr: &str,
+    uri: &str,
     title: &str,
     migration: bool,
 ) -> Result<(String, String), DocFailure> {
@@ -844,7 +851,7 @@ fn apply_add_item_target(
     // is an enum the `--title` re-slugs outside, block here — fast feedback at the point
     // of the mistake, not deferred to finalize. The batch (`apply_leaf`) inherits this
     // by sharing this path.
-    if let Some(finding) = id_from_enum_block(schema, &target, title) {
+    if let Some(finding) = id_from_enum_block(schema, doc_head(uri), &target, title) {
         return Err(DocFailure::Block(finding));
     }
     Ok(match target {
@@ -859,7 +866,7 @@ fn apply_add_item_target(
             // field materializing normally.
             let on_create = on_create_item_fields(schema, &section, migration);
             let edited = engine::write::add_item(schema, source, &section, title, None, &on_create)
-                .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
+                .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", uri))?;
             let minted = format!("{}/{}", section, engine::slug::slugify(title));
             (edited, minted)
         }
@@ -894,7 +901,7 @@ fn apply_add_item_target(
                 None,
                 &on_create,
             )
-            .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
+            .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", uri))?;
             // The minted nested item address is the **section-qualified** chain: the
             // section, the parent-scoped id chain, the nested-section name, then the
             // slugger-minted anchor — `#section/parent/.../nested-section/<slug>`. This is
@@ -922,9 +929,15 @@ fn apply_add_item_target(
 /// adjudicator over the `--title`. When the id-from is an enum the title re-slugs outside
 /// its members, returns a blocking finding carrying the **shared** code
 /// [`engine::validate::ID_FROM_ENUM_CODE`] (identical to finalize's) addressed at the
-/// slug-cased id-from address. A non-enum id-from / a member title yields `None` — the
-/// inert path, mirroring finalize's exemption (so `Fixed`→`fixed` passes).
-fn id_from_enum_block(schema: &Schema, target: &AddItemTarget, title: &str) -> Option<Finding> {
+/// slug-cased id-from address, **qualified by the doc head** `doc` (`<type>:<slug>`) into the
+/// URI normal form its stable key targets. A non-enum id-from / a member title yields `None`
+/// — the inert path, mirroring finalize's exemption (so `Fixed`→`fixed` passes).
+fn id_from_enum_block(
+    schema: &Schema,
+    doc: &str,
+    target: &AddItemTarget,
+    title: &str,
+) -> Option<Finding> {
     let (repeatable, prefix) = match target {
         AddItemTarget::TopLevel { section } => {
             let body = &schema.sections.iter().find(|s| &s.id == section)?.body;
@@ -954,7 +967,11 @@ fn id_from_enum_block(schema: &Schema, target: &AddItemTarget, title: &str) -> O
             "add-item rejected: `{slug}` is not an enum member of id-from field `{}`",
             repeatable.id_from
         ),
-        Location::addressed(format!("{prefix}/{slug}/{}", repeatable.id_from), 1, 1),
+        Location::addressed(
+            format!("{doc}#{prefix}/{slug}/{}", repeatable.id_from),
+            1,
+            1,
+        ),
     ))
 }
 
@@ -1025,7 +1042,8 @@ fn run_remove_item(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_verb_addr(task.pack.as_ref(), addr)?;
-    machine_maintained_guard(address.r#type.as_str(), "remove-item", addr)?;
+    let uri = address.to_string();
+    machine_maintained_guard(address.r#type.as_str(), "remove-item", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
@@ -1042,7 +1060,7 @@ fn run_remove_item(
                 block(
                     &engine::write::splice_error_finding(&e),
                     "remove-item",
-                    addr,
+                    &uri,
                 )
             })?
         }
@@ -1053,7 +1071,7 @@ fn run_remove_item(
                     block(
                         &engine::write::splice_error_finding(&e),
                         "remove-item",
-                        addr,
+                        &uri,
                     )
                 },
             )?
@@ -1142,6 +1160,7 @@ fn run_retitle_item(
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let uri = address.to_string();
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
@@ -1168,7 +1187,8 @@ fn run_retitle_item(
                  the record is machine-maintained and an item's heading IS the sub-task's \
                  work-unit id, so a retitle would sever the record from its work unit"
             ),
-            Some(Location::addressed(item_path, 1, 1)),
+            // The addressed item, in URI normal form — the item's key target.
+            Some(Location::addressed(&uri, 1, 1)),
             Some(
                 "leave the record to the milestone verbs — `jigc milestone add-task` \
                  appends sub-tasks and `jigc task finalize` advances their status; no \
@@ -1198,7 +1218,7 @@ fn run_retitle_item(
         block(
             &engine::write::generate_error_finding(&e),
             "retitle-item",
-            addr,
+            &uri,
         )
     })?;
 
@@ -1291,8 +1311,10 @@ fn retitle_enum_refusal(
              `{}` — a member change is an identity change, not a retitle",
             repeatable.id_from
         ),
+        // The FULL URI (the `doc` head is in hand from the parsed address) — a bare
+        // fragment is not a stable key (`design/command-output-contract.md`).
         Some(Location::addressed(
-            format!("{item_path}/{}", repeatable.id_from),
+            format!("{doc}#{item_path}/{}", repeatable.id_from),
             1,
             1,
         )),
@@ -3276,20 +3298,57 @@ fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
 }
 
 /// Wrap a blocking [`Finding`] as a [`DocFailure::Block`], ensuring it carries a
-/// route. A hard block is a blocking-severity finding carrying a route
-/// (`DECISIONS.md` 2026-05-31 → blocked/error payload). Where a write-time
-/// adjudication finding carries none (the engine's `write.malformed-value` is
+/// route **and a stable key target**. A hard block is a blocking-severity finding
+/// carrying a route (`DECISIONS.md` 2026-05-31 → blocked/error payload). Where a
+/// write-time adjudication finding carries none (the engine's `write.malformed-value` is
 /// routeless), the CLI supplies the actionable retry route — presentation the CLI
 /// owns, the determinism boundary unaffected. `dispatch` renders it through
 /// `--format` (JSON envelope under `--format json`).
-fn block(finding: &Finding, verb: &str, addr: &str) -> DocFailure {
+///
+/// `subject` is the finding's **declared target form**
+/// (`design/command-output-contract.md` → the form table): the **doc URI** for the
+/// address-bearing writes — in the parsed normal form, never the raw CLI argument (a bare
+/// singleton head expands: `vision#thesis` → `vision:vision#thesis`) — and the **bare
+/// doctype id** for the doctype-scoped `create` / `author` blocks. It doubles as the
+/// route's address echo.
+fn block(finding: &Finding, verb: &str, subject: &str) -> DocFailure {
     let mut finding = finding.clone();
     if finding.route.is_none() {
         finding.route = Some(format!(
-            "retry `jigc doc {verb} {addr}` with a conforming value"
+            "retry `jigc doc {verb} {subject}` with a conforming value"
         ));
     }
+    stamp_target(&mut finding, subject);
     DocFailure::Block(finding)
+}
+
+/// Stamp `subject` as the finding's [`Location::address`] — the string its stable
+/// `(code, target)` key derives from (`design/command-output-contract.md` → The stable
+/// finding key) — **if it carries none**. The engine's fifteen write constructors cannot
+/// self-address (they hold a section + a field, never a `type:slug`), so they emit
+/// `Location::at(line, col)` with no address and every failed write of one code collided on
+/// the degenerate key `(code, null)`; the CLI holds the parsed address, so the CLI stamps it
+/// outward — the same post-pass shape the store walk's `attribute_to_doc` flip installs.
+///
+/// **If-absent, never a clobber:** a finding that already resolved its own target keeps it
+/// — the doctype-scoped `create` keys (`create.gate-blocked` → `adr`) and
+/// `create.serial-collision`'s instance address are its declared forms, not defaults. The
+/// source coordinate is preserved (it is a human's pointer, never part of the key).
+fn stamp_target(finding: &mut Finding, subject: &str) {
+    match &mut finding.location {
+        Some(location) if location.address.is_none() => {
+            location.address = Some(subject.to_string());
+        }
+        Some(_) => {}
+        None => finding.location = Some(Location::addressed(subject, 1, 1)),
+    }
+}
+
+/// The doc head (`<type>:<slug>`) of a **normal-form** address — the URI prefix every
+/// write-path finding's target carries, and the head the guards rebuild their route
+/// addresses from. An address with no `#fragment` is already the head.
+fn doc_head(addr: &str) -> &str {
+    addr.split_once('#').map_or(addr, |(head, _)| head)
 }
 
 /// Map an engine [`Finding`] to an `anyhow` error carrying its message + route —

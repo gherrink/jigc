@@ -535,10 +535,10 @@ fn flow26_red_write_time_enum_block_at_add_item() {
         ),
         "add-item release",
     );
-    let rel_id = rel
-        .strip_prefix("changelog:changelog#releases/")
-        .expect("release address under #releases/");
-    let expected_address = format!("releases/{rel_id}/changes/performance/category");
+    // (M42 inc-9 T2) The finding address is the minted release address in **URI normal
+    // form**, driven verbatim (`design/command-output-contract.md` → the `write.*` row: a
+    // bare fragment is not a stable key).
+    let expected_address = format!("{rel}/changes/performance/category");
 
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
 

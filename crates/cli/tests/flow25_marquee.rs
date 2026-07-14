@@ -512,12 +512,11 @@ fn flow25_red1_performance_group_blocks_at_enum_conformance() {
 
     let rel_120 = drive_conformant_migration(repo.path(), home.path(), &pack);
 
-    // The id-from slug = `performance`; the finding address is rooted at the release id
-    // the binary minted (driven verbatim, not hand-built).
-    let rel_id = rel_120
-        .strip_prefix("changelog:changelog#releases/")
-        .expect("release address under #releases/");
-    let expected_address = format!("releases/{rel_id}/changes/performance/category");
+    // The id-from slug = `performance`; the finding address is rooted at the release address
+    // the binary minted (driven verbatim, not hand-built) — in **URI normal form** since
+    // M42 inc-9 T2 (`design/command-output-contract.md` → the `write.*` row: a bare fragment
+    // is not a stable key), so the minted address prefixes it whole.
+    let expected_address = format!("{rel_120}/changes/performance/category");
 
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
     let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])

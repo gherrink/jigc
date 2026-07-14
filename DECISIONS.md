@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-14 — M42 Increment 9 / T2: the half-normalized `write.*` targets were four constructors, not one
+
+[command-output-contract.md](design/command-output-contract.md) → the `write.*` row names **one** bare-fragment offender (`write.id-from-field`, `doc.rs`); the sweep found **four** — its `add-item` twin (`id_from_enum_block`), `write.identity-change` (the retitle enum refusal) and the retitle milestone-record refusal all emitted `<section>/<item>/<field>` with no doc head, so two docs' foreign categories collided on one key exactly as the null-target family did. All four now emit the URI normal form; **no new decision** — the doc's rule ("a bare fragment is the same broken key one step short") assigns it on sight, and the "…" in its code list already covered them. Logged because the pattern is the wave's own: *a census keyed on the offender you noticed will miss its siblings.* The CLI stamp is **if-absent** at the `DocFailure::Block` seam, so T1's engine-side `create.*` doctype targets and `create.serial-collision`'s doc URI are never clobbered.
+
 ## 2026-07-14 — M42 Increment 9 planning: decomposition
 
 Cut [Increment 9](implementation/roadmap.md) (the command-output contract — every finding gets a stable, discriminating key; [command-output-contract.md](design/command-output-contract.md) → the stable finding key / the six target forms / the membership test / the parse-conformance + finalize sub-tables / the `op` enum) into **9 ordered single-concern tasks**, grounded at HEAD `3e1ba0a` (tree clean; Inc 1–8 landed, the two Inc-9 halts settled into the design of record). The cut is **one task per target-form family**, then the acks, then the closure — no family's fix breaks a gate another family repairs, so each task is gate-green alone.

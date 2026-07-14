@@ -285,9 +285,16 @@ fn top_level_foreign_category_blocks_at_the_add_item_verb() {
     let address = finding["location"]["address"]
         .as_str()
         .unwrap_or_else(|| panic!("the finding is addressed; got:\n{stderr}"));
+    // (M42 inc-9 T2) The slug-cased id-from address in **URI normal form** — the bare
+    // fragment this pinned before is not a stable key (two docs' foreign categories collided
+    // on it); `design/command-output-contract.md` → the `write.*` row.
     assert_eq!(
-        address, "unreleased-changes/improvements/category",
-        "the finding names the slug-cased id-from address; got {address:?}",
+        address, "changelog:changelog#unreleased-changes/improvements/category",
+        "the finding names the slug-cased id-from address, doc-qualified; got {address:?}",
+    );
+    assert_eq!(
+        finding["key"]["target"], address,
+        "the stable key.target IS that address; got:\n{stderr}",
     );
 
     // A valid member passes — `Fixed` re-slugs to the `fixed` enum member.

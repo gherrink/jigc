@@ -344,10 +344,6 @@ fn nested_foreign_category_blocks_at_the_add_item_verb() {
         ),
         "add-item release 1.2.0",
     );
-    let release_id = release
-        .strip_prefix("changelog:changelog#releases/")
-        .expect("release address is under #releases/")
-        .to_owned();
 
     // The foreign nested category — blocks at the write verb.
     let blocked = run_jigc(
@@ -382,10 +378,17 @@ fn nested_foreign_category_blocks_at_the_add_item_verb() {
     let address = finding["location"]["address"]
         .as_str()
         .unwrap_or_else(|| panic!("the finding is addressed; got:\n{stderr}"));
+    // (M42 inc-9 T2) The section-qualified nested id-from address in **URI normal form** —
+    // the emitted release address prefixes it whole (`design/command-output-contract.md` →
+    // the `write.*` row: a bare fragment is not a stable key).
     assert_eq!(
         address,
-        format!("releases/{release_id}/changes/improvements/category"),
-        "the finding names the section-qualified slug-cased nested id-from address",
+        format!("{release}/changes/improvements/category"),
+        "the finding names the doc-qualified, section-qualified slug-cased nested id-from address",
+    );
+    assert_eq!(
+        finding["key"]["target"], address,
+        "the stable key.target IS that address; got:\n{stderr}",
     );
 
     // A valid member passes — `Added` re-slugs to the `added` enum member (the
