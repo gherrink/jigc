@@ -356,6 +356,15 @@ impl Path {
     /// A literal `type:name` [`Head::Doc`] head is a committed-store read that
     /// needs the wired store/edge-index; it is out of MVP resolution scope and
     /// surfaces as an `unresolved` finding here.
+    ///
+    /// **The findings below carry a location, not yet a target.** A resolver over a `(path,
+    /// ctx)` pair holds no id for the *definition* the path was read from, so each finding is
+    /// stamped with its **pack resource** (`step:<id>`) outward, at the compose boundary that
+    /// does hold it (`compose::at_resource`;
+    /// [command-output-contract.md](../../../design/command-output-contract.md) →
+    /// `workflow-refs.*` — the pack-resource form). A new finding raised here inherits that
+    /// stamp for free; one raised *outside* that boundary would project the degenerate key
+    /// `(code, null)` the contract forbids.
     pub fn resolve(&self, ctx: &ComposeContext) -> Result<Resolution, Finding> {
         let root = match &self.head {
             Head::Root(root) => root,

@@ -422,9 +422,16 @@ pub fn validate_store_families(
     // a single pack the origin *is* the pack, so the scope is inert and the catalog is the
     // same — byte-identical to the pre-fix flat path (`multi-pack.md` → Pack-local
     // body-reference resolution).
+    // The loop is also where each definition's **id** exists — the `workflow-refs.*` checks are
+    // pure helpers over bytes and hold none — so it is fed in and every finding is keyed at the
+    // pack resource it was raised in (`workflow:<id>` / `step:<id>`;
+    // `command-output-contract.md` → `workflow-refs.*` — the pack-resource form). Without it the
+    // family projected `(code, null)`: two bad refs in one step were byte-identical keys in one
+    // report array.
     for workflow in workflows {
         workflow_source.scope_to_workflow(&workflow.id);
         findings.extend(crate::compose::workflow_refs_store(
+            &workflow.id,
             &workflow.bytes,
             workflow_source,
             &workflow.catalog,

@@ -2184,19 +2184,22 @@ pub fn workflow_refs_with_deltas(
     }
 
     // Per expanded step body: the reserved-marker shadow checks, then emission
-    // (command-ref-resolves / placeholder-resolves / at-marker-on-non-scalar).
+    // (command-ref-resolves / placeholder-resolves / at-marker-on-non-scalar). Each finding
+    // is stamped with the step it was raised in — its pack-resource target ([`at_resource`]);
+    // the emit-path break carries `data_value.rs`'s findings, which hold no id of their own.
     for step in &composition.steps {
+        let step_ref = step_resource(&step.id);
         if let Some(finding) = find_run_shadow(&step.body) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
         if let Some(finding) = find_spawn_shadow(&step.body) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
         if let Some(finding) = find_checkpoint_shadow(&step.body) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
         if let Err(finding) = emit_step_body(&step.body, ctx, catalog) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
     }
     findings
@@ -2233,46 +2236,101 @@ pub fn workflow_refs_with_deltas(
 /// ([`workflow_refs`]); they are not run here. Reuses the `workflow-refs.*` check ids
 /// (no new id, no severity-inventory growth). A pure function of its inputs (the
 /// determinism boundary; no I/O, clock, or LLM, and — by construction — no task).
+///
+/// `workflow_id` is the definition's id — the caller's handle, and the only place it exists
+/// (every check below is a pure helper over bytes). It is what each finding is keyed at: this
+/// is the one `workflow-refs.*` path whose findings reach a serialization funnel (the store
+/// sweep's [`ValidationReport`](crate::result::ValidationReport)), so a null target here is a
+/// key a driver cannot dedupe on — see [`at_resource`].
 pub fn workflow_refs_store(
+    workflow_id: &str,
     workflow_bytes: &[u8],
     source: &dyn StepSource,
     catalog: &CommandCatalog,
 ) -> Vec<Finding> {
+    let workflow_ref = workflow_resource(workflow_id);
+
     // body-include-only (and malformed/missing front-matter): a definition that does
     // not load has no tree to walk.
     let def = match load_workflow_def(workflow_bytes) {
         Ok(def) => def,
-        Err(finding) => return vec![finding],
+        Err(finding) => return vec![at_resource(finding, &workflow_ref)],
     };
 
     // include-resolves / include-cycle-absent: a tree that does not expand cannot be
     // emitted.
     let composition = match expand_includes(&def, source) {
         Ok(composition) => composition,
-        Err(finding) => return vec![finding],
+        Err(finding) => return vec![at_resource(finding, &workflow_ref)],
     };
 
     // Workflow-level: each `fan-out` step must pair with a `join` step (M8).
     let mut findings = Vec::new();
     if let Some(finding) = find_fan_out_join_pairing(&composition) {
-        findings.push(finding);
+        findings.push(at_resource(finding, &workflow_ref));
     }
 
     // Per expanded step body: the reserved-marker shadow checks, then the
     // membership-only command-ref check (no `render_command`, no task data).
     for step in &composition.steps {
+        let step_ref = step_resource(&step.id);
         if let Some(finding) = find_run_shadow(&step.body) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
         if let Some(finding) = find_spawn_shadow(&step.body) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
         if let Some(finding) = find_checkpoint_shadow(&step.body) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
-        findings.extend(find_command_ref_membership(&step.body, catalog));
+        findings.extend(
+            find_command_ref_membership(&step.body, catalog)
+                .into_iter()
+                .map(|finding| at_resource(finding, &step_ref)),
+        );
     }
     findings
+}
+
+/// The **pack-resource** target of a workflow — `workflow:<id>`
+/// ([structural-grammar.md](../../../design/structural-grammar.md) → Addressing: one grammar,
+/// every reference).
+fn workflow_resource(workflow_id: &str) -> String {
+    format!("workflow:{workflow_id}")
+}
+
+/// The **pack-resource** target of a step — `step:<id>`.
+fn step_resource(step_id: &str) -> String {
+    format!("step:{step_id}")
+}
+
+/// Stamp a `workflow-refs.*` finding with the **pack resource** it concerns — its declared
+/// target form ([command-output-contract.md](../../../design/command-output-contract.md) →
+/// `workflow-refs.*` — the pack-resource form, keyed at the resource).
+///
+/// Every one of the family's constructors is a **pure helper over bytes** (`load_workflow_def`,
+/// `find_run_shadow`, `parse_data_value`, `Path::resolve` …) — none of them holds the id of the
+/// definition it is reading, so all 37 sites emitted `Location::at(…)` with **no address** and
+/// projected the degenerate key `(code, null)`: two unresolvable `{{cli.…}}` refs in one step
+/// rode one `jigc validate --format json` array with byte-identical keys. The id *is* in hand at
+/// the load/compose boundary, so the address is attributed **outward** here — the same
+/// post-pass shape `attribute_to_doc` (`validate.rs`) establishes for the content families.
+///
+/// **Keyed at the resource, declared non-unique below it**: two bad refs in one step *correctly*
+/// collapse to one key. A workflow-def break means the **pack** is broken — a defect a pack
+/// author fixes once, not a corpus finding a driver tracks per-occurrence — so the resource is
+/// the right granularity, and `location.line` still separates the instances for a human reader.
+///
+/// A finding raised with no source coordinate at all ([`Finding::block`] — the workflow-level
+/// `fan-out-join-paired` pairing check) gains a `1:1` location to carry the address, exactly as
+/// the `override-default` delta targets do: the key is derived from [`Location::address`], so an
+/// addressed finding must have a location.
+fn at_resource(mut finding: Finding, resource: &str) -> Finding {
+    match &mut finding.location {
+        Some(location) => location.address = Some(resource.to_owned()),
+        None => finding.location = Some(Location::addressed(resource, 1, 1)),
+    }
+    finding
 }
 
 /// The **membership-only** command-ref check ([`workflow_refs_store`]): for each lone
@@ -2380,7 +2438,14 @@ pub fn workflow_refs_with_fills(
                     "slot-fill targets `step:{}#{}`, a `{{{{fill:}}}}` point no resolved step body declares (orphaned)",
                     delta.target.step_id, delta.target.fill_id
                 ),
-                Some(Location::at(1, 1)),
+                // The subject is the **target step** whose body declares no such fill point —
+                // the pack resource this check is keyed on ([`at_resource`]), and the one id
+                // this constructor does hold.
+                Some(Location::addressed(
+                    step_resource(&delta.target.step_id),
+                    1,
+                    1,
+                )),
                 Some(format!(
                     "remove or re-target the slot-fill on `step:{}#{}` with `jigc config fill` (the `{{{{fill:}}}}` point it names is not in the resolved step body)",
                     delta.target.step_id, delta.target.fill_id
@@ -2398,11 +2463,14 @@ pub fn workflow_refs_with_fills(
 
     // Per expanded step body, run phase 5, then the post-phase-5 checks:
     // fill-survivor, run/spawn-marker shadow, and emission (command-ref / placeholder).
+    // Each finding carries the step it was raised in — its pack-resource target
+    // ([`at_resource`]).
     for step in &composition.steps {
+        let step_ref = step_resource(&step.id);
         let applied = match apply_slot_fills(&step.id, &step.body, fills) {
             Ok(applied) => applied,
             Err(finding) => {
-                findings.push(finding);
+                findings.push(at_resource(finding, &step_ref));
                 continue;
             }
         };
@@ -2410,20 +2478,20 @@ pub fn workflow_refs_with_fills(
         // mis-parsed as a `fill`-rooted data-value by the emitter, so the distinct
         // survivor finding supersedes the emit check for this body.
         if let Some(finding) = find_fill_survivor(&applied) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
             continue;
         }
         if let Some(finding) = find_run_shadow(&applied) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
         if let Some(finding) = find_spawn_shadow(&applied) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
         if let Some(finding) = find_checkpoint_shadow(&applied) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
         if let Err(finding) = emit_step_body(&applied, ctx, catalog) {
-            findings.push(finding);
+            findings.push(at_resource(finding, &step_ref));
         }
     }
     findings
@@ -5520,7 +5588,12 @@ explain what changes (nothing appears if it supersedes none).
         let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
 
         // Clean: the shipped single-task store-validates with zero findings.
-        let clean = workflow_refs_store(SINGLE_TASK.as_bytes(), &single_task_source(), &catalog);
+        let clean = workflow_refs_store(
+            "single-task",
+            SINGLE_TASK.as_bytes(),
+            &single_task_source(),
+            &catalog,
+        );
         assert!(
             clean.is_empty(),
             "a clean single-task must yield zero store findings, got {clean:?}"
@@ -5529,7 +5602,8 @@ explain what changes (nothing appears if it supersedes none).
 
         // 1) A dangling include id (no step file in the cascade) → include-resolves.
         let dangling_wf = b"---\nwhen: x\n---\n{{ include: step:not-a-step }}\n";
-        let dangling = workflow_refs_store(dangling_wf, &single_task_source(), &catalog);
+        let dangling =
+            workflow_refs_store("single-task", dangling_wf, &single_task_source(), &catalog);
         insta::assert_snapshot!(
             finding_codes(&dangling),
             @"workflow-refs.include-resolves @ 1:1"
@@ -5541,7 +5615,7 @@ explain what changes (nothing appears if it supersedes none).
             ("b", "prose b\n{{ include: step:a }}\n"),
         ]);
         let cyclic_wf = b"---\nwhen: x\n---\n{{ include: step:a }}\n";
-        let cyclic = workflow_refs_store(cyclic_wf, &cyclic_src, &catalog);
+        let cyclic = workflow_refs_store("single-task", cyclic_wf, &cyclic_src, &catalog);
         insta::assert_snapshot!(
             finding_codes(&cyclic),
             @"workflow-refs.include-cycle-absent @ 1:1"
@@ -5549,7 +5623,7 @@ explain what changes (nothing appears if it supersedes none).
 
         // 3) A workflow body with a prose line → body-include-only.
         let prose_wf = b"---\nwhen: x\n---\n{{ include: step:locate }}\nthis is prose\n";
-        let prose = workflow_refs_store(prose_wf, &single_task_source(), &catalog);
+        let prose = workflow_refs_store("single-task", prose_wf, &single_task_source(), &catalog);
         insta::assert_snapshot!(
             finding_codes(&prose),
             @"workflow-refs.body-include-only @ 5:1"
@@ -5558,7 +5632,7 @@ explain what changes (nothing appears if it supersedes none).
         // 4) A step body line starting `Run: ` → run-marker-not-shadowed.
         let run_src = MapSource::new(&[("only", "do the thing\nRun: jigc do-it\nthen stop\n")]);
         let only_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
-        let run = workflow_refs_store(only_wf, &run_src, &catalog);
+        let run = workflow_refs_store("single-task", only_wf, &run_src, &catalog);
         insta::assert_snapshot!(
             finding_codes(&run),
             @"workflow-refs.run-marker-not-shadowed @ 2:1"
@@ -5566,7 +5640,7 @@ explain what changes (nothing appears if it supersedes none).
 
         // 5) A step body line starting `Spawn: ` → spawn-marker-not-shadowed.
         let spawn_src = MapSource::new(&[("only", "do the thing\nSpawn: a sub-task\nthen stop\n")]);
-        let spawn = workflow_refs_store(only_wf, &spawn_src, &catalog);
+        let spawn = workflow_refs_store("single-task", only_wf, &spawn_src, &catalog);
         insta::assert_snapshot!(
             finding_codes(&spawn),
             @"workflow-refs.spawn-marker-not-shadowed @ 2:1"
@@ -5574,7 +5648,7 @@ explain what changes (nothing appears if it supersedes none).
 
         // 6) A step body line starting `Checkpoint: ` → checkpoint-marker-not-shadowed.
         let cp_src = MapSource::new(&[("only", "do the thing\nCheckpoint: a halt\nthen stop\n")]);
-        let cp = workflow_refs_store(only_wf, &cp_src, &catalog);
+        let cp = workflow_refs_store("single-task", only_wf, &cp_src, &catalog);
         insta::assert_snapshot!(
             finding_codes(&cp),
             @"workflow-refs.checkpoint-marker-not-shadowed @ 2:1"
@@ -5586,10 +5660,12 @@ explain what changes (nothing appears if it supersedes none).
             "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run: workflow:sub-task\n---\nSpawn a sub-task per item.\n",
         )]);
         let fan_wf = b"---\nwhen: x\n---\n{{ include: step:fan }}\n";
-        let fan = workflow_refs_store(fan_wf, &fan_src, &catalog);
+        let fan = workflow_refs_store("single-task", fan_wf, &fan_src, &catalog);
+        // The pairing check is the family's one location-less constructor (`Finding::block`);
+        // carrying its workflow target now gives it a `1:1` location (M42 T7).
         insta::assert_snapshot!(
             finding_codes(&fan),
-            @"workflow-refs.fan-out-join-paired @ -"
+            @"workflow-refs.fan-out-join-paired @ 1:1"
         );
 
         // Every store finding is intrinsic blocking, exactly one per fixture.
@@ -5599,6 +5675,28 @@ explain what changes (nothing appears if it supersedes none).
                 findings[0].severity,
                 crate::finding::Severity::Blocking,
                 "every store workflow-refs check is intrinsic-blocking"
+            );
+        }
+
+        // M42 T7 — every store finding keys at the **pack resource** it was raised in, never at
+        // `null` (`command-output-contract.md` → `workflow-refs.*` — the pack-resource form).
+        // The subject splits: a definition that does not load / expand, and the workflow-level
+        // pairing check, key at the **workflow**; a break inside an expanded step body keys at
+        // that **step**.
+        for findings in [&dangling, &cyclic, &prose, &fan] {
+            assert_eq!(
+                findings[0].key().target.as_deref(),
+                Some("workflow:single-task"),
+                "a workflow-level break keys at the workflow, got {:?}",
+                findings[0]
+            );
+        }
+        for findings in [&run, &spawn, &cp] {
+            assert_eq!(
+                findings[0].key().target.as_deref(),
+                Some("step:only"),
+                "a step-body break keys at the step it lives in, got {:?}",
+                findings[0]
             );
         }
     }
@@ -5613,7 +5711,7 @@ explain what changes (nothing appears if it supersedes none).
 
         // A dangling `{{cli.unknown}}` command-ref → command-ref-resolves at its line.
         let unknown_src = MapSource::new(&[("only", "first\n{{ cli.unknown }}\nlast\n")]);
-        let unknown = workflow_refs_store(only_wf, &unknown_src, &catalog);
+        let unknown = workflow_refs_store("single-task", only_wf, &unknown_src, &catalog);
         insta::assert_snapshot!(
             finding_codes(&unknown),
             @"workflow-refs.command-ref-resolves @ 2:1"
@@ -5623,7 +5721,7 @@ explain what changes (nothing appears if it supersedes none).
 
         // A present command-ref id → clean (membership passes).
         let present_src = MapSource::new(&[("only", "{{ cli.validate-task }}\n")]);
-        let present = workflow_refs_store(only_wf, &present_src, &catalog);
+        let present = workflow_refs_store("single-task", only_wf, &present_src, &catalog);
         assert!(
             present.is_empty(),
             "a catalog-present command-ref yields zero findings, got {present:?}"
@@ -5650,7 +5748,7 @@ explain what changes (nothing appears if it supersedes none).
             );
             let src = MapSource::new(&[("only", &format!("{{{{ cli.{id} }}}}\n"))]);
             let only_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
-            let findings = workflow_refs_store(only_wf, &src, &catalog);
+            let findings = workflow_refs_store("single-task", only_wf, &src, &catalog);
             assert!(
                 findings.is_empty(),
                 "store scope must emit NO finding for the task.*-arg command-ref `{id}` (B1), got {findings:?}"
@@ -5658,15 +5756,49 @@ explain what changes (nothing appears if it supersedes none).
         }
     }
 
-    /// `workflow_refs_store` is a pure function of `(workflow_bytes, source,
+    /// M42 T7 — the **compose-path** per-step stamp: a data-value break raised deep in
+    /// `data_value.rs` (a pure helper over bytes, no id in hand) surfaces from the compose gate
+    /// carrying the **pack resource** it lives in — `step:<id>`
+    /// (`command-output-contract.md` → `workflow-refs.*` — the pack-resource form).
+    ///
+    /// Two steps, each with its own break, prove the granularity in both directions: the target
+    /// is **non-null** (the degenerate `(code, null)` key is gone) and **distinct per resource**
+    /// (the two steps do not collide).
+    #[test]
+    fn compose_path_step_findings_carry_their_step_resource() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        // `nope` / `also-nope` are undeclared data-value roots — `data_value.rs`'s
+        // `workflow-refs.undeclared-root`, one of the nine sites that hold no id at all.
+        let src = MapSource::new(&[
+            ("alpha", "reason about it:\n{{ nope.thing }}\n"),
+            ("beta", "then this:\n{{ also-nope.thing }}\n"),
+        ]);
+        let wf = b"---\nwhen: x\n---\n{{ include: step:alpha }}\n{{ include: step:beta }}\n";
+
+        let findings = workflow_refs(wf, &src, &catalog, &ctx);
+
+        assert_eq!(findings.len(), 2, "one break per step, got {findings:?}");
+        for finding in &findings {
+            assert_eq!(finding.code, "workflow-refs.undeclared-root");
+        }
+        let targets: Vec<Option<String>> = findings.iter().map(|f| f.key().target).collect();
+        assert_eq!(
+            targets,
+            vec![Some("step:alpha".to_owned()), Some("step:beta".to_owned())],
+            "each step's break keys at its own step resource, never at `null`"
+        );
+    }
+
+    /// `workflow_refs_store` is a pure function of `(workflow_id, workflow_bytes, source,
     /// catalog)` — the determinism boundary, by construction task-less. The same
     /// inputs twice yield byte-identical findings.
     #[test]
     fn workflow_refs_store_is_deterministic() {
         let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
         let src = single_task_source();
-        let first = workflow_refs_store(SINGLE_TASK.as_bytes(), &src, &catalog);
-        let second = workflow_refs_store(SINGLE_TASK.as_bytes(), &src, &catalog);
+        let first = workflow_refs_store("single-task", SINGLE_TASK.as_bytes(), &src, &catalog);
+        let second = workflow_refs_store("single-task", SINGLE_TASK.as_bytes(), &src, &catalog);
         assert_eq!(
             finding_codes(&first),
             finding_codes(&second),
