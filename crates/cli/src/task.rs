@@ -908,6 +908,16 @@ impl TaskArea {
             return Ok(Outcome::code(EXIT_REVIEW_PENDING));
         }
 
+        // M42 — say what the commit is about to leave out, BEFORE it commits
+        // (`design/finalize.md` → "The `left-out` advisory prints BEFORE the commit too").
+        // The landed residual below names the same set, but only once the partial commit
+        // is already history. The forecast is the `--dry-run` one (side-effect-free, and a
+        // `MigrationFixed` migration correctly forecasts none — it sweeps no WIP). It
+        // SURFACES only: the commit still lands, the block stays reserved for the
+        // empty-index case (`nothing_staged_finding`).
+        let (_, pending_left_out) = self.predict_manifest(&plan, is_migration)?;
+        emit_left_out_advisory(format, &pending_left_out);
+
         // Phases 4–7: the shared transactional core — promote + stage + commit +
         // rollback + post-commit. The working area is the cleanup dir removed on a
         // landed commit.
@@ -990,6 +1000,15 @@ impl TaskArea {
                 // M40 item 3): the hook output IS the correction signal.
                 if let Some(stage) = err.downcast_ref::<StageGitFailure>() {
                     return self.blocked(vec![stage_failed_finding(id, &stage.0)], format);
+                }
+                // M42 — the commit-phase rejection keeps git's stderr verbatim-raw AND
+                // gains the recoverability half it never said: the task survives intact,
+                // so the same re-run lands the commit once the hook is satisfied
+                // (`design/finalize.md` → 6. Commit). Framed HERE because the task `id` is
+                // in hand here — `git_commit` never sees it.
+                if let Some(rejected) = err.downcast_ref::<CommitRejected>() {
+                    eprintln!("{}", render::commit_rejected(format, id, &rejected.0));
+                    return Ok(Outcome::failure());
                 }
                 eprintln!("{}", render::operational_error(format, &err));
                 Ok(Outcome::failure())
@@ -1804,6 +1823,42 @@ fn mark_stage_failure(err: anyhow::Error) -> anyhow::Error {
     anyhow::Error::new(StageGitFailure(format!("{err:#}")))
 }
 
+/// Typed marker for a **commit-phase** rejection — the user's `pre-commit` / `commit-msg`
+/// hook (or git itself) refused the commit in [`git_commit`] (M42, `design/finalize.md` →
+/// 6. Commit). It carries git's message **verbatim**, so a surface that has the task `id`
+/// in hand (the per-task `finalize` [`Err`](Task::finalize) arm) can frame it with the
+/// recoverability it declares — *task `<id>` is intact, re-run finalize* — without editing
+/// the hook's own bytes. Its [`Display`](std::fmt::Display) is that verbatim message, so
+/// every other caller (the fan-out / record-only commit paths) keeps its existing surface.
+#[derive(Debug)]
+struct CommitRejected(String);
+
+impl std::fmt::Display for CommitRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for CommitRejected {}
+
+/// Emit the **pre-commit** `left-out` advisory (M42, `design/finalize.md` → "The `left-out`
+/// advisory prints BEFORE the commit too") — nothing at all when the commit leaves nothing
+/// behind. Placement follows the [`relay_hook_output`] discipline: agent/human text goes to
+/// **stdout** (where the agent reads the finalize surface), but under `--format json` the
+/// structured envelope owns stdout and must not be corrupted, so the advisory goes to
+/// **stderr**.
+fn emit_left_out_advisory(format: Format, left_out: &[render::ManifestEntry]) {
+    let advisory = render::left_out_advisory(left_out);
+    if advisory.is_empty() {
+        return;
+    }
+    if format == Format::Json {
+        eprint!("{advisory}");
+    } else {
+        print!("{advisory}");
+    }
+}
+
 /// The M30 G2 block-on-empty guidance: the working tree is dirty but the narrowed index
 /// is empty, so a per-task `IndexHonoring` commit would land nothing the agent staged. A
 /// routed blocking finding pointing at `git add` — distinct from the genuinely-clean
@@ -2309,11 +2364,15 @@ pub(crate) fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String
     let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
         let stdout = String::from_utf8_lossy(&out.stdout);
-        bail!(
+        // M42 — the rejection is a TYPED error (`CommitRejected`) carrying git's bytes
+        // verbatim, so the per-task surface (which knows the task id) can frame it with
+        // the recoverability route. Its `Display` is this same message, so the callers
+        // that only print `{err:#}` are byte-unchanged.
+        return Err(anyhow::Error::new(CommitRejected(format!(
             "`git commit` was rejected (no commit was made):\n{}{}",
             stdout.trim(),
             stderr.trim()
-        );
+        ))));
     }
     Ok(stderr.trim_end().to_owned())
 }

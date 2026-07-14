@@ -653,6 +653,46 @@ fn left_out_lines(left_out: &[ManifestEntry]) -> Vec<String> {
     lines
 }
 
+/// The **pre-commit** `left-out` advisory a landing `task finalize` prints *before* it
+/// commits (M42, `design/finalize.md` → "The `left-out` advisory prints BEFORE the commit
+/// too"): a titled line, then the same [`left_out_lines`] section the dry-run forecast and
+/// the landed residual render — so all three surfaces name the left-out set identically.
+/// Empty (no bytes) when the tree leaves nothing out; ends with a newline (the caller
+/// emits it as-is on the stream the format selects). It **surfaces only** — the commit
+/// still lands; the block stays reserved for the empty-index case.
+pub fn left_out_advisory(left_out: &[ManifestEntry]) -> String {
+    let lines = left_out_lines(left_out);
+    if lines.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("finalize — committing the index; leaving out:\n");
+    for line in lines {
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out
+}
+
+/// Frame a commit-phase **hook/git rejection** with the recoverability it always had but
+/// never stated (M42, `design/finalize.md` → 6. Commit): git's `rejection` bytes stay
+/// **verbatim and unwrapped** (the hook output *is* the correction signal — the M40
+/// refinement's routed wrap covers jigc's *own* staging acts, never the user's hook
+/// channel), and jigc's own sentence is added *around* them — the task survives a
+/// rejection intact, so the same `finalize` re-run lands the commit once the hook's
+/// complaint is fixed. Emitted on **stderr** by the caller; `json` carries the framed text
+/// in the [`operational_error`] envelope so a tooling consumer still parses it.
+pub fn commit_rejected(format: Format, task_id: &str, rejection: &str) -> String {
+    let framed = format!(
+        "{rejection}\n\ntask {task_id} is intact — nothing was committed and your staged \
+         changes are still staged. Fix the hook's complaint, then re-run `jigc task finalize \
+         {task_id}`."
+    );
+    match format {
+        Format::Json => json(&serde_json::json!({ "error": framed })),
+        Format::Agent | Format::Human => framed,
+    }
+}
+
 /// Render the `task finalize --dry-run` pre-commit manifest to the surface `format`
 /// selects (M30 G3 — name what is **included** in the commit vs **left out** of it): `json`
 /// emits `{ "dry_run": true, "manifest": [{path,kind}…], "left_out": [{path,kind}…] }`

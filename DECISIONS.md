@@ -2,6 +2,13 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-14 — M42 Inc 11 T5: finalize names the left-out set *before* it commits, and a rejected commit says it is survivable
+
+Both message repairs ship as designed ([finalize.md](design/finalize.md)`:119-121`, `:78`). Two elaborations the design left to the mint:
+
+- **The pre-commit advisory reuses the `--dry-run` forecast, not a second computation.** `Task::predict_manifest` already splits the porcelain columns side-effect-free (index → included, worktree → left-out) and `render::left_out_lines` already renders the set, so the landing path calls the same pair before the transaction — one left-out truth, three surfaces (dry-run · pre-commit · landed residual), rendered byte-identically. The migration arm forecasts **no** left-out set and that stays correct: `MigrationFixed` stages its own narrowed pathspec and sweeps no WIP. It **surfaces only** — the commit still lands, and the block stays reserved for the empty-index case (`finalize.nothing-staged`).
+- **The hook rejection becomes a *typed* error (`CommitRejected`), framed where the task id is in hand — and stays out of the findings envelope.** `git_commit` never sees the task id, so it carries git's bytes verbatim in a marker on `StageGitFailure`'s mold and `Task::finalize`'s `Err` arm adds jigc's sentence *around* them. It is deliberately **not** promoted to a routed finding: the M40 refinement (`finalize.md`:84, item 3) is explicit that the routed wrap covers jigc's *own* staging acts, never the user's hook channel — the hook's stderr **is** the correction signal and stays unedited. The marker's `Display` is that same verbatim message, so the fan-out / record-only commit paths, which print `{err:#}` and have no single task id, are byte-unchanged.
+
 ## 2026-07-14 — M42 Inc 11 T3: a granted-and-unused changelog gate is an advisory, and "an entry" is an *item*
 
 `changelog-recording.gate-granted-unused` ships as designed ([validation.md](design/validation.md) → The changelog-gate advisory): the task's workflow **grants** the `changelog` create-gate and the task authored **no** entry → an advisory at `finalize`, keyed at the **task id** (`task:<id>` — the work-unit ref; a `null` target would collapse every skipped changelog in the corpus onto one key, in the wave that fixes exactly that for `write.*`), tunable **upward** to `blocking` with one cascade line. The inventory grows to **33 checks / 19 intrinsic / 14 tunable**; `CHECK_INVENTORY` to 30 rows. Two elaborations the design left to the mint:
