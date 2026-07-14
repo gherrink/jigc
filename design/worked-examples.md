@@ -2686,3 +2686,88 @@ $ jigc doc set-field adr:anchor-decision#status/cites-code --unset --format json
 5. **The first methodology v1→v2 value-remap (F4).** `jigc migrate-corpus` remaps a committed v1 `deferral-ledger`'s `kind: D` → `kind: Decision` (and `I` → `Idea`) byte-faithful to a real v2 canonical oracle — the enum rename + the stamp bump `1`→`2` are the whole delta; every other byte is preserved.
 6. **The first real-binary Vue proof (F3).** A committed arch-doc component whose `implemented-by` anchor names a **fabricated** `.vue` script symbol **blocks** at the finalize gate (`doc-code.symbol-exists`, exit non-zero — the SFC's `<script setup>` is extracted and parsed under the vendored TypeScript grammar); re-pointed at a **real** composable (`useCounter`), the same finalize passes.
 7. **The optional-scalar clear (V5).** `jigc doc set-field <addr> --unset` clears an optional adr header scalar (`cites-code`) — the field line is gone and the ack names the clear (`unset: true`) — and the doc re-conforms: a follow-up `set-field` over the now-absent field lands.
+
+## 43. The M42 rc.6 wave, end-to-end — the tool's own routes tell the truth (M42)
+
+The M42 rc.6 wave answers the RC adoption trial's (implementation-half, rc.5) verified findings ([completions/artifacts/RC-adoption/impl-rc5/trial-record.md](../completions/artifacts/RC-adoption/impl-rc5/trial-record.md)) — increments 1–11 prove each feature per-feature; this flow is the **composite acceptance** tying them into nine done-picture arms over the real binary (`crates/cli/tests/flow43_acceptance.rs`). **The claim it proves is one claim: the tool's own routes tell the truth.** Every arm is a route (or a verdict) that lied at rc.5 and now does not — a false green (arms 1, 3), a false route (arms 1, 2, 5), a dead-end route (arm 4), a missing route (arms 6, 9), an address the tool emitted but could not read back (arm 7), a contract it never stated (arm 8). The designs of record live elsewhere and are not restated here: the placement census + the store-provenance check in [storage.md](storage.md); the managed-vs-foreign discriminator, the version-currency check id, and the exit semantics in [validation.md](validation.md); the corpus walk, the commit boundary, and the empty-diff backstop in [corpus-migration.md](corpus-migration.md); the milestone lifecycle + the discard op in [team-ready-state.md](team-ready-state.md) and [write-commands.md](write-commands.md); the slice grammar and `doc list` in [doc-read-surface.md](doc-read-surface.md); the staging contract's sibling obligation in [finalize.md](finalize.md); step-subset inclusion in [workflow-dialect.md](workflow-dialect.md). Arms 2, 4, 5 and 7 run the dev doctypes; arms 1, 3, 6, 8 exercise the `[dev ▸ methodology]` composition a `jigc setup` repo ships. Notation illustrative.
+
+### The walk — nine arms, one wave
+
+```text
+# ── Arm 1 (HEADLINE) · the trial's probe-1 upgrade, re-run against a stale-stamped corpus. ──
+#    A committed v1 `docs/deferral-ledger.md` (kind: D / kind: I) under a store stamped by an older binary.
+$ jigc validate
+> blocking · schema-conformance.schema-version-current — … is schema-version 1, below the current 2
+>   route: migrate — … run `jigc migrate-corpus` to upgrade it
+> advisory · store-version.binary-mismatch — … re-stamping alone would clear this advisory while the corpus stayed stale
+>   route: run `jigc migrate-corpus` … THEN re-run `jigc setup` to re-stamp
+> the committed corpus is below its schema-version … the sweep exits non-zero          # rc.5: "validates clean", exit 0
+$ jigc migrate-corpus --dry-run
+> corpus migration: 1 migrated …                        # SHOWN, not written — rc.5 had no way to look first
+$ jigc migrate-corpus
+> committed f9542ab — only the migrated paths were staged   # it lands its own work; no raw `git add` drive-around
+$ jigc validate                                        # green — and the mismatch route drops `migrate-corpus`
+> … report-only at store scope (exit 0)                #   (naming it now would command a verb with nothing to do)
+
+# ── Arm 2 · a stock brownfield CHANGELOG.md is an ADOPTION case, on all three surfaces. ──
+$ jigc validate                                        # a real Keep-a-Changelog + `jigc setup`, nothing else
+> advisory · schema-conformance.unadopted-instance — … was never adopted by jigc
+>   route: adopt — run `jigc ingest` … it is a foreign file, not an unmigrated managed doc   # never `migrate-corpus`
+> 1 finding(s) — report-only at store scope (exit 0)   # the brownfield first run stays GREEN
+$ jigc doc list
+> changelog:changelog  CHANGELOG.md  unregistered
+$ jigc doc show changelog:changelog
+> blocking · store.unparseable … route: adopt — run `jigc ingest` …   # one file, one story, three surfaces
+
+# ── Arm 3 · an OOB edit to the managed VISION.md is DETECTED (the placement class). ──
+$ git commit -m "human edits VISION.md out of band"    # a placement doctype: managed AT the literal root file
+$ jigc validate
+> blocking (gates at finalize) · file-state.hash-matches — on-disk content of `VISION.md` differs from the recorded state
+>   route: review the out-of-band edit … and re-author it through the owning workflow   # rc.5: invisible, exit 0
+
+# ── Arm 4 · a doc that ALREADY carries the optional section migrates (rc.5: stranded forever). ──
+$ jigc migrate-corpus       # a v1-stamped adr carrying a hand-authored `## Options`
+> corpus migration: 1 migrated …                       # exactly one `## Options`; only the stamp digit moves
+
+# ── Arm 5 · a schema bump with NO transform kind refuses — it never strands the corpus. ──
+$ jigc migrate-corpus       # `adr` bumped 2→3 with a field-`type:` change no kind classifies
+> corpus migration: 0 migrated, 0 already current, 1 blocked
+>   blocked    docs/decisions/alpha.md — no transform kind … → build the transform kind first
+
+# ── Arm 6 · abandoning a milestone SETTLES the record — and a joined sub-task stays joined. ──
+$ jigc milestone discard cache-rework --force
+> discarded milestone:cache-rework (3 sub-task(s); workbench removed)   # ONE record-only commit
+# docs/milestone-records/cache-rework.md: header `discarded` · warm-the-read-cache `joined` (it really did land)
+#                                          · purge-stale-keys `discarded`   # rc.5: `active` forever, no verb to settle it
+
+# ── Arm 7 · validate EMITS → doc show READS (the same address, verbatim). ──
+$ jigc validate --format json
+> { "code": "schema-conformance.field-value-conformant",
+>   "key": { …, "target": "adr:cache-sessions#status/status" }, … }
+$ jigc doc show 'adr:cache-sessions#status/status'     # the emitted target, fed back verbatim
+> acceptedish                                          # rc.5: store.no-such-item — the same string set-field accepted
+
+# ── Arm 8 · a methodology dev-task composes the staging contract.  [dev ▸ methodology] ──
+$ jigc start --workflow dev-task "add cache"
+> … `git add` your code edits before you finalize, because it commits only what you have staged …
+$ jigc start --workflow increment "M99 increment 1"    # the omitting context: composes neither step
+> …                                                     # the contract is INERT there — never leaked, never an error
+
+# ── Arm 9 · implement-from-spec prints no command the binary refuses. ──
+$ jigc start --workflow implement-from-spec "work the arm"
+> Run: `jigc doc create adr --title <TITLE> --task work-the-arm`    # zero `doc create changelog` lines
+$ jigc doc create adr --title "Probe Decision" --task work-the-arm  # the emitted line, run VERBATIM
+> adr:probe-decision                                    # ADMITTED by the gate it composes under
+```
+
+### What it asserts (the M42-wave acceptance bar — flow43_acceptance.rs)
+
+1. **The trial's probe-1 upgrade, re-run against a stale-stamped corpus (HEADLINE).** Over a committed **v1** `deferral-ledger` (the exact-inverse downgrade of a v2 canonical oracle rendered through the binary) under an older-binary store stamp: `jigc validate` **exits non-zero** with a blocking `schema-conformance.schema-version-current` keyed at the doc and routed at **`jigc migrate-corpus`** (rc.5 printed *"the committed store validates clean"*); the `store-version.binary-mismatch` advisory names **`migrate-corpus` first** (rc.5's *"re-run `jigc setup`"* re-stamps `.jigc/version` and **self-clears the advisory while the corpus stays stale** — the false all-clear); `--dry-run` reports the pending migration and writes **nothing** (bytes and commit count unchanged); the run migrates **byte-faithful to the oracle** and **self-commits**, pathspec-limited to the migrated path (no raw `git add` drive-around); and the re-validate is **green**, with the mismatch route falling back to plain align-or-re-stamp (naming `migrate-corpus` over a current corpus would command a verb with nothing to do).
+2. **A stock brownfield `CHANGELOG.md` is an adoption case, on all three surfaces.** A real Keep-a-Changelog file plus `jigc setup` and nothing else: `validate` **stays exit 0** with **zero** blocking findings and exactly **one** `schema-conformance.unadopted-instance` advisory routed at `jigc ingest` / `jigc migrate CHANGELOG.md --as changelog` and **never** at `migrate-corpus`; `doc list` names it `unregistered` (omitting the very file jigc is telling the agent to adopt would send it straight to `cat`); `doc show` blocks — it has no managed content to read back — carrying the **same** adoption route.
+3. **An OOB edit to the managed `VISION.md` is detected at store scope.** A placement doctype is managed *at* its literal repo-root file; the read-only file↔CLI-state twin now walks that class, so a human's out-of-band edit to a baselined `VISION.md` surfaces one `file-state.hash-matches` drift naming the file and routing a human review — report-only at store scope (exit 0). Red before the census: silently invisible, voiding *"out-of-band edits are detected and routed"* for the whole placement class.
+4. **A doc that already carries the optional section migrates cleanly.** A v1-stamped ADR carrying a hand-authored `## Options` migrates (`1 migrated`, `0 blocked`), the heading survives **exactly once**, and the only byte that moves is the stamp digit `1`→`2`. Red on rc.5 — and *shipped*: the heading re-splice was refused, the doc halted, and the route was a dead end (author the new required prose — for a section that is optional and already authored), stranding every such adopter permanently.
+5. **A schema bump with no transform kind blocks the migration.** A dev-pack copy bumps `adr` 2→3 with a change no kind classifies (a field's `type:`, inside the conformance-relevant structural projection): the migration reports `0 migrated, 1 blocked`, routes at *build the transform kind*, and leaves the doc **byte-identical** — never the silent stamp-bump that strands the corpus at *v3-failing-its-own-gate*.
+6. **Abandoning a milestone settles the record — and preserves a joined sub-task.** `jigc milestone discard --force` flips the record header and every **non-joined** item to `discarded` in exactly **one record-only commit**, leaves a genuinely **joined** sub-task reading `joined` (it really did land; flipping it would lie about landed work), and tears the workbench down (`.jigc/milestones/<id>/` had no reachable remover at all). Red on rc.5: `status: active` forever, with no verb that could settle it.
+7. **`validate` emits → `doc show` reads.** The sweep's finding target is an address in the one structural grammar (`adr:cache-sessions#status/status`); fed back **verbatim** to `jigc doc show`, it resolves to the offending value. Red on rc.5: the same string that `doc set-field` accepted, `doc show` refused with `store.no-such-item` — the read contract was not closed under the address grammar its own validator emits.
+8. **A methodology `dev-task` composes the staging contract.** The composed body carries `` `git add` `` **and its consequence** (finalize commits only what you staged) — the verified root cause of the trial's silent partial commits, where the methodology pack composed zero mentions of it. The **omitting context** holds: `increment` composes neither step, so the contract is **inert** there, never leaked and never an error.
+9. **`implement-from-spec` prints no command the binary refuses.** Every `jigc doc create …` line the workflow composes is **run verbatim** and **admitted** by the gate it composes under, and it composes **zero** `doc create changelog` lines — the prompt that instructed a create the binary answered with `create.gate-blocked` is gone.
