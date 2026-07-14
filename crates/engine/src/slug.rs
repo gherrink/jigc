@@ -35,6 +35,22 @@
 //! `slugify(slugify(x)) == slugify(x)`. Step 9 is what secures this — without a
 //! post-cap edge-stopword drop, the step-8 char cap could leave a fresh trailing
 //! stopword that a second pass would strip.
+//!
+//! # The rule is itself versioned (M42)
+//!
+//! `slugify` is jigc's **identity-derivation function** — it mints every doc slug,
+//! every task/milestone id, and every `{#id}` item anchor — yet it sits in no
+//! `schema-hash` and no manifest, so the pack-load freeze assert (the gate that
+//! blocks renaming a *field*) was blind to a change in the function that *names*
+//! every id. And no transform kind can re-mint an id, so a rule change **cannot be
+//! migrated after the fact**: a corpus that spans one carries two id generations
+//! permanently. So the rule is **declared**: [`SLUG_RULE_VERSION`] +
+//! [`rule_fingerprint`] are pinned beside the schema manifest (`slug-rule:`) and
+//! [`crate::manifest::check`] blocks loudly on a drift
+//! ([design/storage.md](../../../design/storage.md) → Identity → *The slug rule is
+//! itself a versioned rule (M42)*).
+
+use crate::file_state::hash_bytes;
 
 /// Cap on slug length, in **words** (dash-separated segments). A minted slug
 /// keeps at most the first `MAX_WORDS` words of its id-source and drops the
@@ -141,30 +157,92 @@ pub fn slugify(id_source: &str) -> String {
     drop_edge_stopwords(&bounded)
 }
 
-/// Transliterate a single non-ASCII char to its ASCII lowercase skeleton, or
-/// `None` if it has no sensible ASCII fold (then it is stripped).
+/// The transliteration table: each non-ASCII char that folds to an ASCII
+/// skeleton, paired with that skeleton. Anything absent folds to nothing (it is
+/// stripped).
 ///
 /// Covers the common Latin-1 / Latin Extended-A accented letters and ligatures
-/// — enough for the settled `café`→`cafe` rule and ordinary Latin-script
-/// titles. Deliberately small and hand-rolled (no transliteration crate): the
-/// slug is a *legibility* aid, not a faithful romanization, so anything outside
-/// this table is simply dropped.
+/// — enough for the settled `café`→`cafe` rule and ordinary Latin-script titles.
+/// Deliberately small and hand-rolled (no transliteration crate): the slug is a
+/// *legibility* aid, not a faithful romanization.
+///
+/// It is a **table**, not a `match`, so [`rule_fingerprint`] can *enumerate* it:
+/// the fingerprint's input vector is generated from this array, so adding,
+/// removing, or re-pointing an entry moves the fingerprint by construction — a
+/// hand-picked census would wave the change through.
+const TRANSLITERATE: &[(char, &str)] = &[
+    ('à', "a"),
+    ('á', "a"),
+    ('â', "a"),
+    ('ã', "a"),
+    ('ä', "a"),
+    ('å', "a"),
+    ('À', "a"),
+    ('Á', "a"),
+    ('Â', "a"),
+    ('Ã', "a"),
+    ('Ä', "a"),
+    ('Å', "a"),
+    ('æ', "ae"),
+    ('Æ', "ae"),
+    ('ç', "c"),
+    ('Ç', "c"),
+    ('è', "e"),
+    ('é', "e"),
+    ('ê', "e"),
+    ('ë', "e"),
+    ('È', "e"),
+    ('É', "e"),
+    ('Ê', "e"),
+    ('Ë', "e"),
+    ('ì', "i"),
+    ('í', "i"),
+    ('î', "i"),
+    ('ï', "i"),
+    ('Ì', "i"),
+    ('Í', "i"),
+    ('Î', "i"),
+    ('Ï', "i"),
+    ('ñ', "n"),
+    ('Ñ', "n"),
+    ('ò', "o"),
+    ('ó', "o"),
+    ('ô', "o"),
+    ('õ', "o"),
+    ('ö', "o"),
+    ('ø', "o"),
+    ('Ò', "o"),
+    ('Ó', "o"),
+    ('Ô', "o"),
+    ('Õ', "o"),
+    ('Ö', "o"),
+    ('Ø', "o"),
+    ('œ', "oe"),
+    ('Œ', "oe"),
+    ('ù', "u"),
+    ('ú', "u"),
+    ('û', "u"),
+    ('ü', "u"),
+    ('Ù', "u"),
+    ('Ú', "u"),
+    ('Û', "u"),
+    ('Ü', "u"),
+    ('ý', "y"),
+    ('ÿ', "y"),
+    ('Ý', "y"),
+    ('Ÿ', "y"),
+    ('ß', "ss"),
+];
+
+/// Transliterate a single non-ASCII char to its ASCII lowercase skeleton, or
+/// `None` if it has no sensible ASCII fold (then it is stripped). A lookup in
+/// [`TRANSLITERATE`] — reached only for chars outside `[a-zA-Z0-9- _]`, so the
+/// linear scan of ~60 entries is off the hot path.
 fn transliterate(ch: char) -> Option<&'static str> {
-    let s = match ch {
-        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' => "a",
-        'æ' | 'Æ' => "ae",
-        'ç' | 'Ç' => "c",
-        'è' | 'é' | 'ê' | 'ë' | 'È' | 'É' | 'Ê' | 'Ë' => "e",
-        'ì' | 'í' | 'î' | 'ï' | 'Ì' | 'Í' | 'Î' | 'Ï' => "i",
-        'ñ' | 'Ñ' => "n",
-        'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' => "o",
-        'œ' | 'Œ' => "oe",
-        'ù' | 'ú' | 'û' | 'ü' | 'Ù' | 'Ú' | 'Û' | 'Ü' => "u",
-        'ý' | 'ÿ' | 'Ý' | 'Ÿ' => "y",
-        'ß' => "ss",
-        _ => return None,
-    };
-    Some(s)
+    TRANSLITERATE
+        .iter()
+        .find(|(c, _)| *c == ch)
+        .map(|(_, skeleton)| *skeleton)
 }
 
 /// Collapse runs of `-` to a single `-` and trim leading/trailing `-`.
@@ -257,6 +335,94 @@ fn cap_chars(s: &str) -> String {
     }
 }
 
+/// The **declared version of the slug rule** — the identity-derivation rule
+/// [`slugify`] implements. Bumped by (and only by) a deliberate change to that
+/// rule, in the same commit that re-pins every shipped manifest's `slug-rule:`
+/// block. A corpus that spans a bump carries **two permanent id generations**:
+/// ids minted under the old rule keep their bytes (they are frozen anchors and
+/// frozen paths), and no transform kind can re-mint an id, so there is no
+/// migration to reconcile them. The version is what makes that split a
+/// *declared* event rather than a discovered one.
+pub const SLUG_RULE_VERSION: u32 = 1;
+
+/// The **fingerprint of the slug rule**: the lowercase-hex `blake3` digest of
+/// `slugify`'s behaviour over a *generated* input vector — the identity-mint
+/// sibling of [`crate::manifest::schema_hash`], and the value each pack's
+/// `slug-rule.hash` pins.
+///
+/// The vector is **generated from the rule's own constants**, never hand-picked
+/// (a hand-picked table would wave through the very mapping change it exists to
+/// catch — "a census cannot enforce a predicate"):
+///
+/// - every **printable ASCII** char, alone and framed (`a<c>b`) — so a change to
+///   the separator map, the strip set, or the case-fold moves the hash (the two
+///   frames separate "what does this char *become*" from "what does it do
+///   *between* two words": `/` is stripped today, so `a/b` fuses to `ab`);
+/// - every [`TRANSLITERATE`] entry, in both frames — so adding, removing, or
+///   re-pointing a fold moves the hash;
+/// - every [`EDGE_STOPWORDS`] word at each of the three positions (leading,
+///   medial, trailing) — so widening or narrowing the set moves the hash;
+/// - inputs that **cross both caps** ([`MAX_WORDS`] and [`MAX_CHARS`], including
+///   a mid-word cut and a cut that exposes a fresh edge stopword) — so a cap
+///   change, or a change to the retreat/re-drop steps, moves the hash.
+///
+/// Computed once per process (the pack-load gate calls it per manifest-owning
+/// pack) and cached.
+pub fn rule_fingerprint() -> &'static str {
+    static FINGERPRINT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    FINGERPRINT.get_or_init(|| {
+        let census: Vec<String> = fingerprint_inputs()
+            .iter()
+            .map(|input| format!("{input:?} -> {:?}", slugify(input)))
+            .collect();
+        hash_bytes(census.join("\n").as_bytes())
+    })
+}
+
+/// The generated input vector [`rule_fingerprint`] ranges over. See its docs for
+/// the four families and why each is derived from a rule constant rather than
+/// listed by hand.
+fn fingerprint_inputs() -> Vec<String> {
+    let mut inputs = Vec::new();
+
+    // 1. Every printable ASCII char, alone and framed between two content words.
+    for byte in b' '..=b'~' {
+        let ch = byte as char;
+        inputs.push(ch.to_string());
+        inputs.push(format!("a{ch}b"));
+    }
+
+    // 2. Every transliteration-table char, in both frames.
+    for (ch, _) in TRANSLITERATE {
+        inputs.push(ch.to_string());
+        inputs.push(format!("a{ch}b"));
+    }
+
+    // 3. Every edge stopword at each of the three positions.
+    for word in EDGE_STOPWORDS {
+        inputs.push(format!("{word} alpha beta"));
+        inputs.push(format!("alpha {word} beta"));
+        inputs.push(format!("alpha beta {word}"));
+    }
+
+    // 4. Inputs crossing both caps: more words than MAX_WORDS; a single word
+    //    longer than MAX_CHARS; a multi-word input whose MAX_CHARS cut lands
+    //    mid-word (the retreat); and one whose cut exposes a fresh trailing edge
+    //    stopword (the post-cap re-drop).
+    inputs.push(
+        (0..MAX_WORDS + 3)
+            .map(|i| format!("word{i}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    inputs.push("x".repeat(MAX_CHARS + 10));
+    let long_word = "z".repeat(MAX_CHARS / 3 + 2);
+    inputs.push(format!("{long_word} {long_word} {long_word}"));
+    inputs.push(format!("alpha beta to {}", "y".repeat(MAX_CHARS)));
+
+    inputs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +472,17 @@ mod tests {
             ("combining-mark-alone", "\u{0301}"),
             ("transliterates-to-dash", "–—‒"),
             ("transliterates-to-uppercase", "Đorđe ẞ"),
+            // M42 Inc 10 T1 — the census EXTENDED over the characters the rule
+            // change (T3) touches, pinning **today's broken outputs** so the fork
+            // reads as a reviewable diff rather than an unpinned surprise. `/` and
+            // `.` are *stripped*, not mapped: a slash **fuses two words**, and a
+            // dotted version number **collides** with its dot-free neighbour
+            // (`1.0` and `10` both mint `10` — live in a changelog whose release
+            // ids are minted from version strings).
+            ("slash-fuses-words", "auth/session"),
+            ("dotted-version-collides", "1.0"),
+            ("dot-free-collision-partner", "10"),
+            ("path-like-id-source", "src/main.rs"),
         ];
         let table: Vec<String> = cases
             .iter()
@@ -345,6 +522,10 @@ mod tests {
         combining-mark-alone: "\u{301}" -> ""
         transliterates-to-dash: "–—‒" -> ""
         transliterates-to-uppercase: "Đorđe ẞ" -> "ore"
+        slash-fuses-words: "auth/session" -> "authsession"
+        dotted-version-collides: "1.0" -> "10"
+        dot-free-collision-partner: "10" -> "10"
+        path-like-id-source: "src/main.rs" -> "srcmainrs"
         "#);
     }
 
@@ -441,6 +622,99 @@ mod tests {
         assert!(!is_slug("a, adr:b"), "comma-form body");
         assert!(!is_slug("auth#criteria/rate-limit"), "fragment / slash");
         assert!(!is_slug("with space"), "space");
+    }
+
+    /// The fingerprint's input vector is **generated over the rule's own
+    /// constants**, never hand-picked — the property that lets the fence catch a
+    /// change nobody listed in advance (a hand-picked table would wave through the
+    /// very separator mapping it exists to detect). Pins all four families.
+    #[test]
+    fn fingerprint_vector_is_generated_over_the_rule_constants() {
+        let inputs = fingerprint_inputs();
+        let has = |s: &str| inputs.iter().any(|i| i == s);
+
+        // Every printable ASCII char, alone and framed — `/` and `.` (the chars the
+        // M42 rule change maps) are in there by construction, not by anyone's memory.
+        for byte in b' '..=b'~' {
+            let ch = byte as char;
+            assert!(
+                has(&ch.to_string()),
+                "printable ASCII {ch:?} missing (alone)"
+            );
+            assert!(
+                has(&format!("a{ch}b")),
+                "printable ASCII {ch:?} missing (framed)"
+            );
+        }
+        // Every transliteration-table entry, in both frames.
+        for (ch, _) in TRANSLITERATE {
+            assert!(
+                has(&ch.to_string()),
+                "transliterate entry {ch:?} missing (alone)"
+            );
+            assert!(
+                has(&format!("a{ch}b")),
+                "transliterate entry {ch:?} missing (framed)"
+            );
+        }
+        // Every edge stopword at each of the three positions.
+        for word in EDGE_STOPWORDS {
+            assert!(
+                has(&format!("{word} alpha beta")),
+                "{word}: leading missing"
+            );
+            assert!(has(&format!("alpha {word} beta")), "{word}: medial missing");
+            assert!(
+                has(&format!("alpha beta {word}")),
+                "{word}: trailing missing"
+            );
+        }
+        // Both caps are genuinely crossed by some input.
+        assert!(
+            inputs
+                .iter()
+                .any(|i| slugify(i).split('-').count() == MAX_WORDS),
+            "no input crosses the word cap"
+        );
+        assert!(
+            inputs
+                .iter()
+                .any(|i| slugify(i).chars().count() == MAX_CHARS),
+            "no input crosses the char cap"
+        );
+    }
+
+    /// The fingerprint is a stable 64-hex digest that **moves when the rule moves**
+    /// — the property the pack-load gate rests on. Proven against the *exact* change
+    /// T3 ships (`/` and `.` mapped to `-`): re-running the generated vector under
+    /// that variant rule yields a different digest, so the gate cannot sleep through
+    /// it.
+    #[test]
+    fn fingerprint_moves_when_the_rule_changes() {
+        let today = rule_fingerprint();
+        assert_eq!(today.len(), 64, "not a blake3 hex digest: {today:?}");
+        assert!(
+            today.chars().all(|c| c.is_ascii_hexdigit()),
+            "not hex: {today:?}"
+        );
+        assert_eq!(today, rule_fingerprint(), "fingerprint not stable");
+
+        // The T3 variant rule, applied over the same generated vector.
+        let variant: Vec<String> = fingerprint_inputs()
+            .iter()
+            .map(|input| {
+                let mapped: String = input
+                    .chars()
+                    .map(|c| if c == '/' || c == '.' { '-' } else { c })
+                    .collect();
+                format!("{input:?} -> {:?}", slugify(&mapped))
+            })
+            .collect();
+        assert_ne!(
+            hash_bytes(variant.join("\n").as_bytes()),
+            today,
+            "the fingerprint is blind to the `/`·`.` separator mapping"
+        );
     }
 
     // Every non-empty `slugify` output is a valid slug (the dual property).

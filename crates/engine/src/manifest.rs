@@ -67,14 +67,42 @@ pub struct ManifestEntry {
     pub schema_hash: String,
 }
 
+/// The declared **slug rule** — the identity-derivation rule's version + the
+/// fingerprint of its behaviour ([`crate::slug::SLUG_RULE_VERSION`] /
+/// [`crate::slug::rule_fingerprint`]).
+///
+/// `slugify` mints every id in every corpus yet rides in no `schema-hash`, so the
+/// freeze assert was blind to a change in it — and no transform kind can re-mint
+/// an id, so such a change **cannot be migrated after the fact** (a corpus that
+/// spans one carries two id generations permanently). This block is what makes the
+/// change a *declared* event: a pack that ships it is held to it at pack-load
+/// ([`check`]; `design/storage.md` → Identity → *The slug rule is itself a
+/// versioned rule (M42)*).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlugRule {
+    /// The slug rule version this pack was frozen against.
+    pub version: u32,
+
+    /// The [`crate::slug::rule_fingerprint`] of the rule at that version.
+    pub hash: String,
+}
+
 /// The doctype-set manifest: the enumerated, ordered `doctype → version + hash`
-/// declaration that makes the freeze self-enforcing.
+/// declaration that makes the freeze self-enforcing, plus the declared slug rule
+/// the ids inside those doctypes are minted by.
 ///
 /// An ordered `Vec` (no map) for the same determinism reason the schema model is
 /// map-free — the on-disk form is surface-visible and order-stable.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
+    /// The declared slug rule. **Absent = unchecked** — the manifest-less
+    /// precedent (a seeded / composed pack that opts out stays inert, never
+    /// errors); a pack that declares it opts into the gate.
+    #[serde(rename = "slug-rule", default, skip_serializing_if = "Option::is_none")]
+    pub slug_rule: Option<SlugRule>,
+
     /// The frozen doctype entries, in declaration order.
     #[serde(default)]
     pub doctypes: Vec<ManifestEntry>,
@@ -117,6 +145,37 @@ pub enum ManifestError {
         /// The declared-but-unshipped doctype.
         doctype: String,
     },
+
+    /// The **slug rule** changed: the recomputed [`crate::slug::rule_fingerprint`]
+    /// differs from the manifest's declared `slug-rule.hash`. This is the
+    /// identity-mint sibling of [`HashMismatch`](ManifestError::HashMismatch) — a
+    /// change to the function that names every id in every corpus, which **no
+    /// migration can repair** (no transform kind re-mints an id), so it must be
+    /// declared, never slipped in.
+    #[error(
+        "the slug rule changed: the manifest declares slug-rule.hash `{expected}`, the engine recomputed `{actual}` — bump slug-rule-version + re-pin the hash in every shipped manifest (a slug-rule change cannot be migrated: it splits the corpus into two permanent id generations)"
+    )]
+    SlugRuleHashMismatch {
+        /// The fingerprint the manifest declares.
+        expected: String,
+        /// The fingerprint recomputed from the shipped rule.
+        actual: String,
+    },
+
+    /// The manifest's declared `slug-rule.version` is not the version the engine
+    /// ships ([`crate::slug::SLUG_RULE_VERSION`]) — the **anti-silencing** arm: a
+    /// rule change re-pinned into the hash alone (without the declared bump the
+    /// change owes) still blocks, and a bumped rule leaves every un-re-pinned
+    /// manifest loud.
+    #[error(
+        "slug-rule version mismatch: the manifest declares slug-rule.version {declared}, the engine ships slug-rule version {shipped} — bump slug-rule-version + re-pin the hash in every shipped manifest"
+    )]
+    SlugRuleVersionMismatch {
+        /// The version the manifest declares.
+        declared: u32,
+        /// The version the engine's rule ships at.
+        shipped: u32,
+    },
 }
 
 /// Verify a shipped doctype-set against the freeze manifest.
@@ -136,7 +195,14 @@ pub enum ManifestError {
 /// hash matching. The **first** violation in sorted doctype order is returned, so
 /// the result is a pure function of the manifest + the schema *content* — the
 /// loud, deterministic failure the pack-load freeze gate fires on.
+///
+/// The declared **slug rule** ([`SlugRule`]) is checked **first**, before any
+/// doctype: it is the rule the ids *inside* every doctype are minted by, so a
+/// drift there is the more fundamental breach (and, unlike a schema-shape change,
+/// one no migration can repair). An absent `slug-rule:` block is unchecked.
 pub fn check(manifest: &Manifest, schemas: &BTreeMap<String, Schema>) -> Result<(), ManifestError> {
+    check_slug_rule(manifest.slug_rule.as_ref())?;
+
     let declared: BTreeMap<&str, &ManifestEntry> = manifest
         .doctypes
         .iter()
@@ -176,6 +242,39 @@ pub fn check(manifest: &Manifest, schemas: &BTreeMap<String, Schema>) -> Result<
         }
     }
 
+    Ok(())
+}
+
+/// Verify a declared [`SlugRule`] against the rule the engine actually ships.
+///
+/// Two arms, both loud, both routing to the same fix (*bump `slug-rule-version` +
+/// re-pin the hash*):
+///
+/// - the declared **hash** must equal the recomputed [`crate::slug::rule_fingerprint`]
+///   — the drift the gate exists to catch;
+/// - the declared **version** must equal [`crate::slug::SLUG_RULE_VERSION`] — the
+///   *anti-silencing* arm, so re-pinning the hash alone cannot quiet the gate: the
+///   rule change still owes its declared bump, in every shipped manifest.
+///
+/// `None` (no `slug-rule:` block) is **unchecked** — the manifest-less precedent:
+/// a pack opts into the gate by declaring the rule.
+fn check_slug_rule(declared: Option<&SlugRule>) -> Result<(), ManifestError> {
+    let Some(rule) = declared else {
+        return Ok(());
+    };
+    if rule.version != crate::slug::SLUG_RULE_VERSION {
+        return Err(ManifestError::SlugRuleVersionMismatch {
+            declared: rule.version,
+            shipped: crate::slug::SLUG_RULE_VERSION,
+        });
+    }
+    let actual = crate::slug::rule_fingerprint();
+    if rule.hash != actual {
+        return Err(ManifestError::SlugRuleHashMismatch {
+            expected: rule.hash.clone(),
+            actual: actual.to_string(),
+        });
+    }
     Ok(())
 }
 
@@ -224,9 +323,11 @@ sections:
         schemas.into_iter().map(|s| (s.ty.clone(), s)).collect()
     }
 
-    /// A manifest whose entries' hashes match the supplied schemas (version 1).
+    /// A manifest whose entries' hashes match the supplied schemas (version 1),
+    /// declaring **no** slug rule (the unchecked, opted-out shape).
     fn manifest_for(schemas: &[Schema]) -> Manifest {
         Manifest {
+            slug_rule: None,
             doctypes: schemas
                 .iter()
                 .map(|s| ManifestEntry {
@@ -235,6 +336,18 @@ sections:
                     schema_hash: schema_hash(s),
                 })
                 .collect(),
+        }
+    }
+
+    /// The same manifest, declaring the slug rule the engine actually ships (the
+    /// shape both production packs carry).
+    fn manifest_with_slug_rule(schemas: &[Schema]) -> Manifest {
+        Manifest {
+            slug_rule: Some(SlugRule {
+                version: crate::slug::SLUG_RULE_VERSION,
+                hash: crate::slug::rule_fingerprint().to_string(),
+            }),
+            ..manifest_for(schemas)
         }
     }
 
@@ -297,6 +410,112 @@ sections:
             ManifestError::MissingEntry {
                 doctype: "gadget".into()
             }
+        );
+    }
+
+    /// The declared slug rule matches the shipped one → the gate is inert.
+    #[test]
+    fn matching_slug_rule_passes() {
+        let schemas = vec![widget(), gadget()];
+        let manifest = manifest_with_slug_rule(&schemas);
+        assert_eq!(check(&manifest, &schema_map(schemas)), Ok(()));
+    }
+
+    /// The headline: a manifest whose `slug-rule.hash` differs from the recomputed
+    /// [`crate::slug::rule_fingerprint`] **blocks loudly** — naming the recomputed
+    /// hash and routing to the declared bump. This is the fence the whole increment
+    /// rests on: `slugify` mints every id in every corpus, sits in no `schema-hash`,
+    /// and **cannot be migrated after the fact**.
+    #[test]
+    fn slug_rule_hash_drift_blocks_naming_the_recomputed_hash() {
+        let schemas = vec![widget(), gadget()];
+        let mut manifest = manifest_with_slug_rule(&schemas);
+        manifest.slug_rule = Some(SlugRule {
+            version: crate::slug::SLUG_RULE_VERSION,
+            hash: "0".repeat(64),
+        });
+
+        let err = check(&manifest, &schema_map(schemas)).expect_err("a drifted rule must block");
+        assert_eq!(
+            err,
+            ManifestError::SlugRuleHashMismatch {
+                expected: "0".repeat(64),
+                actual: crate::slug::rule_fingerprint().to_string(),
+            }
+        );
+        // The message names the recomputed hash and the route (the agent/human
+        // reading stderr must know what to do; `design/storage.md` → the slug rule).
+        let msg = err.to_string();
+        assert!(
+            msg.contains(crate::slug::rule_fingerprint()),
+            "the message must name the recomputed hash; got: {msg}"
+        );
+        assert!(
+            msg.contains("bump slug-rule-version + re-pin"),
+            "the message must route to the declared bump; got: {msg}"
+        );
+    }
+
+    /// The **anti-silencing** arm: re-pinning the hash alone cannot quiet the gate.
+    /// A manifest whose declared `slug-rule.version` is not the engine's
+    /// [`crate::slug::SLUG_RULE_VERSION`] blocks with the same route — so a rule
+    /// change must carry its *declared bump*, in every shipped manifest, not just a
+    /// freshly-regenerated digest.
+    #[test]
+    fn slug_rule_version_mismatch_blocks_even_with_a_correct_hash() {
+        let schemas = vec![widget(), gadget()];
+        let mut manifest = manifest_with_slug_rule(&schemas);
+        let stale = crate::slug::SLUG_RULE_VERSION + 1;
+        manifest.slug_rule = Some(SlugRule {
+            version: stale,
+            hash: crate::slug::rule_fingerprint().to_string(), // the hash is CORRECT
+        });
+
+        let err =
+            check(&manifest, &schema_map(schemas)).expect_err("a version mismatch must block");
+        assert_eq!(
+            err,
+            ManifestError::SlugRuleVersionMismatch {
+                declared: stale,
+                shipped: crate::slug::SLUG_RULE_VERSION,
+            }
+        );
+        assert!(
+            err.to_string().contains("bump slug-rule-version + re-pin"),
+            "the message must route to the declared bump; got: {err}"
+        );
+    }
+
+    /// The omitting context (the manifest-less precedent, applied within the
+    /// manifest): a manifest with **no** `slug-rule:` block is **unchecked** — inert,
+    /// never an error — so every pack that has not opted in (and every fixture)
+    /// stays green.
+    #[test]
+    fn absent_slug_rule_block_is_unchecked() {
+        let schemas = vec![widget(), gadget()];
+        let manifest = manifest_for(&schemas); // no slug-rule block
+        assert_eq!(manifest.slug_rule, None);
+        assert_eq!(check(&manifest, &schema_map(schemas)), Ok(()));
+    }
+
+    /// The on-disk key spelling is part of the contract: `slug-rule: { version, hash }`
+    /// deserializes into the model (both shipped manifests declare it, and
+    /// `deny_unknown_fields` means a key/field drift breaks *both* packs loudly).
+    #[test]
+    fn slug_rule_block_deserializes_from_the_on_disk_spelling() {
+        let yaml = "\
+slug-rule:
+  version: 1
+  hash: deadbeef
+doctypes: []
+";
+        let manifest: Manifest = serde_yaml_ng::from_str(yaml).expect("the manifest parses");
+        assert_eq!(
+            manifest.slug_rule,
+            Some(SlugRule {
+                version: 1,
+                hash: "deadbeef".into()
+            })
         );
     }
 

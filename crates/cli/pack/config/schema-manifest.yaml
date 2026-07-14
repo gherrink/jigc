@@ -18,6 +18,22 @@
 # `schema-version` is the doctype's own version (v1 at the freeze); `schema-hash`
 # is engine::manifest::schema_hash of its definition. Regenerate a hash only
 # alongside a deliberate, versioned schema change — never to silence this gate.
+#
+# `slug-rule` (M42) declares the IDENTITY-MINT rule the ids inside every doctype
+# above are derived by — `engine::slug::slugify`, which sits in no schema-hash, so
+# this gate was blind to a change in the one function that names every id in every
+# corpus. `version` is engine::slug::SLUG_RULE_VERSION; `hash` is
+# engine::slug::rule_fingerprint() — a blake3 digest of the rule's behaviour over a
+# GENERATED input vector (every printable ASCII char in two frames, every
+# transliteration entry, every edge stopword at every position, inputs crossing both
+# caps). A slug-rule change CANNOT be migrated after the fact (no transform kind
+# re-mints an id) — a corpus that spans one carries two id generations permanently —
+# so it is a declared event: bump slug-rule-version AND re-pin the hash here and in
+# packs/methodology/config/schema-manifest.yaml, together, in one commit
+# (design/storage.md → Identity → The slug rule is itself a versioned rule).
+slug-rule:
+  version: 1
+  hash: 41f502121ae9c89e36c3f4d96d6eb47d69b5ca2a64325add446acde8124482c5
 doctypes:
   - type: commit
     schema-version: 1

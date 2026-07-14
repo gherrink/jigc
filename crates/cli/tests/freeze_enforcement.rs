@@ -355,49 +355,58 @@ fn list_packs(repo: &Path, packs: &[&Path]) {
 
 /// A repo + home + listed **drifted** dev-pack copy (with the methodology pack
 /// composed for the `milestone-record` doctype). Every door run against it must
-/// block.
+/// block, naming [`needles`](DriftedProject::needles).
 struct DriftedProject {
     repo: TempDir,
     home: TempDir,
     _pack: TempDir,
+    /// The substrings every blocked door's stderr must carry — what the operator
+    /// reading the failure is owed: *what* drifted and *how to fix it*.
+    needles: &'static [&'static str],
 }
 
 impl DriftedProject {
+    /// The schema-shape drift (a frozen `adr` whose `location:` moved with no
+    /// version bump).
     fn new(tag: &str) -> Self {
+        Self::with(tag, drift_adr_schema, &["schema-hash mismatch", "adr"])
+    }
+
+    /// A listed dev-pack copy mutated by `drift`; every door must then block naming
+    /// `needles`.
+    fn with(tag: &str, drift: fn(&Path), needles: &'static [&'static str]) -> Self {
         let repo = TempDir::new(&format!("{tag}-repo"));
         let home = TempDir::new(&format!("{tag}-home"));
         let pack = dev_pack_copy(&format!("{tag}-pack"));
         init_repo(repo.path());
         list_packs(repo.path(), &[pack.path(), &methodology_pack_tree()]);
-        drift_adr_schema(pack.path());
+        drift(pack.path());
         DriftedProject {
             repo,
             home,
             _pack: pack,
+            needles,
         }
     }
 
-    /// Run one door and assert it exits non-zero naming the drifted doctype's
-    /// schema-hash mismatch — the emitted exit code + stderr are the contract.
+    /// Run one door and assert it exits non-zero naming the drift — the emitted exit
+    /// code + stderr are the contract.
     fn door_blocks(&self, args: &[&str]) -> std::process::Output {
         let out = run_listed(self.repo.path(), self.home.path(), args);
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(
             !out.status.success(),
-            "`jigc {}` must exit non-zero on a drifted frozen schema; stdout:\n{}\nstderr:\n{stderr}",
+            "`jigc {}` must exit non-zero on a drifted frozen pack; stdout:\n{}\nstderr:\n{stderr}",
             args.join(" "),
             String::from_utf8_lossy(&out.stdout),
         );
-        assert!(
-            stderr.contains("schema-hash mismatch"),
-            "`jigc {}` stderr must name the schema-hash mismatch; got:\n{stderr}",
-            args.join(" "),
-        );
-        assert!(
-            stderr.contains("adr"),
-            "`jigc {}` stderr must name the drifted `adr` doctype; got:\n{stderr}",
-            args.join(" "),
-        );
+        for needle in self.needles {
+            assert!(
+                stderr.contains(needle),
+                "`jigc {}` stderr must name {needle:?}; got:\n{stderr}",
+                args.join(" "),
+            );
+        }
         out
     }
 }
@@ -419,6 +428,88 @@ fn every_read_door_blocks_on_a_drifted_frozen_schema() {
     // door, distinct from the composing `jigc start --workflow …` the assert already
     // guarded.
     project.door_blocks(&["start"]);
+}
+
+/// Rewrite the copied manifest's declared `slug-rule.hash` to a well-formed but
+/// **wrong** digest — the identity-mint sibling of [`drift_adr_schema`]: it stands in
+/// for a change to `engine::slug::slugify` (the function that mints every doc slug,
+/// task id, and `{#id}` anchor) shipped without the declared `slug-rule-version` bump.
+/// Mutating the *manifest* rather than the engine is what makes the drift reachable
+/// from a test at all — the pack is data, the rule is compiled in — and it drives the
+/// same `check` arm from the same side the gate reads.
+fn drift_slug_rule_hash(pack: &Path) {
+    let path = pack.join("config").join("schema-manifest.yaml");
+    let body = fs::read_to_string(&path).expect("read the copied schema-manifest.yaml");
+    let mut out = String::new();
+    let mut hit = false;
+    for line in body.lines() {
+        if !hit && line.starts_with("  hash: ") {
+            out.push_str(&format!("  hash: {}", "0".repeat(64)));
+            hit = true;
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    assert!(
+        hit,
+        "the shipped manifest must declare a `slug-rule.hash` to drift"
+    );
+    fs::write(&path, out).expect("write the drifted schema-manifest.yaml");
+}
+
+/// The M42 Inc 10 T1 headline — **the fence**: `slugify` is jigc's identity-derivation
+/// function (every doc slug, task/milestone id, and `{#id}` anchor) and it sits in no
+/// `schema-hash` and no manifest, so the gate that blocks renaming a *field* waved
+/// through a change to the function that *names every id in every corpus* — a change
+/// **no migration can repair** (no transform kind re-mints an id). With the rule
+/// declared (`slug-rule: { version, hash }`), a manifest whose declared fingerprint no
+/// longer matches the shipped rule blocks **every** door, naming the recomputed hash
+/// and routing to the declared bump (`design/storage.md` → Identity → *The slug rule is
+/// itself a versioned rule (M42)*).
+#[test]
+fn a_drifted_slug_rule_blocks_every_door() {
+    let project = DriftedProject::with(
+        "slugrule",
+        drift_slug_rule_hash,
+        &["the slug rule changed", "bump slug-rule-version + re-pin"],
+    );
+
+    project.door_blocks(&["validate"]);
+    project.door_blocks(&["describe"]);
+    project.door_blocks(&["doc", "schema", "adr"]);
+    project.door_blocks(&["migrate-corpus"]);
+    project.door_blocks(&["start"]);
+}
+
+/// The control (the omitting context's twin): an **unmutated** listed pack — whose
+/// manifests declare the slug rule the engine really ships — runs every one of those
+/// doors clean. Without this arm, a fence that blocked *unconditionally* would pass the
+/// test above; it is also the standing proof that both shipped manifests' `slug-rule`
+/// blocks stay in sync with `engine::slug::rule_fingerprint()`.
+#[test]
+fn an_unmutated_listed_pack_passes_the_slug_rule_gate() {
+    let repo = TempDir::new("slugclean-repo");
+    let home = TempDir::new("slugclean-home");
+    let pack = dev_pack_copy("slugclean-pack");
+    init_repo(repo.path());
+    list_packs(repo.path(), &[pack.path(), &methodology_pack_tree()]);
+
+    for args in [
+        vec!["validate"],
+        vec!["describe"],
+        vec!["doc", "schema", "adr"],
+        vec!["start"],
+    ] {
+        let out = run_listed(repo.path(), home.path(), &args);
+        assert!(
+            out.status.success(),
+            "`jigc {}` must run clean against an unmutated pack; stdout:\n{}\nstderr:\n{}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
 }
 
 /// The **committing** door: `jigc milestone create` wrote and committed a brand-new

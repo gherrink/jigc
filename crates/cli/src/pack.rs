@@ -3198,9 +3198,12 @@ sections:
 
             /// A `schema-manifest.yaml` body over `(type, schema-version,
             /// schema-hash)` entries, serialized through the engine model so the
-            /// on-disk key spelling can never drift from the deserializer.
+            /// on-disk key spelling can never drift from the deserializer. It
+            /// declares **no** `slug-rule:` block — these fixtures freeze doctype
+            /// *shapes*, and an absent slug rule is unchecked (the opt-in gate).
             fn manifest_yaml(entries: &[(&str, u32, String)]) -> Vec<u8> {
                 let manifest = engine::manifest::Manifest {
+                    slug_rule: None,
                     doctypes: entries
                         .iter()
                         .map(|(ty, version, hash)| engine::manifest::ManifestEntry {

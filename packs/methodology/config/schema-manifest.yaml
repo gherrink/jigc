@@ -27,6 +27,16 @@
 # is engine::manifest::schema_hash of its resolved definition. Regenerate a hash
 # only alongside a deliberate, versioned schema change — never to silence this
 # gate.
+#
+# `slug-rule` (M42) declares the IDENTITY-MINT rule — engine::slug::slugify — the ids
+# inside every doctype above are derived by. It is the SAME rule for every pack (it
+# lives in the engine), so both shipped manifests pin the same version + hash and a
+# rule change re-pins both, in one commit, alongside its slug-rule-version bump. The
+# gate is per-manifest, so a stale copy here blocks every door on its own
+# (design/storage.md → Identity → The slug rule is itself a versioned rule).
+slug-rule:
+  version: 1
+  hash: 41f502121ae9c89e36c3f4d96d6eb47d69b5ca2a64325add446acde8124482c5
 doctypes:
   - type: commit
     schema-version: 1

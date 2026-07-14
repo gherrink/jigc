@@ -2,6 +2,16 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-14 — M42 Inc 10 T1: the slug rule is declared, and the fence is generated
+
+The slug rule now ships **declared**: `engine::slug::SLUG_RULE_VERSION` + `rule_fingerprint()`, pinned as a `slug-rule: { version, hash }` block in **both** shipped manifests, checked at pack-load through the existing `engine::manifest::check` — so an undeclared change to the function that mints every id blocks at **every** door ([storage.md](design/storage.md) → Identity → *The slug rule is itself a versioned rule*). Three elaborations the design left open, settled here:
+
+- **The fingerprint's input vector is *generated*, never hand-picked** — every printable ASCII char in two frames (`c` and `a<c>b`), every transliteration-table entry, every `EDGE_STOPWORDS` word at all three positions, and inputs crossing both caps — all derived *from the rule's own constants*. A hand-picked table is a census, and **a census cannot enforce a predicate**: it would wave through the next mapping nobody thought to list. This is why `transliterate` became an enumerable **table** rather than a `match` — the fingerprint reads the table, so an added fold moves the hash by construction. Honest bound: the vector's char families are ASCII + the table, so a *newly-transliterated* codepoint outside both would be caught only via the table it must be added to (it cannot be added anywhere else).
+- **Two arms, because one is silenceable.** The hash arm catches the drift; the **version arm** (manifest `version` ≠ `SLUG_RULE_VERSION`) is what stops a re-pinned hash from quietly buying silence — a rule change owes its *declared bump*, in every manifest, in the same commit.
+- **Absent `slug-rule:` = unchecked**, following the manifest-less precedent: a pack opts *into* the gate by declaring the rule; an omitting pack stays inert, never errors.
+
+The census (`slug::golden_table`) is **extended, not re-pinned**: it now carries today's *broken* separator outputs (`auth/session` → `authsession`, and `1.0`/`10` colliding on `10`), so T3's fork reads as a reviewable diff rather than an unpinned surprise.
+
 ## 2026-07-14 — M42 Increment 10 planning: decomposition
 
 Cut [Increment 10](implementation/roadmap.md) (the slug rule becomes a versioned rule; [storage.md](design/storage.md) → Identity → *The slug rule is itself a versioned rule (M42)*) into **3 ordered single-concern tasks**, grounded at HEAD `3054622` (tree clean; Inc 1–9 landed, incl. Inc 8's item-`id` projection this increment is sequenced behind). The two grouped-scope bullets map: **T1 + T3** = the separator map + its governance (version · assert · census · shadow-map kill, the kill landing in T2 where the single map is extracted); **T2** = the four renormalization sites. No new fork surfaced — `storage.md`'s slug-rule section is **already written** (landed with the Settle) and settles the *what*; T1/T3 fold back only the two lines it leaves stale.
