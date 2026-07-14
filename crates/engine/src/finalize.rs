@@ -1207,18 +1207,21 @@ sections:
         );
 
         // (Phase 2) blocking validate findings → abort with exactly those.
+        // Both fixtures carry a declared target — the doc URI form — because a report is a
+        // serialization funnel and every finding reaching one owes a key
+        // (`command-output-contract.md` → The membership test).
         let blocking = Finding::graded(
             Severity::Blocking,
             "schema-conformance.required-slot-present",
             "required slot `body` is empty",
-            None,
+            Some(Location::addressed("commit:add-rate-limiter#body", 1, 1)),
             None,
         );
         let advisory = Finding::graded(
             Severity::Advisory,
             "commit-rendering.line-limit-subject",
             "subject is 71 chars",
-            None,
+            Some(Location::addressed("commit:add-rate-limiter#subject", 1, 1)),
             None,
         );
         let report = ValidationReport::new(vec![advisory, blocking.clone()], &no_delta_resolved());

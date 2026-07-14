@@ -27,8 +27,13 @@
 //! ([command-output-contract.md](../../../design/command-output-contract.md) → The stable
 //! finding key). It is **derived** — from the finding's `code` and its
 //! [`Location::address`] — never a stored field, so it can never drift from the address
-//! the finding carries; the `Serialize` impl computes it at projection time. `target` is
-//! `null` for a finding raised before an address resolves.
+//! the finding carries; the `Serialize` impl computes it at projection time. A `target` of
+//! `null` is **not** a default for "no address yet": every finding that reaches a
+//! serialization funnel carries one of the six declared target forms, and `null` is a
+//! **declared singleton value** — reserved for the codes [`is_declared_singleton`] names,
+//! whose emission path can yield at most one instance. [`debug_assert_targets_declared`]
+//! enforces that at the funnels (the contract's third obligation — the closure claim is a
+//! check, not a promise).
 //!
 //! `probe` / `check` are the **structured severity handle** the M6 post-pass keys on
 //! ([validation.md](../../../design/validation.md) → Severity assignment — the M6
@@ -148,6 +153,51 @@ pub struct FindingKey {
     pub target: Option<String>,
 }
 
+/// Whether `code` is a **declared singleton exception** — the one place `target: null` is a
+/// *value of the pin* rather than an un-swept default
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → The declared
+/// singleton exception). The list is stated by its predicate — *a finding whose emission path
+/// can yield at most one instance has nothing to discriminate against, so `(code, null)` is
+/// already unique-per-instance* — and this is its **one home**:
+///
+/// - `store-version.binary-mismatch` — its subject is **the store**, of which a repo has one.
+/// - every `setup.*` / `uninstall.*` — `setup::run` / `run_uninstall` are `Result<_, Finding>`
+///   (fail-fast, **exactly one finding per invocation**; no `Vec<Finding>` anywhere), so two
+///   instances of one code can never coexist in one output.
+///
+/// Anything else with no address is the un-swept state of a family nobody has looked at, and
+/// [`debug_assert_targets_declared`] says so at the seam.
+pub fn is_declared_singleton(code: &str) -> bool {
+    code == "store-version.binary-mismatch"
+        || code.starts_with("setup.")
+        || code.starts_with("uninstall.")
+}
+
+/// The **membership test, made mechanical** — the check the contract's third obligation owes
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → The membership
+/// test): *every `Finding` reaching a serialization funnel carries `Some(Location::address)`,
+/// except the declared singletons.* A finding is in the envelope-projecting set **iff** it is
+/// serialized as a `Finding` — [`Finding`]'s `Serialize` writes `key` unconditionally and
+/// derives `key.target` from [`Location::address`], so a null address **is** a null key. Call
+/// it at each of the three funnels (`ValidationReport`'s `findings[]`, a `DocAck`'s
+/// `findings[]`, the bare-`Finding` `setup_block`); a family that forgets its target form then
+/// fails the suite instead of shipping a degenerate key.
+///
+/// Debug-only (`debug_assert`): the obligation is an invariant of jigc's **own** finding
+/// producers — a build-time property the whole test suite exercises through the seam — not a
+/// runtime condition on user input, so it must never turn a user's finding into a panic.
+pub fn debug_assert_targets_declared(findings: &[Finding]) {
+    for finding in findings {
+        debug_assert!(
+            finding.carries_declared_target(),
+            "finding `{}` reaches a serialization funnel with no `key.target` — give it one \
+             of the six declared target forms, or declare it an exception \
+             (design/command-output-contract.md → The membership test)",
+            finding.code,
+        );
+    }
+}
+
 /// The one envelope every problem surfaces through: a [`Severity`], a stable
 /// machine `code`, a human-readable `message`, an optional [`Location`], and an
 /// optional `route` directing the agent's next action.
@@ -242,6 +292,14 @@ impl Finding {
             code: self.code.clone(),
             target: self.location.as_ref().and_then(|l| l.address.clone()),
         }
+    }
+
+    /// Whether this finding honours the target obligation: it carries a discriminating
+    /// `key.target` (a [`Location::address`] in one of the six declared forms), **or** its
+    /// code is a [`is_declared_singleton`] exception. The predicate
+    /// [`debug_assert_targets_declared`] enforces at every serialization funnel.
+    pub fn carries_declared_target(&self) -> bool {
+        self.key().target.is_some() || is_declared_singleton(&self.code)
     }
 
     /// A blocking conformance finding at a [`Location`], with no route — the

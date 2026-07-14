@@ -285,6 +285,11 @@ impl ValidationReport {
     /// cascade the post-pass is a no-op and output is byte-identical.
     pub fn new(mut findings: Vec<Finding>, resolved: &Resolved) -> Self {
         assign_severity(&mut findings, resolved);
+        // The membership test at the first serialization funnel: every finding this report
+        // projects carries a declared `key.target` (`command-output-contract.md` → The
+        // membership test). `ValidationReport::new` is the single constructor, so this is
+        // the natural seam.
+        crate::finding::debug_assert_targets_declared(&findings);
         Self {
             schema_version: SCHEMA_VERSION,
             findings,
@@ -790,7 +795,7 @@ mod tests {
             Severity::Blocking,
             "schema-conformance.required-slot-present",
             "required slot is empty",
-            None,
+            Some(Location::addressed("commit:x#summary", 1, 1)),
             None,
         );
         let report = ValidationReport::new(vec![advisory, blocking], &resolved);
@@ -833,6 +838,8 @@ mod tests {
     /// Severity assignment — the M6 post-pass; the per-check, three-step lookup).
     #[test]
     fn post_pass_flips_severity_on_a_per_check_scalar_set() {
+        use crate::finding::Location;
+
         // `file-state.hash-matches` (emitted blocking) is demoted to advisory;
         // `commit-rendering.line-limit-subject` (emitted advisory) is promoted to
         // blocking — both per-check `scalar-set`s on the closed knob surface.
@@ -845,18 +852,21 @@ mod tests {
         let resolved =
             crate::cascade::resolve(&severity_pack(), None, Some(&project)).expect("resolves");
 
+        // A report is a serialization funnel, so both fixtures carry a declared target —
+        // the file-path form for the drift, the doc URI for the commit's subject
+        // (`command-output-contract.md` → The membership test).
         let drift = Finding::graded(
             Severity::Blocking,
             "file-state.hash-matches",
             "on-disk content drifted",
-            None,
+            Some(Location::addressed("decisions/cache.md", 1, 1)),
             None,
         );
         let line_limit = Finding::graded(
             Severity::Advisory,
             "commit-rendering.line-limit-subject",
             "subject is 73 chars",
-            None,
+            Some(Location::addressed("commit:add-cache#subject", 1, 1)),
             None,
         );
 
@@ -898,20 +908,25 @@ mod tests {
     /// stays advisory; the gate is unchanged.
     #[test]
     fn post_pass_no_delta_leaves_emitted_severity() {
+        use crate::finding::Location;
+
         let resolved = no_delta_resolved();
 
+        // A report is a serialization funnel, so both fixtures carry a declared target —
+        // the file-path form for the drift, the doc URI for the commit's subject
+        // (`command-output-contract.md` → The membership test).
         let drift = Finding::graded(
             Severity::Blocking,
             "file-state.hash-matches",
             "on-disk content drifted",
-            None,
+            Some(Location::addressed("decisions/cache.md", 1, 1)),
             None,
         );
         let line_limit = Finding::graded(
             Severity::Advisory,
             "commit-rendering.line-limit-subject",
             "subject is 73 chars",
-            None,
+            Some(Location::addressed("commit:add-cache#subject", 1, 1)),
             None,
         );
 
@@ -936,6 +951,7 @@ mod tests {
     /// per-probe key must not catch a determinism-boundary code that has no row.
     #[test]
     fn post_pass_exempts_a_non_inventory_check_under_a_keyed_probe() {
+        use crate::finding::Location;
         use std::collections::BTreeMap;
         // Declare a per-probe key for `schema-conformance` and demote it.
         let mut scalars = BTreeMap::new();
@@ -953,7 +969,8 @@ mod tests {
             Severity::Blocking,
             "schema-conformance.unknown-type",
             "staged doc has an undefined type",
-            None,
+            // The file-path form: a doc of an undeclared type has no managed URI identity.
+            Some(Location::addressed("docs/wat.md", 1, 1)),
             None,
         );
         let report = ValidationReport::new(vec![exempt], &resolved);
@@ -1037,6 +1054,52 @@ mod tests {
         assert!(
             is_inventory_check("schema-conformance", "schema-version-current"),
             "the M42 version-currency break is a keyed store-scope check — a CHECK_INVENTORY row",
+        );
+    }
+
+    /// The membership test, mechanically enforced at the **report seam**
+    /// (`command-output-contract.md` → The membership test / obligation #3): a `Finding`
+    /// that reaches a serialization funnel with **no** `Location::address` projects
+    /// `key.target: null` — a degenerate key — so [`ValidationReport::new`], the single
+    /// constructor of the first funnel, fires on it. Red before the check existed: the
+    /// address-less finding sailed through and shipped a null key.
+    #[test]
+    #[should_panic(expected = "reaches a serialization funnel with no `key.target`")]
+    fn the_report_seam_fires_on_an_address_less_finding() {
+        use crate::finding::Location;
+
+        let resolved = no_delta_resolved();
+        let degenerate = Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.required-field-present",
+            "required field `status` is missing",
+            Some(Location::at(12, 1)),
+            Some("run `jigc doc set-field …`".to_owned()),
+        );
+
+        let _ = ValidationReport::new(vec![degenerate], &resolved);
+    }
+
+    /// The other half of the predicate: a **declared singleton exception** passes the seam
+    /// with `target: null` — `store-version.binary-mismatch`'s subject is *the store*, of
+    /// which there is exactly one per repo, so `(code, null)` is already unique
+    /// per-instance (`command-output-contract.md` → The declared singleton exception).
+    #[test]
+    fn the_report_seam_passes_the_declared_singleton() {
+        let resolved = no_delta_resolved();
+        let singleton = Finding::block(
+            "store-version.binary-mismatch",
+            "the store was written by a newer jigc",
+            "upgrade the binary",
+        );
+
+        let report = ValidationReport::new(vec![singleton.clone()], &resolved);
+
+        assert_eq!(report.findings, vec![singleton]);
+        assert_eq!(
+            serde_json::to_value(&report.findings[0]).expect("serializes")["key"]["target"],
+            serde_json::Value::Null,
+            "the declared singleton keys at null — by the pin, not by omission",
         );
     }
 

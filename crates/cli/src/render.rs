@@ -829,12 +829,33 @@ pub struct AckTarget {
     pub leaf: Option<String>,
 }
 
+impl DocAck {
+    /// The intrinsic single-doc advisories this ack carries — every variant has them, and
+    /// they are what the ack's `findings[]` projects (the second serialization funnel).
+    fn findings(&self) -> &[Finding] {
+        match self {
+            DocAck::Field { findings, .. }
+            | DocAck::UnsetField { findings, .. }
+            | DocAck::Slot { findings, .. }
+            | DocAck::RemovedItem { findings, .. }
+            | DocAck::RetitledItem { findings, .. }
+            | DocAck::Created { findings, .. }
+            | DocAck::AddedItem { findings, .. }
+            | DocAck::Authored { findings, .. } => findings,
+        }
+    }
+}
+
 /// Render a successful single-write `jigc doc` verb confirmation ([`DocAck`]) to the
 /// surface `format` selects: `agent` / `human` emit a terse one-line confirmation (no
 /// footer — symmetric with the bare line `doc create` / `doc add-item` emit); `json`
 /// emits a small structured ack object on stdout (the house serde-object shape, like
 /// [`milestone`]), so an agent on `--format json` gets a parseable confirmation.
 pub fn doc_ack(format: Format, ack: &DocAck) -> String {
+    // The membership test at the second serialization funnel — the ack's `findings[]`
+    // (`command-output-contract.md` → The membership test): each carries a declared
+    // `key.target`, or it would ship a degenerate key to a driver.
+    engine::finding::debug_assert_targets_declared(ack.findings());
     match format {
         Format::Json => match ack {
             // The command-output contract (`design/command-output-contract.md` §2):
@@ -1065,6 +1086,11 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
 /// footer. A hard block is a blocking finding carrying a route (`DECISIONS.md`
 /// 2026-05-31), so this is the same envelope `validate` blocks surface through.
 pub fn setup_block(format: Format, finding: &Finding) -> String {
+    // The membership test at the third serialization funnel — the bare `Finding`
+    // (`command-output-contract.md` → The membership test). Every `setup.*` / `uninstall.*`
+    // code is a **declared singleton** (one finding per invocation), so this seam passes
+    // them at `target: null` by the pin; anything else riding it owes a target.
+    engine::finding::debug_assert_targets_declared(std::slice::from_ref(finding));
     match format {
         Format::Json => json(finding),
         Format::Agent | Format::Human => {
@@ -1775,6 +1801,63 @@ mod tests {
         ]))
     }
 
+    /// The membership test at the **ack seam** — the second serialization funnel
+    /// (`command-output-contract.md` → The membership test): a `DocAck`'s `findings[]`
+    /// projects the pinned envelope, so an address-less non-exempt finding riding a write
+    /// ack would ship `key.target: null`. [`doc_ack`] fires on it. Red before the check
+    /// existed.
+    #[test]
+    #[should_panic(expected = "reaches a serialization funnel with no `key.target`")]
+    fn the_ack_seam_fires_on_an_address_less_finding() {
+        let degenerate = Finding::graded(
+            engine::finding::Severity::Advisory,
+            "schema-conformance.surplus-sections-absent",
+            "a surplus section is present",
+            Some(engine::finding::Location::at(9, 1)),
+            Some("remove the surplus section".to_owned()),
+        );
+
+        let _ = doc_ack(
+            Format::Json,
+            &DocAck::Slot {
+                address: "adr:use-rust#decision".to_owned(),
+                target: AckTarget {
+                    doctype: "adr".to_owned(),
+                    slug: "use-rust".to_owned(),
+                    section: Some("decision".to_owned()),
+                    item: None,
+                    leaf: None,
+                },
+                chars: 12,
+                findings: vec![degenerate],
+            },
+        );
+    }
+
+    /// The membership test at the **`setup_block` seam** — the third funnel, which
+    /// serializes a *bare* `Finding` (the funnel the two-funnel picture missed). Every
+    /// `setup.*` code is a **declared singleton** (fail-fast `Result<_, Finding>`: at most
+    /// one per invocation), so it passes the check with `target: null` — by the pin, not by
+    /// omission (`command-output-contract.md` → The declared singleton exception).
+    #[test]
+    fn the_setup_block_seam_passes_the_declared_singleton() {
+        let singleton = Finding::block(
+            "setup.repo-root",
+            "`jigc setup` must run inside a git repository",
+            "run `git init` first",
+        );
+
+        let json = setup_block(Format::Json, &singleton);
+
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parses");
+        assert_eq!(value["key"]["code"], "setup.repo-root");
+        assert_eq!(
+            value["key"]["target"],
+            serde_json::Value::Null,
+            "a declared singleton keys at null and passes the seam",
+        );
+    }
+
     /// The agent-text rendering lists each workflow with its `when` hint and ends
     /// with the routing footer line.
     #[test]
@@ -2279,15 +2362,17 @@ mod tests {
     /// warning-only report exits non-blocking, not merely that the render arm exists.
     #[test]
     fn render_warning_finding_is_non_blocking_and_distinct_from_advisory() {
-        use engine::finding::{Finding, Severity};
+        use engine::finding::{Finding, Location, Severity};
 
         let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
         let report = ValidationReport::new(
+            // The cascade-delta target form (T6): the delta *is* the subject, and its
+            // target string is its identity (`command-output-contract.md` → the sixth form).
             vec![Finding::graded(
                 Severity::Warning,
                 "override-default.target-unchanged",
                 "override target `workflow:single-task#implement` changed in the current pack",
-                None,
+                Some(Location::addressed("workflow:single-task#implement", 1, 1)),
                 Some("re-review the delta on `workflow:single-task#implement`".into()),
             )],
             &resolved,
@@ -2947,7 +3032,7 @@ mod tests {
                     Severity::Blocking,
                     "schema-conformance.required-slot-present",
                     "required slot in section `summary` is empty",
-                    None,
+                    Some(Location::addressed("commit:x#summary", 1, 1)),
                     None,
                 ),
             ],
@@ -3047,11 +3132,12 @@ mod tests {
         // A pack-probe-integrity meta-finding (the exit-non-zero exception) flips both
         // surfaces: the trailer distinguishes it and `report_only` goes false.
         let probe = ValidationReport::new(
+            // The pack-resource target form (T3): the probe id.
             vec![Finding::graded(
                 Severity::Blocking,
                 "pack-probe-integrity.crash",
                 "the doc-code probe exited 2",
-                None,
+                Some(Location::addressed("doc-code", 1, 1)),
                 None,
             )],
             &resolved,
@@ -3180,7 +3266,7 @@ mod tests {
                     Severity::Blocking,
                     "doc-code.symbol-exists",
                     "cited symbol `evict_lru` not found",
-                    None,
+                    Some(Location::addressed("adr:cache#status/cites-code", 1, 1)),
                     None,
                 ),
             ],
