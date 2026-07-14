@@ -537,6 +537,98 @@ fn doc_schema_plain_listing_shows_enum_members() {
     );
 }
 
+/// The listing line for field `id` — the `- <id>: …` line at any depth.
+fn field_line<'a>(listing: &'a str, id: &str) -> &'a str {
+    listing
+        .lines()
+        .find(|line| line.trim_start().starts_with(&format!("- {id}: ")))
+        .unwrap_or_else(|| panic!("the listing has a `- {id}: …` line; got:\n{listing}"))
+}
+
+/// The plain (`agent`/`human`) listing names each **top-level** field's owning
+/// simple-section — the field group an agent must address to write it (the `doc
+/// author` payload is section-keyed: `sections: - id: <section-id>` / `set:`), and
+/// the one thing the flat `fields:` list could not tell it. The pinned json has
+/// carried `section` since contract-version 2; the listing never read it (M42 rc.6,
+/// T3 — the papercut batch).
+///
+/// The **omitting context** is asserted too: an item field under a repeatable
+/// carries its section *structurally* (it is printed indented under it), so its line
+/// stays section-less — inert, not wrong. Only the json shape is the pin
+/// (`design/doc-read-surface.md`); this listing is non-contractual presentation, and
+/// the byte-verbatim goldens above hold it to an unchanged json key set.
+#[test]
+fn doc_schema_plain_listing_names_each_field_owning_section() {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // (1) adr — every top-level field names its owning section, which is `status`:
+    //     the very guess an agent gets wrong (most doctypes group under `meta`).
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "adr", "--format", "agent"],
+    );
+    assert_ok(&out, "`jigc doc schema adr --format agent`");
+    let adr = stdout_of(&out);
+    for id in [
+        "status",
+        "date",
+        "supersedes",
+        "cites-code",
+        "schema-version",
+    ] {
+        let line = field_line(&adr, id);
+        assert!(
+            line.contains("(section: status)"),
+            "the adr field `{id}` names its owning section; got:\n{line}",
+        );
+    }
+
+    // (2) spec — the section is READ from the schema, not hardcoded: spec groups its
+    //     fields under `meta`, so the same listing says `meta` there.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "spec", "--format", "agent"],
+    );
+    assert_ok(&out, "`jigc doc schema spec --format agent`");
+    let spec = stdout_of(&out);
+    let derived = field_line(&spec, "derived-from");
+    assert!(
+        derived.contains("(section: meta)"),
+        "the spec field `derived-from` names its own owning section; got:\n{derived}",
+    );
+
+    // (3) changelog — the omitting context: its ONLY top-level field is the injected
+    //     stamp (section `meta`); every item field under a repeatable (`category`,
+    //     `title`, `date`, `link`, and the nested `category`) carries its section
+    //     structurally, so no item line names one.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "changelog", "--format", "agent"],
+    );
+    assert_ok(&out, "`jigc doc schema changelog --format agent`");
+    let changelog = stdout_of(&out);
+    let stamp = field_line(&changelog, "schema-version");
+    assert!(
+        stamp.contains("(section: meta)"),
+        "the changelog stamp field names its owning section; got:\n{stamp}",
+    );
+    let annotated: Vec<&str> = changelog
+        .lines()
+        .filter(|line| line.contains("(section:"))
+        .collect();
+    assert_eq!(
+        annotated,
+        vec![stamp],
+        "only the top-level field line names a section — an item field under a \
+         repeatable carries its section structurally; got:\n{changelog}",
+    );
+}
+
 /// An unknown doctype exits non-zero with a routed error — never a panic, never
 /// exit-0 silence (`design/doc-read-surface.md`: a read-side block routes like a
 /// write block).

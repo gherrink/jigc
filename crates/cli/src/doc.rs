@@ -2222,12 +2222,19 @@ fn schema_listing(schema: &Schema, schema_version: Option<u32>) -> String {
     out
 }
 
-/// Append one field's listing line at `depth` (two spaces per level).
+/// Append one field's listing line at `depth` (two spaces per level). A **top-level**
+/// field names its owning simple-section — the field group an agent must address to
+/// write it (the `doc author` payload is section-keyed, and `set-field` takes
+/// `#<section>/<field>`); an **item** field carries its section structurally (printed
+/// indented under its repeatable), so its line stays section-less.
 fn push_field_line(out: &mut String, field: &ContractField<'_>, depth: usize) {
     out.push_str(&"  ".repeat(depth));
     out.push_str(&format!("- {}: {}", field.id, field.ty_name()));
     if let Some(members) = field.of {
         out.push_str(&format!(" [{}]", members.join("|")));
+    }
+    if let Some(section) = field.section {
+        out.push_str(&format!(" (section: {section})"));
     }
     if let Some(default) = field.default {
         out.push_str(&format!(" (default: {default})"));
