@@ -7,5 +7,6 @@ allows-create: [{type: adr, as: decision}, {type: changelog, as: change}]
 ---
 {{ include: step:locate }}
 {{ include: step:implement }}
+{{ include: step:record-changelog }}
 {{ include: step:superseded-context }}
 {{ include: step:finalize }}

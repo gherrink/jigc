@@ -122,7 +122,7 @@ The **M4 acceptance flow** — a project-level delta of each kind shifts the com
 
 ### 3a · `structural-op` — `replace-step`
 
-The pack-default `single-task` include list is `[locate, implement, superseded-context, finalize]`. The project wants its own `implement` step that augments the pack's with a house lint reminder — without forking the pack step (it re-includes it).
+The pack-default `single-task` include list is `[locate, implement, record-changelog, superseded-context, finalize]`. The project wants its own `implement` step that augments the pack's with a house lint reminder — without forking the pack step (it re-includes it).
 
 The project authors the delta through the verb:
 
@@ -166,6 +166,7 @@ workflow:single-task    (pack-default · dev/v0.3.0)
     step:project-implement   (project · .jigc/config/steps/project-implement.yaml
                               ← replaces step:implement at position 2)
       {{include: step:implement}}  → (pack-default · dev/steps/implement.yaml)
+    step:record-changelog    (pack-default · dev/steps/record-changelog.yaml)
     step:superseded-context  (pack-default · dev/steps/superseded-context.yaml)
     step:finalize            (pack-default · dev/steps/finalize.yaml)
   findings (workflow-refs): 0

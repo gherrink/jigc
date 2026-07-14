@@ -408,12 +408,6 @@ it in a commit trailer. Add one trailer item, then set its value on the address
 jigc doc add-item commit:add-a-thing#trailers --title Co-Authored-By --task add-a-thing
 jigc doc set-field commit:add-a-thing#trailers/<id>/value --value \"Name <email>\" --task add-a-thing
 
-If the change is user-facing — a feature, a fix, or a behaviour a user would
-notice — record it on the changelog, when the workflow you are running opens a
-changelog create-gate (bare `jigc start` lists the gates it grants):
-
-jigc doc create changelog --title Changelog --task add-a-thing
-
 If a decision is warranted, create an ADR and author its slots — a line per slot
 usually suffices; an ADR earns its keep by capturing the *why*, not by running
 long:
@@ -436,6 +430,11 @@ jigc doc set-slot adr:<slug>#options --from-file - --task add-a-thing
 Before you finalize, verify the change actually works: build it and run the
 tests, and confirm the behaviour you set out to produce. Finalize commits your
 staged work; it does not check that the work is correct.
+
+If the change is user-facing — a feature, a fix, or a behaviour a user would
+notice — record it on the changelog:
+
+jigc doc create changelog --title Changelog --task add-a-thing
 
 If your decision supersedes an earlier one, set `supersedes` on the ADR; the
 superseded decision then appears below for reference, so your consequences can
