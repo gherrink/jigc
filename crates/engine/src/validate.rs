@@ -2142,22 +2142,33 @@ fn check_id_from_enum(
 /// `required-slot-present`: the section declares a slot, so its prose must be
 /// non-empty. The parser records the slot span even when empty (a present heading
 /// with no prose under it), so an all-whitespace slice is the unfilled-slot case.
+///
+/// Addressed at `#<section>` (`command-output-contract.md` → schema-conformance): a doc has
+/// **one required slot per section** but many sections, so a fragment-less finding collapses
+/// every empty slot in a doc onto one key under the path→URI flip — a pristine `jigc doc
+/// create adr` has three, and emitted three byte-identical keys in one envelope. The section
+/// id is the discriminator, and it was already in hand (spent on the message alone). Its
+/// siblings in this family were normalized the same way: [`check_field`] /
+/// [`check_field_value`] at `#<section>/<field>`, [`check_item_slot_present`] at
+/// `#<item-path>/<leaf>`.
 fn check_slot_present(
     section: &Section,
     parsed: &ParsedSection,
     source: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let filled = parsed
-        .slot
-        .as_ref()
+    let span = parsed.slot.as_ref();
+    let filled = span
         .map(|span| !span.slice(source).trim().is_empty())
         .unwrap_or(false);
     if !filled {
+        // `line`/`col` stay the slot's source coordinate (the human's pointer); the address
+        // is what the key reads.
+        let line = span.map(|span| span.start_line).unwrap_or(1);
         findings.push(blocking_conformance(
             "schema-conformance.required-slot-present",
             format!("required slot in section `{}` is empty", section.id),
-            slot_location(parsed),
+            Some(Location::addressed(section.id.clone(), line, 1)),
         ));
     }
 }
@@ -2291,14 +2302,6 @@ pub fn is_optional_ref(field: &SchemaField) -> bool {
             None => true,
             Some(card) => card.trim_start().starts_with('0'),
         }
-}
-
-/// The located coordinate for a slot finding: the slot span's start line when known.
-fn slot_location(parsed: &ParsedSection) -> Option<Location> {
-    parsed
-        .slot
-        .as_ref()
-        .map(|span| Location::at(span.start_line, 1))
 }
 
 /// Build a blocking `schema-conformance.*` [`Finding`] (the inventory default
@@ -6871,8 +6874,10 @@ title: {title}
             let loc = f.location.as_ref().expect("attributed finding is located");
             assert_eq!(
                 loc.address.as_deref(),
-                Some(identity.as_str()),
-                "the address names the owning doc's URI identity (slot break carries no fragment)",
+                Some(format!("{identity}#body").as_str()),
+                "the address names the owning doc's URI identity, fragmented at the empty \
+                 slot's section (M42 Inc 9 — a doc's several empty slots must not collapse \
+                 onto one key)",
             );
             assert!(
                 !loc.address.as_deref().unwrap().contains(sibling),
@@ -6940,8 +6945,9 @@ title: {title}
             let loc = f.location.as_ref().expect("attributed finding is located");
             assert_eq!(
                 loc.address.as_deref(),
-                Some(identity.as_str()),
-                "the address names the owning doc's URI identity",
+                Some(format!("{identity}#body").as_str()),
+                "the address names the owning doc's URI identity, fragmented at the empty \
+                 slot's section (M42 Inc 9)",
             );
             assert_eq!(
                 (loc.line, loc.col),
