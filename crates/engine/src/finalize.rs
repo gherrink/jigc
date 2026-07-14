@@ -180,12 +180,17 @@ pub fn plan_finalize(
     commit_slug: &str,
     schemas: &BTreeMap<String, Schema>,
 ) -> Result<FinalizePlan, Vec<Finding>> {
+    // The work unit every block whose subject is the *task* keys at (M42 inc-9 T4). The
+    // commit slug IS the task id — a task's commit doc is provisioned as `commit:<task-id>`
+    // — so the ref is in hand, not derived from the working-area path.
+    let unit = Unit::Task(commit_slug);
+
     // Phase 1 — preflight: task exists, base pin == supplied HEAD.
     if !task_dir.exists() {
-        return Err(vec![task_missing_finding(task_dir)]);
+        return Err(vec![task_missing_finding(unit, task_dir)]);
     }
     if base.sha != head_sha {
-        return Err(vec![base_mismatch_finding(UnitKind::Task, base, head_sha)]);
+        return Err(vec![base_mismatch_finding(unit, base, head_sha)]);
     }
 
     // Phase 2 — validate: abort on any blocking finding, surfacing exactly those.
@@ -200,7 +205,7 @@ pub fn plan_finalize(
 
     // Empty-commit guard (after validate per finalize.md → Empty commit).
     if !has_diff {
-        return Err(vec![empty_commit_finding()]);
+        return Err(vec![empty_commit_finding(unit)]);
     }
 
     // Phase 3 — render the staged commit doc into the git-message string.
@@ -224,7 +229,7 @@ pub fn plan_finalize(
     // promote — irreversible data loss. Block before retire. The in-place migration
     // rewrite (the doc replacing the very foreign original at its own canonical path) is
     // excluded via the retire guard's source-path == destination discriminator.
-    plan_clobber_guard(task_dir, repo_root, &promote.promotions, schemas)?;
+    plan_clobber_guard(unit, task_dir, repo_root, &promote.promotions, schemas)?;
 
     // The retire set (`design/auto-migration.md` → Retire-the-foreign-original): a
     // migration task records its repo-relative foreign source path at mint; the planner
@@ -232,7 +237,7 @@ pub fn plan_finalize(
     // task (no `source-path`) — inert. The path-collision guard (→ Path-collision guard)
     // excludes a foreign source that equals a promote destination — the in-location
     // squatter the managed write rewrites in place is not a distinct original to retire.
-    let retirements = plan_retirements(task_dir, &promote.promotions)?;
+    let retirements = plan_retirements(unit, task_dir, &promote.promotions)?;
 
     Ok(FinalizePlan::new(
         message,
@@ -268,6 +273,7 @@ pub fn plan_finalize(
 /// path must still be recognized as the squatter). The common root-`CHANGELOG.md` ≠
 /// `changelog/changelog.md` case retires the distinct original.
 fn plan_retirements(
+    unit: Unit,
     task_dir: &Path,
     promotions: &[Promotion],
 ) -> Result<Vec<PathBuf>, Vec<Finding>> {
@@ -289,7 +295,7 @@ fn plan_retirements(
             }
         }
         Ok(_) => Ok(Vec::new()),
-        Err(err) => Err(vec![source_path_io_finding(task_dir, &err)]),
+        Err(err) => Err(vec![source_path_io_finding(unit, task_dir, &err)]),
     }
 }
 
@@ -324,17 +330,18 @@ fn plan_retirements(
 /// `schemas` (for the singleton check). A staged doc with no recorded provenance (none was
 /// minted/copied-in here) is not create-provenance, so it never trips the guard.
 fn plan_clobber_guard(
+    unit: Unit,
     task_dir: &Path,
     repo_root: &Path,
     promotions: &[Promotion],
     schemas: &BTreeMap<String, Schema>,
 ) -> Result<(), Vec<Finding>> {
     let provenance = crate::state::ProvenanceRecord::load(task_dir)
-        .map_err(|err| vec![provenance_io_finding(task_dir, &err)])?;
+        .map_err(|err| vec![provenance_io_finding(unit, task_dir, &err)])?;
     // The in-place migration rewrite's destination (if any) — the foreign source path the
     // managed write replaces at its own canonical path, normalized for the comparison.
     let in_place = crate::state::read_source_path(task_dir)
-        .map_err(|err| vec![source_path_io_finding(task_dir, &err)])?
+        .map_err(|err| vec![source_path_io_finding(unit, task_dir, &err)])?
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .map(|s| crate::store::lexical_normalize(Path::new(&s)));
@@ -372,7 +379,8 @@ fn plan_clobber_guard(
 /// data-loss clobber guard) when a create-provenance doc's canonical promote destination
 /// already holds a file — a committed managed doc that would collide, or a hand-authored /
 /// foreign file (e.g. an existing `VISION.md` at a placement home) — promoting would silently
-/// overwrite it (irreversible data loss). Names the destination it refused to clobber.
+/// overwrite it (irreversible data loss). Names the destination it refused to clobber, and
+/// [keys at it](file_location).
 fn clobber_finding(destination: &str) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -381,7 +389,7 @@ fn clobber_finding(destination: &str) -> Finding {
             "promoting this task's doc to `{destination}` would overwrite a file already \
              there — refusing to clobber it"
         ),
-        None,
+        Some(file_location(destination)),
         Some(format!(
             "a file already occupies `{destination}`: if it is a hand-authored/foreign file, \
              remove or adopt it; if it is another managed doc, retitle this one so it slugs \
@@ -392,8 +400,9 @@ fn clobber_finding(destination: &str) -> Finding {
 
 /// A blocking finding for an I/O failure loading the task's provenance manifest while
 /// planning the clobber guard (the manifest is written at stage time, so a read fault is a
-/// real fault — the promote/source-path I/O precedent).
-fn provenance_io_finding(task_dir: &Path, err: &std::io::Error) -> Finding {
+/// real fault — the promote/source-path I/O precedent). Its subject is the **task** (its
+/// manifest), so it [keys at the work unit](Unit::location).
+fn provenance_io_finding(unit: Unit, task_dir: &Path, err: &std::io::Error) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "finalize.provenance-io",
@@ -401,7 +410,7 @@ fn provenance_io_finding(task_dir: &Path, err: &std::io::Error) -> Finding {
             "could not read the task provenance manifest under `{}`: {err}",
             task_dir.display()
         ),
-        None,
+        Some(unit.location()),
         None,
     )
 }
@@ -438,7 +447,10 @@ pub enum RepinDecision {
 /// [`plan_finalize`]'s phase-1 equality stays as defense — on a re-pin the CLI
 /// feeds it the effective pin. The milestone sibling ([`plan_milestone_finalize`])
 /// is consciously unchanged: the amendment targets the serial-task phase 1.
+/// `task_id` is the task the decision speaks about — the **work-unit ref** its overlap block
+/// keys at (M42 inc-9 T4; [`Unit::location`]).
 pub fn decide_base_repin(
+    task_id: &str,
     task_dir: &Path,
     base: &BasePin,
     head_sha: &str,
@@ -468,7 +480,12 @@ pub fn decide_base_repin(
     if overlapping.is_empty() {
         return Ok(RepinDecision::Repin);
     }
-    Err(vec![base_overlap_finding(base, head_sha, &overlapping)])
+    Err(vec![base_overlap_finding(
+        Unit::Task(task_id),
+        base,
+        head_sha,
+        &overlapping,
+    )])
 }
 
 /// Plan the **milestone** `finalize` transaction — the thin sibling of
@@ -496,7 +513,11 @@ pub fn decide_base_repin(
 /// whose `docs/` holds the suffix-resolved bodies in the same staging form a single
 /// task's working area uses, so the shared promote sweep reads it unchanged. Performs
 /// no git and no commit; reads only `staging_dir`.
+// The determinism contract feeds every layer in explicitly (the [`plan_finalize`] precedent);
+// bundling the inputs into a params struct would be churn without clarifying the contract.
+#[allow(clippy::too_many_arguments)]
 pub fn plan_milestone_finalize(
+    milestone_id: &str,
     staging_dir: &Path,
     base: &BasePin,
     head_sha: &str,
@@ -505,6 +526,12 @@ pub fn plan_milestone_finalize(
     has_diff: bool,
     schemas: &BTreeMap<String, Schema>,
 ) -> Result<FinalizePlan, Vec<Finding>> {
+    // The work unit every shared block keys at — `milestone:<id>`, never a guess derived from
+    // `staging_dir` (M42 inc-9 T4; `design/command-output-contract.md` → the finalize
+    // sub-table). The three constructors below are shared with [`plan_finalize`], so the
+    // caller's unit is what tells them apart.
+    let unit = Unit::Milestone(milestone_id);
+
     // Preflight (shared): the staging area exists, and the base pin is reconciled with the
     // supplied HEAD. The base-guard is refined for the per-op record-commit model
     // (`design/team-ready-state.md` → The commit model: the finalize base-guard refinement;
@@ -518,20 +545,16 @@ pub fn plan_milestone_finalize(
     // is the MILESTONE arm of [`base_mismatch_finding`] (M42 T3): same code, a route that names
     // the milestone, the cause, and the two real (out-of-band git) options — never `discard`.
     if !staging_dir.exists() {
-        return Err(vec![task_missing_finding(staging_dir)]);
+        return Err(vec![task_missing_finding(unit, staging_dir)]);
     }
     if base.sha != head_sha && !record_only_advance {
-        return Err(vec![base_mismatch_finding(
-            UnitKind::Milestone,
-            base,
-            head_sha,
-        )]);
+        return Err(vec![base_mismatch_finding(unit, base, head_sha)]);
     }
 
     // Empty-commit guard (shared): validate-equivalent passed (the join adjudicated),
     // but a materialized-but-empty diff still aborts — no empty commits.
     if !has_diff {
-        return Err(vec![empty_commit_finding()]);
+        return Err(vec![empty_commit_finding(unit)]);
     }
 
     // No commit-doc render — the synthesized message is substituted for phase 3. Phase 4
@@ -671,7 +694,8 @@ fn plan_promotions(
 }
 
 /// A blocking finding for an I/O failure walking the staged docs or reading a staged
-/// doc during the promote phase.
+/// doc during the promote phase. Its subject is the staged **file**, so it
+/// [keys at its path](file_location).
 fn promote_io_finding(path: &Path, err: &std::io::Error) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -680,7 +704,7 @@ fn promote_io_finding(path: &Path, err: &std::io::Error) -> Finding {
             "could not read the staged managed doc `{}` to promote it: {err}",
             path.display()
         ),
-        None,
+        Some(file_location(path.display())),
         None,
     )
 }
@@ -689,7 +713,8 @@ fn promote_io_finding(path: &Path, err: &std::io::Error) -> Finding {
 /// but staged **no** managed doc to promote in its place — the retire would delete the
 /// foreign original with no canonical replacement. The migration must author its
 /// canonical doc before finalize; refusing here keeps the first byte-destructive write
-/// honest (never delete-with-no-replacement).
+/// honest (never delete-with-no-replacement). Its subject is the **foreign source file**, so
+/// it [keys at its path](file_location).
 fn migration_no_replacement_finding(source_path: &str) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -699,7 +724,7 @@ fn migration_no_replacement_finding(source_path: &str) -> Finding {
              managed doc to replace it — the foreign original will not be retired with \
              nothing to take its place"
         ),
-        None,
+        Some(file_location(source_path)),
         Some(
             "author the canonical doc (e.g. `jigc doc create <doctype> --task <id>`), then \
              re-run `jigc task finalize <id> --approve`"
@@ -709,8 +734,9 @@ fn migration_no_replacement_finding(source_path: &str) -> Finding {
 }
 
 /// A blocking finding for an I/O failure reading the migration task's recorded
-/// `source-path` while planning the retire set.
-fn source_path_io_finding(task_dir: &Path, err: &std::io::Error) -> Finding {
+/// `source-path` while planning the retire set. Its subject is the **task** (its recorded
+/// source path), so it [keys at the work unit](Unit::location).
+fn source_path_io_finding(unit: Unit, task_dir: &Path, err: &std::io::Error) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "finalize.source-path-io",
@@ -718,13 +744,16 @@ fn source_path_io_finding(task_dir: &Path, err: &std::io::Error) -> Finding {
             "could not read the recorded migration source path under `{}`: {err}",
             task_dir.display()
         ),
-        None,
+        Some(unit.location()),
         None,
     )
 }
 
-/// The phase-1 task-missing reject (`finalize.md` → 1. Preflight: "Task exists").
-fn task_missing_finding(task_dir: &Path) -> Finding {
+/// The phase-1 task-missing reject (`finalize.md` → 1. Preflight: "Task exists"). Its
+/// subject is the work unit whose area is absent, so it
+/// [keys at the work unit](Unit::location) — never at the missing path (the *unit* is what
+/// a driver tracks; the path is an artifact of where the workbench happens to sit).
+fn task_missing_finding(unit: Unit, task_dir: &Path) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "finalize.no-task",
@@ -732,20 +761,53 @@ fn task_missing_finding(task_dir: &Path) -> Finding {
             "no task working area at `{}` — nothing to finalize",
             task_dir.display()
         ),
-        None,
+        Some(unit.location()),
         Some("start a task with `jigc start \"<intent>\"`".to_string()),
     )
 }
 
-/// The work-unit kind a [`base_mismatch_finding`] speaks about — one `code`, two units
-/// whose cause and whose exits are different (M42 T3; `design/write-commands.md` → The
-/// `finalize.base-mismatch` route is unit-aware).
+/// The work unit a `finalize.*` block speaks about — one `code`, two units whose cause and
+/// whose exits are different (M42 T3; `design/write-commands.md` → The
+/// `finalize.base-mismatch` route is unit-aware), and whose **stable key target** is the
+/// unit's own ref (M42 inc-9 T4; [`Unit::location`]).
+///
+/// It carries the unit's **id**, because the shared constructors ([`task_missing_finding`],
+/// [`base_mismatch_finding`], [`empty_commit_finding`]) serve both planners and a
+/// path-derived guess would be exactly the degenerate target the contract forbids.
 #[derive(Clone, Copy)]
-enum UnitKind {
-    /// A serial task ([`plan_finalize`]).
-    Task,
-    /// A milestone ([`plan_milestone_finalize`]).
-    Milestone,
+enum Unit<'a> {
+    /// A serial task ([`plan_finalize`]) — `task:<id>`.
+    Task(&'a str),
+    /// A milestone ([`plan_milestone_finalize`]) — `milestone:<id>`.
+    Milestone(&'a str),
+}
+
+impl Unit<'_> {
+    /// The unit's [`Location`] — the **work-unit ref** target form `task:<id>` /
+    /// `milestone:<id>` a `finalize.*` block whose subject is the work unit keys at
+    /// ([command-output-contract.md](../../../design/command-output-contract.md) → the form
+    /// table, the work-unit row; the finalize sub-table). Without it every diverged task in
+    /// every repo collided on the one degenerate key `(finalize.base-mismatch, null)`. A
+    /// container address, no fragment (`structural-grammar.md` → Work-units and runtime
+    /// identity).
+    fn location(&self) -> Location {
+        let address = match self {
+            Self::Task(id) => format!("task:{id}"),
+            Self::Milestone(id) => format!("milestone:{id}"),
+        };
+        Location::addressed(address, 1, 1)
+    }
+}
+
+/// The [`Location`] of a `finalize.*` block whose subject is a **file** — the promote
+/// destination it refused to clobber, the staged doc it could not read, the foreign original
+/// it would not retire. It keys at the **filesystem path** form, the `file-state.*` exception
+/// generalized: the subject may be a *foreign* file carrying no committed URI identity, so a
+/// `<type>:<slug>` target would name a doc that does not exist
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → the form table,
+/// the file row; the finalize sub-table).
+fn file_location(path: impl std::fmt::Display) -> Location {
+    Location::addressed(path.to_string(), 1, 1)
 }
 
 /// The phase-1 base-pin-divergence reject (`finalize.md` → 1. Preflight: "Base pin
@@ -770,9 +832,9 @@ enum UnitKind {
 ///   never offers `discard`: `jigc milestone discard` settles the record of an **abandoned**
 ///   milestone, so routing a still-wanted one there tells the operator to destroy the work to
 ///   satisfy a guard.
-fn base_mismatch_finding(unit: UnitKind, base: &BasePin, head_sha: &str) -> Finding {
+fn base_mismatch_finding(unit: Unit, base: &BasePin, head_sha: &str) -> Finding {
     let (message, route) = match unit {
-        UnitKind::Task => (
+        Unit::Task(_) => (
             format!(
                 "the task was started at base `{}` but HEAD is now `{head_sha}`",
                 base.short
@@ -782,7 +844,7 @@ fn base_mismatch_finding(unit: UnitKind, base: &BasePin, head_sha: &str) -> Find
                 base.short
             ),
         ),
-        UnitKind::Milestone => (
+        Unit::Milestone(_) => (
             format!(
                 "the milestone was pinned to base `{}` but HEAD is now `{head_sha}`, and the \
                  commits landed since move more than milestone-record bookkeeping — the \
@@ -803,7 +865,7 @@ fn base_mismatch_finding(unit: UnitKind, base: &BasePin, head_sha: &str) -> Find
         Severity::Blocking,
         "finalize.base-mismatch",
         message,
-        None,
+        Some(unit.location()),
         Some(route),
     )
 }
@@ -813,7 +875,16 @@ fn base_mismatch_finding(unit: UnitKind, base: &BasePin, head_sha: &str) -> Find
 /// task's work**, so no auto-re-pin — the finding names the overlapping paths and
 /// carries the resolve-or-discard conflict route. `overlapping` is sorted + deduped
 /// by [`decide_base_repin`].
-fn base_overlap_finding(base: &BasePin, head_sha: &str, overlapping: &[&str]) -> Finding {
+///
+/// The second constructor of the one `finalize.base-mismatch` code — mutually exclusive with
+/// [`base_mismatch_finding`]'s pin form (one instance per finalize), and
+/// [keyed at the same work unit](Unit::location).
+fn base_overlap_finding(
+    unit: Unit,
+    base: &BasePin,
+    head_sha: &str,
+    overlapping: &[&str],
+) -> Finding {
     let paths = overlapping.join("`, `");
     Finding::graded(
         Severity::Blocking,
@@ -823,7 +894,7 @@ fn base_overlap_finding(base: &BasePin, head_sha: &str, overlapping: &[&str]) ->
              history overlaps the task's work on `{paths}`",
             base.short
         ),
-        None,
+        Some(unit.location()),
         Some(format!(
             "resolve the overlap on `{paths}` against the new history, or discard the task \
              with `jigc task discard`"
@@ -832,18 +903,21 @@ fn base_overlap_finding(base: &BasePin, head_sha: &str, overlapping: &[&str]) ->
 }
 
 /// The empty-commit abort (`finalize.md` → Commit-doc rendering → Empty commit):
-/// validate passed but the staged diff is empty. No empty commits.
-fn empty_commit_finding() -> Finding {
+/// validate passed but the staged diff is empty. No empty commits. Its subject is the work
+/// unit that produced nothing, so it [keys at it](Unit::location) — shared by both planners,
+/// so the unit is passed in, never guessed from a path.
+fn empty_commit_finding(unit: Unit) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "finalize.empty-commit",
         "task validated but produced no diff — nothing to finalize",
-        None,
+        Some(unit.location()),
         Some("make a change, then re-run `jigc task finalize`".to_string()),
     )
 }
 
-/// A blocking finding for an I/O failure reading the staged commit doc during render.
+/// A blocking finding for an I/O failure reading the staged commit doc during render. Its
+/// subject is the staged **file**, so it [keys at its path](file_location).
 fn render_io_finding(path: &Path, err: &std::io::Error) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -852,7 +926,7 @@ fn render_io_finding(path: &Path, err: &std::io::Error) -> Finding {
             "could not read the staged commit doc `{}`: {err}",
             path.display()
         ),
-        Some(Location::at(1, 1)),
+        Some(file_location(path.display())),
         None,
     )
 }
@@ -862,6 +936,17 @@ mod tests {
     use super::*;
     use crate::state;
     use std::path::PathBuf;
+
+    /// The finding's **key target** — the address its stable `(code, target)` key derives
+    /// from ([`Finding::key`]). Every `finalize.*` block declares one: the work-unit ref
+    /// where the subject is the unit, the file path where it is a file
+    /// (`design/command-output-contract.md` → the finalize sub-table).
+    fn target(finding: &Finding) -> Option<&str> {
+        finding
+            .location
+            .as_ref()
+            .and_then(|location| location.address.as_deref())
+    }
 
     /// A no-delta resolved cascade — the post-pass leaves every emitted severity
     /// untouched, so a report built over it carries exactly its emitted findings.
@@ -1110,6 +1195,12 @@ sections:
         assert_eq!(err.len(), 1, "one preflight finding");
         assert_eq!(err[0].code, "finalize.base-mismatch");
         assert_eq!(err[0].severity, Severity::Blocking);
+        assert_eq!(
+            target(&err[0]),
+            Some("task:add-rate-limiter"),
+            "the diverged TASK keys at its own work-unit ref — else every diverged task in \
+             every repo collides on `(finalize.base-mismatch, null)`",
+        );
         assert!(
             err[0].route.is_some(),
             "the divergence block carries a switch-back/discard route"
@@ -1164,6 +1255,11 @@ sections:
         .expect_err("an empty diff aborts");
         assert_eq!(err.len(), 1);
         assert_eq!(err[0].code, "finalize.empty-commit");
+        assert_eq!(
+            target(&err[0]),
+            Some("task:add-rate-limiter"),
+            "the empty-commit abort keys at the work unit that produced nothing",
+        );
         assert!(
             err[0].message.contains("produced no diff"),
             "the empty-commit message is the produced-no-diff abort: {:?}",
@@ -1285,6 +1381,11 @@ sections:
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].code, "finalize.migration-no-replacement");
         assert_eq!(findings[0].severity, Severity::Blocking);
+        assert_eq!(
+            target(&findings[0]),
+            Some("CHANGELOG.md"),
+            "the refused retire keys at the foreign source FILE — it has no managed identity",
+        );
         assert!(
             findings[0].message.contains("CHANGELOG.md"),
             "the finding names the foreign original it refused to retire: {:?}",
@@ -1416,6 +1517,11 @@ sections:
         assert_eq!(err.len(), 1);
         assert_eq!(err[0].code, "finalize.no-task");
         assert_eq!(err[0].severity, Severity::Blocking);
+        assert_eq!(
+            target(&err[0]),
+            Some("task:nonexistent"),
+            "the absent-area block keys at the WORK UNIT, not at the path it looked in",
+        );
     }
 
     /// The finalize-promote **clobber guard** (review S1, `design/auto-migration.md` →
@@ -1460,6 +1566,11 @@ sections:
         assert_eq!(findings.len(), 1, "exactly one clobber finding");
         assert_eq!(findings[0].code, "finalize.promote-clobber");
         assert_eq!(findings[0].severity, Severity::Blocking);
+        assert_eq!(
+            target(&findings[0]),
+            Some("decisions/single-node-cache.md"),
+            "the clobber refusal keys at the destination FILE it refused to overwrite",
+        );
         assert!(
             findings[0]
                 .message
@@ -1814,6 +1925,7 @@ sections:
         with_placement.insert(schema.ty.clone(), schema.clone());
 
         let plan = plan_milestone_finalize(
+            "page-rework",
             &staging,
             &base(),
             &base().sha,
@@ -1958,6 +2070,7 @@ sections:
         // divergence-routing CODE, no plan (its route is the milestone arm's — asserted in
         // `base_mismatch_route_is_unit_aware`).
         let err = plan_milestone_finalize(
+            "cache-rework",
             &staging,
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
@@ -1975,6 +2088,7 @@ sections:
         // and the preflight proceeds (the finalize base-guard refinement). The milestone's own
         // record-only bookkeeping is tolerated; only external drift keeps the block above.
         let plan = plan_milestone_finalize(
+            "cache-rework",
             &staging,
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
@@ -1991,6 +2105,7 @@ sections:
 
         // (Preflight) a missing staging area aborts before anything.
         let err = plan_milestone_finalize(
+            "none",
             &root.path().join("milestones").join("none").join("merged"),
             &base(),
             &base().sha,
@@ -2001,9 +2116,15 @@ sections:
         )
         .expect_err("a missing staging area aborts preflight");
         assert_eq!(err[0].code, "finalize.no-task");
+        assert_eq!(
+            target(&err[0]),
+            Some("milestone:none"),
+            "the shared constructor keys at the MILESTONE — the caller's unit tells it apart",
+        );
 
         // (Empty-commit guard) base matches but no diff → produced-no-diff abort.
         let err = plan_milestone_finalize(
+            "cache-rework",
             &staging,
             &base(),
             &base().sha,
@@ -2014,10 +2135,16 @@ sections:
         )
         .expect_err("an empty diff aborts");
         assert_eq!(err[0].code, "finalize.empty-commit");
+        assert_eq!(
+            target(&err[0]),
+            Some("milestone:cache-rework"),
+            "the milestone's empty-commit abort keys at the milestone",
+        );
 
         // (Clean) the plan carries the SUBSTITUTED synthesized message verbatim (never a
         // commit-doc render) and the SHARED promote/hash set over the materialized doc.
         let plan = plan_milestone_finalize(
+            "cache-rework",
             &staging,
             &base(),
             &base().sha,
@@ -2116,6 +2243,7 @@ sections:
             .join("merged");
         stage_filled_adr(&staging, "cache-strategy");
         let err = plan_milestone_finalize(
+            "cache-rework",
             &staging,
             &base(),
             head,
@@ -2128,6 +2256,11 @@ sections:
         assert_eq!(err.len(), 1, "one preflight finding");
         assert_eq!(err[0].code, "finalize.base-mismatch");
         assert_eq!(err[0].severity, Severity::Blocking);
+        assert_eq!(
+            target(&err[0]),
+            Some("milestone:cache-rework"),
+            "same code, a different unit — and a different KEY: the milestone's own ref",
+        );
 
         let message = &err[0].message;
         assert!(
@@ -2171,6 +2304,7 @@ sections:
         stage_filled_adr(&task_dir, "keep-sessions-in-memory");
 
         let decision = decide_base_repin(
+            "add-rate-limiter",
             &task_dir,
             &base(),
             &base().sha,
@@ -2193,6 +2327,7 @@ sections:
         stage_filled_adr(&task_dir, "keep-sessions-in-memory");
 
         let decision = decide_base_repin(
+            "add-rate-limiter",
             &task_dir,
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
@@ -2221,6 +2356,7 @@ sections:
         ];
         let dirty = ["src/auth.rs".to_string(), "src/limiter.rs".to_string()];
         let err = decide_base_repin(
+            "add-rate-limiter",
             &task_dir,
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
@@ -2255,6 +2391,7 @@ sections:
         let mut dirty_rev = dirty.to_vec();
         dirty_rev.reverse();
         let err_rev = decide_base_repin(
+            "add-rate-limiter",
             &task_dir,
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
@@ -2280,6 +2417,7 @@ sections:
         stage_filled_adr(&task_dir, "keep-sessions-in-memory");
 
         let err = decide_base_repin(
+            "add-rate-limiter",
             &task_dir,
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",

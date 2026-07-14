@@ -1493,6 +1493,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         .expect("the materialized docs dir has a parent staging area")
         .to_path_buf();
     let plan = match plan_milestone_finalize(
+        milestone_id,
         &staging_dir,
         &base,
         &head,
@@ -1502,21 +1503,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         &schemas,
     ) {
         Ok(plan) => plan,
-        Err(findings) => {
-            for finding in &findings {
-                eprintln!("{}", finding.message);
-                if let Some(route) = &finding.route {
-                    eprintln!("  route: {route}");
-                }
-            }
-            // The same outcome class as the task-finalize planner block: a
-            // `plan_*_finalize`-findings block is a validation outcome, exit 3
-            // (`design/measurement.md` → The capture substrate, item 2).
-            return Ok(Outcome::with_findings(
-                crate::task::EXIT_VALIDATION_BLOCKED,
-                &findings,
-            ));
-        }
+        Err(findings) => return blocked(&jigc_home, format, findings),
     };
 
     // `squash: false` — lay down the per-sub-task commits in id order now (the planner's
@@ -1795,6 +1782,41 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
 /// commit doc is `commit:<sub-id>` (the `commit:<task-id>` provisioning convention),
 /// the transient type whose sink is the git message.
 const COMMIT_TYPE: &str = "commit";
+
+/// Surface a **blocked** milestone `finalize` — the funnel the per-task planner block already
+/// rides ([`crate::task`]'s `blocked`): `--format json` prints the pinned findings envelope on
+/// stdout (keys and all), the agent/human view keeps its message + route lines on stderr, and
+/// the exit is the validation outcome (3) either way (`design/measurement.md` → The capture
+/// substrate, item 2).
+///
+/// **The envelope, not prose (M42 inc-9 T4).** §3's consumer list is *descriptive, not
+/// constitutive* (`design/command-output-contract.md` → the findings envelope): a verb that
+/// hands a driver a `Finding` **is** a consumer of the envelope. A blocked milestone finalize
+/// handed one to nobody — it printed the message and the route as text in every format — so
+/// the milestone arm of `finalize.base-mismatch` reached no driver at all. It now rides the
+/// same envelope as its task sibling, keyed at `milestone:<id>`.
+fn blocked(jigc_home: &Path, format: Format, findings: Vec<Finding>) -> Result<Outcome> {
+    let pack = make_pack()?;
+    let cascade = crate::start::resolve_severity_cascade(
+        pack.as_ref(),
+        &jigc_home.join(".jigc").join("config"),
+    )?;
+    let report = engine::result::ValidationReport::new(findings, &cascade);
+    if format == Format::Json {
+        print!("{}", render::validation(format, &report));
+    } else {
+        for finding in &report.findings {
+            eprintln!("{}", finding.message);
+            if let Some(route) = &finding.route {
+                eprintln!("  route: {route}");
+            }
+        }
+    }
+    Ok(Outcome::with_findings(
+        crate::task::EXIT_VALIDATION_BLOCKED,
+        &report.findings,
+    ))
+}
 
 /// Resolve the `finalize.fan-out.squash` knob for the project at `repo_root` —
 /// `true` (the pack default) keeps the single CLI-synthesized aggregate commit; `false`

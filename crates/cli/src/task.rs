@@ -36,7 +36,7 @@ use engine::address::Address;
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::file_state::{self, FileStateRecord};
 use engine::finalize::{Promotion, RepinDecision, decide_base_repin, plan_finalize};
-use engine::finding::Finding;
+use engine::finding::{Finding, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
 use engine::schema::Schema;
@@ -674,6 +674,7 @@ impl TaskArea {
         // owns the decision (`design/finalize.md` → Parallel hand-editing, the
         // 2026-06-12 phase-1 amendment).
         let base = match decide_base_repin(
+            id,
             &self.dir,
             &base,
             &head,
@@ -781,7 +782,7 @@ impl TaskArea {
                 if findings.iter().any(|f| f.code == "finalize.empty-commit")
                     && !git_dirty_paths(&self.repo_root)?.is_empty() =>
             {
-                return self.blocked(vec![nothing_staged_finding()], format);
+                return self.blocked(vec![nothing_staged_finding(id)], format);
             }
             Err(findings) => return self.blocked(findings, format),
         };
@@ -916,7 +917,7 @@ impl TaskArea {
                 // recorded hook decision honored (`design/finalize.md` → 6. Commit,
                 // M40 item 3): the hook output IS the correction signal.
                 if let Some(stage) = err.downcast_ref::<StageGitFailure>() {
-                    return self.blocked(vec![stage_failed_finding(&stage.0)], format);
+                    return self.blocked(vec![stage_failed_finding(id, &stage.0)], format);
                 }
                 eprintln!("{}", render::operational_error(format, &err));
                 Ok(Outcome::failure())
@@ -1635,12 +1636,26 @@ fn mark_stage_failure(err: anyhow::Error) -> anyhow::Error {
 /// routed blocking finding pointing at `git add` — distinct from the genuinely-clean
 /// engine `finalize.empty-commit` ("produced no diff"), selected CLI-side
 /// (`design/finalize.md` → Dirty-tree policy, revised M30).
-fn nothing_staged_finding() -> Finding {
-    Finding::block(
+///
+/// [Keys at the task](work_unit_location) — one of the two `finalize.*` members living in the
+/// CLI, which the design's file-scoped census missed (M42 inc-9 T4).
+fn nothing_staged_finding(task_id: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
         "finalize.nothing-staged",
         "you staged nothing — the working tree has changes but the index is empty",
-        "`git add` your changes, then re-run `jigc task finalize`",
+        Some(work_unit_location(task_id)),
+        Some("`git add` your changes, then re-run `jigc task finalize`".to_string()),
     )
+}
+
+/// The **work-unit ref** [`Location`] a `finalize.*` block whose subject is the task keys at
+/// — `task:<id>`, the container address the engine's `finalize.rs` siblings carry
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → the form
+/// table, the work-unit row). Without it both CLI members projected the degenerate key
+/// `(code, null)`: every staged-nothing block in every repo was one key.
+fn work_unit_location(task_id: &str) -> Location {
+    Location::addressed(format!("task:{task_id}"), 1, 1)
 }
 
 /// The M40 F7 routed stage-failure block (`design/finalize.md` → M40 refinement item
@@ -1648,16 +1663,22 @@ fn nothing_staged_finding() -> Finding {
 /// with the git stderr embedded verbatim — previously a raw enveloped operational error
 /// with no code and no route. The rollback has already run when this surfaces (the
 /// executor's shared `Err` arm). Code executor-chosen in the `finalize.*` family (the
-/// design names no code; `DECISIONS.md` 2026-07-10 M40 Inc 1 T3).
-fn stage_failed_finding(git_error: &str) -> Finding {
-    Finding::block(
+/// design names no code; `DECISIONS.md` 2026-07-10 M40 Inc 1 T3). [Keys at the
+/// task](work_unit_location) — the second CLI-resident member of the family.
+fn stage_failed_finding(task_id: &str, git_error: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
         "finalize.stage-failed",
         format!(
             "jigc could not stage its own changes — no commit was made and the \
              promotions were rolled back: {git_error}"
         ),
-        "resolve the embedded git failure (e.g. remove a stale `.git/index.lock`), \
-         then re-run `jigc task finalize`",
+        Some(work_unit_location(task_id)),
+        Some(
+            "resolve the embedded git failure (e.g. remove a stale `.git/index.lock`), \
+             then re-run `jigc task finalize`"
+                .to_string(),
+        ),
     )
 }
 
