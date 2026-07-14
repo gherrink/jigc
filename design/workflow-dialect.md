@@ -139,6 +139,14 @@ The six rules:
 
 The footer reinforces the bootstrap routing pointer on every CLI emission, so context compaction can't strip the agent's a-priori knowledge that the CLI is the interface ([bootstrap.md](bootstrap.md) → Context compaction resilience). It is CLI-emitted at phase 9 of the [resolution algorithm](overrides.md#resolution-algorithm), after step content; a step body never authors it. JSON-format output (consumed by tooling, not the agent's reading flow) carries no footer. Stays within the *routing, not content* discipline: names the entrypoint, embeds no rules.
 
+**The `create-gates:` line (M42).** A composed **task** carries one more frontend-appended line, immediately *before* the footer — the doctypes the composing workflow's `allows-create` grants, in declaration order:
+
+```
+create-gates: adr, changelog
+```
+
+Same mold, same rationale: CLI-emitted after step content, never authored by a step body, and **absent from the JSON projection** (the composed-output contract is pinned at exactly `{task, text}` — [command-output-contract.md](command-output-contract.md) §1 — so the gate list is *presentation*, never a key). Before it, the **only** surface in the binary that named a task's gates was the `create.gate-blocked` **refusal** ([write-commands.md](write-commands.md) → The create-gate): an agent learned its gates by tripping one, and a step that instructs a `doc create` the composing workflow does not gate is a prompt the binary refuses (the rc.5 trial's changelog defect). A workflow that grants **no** gate (`quick-fix`, a `creates-task: false` router) emits **no line at all** — omitted, never printed as `none`. The line and the refusal read the same `allows-create` declaration, so they cannot disagree.
+
 **Honest boundary.** Recognition of these four markers is **convention**, not parser-enforced on the agent side — agents read the emitted text as humans do, and the markers' job is to be unambiguous *to a reader*, not to be machine-parsed downstream. Consistent with [VISION.md](../VISION.md) principle #3 (compliance is by ergonomics, not sandbox). The CLI guarantees the *shape* of the emitted text; reading it as intended is the agent's responsibility.
 
 **Data-values are full graph navigation, no logic** — and the path syntax turns on one rule that disambiguates the connectors:

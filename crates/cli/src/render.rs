@@ -12,8 +12,8 @@
 use crate::cli::Format;
 use crate::ingest::IngestReport;
 use crate::setup::{InstallCommit, SetupSummary, UninstallSummary};
+use crate::start::Composition;
 use crate::task::TaskListRow;
-use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Findings, Severity};
 use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
@@ -125,32 +125,64 @@ pub fn orientation_clean(
 }
 
 /// Render a composed workflow to the surface `format` selects: `agent` / `human`
-/// emit the engine's four-class composed text followed by the routing footer
-/// (`design/workflow-dialect.md` → Routing footer — every composed workflow
-/// output in agent-text and human-pretty ends with the one-line footer); `json`
-/// emits the **generic** JSON projection of the [`ComposedWorkflow`] with **no**
-/// footer (consumed by tooling, not the agent's reading flow).
+/// emit the engine's four-class composed text, then the [`create_gates_line`], then
+/// the routing footer (`design/workflow-dialect.md` → Routing footer — every composed
+/// workflow output in agent-text and human-pretty ends with the one-line footer);
+/// `json` emits the **generic** JSON projection of the [`ComposedWorkflow`](engine::compose::ComposedWorkflow) with
+/// **no** footer and **no** gates line (consumed by tooling, not the agent's reading
+/// flow).
 ///
-/// The footer is appended here, in the frontend — never by the engine, which
-/// stays presentation-free (the engine view carries the footerless text). The
-/// composed text already ends with a trailing newline; the footer follows it on
-/// its own line.
+/// Both trailing lines are appended here, in the frontend — never by the engine, which
+/// stays presentation-free (the engine view carries the footerless text). The composed
+/// text already ends with a trailing newline; the gates line and the footer follow it,
+/// each on its own line.
+///
+/// The gates ride on the CLI-side [`Composition`], **not** on the engine's composed view:
+/// the composed-output JSON is pinned at exactly `{task, text}`
+/// (`design/command-output-contract.md` §1), so the agent-facing gate list is
+/// presentation, and adds no key to the contract.
 ///
 /// Wired into the `jigc start "<intent>"` dispatch (`crate::cli::run_compose`),
 /// which mints a task and emits this composed view.
-pub fn composed(format: Format, view: &ComposedWorkflow) -> String {
+pub fn composed(format: Format, view: &Composition) -> String {
     match format {
-        Format::Json => json(view),
+        // Exactly the pinned `{task, text}` projection — the presentation lines below
+        // reach no tooling consumer.
+        Format::Json => json(&view.view),
         Format::Agent | Format::Human => {
-            let mut out = String::with_capacity(view.text.len() + ROUTING_FOOTER.len() + 1);
-            out.push_str(&view.text);
-            if !view.text.ends_with('\n') {
+            let text = &view.view.text;
+            let gates = create_gates_line(&view.gates);
+            let mut out =
+                String::with_capacity(text.len() + gates.len() + ROUTING_FOOTER.len() + 1);
+            out.push_str(text);
+            if !text.ends_with('\n') {
                 out.push('\n');
             }
+            out.push_str(&gates);
             out.push_str(ROUTING_FOOTER);
             out
         }
     }
+}
+
+/// The `create-gates:` line a composed task carries immediately before the
+/// [`ROUTING_FOOTER`] (M42) — the doctypes the composing workflow's `allows-create`
+/// grants, in declaration order (`create-gates: adr, changelog`).
+///
+/// Before this line, the **only** surface in the binary that named a task's gates was
+/// the `create.gate-blocked` **refusal** — an agent learned its gates by tripping one.
+/// It joins the footer's mold (frontend-appended presentation, agent/human only) rather
+/// than the JSON contract, which stays pinned at `{task, text}`.
+///
+/// A workflow that grants **no** gate (`quick-fix`, a `creates-task: false` router)
+/// renders **no bytes at all** — the line is omitted, never printed as `none`: the
+/// omitting context stays inert, and the footer follows the composed text exactly as
+/// before.
+fn create_gates_line(gates: &[String]) -> String {
+    if gates.is_empty() {
+        return String::new();
+    }
+    format!("create-gates: {}\n", gates.join(", "))
 }
 
 /// Render the `--explain` [`ResolutionTree`] to the surface `format` selects:
@@ -1810,6 +1842,7 @@ pub fn describe(format: Format, description: &Description) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use engine::compose::ComposedWorkflow;
     use engine::result::{Catalog, CatalogEntry, Orientation};
 
     fn fixture() -> Orientation {
@@ -2011,27 +2044,47 @@ mod tests {
         assert!(text.ends_with(ROUTING_FOOTER));
     }
 
-    /// A composed workflow rendered to agent-text ends with the routing footer
-    /// (`design/workflow-dialect.md` → Routing footer), appended in the frontend
-    /// after the engine's footerless four-class text. JSON carries none.
+    /// A composed workflow rendered to agent-text carries the `create-gates:` line then
+    /// the routing footer (`design/workflow-dialect.md` → Routing footer), both appended
+    /// in the frontend after the engine's footerless four-class text. JSON carries
+    /// neither, and stays the pinned `{task, text}` projection of the composed view.
     #[test]
-    fn render_composed_agent_text_ends_with_routing_footer() {
+    fn render_composed_agent_text_names_the_gates_then_the_footer() {
         let view = ComposedWorkflow {
             task: Some("add-rate-limiter".to_string()),
             text: "Reason about the change.\nRun: `jigc task finalize add-rate-limiter`\n"
                 .to_string(),
         };
+        let granting = Composition {
+            view: view.clone(),
+            gates: vec!["adr".to_string(), "changelog".to_string()],
+        };
 
-        let agent = composed(Format::Agent, &view);
+        let agent = composed(Format::Agent, &granting);
         assert!(agent.ends_with(ROUTING_FOOTER));
         assert!(agent.contains("Run: `jigc task finalize add-rate-limiter`"));
+        assert!(
+            agent.contains("create-gates: adr, changelog\n— jigc"),
+            "the gates line sits immediately before the footer; got:\n{agent}",
+        );
 
         // Human renders identically to agent in the MVP (TUI is post-MVP).
-        assert_eq!(composed(Format::Human, &view), agent);
+        assert_eq!(composed(Format::Human, &granting), agent);
 
-        // JSON is the generic projection of the result type — no footer.
-        let json_out = composed(Format::Json, &view);
+        // A gate-less workflow renders no line at all — omitted, never `none`.
+        let gateless = Composition {
+            view: view.clone(),
+            gates: Vec::new(),
+        };
+        let bare = composed(Format::Agent, &gateless);
+        assert!(!bare.contains("create-gates"), "got:\n{bare}");
+        assert!(bare.ends_with(ROUTING_FOOTER));
+
+        // JSON is the generic projection of the composed view — the pinned `{task, text}`
+        // (`design/command-output-contract.md` §1): no footer, and no gates key or line.
+        let json_out = composed(Format::Json, &granting);
         assert!(!json_out.contains(ROUTING_FOOTER));
+        assert!(!json_out.contains("create-gates"));
         let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, view);
     }

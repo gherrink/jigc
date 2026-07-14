@@ -1235,7 +1235,7 @@ fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
 /// directive per sub-task, id-ordered). The lone production site feeding
 /// [`ComposeContext::milestone`] non-empty; **mints nothing** (the milestone and its
 /// sub-tasks already exist).
-fn run_execute(cwd: &Path, milestone_id: &str) -> Result<engine::compose::ComposedWorkflow> {
+fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Composition> {
     // The `.jigc/` area binds to jigc_home (the main checkout); the compose feed resolves
     // the same split internally (it derives jigc_home from the worktree `repo_root`).
     let repo_root = discover_repo_root(cwd)
@@ -2083,7 +2083,8 @@ mod tests {
         let fed = vec!["zebra-fix".to_owned(), "alpha-fix".to_owned()];
         let composed =
             execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &fed)
-                .expect("milestone-execution composes over the fed sub-task list");
+                .expect("milestone-execution composes over the fed sub-task list")
+                .view;
 
         // Exactly one Spawn line per sub-task, each `cd`-ing into its own worktree
         // before the bare re-entry workflow + id.
@@ -2117,7 +2118,8 @@ mod tests {
         let reversed = vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()];
         let composed_rev =
             execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &reversed)
-                .expect("the reversed feed composes");
+                .expect("the reversed feed composes")
+                .view;
         assert_eq!(
             composed.text, composed_rev.text,
             "the fan-out emit must be byte-identical across divergent feed orders (id-sorted on resolve)",

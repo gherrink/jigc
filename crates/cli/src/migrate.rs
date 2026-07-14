@@ -28,7 +28,6 @@ use crate::invocation_log::Outcome;
 use crate::render;
 use crate::start;
 use anyhow::{Context, Result, anyhow, bail};
-use engine::compose::ComposedWorkflow;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::state;
 use std::path::{Component, Path, PathBuf};
@@ -138,7 +137,7 @@ fn repo_relative_source_path(repo_root: &Path, path: &str) -> String {
 /// happens before composition so the seam can be fed off the just-staged bytes; a
 /// failed compose leaves the minted task in place for inspection / re-entry (the
 /// determinism boundary keeps the seam read CLI-owned).
-fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<ComposedWorkflow> {
+fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<crate::start::Composition> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
         bail!(

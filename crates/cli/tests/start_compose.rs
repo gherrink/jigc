@@ -150,6 +150,7 @@ are staged (`git add`) first — finalize commits only the staged set plus the
 docs it manages:
 
 Run: `jigc task finalize add-rate-limiter`
+create-gates: adr, changelog
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

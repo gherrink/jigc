@@ -522,6 +522,35 @@ fn resolve_research_advisory(text: String, advise: bool) -> String {
     result
 }
 
+/// A composed workflow **plus** the CLI-side presentation facts the pinned composed-output
+/// JSON contract does not carry (M42) — today the composing workflow's **create-gates**.
+///
+/// The contract is exactly `{task, text}` (`design/command-output-contract.md` §1), so a
+/// gate list cannot ride the engine's [`ComposedWorkflow`] (every field of which projects
+/// into that JSON). It rides here instead, next to it: the CLI renderer appends the
+/// `create-gates:` line to agent/human text only — the same frontend-appended mold as the
+/// routing footer — and projects the [`ComposedWorkflow`] alone on `--format json`.
+#[derive(Debug)]
+pub struct Composition {
+    /// The composed view — the pinned `{task, text}` JSON projection, verbatim.
+    pub view: ComposedWorkflow,
+    /// The doctypes the composing workflow's `allows-create` grants, in declaration order
+    /// (the `create-gates:` presentation line). Empty for a gate-less workflow
+    /// (`quick-fix`, a `creates-task: false` router) — which renders no line at all.
+    pub gates: Vec<String>,
+}
+
+/// The composing workflow's create-gate doctypes, in declaration order — the source of the
+/// `create-gates:` line and the same list the `create.gate-blocked` refusal enumerates
+/// (`design/write-commands.md` → The create-gate), so the announcement and the refusal can
+/// never disagree.
+fn create_gates(def: &WorkflowDef) -> Vec<String> {
+    def.allows_create
+        .iter()
+        .map(|entry| entry.doc_type.clone())
+        .collect()
+}
+
 /// Mint a task from `intent`, then compose the cascade's default workflow over
 /// it — the `jigc start "<intent>"` front door.
 ///
@@ -540,7 +569,7 @@ pub fn compose_in_repo(
     start: &Path,
     intent: &str,
     slug_override: Option<&str>,
-) -> Result<ComposedWorkflow> {
+) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
@@ -582,7 +611,7 @@ pub fn compose_named_in_repo(
     intent: &str,
     workflow_id: &str,
     slug_override: Option<&str>,
-) -> Result<ComposedWorkflow> {
+) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
@@ -625,10 +654,7 @@ pub fn compose_named_in_repo(
 ///
 /// An unknown `<X>` surfaces its routed not-found finding from the cascade read,
 /// before any branch — the same rejection the intent-bearing Form D gives.
-pub fn compose_named_no_intent_in_repo(
-    start: &Path,
-    workflow_id: &str,
-) -> Result<ComposedWorkflow> {
+pub fn compose_named_no_intent_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
@@ -679,7 +705,7 @@ pub fn execute_milestone_in_repo(
     start: &Path,
     workflow_id: &str,
     milestone_ids: &[String],
-) -> Result<ComposedWorkflow> {
+) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
@@ -725,7 +751,7 @@ pub(crate) fn compose_migrate_in_repo(
     task_id: &str,
     workflow_id: &str,
     foreign: &str,
-) -> Result<ComposedWorkflow> {
+) -> Result<Composition> {
     let pack = make_pack()?;
     let pack = pack.as_ref();
     let (resolved, overrides) = resolve_cascade(pack, project_config)?;
@@ -784,10 +810,15 @@ pub(crate) fn compose_migrate_in_repo(
         return Err(finding_to_err(located));
     }
     // The verb already minted the off-router task, so its id is the in-hand handle
-    // surfaced in `--format json` (`command-output-contract.md` §1).
-    result.map(|composed| ComposedWorkflow {
-        task: Some(task_id.to_string()),
-        ..composed
+    // surfaced in `--format json` (`command-output-contract.md` §1). The migration
+    // workflow's own create-gate (the doctype it migrates *into*) rides alongside as the
+    // `create-gates:` presentation line.
+    result.map(|composed| Composition {
+        view: ComposedWorkflow {
+            task: Some(task_id.to_string()),
+            ..composed
+        },
+        gates: create_gates(&def),
     })
 }
 
@@ -807,7 +838,7 @@ pub(crate) fn execute_milestone_core(
     workflow_id: &str,
     source: &dyn StepSource,
     milestone_ids: &[String],
-) -> Result<ComposedWorkflow> {
+) -> Result<Composition> {
     let overrides = ComposeOverrides {
         deltas: Vec::new(),
         slot_fills: Vec::new(),
@@ -850,7 +881,7 @@ fn compose_drained(
     milestone_ids: &[String],
     seam: Option<&str>,
     slug_override: Option<&str>,
-) -> Result<ComposedWorkflow> {
+) -> Result<Composition> {
     // Scope the step source's pack-default arm to the composing workflow's origin
     // pack, so its `{{include: step:X}}` resolves against the pack that *defines*
     // the workflow — the pack-local body-reference rule (`multi-pack.md` →
@@ -927,7 +958,7 @@ fn compose_core(
     milestone_ids: &[String],
     seam: Option<&str>,
     slug_override: Option<&str>,
-) -> Result<ComposedWorkflow> {
+) -> Result<Composition> {
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
     let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     // The manifest's `structural-op` deltas scoped to *this* workflow id — a
@@ -1063,9 +1094,14 @@ fn compose_core(
         ctx: &ctx,
     };
     let composed = compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err)?;
-    Ok(ComposedWorkflow {
-        task: task_id,
-        text: resolve_research_advisory(composed.text, advise_research),
+    Ok(Composition {
+        view: ComposedWorkflow {
+            task: task_id,
+            text: resolve_research_advisory(composed.text, advise_research),
+        },
+        // The composing workflow's create-gates — the CLI-side presentation fact the
+        // renderer names on the `create-gates:` line (never the pinned JSON).
+        gates: create_gates(&def),
     })
 }
 
@@ -1499,7 +1535,7 @@ pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogE
 /// A nonexistent id rejects with `no task \`<id>\``; a base mismatch rejects with
 /// the divergence-routing prompt (`write-commands.md` → Base mismatch on an
 /// existing task).
-pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
+pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
@@ -1566,7 +1602,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
 /// A nonexistent id rejects with `no task \`<id>\``; a `<W>` ≠ the recorded workflow
 /// rejects with a routed `workflow-refs.workflow-mismatch` block naming both ids + the
 /// sub-task; a base mismatch rejects with the divergence-routing prompt.
-pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<ComposedWorkflow> {
+pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
@@ -1651,7 +1687,7 @@ fn compose_task_workflow(
     workflow_id: &str,
     head: &BasePin,
     provision: bool,
-) -> Result<ComposedWorkflow> {
+) -> Result<Composition> {
     let intent = state::read_intent(task_dir)
         .with_context(|| format!("could not read intent for `{id}`"))?;
     let bound =
@@ -1762,11 +1798,16 @@ fn compose_task_workflow(
     };
     let composed = compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store))
         .map_err(finding_to_err)?;
-    Ok(ComposedWorkflow {
-        // Resume / reenter re-composes the given task, so its id is the in-hand handle
-        // surfaced in `--format json` (`command-output-contract.md` §1).
-        task: Some(id.to_string()),
-        text: resolve_research_advisory(composed.text, advise_research),
+    Ok(Composition {
+        view: ComposedWorkflow {
+            // Resume / reenter re-composes the given task, so its id is the in-hand handle
+            // surfaced in `--format json` (`command-output-contract.md` §1).
+            task: Some(id.to_string()),
+            text: resolve_research_advisory(composed.text, advise_research),
+        },
+        // A resumed task carries the same gates its workflow granted at mint — the
+        // announcement re-shows on every re-compose, exactly like the routing footer.
+        gates: create_gates(&def),
     })
 }
 
@@ -3216,7 +3257,8 @@ mod tests {
             None,
             None,
         )
-        .expect("Form-D compose of ingest-existing");
+        .expect("Form-D compose of ingest-existing")
+        .view;
 
         // (a) creates-task: false ⇒ no working area is minted.
         assert!(
@@ -3330,7 +3372,8 @@ mod tests {
             None,
             None,
         )
-        .expect("no-task compose");
+        .expect("no-task compose")
+        .view;
 
         // (a) The no-task arm mints nothing: no working area is opened.
         assert!(
@@ -3556,7 +3599,8 @@ mod tests {
             None,
             None,
         )
-        .expect("flow 3a's different-id re-include composes clean");
+        .expect("flow 3a's different-id re-include composes clean")
+        .view;
 
         assert!(
             composed.text.contains("pack implement body")
@@ -3674,6 +3718,7 @@ mod tests {
                 None,
             )
             .expect("flow composes under the replace delta")
+            .view
             .text
         };
 
@@ -3745,7 +3790,8 @@ mod tests {
             None,
             None,
         )
-        .expect("Form-D compose of a creates-task workflow");
+        .expect("Form-D compose of a creates-task workflow")
+        .view;
 
         let dir = repo
             .path()
@@ -4410,7 +4456,8 @@ mod tests {
             None,
             None,
         )
-        .expect("the loser-pack workflow composes");
+        .expect("the loser-pack workflow composes")
+        .view;
 
         assert!(
             composed.text.contains("LOWER implement body"),
@@ -4457,7 +4504,8 @@ mod tests {
             None,
             None,
         )
-        .expect("the winner-pack workflow composes");
+        .expect("the winner-pack workflow composes")
+        .view;
 
         assert!(
             composed.text.contains("HIGHER implement body")
@@ -4497,7 +4545,8 @@ mod tests {
             None,
             None,
         )
-        .expect("compose over the single-pack composite");
+        .expect("compose over the single-pack composite")
+        .view;
         let over_bare = compose_drained(
             repo.path(),
             "anything",
@@ -4509,7 +4558,8 @@ mod tests {
             None,
             None,
         )
-        .expect("compose over the bare pack");
+        .expect("compose over the bare pack")
+        .view;
 
         assert_eq!(
             over_composite.text, over_bare.text,
@@ -4600,7 +4650,8 @@ mod tests {
         )
         .expect(
             "the loser-pack workflow must resolve its own `{{cli.low-cmd}}` against ITS pack's catalog",
-        );
+        )
+        .view;
 
         assert!(
             composed.text.contains("Run: `jigc noop`"),
@@ -4640,7 +4691,8 @@ mod tests {
             None,
             None,
         )
-        .expect("the winner-pack workflow composes its own command-ref");
+        .expect("the winner-pack workflow composes its own command-ref")
+        .view;
 
         assert!(
             composed.text.contains("Run: `jigc noop`"),
@@ -4680,7 +4732,8 @@ mod tests {
             None,
             None,
         )
-        .expect("compose over the single-pack composite");
+        .expect("compose over the single-pack composite")
+        .view;
         let over_bare = compose_drained(
             repo.path(),
             "anything",
@@ -4692,7 +4745,8 @@ mod tests {
             None,
             None,
         )
-        .expect("compose over the bare pack");
+        .expect("compose over the bare pack")
+        .view;
 
         assert_eq!(
             over_composite.text, over_bare.text,
@@ -5544,7 +5598,8 @@ mod tests {
             None,
             None,
         )
-        .expect("shadowed flow composes");
+        .expect("shadowed flow composes")
+        .view;
         assert!(
             shadowed.text.contains("PROJECT BODY MARKER")
                 && !shadowed.text.contains("PACK BODY MARKER"),
@@ -5566,7 +5621,8 @@ mod tests {
             None,
             None,
         )
-        .expect("pack-baseline flow composes");
+        .expect("pack-baseline flow composes")
+        .view;
         assert!(
             pack_baseline.text.contains("PACK BODY MARKER"),
             "the no-shadow baseline must read the pack body; got:\n{}",
@@ -5593,6 +5649,7 @@ mod tests {
             None,
         )
         .expect("unshadowed other composes under the shadow cascade")
+        .view
         .text;
         let other_pack = compose_core(
             repo.path(),
@@ -5607,6 +5664,7 @@ mod tests {
             None,
         )
         .expect("unshadowed other composes under the no-shadow cascade")
+        .view
         .text;
         assert_eq!(
             other_under_shadow, other_pack,

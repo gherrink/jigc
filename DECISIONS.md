@@ -2,6 +2,12 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-14 — M42 Inc 11 T6: a composed task names the gates it grants — and the gate list is *presentation*, not contract
+
+The `create-gates:` line ships as designed ([workflow-dialect.md](design/workflow-dialect.md) → Routing footer): the composing workflow's `allows-create` doctypes, in declaration order, on the line immediately before the routing footer — agent/human text only. Until now the **only** surface in the whole binary that named a task's gates was the `create.gate-blocked` **refusal**; an agent learned its gates by tripping one. One elaboration the design left to the mint:
+
+- **The gates ride *beside* the composed view, never inside it.** Every field of `engine::compose::ComposedWorkflow` projects into the pinned composed-output JSON (`{task, text}` — [command-output-contract.md](design/command-output-contract.md) §1, which M42 does not revise), so a `gates` field there would have silently extended the contract. The CLI wraps it instead — `start::Composition { view, gates }`, threaded through the seven `render::composed` call sites — and the renderer appends the line to agent/human text while projecting the `ComposedWorkflow` **alone** on `--format json`. Presentation joins the footer's mold; the contract is untouched (pinned by an emitted-bytes test that deserializes both arms and asserts the key set is exactly `{task, text}`). A gate-less workflow (`quick-fix`, a `creates-task: false` router) emits **no line** — omitted, never `none`.
+
 ## 2026-07-14 — M42 Inc 11 T5: finalize names the left-out set *before* it commits, and a rejected commit says it is survivable
 
 Both message repairs ship as designed ([finalize.md](design/finalize.md)`:119-121`, `:78`). Two elaborations the design left to the mint:
