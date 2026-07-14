@@ -175,6 +175,34 @@ A cold node loses its sessions.
     )
 }
 
+/// A **v0** `adr` — the *pre-stamp* corpus state: the v1 body shape (`status`/`date` header,
+/// `context`/`decision`/`consequences` slots, no `## Options`) with **no `schema-version:`
+/// line at all**. The byte form every ADR committed before the M34 stamp injection has.
+fn adr_v0_body(title: &str) -> String {
+    format!(
+        "\
+---
+status: accepted
+date: 2026-06-25
+---
+
+# {title}
+
+## Context
+
+Session lookups must stay sub-millisecond.
+
+## Decision
+
+Keep sessions in a single in-memory node.
+
+## Consequences
+
+A cold node loses its sessions.
+"
+    )
+}
+
 /// A **v1** `adr` that already carries a hand-authored `## Options` section at its
 /// schema-ordered home (between `## Context` and `## Decision`) — the shape an adopter who
 /// wrote the alternatives down *before* the v1→v2 bump has committed. Structurally it is
@@ -440,6 +468,99 @@ fn an_adr_that_already_carries_options_migrates_instead_of_stranding() {
     assert!(
         reval.status.success(),
         "re-validate exits 0; stdout:\n{reval_out}",
+    );
+    assert_eq!(
+        count(&reval_out, "route: migrate"),
+        0,
+        "the migrated ADR carries no migrate route; stdout:\n{reval_out}",
+    );
+}
+
+/// **The v0 dead end** (M42 completion audit, Finding 1): a **stamp-absent (v0)** ADR — the
+/// pre-stamp corpus state, the exact population the v0 arm exists to route — of a doctype now
+/// at schema-version **2** must migrate through the *whole* chain and land conformant.
+///
+/// RED before the fix: the v0 arm derived the prior shape as `strip_stamp(current)`, i.e. it
+/// assumed *a v0 doc's shape is the current schema minus the stamp*. That held only while every
+/// doctype sat at v1. `adr` has been at **schema-version 2** since M36 (the `## Options`
+/// section), so for a v0 ADR the diff carried **only** `AddedOptionalField(schema-version)`:
+/// `AddedOptionalSection` was never classified, the empty-diff backstop could not catch it (the
+/// diff is non-empty), the doc failed its parse-under-v2 gate, and it was blocked with the
+/// prose-needing route — **a lie on all three counts** (there is no new *required* prose; the
+/// write verbs cannot author it, since the doc does not parse under v2; and re-running changes
+/// nothing). The doc was a **permanent** dead end, byte-unchanged forever, while `jigc validate`
+/// went on routing it at the verb that refused it.
+///
+/// The fix: the v0 arm sources the prior shape from the doctype's **earliest shipped snapshot**
+/// (`schema-snapshots/adr.v1.yaml` — which the verb ships and never consulted on this arm), so
+/// the diff is the honest v0→v2 union and the doc migrates in one pass.
+#[test]
+fn a_v0_adr_migrates_through_the_full_chain_to_the_current_version() {
+    let repo = TempDir::new("v0");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    let before = adr_v0_body("Gamma Decision");
+    commit_adr_body(repo.path(), "gamma-decision", &before);
+    // Precondition: genuinely v0 — no stamp at all — and lacking the v2 optional section, so the
+    // migration must apply *both* links of the chain (add the stamp AND splice `## Options`).
+    assert!(
+        !before.contains("schema-version") && !before.contains("## Options"),
+        "the seed ADR is unstamped (v0) and carries no Options section; got:\n{before}",
+    );
+
+    // 1. DETECT — the store sweep routes the unstamped ADR `migrate` (exit non-zero: an
+    //    unmigrated corpus is an exit-flipping exception).
+    let detect = jigc(repo.path(), home.path(), &["validate"]);
+    let detect_out = String::from_utf8_lossy(&detect.stdout);
+    assert!(
+        detect_out.contains("route: migrate — `docs/decisions/gamma-decision.md`"),
+        "the v0 ADR is routed `migrate`; stdout:\n{detect_out}",
+    );
+
+    // 2. MIGRATE — the route the detector gave must be one the verb can honour.
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let migrate_out = String::from_utf8_lossy(&migrate.stdout);
+    assert_eq!(
+        count(&migrate_out, "migrated   docs/decisions/gamma-decision.md"),
+        1,
+        "the v0 ADR MIGRATES (pre-fix: blocked, byte-unchanged, forever); stdout:\n{migrate_out}",
+    );
+    assert_eq!(
+        count(&migrate_out, "  blocked    "),
+        0,
+        "nothing is blocked — a v0 doc of a v2 doctype is not a dead end; stdout:\n{migrate_out}",
+    );
+
+    // The doc landed at the CURRENT version, structurally complete: the stamp added at 2 (not 1)
+    // and the v2 `## Options` heading spliced at its schema-ordered home.
+    let after = fs::read_to_string(adr_path(repo.path(), "gamma-decision")).expect("read adr");
+    assert!(
+        after.contains("schema-version: 2"),
+        "the stamp is added at the CURRENT version, 2; got:\n{after}",
+    );
+    assert_eq!(
+        count(&after, "## Options"),
+        1,
+        "the v2 `## Options` heading is spliced exactly once; got:\n{after}",
+    );
+    // Every authored byte survives: the header fields, the title, all three prose blocks.
+    assert!(
+        after.contains("status: accepted\ndate: 2026-06-25\n")
+            && after.contains("# Gamma Decision\n")
+            && after.contains("## Context\n\nSession lookups must stay sub-millisecond.\n")
+            && after.contains("## Decision\n\nKeep sessions in a single in-memory node.\n")
+            && after.contains("## Consequences\n\nA cold node loses its sessions.\n"),
+        "every authored byte is preserved; got:\n{after}",
+    );
+
+    // 3. RE-VALIDATE — the migrated ADR is v2-conformant, and the migrate route is gone (the
+    //    detect→migrate→detect loop terminates).
+    let reval = jigc(repo.path(), home.path(), &["validate"]);
+    let reval_out = String::from_utf8_lossy(&reval.stdout);
+    assert!(
+        reval.status.success(),
+        "re-validate exits 0 — the corpus is current; stdout:\n{reval_out}",
     );
     assert_eq!(
         count(&reval_out, "route: migrate"),

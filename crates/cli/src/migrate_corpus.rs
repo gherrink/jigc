@@ -59,9 +59,9 @@ use std::path::{Path, PathBuf};
 /// One doctype's migration job: its current shape (`to`, stamp-injected) and its current
 /// manifest schema-version (the value the stamp is filled/bumped to + the "already current"
 /// threshold). The **prior** shape (`from`) is resolved **per committed doc by stamp** in
-/// [`migrate_committed_corpus`] — stamp-absent (v0) docs derive it as `strip_stamp(to)`;
-/// below-version (v1→v2) docs source it from the versioned snapshot store via
-/// [`crate::pack::load_prior_schema`] — so it is not a per-doctype field.
+/// [`migrate_committed_corpus`] — stamp-absent (v0) docs derive it from the doctype's *earliest*
+/// shipped snapshot ([`v0_prior_shape`]); below-version (v1→v2) docs source it from the snapshot
+/// at their own stamp via [`crate::pack::load_prior_schema`] — so it is not a per-doctype field.
 pub(crate) struct DoctypeMigration {
     /// The doctype's id (the snapshot-store key + diagnostics).
     pub ty: String,
@@ -369,8 +369,11 @@ fn git_stdout(repo_root: &Path, args: &[&str]) -> Result<String> {
 /// The **prior shape (`from`) is resolved per committed doc by its schema-version stamp**
 /// (`design/corpus-migration.md` → Prior-schema sourcing):
 /// - **at-or-above** the doctype's current version → `already-current`, byte-untouched.
-/// - **stamp absent** (the v0 corpus state) → `from = strip_stamp(to)`, the unchanged
-///   `added-optional-field` stamp path (the live Inc-3 dogfood); the stamp is *added*.
+/// - **stamp absent** (the v0 corpus state) → `from` = the doctype's **earliest shipped
+///   snapshot**, stamp-stripped ([`v0_prior_shape`]; `strip_stamp(to)` only for a doctype that
+///   has never bumped, whose earliest shape *is* its current one). The diff is the whole
+///   v0→current chain — the stamp `added-optional-field` (the live Inc-3 dogfood) *plus* every
+///   structural link since v1 — and the stamp is *added* at the current value.
 /// - **below-version** (`1 ≤ k < current`, a v1→v2 transition) → `from` = the versioned
 ///   snapshot `schema-snapshots/<ty>.v<k>.yaml` via [`crate::pack::load_prior_schema`]; the
 ///   structural diff is applied **and** the stamp is **value-bumped** `k → current` (it
@@ -435,6 +438,8 @@ pub(crate) fn migrate_committed_corpus(
         // schema relocation — a `config set docs-root` move routes through
         // `crate::relocate`).
         let to_diff = docs_root_free(&to, &dt.docs_root);
+        // The stamp-absent (v0) arm's prior shape, resolved **once per doctype** (a pack read).
+        let v0_from = v0_prior_shape(pack, dt, &to_diff);
         // Each candidate is `(source, destination)` — the FROM home the walk found the
         // committed instance at, and the path the gated bytes land at
         // (`design/corpus-migration.md` → Relocation: the walk keys on the from home).
@@ -538,13 +543,12 @@ pub(crate) fn migrate_committed_corpus(
                         report.blocked.push((rel_key, route));
                     }
                 },
-                // Stamp absent (the v0 corpus state): the unchanged add-field path (the stamp
-                // is *added* at the current value via its `default`, so no post-fold bump).
+                // Stamp absent (the v0 corpus state): the add-field path (the stamp is *added*
+                // at the **current** value via its `default`, so no post-fold bump) — over the
+                // doctype's genuine v0 shape ([`v0_prior_shape`]), so the diff is the whole
+                // v0→current chain, not just the stamp.
                 None => {
-                    // Derived from the diff-side (docs-root-free) shape, so this pair is
-                    // docs-root-consistent by construction — the same invariant the
-                    // below-version arm restores by stripping the prefix off `to`.
-                    let from = strip_stamp(&to_diff);
+                    let from = v0_from.clone();
                     let changes = per_doc_changes(&schema_diff(&from, &to_diff), &source, true);
                     if changes.is_empty() {
                         // Nothing this doc needs (its shape already matches): leave it.
@@ -1045,6 +1049,48 @@ fn removed_field_route(
          `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then re-run `jigc \
          migrate-corpus`"
     )
+}
+
+/// The **v0 (pre-stamp) shape** of a doctype — the schema-diff's `from` for a **stamp-absent**
+/// committed doc, and the fix for the M42 audit's Finding 1.
+///
+/// A v0 doc predates the M34 stamp injection, so its shape is *the doctype's earliest declared
+/// shape, minus the stamp*. It sourced that as `strip_stamp(current)` — which silently asserts
+/// **the doctype never bumped**: true while every doctype sat at v1, and false since M36, when
+/// `adr` went to schema-version 2 (the `## Options` section). For a v0 ADR the diff then carried
+/// **only** the stamp add-field: `AddedOptionalSection` was never classified, the empty-diff
+/// backstop could not catch it (the diff is *non-empty*), the doc failed its parse-under-current
+/// gate, and it was blocked with the prose-needing route — a **permanent dead end** whose route
+/// lied on all three counts (no new *required* prose; the write verbs cannot author it, since the
+/// doc does not parse under the current schema; re-running changes nothing), while `jigc validate`
+/// went on routing the doc at the verb that refused it. `deferral-ledger` (v2, the enum rename)
+/// carried the same trap.
+///
+/// So the prior shape comes from the doctype's **earliest shipped snapshot** — the snapshots exist
+/// precisely so a prior shape is *knowable*, and this arm never consulted them. `strip_stamp` it
+/// (the snapshot is a v≥1 shape, which [`crate::pack::load_prior_schema`] stamp-injects like every
+/// CLI schema-load; a v0 doc carries no stamp), and the diff becomes the honest v0→current union —
+/// stamp add-field **plus** every structural link of the chain — so the doc migrates in one pass
+/// and lands conformant.
+///
+/// Where **no** snapshot is shipped — a doctype that has never bumped, whose earliest shape *is*
+/// its current one — `strip_stamp(to_diff)` remains correct, and is the honest fallback. Both
+/// sides stay docs-root-free by construction (`to_diff` has the prefix stripped; a snapshot stores
+/// its `location:` raw), the invariant the below-version arm rests on too.
+fn v0_prior_shape(pack: &dyn PackSource, dt: &DoctypeMigration, to_diff: &Schema) -> Schema {
+    match earliest_snapshot(pack, dt) {
+        Some(earliest) => strip_stamp(&earliest),
+        None => strip_stamp(to_diff),
+    }
+}
+
+/// The doctype's **earliest shipped prior-schema snapshot** (`schema-snapshots/<ty>.v<k>.yaml`,
+/// smallest `k` below the current version that resolves), or `None` when it ships none — a
+/// doctype that has never bumped, or one whose snapshot set starts later. The `from`-source of
+/// [`v0_prior_shape`]: a v0 doc predates *every* shipped version, so the shape it must be diffed
+/// against is the **earliest** one, never the immediately-prior one.
+fn earliest_snapshot(pack: &dyn PackSource, dt: &DoctypeMigration) -> Option<Schema> {
+    (1..dt.version).find_map(|k| crate::pack::load_prior_schema(pack, &dt.ty, k).ok())
 }
 
 /// A clone of `schema` with the engine schema-version stamp field removed — the doctype's
