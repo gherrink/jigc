@@ -182,6 +182,13 @@ pub fn is_declared_singleton(code: &str) -> bool {
 ///
 /// - `conformance.item-anchor-missing` — an item with no anchor **has no identity**: the key
 ///   that would discriminate is precisely the thing the finding reports missing.
+/// - `conformance.item-anchor-malformed` — the same reason, one step along: the item's anchor
+///   text **is not an identity, it is the defect**, so keying on it (`#<section>/<found>`)
+///   discriminates the *bad text*, not the item — and two items carrying the same bad anchor
+///   collapse. Both are still reported (unlike a duplicated *id*, two broken anchors are two
+///   items and two repairs); what is forgone is telling them apart by key, because the only
+///   sub-discriminators on offer are heading prose (unstable) and position (excluded by the
+///   never-positions invariant).
 /// - `conformance.item-slot-delimiter-shadowed`, `conformance.slot-setext-heading`,
 ///   `conformance.slot-heading-depth` — the subject is a **slot's prose**; the only
 ///   sub-discriminator on offer is prose text, and a prose-derived key churns under exactly
@@ -196,6 +203,7 @@ pub fn is_declared_non_unique(code: &str) -> bool {
     matches!(
         code,
         "conformance.item-anchor-missing"
+            | "conformance.item-anchor-malformed"
             | "conformance.item-slot-delimiter-shadowed"
             | "conformance.slot-setext-heading"
             | "conformance.slot-heading-depth"

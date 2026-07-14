@@ -2250,6 +2250,44 @@ Body.
         insta::assert_debug_snapshot!("malformed_anchor", f);
     }
 
+    /// The **second member of the degenerate-key class**, and the half the single-occurrence
+    /// golden above never fed: two items carrying the **same** malformed anchor text. Unlike a
+    /// duplicated *id* (one shared defect, one repair — collapsed at the producer), these are
+    /// **two** items and **two** repairs, so both findings must be emitted — and they key
+    /// byte-identically, because the fragment is the malformed text and the malformed text is
+    /// the defect, not an identity. Red before the declaration: two byte-identical
+    /// `(conformance.item-anchor-malformed, spec:…#criteria/Bad Id)` keys in one slice — a
+    /// degenerate key in release, a panic at the seam in debug — so the code is a **declared
+    /// non-unique exception**, alongside `item-anchor-missing`, and the seam must pass it
+    /// (`command-output-contract.md` → The declared non-unique exceptions).
+    #[test]
+    fn two_items_on_one_malformed_anchor_both_report_and_pass_the_seam() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### A criterion  {#Bad Id}
+Body one.
+
+### Another criterion  {#Bad Id}
+Body two.
+";
+        let findings = parse_sections(&spec_schema(), src).expect_err("malformed anchors block");
+        assert_eq!(
+            fragments(&findings, "conformance.item-anchor-malformed"),
+            [Some("criteria/Bad Id"), Some("criteria/Bad Id")],
+            "two broken anchors are two defects and two repairs — both reported, collapsed on \
+             one key by declaration: {findings:#?}",
+        );
+        // The seam, over the real emitted slice: the collision is the pin, not a defect.
+        crate::finding::debug_assert_targets_declared(&findings);
+    }
+
     /// Regression golden (F5): a valid slug that is **not** a `slugify` fixed
     /// point — `{#a-0}`, a leading-article id — is a well-formed frozen anchor and
     /// must be *recognized*, never flagged malformed. Before the F5 edge-stopword
