@@ -1180,12 +1180,12 @@ fn deferred_route(rel_key: &str) -> String {
 /// - A doctype whose current shape is a single-file `placement:` (no `location:`) walks the
 ///   **union of both homes** (`design/corpus-migration.md` → The corpus walk — the placement
 ///   branches become a union):
-///   - the **prior home** — for a *relocated* doctype (the M38 changelog) the versioned
-///     snapshot at `version - 1` (via [`crate::pack::load_prior_schema`]) declares the
-///     `location:` home its committed instances still sit at; walk that old directory, each
-///     instance destined for the placement `file`. A *placement-born* doctype (the M40
-///     methodology singletons — placement at v1) has no location-bearing prior snapshot, so
-///     this half is empty;
+///   - the **prior homes** — for a *relocated* doctype (the M38 changelog) the versioned
+///     snapshots below the current version (via [`crate::pack::load_prior_schema`]) declare the
+///     `location:` homes its committed instances may still sit at; walk **every** such old
+///     directory (not merely `version - 1`'s — see below), each instance destined for the
+///     placement `file`. A *placement-born* doctype (the M40 methodology singletons — placement
+///     at v1) has no location-bearing prior snapshot, so this half is empty;
 ///   - the **placement home** — the literal `placement.file`, if committed: that instance is
 ///     migrated **in place** (`destination == source`).
 ///
@@ -1198,6 +1198,14 @@ fn deferred_route(rel_key: &str) -> String {
 ///   *wherever* a partially-completed migration left them. A destination shared by two
 ///   candidates (both homes populated) is resolved at the write boundary — see
 ///   [`destination_collision_route`].
+///
+///   **The union is over every prior home** (M42 completion audit, Finding 3). It first shipped
+///   consulting `version - 1` only, which re-opens the same hole one version along: a doctype
+///   that relocated at v2 and has since bumped to v3 loads only the v2 snapshot — already the
+///   placement shape, no `location:` — so its **v1** home goes unwalked and an instance stranded
+///   there is invisible to the verb again. *Wherever* a partially-completed migration left them
+///   is a claim over **every** home the doctype has ever declared, so the walk is the union of
+///   all of them.
 fn candidate_docs(
     pack: &dyn PackSource,
     repo_root: &Path,
@@ -1215,14 +1223,22 @@ fn candidate_docs(
     let Some(placement) = &dt.to.placement else {
         return Vec::new();
     };
-    let prior_location = dt
-        .version
-        .checked_sub(1)
-        .and_then(|k| crate::pack::load_prior_schema(pack, &dt.ty, k).ok())
-        .and_then(|prior| prior.location);
+    // EVERY prior home, not just `version - 1`'s (M42 completion audit, Finding 3). Consulting
+    // only the immediately-prior snapshot re-opens the very hole the union closes, one version
+    // along: a doctype that **relocated at v2** and has since bumped to **v3** would load only
+    // the v2 snapshot — already the placement shape, carrying no `location:` — so its **v1**
+    // folder home would go unwalked and an instance stranded there would be invisible to the
+    // verb again. The union's own rationale is *findable **wherever** a partially-completed
+    // migration left them*, and that is a claim over every home the doctype has ever declared.
+    // De-duplicated (successive versions usually re-declare one home) and ordered, so the walk
+    // is deterministic.
+    let prior_locations: std::collections::BTreeSet<String> = (1..dt.version)
+        .filter_map(|k| crate::pack::load_prior_schema(pack, &dt.ty, k).ok())
+        .filter_map(|prior| prior.location)
+        .collect();
     let mut out: Vec<(String, String)> = Vec::new();
-    if let Some(raw_home) = prior_location {
-        // The prior snapshot stores its `location:` **raw** (docs-root-free), but the
+    for raw_home in prior_locations {
+        // A prior snapshot stores its `location:` **raw** (docs-root-free), but the
         // committed instances sit under the resolved `docs-root` prefix — re-apply it
         // (the in-place branch above walks an already-resolved `to.location`, so this is
         // the sole re-application site; `crate::start::docs_root_prefix`).
@@ -3397,6 +3413,105 @@ sections:
         assert_eq!(
             on_disk, v1,
             "the blocked doc is byte-identical v0 — the stamp is NOT bumped"
+        );
+    }
+
+    /// A throwaway pack carrying **several** prior-schema snapshots for one doctype
+    /// (`schema-snapshots/<ty>.v<k>.yaml` per `(k, yaml)`) plus a freeze manifest naming `<ty>`,
+    /// so [`crate::pack::load_prior_schema`] resolves each and injects the schema-version stamp
+    /// exactly as a shipped pack does. The [`snapshot_pack`] sibling, for a doctype that has
+    /// bumped **more than once** — the topology the relocation walk must survive.
+    fn multi_snapshot_pack(ty: &str, snapshots: &[(u32, &str)]) -> TempDir {
+        let dir = TempDir::new("multi-snap-pack");
+        let snaps = dir.path().join("schema-snapshots");
+        fs::create_dir_all(&snaps).expect("mk schema-snapshots");
+        for (version, yaml) in snapshots {
+            fs::write(snaps.join(format!("{ty}.v{version}.yaml")), yaml).expect("write snap");
+        }
+        let cfg = dir.path().join("config");
+        fs::create_dir_all(&cfg).expect("mk config");
+        // Only the doctype name gates stamp injection (the freeze gate does not run here), so
+        // the manifest version/hash are placeholders — the [`snapshot_pack`] precedent.
+        fs::write(
+            cfg.join("schema-manifest.yaml"),
+            format!(
+                "doctypes:\n  - type: {ty}\n    schema-version: 1\n    schema-hash: {}\n",
+                "0".repeat(64)
+            ),
+        )
+        .expect("write manifest");
+        dir
+    }
+
+    /// The v1 (folder-home) shape of a `thing`: `location: things/`, one slot section.
+    fn thing_v1_yaml() -> &'static str {
+        "\
+type: thing
+location: things/
+singleton: true
+id-from: title
+sections:
+  - id: body
+    slot: { hint: \"the thing\" }
+"
+    }
+
+    /// The v2+ (relocated, placement) shape of a `thing`: the literal root `THING.md`, the same
+    /// section. The relocation happened at **v2**; the doctype has since bumped again, to **v3**.
+    fn thing_placement_yaml() -> &'static str {
+        "\
+type: thing
+placement: { file: THING.md }
+singleton: true
+id-from: title
+sections:
+  - id: body
+    slot: { hint: \"the thing\" }
+"
+    }
+
+    /// **The relocation walk unions EVERY prior home, not just the immediately-prior one**
+    /// (M42 completion audit, Finding 3).
+    ///
+    /// [`candidate_docs`] sourced the prior home from `version - 1` alone. A placement doctype
+    /// that **relocated at v2** and has since bumped to **v3** therefore loads only the v2
+    /// snapshot — which is *already* the placement shape and carries no `location:` — so the
+    /// **v1 folder home is never walked**, and an instance a partially-completed migration left
+    /// stranded there goes **invisible to the verb** all over again: the exact defect M42's walk
+    /// union fixed for the v1→v2 case, one version along. (This wave's signature failure — the
+    /// fix applied to the instance, not the class.) Latent on the shipped packs today
+    /// (`changelog` is the only relocated doctype and it sits at v2), so it is reproduced over a
+    /// synthetic two-snapshot pack — but the union's own rationale is *findable **wherever** a
+    /// partially-completed migration left them*, which argues over **every** prior home.
+    ///
+    /// RED pre-fix: the walk returns **nothing** for the stranded v1-home instance.
+    #[test]
+    fn the_relocation_walk_unions_every_prior_home_not_just_the_last() {
+        let repo = TempDir::new("prior-homes");
+
+        // `thing`: v1 at `things/`, RELOCATED to the literal `THING.md` at v2, now at **v3**.
+        let pack_dir = multi_snapshot_pack(
+            "thing",
+            &[(1, thing_v1_yaml()), (2, thing_placement_yaml())],
+        );
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+        let dt = migration(v1_schema(thing_placement_yaml().as_bytes()), 3);
+
+        // An instance a partially-completed migration left stranded at the **v1** folder home
+        // (under the resolved docs-root — the prior snapshot stores its `location:` raw).
+        write_doc(
+            repo.path(),
+            "docs/things/thing.md",
+            "# Thing\n\n## Body\n\nX.\n",
+        );
+
+        let candidates = candidate_docs(&pack, repo.path(), &dt);
+
+        assert!(
+            candidates.contains(&("docs/things/thing.md".to_string(), "THING.md".to_string())),
+            "the v1 home is walked even though the doctype is at v3 (pre-fix: only v2's home was \
+             consulted, which is already the placement shape — so the stranded instance was \
+             invisible); got: {candidates:?}",
         );
     }
 }
