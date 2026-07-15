@@ -12,6 +12,8 @@ A topic doc: `id-from: title`, `location: reference/`, an `overview` slot + a **
 
 What it buys: reference prose kept honest against the repo instead of rotting in an unvalidated file — the doc↔code drift promise extended to the largest doc class projects actually have. For jigc's own self-migration it is the volume driver (`migrate-reference` over ~40 files); the deep-heading-nesting flattening problem is recorded as structural blocker 4 in the coverage audit.
 
+**2026-07-15 — confirmed on a third independent corpus, three ways in one trial** ([lacon trial](../completions/artifacts/RC-lacon/trial-record.md); verified [findings-verification](../completions/artifacts/RC-lacon/findings-verification.md) → A13): (1) four lacon docs (primitive reference, testing guide, tutorial, resolved-questions log) fit no doctype and stayed plain; (2) spec examples were **bent into the `context` slot as a workaround** because `spec` has no examples section — content actively deformed to fit, the sharpest datum yet; (3) the invocation log caught a benchmarks doc **committed entirely outside jigc** (no task minted) because nothing fit — the gap measurably pulls work off the managed path. Two adjacent wording fixes ride separately (not this idea): ingest's `unmanaged` verdict should bless the plain-file outcome as deliberate, and the report's only route shouldn't imply everything must migrate.
+
 ## Trigger
 
 The post-1.0 **doctype-completeness milestone** — the self-migration's anchor doctype; plan it first among the doctype candidates.

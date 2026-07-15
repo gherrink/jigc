@@ -15,3 +15,5 @@ Three rungs, cheapest honest one first: (1) **disclaim + detect** — the milest
 ## Trigger
 
 The milestone-surface wave that also owes the stale-record-on-discard fix and the skippable-completion decision (they're one cluster: the unit must *fit* brownfield work before its close can be made non-skippable).
+
+**2026-07-15 datum — the second real planning session never reached for the milestone unit at all** ([lacon trial](../completions/artifacts/RC-lacon/trial-record.md) → log surprises #4): the Tier-2 session ran `planning`, wrote roadmap/decisions-log/deferral-ledger, then executed three increments as flat `dev-task`/`single-task` starts — zero `milestone` verbs in 294 logged invocations. After rc.5's milestone arc collapsed ~80 s after creation, rc.6's first planning session simply routed around the unit (whether the workflow steered away or the agent did is unasked). Two consecutive trials, zero successful milestone-unit uses on sequential brownfield work — the unit-fit question is no longer hypothetical.

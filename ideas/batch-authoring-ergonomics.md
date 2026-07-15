@@ -18,3 +18,5 @@ Candidates, not settled: (a) `add-item` accepts leaf values inline (`add-item <a
 ## Trigger
 
 A third independent session avoiding `doc author`, or the composed-context/invocation-output measurement showing the per-leaf ack overhead is material.
+
+**2026-07-15 — the trigger fired, and the cause is now located** ([lacon trial](../completions/artifacts/RC-lacon/trial-record.md), task 4; verified [findings-verification](../completions/artifacts/RC-lacon/findings-verification.md) → B15): the third session defaulted to N per-leaf calls *because that's what the workflow text models* — the fresh-authoring steps (`author-roadmap`/`author-decision`/`author-ledger`) print `add-item` + `set-slot` lines verbatim, while `doc author` is modeled **only** in the migrate-* templates. Notably the *migration* phase of the same trial used `doc author` 25 times without a stumble — the verb is fine when the template hands it over. So the cheapest candidate is now (d): **model `doc author` in the fresh-authoring workflow steps**, before any new verb surface. The single-call-finalize ask (task 1 #4: `finalize --type --summary` for quick-fix) is the same cost surface, thinnest tier.

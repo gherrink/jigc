@@ -15,3 +15,5 @@ The determinism tension: jigc runs no project commands today (the gate-command k
 ## Trigger
 
 An adopter on a brownfield repo (i.e., any adopter) — concretely, the next trial/adopter session that hand-rolls a baseline again, or the dev-task workflow's next revision.
+
+**2026-07-15 — second demand, from the enforcement side** ([lacon trial](../completions/artifacts/RC-lacon/trial-record.md), task 3; verified [findings-verification](../completions/artifacts/RC-lacon/findings-verification.md) → B13): the tester asked for `jigc task check-red <test>` — run the test, record the observed failure, gate the implement step — calling test-first "the one promise the workflow makes and can't keep" (the pack's own text says "yours to police," candidly). That's this idea's capture mechanism pointed at a single test instead of the whole terrain. A de-park must engage the recorded test-running-gate deferral rationale (the A==A-oracle lint entry: a test-running gate breaches the CLI-runs-no-project-commands posture; the baseline shape here — cascade-configured command, capture + delta-report, never judge — is the boundary-respecting form).
