@@ -69,7 +69,7 @@ use crate::file_state::hash_bytes;
 /// trails off into filler. The cut always lands on a `-` boundary, never
 /// mid-word. This is a mint-time cap only; [`is_slug`] is uncapped so a ref to
 /// a pre-existing longer slug still resolves.
-const MAX_WORDS: usize = 5;
+pub(crate) const MAX_WORDS: usize = 5;
 
 /// Character-length backstop, applied *after* the word cap. The word cap alone
 /// leaves a single long word (no `-` to cut on) unbounded, and a minted slug is
@@ -79,7 +79,20 @@ const MAX_WORDS: usize = 5;
 /// length. `50` restores the pre-M39 backstop — well under `NAME_MAX` even with
 /// the `.md` suffix and any `-N` collision suffix. Normal ≤5-word intents sit
 /// far below it, so multi-word behaviour is unchanged.
-const MAX_CHARS: usize = 50;
+pub(crate) const MAX_CHARS: usize = 50;
+
+/// The **stated-at statement** of the mint-time caps — the sentence the
+/// `{{schema:<doctype>}}` projection renders at the id-source (`title:`) line,
+/// so the slug word-cap is stated where it binds, before it can surprise
+/// (`design/surface-contract.md` → The stated-at fence, seam-generated tier;
+/// law 3). Built from [`MAX_WORDS`]/[`MAX_CHARS`] themselves — statement and
+/// enforcement share one source, so drift between them is unrepresentable.
+pub(crate) fn mint_statement() -> String {
+    format!(
+        "the id-source — slugged lowercase-kebab into the doc id, \
+         capped at the first {MAX_WORDS} words / {MAX_CHARS} chars"
+    )
+}
 
 /// Conservative English **edge-stopword** set — articles plus the short
 /// prepositions — dropped when the word cap leaves one at the leading or

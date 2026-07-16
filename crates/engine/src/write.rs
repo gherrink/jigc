@@ -5756,6 +5756,27 @@ pub fn set_slot_validated(
     }
 }
 
+/// The ceiling's depth vocabulary — the two schema-reserved depths and the first
+/// allowed one — shared by the enforcing check ([`slot_ceiling_finding`]) and the
+/// stated-at statement ([`slot_ceiling_statement`]), so the sentence the projection
+/// renders and the rule the write path enforces cannot drift
+/// (`design/surface-contract.md` → The stated-at fence, seam-generated tier).
+const CEILING_RESERVED_H2: &str = "##";
+const CEILING_RESERVED_H3: &str = "###";
+const CEILING_ALLOWED: &str = "####";
+
+/// The **stated-at statement** of the slot heading-depth ceiling — the sentence
+/// the `{{schema:<doctype>}}` projection renders beside the slot-prose skeleton,
+/// so the ceiling is stated where it binds, before it can fail (law 3). Built
+/// from the same depth constants [`slot_ceiling_finding`] enforces with.
+pub(crate) fn slot_ceiling_statement() -> String {
+    format!(
+        "Inside slot prose, headings must sit at `{CEILING_ALLOWED}` depth or deeper — \
+         `{CEILING_RESERVED_H2}`/`{CEILING_RESERVED_H3}` are schema-reserved, and Setext \
+         headings are rejected."
+    )
+}
+
 /// The first heading-depth-ceiling violation in standalone slot `prose`, if any — a
 /// `##`/`###` ATX heading or a Setext underline, located by its **1-based line within
 /// the prose**. Reuses the same block parse the read-time parser uses (never a line
@@ -5767,7 +5788,8 @@ fn slot_ceiling_finding(prose: &str) -> Option<Finding> {
         Block::Heading { is_atx, line, .. } if !is_atx => Some(blocking_write(
             "write.slot-setext-heading",
             format!(
-                "Setext heading in slot prose at line {line}; use `####` ATX depth or rephrase"
+                "Setext heading in slot prose at line {line}; use `{CEILING_ALLOWED}` ATX \
+                 depth or rephrase"
             ),
             Location::at(line, 1),
         )),
@@ -5775,15 +5797,15 @@ fn slot_ceiling_finding(prose: &str) -> Option<Finding> {
             if matches!(level, HeadingLevel::H2 | HeadingLevel::H3) =>
         {
             let depth = if level == HeadingLevel::H2 {
-                "##"
+                CEILING_RESERVED_H2
             } else {
-                "###"
+                CEILING_RESERVED_H3
             };
             Some(blocking_write(
                 "write.slot-heading-depth",
                 format!(
                     "heading at schema-reserved depth `{depth}` in slot prose at line {line}; \
-                     use `####` or rephrase"
+                     use `{CEILING_ALLOWED}` or rephrase"
                 ),
                 Location::at(line, 1),
             ))
@@ -6597,6 +6619,29 @@ Each service drops its local limiter.
         assert_eq!(finding.severity, crate::finding::Severity::Blocking);
         assert_eq!(finding.code, "write.slot-setext-heading");
         assert_eq!(finding.location.as_ref().unwrap().line, 1);
+    }
+
+    /// M43 inc-3 T3 — the stated-at statement and the enforcing check share one
+    /// depth vocabulary (`surface-contract.md` → The stated-at fence,
+    /// seam-generated tier): the statement names exactly the reserved depths the
+    /// check rejects and the allowed depth its findings route to, each asserted
+    /// through the shared constant symbols — never a re-typed literal.
+    #[test]
+    fn ceiling_statement_and_check_share_the_depth_vocabulary() {
+        let statement = slot_ceiling_statement();
+        for depth in [CEILING_RESERVED_H2, CEILING_RESERVED_H3, CEILING_ALLOWED] {
+            assert!(
+                statement.contains(&format!("`{depth}`")),
+                "the statement names `{depth}`; got: {statement}"
+            );
+        }
+        // The enforcing finding routes to the SAME allowed depth the statement
+        // states, and names the reserved depth it rejects.
+        let h2 = slot_ceiling_finding("## nope\n").expect("H2 trips the ceiling");
+        assert!(h2.message.contains(&format!("`{CEILING_RESERVED_H2}`")));
+        assert!(h2.message.contains(&format!("`{CEILING_ALLOWED}`")));
+        let setext = slot_ceiling_finding("A title\n=======\n").expect("Setext trips the ceiling");
+        assert!(setext.message.contains(&format!("`{CEILING_ALLOWED}`")));
     }
 
     /// Locate the `decision` slot's byte span in `source` (the parser's recorded

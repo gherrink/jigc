@@ -935,15 +935,37 @@ fn render_schema_projection(schema: &crate::schema::Schema, task: Option<&str>) 
         "Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` \
          value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the \
          `<<`/`>>` markers and replace only the text between them (an inline field takes a \
-         bare value — wrapping one is rejected). An entry marked `# optional` may be omitted \
-         entirely. Pipe the payload on stdin:\n\n",
+         bare value — wrapping one is rejected). ",
+    );
+    // The stated-at fence, seam-generated tier (`surface-contract.md`, law 3): the
+    // heading-depth ceiling is stated with the slot-prose skeleton — above the
+    // heredoc that solicits the prose it gates — verbatim from the write-path
+    // source. A slot-less schema solicits no slot prose, so it stays inert.
+    if sections_declare_a_slot(&schema.sections) {
+        out.push_str(&crate::write::slot_ceiling_statement());
+        out.push(' ');
+    }
+    out.push_str(
+        "An entry marked `# optional` may be omitted entirely. Pipe the payload on \
+         stdin:\n\n",
     );
     let task_arg = task.map(|id| format!(" --task {id}")).unwrap_or_default();
     out.push_str(&format!(
         "jigc doc author {} --from-file -{task_arg} <<'EOF'\n",
         schema.ty
     ));
-    out.push_str(&format!("title: {}\n", projection_title_value(schema)));
+    // The slug word-cap, stated at the id-source line it binds (same fence): a
+    // per-instance minted title carries the statement built from the mint-rule
+    // constants; a singleton's fixed title mints nothing, so it stays inert.
+    if !schema.singleton && schema.id_from.is_some() {
+        out.push_str(&format!(
+            "title: {} # {}\n",
+            projection_title_value(schema),
+            crate::slug::mint_statement()
+        ));
+    } else {
+        out.push_str(&format!("title: {}\n", projection_title_value(schema)));
+    }
     let body = projection_skeleton_sections(&schema.sections, 2);
     if !body.is_empty() {
         out.push_str("sections:\n");
@@ -977,6 +999,30 @@ fn projection_home_line(schema: &crate::schema::Schema) -> String {
     } else {
         format!("The `{ty}` schema — transient (no committed file).")
     }
+}
+
+/// Whether any section (or nested repeatable leaf) declares a prose slot — the
+/// scope gate for the ceiling statement: the projection states the slot
+/// heading-depth ceiling only where slot prose is actually solicited.
+fn sections_declare_a_slot(sections: &[crate::schema::Section]) -> bool {
+    sections.iter().any(|section| match &section.body {
+        crate::schema::SectionBody::Simple { slot, .. } => slot.is_some(),
+        crate::schema::SectionBody::Repeatable { repeatable } => {
+            repeatable_declares_a_slot(repeatable)
+        }
+    })
+}
+
+/// The repeatable arm of [`sections_declare_a_slot`], recursing through nested
+/// repeatables.
+fn repeatable_declares_a_slot(repeatable: &crate::schema::Repeatable) -> bool {
+    repeatable.block.iter().any(|leaf| match leaf {
+        crate::schema::Leaf::Slot { .. } => true,
+        crate::schema::Leaf::Repeatable { repeatable, .. } => {
+            repeatable_declares_a_slot(repeatable)
+        }
+        crate::schema::Leaf::Field(_) => false,
+    })
 }
 
 /// The skeleton's `title:` value: a singleton's title is **fixed and known**
@@ -3450,10 +3496,10 @@ sections:
                 - `label`: enum, one of: pro | con — the item's id-source (authored as the item's `title:` payload key)
                 - `text`: prose slot (optional)
 
-        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). An entry marked `# optional` may be omitted entirely. Pipe the payload on stdin:
+        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. Pipe the payload on stdin:
 
         jigc doc author note --from-file - --task emit-four-classes <<'EOF'
-        title: "<the title>"
+        title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id, capped at the first 5 words / 50 chars
         sections:
           - id: meta
             set:
@@ -3515,7 +3561,7 @@ sections:
 
         - `body`: prose slot — The handbook body.
 
-        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). An entry marked `# optional` may be omitted entirely. Pipe the payload on stdin:
+        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. Pipe the payload on stdin:
 
         jigc doc author handbook --from-file - <<'EOF'
         title: Handbook
@@ -3601,6 +3647,127 @@ sections:
             resolve_inline_data_values(line, &ctx),
             line,
             "inline schema tokens are skipped verbatim, resolvable and dangling alike"
+        );
+    }
+
+    /// M43 inc-3 T3 — the two constraint statements are **seam-generated** into
+    /// the projection (`surface-contract.md` → The stated-at fence, law 3): the
+    /// slug word-cap statement at the id-source (`title:`) line, the slot
+    /// heading-depth ceiling statement with the slot-prose skeleton's instruction
+    /// paragraph. Each expected string is rebuilt here by `format!` over the SAME
+    /// constant symbols the enforcing code uses (`slug::MAX_WORDS`/`MAX_CHARS`;
+    /// the ceiling's depth vocabulary), so a cap or depth change moves the
+    /// statement, the enforcement, and this test together — drift between
+    /// statement and rule is unrepresentable.
+    #[test]
+    fn projection_statements_are_built_from_the_enforcing_constants() {
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let mut ctx = emit_ctx();
+        ctx.schemas.insert("note".to_owned(), note_schema());
+        let emitted = emit_step_body("{{ schema:note }}\n", &ctx, &catalog).expect("emits");
+
+        // The slug statement: string equality against format! over the constants.
+        let slug_statement = format!(
+            "the id-source — slugged lowercase-kebab into the doc id, \
+             capped at the first {} words / {} chars",
+            crate::slug::MAX_WORDS,
+            crate::slug::MAX_CHARS
+        );
+        assert_eq!(
+            crate::slug::mint_statement(),
+            slug_statement,
+            "the statement source and this test share the cap constants"
+        );
+        assert!(
+            emitted.contains(&format!("title: \"<the title>\" # {slug_statement}")),
+            "the slug statement rides the id-source line; got:\n{emitted}"
+        );
+
+        // The ceiling statement: rendered verbatim from the write-path source,
+        // above the heredoc it constrains (stated before it can fail).
+        let ceiling_statement = crate::write::slot_ceiling_statement();
+        assert!(
+            emitted.contains(&ceiling_statement),
+            "the ceiling statement rides the skeleton's instruction paragraph; \
+             got:\n{emitted}"
+        );
+        let paragraph_at = emitted
+            .find(&ceiling_statement)
+            .expect("the ceiling statement is embedded");
+        let heredoc_at = emitted
+            .find("<<'EOF'")
+            .expect("the projection carries the author heredoc");
+        assert!(
+            paragraph_at < heredoc_at,
+            "the ceiling is stated ABOVE the solicit it gates"
+        );
+    }
+
+    /// The omitting contexts (the statements are scoped, never boilerplate): a
+    /// **singleton**'s title is fixed — no slug is minted from author input — so
+    /// its projection carries no slug statement (while its slot still earns the
+    /// ceiling statement); a **slot-less** schema solicits no slot prose, so its
+    /// projection carries no ceiling statement (while its minted title still
+    /// earns the slug statement). Inert where the target is absent, never noise.
+    #[test]
+    fn projection_statements_are_inert_where_their_targets_are_absent() {
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+
+        // Singleton with a slot: ceiling yes, slug no.
+        let handbook = crate::schema::load_schema(
+            br#"
+type: handbook
+placement: { file: HANDBOOK.md }
+display-title: Handbook
+singleton: true
+id-from: title
+sections:
+  - id: body
+    slot: { hint: "The handbook body." }
+"#,
+        )
+        .expect("the handbook fixture schema loads");
+        let mut ctx = crate::data_value::ComposeContext::default();
+        ctx.schemas.insert("handbook".to_owned(), handbook);
+        let emitted = emit_step_body("{{ schema:handbook }}\n", &ctx, &catalog).expect("emits");
+        assert!(
+            !emitted.contains(&crate::slug::mint_statement()),
+            "a fixed singleton title mints no slug — no slug statement; got:\n{emitted}"
+        );
+        assert!(
+            emitted.contains(&crate::write::slot_ceiling_statement()),
+            "a slot-bearing schema still states the ceiling; got:\n{emitted}"
+        );
+
+        // Per-instance, fields-only: slug yes, ceiling no.
+        let ledger = crate::schema::load_schema(
+            br#"
+type: ledger
+location: ledger/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: kind, type: enum, of: [debit, credit] }
+"#,
+        )
+        .expect("the ledger fixture schema loads");
+        let mut ctx = crate::data_value::ComposeContext::default();
+        ctx.schemas.insert("ledger".to_owned(), ledger);
+        let emitted = emit_step_body("{{ schema:ledger }}\n", &ctx, &catalog).expect("emits");
+        assert!(
+            emitted.contains(&crate::slug::mint_statement()),
+            "a minted per-instance title states the slug caps; got:\n{emitted}"
+        );
+        assert!(
+            !emitted.contains(&crate::write::slot_ceiling_statement()),
+            "a slot-less schema solicits no slot prose — no ceiling statement; \
+             got:\n{emitted}"
         );
     }
 
