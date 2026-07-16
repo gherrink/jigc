@@ -4,11 +4,14 @@
 //! two-tier rule; `implementation/roadmap.md` → M6 inc-2 grouped-scope bullet 5;
 //! `increment-workflow.md` → Validation hardening #4 + #5):
 //!
-//! - **(a) a real-key tunable demotion stops a check blocking.** `jigc config set
-//!   validation.file-state.hash-matches.severity advisory` + a `file-state` drift on
-//!   a staged commit doc → `task validate` no longer blocks (exit 0) and surfaces the
-//!   drift as an **advisory** finding rather than a blocking one. `hash-matches` is a
-//!   *tunable* check (no floor), so the demotion applies.
+//! - **(a) a real-key tunable demotion re-grades a check.** `jigc config set
+//!   validation.file-state.hash-matches.severity advisory` + an out-of-band edit to a
+//!   committed, baselined ADR → the store-scope `jigc validate` surfaces the drift as
+//!   an **advisory** finding rather than a blocking one. `hash-matches` is a *tunable*
+//!   check (no floor), so the demotion applies. (Its live surface is the store sweep:
+//!   since M43 A14 the task-scope staged loop never keys an instance against the
+//!   record, so `task validate` mints no `hash-matches` — the task-scope demotion
+//!   proof with exit-code observability lives in flow 13's tunable `doc-code` walk.)
 //! - **(b) an intrinsic demotion is floor-rejected.** `jigc config set
 //!   validation.workflow-refs.placeholder-resolves.severity advisory` targets a
 //!   *floored* intrinsic check. The below-floor `scalar-set` is **soft-rejected at
@@ -162,57 +165,87 @@ fn fill_commit(repo: &Path, home: &Path, task: &str) {
     set_slot(&format!("commit:{task}#body"), b"A rate limiter.\n");
 }
 
-/// Seed the `file-state` record with a **stale** hash for the staged commit doc, so the
-/// next `task validate` sees `recorded != on-disk` → a `file-state.hash-matches` drift.
-///
-/// `task validate` *loads* the record but never persists it (the record advances only at
-/// adopt/absorb/commit), so two validates always baseline-adopt the working-area doc
-/// fresh — drift over a working-area key can only arise from a pre-existing recorded
-/// baseline. Writing the record's plain JSON state directly is the established way to
-/// establish that baseline (mirrors `engine::validate`'s `record.record(...)` unit setup,
-/// driven here through the binary's `task validate`).
-fn seed_stale_commit_baseline(repo: &Path, task: &str) {
-    let key = format!("docs/commit:{task}.md");
-    let state = repo.join(".jigc").join("state");
-    fs::create_dir_all(&state).expect("create .jigc/state");
-    // A deterministic 64-char lowercase-hex digest that does NOT match any real
-    // blake3 hash of the filled doc — the staleness is the whole point.
-    let stale = "0".repeat(64);
-    let body = format!("{{\n  \"hashes\": {{\n    \"{key}\": \"{stale}\"\n  }}\n}}\n");
-    fs::write(state.join("file-state.json"), body).expect("seed file-state.json");
+/// One whole task that creates + finalizes `adr:single-node-cache`, committing it to
+/// `docs/decisions/single-node-cache.md` and baselining it in the file-state record
+/// (the `validate_envelope.rs` idiom) — the committed managed doc the OOB edit drifts.
+fn commit_baselined_adr(repo: &Path, home: &Path) {
+    let start = jigc(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "cache sessions in a single in-memory node",
+        ],
+    );
+    assert_ok(&start, "`jigc start`");
+    let task = "cache-sessions-in-a-single";
+
+    let create = jigc_doc(
+        repo,
+        home,
+        &["create", "adr", "--title", "Single-node cache"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create adr`");
+    for (slot, prose) in [
+        (
+            "context",
+            &b"Session lookups must stay sub-millisecond.\n"[..],
+        ),
+        ("decision", b"Keep sessions in a single in-memory node.\n"),
+        ("consequences", b"A cold node loses its sessions.\n"),
+    ] {
+        let out = jigc_doc(
+            repo,
+            home,
+            &[
+                "set-slot",
+                &format!("adr:single-node-cache#{slot}"),
+                "--from-file",
+                "-",
+            ],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot #{slot}"));
+    }
+    fill_commit(repo, home, task);
+    let out = jigc(repo, home, &["task", "finalize", task]);
+    assert_ok(&out, "`jigc task finalize`");
 }
 
-// ─────────────── (a) tunable demotion stops a check blocking ───────────────
+// ─────────────── (a) tunable demotion re-grades a check ───────────────
+
+/// The committed ADR's canonical path (default `docs-root`: `docs/`).
+const COMMITTED_ADR: &str = "docs/decisions/single-node-cache.md";
 
 #[test]
-fn tunable_severity_demotion_stops_file_state_drift_blocking() {
+fn tunable_severity_demotion_regrades_a_file_state_drift() {
     let repo = TempDir::new("tunable");
     let home = TempDir::new("home");
     init_repo(repo.path());
+    // The store sweep pre-flights the `doc-code` probe — `jigc setup` extracts it.
+    let setup = jigc(repo.path(), home.path(), &["setup"]);
+    assert_ok(&setup, "`jigc setup`");
 
-    let start = jigc(
-        repo.path(),
-        home.path(),
-        &["start", "--workflow", "single-task", "add rate limiter"],
-    );
-    assert_ok(&start, "`jigc start`");
-    let task = "add-rate-limiter";
-
-    // Fill the commit doc so the only finding is the file-state drift, then seed a
-    // stale baseline for the staged commit doc so `task validate` sees drift.
-    fill_commit(repo.path(), home.path(), task);
-    seed_stale_commit_baseline(repo.path(), task);
+    // A committed, baselined ADR, then an out-of-band edit so its on-disk bytes
+    // diverge from the recorded baseline — the store-scope drift.
+    commit_baselined_adr(repo.path(), home.path());
+    let committed = repo.path().join(COMMITTED_ADR);
+    let mut body = fs::read_to_string(&committed).expect("read the committed ADR");
+    body.push_str("\nAn out-of-band human edit appended after baseline.\n");
+    fs::write(&committed, &body).expect("apply the out-of-band edit");
 
     // Before the demotion: `file-state.hash-matches` is blocking by default →
-    // `task validate` exits non-zero and surfaces the drift as a *blocking* finding.
-    let before = jigc(repo.path(), home.path(), &["task", "validate", task]);
-    assert!(
-        !before.status.success(),
-        "a file-state drift must block validate by default; streams:\n{}",
-        streams(&before)
+    // `jigc validate` surfaces the drift as a *blocking* finding (report-only, exit 0).
+    let before = jigc(repo.path(), home.path(), &["validate"]);
+    assert_ok(
+        &before,
+        "`jigc validate` (report-only, before the demotion)",
     );
     assert!(
-        streams(&before).contains("blocking · file-state.hash-matches"),
+        streams(&before).contains("blocking (gates at finalize) · file-state.hash-matches"),
         "the default drift finding must render as `blocking`; got:\n{}",
         streams(&before)
     );
@@ -231,23 +264,18 @@ fn tunable_severity_demotion_stops_file_state_drift_blocking() {
     );
     assert_ok(&set, "`jigc config set` (tunable demotion)");
 
-    // After the demotion: the SAME drift no longer blocks (exit 0) and is surfaced as
-    // an *advisory* finding — files are truth, the drift is still reported, just not
-    // gated. The drift state itself is unchanged (the record was not advanced).
-    let after = jigc(repo.path(), home.path(), &["task", "validate", task]);
-    assert!(
-        after.status.success(),
-        "after demoting `file-state.hash-matches` to advisory, the drift must NOT block \
-         (exit 0); streams:\n{}",
-        streams(&after)
-    );
+    // After the demotion: the SAME drift is surfaced as an *advisory* finding — files
+    // are truth, the drift is still reported, just re-graded. The drift state itself
+    // is unchanged (the read-only sweep never advances the record).
+    let after = jigc(repo.path(), home.path(), &["validate"]);
+    assert_ok(&after, "`jigc validate` (report-only, after the demotion)");
     let surfaced = streams(&after);
     assert!(
         surfaced.contains("advisory · file-state.hash-matches"),
         "the demoted drift must render as `advisory`; got:\n{surfaced}"
     );
     assert!(
-        !surfaced.contains("blocking · file-state.hash-matches"),
+        !surfaced.contains("blocking (gates at finalize) · file-state.hash-matches"),
         "the demoted drift must NOT render as `blocking`; got:\n{surfaced}"
     );
 }

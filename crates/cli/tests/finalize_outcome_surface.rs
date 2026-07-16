@@ -272,31 +272,6 @@ fn landed_finalize_after_oob(format: Option<&str>) -> String {
     String::from_utf8(out.stdout).expect("utf-8 stdout")
 }
 
-/// Seed the file-state record with `task`'s staged commit doc's **real** digest so
-/// the sweep sees `IN_SYNC`, not a fresh baseline-adopt. `task validate`/finalize
-/// never persist the working-area baseline, so without the seed the staged commit
-/// doc would adopt anew on every sweep (the severity-tuning seeding pattern, here
-/// with the matching hash). Merges into any existing record — a prior task's
-/// landed finalize may have posted baselines this seed must not drop.
-fn seed_in_sync(repo: &Path, task: &str) {
-    let staged = repo
-        .join(".jigc")
-        .join("tasks")
-        .join(task)
-        .join("docs")
-        .join(format!("commit:{task}.md"));
-    let digest = engine::file_state::hash_bytes(&fs::read(&staged).expect("read staged doc"));
-    let state = repo.join(".jigc").join("state");
-    fs::create_dir_all(&state).expect("create .jigc/state");
-    let record = state.join("file-state.json");
-    let mut body: serde_json::Value = match fs::read_to_string(&record) {
-        Ok(existing) => serde_json::from_str(&existing).expect("parse existing file-state.json"),
-        Err(_) => serde_json::json!({ "hashes": {} }),
-    };
-    body["hashes"][format!("docs/commit:{task}.md")] = serde_json::Value::String(digest);
-    fs::write(record, body.to_string()).expect("seed file-state.json");
-}
-
 /// The clean scenario: a commit-only task whose preflight report is **empty**.
 /// Asserts the finalize lands and returns its stdout — which must carry the
 /// positive no-findings signal.
@@ -324,7 +299,6 @@ fn landed_clean_finalize(format: Option<&str>) -> String {
         .expect("write code change");
     git(repo.path(), &["add", &format!("{task}.txt")]);
     fill_commit(repo.path(), home.path(), task);
-    seed_in_sync(repo.path(), task);
 
     let out = finalize(repo.path(), home.path(), task, format);
     assert_ok(&out, "`jigc task finalize` (clean task)");
@@ -775,11 +749,13 @@ fn landed_finalize_emits_findings() {
 /// The advisory-route floor on the pinned `--format json` findings envelope
 /// (`design/command-output-contract.md` → §route: "always present … never null";
 /// `design/validation.md` → The advisory-route floor). The absorb scenario emits the
-/// two file-state informational advisories — `reconciliation.absorb` and
-/// `file-state.baseline-adopt` — and each must carry an explicit **informational**
-/// route *value*, not `route: null`. (The earlier route-floor sweep routed only the
-/// two `index.rs` constructors; these file-state constructors were missed, leaving the
-/// floor violated on the JSON contract surface.)
+/// `reconciliation.absorb` informational advisory, which must carry an explicit
+/// **informational** route *value*, not `route: null`. (The earlier route-floor sweep
+/// routed only the two `index.rs` constructors; the file-state constructors were
+/// missed, leaving the floor violated on the JSON contract surface.) Since M43 A14
+/// the task's staged **transient** commit doc is file-state-silent — no
+/// `file-state.baseline-adopt` rides this envelope for it (the `docs/<type>:<slug>.md`
+/// working-area key was a fiction).
 #[test]
 fn landed_finalize_advisories_carry_a_route() {
     let stdout = landed_finalize_after_oob(Some("json"));
@@ -795,25 +771,31 @@ fn landed_finalize_advisories_carry_a_route() {
         }
     }
 
-    // The two file-state informational advisories are present and routed.
-    for code in ["reconciliation.absorb", "file-state.baseline-adopt"] {
-        let finding = findings
+    // The absorb informational advisory is present and routed…
+    let absorb = findings
+        .iter()
+        .find(|f| f["code"] == "reconciliation.absorb")
+        .unwrap_or_else(|| panic!("the json envelope must carry the absorb; got:\n{stdout}"));
+    assert!(
+        absorb["route"].as_str().is_some(),
+        "`reconciliation.absorb` must carry an informational route string, not null; \
+         got:\n{absorb}",
+    );
+    // …and the staged transient commit doc mints NO file-state finding (M43 A14).
+    assert!(
+        findings
             .iter()
-            .find(|f| f["code"] == code)
-            .unwrap_or_else(|| panic!("the json envelope must carry `{code}`; got:\n{stdout}"));
-        assert!(
-            finding["route"].as_str().is_some(),
-            "`{code}` must carry an informational route string, not null; got:\n{finding}",
-        );
-    }
+            .all(|f| !f["code"].as_str().unwrap_or("").starts_with("file-state.")),
+        "a transient-sink staged instance is file-state-silent; got:\n{stdout}",
+    );
 }
 
 /// Mint + fill + land a commit-only task in `repo`, returning the finalize output
-/// for the caller's exit-code/stream assertions. The fill is clean (in-sync seeded)
-/// so the landed envelope is the deterministic positive signal; each task writes
-/// one distinct code file (the agent's authored change) so its commit is never
-/// empty — a second commit-only task in the same repo would otherwise have nothing
-/// for git to commit.
+/// for the caller's exit-code/stream assertions. The fill is clean, and the staged
+/// transient commit doc is file-state-silent (M43 A14), so the landed envelope is
+/// the deterministic positive signal; each task writes one distinct code file (the
+/// agent's authored change) so its commit is never empty — a second commit-only
+/// task in the same repo would otherwise have nothing for git to commit.
 ///
 /// Minted on **`quick-fix`** — literally the commit-only workflow (`allows-create: []`),
 /// so the report stays empty: since M42 a *gate-granting* workflow that records no
@@ -831,7 +813,6 @@ fn land_commit_only(
     fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
     git(repo, &["add", &format!("{task}.txt")]); // M30 G5 — the agent stages its own edit.
     fill_commit(repo, home, task);
-    seed_in_sync(repo, task);
     finalize(repo, home, task, format)
 }
 

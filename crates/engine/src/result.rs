@@ -973,8 +973,9 @@ mod tests {
             Severity::Blocking,
             "schema-conformance.unknown-type",
             "staged doc has an undefined type",
-            // The file-path form: a doc of an undeclared type has no managed URI identity.
-            Some(Location::addressed("docs/wat.md", 1, 1)),
+            // The `<type>:<slug>` identity derivable from the staged filename (M43 A14 —
+            // the typed-identity form; the docs/ working-area path was a fiction).
+            Some(Location::addressed("wat:wat", 1, 1)),
             None,
         );
         let report = ValidationReport::new(vec![exempt], &resolved);

@@ -185,9 +185,9 @@ fn conforms(schema: &Schema, source: &str) -> bool {
 
 /// **Adopt** an [`Verdict::Adoptable`] candidate — the net-new, schema-gated register
 /// action (`project-setup.md` → Flow 2, bullet 3). Distinct from reconciliation's
-/// `UNKNOWN → baseline-adopt` ([`crate::file_state::file_state`]), which records a hash
-/// with **no schema check and no index population** — exactly the safety hole this
-/// closes: ingestion registers only what re-conforms, and indexes its edges.
+/// `UNKNOWN → baseline-adopt` ([`crate::file_state::reconcile_committed`]), whose
+/// baseline-adopt arm records a hash with **no index population** — exactly the safety
+/// hole this closes: ingestion registers only what re-conforms, and indexes its edges.
 ///
 /// `rel_path` is the candidate's forward-slash repo-relative path (its `file-state`
 /// record key); `bytes` are its raw on-disk bytes; `schema` is the matched doc-type the

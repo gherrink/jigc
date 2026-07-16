@@ -31,11 +31,9 @@ use std::process::{Command, Stdio};
 /// assignment — the M6 post-pass: the byte-identical golden must cover the validate
 /// path, not only `start_compose`; review B2).
 const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
-advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
-  route: no action needed — the baseline was adopted on first encounter
-blocking · schema-conformance.field-value-conformant — `docs/commit:add-rate-limiter.md`: field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
+blocking · schema-conformance.field-value-conformant — `commit:add-rate-limiter`: field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
   route: `jigc doc set-field <address> --value <value>` to correct the value
-blocking · schema-conformance.required-slot-present — `docs/commit:add-rate-limiter.md`: required slot in section `summary` is empty
+blocking · schema-conformance.required-slot-present — `commit:add-rate-limiter`: required slot in section `summary` is empty
   route: `jigc doc set-slot <address> --from-file -` to fill the empty slot (this finding's target is the address)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
@@ -43,9 +41,11 @@ blocking · schema-conformance.required-slot-present — `docs/commit:add-rate-l
 /// The **no-delta** `jigc task validate` rendered output over a conformant commit doc,
 /// byte for byte — the clean (exit-0) companion to `NO_DELTA_BROKEN_VALIDATE_GOLDEN`.
 /// The post-pass must perturb neither the blocking nor the clean validate render.
+/// (M43 A14: the staged transient commit doc is file-state-silent — its display was
+/// the fictional `docs/commit:<id>.md` working-area key; a transient instance
+/// displays at its `<type>:<slug>` identity and mints no `file-state.*` finding.)
 const NO_DELTA_CLEAN_VALIDATE_GOLDEN: &str = "\
-advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
-  route: no action needed — the baseline was adopted on first encounter
+no findings — the task validates clean
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 
@@ -255,32 +255,26 @@ fn task_validate_exit_code_tracks_blocking_findings() {
     );
 }
 
-/// T3 done-criterion: a recorded `validation.file-state.severity` scalar-set, read
-/// through the cascade `task validate` now resolves (the M6 severity post-pass fed a
-/// *real* `Resolved`), **demotes a real blocking `file-state.hash-matches` finding**
-/// observed through `task validate`'s exit code and rendered output
-/// (`design/validation.md` → Every finding-emitting entry point must resolve the
-/// cascade; Severity assignment — the M6 post-pass).
-///
-/// The drift is genuine: the staged commit doc is filled conformant (so the only
-/// blocker is the file-state probe, not `schema-conformance.*`), then the file-state
-/// record is seeded with a wrong baseline hash for the staged doc — exactly the
-/// `recorded + differing` drift the probe blocks on. Without the override, validate
-/// exits non-zero on the blocking drift; with `validation.file-state.severity:
-/// warning` recorded in the project manifest, the post-pass re-grades it to warning,
-/// the finding is still surfaced, and validate exits **zero** (the gate keys on
-/// blocking only).
+/// M43 A14, the do-NOT-do-it guard through the real binary: a stale recorded
+/// baseline for a staged doc's key mints **no** drift at `task validate` — the
+/// staged sweep never keys a staged instance against the record (pre-M43 this exact
+/// seed produced a blocking `file-state.hash-matches` at the fictional
+/// `docs/commit:<id>.md` key; keying the repo-real destination against the record
+/// instead would mint false blocking drift on every in-flight edit of a copied-in
+/// committed doc). The conformant task validates clean, exit 0. (The severity
+/// post-pass threading through `task validate` stays proven by flow 13's tunable
+/// `doc-code` demotion; the `file-state.hash-matches` knob's live surface is the
+/// store-scope sweep — `severity_tuning.rs`.)
 #[test]
-fn task_validate_severity_override_demotes_a_blocking_file_state_finding() {
+fn task_validate_ignores_a_stale_staged_record_key() {
     let (repo, home) = started_repo("add rate limiter");
     let task = "add-rate-limiter";
 
-    // Fill the commit doc conformant so `schema-conformance.*` is clean — the only
-    // blocking finding left will be the file-state drift we seed below.
+    // Fill the commit doc conformant so `schema-conformance.*` is clean.
     make_commit_conformant(repo.path(), home.path(), task);
 
-    // Seed a *wrong* baseline hash for the staged commit doc, so the file-state probe
-    // sees `recorded + differing` → a blocking `file-state.hash-matches` drift.
+    // Seed a *wrong* baseline hash at both the legacy staged key and the never-legal
+    // repo-real-shaped key — neither may be consulted for a staged instance.
     let rel_key = format!("docs/commit:{task}.md");
     let state_dir = repo.path().join(".jigc").join("state");
     fs::create_dir_all(&state_dir).expect("mk state dir");
@@ -291,35 +285,6 @@ fn task_validate_severity_override_demotes_a_blocking_file_state_finding() {
     )
     .expect("seed file-state record");
 
-    // Control: no override → the drift blocks, validate exits non-zero.
-    let out = run_task(repo.path(), home.path(), &["validate", task]);
-    let rendered = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(
-        !out.status.success(),
-        "the seeded file-state drift must block validate without an override; output:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("file-state.hash-matches"),
-        "validate must surface the file-state drift finding; got:\n{rendered}"
-    );
-
-    // Record `validation.file-state.severity: warning` in the project manifest — the
-    // scalar-set the resolved cascade carries, demoting the file-state check.
-    fs::write(
-        repo.path()
-            .join(".jigc")
-            .join("config")
-            .join("manifest.yaml"),
-        "scalar:\n  validation.file-state.severity: warning\n",
-    )
-    .expect("seed manifest with the severity override");
-
-    // With the override resolved through the cascade, the drift is a warning — still
-    // surfaced, but no longer blocking, so validate exits zero.
     let out = run_task(repo.path(), home.path(), &["validate", task]);
     let rendered = format!(
         "{}{}",
@@ -328,12 +293,12 @@ fn task_validate_severity_override_demotes_a_blocking_file_state_finding() {
     );
     assert!(
         out.status.success(),
-        "the recorded severity override must demote the drift to non-blocking, so validate \
-         exits zero; output:\n{rendered}"
+        "a stale staged record key must not block validate (staged instances never \
+         key against the record); output:\n{rendered}"
     );
     assert!(
-        rendered.contains("file-state.hash-matches"),
-        "the demoted finding is still surfaced (as a warning); got:\n{rendered}"
+        !rendered.contains("file-state."),
+        "a transient staged instance is file-state-silent; got:\n{rendered}"
     );
 }
 

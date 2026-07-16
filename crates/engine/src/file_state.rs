@@ -1,10 +1,11 @@
 //! The `file-state` hash record — the raw-byte drift hash, the
 //! `.jigc/state/file-state.json` `path → hex-hash` map (load/save), the engine-native
-//! `file-state` probe, and the full OOB reconciliation classifier.
+//! `file-state` probe surface, and the full OOB reconciliation classifier.
 //!
 //! The store layer is a raw-byte [`blake3`] hash and byte-stable JSON I/O over the
-//! record. Built atop it: [`file_state`], the inc-4 working-area/commit-only probe
-//! (baseline-adopt + hash-matches); [`reconcile_committed`], the inc-5 OOB
+//! record. Built atop it: [`staged_copy_finding`], the per-staged-instance advisory
+//! the task sweep emits at a persisted instance's repo-real destination (M43 A14 —
+//! staged copies never key against the record); [`reconcile_committed`], the inc-5 OOB
 //! reconciliation state machine over a *committed* managed doc — absorb /
 //! conformance-block / conflict-block (`reconciliation.md` → The state machine;
 //! `validation.md` → the `file-state` probe); and [`detect_rename`], the separate
@@ -118,43 +119,33 @@ impl FileStateRecord {
     }
 }
 
-/// The engine-native `file-state` probe over a set of files: classify each
-/// `(path, bytes)` against the recorded baseline and emit the MVP findings.
+/// The per-staged-instance `file-state` advisory (M43 A14 — `DECISIONS.md`
+/// 2026-07-16 Settle item 9; `surface-contract.md` → law 1): a task's staged
+/// **persisted** instance, reported at `dest` — the repo-relative repo-real
+/// committed destination its finalize will promote it to — never the
+/// `docs/<type>:<slug>.md` working-area fiction the pre-M43 sweep printed.
 ///
-/// Three states (the only two transitions the commit-only loop needs —
-/// `validation.md` → Probes (`file-state`); `reconciliation.md` → Baseline
-/// adoption; OOB absorb/conflict are inc-5):
-///
-/// - **`UNKNOWN`** (no recorded hash — first run / fresh checkout) → **baseline-adopt**:
-///   the current on-disk content *is* the baseline. The probe records the hash on
-///   `record` and emits an informational `file-state.baseline-adopt` finding
-///   ([`Severity::Advisory`], an informational "no action needed" route — the
-///   advisory-route floor, never null). Absent-hash is not drift.
-/// - **recorded + matching** → no finding (the file is `IN_SYNC`).
-/// - **recorded + differing** → **drift**: a `file-state.hash-matches` finding —
-///   blocking by default ([`Severity::Blocking`], the severity-inventory default),
-///   tunable post-MVP — carrying a `reconcile <target>` route for the
-///   reconciliation classifier ([`reconciliation.md`](../../../design/reconciliation.md)).
-///   The recorded hash is **not** advanced on drift: re-baselining happens only at
-///   the three named sites (adopt / absorb / commit), and drift is none of them.
-///
-/// Mutating: the `UNKNOWN → baseline` transition records into `record`, so the
-/// caller persists the advanced record after the probe runs. The probe does no
-/// I/O of its own — the caller supplies the raw bytes already read.
-pub fn file_state(record: &mut FileStateRecord, files: &[(&str, &[u8])]) -> Vec<Finding> {
-    let mut findings = Vec::new();
-    for (path, bytes) in files {
-        let current = hash_bytes(bytes);
-        match record.get(path) {
-            None => {
-                record.record(*path, current);
-                findings.push(baseline_adopt_finding(path));
-            }
-            Some(recorded) if recorded == current => {}
-            Some(_) => findings.push(drift_finding(path)),
-        }
-    }
-    findings
+/// Purely informational, emitted directly by the sweep **without consulting or
+/// mutating the record**: a staged copy has no committed baseline of its own to
+/// drift against (an in-flight edit of a copied-in committed doc legitimately
+/// differs from the committed baseline, so keying `dest` against the record would
+/// mint false blocking drift), and the baseline is adopted only when the finalize
+/// lands. A transient-sink or unknown-type instance has no committed destination,
+/// so the sweep emits **no** `file-state.*` finding for it at all — the A14 root
+/// cause. Distinct from `file-state.baseline-adopt` so a task touching a committed
+/// doc the store sweep baseline-adopts in the same run cannot collide two findings
+/// on one `(code, target)` key.
+pub fn staged_copy_finding(dest: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "file-state.staged-copy",
+        format!("staged copy of `{dest}` — this task's in-flight version of the doc"),
+        Some(Location::addressed(dest, 1, 1)),
+        Some(crate::finding::Route::informational(
+            "no action needed — the staged copy is validated in-task and baselined when \
+             its finalize lands",
+        )),
+    )
 }
 
 /// The full **OOB reconciliation classifier** for a single *committed* managed doc —
@@ -684,12 +675,12 @@ fn unbaselined_finding(path: &str) -> Finding {
 }
 
 /// Whether `path` (a `file-state` record key like `decisions/x.md`) lives under a
-/// persisted schema's `location:` — i.e. it is a committed managed doc, not a staged
-/// working-area key (`docs/<type>:<slug>.md`) or a code path. The `:` discriminates
-/// the staged namespace even when a schema's `location:` is itself `docs/`: every
-/// staged key carries one ([`crate::state`] mints `<type>:<slug>.md`), no committed
-/// path can (committed docs are `<location>/<slug>.md`, slugs `[a-z0-9-]` per
-/// [`crate::slug::slugify`]).
+/// persisted schema's `location:` — i.e. it is a committed managed doc, not a code
+/// path. The `:` exclusion is a structural guard on the staged working-area namespace
+/// (`docs/<type>:<slug>.md` — no committed path can carry a `:`: committed docs are
+/// `<location>/<slug>.md`, slugs `[a-z0-9-]` per [`crate::slug::slugify`]); since M43
+/// A14 staged keys never enter the record at all (the task sweep is record-silent for
+/// staged instances), so no live record should ever hit it.
 fn persisted_committed_path(
     path: &str,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
@@ -986,20 +977,6 @@ fn baseline_adopt_finding(path: &str) -> Finding {
         format!("baseline adopted: `{path}`"),
         Some(Location::addressed(path, 1, 1)),
         Some("no action needed — the baseline was adopted on first encounter".into()),
-    )
-}
-
-/// The drift block: the on-disk content no longer matches the recorded hash. A
-/// blocking `file-state.hash-matches` finding carrying a `reconcile <target>`
-/// route the engine never executes (`validation.md` → Findings: the `reconcile`
-/// route; severity inventory: `hash-matches` default blocking).
-fn drift_finding(path: &str) -> Finding {
-    Finding::graded(
-        Severity::Blocking,
-        "file-state.hash-matches",
-        format!("on-disk content of `{path}` differs from the recorded state"),
-        Some(Location::addressed(path, 1, 1)),
-        Some(format!("reconcile {path}").into()),
     )
 }
 
@@ -2407,71 +2384,29 @@ sections: []
         assert_eq!(loaded, FileStateRecord::new());
     }
 
-    /// The done-criterion for the `file-state` probe across the three MVP states:
-    ///
-    /// 1. **Fresh file (`UNKNOWN`)** → exactly one informational
-    ///    `file-state.baseline-adopt` finding (advisory, no route) **and** the
-    ///    record advances: the file's hash is now recorded.
-    /// 2. **Unchanged second run** → zero findings (the file is `IN_SYNC`).
-    /// 3. **Mutated file** → exactly one blocking `file-state.hash-matches`
-    ///    finding carrying a non-`None` `reconcile` route, and the recorded hash
-    ///    is **not** advanced (re-baselining is not a drift-site).
-    ///
-    /// All findings are the one [`Finding`] envelope.
+    /// The staged-copy advisory (M43 A14): keyed at the repo-real destination
+    /// (the file-path target form, value corrected), advisory severity, and an
+    /// informational route — the shape [`crate::validate::validate_task`]'s staged
+    /// loop emits for a persisted instance without touching the record.
     #[test]
-    fn file_state_probe_baselines_and_detects_drift() {
-        const PATH: &str = "decisions/rate-limit.md";
-        let original: &[u8] = b"## Decision\n\nadopt a token bucket\n";
-        let mutated: &[u8] = b"## Decision\n\nadopt a leaky bucket\n";
-
-        let mut record = FileStateRecord::new();
-
-        // (1) Fresh file: baseline-adopt + the record advances.
-        let findings = file_state(&mut record, &[(PATH, original)]);
-        assert_eq!(findings.len(), 1, "first encounter emits one finding");
-        let adopt = &findings[0];
-        assert_eq!(adopt.code, "file-state.baseline-adopt");
-        assert_eq!(adopt.severity, Severity::Advisory);
+    fn staged_copy_finding_is_an_informational_advisory_at_the_destination() {
+        let f = staged_copy_finding("decisions/rate-limit.md");
+        assert_eq!(f.code, "file-state.staged-copy");
+        assert_eq!(f.severity, Severity::Advisory);
         assert!(
-            adopt
-                .route
+            f.message.contains("`decisions/rate-limit.md`"),
+            "the message names the repo-real destination: {f:?}",
+        );
+        assert_eq!(
+            f.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("decisions/rate-limit.md"),
+            "the target is the repo-real destination: {f:?}",
+        );
+        assert!(
+            f.route
                 .as_deref()
-                .is_some_and(|r| r.contains("no action needed")),
-            "baseline adoption carries an informational route (the advisory-route floor, \
-             never null); a first encounter is not a repair: {adopt:?}"
-        );
-        assert_eq!(
-            record.get(PATH),
-            Some(hash_bytes(original).as_str()),
-            "baseline-adopt records the current hash (the record advances)",
-        );
-
-        // (2) Unchanged second run: zero findings, no spurious re-adoption.
-        let findings = file_state(&mut record, &[(PATH, original)]);
-        assert!(
-            findings.is_empty(),
-            "a matching hash is IN_SYNC — no finding, got {findings:?}",
-        );
-
-        // (3) Mutated file: exactly one blocking hash-matches drift finding with a
-        // non-None reconcile route; the recorded hash stays pinned (not advanced).
-        let findings = file_state(&mut record, &[(PATH, mutated)]);
-        assert_eq!(findings.len(), 1, "drift emits exactly one finding");
-        let drift = &findings[0];
-        assert_eq!(drift.code, "file-state.hash-matches");
-        assert_eq!(drift.severity, Severity::Blocking);
-        let route = drift
-            .route
-            .as_deref()
-            .expect("drift carries a reconcile route");
-        assert!(
-            route.starts_with("reconcile"),
-            "the drift route is a reconcile direction, got {route:?}",
-        );
-        assert_eq!(
-            record.get(PATH),
-            Some(hash_bytes(original).as_str()),
-            "drift does not advance the recorded hash (re-baselining is not a drift-site)",
+                .is_some_and(|r| r.starts_with("no action needed")),
+            "an ignorable advisory says so in the first clause (the style guide): {f:?}",
         );
     }
 }

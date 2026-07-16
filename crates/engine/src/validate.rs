@@ -37,7 +37,7 @@
 //! yields none.
 
 use crate::field_block::Field;
-use crate::file_state::{FileStateRecord, file_state};
+use crate::file_state::FileStateRecord;
 use crate::finding::{Finding, Location, Route, Severity};
 use crate::parse::{Document, ParsedItem, ParsedSection, parse_sections};
 use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, RootKind, ingest_probe_run};
@@ -113,9 +113,11 @@ pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// `<type>:<slug>.md`), then over each instance runs the two MVP task-scope probes
 /// and aggregates their severity-classified findings into a [`ValidationReport`]:
 ///
-/// - **`file-state`** — hashes the staged bytes against `record` (baseline-adopt on
-///   first encounter, blocking drift on a recorded mismatch). The probe advances the
-///   record on adopt; the caller persists it.
+/// - **`file-state`** — a **persisted** instance gets the staged-copy advisory at its
+///   repo-real committed destination ([`crate::file_state::staged_copy_finding`]);
+///   `record` is neither consulted nor advanced for staged instances (M43 A14 — a
+///   copied-in committed doc's in-flight edit must not drift). A transient-sink or
+///   unknown-type instance yields no `file-state.*` finding at all.
 /// - **`schema-conformance`** — parses each instance against its (caller-supplied)
 ///   schema. A *parse-level* conformance failure (missing/renamed heading, malformed
 ///   anchor, …) surfaces those findings directly; a clean parse then runs the
@@ -220,18 +222,32 @@ pub fn validate_task(
     base_code_tree_root: &Path,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
-    for entry in staged_instances(dir)? {
-        let StagedInstance { rel_key, filename } = entry;
+    for filename in staged_instances(dir)? {
         let bytes = std::fs::read(dir.join(DOCS_DIR).join(&filename))?;
 
-        // `file-state` over this one instance, keyed by its docs-relative path.
-        findings.extend(file_state(record, &[(rel_key.as_str(), &bytes)]));
+        // The per-instance display identity (M43 A14; `surface-contract.md` → law 1:
+        // every printed path is repo-real or a typed identity): a persisted instance
+        // displays at its repo-relative committed destination, a transient-sink or
+        // unknown-type one at its `<type>:<slug>` identity — never the
+        // `docs/<type>:<slug>.md` working-area fiction the pre-M43 sweep printed.
+        let display = staged_display(&filename, schemas);
+
+        // `file-state` over this one instance: a persisted instance gets the
+        // staged-copy advisory at its repo-real destination, emitted directly — the
+        // record is neither consulted nor advanced (a copied-in committed doc's
+        // in-flight edit legitimately differs from the committed baseline, so keying
+        // the destination against the record would mint false blocking drift). A
+        // transient-sink or unknown-type instance has no committed file to baseline
+        // or drift, so no `file-state.*` finding fires at all — the A14 root cause.
+        if let Some(dest) = staged_destination(&filename, schemas) {
+            findings.push(crate::file_state::staged_copy_finding(&dest));
+        }
 
         // `schema-conformance` over the instance, resolving its type from the
         // `<type>:<slug>.md` filename. A non-UTF-8 instance can't be a managed
         // Markdown doc; the parser owns that, so we require a UTF-8 read here.
         let source = String::from_utf8_lossy(&bytes);
-        findings.extend(conformance_for(&filename, schemas, &rel_key, &source));
+        findings.extend(conformance_for(&filename, schemas, &display, &source));
 
         // The #5 owner-artifact presence gate over this instance's `owned-location`
         // leaves: each named path must be a repo-relative path under the owned artifact
@@ -239,7 +255,7 @@ pub fn validate_task(
         // → The engine work, item 3). An instance with no `owned-location` field yields
         // nothing — the omitting-context inert path (mirroring the doc-code surface).
         findings.extend(owner_artifact_present(
-            &filename, schemas, &rel_key, &source, repo_root, tracked,
+            &filename, schemas, &display, &source, repo_root, tracked,
         ));
     }
 
@@ -1506,17 +1522,11 @@ fn finding_address(f: &Finding) -> Option<&str> {
     f.location.as_ref().and_then(|l| l.address.as_deref())
 }
 
-/// One staged doc instance under `<dir>/docs/`: its `docs/<filename>` record key
-/// and the bare `filename` (`<type>:<slug>.md`).
-struct StagedInstance {
-    rel_key: String,
-    filename: String,
-}
-
-/// The task's staged doc instances under `<dir>/docs/`, in **path-sorted** filename
-/// order (the stable sweep order). A working area with no `docs/` dir (nothing
-/// staged yet) yields an empty list, not an error. Only `*.md` files are instances.
-fn staged_instances(dir: &Path) -> std::io::Result<Vec<StagedInstance>> {
+/// The task's staged doc instances under `<dir>/docs/` — the bare `<type>:<slug>.md`
+/// filenames, in **path-sorted** order (the stable sweep order). A working area with
+/// no `docs/` dir (nothing staged yet) yields an empty list, not an error. Only
+/// `*.md` files are instances.
+fn staged_instances(dir: &Path) -> std::io::Result<Vec<String>> {
     let docs = dir.join(DOCS_DIR);
     let read = match std::fs::read_dir(&docs) {
         Ok(read) => read,
@@ -1535,34 +1545,58 @@ fn staged_instances(dir: &Path) -> std::io::Result<Vec<StagedInstance>> {
         }
     }
     names.sort();
-    Ok(names
-        .into_iter()
-        .map(|filename| StagedInstance {
-            rel_key: format!("{DOCS_DIR}/{filename}"),
-            filename,
-        })
-        .collect())
+    Ok(names)
+}
+
+/// The repo-relative committed destination a staged `<type>:<slug>.md` instance
+/// promotes to at finalize — `<location>/<slug>.md`, or a **placement** doctype's
+/// literal `placement.file` ([`crate::store::canonical_path`] rooted at the empty
+/// path, so the placement branch is included) — or `None` for a transient-sink type
+/// (no committed home) or a type the resolved cascade does not define.
+fn staged_destination(filename: &str, schemas: &BTreeMap<String, Schema>) -> Option<String> {
+    let identity = filename.strip_suffix(".md").unwrap_or(filename);
+    let (ty, slug) = identity.split_once(':')?;
+    let schema = schemas.get(ty)?;
+    crate::store::canonical_path(Path::new(""), schema, slug)
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// The per-instance **display identity** of one staged instance (M43 A14;
+/// `design/surface-contract.md` → law 1's two legal forms): a **persisted** instance
+/// displays at its repo-relative repo-real destination ([`staged_destination`]); a
+/// **transient-sink** or **unknown-type** instance has no committed home, so it
+/// displays at its `<type>:<slug>` identity — never the `docs/<type>:<slug>.md`
+/// working-area fiction the pre-M43 sweep printed.
+fn staged_display(filename: &str, schemas: &BTreeMap<String, Schema>) -> String {
+    staged_destination(filename, schemas)
+        .unwrap_or_else(|| filename.strip_suffix(".md").unwrap_or(filename).to_owned())
 }
 
 /// Run `schema-conformance` over one staged instance: resolve its type from the
 /// `<type>:<slug>.md` filename, parse against the schema, and surface parse-level
 /// findings or the [`schema_conformance`] checks. A type with no schema in the
-/// resolved cascade raises a blocking `schema-conformance.unknown-type`.
+/// resolved cascade raises a blocking `schema-conformance.unknown-type`, keyed —
+/// message and target — at the `<type>:<slug>` identity derivable from the staged
+/// filename (M43 A14: the typed-identity form; `display` equals that identity for an
+/// unknown type by [`staged_display`]'s construction).
 fn conformance_for(
     filename: &str,
     schemas: &BTreeMap<String, Schema>,
-    rel_key: &str,
+    display: &str,
     source: &str,
 ) -> Vec<Finding> {
     let ty = filename.split(':').next().unwrap_or(filename);
+    // Identity is the staged `<type>:<slug>.md` filename minus its extension — the URI the
+    // path→URI flip keys on (never the `docs/<type>:<slug>.md` working-area path).
+    let identity = filename.strip_suffix(".md").unwrap_or(filename);
     let Some(schema) = schemas.get(ty) else {
         return vec![Finding::graded(
             Severity::Blocking,
             "schema-conformance.unknown-type",
             format!(
-                "staged doc `{rel_key}` has type `{ty}`, which the resolved cascade does not define"
+                "staged doc `{identity}` has type `{ty}`, which the resolved cascade does not define"
             ),
-            Some(Location::addressed(rel_key, 1, 1)),
+            Some(Location::addressed(identity, 1, 1)),
             None,
         )];
     };
@@ -1570,22 +1604,23 @@ fn conformance_for(
         Ok(doc) => schema_conformance(schema, source, &doc),
         Err(parse_findings) => parse_findings,
     };
-    // Identity is the staged `<type>:<slug>.md` filename minus its extension — the URI the
-    // path→URI flip keys on (never the `docs/<type>:<slug>.md` working-area path).
-    let identity = filename.strip_suffix(".md").unwrap_or(filename);
-    attribute_to_doc(&mut findings, identity, rel_key);
+    attribute_to_doc(&mut findings, identity, display);
     findings
 }
 
-/// Thread the owning doc's `identity` + `rel_key` into every `schema-conformance` /
+/// Thread the owning doc's `identity` + `display` into every `schema-conformance` /
 /// `conformance.*` finding so each names the doc it came from — never a sibling's
 /// (`design/validation.md` → Findings: `target` is the address the finding concerns). The
 /// bare per-instance checks emit doc-less messages and fragment-only / absent addresses
 /// (`section/field`, `section/item/leaf`, or `None`), so a multi-doc sweep produces
 /// indistinguishable findings; this post-pass attributes each in place:
 ///
-/// - **message** — prefixed with `` `<rel_key>`:  `` (the filesystem path) so the rendered
-///   `severity · code — message` line an operator reads names the on-disk doc.
+/// - **message** — prefixed with `` `<display>`:  `` so the rendered
+///   `severity · code — message` line an operator reads names the doc. `display` is
+///   the committed filesystem path at store scope, and the M43 A14 staged display
+///   identity at task scope ([`staged_display`] — the repo-real destination for a
+///   persisted instance, the `<type>:<slug>` identity for a transient one; law 1 of
+///   `design/surface-contract.md`).
 /// - **`Location.address`** — the JSON `target` channel, in **URI normal form**
 ///   (`command-output-contract.md` → the stable finding key): the **`path→URI` flip** — a
 ///   fragment-bearing address becomes `<identity>#<fragment>`, a fragment-less or
@@ -1599,11 +1634,11 @@ fn conformance_for(
 /// [`schema_conformance_store`] / [`hollow_surplus_store`] apply to their parse arms
 /// (reuse-proven — every caller holds the `<type>:<slug>` identity, including a **placement**
 /// doctype's `<type>:<type>` singleton identity, so the flip resolves placement docs too).
-/// The task-scope `unknown-type` arm and the store `route`-labeler already carry `rel_key`,
-/// so they are left untouched.
-fn attribute_to_doc(findings: &mut [Finding], identity: &str, rel_key: &str) {
+/// The task-scope `unknown-type` arm and the store `route`-labeler mint their own
+/// message + address, so they are left untouched.
+fn attribute_to_doc(findings: &mut [Finding], identity: &str, display: &str) {
     for finding in findings.iter_mut() {
-        finding.message = format!("`{rel_key}`: {}", finding.message);
+        finding.message = format!("`{display}`: {}", finding.message);
     }
     // The address half is the shared `path→URI` flip ([`engine::finding::readdress_to_uri`]) —
     // the same one `jigc ingest`'s near-miss row applies, so a defect keys identically
@@ -1640,7 +1675,7 @@ fn attribute_to_doc(findings: &mut [Finding], identity: &str, rel_key: &str) {
 fn owner_artifact_present(
     filename: &str,
     schemas: &BTreeMap<String, Schema>,
-    rel_key: &str,
+    display: &str,
     source: &str,
     repo_root: &Path,
     tracked: &TrackedPredicate<'_>,
@@ -1680,7 +1715,7 @@ fn owner_artifact_present(
                 findings.push(blocking_conformance(
                     "owner-artifact.present",
                     format!(
-                        "owner-artifact `{}` in section `{}` of `{rel_key}`: {why}",
+                        "owner-artifact `{}` in section `{}` of `{display}`: {why}",
                         declared.id, section.id
                     ),
                     Some(Location::addressed(
@@ -4003,24 +4038,19 @@ kind: memo
         |_path| false
     }
 
-    /// The done-criterion. Over a working area with **one drifted file** and **one
-    /// conformance-broken instance**, `validate_task` returns *both* findings and
+    /// The done-criterion. Over a working area with **two conformance-broken
+    /// instances**, `validate_task` aggregates one finding per instance and
     /// `has_blocking() == true`; over a **clean** area it returns an empty report and
-    /// `has_blocking() == false`.
+    /// `has_blocking() == false`. (The pre-M43 drift arm over a staged instance is
+    /// retired — A14: staged instances never key against the record; see
+    /// `staged_transient_instance_yields_no_file_state_findings` for that pin.)
     #[test]
     fn validate_task_aggregates_probe_findings() {
-        // --- The broken area: a drifted instance + a conformance-broken instance.
+        // --- The broken area: two conformance-broken staged instances.
         let area = TempArea::new("broken");
-
-        // `note:drift.md` was committed with the conformant bytes (its hash is in the
-        // record), but the working area now holds *different* bytes → file-state drift.
-        let drift_rel = area.stage("note:drift.md", BROKEN.as_bytes());
-        let mut record = FileStateRecord::new();
-        record.record(drift_rel.clone(), hash_bytes(CONFORMANT.as_bytes()));
-
-        // `note:broken.md` is a fresh instance (no recorded hash → baseline-adopt,
-        // advisory) whose slot is empty → schema-conformance blocks.
+        area.stage("note:also-broken.md", BROKEN.as_bytes());
         area.stage("note:broken.md", BROKEN.as_bytes());
+        let mut record = FileStateRecord::new();
 
         let report = validate_task(
             area.dir(),
@@ -4038,19 +4068,19 @@ kind: memo
         )
         .expect("sweep runs");
 
-        // Both blocking findings are present in the aggregate.
+        // Both instances' blocking findings are present in the aggregate.
         let codes: Vec<&str> = report.findings.iter().map(|f| f.code.as_str()).collect();
-        assert!(
-            codes.contains(&"file-state.hash-matches"),
-            "the drifted file must surface a file-state drift finding, got {codes:?}"
-        );
-        assert!(
-            codes.contains(&"schema-conformance.required-slot-present"),
-            "the broken instance must surface a conformance finding, got {codes:?}"
+        assert_eq!(
+            codes,
+            vec![
+                "schema-conformance.required-slot-present",
+                "schema-conformance.required-slot-present",
+            ],
+            "one conformance finding per broken instance, in path-sorted order"
         );
         assert!(
             report.has_blocking(),
-            "a drifted + conformance-broken area must block, got {:?}",
+            "a conformance-broken area must block, got {:?}",
             report.findings
         );
 
@@ -4088,6 +4118,379 @@ kind: memo
                 .all(|f| f.severity != Severity::Blocking),
             "no blocking findings over a clean area, got {:?}",
             clean_report.findings
+        );
+    }
+
+    // ── M43 A14: the honest staged-sweep display + the transient file-state skip ──
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "adr".to_string(),
+            crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+                .expect("adr.yaml loads"),
+        );
+        m
+    }
+
+    /// A staged ADR whose required `consequences` slot is empty — one
+    /// `schema-conformance.required-slot-present`, nothing else.
+    const ADR_BROKEN: &str = "\
+---
+status: accepted
+date: 2026-07-16
+---
+
+# Rate limit the gateway
+
+## Context
+Clients can flood the gateway.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+Throttle per client id.
+
+## Consequences
+";
+
+    /// A fully-conformant ADR (every required slot filled, no outgoing ref).
+    const ADR_OK: &str = "\
+---
+status: accepted
+date: 2026-07-16
+---
+
+# Rate limit the gateway
+
+## Context
+Clients can flood the gateway.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+Throttle per client id.
+
+## Consequences
+Bursty-but-honest clients see occasional 429s.
+";
+
+    /// The finding's carried target address, if any.
+    fn address(f: &Finding) -> Option<&str> {
+        f.location.as_ref().and_then(|l| l.address.as_deref())
+    }
+
+    /// (M43 A14, done-criterion 1) A staged **persisted** ADR's staged-sweep findings
+    /// name its repo-real committed destination `decisions/<slug>.md` — in the
+    /// staged-copy advisory's message AND target, and as the conformance message
+    /// prefix — never the fictional `docs/adr:<slug>.md` working-area key
+    /// (`design/surface-contract.md` → law 1: every printed path is repo-real or a
+    /// typed identity). The record is neither consulted nor advanced.
+    #[test]
+    fn staged_persisted_adr_reports_at_its_repo_real_destination() {
+        let area = TempArea::new("persisted");
+        area.stage("adr:rate-limit-the-gateway.md", ADR_BROKEN.as_bytes());
+        let mut record = FileStateRecord::new();
+
+        let report = validate_task(
+            area.dir(),
+            &adr_schemas(),
+            &mut record,
+            area.dir(),
+            area.dir(),
+            area.dir(),
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &never_tracked(),
+            &BTreeSet::new(),
+            area.dir(),
+        )
+        .expect("sweep runs");
+
+        // Exactly one file-state finding: the staged-copy advisory at the repo-real
+        // destination — message AND target name `decisions/<slug>.md`.
+        let staged: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code.starts_with("file-state."))
+            .collect();
+        assert_eq!(
+            staged.len(),
+            1,
+            "one staged-copy advisory and no other file-state finding: {:?}",
+            report.findings
+        );
+        let advisory = staged[0];
+        assert_eq!(advisory.code, "file-state.staged-copy");
+        assert_eq!(advisory.severity, Severity::Advisory);
+        assert!(
+            advisory
+                .message
+                .contains("`decisions/rate-limit-the-gateway.md`"),
+            "the advisory's message names the repo-real destination: {advisory:?}",
+        );
+        assert_eq!(
+            address(advisory),
+            Some("decisions/rate-limit-the-gateway.md"),
+            "the advisory's target is the repo-real path (the file-path form, value \
+             corrected): {advisory:?}",
+        );
+        assert!(
+            advisory
+                .route
+                .as_deref()
+                .is_some_and(|r| r.contains("no action needed")),
+            "the advisory-route floor: an ignorable advisory says so: {advisory:?}",
+        );
+
+        // The record was neither consulted nor advanced — no key minted.
+        assert!(
+            record.hashes.is_empty(),
+            "the staged loop must not mint record keys; got {:?}",
+            record.hashes
+        );
+
+        // The conformance finding displays the repo-real path in its message prefix;
+        // its target stays the URI identity (the address grammar is untouched).
+        let slot = report
+            .findings
+            .iter()
+            .find(|f| f.code == "schema-conformance.required-slot-present")
+            .expect("the empty consequences slot fires");
+        assert!(
+            slot.message
+                .starts_with("`decisions/rate-limit-the-gateway.md`: "),
+            "the conformance message prefix is the repo-real destination: {}",
+            slot.message
+        );
+        assert_eq!(
+            address(slot),
+            Some("adr:rate-limit-the-gateway#consequences"),
+            "the conformance target stays the URI identity: {slot:?}",
+        );
+    }
+
+    /// (M43 A14, the do-NOT-do-it guard) A task editing an **existing committed** doc —
+    /// the copied-in staged instance whose bytes legitimately differ from the committed
+    /// baseline — must NOT drift at its repo-real key: the staged sweep never keys the
+    /// destination against the record (that would mint false blocking drift on every
+    /// in-flight edit; `DECISIONS.md` 2026-07-16 Inc 5 T4).
+    #[test]
+    fn a_copied_in_committed_doc_never_drifts_at_its_repo_real_key() {
+        let area = TempArea::new("copied-in");
+        // The committed doc at its canonical home, baselined in the record…
+        let decisions = area.dir().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+        std::fs::write(decisions.join("rate-limit-the-gateway.md"), ADR_OK).expect("commit");
+        let mut record = FileStateRecord::new();
+        record.record(
+            "decisions/rate-limit-the-gateway.md",
+            hash_bytes(ADR_OK.as_bytes()),
+        );
+        let before = record.clone();
+        // …and this task's staged copy, mid-edit (different bytes).
+        let edited = ADR_OK.replace("occasional", "rare");
+        assert_ne!(edited, ADR_OK);
+        area.stage("adr:rate-limit-the-gateway.md", edited.as_bytes());
+
+        let report = validate_task(
+            area.dir(),
+            &adr_schemas(),
+            &mut record,
+            area.dir(),
+            area.dir(),
+            area.dir(),
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &never_tracked(),
+            &BTreeSet::new(),
+            area.dir(),
+        )
+        .expect("sweep runs");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|f| f.code != "file-state.hash-matches"),
+            "an in-flight edit of a committed doc must not drift at the repo-real key: {:?}",
+            report.findings
+        );
+        assert!(
+            !report.has_blocking(),
+            "the conformant mid-edit copy must not block: {:?}",
+            report.findings
+        );
+        assert_eq!(
+            record, before,
+            "the staged sweep neither consults nor advances the record",
+        );
+    }
+
+    /// (M43 A14, done-criterion 2) A staged **transient-sink** instance (no committed
+    /// home — the `note`/`commit` shape) yields **zero** `file-state.*` findings — there
+    /// is no committed file to baseline or drift, the A14 root cause — while its
+    /// `schema-conformance` still fires, displayed AND keyed at the `<type>:<slug>`
+    /// identity. A stale legacy-shaped record key is neither consulted nor dropped.
+    #[test]
+    fn staged_transient_instance_yields_no_file_state_findings() {
+        let area = TempArea::new("transient");
+        let rel = area.stage("note:broken.md", BROKEN.as_bytes());
+        let mut record = FileStateRecord::new();
+        record.record(rel.clone(), hash_bytes(CONFORMANT.as_bytes()));
+        let before = record.clone();
+
+        let report = validate_task(
+            area.dir(),
+            &schemas(),
+            &mut record,
+            area.dir(),
+            area.dir(),
+            area.dir(),
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &never_tracked(),
+            &BTreeSet::new(),
+            area.dir(),
+        )
+        .expect("sweep runs");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|f| !f.code.starts_with("file-state.")),
+            "a transient-sink staged instance is file-state-silent: {:?}",
+            report.findings
+        );
+        let slot = report
+            .findings
+            .iter()
+            .find(|f| f.code == "schema-conformance.required-slot-present")
+            .expect("the empty body slot still fires");
+        assert!(
+            slot.message.starts_with("`note:broken`: "),
+            "a transient instance displays at its `<type>:<slug>` identity: {}",
+            slot.message
+        );
+        assert_eq!(address(slot), Some("note:broken#body"));
+        assert_eq!(
+            record, before,
+            "the stale legacy key is neither consulted nor dropped",
+        );
+    }
+
+    /// (M43 A14, the `(code, target)` value correction) The `unknown-type` arm keys —
+    /// message AND target — at the `<type>:<slug>` identity derivable from the staged
+    /// filename, never the `docs/<type>:<slug>.md` working-area fiction.
+    #[test]
+    fn unknown_type_keys_at_the_type_slug_identity() {
+        let area = TempArea::new("unknown");
+        area.stage("mystery:zed.md", b"whatever\n");
+        let mut record = FileStateRecord::new();
+
+        let report = validate_task(
+            area.dir(),
+            &schemas(),
+            &mut record,
+            area.dir(),
+            area.dir(),
+            area.dir(),
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &never_tracked(),
+            &BTreeSet::new(),
+            area.dir(),
+        )
+        .expect("sweep runs");
+
+        let unknown = report
+            .findings
+            .iter()
+            .find(|f| f.code == "schema-conformance.unknown-type")
+            .expect("the unknown type blocks");
+        assert_eq!(
+            address(unknown),
+            Some("mystery:zed"),
+            "the target is the typed identity, not a working-area path: {unknown:?}",
+        );
+        assert!(
+            unknown.message.contains("`mystery:zed`") && !unknown.message.contains("docs/"),
+            "the message names the identity, never the docs/ fiction: {}",
+            unknown.message
+        );
+        // No file-state finding either — an unknown type has no committed home.
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|f| !f.code.starts_with("file-state.")),
+            "an unknown-type instance is file-state-silent: {:?}",
+            report.findings
+        );
+    }
+
+    /// (M43 A14, the placement branch) A staged **placement** doctype instance displays
+    /// at its literal `placement.file` — the repo-real destination `canonical_path`
+    /// resolves for it — not a `docs/<type>:<type>.md` fiction.
+    #[test]
+    fn staged_placement_instance_displays_at_its_literal_file() {
+        let roadmap = crate::schema::load_schema(
+            b"\
+type: roadmap
+id-from: title
+placement: { file: ROADMAP.md }
+sections:
+  - id: body
+    slot: { hint: \"The roadmap.\" }
+",
+        )
+        .expect("placement schema loads");
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("roadmap".to_string(), roadmap);
+
+        let area = TempArea::new("placement");
+        area.stage("roadmap:roadmap.md", b"# Roadmap\n\n## Body\n\nThe plan.\n");
+        let mut record = FileStateRecord::new();
+
+        let report = validate_task(
+            area.dir(),
+            &schemas,
+            &mut record,
+            area.dir(),
+            area.dir(),
+            area.dir(),
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &never_tracked(),
+            &BTreeSet::new(),
+            area.dir(),
+        )
+        .expect("sweep runs");
+
+        let advisory = report
+            .findings
+            .iter()
+            .find(|f| f.code == "file-state.staged-copy")
+            .expect("a placement instance is persisted — the staged-copy advisory fires");
+        assert_eq!(
+            address(advisory),
+            Some("ROADMAP.md"),
+            "the placement branch displays at the literal file: {advisory:?}",
+        );
+        assert!(
+            advisory.message.contains("`ROADMAP.md`"),
+            "the message names the literal file: {}",
+            advisory.message
         );
     }
 }

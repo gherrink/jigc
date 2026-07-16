@@ -572,11 +572,11 @@ impl TaskArea {
     /// **landed `finalize`** (`design/reconciliation.md` → Persistence of the shifted
     /// baseline, the M17 amendment), whose post-commit threads this record through so
     /// an absorbed OOB baseline stops re-firing in every later task. A standalone
-    /// `task validate` drops the record — read verbs stay pure readers. A
-    /// working-area instance with no committed baseline baseline-adopts fresh
-    /// (advisory) each run rather than drifting against a stale staged hash — clean
-    /// validate stays clean as the agent fills it; those `docs/…` staged keys are
-    /// per-run and stripped before any persistence.
+    /// `task validate` drops the record — read verbs stay pure readers. Staged
+    /// working-area instances never touch the record (M43 A14): a persisted instance
+    /// is reported as an informational staged-copy advisory at its repo-real
+    /// destination, a transient one yields no `file-state.*` finding at all, and no
+    /// `docs/<type>:<slug>.md` key is ever minted.
     ///
     /// The sweep runs `engine::file_state::reconcile_committed_store` over the committed
     /// store (`reconciliation.md` → Detection timing: the `task validate` full sweep,
@@ -2234,15 +2234,13 @@ fn post_commit(
 /// When the caller carries a `post_sweep` record (the per-task preflight's post-sweep
 /// state), it is the **base** the commit's updates land on, so an absorbed OOB baseline
 /// the commit itself never touched persists too — fixing the verified re-fire defect
-/// (`design/reconciliation.md` → Persistence of the shifted baseline). Committed-store
-/// keys only: the sweep's staged working-area baselines (`docs/<type>:<slug>.md`) are
-/// per-run ([`TaskArea::validate`]) and stripped — discriminated by the `:` every
-/// staged key carries ([`engine::state`] mints `<type>:<slug>.md`) and no committed
-/// path can (committed docs are `<location>/<slug>.md`, slugs `[a-z0-9-]`), so a
-/// committed baseline under a schema whose `location:` is itself `docs/` survives and
-/// its drift detection stays live. The plan's hash set and the landed commit's
-/// re-hash apply on top, winning on overlap. `None` (the milestone boundary, no sweep)
-/// loads the durable record as before.
+/// (`design/reconciliation.md` → Persistence of the shifted baseline). The sweep mints
+/// **committed-store keys only** by construction (M43 A14 — staged working-area
+/// instances are record-silent, [`TaskArea::validate`]; the pre-M43 per-run
+/// `docs/<type>:<slug>.md` strip is retired as dead code), so the post-sweep record
+/// lands as-is. The plan's hash set and the landed commit's re-hash apply on top,
+/// winning on overlap. `None` (the milestone boundary, no sweep) loads the durable
+/// record as before.
 fn advance_file_state(
     repo_root: &Path,
     jigc_root: &Path,
@@ -2251,12 +2249,7 @@ fn advance_file_state(
     post_sweep: Option<FileStateRecord>,
 ) -> Result<()> {
     let mut record = match post_sweep {
-        Some(mut swept) => {
-            swept
-                .hashes
-                .retain(|path, _| !(path.starts_with("docs/") && path.contains(':')));
-            swept
-        }
+        Some(swept) => swept,
         None => FileStateRecord::load(jigc_root)
             .with_context(|| format!("loading the file-state record under {jigc_root:?}"))?,
     };

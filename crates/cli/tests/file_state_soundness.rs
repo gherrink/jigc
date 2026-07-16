@@ -11,9 +11,10 @@
 //!   `reconciliation.absorb` advisory **exactly once** across subsequent tasks —
 //!   task A's landed finalize emits it in its envelope and persists the shifted
 //!   baseline; task B's validate + landed finalize emit **zero** absorb for that
-//!   path. The persisted record carries committed-store keys only (no `docs/`-
-//!   prefixed staged working-area baselines — those are per-run by design,
-//!   `crates/cli/src/task.rs` → `TaskArea::validate`).
+//!   path. The persisted record carries committed-store keys only — since M43 A14
+//!   staged working-area instances are record-silent (no `docs/<type>:<slug>.md`
+//!   key is ever minted; `crates/cli/src/task.rs` → `TaskArea::validate`), so no
+//!   strip is needed for that to hold.
 //! - **Pure readers stay pure.** A standalone `jigc task validate` absorbs in
 //!   memory for its own run (the advisory still surfaces) but leaves
 //!   `.jigc/state/file-state.json` byte-unchanged — and never mints it when
@@ -310,7 +311,8 @@ fn absorbed_oob_edit_fires_absorb_exactly_once_across_tasks() {
     );
 
     // The durable record advanced to the edited bytes' hash, committed-store keys
-    // only — no `docs/`-prefixed staged working-area baselines leak into it.
+    // only — staged working-area instances never enter the record (M43 A14), so no
+    // `docs/<type>:<slug>.md` key can leak into it.
     let record = fs::read_to_string(
         repo.path()
             .join(".jigc")
@@ -620,7 +622,9 @@ fn copy_tree(src: &Path, dst: &Path) {
 /// Copy the embedded pack into `dir` and move the `adr` schema's committed home from
 /// `decisions/` to `docs/` — a natural `location:` name that collides with the
 /// staged working-area key prefix (`docs/<type>:<slug>.md`), the collision the
-/// post-sweep strip must discriminate on.
+/// pre-M43 post-sweep strip had to discriminate on (retired at M43 A14 — staged
+/// instances never enter the record — but a committed `docs/<slug>.md` baseline
+/// surviving every landed finalize is still the contract under test).
 fn docs_located_pack(dir: &Path) -> PathBuf {
     copy_tree(&embedded_pack_tree(), dir);
     // This fixture relocates `adr` (a hash-affecting shape change), so it is NOT the
@@ -734,14 +738,15 @@ fn oob_edit_and_commit(repo: &Path, rel: &str, from: &str, to: &str) {
     git(repo, &["commit", "-q", "-m", "docs: tighten the prose"]);
 }
 
-/// The post-sweep persistence discriminator (`crates/cli/src/task.rs` →
-/// `advance_file_state`): the per-run staged working-area baselines
-/// (`docs/<type>:<slug>.md` — always `:`-bearing) are stripped, but a **committed**
-/// baseline under a `location: docs/` schema (`docs/<slug>.md` — slugs are
-/// `[a-z0-9-]`, never `:`) must survive a landed finalize. Red before the fix: the
-/// strip matched on the `docs/` prefix alone, so the committed baseline died at
-/// every landed finalize and a later OOB edit silently baseline-adopted instead of
-/// firing `reconciliation.absorb` — drift detection permanently off for that type.
+/// The post-sweep persistence contract (`crates/cli/src/task.rs` →
+/// `advance_file_state`): a **committed** baseline under a `location: docs/` schema
+/// (`docs/<slug>.md` — slugs are `[a-z0-9-]`, never `:`) must survive a landed
+/// finalize, and no `:`-bearing staged working-area key may persist. Historically
+/// this pinned the per-run staged-key strip's discriminator (red before that fix:
+/// the strip matched on the `docs/` prefix alone, killing the committed baseline —
+/// drift detection permanently off for that type); since M43 A14 staged instances
+/// never enter the record at all, the strip is retired, and this test now pins that
+/// root-cause invariant through the same collision-shaped fixture.
 #[test]
 fn docs_located_committed_baseline_survives_landed_finalize() {
     const DOCS_ADR_PATH: &str = "docs/single-node-cache.md";
