@@ -4,6 +4,9 @@ description: Migrate a foreign record of deferred decisions and parked ideas int
 usage: an existing project carries a non-conformant owed-and-when record (a deferred-decisions list, a "later" backlog kept as prose) and `jigc migrate <path> --as deferral-ledger` is rewriting it into the managed deferral ledger. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc migrate <path> --as deferral-ledger`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
+  expires: never
 allows-create: [{type: deferral-ledger, as: ledger}]
 ---
 {{ include: step:author-migration-deferral-ledger }}

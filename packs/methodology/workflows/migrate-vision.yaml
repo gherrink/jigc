@@ -4,6 +4,9 @@ description: Migrate a foreign vision/charter document into the managed `vision`
 usage: an existing project carries a non-conformant vision document (a free-form charter/thesis/direction file) and `jigc migrate <path> --as vision` is rewriting it into the managed vision. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc migrate <path> --as vision`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
+  expires: never
 allows-create: [{type: vision, as: vision}]
 ---
 {{ include: step:author-migration-vision }}

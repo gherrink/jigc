@@ -256,6 +256,58 @@ pub fn assert_schema_freeze(pack: &dyn PackSource) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The **eager workflow-front-matter sweep** — the M43 pack-load fence home
+/// (`design/surface-contract.md` → The fences: pack-load posture). Workflows
+/// parse lazily on the compose path, so before this sweep a front-matter defect
+/// surfaced only when its workflow was composed; the fences need every shipped
+/// workflow's front-matter **loaded at pack-load**, at every door.
+///
+/// Scope mirrors [`assert_schema_freeze`]: **manifest-shipping constituents,
+/// each checked in isolation** (enumerated via
+/// [`origin_packs`](PackSource::origin_packs)) — a pack opts into the pack-load
+/// fences by shipping a `config/schema-manifest.yaml`, so a manifest-less
+/// seeded / project-local pack stays on skip-on-absent, never an error. Each
+/// owner's workflows load through the production [`load_workflow_def`] (a
+/// malformed front-matter now blocks at pack-load, naming the workflow).
+///
+/// **The suppression fence (law 2):** every `selectable: false` workflow must
+/// declare `suppressed: {reason, expires}` — a hidden capability carries a
+/// machine-visible reason that can expire (`never` is legal for a
+/// permanent-by-design hide; a *malformed* block is already rejected by the
+/// loader's required-shape check). Missing ⇒ fail, naming the workflow — the
+/// `decided-task` lesson made mechanical.
+fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
+    for owner in pack.origin_packs(PackResourceKind::Config, &manifest_id) {
+        for id in owner.list(PackResourceKind::Workflows) {
+            let bytes = owner
+                .read(PackResourceKind::Workflows, &id)
+                .with_context(|| format!("the `{}` workflow is unreadable", id.as_str()))?;
+            let def = engine::compose::load_workflow_def(&bytes).map_err(|finding| {
+                anyhow::anyhow!(
+                    "pack-load workflow-front-matter sweep failed on `{}`: {}",
+                    id.as_str(),
+                    finding.message,
+                )
+            })?;
+            if !def.selectable && def.suppressed.is_none() {
+                anyhow::bail!(
+                    "pack-load suppression fence failed: workflow `{}` declares \
+                     `selectable: false` with no `suppressed:` block — a hidden capability \
+                     must carry a machine-visible reason \
+                     (design/surface-contract.md → The suppression fence)\n\
+                     route: add `suppressed: {{reason: <why it is hidden>, expires: never | \
+                     <the condition that un-hides it>}}` to the workflow's front-matter",
+                    id.as_str(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The built-in dev pack, embedded at compile time from `crates/cli/pack/`.
 static PACK: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/pack");
 
@@ -470,8 +522,31 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
         eprintln!("warning: {err:#}");
         false
     });
-    let pack = make_pack_from_marker(std::env::var_os(PACK_DIR_ENV), listed, compose_methodology)?;
+    let pack_dir = std::env::var_os(PACK_DIR_ENV);
+    // A purely in-binary pack-set — exactly `[dev]` or `[dev ▸ methodology]`,
+    // no filesystem constituent — is immutable in-process, so the eager
+    // front-matter sweep below memoizes per composition shape.
+    let embedded_only = listed.is_empty() && pack_dir.as_ref().is_none_or(|dir| dir.is_empty());
+    let pack = make_pack_from_marker(pack_dir, listed, compose_methodology)?;
     assert_schema_freeze(pack.as_ref())?;
+
+    // The eager workflow-front-matter sweep (M43, `design/surface-contract.md`
+    // → The fences): memoized for the two embedded compositions (their bytes
+    // cannot change within a process; `make_pack` has ~38 call sites), recomputed
+    // whenever a filesystem pack is in the set (its tree is live-mutable).
+    // `anyhow::Error` is not `Clone`, so the cache carries the rendered message.
+    if embedded_only {
+        static EMBEDDED_SWEEPS: [std::sync::OnceLock<Result<(), String>>; 2] =
+            [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+        EMBEDDED_SWEEPS[usize::from(compose_methodology)]
+            .get_or_init(|| {
+                assert_workflow_front_matter(pack.as_ref()).map_err(|err| format!("{err:#}"))
+            })
+            .clone()
+            .map_err(|msg| anyhow::anyhow!(msg))?;
+    } else {
+        assert_workflow_front_matter(pack.as_ref())?;
+    }
     Ok(pack)
 }
 
@@ -1168,6 +1243,9 @@ mod tests {
         usage: a user-facing change needs recording on the changelog — staged now, or cut into a versioned release.
         creates-task: true
         selectable: false
+        suppressed:
+          reason: reached by name for the deliberate record-a-change/cut-a-release pass (`jigc start --workflow record-change`); routine change recording already rides `single-task`'s record-changelog step, so a catalog line would duplicate it
+          expires: never
         allows-create: [{type: changelog, as: changelog}]
         ---
         {{ include: step:author-change }}

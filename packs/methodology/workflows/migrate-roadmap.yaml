@@ -4,6 +4,9 @@ description: Migrate a foreign roadmap or milestone plan into the managed `roadm
 usage: an existing project carries a non-conformant roadmap (a milestone plan, a phase list, a GSD ROADMAP.md) and `jigc migrate <path> --as roadmap` is rewriting it into the managed roadmap. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc migrate <path> --as roadmap`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
+  expires: never
 allows-create: [{type: roadmap, as: roadmap}]
 ---
 {{ include: step:author-migration-roadmap }}

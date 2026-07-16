@@ -4,6 +4,9 @@ description: Record a change on the changelog — create-or-update the singleton
 usage: a user-facing change needs recording on the changelog — staged now, or cut into a versioned release.
 creates-task: true
 selectable: false
+suppressed:
+  reason: reached by name for the deliberate record-a-change/cut-a-release pass (`jigc start --workflow record-change`); routine change recording already rides `single-task`'s record-changelog step, so a catalog line would duplicate it
+  expires: never
 allows-create: [{type: changelog, as: changelog}]
 ---
 {{ include: step:author-change }}

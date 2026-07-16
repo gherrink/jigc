@@ -4,6 +4,9 @@ description: Migrate a foreign milestone-close record into a managed per-milesto
 usage: an existing project carries a non-conformant milestone-close record (a GSD completion file, a "M3 done" write-up) and `jigc migrate <path> --as completion-record` is rewriting it into a managed completion record. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc migrate <path> --as completion-record`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
+  expires: never
 allows-create: [{type: completion-record, as: record}]
 ---
 {{ include: step:author-migration-completion-record }}

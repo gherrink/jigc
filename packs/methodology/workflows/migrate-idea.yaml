@@ -4,6 +4,9 @@ description: Migrate a foreign parked-idea note into a managed `idea` at `ideas/
 usage: an existing project carries a non-conformant parked-idea note (a someday/maybe file, a backlog entry kept as prose) and `jigc migrate <path> --as idea` is rewriting it into a managed idea. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc migrate <path> --as idea`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
+  expires: never
 allows-create: [{type: idea, as: idea}]
 ---
 {{ include: step:author-migration-idea }}

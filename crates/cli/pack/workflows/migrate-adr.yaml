@@ -4,6 +4,9 @@ description: Migrate a foreign architectural decision record into a managed `adr
 usage: an existing project carries a non-conformant ADR (a MADR or Nygard file under `docs/adr/` or similar) and `jigc migrate <path> --as adr` is rewriting it into a managed `adr`. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc migrate <path> --as adr`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
+  expires: never
 allows-create: [{type: adr, as: decision}]
 ---
 {{ include: step:author-migration-adr }}

@@ -3,6 +3,9 @@ description: The milestone-completion loop (audit → triage → fix → re-veri
 usage: you are closing a milestone — auditing the assembled whole, triaging and fixing its findings, then recording the verdict and the genuine-audit owner-artifact — and you want the phase walk, its human gates, and the record authoring made visible.
 creates-task: true
 selectable: false
+suppressed:
+  reason: invoked by name when a milestone closes (`jigc start --workflow completion "<milestone>"`) — the completion audit follows the milestone lifecycle, not an intent the router disambiguates
+  expires: never
 allows-create:
   - { type: completion-record, as: record }
   - { type: decisions-log, as: log }

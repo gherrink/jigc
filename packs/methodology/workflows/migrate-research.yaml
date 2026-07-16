@@ -4,6 +4,9 @@ description: Migrate a foreign research or investigation note into a managed `re
 usage: an existing project carries a non-conformant research note (loose investigation notes, an evidence dump under `research/` or similar) and `jigc migrate <path> --as research` is rewriting it into a managed research doc. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc migrate <path> --as research`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
+  expires: never
 allows-create: [{type: research, as: research}]
 ---
 {{ include: step:author-migration-research }}

@@ -3,6 +3,9 @@ description: The milestone-planning loop (scope → detect-gaps → settle → r
 usage: you are opening a milestone — scoping it against the roadmap, settling its gaps, and cutting it into increments — and you want the phase walk, its human gate, and the running-doc authoring made visible.
 creates-task: true
 selectable: false
+suppressed:
+  reason: invoked by name with the milestone in hand (`jigc start --workflow planning "<milestone>"`) — opening a milestone is a deliberate lifecycle act, not an intent the router disambiguates
+  expires: never
 allows-create:
   - { type: roadmap, as: roadmap }
   - { type: deferral-ledger, as: ledger }

@@ -4,6 +4,9 @@ description: Migrate a foreign decisions log into the managed `decisions-log` si
 usage: an existing project carries a non-conformant decisions log (a DECISIONS.md, a running "choices we made" file) and `jigc migrate <path> --as decisions-log` is rewriting it into the managed decisions log. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc migrate <path> --as decisions-log`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
+  expires: never
 allows-create: [{type: decisions-log, as: log}]
 ---
 {{ include: step:author-migration-decisions-log }}
