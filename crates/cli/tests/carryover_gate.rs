@@ -23,6 +23,13 @@
 //! declare-at-the-boundary rule, not a leak fix), and `--carry-staged` proceeds with
 //! the entry left staged, uncommitted.
 //!
+//! The **labeled manifest** (T5): a carried entry riding the commit under a declared
+//! `--carry-staged` is labeled **`carried-over`** at all four render sites — the
+//! `--dry-run` forecast (text + JSON), the pre-commit print, and the landed manifest
+//! text + JSON — over one pre-commit-computed set, so the forecast/landed
+//! identical-set invariant holds by construction (labeling changes no set
+//! membership).
+//!
 //! Every arm drives the real binary and asserts on the emitted findings envelope /
 //! the landed git commit — never a reconstruction.
 
@@ -438,6 +445,215 @@ fn carry_staged_lands_the_declared_carryover() {
         committed.lines().any(|l| l == "foreign-a.txt")
             && committed.lines().any(|l| l == "feature.rs"),
         "the declared carryover AND the task's own edit land in the one commit; files:\n{committed}"
+    );
+}
+
+// ───────────────────────── the labeled manifest (T5) ─────────────────────────
+
+/// The `kind` the JSON manifest carries for `path`, from a `manifest`-shaped array.
+fn kind_of(manifest: &serde_json::Value, path: &str) -> String {
+    manifest
+        .as_array()
+        .expect("manifest is an array")
+        .iter()
+        .find(|e| e["path"] == path)
+        .unwrap_or_else(|| panic!("`{path}` is in the manifest; got:\n{manifest:#?}"))["kind"]
+        .as_str()
+        .expect("kind is a string")
+        .to_string()
+}
+
+/// A pre-mint staged **add and deletion** render `carried-over` across the agent
+/// surfaces — the `--dry-run` forecast (text **and** JSON) and, on the `--carry-staged`
+/// run, both the **pre-commit print** (named before the commit lands) and the **landed
+/// manifest text** — while the task's own post-mint staged edit keeps its `added` kind
+/// (labeling changes no set membership).
+#[test]
+fn carried_entries_label_carried_over_across_the_agent_surfaces() {
+    let repo = TempDir::new("label-agent");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    // A second tracked file whose deletion the user pre-stages.
+    fs::write(repo.path().join("doomed.txt"), "to be removed\n").expect("write doomed");
+    git(repo.path(), &["add", "doomed.txt"]);
+    git(repo.path(), &["commit", "-q", "-m", "track doomed.txt"]);
+    ok(repo.path(), home.path(), &["setup"], "jigc setup");
+
+    // The foreign pre-staged add AND deletion — staged BEFORE the task exists.
+    fs::write(repo.path().join("foreign-a.txt"), "not this task's work\n").expect("write a");
+    git(repo.path(), &["add", "foreign-a.txt"]);
+    git(repo.path(), &["rm", "-q", "doomed.txt"]);
+
+    let task = "gate-the-carryover";
+    mint_and_work(
+        repo.path(),
+        home.path(),
+        "gate the carryover",
+        task,
+        "feature.rs",
+    );
+
+    // Site 1a — the dry-run forecast, agent text.
+    let dry = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", task, "--dry-run"],
+        None,
+    );
+    assert!(dry.status.success(), "the dry-run forecast must render");
+    let dry_text = String::from_utf8_lossy(&dry.stdout).to_string();
+    for line in [
+        "  carried-over foreign-a.txt",
+        "  carried-over doomed.txt",
+        "  added feature.rs",
+    ] {
+        assert!(
+            dry_text.contains(line),
+            "the forecast labels the carried entries and keeps the task's own kind \
+             (wanted {line:?}); got:\n{dry_text}"
+        );
+    }
+    assert!(
+        !dry_text.contains("added foreign-a.txt") && !dry_text.contains("deleted doomed.txt"),
+        "a carried entry is labeled, not double-listed under its raw kind; got:\n{dry_text}"
+    );
+
+    // Site 1b — the dry-run forecast, JSON.
+    let dry_json = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", task, "--dry-run", "--format", "json"],
+        None,
+    );
+    assert!(dry_json.status.success(), "the JSON forecast must render");
+    let forecast: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&dry_json.stdout))
+            .expect("the dry-run JSON parses");
+    assert_eq!(
+        kind_of(&forecast["manifest"], "foreign-a.txt"),
+        "carried-over"
+    );
+    assert_eq!(kind_of(&forecast["manifest"], "doomed.txt"), "carried-over");
+    assert_eq!(kind_of(&forecast["manifest"], "feature.rs"), "added");
+
+    // Sites 2 + 3 — the `--carry-staged` run: the pre-commit print names each carried
+    // path BEFORE the commit lands, and the landed manifest text labels the same set.
+    let land = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", task, "--carry-staged"],
+        None,
+    );
+    assert!(
+        land.status.success(),
+        "`--carry-staged` lands; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&land.stdout),
+        String::from_utf8_lossy(&land.stderr),
+    );
+    let land_text = String::from_utf8_lossy(&land.stdout).to_string();
+    let (pre_commit, landed) = land_text
+        .split_once("finalized ")
+        .expect("the landed summary follows the pre-commit surface");
+    assert!(
+        pre_commit.contains("carrying over"),
+        "the pre-commit print announces the declared carry-over; got:\n{pre_commit}"
+    );
+    for site in [pre_commit, landed] {
+        for line in ["  carried-over foreign-a.txt", "  carried-over doomed.txt"] {
+            assert!(
+                site.contains(line),
+                "both the pre-commit print and the landed text carry {line:?}; got:\n{site}"
+            );
+        }
+    }
+    assert!(
+        landed.contains("  added feature.rs"),
+        "the task's own edit keeps its kind in the landed text; got:\n{landed}"
+    );
+}
+
+/// The **landed JSON** labels the carried entry `carried-over` — and the forecast/landed
+/// **identical-set symmetry holds with the labels on**: the dry-run `manifest` and the
+/// landed `committed.manifest` are byte-identical (one pre-commit-computed carried set,
+/// threaded to both sites). Under `--format json` the pre-commit print goes to stderr
+/// (the envelope owns stdout) and names the carried path there.
+#[test]
+fn the_landed_json_labels_carried_over_and_forecast_landed_stay_identical() {
+    let repo = TempDir::new("label-json");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    ok(repo.path(), home.path(), &["setup"], "jigc setup");
+
+    fs::write(repo.path().join("foreign-a.txt"), "deliberately carried\n").expect("write a");
+    git(repo.path(), &["add", "foreign-a.txt"]);
+
+    let task = "gate-the-carryover";
+    mint_and_work(
+        repo.path(),
+        home.path(),
+        "gate the carryover",
+        task,
+        "feature.rs",
+    );
+
+    // The forecast (commits nothing) ...
+    let dry = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", task, "--dry-run", "--format", "json"],
+        None,
+    );
+    assert!(dry.status.success(), "the JSON forecast must render");
+    let forecast: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&dry.stdout))
+        .expect("the dry-run JSON parses");
+
+    // ... then the declared landed run.
+    let land = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "task",
+            "finalize",
+            task,
+            "--carry-staged",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        land.status.success(),
+        "`--carry-staged --format json` lands; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&land.stdout),
+        String::from_utf8_lossy(&land.stderr),
+    );
+    let landed: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&land.stdout))
+        .expect("the landed JSON parses");
+    let committed = &landed["committed"];
+
+    // Site 4 — the landed JSON carries the additive kind for the carried path only.
+    assert_eq!(
+        kind_of(&committed["manifest"], "foreign-a.txt"),
+        "carried-over"
+    );
+    assert_eq!(kind_of(&committed["manifest"], "feature.rs"), "added");
+
+    // The identical-set invariant holds with the labels on (G3 symmetry).
+    assert_eq!(
+        forecast["manifest"], committed["manifest"],
+        "dry-run and landed agree on the labeled included set",
+    );
+    assert_eq!(
+        forecast["left_out"], committed["left_out"],
+        "dry-run and landed agree on the left-out set",
+    );
+
+    // Site 2 under JSON: the envelope owns stdout, so the pre-commit print names the
+    // carried path on stderr.
+    let stderr = String::from_utf8_lossy(&land.stderr);
+    assert!(
+        stderr.contains("carried-over foreign-a.txt"),
+        "the pre-commit print reaches stderr under `--format json`; got:\n{stderr}"
     );
 }
 

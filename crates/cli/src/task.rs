@@ -45,7 +45,7 @@ use engine::schema::Schema;
 use engine::state::{self, BasePin, RolesRecord};
 use engine::store::canonical_path;
 use engine::validate::validate_task;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -907,13 +907,53 @@ impl TaskArea {
         // content-faithfulness; the human is its only check. `--approve` falls through to
         // the transaction. Inert on a non-migration task: no source seam.
 
+        // M43 — the carryover decision (`design/surface-contract.md` → The carryover
+        // gate), computed ONCE pre-commit: `post_commit` deletes the working area (and
+        // the mint-time snapshot in it) before the landed manifest is classified, and
+        // the one computation threaded to every render site is what makes the
+        // forecast/landed identical-set invariant hold by construction. The engine
+        // decides over CLI-supplied git facts: the pre-task snapshot every minting door
+        // persisted, the same probe re-run now, and the migration's recorded retire
+        // pathspec (that deletion is the task's own work, exempt). A task minted before
+        // the snapshot existed reads `None` and fails open (the declared bound).
+        let carried_findings = {
+            let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
+                format!(
+                    "could not read the staged snapshot for task at {:?}",
+                    self.dir
+                )
+            })?;
+            let retire_exempt = state::read_source_path(&self.dir).with_context(|| {
+                format!("could not read the source path for task at {:?}", self.dir)
+            })?;
+            decide_carryover(
+                snapshot.as_ref(),
+                &git_staged_snapshot(&self.repo_root)?,
+                retire_exempt.as_deref(),
+                CarryoverBoundary::Task,
+            )
+        };
+        // The carried path set the manifest labels `carried-over` (labeling changes no
+        // set membership) — extracted from the decision's file-path targets, so the
+        // label set and the refuse set can never diverge (one decision fn).
+        let carried_paths: BTreeSet<String> = carried_findings
+            .iter()
+            .filter_map(|finding| {
+                finding
+                    .location
+                    .as_ref()
+                    .and_then(|location| location.address.clone())
+            })
+            .collect();
+
         // B1 dirty-tree sweep — `--dry-run` surfaces the commit file-set and stops, with no
         // commit and no destructive side effect. It is placed BEFORE the migration review
         // gate: a dry-run commits nothing, so `--approve` must never be required. The plan
         // above is computed read-only (`plan_finalize` only reads), so deriving the
         // prediction from it is side-effect-free.
         if dry_run {
-            let (included, left_out) = self.predict_manifest(&plan, is_migration)?;
+            let (mut included, left_out) = self.predict_manifest(&plan, is_migration)?;
+            relabel_carried(&mut included, &carried_paths);
             print!(
                 "{}",
                 render::finalize_manifest(format, &included, &left_out)
@@ -924,37 +964,16 @@ impl TaskArea {
             return Ok(Outcome::success());
         }
 
-        // M43 — the carryover gate (`design/surface-contract.md` → The carryover gate):
-        // refuse to let index entries staged BEFORE this task existed silently ride its
-        // whole-index commit — one blocking routed finding per carried path. On the
-        // COMMITTING path only, after the `--dry-run` branch (the forecast must render)
-        // and ahead of the migration review gate (a blocking refusal precedes the
-        // human-fidelity hold, like the planner's validation blocks). `--carry-staged`
-        // converts the undecidable intent to a declared one (the `--approve` mold; on a
-        // migration the two compose, each gating its own concern). The engine decides
-        // over CLI-supplied git facts: the pre-task snapshot every minting door
-        // persisted, the same probe re-run now, and the migration's recorded retire
-        // pathspec (that deletion is the task's own work, exempt). A task minted before
-        // the snapshot existed reads `None` and fails open (the declared bound).
-        if !carry_staged {
-            let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
-                format!(
-                    "could not read the staged snapshot for task at {:?}",
-                    self.dir
-                )
-            })?;
-            let retire_exempt = state::read_source_path(&self.dir).with_context(|| {
-                format!("could not read the source path for task at {:?}", self.dir)
-            })?;
-            let carried = decide_carryover(
-                snapshot.as_ref(),
-                &git_staged_snapshot(&self.repo_root)?,
-                retire_exempt.as_deref(),
-                CarryoverBoundary::Task,
-            );
-            if !carried.is_empty() {
-                return self.blocked(carried, format);
-            }
+        // M43 — the carryover gate: refuse to let index entries staged BEFORE this task
+        // existed silently ride its whole-index commit — one blocking routed finding per
+        // carried path. On the COMMITTING path only, after the `--dry-run` branch (the
+        // forecast must render) and ahead of the migration review gate (a blocking
+        // refusal precedes the human-fidelity hold, like the planner's validation
+        // blocks). `--carry-staged` converts the undecidable intent to a declared one
+        // (the `--approve` mold; on a migration the two compose, each gating its own
+        // concern).
+        if !carry_staged && !carried_findings.is_empty() {
+            return self.blocked(carried_findings, format);
         }
 
         if is_migration && !approve {
@@ -990,6 +1009,14 @@ impl TaskArea {
         // empty-index case (`nothing_staged_finding`).
         let (_, pending_left_out) = self.predict_manifest(&plan, is_migration)?;
         emit_left_out_advisory(format, &pending_left_out);
+
+        // M43 — the carried-over half of the pre-commit print: a `--carry-staged` run
+        // names what it is about to carry, BEFORE it commits, with the same
+        // `carried-over` label the other three sites render. Built from the carried set
+        // directly (not the forecast): a migration's narrowed forecast never lists a
+        // carried entry, but its whole-index commit still lands it. Empty on every
+        // undeclared run — a non-empty carried set refused above.
+        emit_carried_advisory(format, &carried_paths);
 
         // Phases 4–7: the shared transactional core — promote + stage + commit +
         // rollback + post-commit. The working area is the cleanup dir removed on a
@@ -1035,11 +1062,14 @@ impl TaskArea {
                     .iter()
                     .map(|promotion| promotion.destination.clone())
                     .collect();
-                let (manifest, left_out) = classify_landed_manifest(
+                let (mut manifest, left_out) = classify_landed_manifest(
                     git_commit_name_status(&self.repo_root)?,
                     git_status_entries(&self.repo_root)?,
                     &promoted_dests,
                 );
+                // M43 — label the landed carried entries from the PRE-commit-computed
+                // set (the working area holding the snapshot is already gone here).
+                relabel_carried(&mut manifest, &carried_paths);
                 let landed = render::Landed {
                     hash: git_capture(&self.repo_root, &["rev-parse", "--short", "HEAD"])?,
                     subject: git_capture(&self.repo_root, &["log", "-1", "--pretty=format:%s"])?,
@@ -1997,6 +2027,42 @@ fn emit_left_out_advisory(format: Format, left_out: &[render::ManifestEntry]) {
         eprint!("{advisory}");
     } else {
         print!("{advisory}");
+    }
+}
+
+/// Emit the **pre-commit** carried-over print (M43, `design/surface-contract.md` → The
+/// carryover gate) — nothing at all when nothing is carried. Stream discipline as
+/// [`emit_left_out_advisory`]: agent/human text to **stdout**, `--format json` to
+/// **stderr** (the structured envelope owns stdout).
+fn emit_carried_advisory(format: Format, carried_paths: &BTreeSet<String>) {
+    let carried: Vec<render::ManifestEntry> = carried_paths
+        .iter()
+        .map(|path| render::ManifestEntry {
+            path: path.clone(),
+            kind: render::ManifestKind::CarriedOver,
+        })
+        .collect();
+    let advisory = render::carried_over_advisory(&carried);
+    if advisory.is_empty() {
+        return;
+    }
+    if format == Format::Json {
+        eprint!("{advisory}");
+    } else {
+        print!("{advisory}");
+    }
+}
+
+/// Relabel manifest entries whose path is in the pre-commit **carried set** to
+/// [`render::ManifestKind::CarriedOver`] (M43 — the labeled manifest, all four render
+/// sites over one set). Labeling changes no set membership: a carried path keeps its
+/// place in the included set; the label says only how it got there (staged before this
+/// task existed, riding under a declared `--carry-staged`).
+fn relabel_carried(entries: &mut [render::ManifestEntry], carried: &BTreeSet<String>) {
+    for entry in entries {
+        if carried.contains(&entry.path) {
+            entry.kind = render::ManifestKind::CarriedOver;
+        }
     }
 }
 

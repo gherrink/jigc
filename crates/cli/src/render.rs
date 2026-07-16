@@ -701,6 +701,13 @@ pub struct Landed {
 /// `Untracked` are distinct on purpose: a staged new file the agent `git add`-ed is an
 /// **included** add (nothing was swept), while `Untracked` only ever tags a **left-out**
 /// file the commit excluded.
+///
+/// `CarriedOver` (M43, `design/surface-contract.md` → The carryover gate) labels a
+/// **pre-task staged** entry (add, modify, or delete) riding the commit under a declared
+/// `--carry-staged` — a label over the same set, never a membership change, rendered
+/// identically at all four sites (dry-run forecast, pre-commit print, landed text,
+/// landed JSON). The JSON value `carried-over` is a pre-1.0 additive enum extension,
+/// declared in `design/command-output-contract.md` → Evolution posture.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum ManifestKind {
@@ -709,6 +716,7 @@ pub enum ManifestKind {
     Deleted,
     Added,
     Untracked,
+    CarriedOver,
 }
 
 /// One entry in the finalize pre-commit manifest: a repo-relative `path` and the `kind`
@@ -723,7 +731,8 @@ pub struct ManifestEntry {
 
 /// One agent-text manifest line for an **included** commit member: `  promoted <path>` /
 /// `  modified <path>` / `  deleted <path>` / `  added <path>` (a deliberately-staged new
-/// file). No trailing newline — the caller joins / closes it. `Untracked` never reaches
+/// file) / `  carried-over <path>` (a pre-task staged entry riding under `--carry-staged`).
+/// No trailing newline — the caller joins / closes it. `Untracked` never reaches
 /// the included path (it tags only left-out files, rendered by [`left_out_lines`]); a
 /// defensive arm renders it under the left-out wording rather than the retired "swept".
 fn manifest_line(entry: &ManifestEntry) -> String {
@@ -733,6 +742,7 @@ fn manifest_line(entry: &ManifestEntry) -> String {
         ManifestKind::Deleted => format!("  deleted {}", entry.path),
         ManifestKind::Added => format!("  added {}", entry.path),
         ManifestKind::Untracked => format!("  untracked {}", entry.path),
+        ManifestKind::CarriedOver => format!("  carried-over {}", entry.path),
     }
 }
 
@@ -765,6 +775,29 @@ pub fn left_out_advisory(left_out: &[ManifestEntry]) -> String {
     let mut out = String::from("finalize — committing the index; leaving out:\n");
     for line in lines {
         out.push_str(&line);
+        out.push('\n');
+    }
+    out
+}
+
+/// The **pre-commit** carried-over print a landing `task finalize` emits before it
+/// commits (M43, `design/surface-contract.md` → The carryover gate): on a
+/// `--carry-staged` run the pre-task staged set is about to ride the whole-index
+/// commit by declaration, and this print names each carried path with the same
+/// [`manifest_line`] label (`carried-over`) the dry-run forecast and the landed
+/// manifest render — the four sites move together. Empty (no bytes) when nothing is
+/// carried (a refused run never reaches this print); ends with a newline. Sits beside
+/// [`left_out_advisory`] (the M42 print, untouched) on the same stream discipline.
+pub fn carried_over_advisory(carried: &[ManifestEntry]) -> String {
+    if carried.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from(
+        "finalize — committing the index; carrying over (staged before this task existed — \
+         declared with `--carry-staged`):\n",
+    );
+    for entry in carried {
+        out.push_str(&manifest_line(entry));
         out.push('\n');
     }
     out
@@ -3736,6 +3769,39 @@ mod tests {
         let json_out = finalize_manifest(Format::Json, &included, &[]);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["manifest"][0]["kind"], "added");
+    }
+
+    /// A carried entry renders `carried-over <path>` in the manifest text, serializes the
+    /// kebab-case JSON kind `carried-over` (the M43 additive enum value,
+    /// `design/command-output-contract.md` → Evolution posture), and the pre-commit
+    /// [`carried_over_advisory`] names each carried path under the declared-carry header —
+    /// empty (no bytes) when nothing is carried.
+    #[test]
+    fn render_manifest_carried_over_kind_and_pre_commit_advisory() {
+        let carried = vec![ManifestEntry {
+            path: "foreign-a.txt".to_string(),
+            kind: ManifestKind::CarriedOver,
+        }];
+
+        let agent = finalize_manifest(Format::Agent, &carried, &[]);
+        assert!(
+            agent.contains("  carried-over foreign-a.txt"),
+            "a carried entry renders `carried-over`; agent:\n{agent}",
+        );
+        let json_out = finalize_manifest(Format::Json, &carried, &[]);
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(value["manifest"][0]["kind"], "carried-over");
+
+        let advisory = carried_over_advisory(&carried);
+        insta::assert_snapshot!(advisory, @r"
+        finalize — committing the index; carrying over (staged before this task existed — declared with `--carry-staged`):
+          carried-over foreign-a.txt
+        ");
+        assert_eq!(
+            carried_over_advisory(&[]),
+            "",
+            "nothing carried ⇒ no bytes at all"
+        );
     }
 
     /// A landed finalize's JSON `committed` object carries the **included** `manifest[]`
