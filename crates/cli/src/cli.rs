@@ -2491,16 +2491,20 @@ mod cli_parse {
         );
     }
 
-    /// (M40 F12) `jigc doc show --help` routes the staged-doc case: a doc still
-    /// staged in an open task is not committed, so `show` cannot read it — the help
-    /// names `jigc task diff <id>` as the sanctioned read instead of dead-ending at
-    /// "takes no `--task`".
+    /// (M43 inc-5 T2, supersedes the M40 F12 pin) `jigc doc show --help` names the
+    /// staged read: the committed read is the **default**, not the only read (the R7
+    /// revision) — a doc staged in an open task is read with `--task <id>` — and the
+    /// retired `jigc task diff` route is gone from the help.
     #[test]
-    fn doc_show_help_points_staged_docs_at_task_diff() {
+    fn doc_show_help_names_the_staged_read() {
         let help = long_help(&["doc", "show"]);
         assert!(
-            help.contains("jigc task diff"),
-            "doc show --help routes staged docs to `jigc task diff`: {help}"
+            help.contains("--task <id>") && help.contains("staged"),
+            "doc show --help names the staged read: {help}"
+        );
+        assert!(
+            !help.contains("jigc task diff"),
+            "the retired task-diff route is gone from the help: {help}"
         );
     }
 }

@@ -181,26 +181,35 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Read a **committed** managed doc (or an addressed `#section`/item/leaf slice)
-    /// through the canonical parse/render path. Plain text is the byte-exact committed
-    /// view; `--format json` is the pinned stable shape (`design/team-ready-state.md` →
-    /// The read surface): a whole-doc object `{ type, slug, fields, sections }` where a
-    /// slot section serializes to its prose string and a repeatable section to its item
-    /// array; a `#section` slice returns that section's value (item array / slot prose),
-    /// an `#section/<id>` slice the item object, an `#section/<id>/<leaf>` slice the leaf.
-    /// Reads the committed store — it takes **no** `--task` (unlike the write verbs).
+    /// Read a managed doc (or an addressed `#section`/item/leaf slice) through the
+    /// canonical parse/render path. **Committed by default**: task-less, it reads the
+    /// **committed** store — the view a fresh session or a teammate on a clone sees.
     /// A doc still staged in an open task is not committed yet; read it with
-    /// `jigc task diff <id>` instead.
+    /// `--task <id>`, which serves that task's **staged** working copy through the
+    /// identical parse/slice path (the read-back of an in-flight write) — including a
+    /// **transient** doc's staged copy (`commit:<task-id>`, which never commits to a
+    /// repo file). Plain text is the canonical render; `--format json` is the pinned
+    /// stable shape (`design/doc-read-surface.md`): a whole-doc object
+    /// `{ type, slug, fields, sections }` — a staged serve adds the one `staged` key
+    /// carrying the task id — where a slot section serializes to its prose string and
+    /// a repeatable section to its item array; a `#section` slice returns that
+    /// section's value (item array / slot prose), an `#section/<id>` slice the item
+    /// object, an `#section/<id>/<leaf>` slice the leaf.
     Show {
         /// The doc address — `<type>:<slug>`, or a `#section`/item/leaf slice of it.
         addr: String,
+        /// Read this open task's **staged** working copy instead of the committed
+        /// store (same address, identical parse/slice path).
+        #[arg(long)]
+        task: Option<String>,
     },
     /// Project a doctype's **resolved** schema (the cascade-composed shape as loaded,
     /// injected stamp field included) — the third read surface, next to `describe`
     /// (the non-contractual menu) and `doc show` (the committed-content read).
     /// `--format json` is the separately-pinned, explicitly versioned contract
     /// (`contract-version: 2` — `design/doc-read-surface.md` → Why json is a contract
-    /// here); plain text is a non-contractual human listing. Task-less, like `show`.
+    /// here); plain text is a non-contractual human listing. Task-less — a schema
+    /// projection is never task-scoped.
     Schema {
         /// The doctype whose resolved schema to project (e.g. `adr`).
         doctype: String,
@@ -212,8 +221,8 @@ pub enum DocCommand {
     /// state**: `managed` (jigc's own doc) or `unregistered` (a file at a managed home jigc
     /// never adopted — adopt it with `jigc ingest` / `jigc migrate <path> --as <doctype>`).
     /// `--format json` is the pinned shape `{"docs":[{id, path, state}]}` (no in-band version
-    /// integer — `design/doc-read-surface.md` → the fourth read surface). Task-less, like
-    /// `show`: it reads the committed store, never an open task's staged buffer.
+    /// integer — `design/doc-read-surface.md` → the fourth read surface). Task-less: it
+    /// reads the committed store, never an open task's staged buffer.
     List {
         /// The doctype to list (optional — omit to list every persisted doctype).
         doctype: Option<String>,
@@ -307,7 +316,7 @@ impl DocCommand {
                 from_file,
                 task,
             } => run_author(cwd, &doctype, &from_file, task.as_deref(), format),
-            DocCommand::Show { addr } => run_show(cwd, &addr, format),
+            DocCommand::Show { addr, task } => run_show(cwd, &addr, task.as_deref(), format),
             DocCommand::Schema { doctype } => run_schema(cwd, &doctype, format),
             DocCommand::List { doctype } => run_list(cwd, doctype.as_deref(), format),
         };
@@ -1770,25 +1779,35 @@ fn apply_leaf(
     }
 }
 
-/// `jigc doc show <ref>` — read a **committed** managed doc (or an addressed slice)
-/// from the store (`design/team-ready-state.md` → The read surface; `design/
-/// introspection.md` → "Reading *filled* prose stays `jigc doc show`"). Unlike the
-/// write verbs this is task-less: it resolves the cascade schema set + repo root the
-/// same way `jigc validate` does, then serves the read through the canonical parse
-/// path — plain text is the [`engine::store::read_slice`] view (the **canonical render of
-/// the addressed node**: the whole doc is the store's own bytes, a slice is re-rendered
-/// from the parse — `design/doc-read-surface.md` → the retired byte-exactness claim);
-/// `--format json` is the pinned stable shape (a 1.0 contract, [`show_json`]). A read-side block
-/// (unknown type / not-found / unparseable / a `#fragment` naming nothing) routes
-/// through the shared [`DocFailure`] envelope, non-zero exit + route, exactly like a
-/// write block.
-fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
+/// `jigc doc show <ref>` — read a managed doc (or an addressed slice) through the
+/// canonical parse path, **committed by default** (`design/team-ready-state.md` → The
+/// read surface; `design/doc-read-surface.md` → What it reads, the M43 R7 revision).
+/// Task-less, it resolves the cascade schema set + repo root the same way `jigc
+/// validate` does and reads the **committed** store; with `--task <id>` it serves that
+/// task's **staged** working copy instead ([`run_show_staged`]). Plain text is the
+/// [`engine::store::read_slice`] view (the **canonical render of the addressed node**:
+/// the whole doc is the store's own bytes, a slice is re-rendered from the parse —
+/// `design/doc-read-surface.md` → the retired byte-exactness claim); `--format json` is
+/// the pinned stable shape (a 1.0 contract, [`show_json`]). A read-side block (unknown
+/// type / not-found / unparseable / a `#fragment` naming nothing) routes through the
+/// shared [`DocFailure`] envelope, non-zero exit + route, exactly like a write block.
+fn run_show(
+    cwd: &Path,
+    addr: &str,
+    task_id: Option<&str>,
+    format: Format,
+) -> Result<(), DocFailure> {
+    if let Some(task_id) = task_id {
+        return run_show_staged(cwd, addr, task_id, format);
+    }
     let pack = make_pack()?;
     let address = parse_verb_addr(pack.as_ref(), addr)?;
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
     let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
     let read = match format {
-        Format::Json => show_json(&jigc_home, &schemas, &address).map(|value| render::json(&value)),
+        Format::Json => {
+            show_json(&jigc_home, &schemas, &address, None).map(|value| render::json(&value))
+        }
         Format::Agent | Format::Human => {
             engine::store::read_slice(&jigc_home, &schemas, &address).map_err(DocFailure::block)
         }
@@ -1806,6 +1825,46 @@ fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
             failure,
         )),
     }
+}
+
+/// The **staged arm** of `jigc doc show` — `--task <id>` serves the task's staged
+/// working copy through the identical parse/slice path
+/// ([`engine::store::read_slice_staged`]; `design/surface-contract.md` → law 2: the
+/// staged read). The task resolves via [`ActiveTask::resolve`] (a bad id gets the
+/// shared `jigc task list` route), and the schema set is the same cascade-resolved
+/// set the committed arm reads against — identical-path applies to schema resolution
+/// too. Two conscious differences from the committed arm:
+///
+/// - **no [`reroute_unadopted`]**: the foreign-adoption discriminator adjudicates the
+///   *committed* store; a staged working copy is jigc-written by construction, never
+///   a foreign squatter, and its `store.unparseable` route already says "fix the
+///   staged working copy";
+/// - the whole-doc `--format json` serve carries the one additive `staged` marker key
+///   ([`show_json`]).
+fn run_show_staged(
+    cwd: &Path,
+    addr: &str,
+    task_id: &str,
+    format: Format,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, Some(task_id))?;
+    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let schemas = committed_schemas(task.pack.as_ref(), &task.jigc_home)?;
+    let out = match format {
+        Format::Json => show_json(
+            &task.jigc_home,
+            &schemas,
+            &address,
+            Some((&task.dir, &task.id)),
+        )
+        .map(|value| render::json(&value))?,
+        Format::Agent | Format::Human => {
+            engine::store::read_slice_staged(&task.jigc_home, &task.dir, &schemas, &address)
+                .map_err(DocFailure::block)?
+        }
+    };
+    println!("{out}");
+    Ok(())
 }
 
 /// Split the read-side **`store.unparseable`** block's *route* on the **managed-vs-foreign
@@ -2300,33 +2359,58 @@ fn push_item_lines(out: &mut String, item: &ContractItem<'_>, depth: usize) {
 }
 
 /// Build the pinned `--format json` value for `address` (`design/team-ready-state.md` →
-/// The read surface — the 1.0 stable contract, a one-way door). Reads the whole
-/// committed doc through [`engine::store::read_slice`] (which surfaces every doc-level
-/// block — unknown type / transient / not-found / unparseable — identically to the
-/// plain path), re-parses it (guaranteed clean: `read_slice` just parsed it), and shapes
-/// the value from the parsed structure. For a `#fragment`, a second `read_slice`
-/// validates the fragment resolves so the json path blocks on a bad `#section`/item/leaf
-/// exactly as plain does; the value itself is navigated over the parsed structure.
+/// The read surface — the 1.0 stable contract, a one-way door). Reads the whole doc
+/// through the addressed source arm — [`engine::store::read_slice`] task-less,
+/// [`engine::store::read_slice_staged`] when `staged` carries a task's `(dir, id)` —
+/// which surfaces every doc-level block (unknown type / transient / not-found /
+/// not-staged / unparseable) identically to the plain path, re-parses it (guaranteed
+/// clean: the read just parsed it), and shapes the value from the parsed structure.
+/// For a `#fragment`, a second read validates the fragment resolves so the json path
+/// blocks on a bad `#section`/item/leaf exactly as plain does; the value itself is
+/// navigated over the parsed structure.
+///
+/// **The staged marker key** (`design/doc-read-surface.md` → The staged marker key): a
+/// **staged whole-doc** serve inserts the one additive top-level key
+/// `"staged": "<task-id>"`, so a driver can never mistake a staged read-back for
+/// committed state; a committed serve's shape is byte-identical to the pin. A fragment
+/// slice is a bare value (prose string / item array / leaf) with no object to hang the
+/// key on — the conscious bound, pinned in the design revision.
 fn show_json(
     jigc_home: &Path,
     schemas: &BTreeMap<String, Schema>,
     address: &Address,
+    staged: Option<(&Path, &str)>,
 ) -> Result<serde_json::Value, DocFailure> {
+    let read = |a: &Address| match staged {
+        Some((task_dir, _)) => engine::store::read_slice_staged(jigc_home, task_dir, schemas, a),
+        None => engine::store::read_slice(jigc_home, schemas, a),
+    };
     let whole = Address {
         fragment: None,
         ..address.clone()
     };
-    let source =
-        engine::store::read_slice(jigc_home, schemas, &whole).map_err(DocFailure::block)?;
+    let source = read(&whole).map_err(DocFailure::block)?;
     let schema = schemas
         .get(address.r#type.as_str())
-        .expect("read_slice resolved the type, so it is in the schema set");
+        .expect("the read resolved the type, so it is in the schema set");
     let doc = engine::parse::parse_sections(schema, &source)
-        .expect("read_slice already parsed the committed doc clean");
+        .expect("the read already parsed the doc clean");
     match &address.fragment {
-        None => Ok(whole_doc_json(schema, &doc, &source, address)),
+        None => {
+            let mut value = whole_doc_json(schema, &doc, &source, address);
+            if let Some((_, task_id)) = staged {
+                value
+                    .as_object_mut()
+                    .expect("the whole-doc json is an object")
+                    .insert(
+                        "staged".to_string(),
+                        serde_json::Value::String(task_id.to_string()),
+                    );
+            }
+            Ok(value)
+        }
         Some(fragment) => {
-            engine::store::read_slice(jigc_home, schemas, address).map_err(DocFailure::block)?;
+            read(address).map_err(DocFailure::block)?;
             Ok(fragment_json(schema, &doc, &source, fragment))
         }
     }

@@ -126,7 +126,17 @@ pub fn read_slice(
                 "doctype `{type_name}` is transient (no `location:`); `{address_str}` is not committed"
             ),
             &address_str,
-            "the referenced doctype has no committed location".to_string(),
+            Route::mechanical(
+                [
+                    "jigc",
+                    "doc",
+                    "show",
+                    address_str.as_str(),
+                    "--task",
+                    "<task-id>",
+                ],
+                " — a transient doc is readable only as a task's staged working copy",
+            ),
         ));
     };
 
@@ -144,9 +154,11 @@ pub fn read_slice(
                     path.display()
                 ),
                 &address_str,
-                "create the referenced doc, or fix the reference to an existing one; a doc \
-                 staged in an open task is not committed yet — read it with `jigc task diff <id>`"
-                    .to_string(),
+                format!(
+                    "create the referenced doc, or fix the reference to an existing one; a doc \
+                     staged in an open task is not committed yet — read it with \
+                     `jigc doc show {address_str} --task <task-id>`"
+                ),
             )
         },
     )
@@ -313,8 +325,8 @@ fn not_staged_block(
 }
 
 /// Build a blocking store-read [`Finding`] with a located message and a route
-/// (a plain-`String` route is a [`Route`]-`Human` direction; the staged arm's
-/// committed-sibling block passes a [`Route::mechanical`]).
+/// (a plain-`String` route is a [`Route`]-`Human` direction; the transient-type
+/// block and the staged arm's committed-sibling block pass a [`Route::mechanical`]).
 fn block(code: &str, message: String, address: &str, route: impl Into<Route>) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -986,12 +998,13 @@ A cold node loses its sessions; clients re-authenticate.
         assert!(err.route.is_some(), "the block carries a route");
     }
 
-    /// (M40 F12) The `store.not-found` route names `jigc task diff <id>` for the
-    /// staged-in-an-open-task case: a doc minted but not yet finalized has no
-    /// committed file, so "create the referenced doc" alone actively misleads —
-    /// the sanctioned read of a staged doc is the task's working diff.
+    /// (M43 inc-5 T2, supersedes the M40 F12 pin) The `store.not-found` route names
+    /// the **staged read** for the staged-in-an-open-task case: a doc minted but not
+    /// yet finalized has no committed file, and its sanctioned read is now the very
+    /// address that missed, task-scoped — `jigc doc show <addr> --task <task-id>`.
+    /// The retired `jigc task diff` route showed a *changeset*, never the doc.
     #[test]
-    fn store_not_found_route_points_staged_docs_at_task_diff() {
+    fn store_not_found_route_points_staged_docs_at_the_staged_read() {
         let root = TempRoot::new("missing-route");
         let address = Address::parse("adr:does-not-exist#decision").expect("valid address");
         let err = read_slice(root.path(), &schemas(), &address)
@@ -1000,8 +1013,12 @@ A cold node loses its sessions; clients re-authenticate.
         assert_eq!(err.code, "store.not-found");
         let route = err.route.expect("the block carries a route");
         assert!(
-            route.contains("jigc task diff <id>"),
-            "route names the staged-doc read: {route}"
+            route.contains("jigc doc show adr:does-not-exist#decision --task <task-id>"),
+            "route names the staged read of the missed address: {route}"
+        );
+        assert!(
+            !route.contains("task diff"),
+            "the superseded task-diff route is retired: {route}"
         );
     }
 
