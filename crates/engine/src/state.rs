@@ -578,6 +578,63 @@ pub fn read_base_pin(task_dir: &Path) -> std::io::Result<BasePin> {
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
+/// The staged-snapshot filename inside a task's (or milestone's) working area —
+/// the pre-task staged state the carryover gate compares finalize's index against
+/// (`design/surface-contract.md` → The carryover gate; M43 T1).
+const STAGED_SNAPSHOT_FILE: &str = "staged-snapshot.json";
+
+/// The staged state of the repo's index **at the moment a task-minting door ran**
+/// — what was `git add`ed / `git rm`ed *before this task existed*, snapshotted so
+/// finalize can refuse to let a foreign pre-staged change silently ride the task's
+/// commit (`design/surface-contract.md` → The carryover gate).
+///
+/// Two halves, because an entry-only snapshot is structurally blind to a staged
+/// deletion (the trial's A7 case): `entries` carries the index entries that differ
+/// from HEAD (adds + modifications) as `path → staged blob hash`, and `deletions`
+/// carries the HEAD paths absent from the index (a pre-task `git rm`).
+///
+/// `BTreeMap`/`BTreeSet` so the serialized JSON is key-sorted and deterministic —
+/// the byte form is golden-stable, the same convention as `base.json` /
+/// `roles.json`. A **missing** snapshot file reads as [`None`] and the gate fails
+/// open (a task minted pre-M43 finalizes as today — the declared bound), so the
+/// record carries no schema version: it is working-area state, disposable with
+/// the task.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StagedSnapshot {
+    /// `path → staged blob hash` for every index entry differing from HEAD
+    /// (staged adds + modifications).
+    pub entries: std::collections::BTreeMap<String, String>,
+    /// The staged-deletion set: HEAD paths absent from the index (`git rm`).
+    pub deletions: std::collections::BTreeSet<String>,
+}
+
+/// Write the staged snapshot into a working area (`<dir>/staged-snapshot.json`)
+/// — the base-pin mold: pretty JSON, key-sorted (the `BTreeMap`/`BTreeSet` field
+/// types), one trailing newline (golden-locked frozen on-disk form). Written at
+/// every task-minting door (`jigc start` compose forms, `jigc migrate`,
+/// `jigc milestone create` into the milestone area); a clean index writes an
+/// **empty** snapshot, distinct from the absent pre-M43 case [`read_staged_snapshot`]
+/// maps to `None`.
+pub fn write_staged_snapshot(dir: &Path, snapshot: &StagedSnapshot) -> std::io::Result<()> {
+    let mut body = serde_json::to_string_pretty(snapshot).expect("StagedSnapshot serializes");
+    body.push('\n');
+    std::fs::write(dir.join(STAGED_SNAPSHOT_FILE), body)
+}
+
+/// Read the persisted [`StagedSnapshot`] of a working area, the companion of
+/// [`write_staged_snapshot`]. A missing file yields [`None`] — the declared
+/// fail-open bound (a task/milestone minted before the carryover gate existed
+/// finalizes as today); a present-but-malformed file is a real fault and errors.
+pub fn read_staged_snapshot(dir: &Path) -> std::io::Result<Option<StagedSnapshot>> {
+    match std::fs::read(dir.join(STAGED_SNAPSHOT_FILE)) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 /// Slug the id-source into the task id, applying the empty → type-name fallback.
 ///
 /// The pure normalization is [`crate::slug::slugify`]; the fallback is the mint
@@ -1133,6 +1190,72 @@ mod tests {
             .expect("tasks dir")
             .count();
         assert_eq!(before, after, "no second dir created on collision");
+    }
+
+    /// M43 T1 (`design/surface-contract.md` → The carryover gate): the staged
+    /// snapshot round-trips through its write/read companions on the base-pin
+    /// mold, and the on-disk byte form is frozen — pretty JSON, key-sorted
+    /// (`BTreeMap`/`BTreeSet`), one trailing newline.
+    #[test]
+    fn staged_snapshot_round_trips_the_frozen_on_disk_form() {
+        let root = TempRoot::new("staged-snapshot");
+        let mut snapshot = StagedSnapshot::default();
+        snapshot.entries.insert(
+            "mod.txt".to_owned(),
+            "5ea2ed416fbd4a4cbe227b75fe255dd7fa6bd4d6".to_owned(),
+        );
+        snapshot.entries.insert(
+            "added.txt".to_owned(),
+            "3e757656cf36eca53338e520d134963a44f793f8".to_owned(),
+        );
+        snapshot.deletions.insert("del.txt".to_owned());
+
+        write_staged_snapshot(root.path(), &snapshot).expect("snapshot writes");
+        let body = std::fs::read_to_string(root.path().join(STAGED_SNAPSHOT_FILE))
+            .expect("snapshot file exists");
+        // Golden over the frozen on-disk form: entries key-sorted regardless of
+        // insertion order, the deletion set alongside, trailing newline.
+        insta::assert_snapshot!(body, @r#"
+        {
+          "entries": {
+            "added.txt": "3e757656cf36eca53338e520d134963a44f793f8",
+            "mod.txt": "5ea2ed416fbd4a4cbe227b75fe255dd7fa6bd4d6"
+          },
+          "deletions": [
+            "del.txt"
+          ]
+        }
+        "#);
+        assert!(
+            body.ends_with('\n'),
+            "frozen form carries a trailing newline"
+        );
+        assert_eq!(
+            read_staged_snapshot(root.path()).expect("snapshot reads back"),
+            Some(snapshot),
+            "the read companion returns the written value"
+        );
+    }
+
+    /// M43 T1, the declared fail-open bound: an absent `staged-snapshot.json`
+    /// reads as `None` (a task minted pre-M43 finalizes as today), never an error.
+    /// A clean-index door writes an **empty** snapshot — `Some(empty)`, distinct
+    /// from the absent case.
+    #[test]
+    fn absent_staged_snapshot_reads_none_and_empty_reads_some() {
+        let root = TempRoot::new("staged-snapshot-none");
+        assert_eq!(
+            read_staged_snapshot(root.path()).expect("absent snapshot is not an error"),
+            None,
+            "a missing snapshot file is the fail-open None"
+        );
+
+        write_staged_snapshot(root.path(), &StagedSnapshot::default()).expect("empty writes");
+        assert_eq!(
+            read_staged_snapshot(root.path()).expect("empty snapshot reads back"),
+            Some(StagedSnapshot::default()),
+            "a clean-index snapshot is Some(empty), not None"
+        );
     }
 
     /// The done-criterion for T3a (`DECISIONS.md` 2026-06-01 → M2 Increment 3

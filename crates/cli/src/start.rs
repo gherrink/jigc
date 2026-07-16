@@ -103,8 +103,13 @@ pub fn mint_in_repo(
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let jigc_root = jigc_home_or_repo(start)?.join(".jigc");
     let base = read_head(&repo_root)?;
+    // The carryover gate's door half (M43 T1, `design/surface-contract.md` → The
+    // carryover gate): probe the pre-task staged state before anything else touches
+    // the tree, and persist it into the working area so finalize can tell "staged
+    // before this task existed" from the task's own staging.
+    let staged = crate::task::git_staged_snapshot(&repo_root)?;
 
-    state::mint_task(
+    let minted = state::mint_task(
         &jigc_root,
         intent,
         FALLBACK_TYPE,
@@ -112,7 +117,10 @@ pub fn mint_in_repo(
         base,
         slug_override,
     )
-    .map_err(finding_to_err)
+    .map_err(finding_to_err)?;
+    state::write_staged_snapshot(&minted.dir, &staged)
+        .with_context(|| format!("could not write the staged snapshot for `{}`", minted.id))?;
+    Ok(minted)
 }
 
 /// Resolve **jigc_home** — the main checkout the committed doc-store + `.jigc/` bind to
@@ -173,11 +181,18 @@ pub(crate) fn mint_migration_in_repo(
     // concern (M31 Inc 2 binds the start/resume/reenter + task/finalize read paths).
     let jigc_root = repo_root.join(".jigc");
     let base = read_head(repo_root)?;
+    // The carryover gate's door half (M43 T1): snapshot the pre-task staged state —
+    // `jigc migrate` is a task-minting door like `start` (the foreign bytes are staged
+    // into the gitignored working area, never the git index, so the probe sees only
+    // genuinely foreign pre-staged changes).
+    let staged = crate::task::git_staged_snapshot(repo_root)?;
     // Empty intent → the id slugs from this per-file `migrate-<doctype>-<slug>` fallback,
     // keeping the bare `<doctype>` task namespace free and the migration task per-file.
     let mint_id_source = migration_task_id_source(doctype, source_path);
     let minted = state::mint_task(&jigc_root, "", &mint_id_source, workflow_id, base, None)
         .map_err(finding_to_err)?;
+    state::write_staged_snapshot(&minted.dir, &staged)
+        .with_context(|| format!("could not write the staged snapshot for `{}`", minted.id))?;
     let pack = make_pack()?;
     provision_migration_commit_doc(pack.as_ref(), &minted.dir, &minted.id, source_path, doctype)?;
     Ok(minted)
@@ -3060,6 +3075,126 @@ mod tests {
             msg.contains("add-rate-limiter") && msg.contains("route:"),
             "serial collision must name the task and carry a route; got: {msg}"
         );
+    }
+
+    /// M43 T1 (`design/surface-contract.md` → The carryover gate): the `jigc start`
+    /// task-minting door snapshots the **pre-task staged state** — a pre-staged add,
+    /// modify, *and* delete all read back from the working area's
+    /// `staged-snapshot.json`: the add + modify as `(path, staged blob)` entries
+    /// (blobs asserted against the index's own `git rev-parse :<path>`), the
+    /// staged `git rm` in the deletion set (the entry-blind A7 case). A mint over
+    /// a **clean** index writes an *empty* snapshot — `Some(empty)`, distinct from
+    /// the fail-open pre-M43 `None`.
+    #[test]
+    fn mint_snapshots_prestaged_add_modify_and_delete() {
+        let repo = TempDir::new("snapshot");
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .output()
+                .expect("run git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout)
+                .expect("utf-8")
+                .trim()
+                .to_string()
+        };
+        init_repo_with_commit(repo.path());
+        // Commit the files the foreign pre-staged modify + delete will touch.
+        fs::write(repo.path().join("mod.txt"), "original\n").expect("write mod.txt");
+        fs::write(repo.path().join("del.txt"), "doomed\n").expect("write del.txt");
+        git(&["add", "mod.txt", "del.txt"]);
+        git(&["commit", "-q", "-m", "seed"]);
+
+        // The foreign pre-staged change-set: an add, a modify, and a delete.
+        fs::write(repo.path().join("added.txt"), "new\n").expect("write added.txt");
+        fs::write(repo.path().join("mod.txt"), "changed\n").expect("modify mod.txt");
+        git(&["add", "added.txt", "mod.txt"]);
+        git(&["rm", "-q", "del.txt"]);
+        let added_blob = git(&["rev-parse", ":added.txt"]);
+        let mod_blob = git(&["rev-parse", ":mod.txt"]);
+
+        let minted = mint_in_repo(repo.path(), "Add rate limiter", "single-task", None)
+            .expect("mint succeeds");
+        let snapshot = engine::state::read_staged_snapshot(&minted.dir)
+            .expect("snapshot reads")
+            .expect("the mint door must write a staged snapshot");
+        assert_eq!(
+            snapshot.entries.get("added.txt"),
+            Some(&added_blob),
+            "the pre-staged add reads back as a (path, staged blob) entry"
+        );
+        assert_eq!(
+            snapshot.entries.get("mod.txt"),
+            Some(&mod_blob),
+            "the pre-staged modify reads back as a (path, staged blob) entry"
+        );
+        assert_eq!(snapshot.entries.len(), 2, "nothing else is staged");
+        assert!(
+            snapshot.deletions.contains("del.txt"),
+            "the pre-staged `git rm` reads back in the deletion set"
+        );
+        assert_eq!(snapshot.deletions.len(), 1);
+
+        // A clean-index mint writes an *empty* snapshot (Some, not the pre-M43 None).
+        git(&["reset", "-q", "--hard", "HEAD"]);
+        let clean = mint_in_repo(repo.path(), "Second task", "single-task", None)
+            .expect("clean-index mint succeeds");
+        assert_eq!(
+            engine::state::read_staged_snapshot(&clean.dir).expect("snapshot reads"),
+            Some(engine::state::StagedSnapshot::default()),
+            "a clean index snapshots as Some(empty)"
+        );
+    }
+
+    /// M43 T1: the `jigc migrate` task-minting door snapshots the pre-task staged
+    /// state too — a foreign pre-staged add is in the migration task's snapshot.
+    #[test]
+    fn migration_mint_snapshots_prestaged_state() {
+        let repo = TempDir::new("migrate-snapshot");
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .output()
+                .expect("run git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout)
+                .expect("utf-8")
+                .trim()
+                .to_string()
+        };
+        init_repo_with_commit(repo.path());
+        fs::write(repo.path().join("stray.txt"), "staged before the task\n")
+            .expect("write stray.txt");
+        git(&["add", "stray.txt"]);
+        let stray_blob = git(&["rev-parse", ":stray.txt"]);
+
+        let minted = mint_migration_in_repo(
+            repo.path(),
+            "changelog",
+            "migrate-changelog",
+            "CHANGELOG.md",
+        )
+        .expect("migration mint succeeds");
+        let snapshot = engine::state::read_staged_snapshot(&minted.dir)
+            .expect("snapshot reads")
+            .expect("the migrate door must write a staged snapshot");
+        assert_eq!(
+            snapshot.entries.get("stray.txt"),
+            Some(&stray_blob),
+            "the pre-staged add reads back from the migration task's snapshot"
+        );
+        assert!(snapshot.deletions.is_empty());
     }
 
     /// A user intent with no sluggable content (empty, whitespace-only, or

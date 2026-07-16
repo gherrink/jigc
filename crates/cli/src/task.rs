@@ -2195,6 +2195,59 @@ pub(crate) fn git_staged_paths(repo_root: &Path) -> Result<std::collections::BTr
         .collect())
 }
 
+/// Probe the repo's **staged state** as a carryover-gate [`engine::state::StagedSnapshot`]
+/// — the one git probe every task-minting door runs (`design/surface-contract.md` →
+/// The carryover gate; M43 T1): `git diff --cached --raw -z`, whose raw records carry
+/// both halves the gate needs — the staged blob hash per changed path (adds +
+/// modifications become `entries`) *and* the `D` status a `--name-only` listing is
+/// blind to (staged deletions become `deletions`). Flag pins: `--no-renames` so a
+/// staged rename reports as its D + A halves (the deletion half is exactly what the
+/// entry-only view misses) and the parse is independent of the user's `diff.renames`
+/// config; `--abbrev=40` because raw output abbreviates object names by default and
+/// the snapshot's blobs must compare stably at finalize; `-z` so a path containing a
+/// space or newline survives verbatim (the [`git_staged_paths`] rationale).
+pub(crate) fn git_staged_snapshot(repo_root: &Path) -> Result<engine::state::StagedSnapshot> {
+    let out = Command::new("git")
+        .args([
+            "diff",
+            "--cached",
+            "--raw",
+            "-z",
+            "--no-renames",
+            "--abbrev=40",
+        ])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git diff --cached --raw -z` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let text =
+        String::from_utf8(out.stdout).context("`git diff --cached` produced non-UTF-8 output")?;
+    // With `-z` each record is `:<oldmode> <newmode> <oldsha> <newsha> <status>` NUL
+    // `<path>` NUL — alternating meta/path tokens, plus one empty trailing token.
+    let mut snapshot = engine::state::StagedSnapshot::default();
+    let mut tokens = text.split('\0').filter(|t| !t.is_empty());
+    while let Some(meta) = tokens.next() {
+        let path = tokens
+            .next()
+            .context("`git diff --cached --raw -z` emitted a meta record without its path")?;
+        let fields: Vec<&str> = meta.trim_start_matches(':').split(' ').collect();
+        let [_, _, _, new_sha, status] = fields[..] else {
+            bail!("`git diff --cached --raw -z` emitted an unrecognized record: {meta:?}");
+        };
+        if status == "D" {
+            snapshot.deletions.insert(path.to_owned());
+        } else {
+            snapshot.entries.insert(path.to_owned(), new_sha.to_owned());
+        }
+    }
+    Ok(snapshot)
+}
+
 /// Run `git diff <base>` in `repo_root`, returning the unified diff of the working
 /// tree against the pinned base commit (`storage.md` → CLI and git: "CLI
 /// orchestrates, git executes"). Shells out to the user's `git`

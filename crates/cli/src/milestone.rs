@@ -256,7 +256,21 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
     }
 
     let base = read_head(&repo_root)?;
+    // The carryover gate's door half (M43 T1, `design/surface-contract.md` → The
+    // carryover gate): `milestone create` is the shared checkout's aggregate-index
+    // door — snapshot the pre-milestone staged state into the milestone area,
+    // BEFORE the record commit below touches the index, so the milestone finalize
+    // can tell "staged before this milestone existed" from the milestone's own
+    // staging. (Sub-task mints write no snapshot: worktrees are provisioned clean
+    // and a missing snapshot fails open.)
+    let staged = crate::task::git_staged_snapshot(&repo_root)?;
     let minted = mint_milestone(&jigc_root, title, base).map_err(finding_to_err)?;
+    engine::state::write_staged_snapshot(&minted.dir, &staged).with_context(|| {
+        format!(
+            "could not write the staged snapshot for milestone `{}`",
+            minted.id
+        )
+    })?;
 
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         // The record's schema-version stamp value: the doctype's manifest version (the

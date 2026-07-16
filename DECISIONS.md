@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-16 — M43 Inc 2 T1: the staged snapshot at the doors — two elaboration pins
+
+**(1) Probe flags:** the pinned probe runs as `git diff --cached --raw -z --no-renames --abbrev=40` — `--no-renames` so a staged rename reports as its D + A halves (the deletion half is exactly what an entry-only view misses) and the parse is independent of the user's `diff.renames` config (the `git_staged_paths` precedent); `--abbrev=40` because raw output abbreviates object names by default and the snapshot's blobs must compare stably at finalize. **(2) A clean index writes `Some(empty)`, never nothing:** every door always writes `staged-snapshot.json` (an empty one when nothing is staged), so `None` means exactly one thing — *minted before the gate existed* — and the fail-open bound never swallows a probed-clean door. At `milestone create` the probe runs **before** the record commit touches the index.
+
 ## 2026-07-16 — M43 Increment 2 planning: decomposition
 
 Cut [Increment 2](implementation/roadmap.md) (the carryover gate + the labeled manifest — A6, fork 7 rung 3) into **5 ordered single-concern tasks**, grounded at HEAD `f867aaa` (tree clean; Inc 1's `Route` value + floor landed, so every finding this increment mints constructs a checked `Route` from day one). The design of record is [surface-contract.md](design/surface-contract.md) → The carryover gate; the gate-record row 2 pins bind (full census incl. deletions · fail-open · per-file finding · `--carry-staged` ∥ `--approve` · four render sites move together).
