@@ -5036,8 +5036,82 @@ title: Auth flow
 // distinct from the `finalize` validation engine (cross-doc/ref integrity).
 // ============================================================================
 
-use crate::finding::{Finding, Location};
+use crate::finding::{Finding, Location, Route};
 use crate::schema::{Field as SchemaField, FieldType};
+
+/// Build a blocking `write.*` reject [`Finding`], **routed** at its repair
+/// ([`write_route`]) — the route floor (M43, `design/surface-contract.md` → The route
+/// fence) widened over the write gate: a rejected write names its recovery. The write
+/// verbs are the doc surface a driver reads with `--format json`, so a route-less
+/// block here would be refused at the serialization seam anyway; this names the
+/// recovery at the source.
+fn blocking_write(code: &str, message: impl Into<String>, location: Location) -> Finding {
+    Finding::graded(
+        crate::finding::Severity::Blocking,
+        code,
+        message,
+        Some(location),
+        Some(write_route(code)),
+    )
+}
+
+/// The per-code repair route of a write-time reject — one declared map, so every call
+/// site minting a code routes it identically (the [`crate::validate::conformance_route`]
+/// sibling). Shape questions route the mechanical `jigc doc schema <doctype>` read
+/// (`<doctype>` is a declared placeholder of the CLI-seam dummy table); payload defects
+/// route the human fix-and-re-run direction — the write persisted nothing, so re-running
+/// the same verb with a corrected payload is always the recovery.
+fn write_route(code: &str) -> Route {
+    match code {
+        "write.malformed-value" => Route::mechanical(
+            ["jigc", "doc", "schema", "<doctype>"],
+            " to see the field's declared type and members, then re-run the write with a \
+             conformant value",
+        ),
+        "write.unknown-field"
+        | "write.unknown-section"
+        | "write.wrong-shape"
+        | "write.not-present" => Route::mechanical(
+            ["jigc", "doc", "schema", "<doctype>"],
+            " to see the declared shape, then re-run the write at a declared address",
+        ),
+        "write.already-present" => Route::human(
+            "the target already exists — edit it in place (`set-field`/`set-slot`) instead \
+             of re-creating it",
+        ),
+        "write.unslugable-title" => Route::human(
+            "re-run the write with a title carrying at least one word character (the item \
+             id is slugged from it)",
+        ),
+        "write.list-overwrite" => Route::human(
+            "re-run `jigc doc set-field` with the inline-list form shown in the message, \
+             carrying every value to keep",
+        ),
+        "write.non-reparseable" => Route::human(
+            "nothing was persisted — revise the payload so the result still conforms (the \
+             message names the break), then re-run the same write",
+        ),
+        "write.target-escape" => Route::human(
+            "nothing was persisted — re-run the write; a recurring escape is a write-path \
+             defect to report",
+        ),
+        "write.slot-heading-depth" => Route::human(
+            "demote the heading to `####` depth or rephrase it as plain prose, then re-run \
+             the same write",
+        ),
+        "write.slot-setext-heading" => Route::human(
+            "rewrite the Setext heading as `####` ATX depth or plain prose, then re-run \
+             the same write",
+        ),
+        // The item-field value reject deliberately emits finalize's conformance code
+        // (`generate_error_finding` → Two check times), so it carries that code's route.
+        "schema-conformance.field-value-conformant" => crate::validate::conformance_route(code),
+        other => panic!(
+            "blocking_write mints `{other}` with no declared route — add it to write_route \
+             (the route floor, design/surface-contract.md → The route fence)"
+        ),
+    }
+}
 
 /// Type-check a `set-field`'s new value against its declared schema [`FieldType`] —
 /// the *write-time local adjudication* of [`design/write-commands.md`]: a malformed
@@ -5261,7 +5335,7 @@ fn check_list_overwrite(
         .unwrap_or(existing)
         .trim();
     let suggested = format!("[{existing_inner}, {}]", new_text.trim());
-    Some(Finding::blocking(
+    Some(blocking_write(
         "write.list-overwrite",
         format!(
             "write rejected: field {field_key:?} already has {count} value(s); `set-field` \
@@ -5368,7 +5442,7 @@ pub fn validate_after(
         let detail = first
             .map(|f| f.message)
             .unwrap_or_else(|| "the edited buffer no longer conforms".to_string());
-        return Err(Finding::blocking(
+        return Err(blocking_write(
             "write.non-reparseable",
             format!("write rejected: result does not re-parse ({detail})"),
             Location::at(1, 1),
@@ -5382,7 +5456,7 @@ pub fn validate_after(
         && edited.ends_with(suffix)
         && edited.len() >= prefix.len() + suffix.len();
     if !confined {
-        return Err(Finding::blocking(
+        return Err(blocking_write(
             "write.target-escape",
             "write rejected: the change touched bytes outside the intended target",
             Location::at(1, 1),
@@ -5411,14 +5485,14 @@ pub fn set_field_validated(
 ) -> Result<String, Finding> {
     // (c) the new value passes its declared type — *before* touching bytes.
     let field = field_schema(schema, section_id, field_key).ok_or_else(|| {
-        Finding::blocking(
+        blocking_write(
             "write.unknown-field",
             format!("no field {field_key:?} declared in section {section_id:?}"),
             Location::at(1, 1),
         )
     })?;
     if let Err(why) = check_value(field, new_value) {
-        return Err(Finding::blocking(
+        return Err(blocking_write(
             "write.malformed-value",
             format!("write rejected: {why}"),
             Location::at(1, 1),
@@ -5481,7 +5555,7 @@ pub fn set_field_validated(
                     .next()
                     .map(|f| f.message)
                     .unwrap_or_else(|| "the generated buffer no longer conforms".to_string());
-                return Err(Finding::blocking(
+                return Err(blocking_write(
                     "write.non-reparseable",
                     format!("write rejected: result does not re-parse ({detail})"),
                     Location::at(1, 1),
@@ -5506,7 +5580,7 @@ pub fn unset_field_validated(
     field_key: &str,
 ) -> Result<String, Finding> {
     let field = field_schema(schema, section_id, field_key).ok_or_else(|| {
-        Finding::blocking(
+        blocking_write(
             "write.unknown-field",
             format!("no field {field_key:?} declared in section {section_id:?}"),
             Location::at(1, 1),
@@ -5532,7 +5606,7 @@ pub fn unset_item_field_validated(
     field_key: &str,
 ) -> Result<String, Finding> {
     let field = item_field_schema(schema, section_id, item_ids, field_key).ok_or_else(|| {
-        Finding::blocking(
+        blocking_write(
             "write.unknown-field",
             format!(
                 "no field {field_key:?} declared on item {item_ids:?} in section {section_id:?}"
@@ -5602,7 +5676,7 @@ fn reparse_or_reject(schema: &Schema, edited: &str) -> Result<(), Finding> {
             .next()
             .map(|f| f.message)
             .unwrap_or_else(|| "the edited buffer no longer conforms".to_string());
-        return Err(Finding::blocking(
+        return Err(blocking_write(
             "write.non-reparseable",
             format!("write rejected: result does not re-parse ({detail})"),
             Location::at(1, 1),
@@ -5649,7 +5723,7 @@ pub fn set_slot_validated(
             // bound the same region the canonical re-render touches, or a legitimate
             // blank-line canonicalization would trip `write.target-escape`.
             let target = locate_slot_region(schema, source, section_id).ok_or_else(|| {
-                Finding::blocking(
+                blocking_write(
                     "write.not-present",
                     format!("slot in section {section_id:?} is not present"),
                     Location::at(1, 1),
@@ -5670,7 +5744,7 @@ pub fn set_slot_validated(
                     .next()
                     .map(|f| f.message)
                     .unwrap_or_else(|| "the generated buffer no longer conforms".to_string());
-                return Err(Finding::blocking(
+                return Err(blocking_write(
                     "write.non-reparseable",
                     format!("write rejected: result does not re-parse ({detail})"),
                     Location::at(1, 1),
@@ -5690,7 +5764,7 @@ pub fn set_slot_validated(
 /// envelope), distinct from the parser's `conformance.*` producer.
 fn slot_ceiling_finding(prose: &str) -> Option<Finding> {
     parse::scan_blocks(prose).into_iter().find_map(|b| match b {
-        Block::Heading { is_atx, line, .. } if !is_atx => Some(Finding::blocking(
+        Block::Heading { is_atx, line, .. } if !is_atx => Some(blocking_write(
             "write.slot-setext-heading",
             format!(
                 "Setext heading in slot prose at line {line}; use `####` ATX depth or rephrase"
@@ -5705,7 +5779,7 @@ fn slot_ceiling_finding(prose: &str) -> Option<Finding> {
             } else {
                 "###"
             };
-            Some(Finding::blocking(
+            Some(blocking_write(
                 "write.slot-heading-depth",
                 format!(
                     "heading at schema-reserved depth `{depth}` in slot prose at line {line}; \
@@ -5761,7 +5835,7 @@ pub fn generate_error_finding(err: &GenerateError) -> Finding {
             format!("write rejected: {why}"),
         ),
     };
-    Finding::blocking(code, message, Location::at(1, 1))
+    blocking_write(code, message, Location::at(1, 1))
 }
 
 /// Find the schema [`SchemaField`] declared for `field_key` in `section_id`, across a
@@ -5813,7 +5887,7 @@ pub fn splice_error_finding(err: &SpliceError) -> Finding {
             "write rejected: the source does not conform to the schema".to_string(),
         ),
     };
-    Finding::blocking(code, message, Location::at(1, 1))
+    blocking_write(code, message, Location::at(1, 1))
 }
 
 #[cfg(test)]

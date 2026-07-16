@@ -382,7 +382,7 @@ impl Path {
         // (workflow-dialect.md → Workflow selection).
         if root == "catalog" {
             if !self.hops.is_empty() || self.fragment.is_some() || self.marker {
-                return Err(Finding::blocking(
+                return Err(crate::compose::blocking_workflow_refs(
                     "workflow-refs.catalog-not-navigable",
                     "`catalog` is a collection leaf — it takes no `.relation` hop, \
                      `#fragment`, or `@` content marker"
@@ -407,7 +407,7 @@ impl Path {
         if root == "store" {
             let is_bare_doctype = self.hops.len() == 1 && self.fragment.is_none() && !self.marker;
             if !is_bare_doctype {
-                return Err(Finding::blocking(
+                return Err(crate::compose::blocking_workflow_refs(
                     "workflow-refs.store-not-navigable",
                     "`store.<doctype-id>` is a collection root — it takes exactly one \
                      doctype-id hop and no further `.relation` hop, `#fragment`, or \
@@ -437,7 +437,7 @@ impl Path {
                 && self.fragment.is_none()
                 && !self.marker;
             if !is_bare_tasks {
-                return Err(Finding::blocking(
+                return Err(crate::compose::blocking_workflow_refs(
                     "workflow-refs.milestone-not-navigable",
                     "`milestone.tasks` is the only navigable milestone path — it takes \
                      exactly the `.tasks` hop and no further `.relation` hop, \
@@ -458,7 +458,7 @@ impl Path {
         }
 
         if root != "task" {
-            return Err(Finding::blocking(
+            return Err(crate::compose::blocking_workflow_refs(
                 "workflow-refs.undeclared-root",
                 format!("`{root}` is not a declared live-state root"),
                 Location::at(1, 1),
@@ -471,7 +471,7 @@ impl Path {
         let task = match &ctx.task {
             Some(task) => task,
             None => {
-                return Err(Finding::blocking(
+                return Err(crate::compose::blocking_workflow_refs(
                     "workflow-refs.task-ref-in-no-task-workflow",
                     "`task.*` cannot be referenced by a `creates-task: false` workflow \
                      (it composes with no task context)"
@@ -484,7 +484,7 @@ impl Path {
         // `task` alone (no hop) is not an addressable value — there is nothing to
         // emit. The MVP data-values all name `intent` or a role.
         let Some(first) = self.hops.first() else {
-            return Err(Finding::blocking(
+            return Err(crate::compose::blocking_workflow_refs(
                 "workflow-refs.undeclared-role",
                 "`task` must be followed by `.intent` or a declared role".to_owned(),
                 Location::at(1, 1),
@@ -500,7 +500,7 @@ impl Path {
             _ => None,
         } {
             if self.marker {
-                return Err(Finding::blocking(
+                return Err(crate::compose::blocking_workflow_refs(
                     "workflow-refs.at-marker-on-non-scalar",
                     format!(
                         "the `@` content marker cannot apply to scalar `task.{}`",
@@ -514,7 +514,7 @@ impl Path {
 
         // A context role: declared (present in the map) vs undeclared.
         match task.roles.get(first.as_str()) {
-            None => Err(Finding::blocking(
+            None => Err(crate::compose::blocking_workflow_refs(
                 "workflow-refs.undeclared-role",
                 format!("`task.{}` is not a declared context role", first.as_str()),
                 Location::at(1, 1),
@@ -545,7 +545,7 @@ impl Path {
 /// A blocking `workflow-refs.unresolved` finding for a structurally-valid path
 /// whose target cannot be reached at MVP compose scope (a committed-store read).
 fn unresolved(message: impl Into<String>) -> Finding {
-    Finding::blocking("workflow-refs.unresolved", message, Location::at(1, 1))
+    crate::compose::blocking_workflow_refs("workflow-refs.unresolved", message, Location::at(1, 1))
 }
 
 impl FromStr for Path {

@@ -330,7 +330,14 @@ fn meta_finding(probe_id: &str, reason: &str, message: String) -> Finding {
         "pack-probe-integrity.probe-failure",
         message,
         Some(crate::finding::Location::addressed(probe_id, 1, 1)),
-        None,
+        // The route floor (M43): a misbehaving probe subprocess is an install/binary
+        // problem, not a corpus problem — judgment-shaped (which half is broken is the
+        // operator's call), so the route is human.
+        Some(crate::finding::Route::human(
+            "the probe subprocess misbehaved (the message carries the reason) — repair or \
+             re-install the probe binary (`jigc setup` reinstalls the shipped probes), then \
+             re-run the sweep",
+        )),
     )
     .with_check(reason)
 }
@@ -476,7 +483,9 @@ mod tests {
                 1,
                 1,
             )),
-            None,
+            Some(crate::finding::Route::human(
+                "update the citation to match the renamed/moved code, or restore the cited symbol",
+            )),
         )]);
 
         let json = serde_json::to_string_pretty(&response).expect("serializes");
@@ -504,7 +513,7 @@ mod tests {
                 "line": 1,
                 "col": 1
               },
-              "route": null
+              "route": "update the citation to match the renamed/moved code, or restore the cited symbol"
             }
           ],
           "schema_version": 2
@@ -635,7 +644,9 @@ mod tests {
                             1,
                             1,
                         )),
-                        None,
+                        Some(crate::finding::Route::human(
+                            "update the citation to match the renamed/moved code, or restore the cited symbol",
+                        )),
                     )
                 })
                 .collect()
@@ -742,7 +753,9 @@ mod tests {
                 1,
                 1,
             )),
-            None,
+            Some(crate::finding::Route::human(
+                "update the citation to match the renamed/moved code, or restore the cited symbol",
+            )),
         );
         let stdout = serde_json::to_vec(&ProbeResponse::new(vec![emitted.clone()])).unwrap();
 

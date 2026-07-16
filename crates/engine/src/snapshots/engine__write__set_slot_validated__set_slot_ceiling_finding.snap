@@ -17,5 +17,5 @@ expression: "serde_json::to_string_pretty(&finding).unwrap()"
     "line": 3,
     "col": 1
   },
-  "route": null
+  "route": "demote the heading to `####` depth or rephrase it as plain prose, then re-run the same write"
 }

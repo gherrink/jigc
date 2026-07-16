@@ -19,7 +19,16 @@ use clap::Parser;
 /// route text keeps the placeholder verbatim — substitution is validation-only). A
 /// placeholder **not** in this table fails the fence: the table is the declared set of legal
 /// route placeholders, grown consciously as producers migrate onto the fence.
-const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[("<task-id>", "dummy-task-id")];
+const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[
+    ("<task-id>", "dummy-task-id"),
+    // The gate schema-conformance routes (engine `validate.rs` → `conformance_route`):
+    // `<address>` is the finding's own `key.target`; `<value>` the field value to set.
+    ("<address>", "adr:pick-a-db#context"),
+    ("<value>", "dummy-value"),
+    // The write-reject routes (engine `write.rs` → `write_route`): the doctype whose
+    // resolved schema `jigc doc schema` projects.
+    ("<doctype>", "adr"),
+];
 
 /// Install the parse fence into the engine's `Route::mechanical` constructor hook.
 /// Idempotent (the engine keeps the first install); called from `main` and from this

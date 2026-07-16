@@ -17,8 +17,31 @@
 //! (`overrides.md` → Resolution algorithm).
 
 use crate::cascade::{Anchor, StructuralDelta};
-use crate::finding::{Finding, Location};
+use crate::finding::{Finding, Location, Route, Severity};
 use serde::{Deserialize, Serialize};
+
+/// Build a blocking `workflow-refs.*` [`Finding`], **routed** at the family repair —
+/// the route floor, widened at M43 (`design/surface-contract.md` → The route fence):
+/// every `workflow-refs.*` break is a workflow/step/catalog **definition** defect,
+/// keyed at the pack resource and repaired once at its source by the pack/project
+/// author, so the whole family carries one human route. Shared by every
+/// `workflow-refs.*` producer (this module and [`crate::data_value`]).
+pub(crate) fn blocking_workflow_refs(
+    code: impl Into<String>,
+    message: impl Into<String>,
+    location: Location,
+) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        code,
+        message,
+        Some(location),
+        Some(Route::human(
+            "fix the workflow/step/catalog definition the message names (a definition \
+             defect, repaired once at its source), then re-run",
+        )),
+    )
+}
 
 /// One `allows-create` entry: a doctype the agent may `jigc doc create` during
 /// the task, bound to a context role (`{type: adr, as: decision}` →
@@ -192,14 +215,14 @@ impl CommandCatalog {
 /// composition.
 pub fn load_command_catalog(bytes: &[u8]) -> Result<CommandCatalog, Finding> {
     let text = std::str::from_utf8(bytes).map_err(|_| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.not-utf8",
             "command catalog is not valid UTF-8",
             Location::at(1, 1),
         )
     })?;
     let raw: RawCatalog = serde_yaml_ng::from_str(text).map_err(|source| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.malformed-command-catalog",
             format!("command catalog is malformed: {source}"),
             Location::at(1, 1),
@@ -220,7 +243,7 @@ pub fn load_command_catalog(bytes: &[u8]) -> Result<CommandCatalog, Finding> {
             hint: entry.hint,
         };
         if commands.insert(entry.id.clone(), command_ref).is_some() {
-            return Err(Finding::blocking(
+            return Err(blocking_workflow_refs(
                 "workflow-refs.duplicate-command-id",
                 format!("command catalog has two entries under id `{}`", entry.id),
                 Location::at(1, 1),
@@ -294,7 +317,7 @@ fn parse_arg_mapping(map: serde_yaml_ng::Mapping) -> Result<CommandArg, Finding>
 
 /// A blocking conformance finding for a malformed catalog arg.
 fn malformed_arg(message: String) -> Finding {
-    Finding::blocking(
+    blocking_workflow_refs(
         "workflow-refs.malformed-command-arg",
         message,
         Location::at(1, 1),
@@ -371,7 +394,7 @@ fn render_arg(
         CommandArg::Agent { agent, .. } => return Ok(format!("<{}>", agent.to_uppercase())),
         CommandArg::From { from } => {
             let path = Path::parse(from).map_err(|source| {
-                Finding::blocking(
+                blocking_workflow_refs(
                     "workflow-refs.malformed-data-value",
                     format!("command-ref `from:` path `{from}` is malformed: {source}"),
                     Location::at(1, 1),
@@ -512,7 +535,7 @@ fn emit_line(
     // Run: a lone `{{cli.<id>}}` placeholder.
     if let Some(id) = parse_cli_placeholder(trimmed) {
         let cmd = catalog.get(id).ok_or_else(|| {
-            Finding::blocking(
+            blocking_workflow_refs(
                 "workflow-refs.command-ref-resolves",
                 format!("command-ref `{{{{cli.{id}}}}}` resolves to no catalog entry"),
                 Location::at(1, 1),
@@ -804,7 +827,7 @@ fn deref_content(
             None => current.clone(),
         };
         let address = crate::address::Address::parse(&landing).map_err(|source| {
-            Finding::blocking(
+            blocking_workflow_refs(
                 "workflow-refs.malformed-data-value",
                 format!("the dereferenced target `{landing}` is not a valid address: {source}"),
                 Location::at(1, 1),
@@ -906,7 +929,7 @@ fn emit_fan_out_spawns(
 ) -> Result<String, Finding> {
     use crate::data_value::Resolution;
     let inner = parse_lone_placeholder(over.trim()).ok_or_else(|| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.malformed-data-value",
             format!("fan-out `over:` `{over}` is not a lone `{{{{<path>}}}}` placeholder"),
             Location::at(1, 1),
@@ -916,7 +939,7 @@ fn emit_fan_out_spawns(
     let ids = match path.resolve(ctx)? {
         Resolution::Milestone { ids } => ids,
         _ => {
-            return Err(Finding::blocking(
+            return Err(blocking_workflow_refs(
                 "workflow-refs.malformed-data-value",
                 format!(
                     "fan-out `over:` `{over}` must resolve to a collection (e.g. `{{{{milestone.tasks}}}}`)"
@@ -1034,7 +1057,7 @@ fn pending_author_address(path: &crate::data_value::Path) -> String {
 /// [`Finding`].
 fn parse_data_value(text: &str) -> Result<crate::data_value::Path, Finding> {
     crate::data_value::Path::parse(text).map_err(|source| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.malformed-data-value",
             format!("data-value path `{text}` is malformed: {source}"),
             Location::at(1, 1),
@@ -1049,7 +1072,7 @@ fn parse_data_value(text: &str) -> Result<crate::data_value::Path, Finding> {
 /// [`emit_line`]: `catalog` → the router's option list, `store` → a Content list);
 /// any other position is a structural misuse, not a value.
 fn collection_not_lone() -> Finding {
-    Finding::blocking(
+    blocking_workflow_refs(
         "workflow-refs.collection-not-lone",
         "a `{{catalog}}` / `{{store.<doctype>}}` collection renders only as a lone \
          placeholder list — it cannot be used as a command arg, content, or inline value"
@@ -1185,7 +1208,7 @@ struct CheckpointMarker {
 /// id+body split; consuming a step's config lands when a step kind needs it.
 pub fn load_step_def(id: impl Into<String>, bytes: &[u8]) -> Result<StepDef, Finding> {
     let text = std::str::from_utf8(bytes).map_err(|_| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.not-utf8",
             "step definition is not valid UTF-8",
             Location::at(1, 1),
@@ -1221,7 +1244,7 @@ pub fn load_step_def(id: impl Into<String>, bytes: &[u8]) -> Result<StepDef, Fin
 fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
     // The front-matter begins on line 2 (line 1 is the opening `---` fence).
     let malformed = |msg: &str| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.step-kind-malformed",
             format!("step front-matter declares a malformed step kind: {msg}"),
             Location::at(2, 1),
@@ -1275,21 +1298,21 @@ fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
 /// a new error type (`DECISIONS.md` 2026-05-31 → block payload).
 pub fn load_workflow_def(bytes: &[u8]) -> Result<WorkflowDef, Finding> {
     let text = std::str::from_utf8(bytes).map_err(|_| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.not-utf8",
             "workflow definition is not valid UTF-8",
             Location::at(1, 1),
         )
     })?;
     let (front, body) = split_front_matter(text).ok_or_else(|| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.missing-front-matter",
             "workflow definition has no `---`-fenced front-matter block",
             Location::at(1, 1),
         )
     })?;
     let meta: WorkflowFrontMatter = serde_yaml_ng::from_str(front).map_err(|source| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.malformed-front-matter",
             format!("workflow front-matter is malformed config-family YAML: {source}"),
             Location::at(1, 1),
@@ -1351,7 +1374,7 @@ fn parse_include_only_body(body: &str, body_start_line: usize) -> Result<Vec<Str
         match parse_include_line(line) {
             Some(id) => includes.push(id),
             None => {
-                return Err(Finding::blocking(
+                return Err(blocking_workflow_refs(
                     "workflow-refs.body-include-only",
                     format!(
                         "workflow body line is not an `{{{{ include: step:<id> }}}}`, blank, or comment: `{line}`"
@@ -1880,7 +1903,7 @@ fn expand_step(
             .chain(std::iter::once(id))
             .collect::<Vec<_>>()
             .join(" -> ");
-        return Err(Finding::blocking(
+        return Err(blocking_workflow_refs(
             "workflow-refs.include-cycle-absent",
             format!("include cycle: {cycle}"),
             Location::at(1, 1),
@@ -1888,7 +1911,7 @@ fn expand_step(
     }
 
     let step = source.step(id).ok_or_else(|| {
-        Finding::blocking(
+        blocking_workflow_refs(
             "workflow-refs.include-resolves",
             format!("include `step:{id}` resolves to no step file in the cascade"),
             Location::at(1, 1),
@@ -2351,7 +2374,7 @@ fn find_command_ref_membership(body: &str, catalog: &CommandCatalog) -> Vec<Find
         .filter_map(|(offset, line)| {
             let id = parse_cli_placeholder(line.trim())?;
             catalog.get(id).is_none().then(|| {
-                Finding::blocking(
+                blocking_workflow_refs(
                     "workflow-refs.command-ref-resolves",
                     format!("command-ref `{{{{cli.{id}}}}}` resolves to no catalog entry"),
                     Location::at(offset + 1, 1),
@@ -2511,7 +2534,7 @@ pub fn workflow_refs_with_fills(
 fn find_run_shadow(body: &str) -> Option<Finding> {
     body.lines().enumerate().find_map(|(offset, line)| {
         line.trim_start().starts_with("Run: ").then(|| {
-            Finding::blocking(
+            blocking_workflow_refs(
                 "workflow-refs.run-marker-not-shadowed",
                 format!(
                     "step prose shadows the composer-reserved `Run: ` marker: `{}`",
@@ -2537,7 +2560,7 @@ fn find_run_shadow(body: &str) -> Option<Finding> {
 fn find_spawn_shadow(body: &str) -> Option<Finding> {
     body.lines().enumerate().find_map(|(offset, line)| {
         line.trim_start().starts_with("Spawn: ").then(|| {
-            Finding::blocking(
+            blocking_workflow_refs(
                 "workflow-refs.spawn-marker-not-shadowed",
                 format!(
                     "step prose shadows the composer-reserved `Spawn: ` marker: `{}`",
@@ -2563,7 +2586,7 @@ fn find_spawn_shadow(body: &str) -> Option<Finding> {
 fn find_checkpoint_shadow(body: &str) -> Option<Finding> {
     body.lines().enumerate().find_map(|(offset, line)| {
         line.trim_start().starts_with("Checkpoint: ").then(|| {
-            Finding::blocking(
+            blocking_workflow_refs(
                 "workflow-refs.checkpoint-marker-not-shadowed",
                 format!(
                     "step prose shadows the composer-reserved `Checkpoint: ` marker: `{}`",
@@ -2628,7 +2651,7 @@ fn find_fan_out_join_pairing(composition: &Composition) -> Option<Finding> {
 fn find_fill_survivor(body: &str) -> Option<Finding> {
     body.lines().enumerate().find_map(|(offset, line)| {
         next_fill_token(line).map(|(_, fill_id)| {
-            Finding::blocking(
+            blocking_workflow_refs(
                 "workflow-refs.fill-survivor",
                 format!(
                     "a `{{{{fill: {fill_id}}}}}` survives composition unresolved (phase 5 does not re-run — fill content may not contain another `{{{{fill:}}}}`)"

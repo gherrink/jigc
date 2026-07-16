@@ -38,7 +38,7 @@
 
 use crate::field_block::Field;
 use crate::file_state::{FileStateRecord, file_state};
-use crate::finding::{Finding, Location, Severity};
+use crate::finding::{Finding, Location, Route, Severity};
 use crate::parse::{Document, ParsedItem, ParsedSection, parse_sections};
 use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, RootKind, ingest_probe_run};
 use crate::result::ValidationReport;
@@ -2321,10 +2321,63 @@ pub fn is_optional_ref(field: &SchemaField) -> bool {
 }
 
 /// Build a blocking `schema-conformance.*` [`Finding`] (the inventory default
-/// severity). These intrinsic checks carry no `route` — the agent fills the slot /
-/// field directly.
+/// severity), **routed** at its repair ([`conformance_route`]) — the route floor,
+/// widened to the gate blocks at M43 (`design/surface-contract.md` → The route fence):
+/// a blocked finalize names its recovery. "The agent fills the slot / field directly"
+/// is now said *by the finding*, never assumed.
 fn blocking_conformance(code: &str, message: String, location: Option<Location>) -> Finding {
-    Finding::graded(Severity::Blocking, code, message, location, None)
+    let route = conformance_route(code);
+    Finding::graded(Severity::Blocking, code, message, location, Some(route))
+}
+
+/// The per-code repair route of a [`blocking_conformance`] gate block — one declared map,
+/// so every call site minting a code routes it identically. The mechanical routes carry
+/// the `<address>` / `<value>` placeholders of the CLI-seam dummy table
+/// (`crates/cli/src/route_fence.rs` → `DUMMY_SUBSTITUTIONS`); `<address>` is the finding's
+/// own `key.target`. A new `blocking_conformance` code must declare its route here — the
+/// loud panic is the same posture as the seam assert it feeds (`Finding`'s `Serialize`
+/// would refuse the route-less finding anyway; this names the omission at its source).
+pub(crate) fn conformance_route(code: &str) -> Route {
+    match code {
+        "schema-conformance.required-slot-present" => Route::mechanical(
+            ["jigc", "doc", "set-slot", "<address>", "--from-file", "-"],
+            " to fill the empty slot (this finding's target is the address)",
+        ),
+        "schema-conformance.required-field-present" => Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "set-field",
+                "<address>",
+                "--value",
+                "<value>",
+            ],
+            " to supply the missing field",
+        ),
+        // `ID_FROM_ENUM_CODE` shares this code (the id-from-enum violation is a
+        // field-value non-conformance), so it shares the route.
+        "schema-conformance.field-value-conformant" => Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "set-field",
+                "<address>",
+                "--value",
+                "<value>",
+            ],
+            " to correct the value",
+        ),
+        // Two-branch judgment: either the recorded path is wrong or the named file is
+        // missing — which side is broken is the human's call, so the route is human.
+        "owner-artifact.present" => Route::human(
+            "place the owned artifact at the recorded path, or correct the field with \
+             `jigc doc set-field` to where the file really lives",
+        ),
+        other => panic!(
+            "blocking_conformance mints `{other}` with no declared route — add it to \
+             conformance_route (the route floor, design/surface-contract.md → The route fence)"
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -2461,6 +2514,38 @@ The note body prose.
                 finding.severity,
                 Severity::Blocking,
                 "{expected_code} must be blocking"
+            );
+        }
+    }
+
+    /// The route floor, widened to the gate blocks (M43, `design/surface-contract.md` →
+    /// The route fence): every `schema-conformance.*` block the finalize/task gate mints
+    /// **carries a route** naming the write verb that repairs it — the empty slot routes
+    /// `jigc doc set-slot`, the missing/malformed field routes `jigc doc set-field`. A
+    /// blocked finalize names its recovery; "the agent fills the slot directly" is now
+    /// said *by the finding*, not assumed.
+    #[test]
+    fn gate_schema_conformance_blocks_carry_a_route() {
+        let schema = schema();
+        let cases: &[(&str, &str)] = &[
+            (MISSING_SLOT, "jigc doc set-slot"),
+            (MISSING_FIELD, "jigc doc set-field"),
+            (MALFORMED_VALUE, "jigc doc set-field"),
+        ];
+        for (source, expected_verb) in cases {
+            let doc = parse(source);
+            let findings = schema_conformance(&schema, source, &doc);
+            assert_eq!(findings.len(), 1, "one finding, got {findings:?}");
+            let route = findings[0].route.as_deref().unwrap_or_else(|| {
+                panic!(
+                    "a gate schema-conformance block must carry a route, got {:?}",
+                    findings[0]
+                )
+            });
+            assert!(
+                route.contains(expected_verb),
+                "the `{}` route must name `{expected_verb}`, got `{route}`",
+                findings[0].code,
             );
         }
     }
@@ -5278,7 +5363,8 @@ Effects.
                         "doc-code.symbol-exists",
                         format!("symbol does not resolve: {}", a.anchor_value),
                         Some(Location::addressed(a.address.clone(), 1, 1)),
-                        None,
+                        // Routed, as the real probe routes it (the route floor).
+                        Some("update the citation, or restore the cited symbol".into()),
                     )
                 })
                 .collect();
@@ -6175,9 +6261,17 @@ Effects.
             .iter()
             .filter(|f| f.code.starts_with("conformance."))
             .collect();
+        // An at-version parse failure is genuine corruption — a purely-positional parser
+        // diagnostic under the route floor's one-home EXEMPTION (M43: the located message
+        // *is* the repair; `design/surface-contract.md` → The route fence), so its
+        // route-lessness is a declared exemption, not an un-swept hole.
         assert!(
-            !at_structural.is_empty() && at_structural.iter().all(|f| f.route.is_none()),
-            "an at-version parse failure is corruption, left un-routed, got {at_structural:?}",
+            !at_structural.is_empty()
+                && at_structural
+                    .iter()
+                    .all(|f| f.route.is_none() && crate::finding::is_route_exempt(&f.code)),
+            "an at-version parse failure is corruption — route-exempt parser diagnostics, \
+             got {at_structural:?}",
         );
     }
 
@@ -6475,7 +6569,8 @@ Effects.
                             "doc-code.symbol-exists",
                             format!("dangling: {}", a.anchor_value),
                             Some(Location::addressed(a.address.clone(), 1, 1)),
-                            None,
+                            // Routed, as the real probe routes it (the route floor).
+                            Some("update the citation, or restore the cited symbol".into()),
                         )
                     })
                 })
@@ -6640,7 +6735,8 @@ Effects.
                         code,
                         a.anchor_value.clone(),
                         Some(Location::addressed(a.address.clone(), 1, 1)),
-                        None,
+                        // Routed, as the real probe routes it (the route floor).
+                        Some("update the citation, or restore the cited symbol".into()),
                     )
                 })
                 .collect();
@@ -6706,7 +6802,8 @@ Effects.
                         "doc-code.symbol-exists",
                         "dangling".to_string(),
                         Some(Location::addressed(a.address.clone(), 1, 1)),
-                        None,
+                        // Routed, as the real probe routes it (the route floor).
+                        Some("update the citation, or restore the cited symbol".into()),
                     )
                 })
                 .collect();

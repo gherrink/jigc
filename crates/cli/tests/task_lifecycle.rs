@@ -34,7 +34,9 @@ const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
 advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
   route: no action needed — the baseline was adopted on first encounter
 blocking · schema-conformance.field-value-conformant — `docs/commit:add-rate-limiter.md`: field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
+  route: `jigc doc set-field <address> --value <value>` to correct the value
 blocking · schema-conformance.required-slot-present — `docs/commit:add-rate-limiter.md`: required slot in section `summary` is empty
+  route: `jigc doc set-slot <address> --from-file -` to fill the empty slot (this finding's target is the address)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

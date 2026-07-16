@@ -974,17 +974,24 @@ fn id_from_enum_block(
         }
     };
     let slug = engine::validate::id_from_enum_violation(&repeatable, title)?;
-    Some(Finding::blocking(
+    Some(Finding::graded(
+        engine::finding::Severity::Blocking,
         engine::validate::ID_FROM_ENUM_CODE,
         format!(
             "add-item rejected: `{slug}` is not an enum member of id-from field `{}`",
             repeatable.id_from
         ),
-        Location::addressed(
+        Some(Location::addressed(
             format!("{doc}#{prefix}/{slug}/{}", repeatable.id_from),
             1,
             1,
-        ),
+        )),
+        // The route floor (M43): the refused mint's repair is a member title, not the
+        // generic set-field route the finalize-time sibling of this code carries.
+        Some(engine::finding::Route::mechanical(
+            ["jigc", "doc", "schema", "<doctype>"],
+            " to see the declared members, then re-run `add-item` with a member title",
+        )),
     ))
 }
 

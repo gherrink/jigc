@@ -3255,17 +3255,21 @@ mod tests {
                     "schema-conformance.required-slot-present",
                     "required slot in section `summary` is empty",
                     Some(Location::addressed("commit:x#summary", 1, 1)),
-                    None,
+                    // Routed, as the production gate block routes it (the route floor).
+                    Some(
+                        "`jigc doc set-slot <address> --from-file -` to fill the empty slot".into(),
+                    ),
                 ),
             ],
             &resolved,
         );
 
         let agent = validation(Format::Agent, &report);
-        insta::assert_snapshot!(agent, @r"
+        insta::assert_snapshot!(agent, @"
         blocking · file-state.hash-matches — on-disk content of `docs/commit:x.md` differs
           route: reconcile docs/commit:x.md
         blocking · schema-conformance.required-slot-present — required slot in section `summary` is empty
+          route: `jigc doc set-slot <address> --from-file -` to fill the empty slot
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -3325,13 +3329,15 @@ mod tests {
                 "doc-code.symbol-exists",
                 "cited symbol `evict_lru` not found",
                 Some(Location::addressed("adr:cache#status/cites-code", 1, 1)),
-                None,
+                // Routed, as the real probe routes it (the route floor).
+                Some("update the citation, or restore the cited symbol".into()),
             )],
             &resolved,
         );
         let agent = validation_store(Format::Agent, &content, &BTreeSet::new());
-        insta::assert_snapshot!(agent, @r"
+        insta::assert_snapshot!(agent, @"
         blocking (gates at finalize) · doc-code.symbol-exists — cited symbol `evict_lru` not found
+          route: update the citation, or restore the cited symbol
         1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
@@ -3360,7 +3366,8 @@ mod tests {
                 "pack-probe-integrity.crash",
                 "the doc-code probe exited 2",
                 Some(Location::addressed("doc-code", 1, 1)),
-                None,
+                // Routed, as the production meta-finding routes it (the route floor).
+                Some("repair or re-install the probe binary, then re-run the sweep".into()),
             )],
             &resolved,
         );
@@ -3388,7 +3395,8 @@ mod tests {
                 "reconciliation.rename",
                 "tracked managed doc adr:cache (decisions/cache.md) is missing",
                 Some(Location::addressed("decisions/cache.md", 1, 1)),
-                None,
+                // Routed, as the production rename detector routes it (the route floor).
+                Some("restore decisions/cache.md, or adopt the move with `jigc rename`".into()),
             )],
             &resolved,
         );

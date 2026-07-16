@@ -42,6 +42,14 @@
 //! construction* (the M42 lesson, one level up — a hand-listed set of funnels is a census,
 //! and a census rots as the set grows; the funnel list missed `jigc ingest`'s triage row).
 //!
+//! The **route floor** rides the same seam (M43,
+//! [surface-contract.md](../../../design/surface-contract.md) → The route fence;
+//! [validation.md](../../../design/validation.md) → The route floor): `blocking ⇒ route
+//! present`, asserted on [`Finding`]'s `Serialize` alongside the target presence — a
+//! blocked gate that names no recovery cannot be serialized at all. The one exemption is
+//! the purely-positional parser diagnostic ([`is_route_exempt`], the floor's one-home
+//! exemption fn).
+//!
 //! `probe` / `check` are the **structured severity handle** the M6 post-pass keys on
 //! ([validation.md](../../../design/validation.md) → Severity assignment — the M6
 //! post-pass: *a `Finding` carries `(probe, check)`*). They are made **explicit
@@ -206,6 +214,26 @@ pub fn is_declared_singleton(code: &str) -> bool {
     code == "store-version.binary-mismatch"
         || code.starts_with("setup.")
         || code.starts_with("uninstall.")
+}
+
+/// Whether `code` is **route-exempt** under the route floor — the floor's **one-home
+/// exemption fn** (the [`is_declared_singleton`] pattern: a list of exceptions checkable
+/// from the code alone, never a census of call sites). The route floor
+/// ([surface-contract.md](../../../design/surface-contract.md) → The route fence;
+/// [validation.md](../../../design/validation.md) → The route floor) says `blocking ⇒
+/// route present`, asserted on [`Finding`]'s `Serialize`; the exemption covers exactly the
+/// **purely-positional parser `conformance.*` diagnostics** — a malformed byte at a source
+/// coordinate, where *the located message is the repair* (fix the named line; no CLI verb
+/// repairs a hand-broken byte) and any at-parse route would be a guess. Exemption means
+/// *may be route-less*: a parser diagnostic that does know a direction (the below-version
+/// parse failure routed `migrate`) still carries it.
+///
+/// The **hook-rejection error identity** (`finalize.commit-rejected`) is the floor's other
+/// re-affirmed exemption, but it is an anyhow error path, not a [`Finding`] — git's
+/// verbatim stderr *is* the correction signal ([finalize.md](../../../design/finalize.md))
+/// — so it never reaches this seam and needs no entry here.
+pub fn is_route_exempt(code: &str) -> bool {
+    code.starts_with("conformance.")
 }
 
 /// Whether `code` is a **declared non-unique exception** — a code whose key is *deliberately
@@ -593,9 +621,11 @@ pub struct Finding {
     pub message: String,
     /// Where this finding points, when a source coordinate is known.
     pub location: Option<Location>,
-    /// An optional repair direction the engine never executes; present on a hard
-    /// block. Internally a [`Route`] (kind-carrying, M43); on the wire still the flat
-    /// string. Projects as `null` when absent (the pinned envelope keeps the key).
+    /// A repair direction the engine never executes. Internally a [`Route`]
+    /// (kind-carrying, M43); on the wire still the flat string. Under the route floor
+    /// (M43) a **blocking** finding must carry one to serialize, unless its code is
+    /// [`is_route_exempt`]; projects as `null` when absent (the pinned envelope keeps
+    /// the key).
     pub route: Option<Route>,
 }
 
@@ -636,6 +666,17 @@ impl Serialize for Finding {
              membership test)",
             self.code,
         );
+        // The route floor's presence half (M43) — the third assert on this seam: a blocking
+        // finding names its recovery, or its code is a declared parser-diagnostic exemption.
+        debug_assert!(
+            self.severity != Severity::Blocking
+                || self.route.is_some()
+                || is_route_exempt(&self.code),
+            "blocking finding `{}` is serialized with no `route` — name its recovery, or (only \
+             if it is a purely-positional parser diagnostic) declare it in `is_route_exempt` \
+             (design/surface-contract.md → The route fence)",
+            self.code,
+        );
         use serde::ser::SerializeStruct;
         let mut st = serializer.serialize_struct("Finding", 8)?;
         st.serialize_field("severity", &self.severity)?;
@@ -673,9 +714,12 @@ impl Finding {
         self.key().target.is_some() || is_declared_singleton(&self.code)
     }
 
-    /// A blocking conformance finding at a [`Location`], with no route — the
-    /// inc-2 parser's only producer. `probe` / `check` derive from the `code`'s
-    /// `<prefix>.<suffix>` split ([`split_code`]).
+    /// A blocking conformance finding at a [`Location`], with no route — suited to the
+    /// route floor's [`is_route_exempt`] parser diagnostics (the `conformance.*` family,
+    /// its main producer). A non-exempt blocking producer must construct a routed
+    /// finding instead ([`Finding::graded`] / [`Finding::block`]) or the serialization
+    /// seam refuses it. `probe` / `check` derive from the `code`'s `<prefix>.<suffix>`
+    /// split ([`split_code`]).
     pub fn blocking(
         code: impl Into<String>,
         message: impl Into<String>,
@@ -827,6 +871,55 @@ mod tests {
         let _ = serde_json::to_string(&degenerate);
     }
 
+    /// The **route floor's presence half at the seam** (M43, `design/surface-contract.md` →
+    /// The route fence): `blocking ⇒ route present` — a route-less non-exempt blocking
+    /// finding cannot be serialized **at all**. Same structural posture as the key seam:
+    /// the assert rides [`Finding`]'s own `Serialize`, so there is no funnel list to keep
+    /// current — a blocked gate that names no recovery is unrepresentable on any surface
+    /// the suite exercises.
+    #[test]
+    #[should_panic(expected = "with no `route`")]
+    fn serializing_a_routeless_blocking_finding_fires_the_seam() {
+        let unrouted = Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.required-slot-present",
+            "required slot in section `context` is empty",
+            Some(Location::addressed("adr:pick-a-db#context", 1, 1)),
+            None,
+        );
+
+        let _ = serde_json::to_string(&unrouted);
+    }
+
+    /// The route floor's **one-home exemption** (the [`is_declared_singleton`] pattern): a
+    /// purely-positional parser `conformance.*` diagnostic serializes route-less — the
+    /// located message *is* the repair — and non-blocking severities are outside the floor
+    /// entirely (the advisory half is carried by the producers, not this assert).
+    #[test]
+    fn route_exempt_parser_diagnostics_and_non_blocking_pass_the_seam() {
+        // A parser conformance diagnostic: blocking, route-less, exempt by its one-home fn.
+        let parser_diagnostic = Finding::blocking(
+            "conformance.heading-missing",
+            "required section heading `## Decision` is missing",
+            Location::addressed("adr:pick-a-db#decision", 1, 1),
+        );
+        assert!(is_route_exempt(&parser_diagnostic.code));
+        let json = serde_json::to_value(&parser_diagnostic).expect("an exempt code projects");
+        assert_eq!(json["route"], serde_json::Value::Null);
+
+        // A non-blocking finding is outside the presence assert (the floor's advisory half
+        // is a producer obligation, not a seam panic).
+        let advisory = Finding::graded(
+            Severity::Advisory,
+            "schema-completeness.inverse-cardinality",
+            "below the inverse-card minimum",
+            Some(Location::addressed("prd:checkout#spec", 1, 1)),
+            None,
+        );
+        let json = serde_json::to_value(&advisory).expect("a non-blocking finding projects");
+        assert_eq!(json["route"], serde_json::Value::Null);
+    }
+
     /// A **declared singleton** is the one legal `target: null` — its emission path yields at
     /// most one instance, so `(code, null)` is already unique-per-instance. It projects
     /// through the same seam untouched (the exception list is a list of *exceptions to a
@@ -897,7 +990,9 @@ mod tests {
             "schema-conformance.ref-resolves",
             "forward-ref integrity — target does not resolve",
             Some(Location::addressed("adr:cache#supersedes/adr:ghost", 1, 1)),
-            None,
+            // Routed, as the production `dangling` constructor routes it (the route floor:
+            // a serialized blocking finding names its recovery).
+            Some("fix the reference, create the target in this task, or drop the field".into()),
         );
         let json = serde_json::to_value(&finding).expect("serializes");
         assert_eq!(

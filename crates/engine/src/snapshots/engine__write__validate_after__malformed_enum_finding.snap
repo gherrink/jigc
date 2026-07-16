@@ -17,5 +17,5 @@ expression: "serde_json::to_string_pretty(&finding).unwrap()"
     "line": 1,
     "col": 1
   },
-  "route": null
+  "route": "`jigc doc schema <doctype>` to see the field's declared type and members, then re-run the write with a conformant value"
 }
