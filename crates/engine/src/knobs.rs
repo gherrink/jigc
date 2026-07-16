@@ -40,7 +40,7 @@ struct KnobDecl {
 
 /// The engine-owned set of intrinsic check cascade keys — the checks whose
 /// demotion would break a load-bearing invariant of the system itself
-/// (`validation.md` → What "intrinsic" means mechanically: the ten
+/// (`validation.md` → What "intrinsic" means mechanically: the eleven
 /// `workflow-refs.*` checks, the five `schema-conformance.*` checks — the four
 /// structural ones plus `schema-version-current`, intrinsic on the trustworthiness
 /// axis (M42): a corpus below its manifest version means every other check in the
@@ -63,6 +63,7 @@ pub const INTRINSIC_CHECK_KEYS: &[&str] = &[
     "validation.workflow-refs.checkpoint-marker-not-shadowed.severity",
     "validation.workflow-refs.fan-out-join-paired.severity",
     "validation.workflow-refs.body-include-only.severity",
+    "validation.workflow-refs.schema-ref-resolves.severity",
     "validation.schema-conformance.ref-resolves.severity",
     "validation.schema-conformance.required-slot-present.severity",
     "validation.schema-conformance.required-field-present.severity",
@@ -376,7 +377,7 @@ mod tests {
                 "validation.schema-conformance.surplus-sections-absent.severity",
                 "advisory",
             ),
-            // workflow-refs (10, intrinsic) + the M4 per-probe default (retained).
+            // workflow-refs (11, intrinsic) + the M4 per-probe default (retained).
             (
                 "validation.workflow-refs.at-marker-on-non-scalar.severity",
                 "blocking",
@@ -411,6 +412,10 @@ mod tests {
             ),
             (
                 "validation.workflow-refs.run-marker-not-shadowed.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.schema-ref-resolves.severity",
                 "blocking",
             ),
             ("validation.workflow-refs.severity", "blocking"),
@@ -616,14 +621,18 @@ mod tests {
 
     /// The shipped per-check severity surface reconciles to the
     /// [`design/validation.md`] Severity inventory (the single source of truth):
-    /// **33 per-check `validation.<probe>.<check>.severity` keys — 19 intrinsic
+    /// **34 per-check `validation.<probe>.<check>.severity` keys — 20 intrinsic
     /// (floored at `blocking`) + 14 tunable (no floor)** (`validation.md` → Severity
     /// inventory). The M15 `checkpoint-marker-not-shadowed` row joined the intrinsic
     /// set (16 → 17); the M16 `owner-artifact.present` #5 gate joins it next (17 → 18);
-    /// the M42 `schema-conformance.schema-version-current` row completes it (18 → 19 —
+    /// the M42 `schema-conformance.schema-version-current` row follows (18 → 19 —
     /// the version-currency break, minted with its own check id so a machine consumer
     /// can act on it; intrinsic on the trustworthiness axis, see
-    /// [`schema_version_current_key_is_declared_intrinsic_blocking`]); the M33
+    /// [`schema_version_current_key_is_declared_intrinsic_blocking`]); the M43
+    /// `workflow-refs.schema-ref-resolves` row completes it (19 → 20 — the
+    /// `{{schema:<doctype>}}` generation-seam membership check, resolved against the
+    /// composed cascade's doctype set, see
+    /// [`schema_ref_resolves_key_is_declared_intrinsic_blocking`]); the M33
     /// `schema-conformance.mention-resolves` row joins the **tunable** set
     /// (9 → 10 — advisory, store-scope only, unfloored); the M40
     /// `doc-code.title-names-symbol` row joins it too (10 → 11 — the stale-heading
@@ -636,14 +645,14 @@ mod tests {
     /// `changelog-recording.gate-granted-unused` row closes it (13 → 14 — the
     /// granted-and-unused changelog gate: advisory by default, keyed precisely so a
     /// project that means it promotes the skip to `blocking` with one cascade line,
-    /// `validation.md` → The changelog-gate advisory). The 19
+    /// `validation.md` → The changelog-gate advisory). The 20
     /// intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is every
     /// other per-check key, including the three `doc-code.*` rows. Counted over the
     /// *embedded* bytes, so the count is the shipped surface — not a synthetic one.
     ///
     /// [`design/validation.md`]: ../../../design/validation.md
     #[test]
-    fn per_check_severity_surface_reconciles_to_the_33_19_14_inventory() {
+    fn per_check_severity_surface_reconciles_to_the_34_20_14_inventory() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
 
         // The per-check keys are the inventory rows: keyed by check, never by
@@ -658,19 +667,19 @@ mod tests {
             .collect();
         assert_eq!(
             per_check.len(),
-            33,
-            "the inventory totals 33 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
+            34,
+            "the inventory totals 34 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
         );
 
-        // 19 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
+        // 20 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
         let intrinsic = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).map(String::as_str) == Some("blocking"))
             .count();
-        assert_eq!(intrinsic, 19, "19 intrinsic checks (floored at blocking)");
-        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 19);
+        assert_eq!(intrinsic, 20, "20 intrinsic checks (floored at blocking)");
+        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 20);
 
-        // The remaining 14 are tunable (no floor) — 33 - 19.
+        // The remaining 14 are tunable (no floor) — 34 - 20.
         let tunable = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).is_none())
@@ -713,6 +722,37 @@ mod tests {
         assert!(
             INTRINSIC_CHECK_KEYS.contains(&key),
             "the version-currency key is an INTRINSIC_CHECK_KEYS member",
+        );
+    }
+
+    /// (M43 T2) The `{{schema:<doctype>}}` generation-seam membership check joins the
+    /// **keyed** severity surface as a floored-blocking intrinsic:
+    /// `validation.workflow-refs.schema-ref-resolves.severity` is **declared**,
+    /// **defaulted `blocking`**, and **floored at `blocking`** — an
+    /// [`INTRINSIC_CHECK_KEYS`] member (`validation.md` → MVP check inventory;
+    /// `surface-contract.md` → The schema projection: intrinsic-floor class, severity
+    /// blocking, un-tunable). A demotion would let a soliciting template silently
+    /// render a dangling projection ref as prose noise — the exact "template
+    /// understates the schema" lie the seam exists to make impossible.
+    #[test]
+    fn schema_ref_resolves_key_is_declared_intrinsic_blocking() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+
+        let key = "validation.workflow-refs.schema-ref-resolves.severity";
+        assert!(knobs.field(key).is_some(), "{key} is declared");
+        assert_eq!(
+            knobs.base_scalars().get(key).map(String::as_str),
+            Some("blocking"),
+            "the schema-ref break is blocking by default",
+        );
+        assert_eq!(
+            knobs.floors().get(key).map(String::as_str),
+            Some("blocking"),
+            "intrinsic — floored at blocking, never demotable",
+        );
+        assert!(
+            INTRINSIC_CHECK_KEYS.contains(&key),
+            "the schema-ref key is an INTRINSIC_CHECK_KEYS member",
         );
     }
 

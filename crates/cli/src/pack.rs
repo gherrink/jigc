@@ -1397,10 +1397,10 @@ mod tests {
         # not a project-overridable value, so it stays in defaults.yaml.
         # The `validation.*.severity` keys are the per-check severity surface; their
         # defaults + intrinsic-ness are governed by the single source of truth,
-        # validation.md → MVP check inventory (33 checks across 10 categories — pinned by
-        # engine::knobs per_check_severity_surface_reconciles_to_the_33_19_14_inventory).
-        # (The engine's CHECK_INVENTORY post-pass membership set is a 30-row subset of
-        # these 33 — it drops the 3 compose-time marker checks; see engine::result
+        # validation.md → MVP check inventory (34 checks across 10 categories — pinned by
+        # engine::knobs per_check_severity_surface_reconciles_to_the_34_20_14_inventory).
+        # (The engine's CHECK_INVENTORY post-pass membership set is a 31-row subset of
+        # these 34 — it drops the 3 compose-time marker checks; see engine::result
         # check_inventory_membership_count_is_stable.) The two
         # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
         # per-probe *defaults* (never a rename) so an M4-authored manifest still
@@ -1453,7 +1453,7 @@ mod tests {
           of: [blocking, warning, advisory]
           default: blocking
 
-        # --- workflow-refs.* (10, intrinsic) ---
+        # --- workflow-refs.* (11, intrinsic) ---
         validation.workflow-refs.placeholder-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
@@ -1500,6 +1500,14 @@ mod tests {
           default: blocking
           floor: blocking
         validation.workflow-refs.body-include-only.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
+        # schema-ref-resolves (M43): a lone `{{schema:<doctype>}}` names a doctype in the
+        # COMPOSED cascade's doctype set — never per-origin-pack (a methodology step
+        # legitimately solicits a dev doctype). Fires at compose AND the store sweep.
+        validation.workflow-refs.schema-ref-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking

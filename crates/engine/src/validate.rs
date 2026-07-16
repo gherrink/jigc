@@ -374,7 +374,7 @@ pub struct StoreWorkflow {
 /// The three families, in a stable sweep order:
 ///
 /// - **doc↔code** — every committed doc's `code-anchor` leaves resolved against the working tree via the CLI-supplied subprocess `invoke_doc_code` seam (the [`validate_store`] body, lifted to [`store_doc_code`]). The only family that can raise a `pack-probe-integrity.*` meta-finding (it is the one subprocess probe).
-/// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding each as a [`StoreWorkflow`] bundling its id, raw bytes, and **origin-pack** command catalog) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, and the **catalog-membership-only** command-ref path. The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource), **scoped per-workflow** to that definition's origin pack via [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow) so a loser-pack workflow's includes + command-refs resolve against ITS OWN pack, never the precedence-winner's catalog (`multi-pack.md` → Pack-local body-reference resolution: `command-ref-resolves` and the include checks fire **per-definition against that definition's own pack**). For a single pack each origin *is* the one pack, so the resolution is byte-identical to a flat catalog (the no-composition floor).
+/// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding each as a [`StoreWorkflow`] bundling its id, raw bytes, and **origin-pack** command catalog) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, the **catalog-membership-only** command-ref path, and the **doctype-membership-only** schema-ref path (`schema-ref-resolves`, M43 — resolved against the **composed cascade's** doctype set derived from `schemas`, deliberately NOT per-origin: a methodology step legitimately solicits a dev doctype, `surface-contract.md` → The schema projection). The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource), **scoped per-workflow** to that definition's origin pack via [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow) so a loser-pack workflow's includes + command-refs resolve against ITS OWN pack, never the precedence-winner's catalog (`multi-pack.md` → Pack-local body-reference resolution: `command-ref-resolves` and the include checks fire **per-definition against that definition's own pack**). For a single pack each origin *is* the one pack, so the resolution is byte-identical to a flat catalog (the no-composition floor).
 /// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`).
 ///
 /// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
@@ -428,6 +428,12 @@ pub fn validate_store_families(
     // `command-output-contract.md` → `workflow-refs.*` — the pack-resource form). Without it the
     // family projected `(code, null)`: two bad refs in one step were byte-identical keys in one
     // report array.
+    // The schema-ref membership check (M43) resolves against the **composed cascade's**
+    // doctype set — `schemas` is the same composed map every compose site feeds, so ONE
+    // set serves every workflow, deliberately unlike the per-origin catalog: a
+    // methodology step legitimately solicits a dev doctype (`surface-contract.md` →
+    // The schema projection: the composition model, not per-origin doctype scoping).
+    let doctypes: std::collections::BTreeSet<String> = schemas.keys().cloned().collect();
     for workflow in workflows {
         workflow_source.scope_to_workflow(&workflow.id);
         findings.extend(crate::compose::workflow_refs_store(
@@ -435,6 +441,7 @@ pub fn validate_store_families(
             &workflow.bytes,
             workflow_source,
             &workflow.catalog,
+            &doctypes,
         ));
     }
 
@@ -5678,6 +5685,98 @@ Effects.
             record.get(drift_path),
             Some(hash_bytes(b"a different baseline").as_str()),
             "the file-state twin must not re-baseline the drift it reports",
+        );
+    }
+
+    /// A `StepSource` resolving exactly one step, `only`, with the given body — the
+    /// minimal source a schema-ref-bearing store workflow needs.
+    struct OnlyStepSource(&'static str);
+    impl crate::compose::StepSource for OnlyStepSource {
+        fn step(&self, id: &str) -> Option<crate::compose::StepDef> {
+            (id == "only").then(|| crate::compose::StepDef {
+                id: "only".to_string(),
+                body: self.0.to_string(),
+                kind: crate::compose::StepKind::Plain,
+            })
+        }
+    }
+
+    /// (M43 T2, the done-criterion) The store sweep's workflow↔refs family resolves
+    /// `{{schema:<doctype>}}` refs against the **composed cascade's** doctype set (the
+    /// `schemas` map the sweep already receives): a [`StoreWorkflow`] whose step body
+    /// solicits a ghost doctype yields the blocking `schema-ref-resolves` finding
+    /// **keyed at the pack resource**; `{{schema:adr}}` in a workflow whose **origin
+    /// pack does not ship `adr`** (its origin catalog is empty — nothing adr-shaped)
+    /// resolves CLEAN against the composed set — the not-per-origin pin, the
+    /// deliberate divergence from the command-ref membership path
+    /// (`surface-contract.md` → The schema projection).
+    #[test]
+    fn store_sweep_resolves_schema_refs_against_the_composed_doctype_set() {
+        let repo = TempRoot::new("schema-refs");
+        let wf_bytes: Vec<u8> = b"---\nwhen: x\n---\n{{ include: step:only }}\n".to_vec();
+        let record = FileStateRecord::new();
+
+        // Arm 1 — a ghost doctype: the blocking finding, keyed at the step resource.
+        let workflows = vec![StoreWorkflow {
+            id: "author-doc".to_string(),
+            bytes: wf_bytes.clone(),
+            catalog: empty_catalog(),
+        }];
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &workflows,
+            &OnlyStepSource("author the doc:\n{{ schema:ghost }}\n"),
+            &record,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
+        .expect("store sweep runs");
+        let ghost: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "workflow-refs.schema-ref-resolves")
+            .collect();
+        assert_eq!(
+            ghost.len(),
+            1,
+            "the ghost schema-ref trips exactly one finding: {:?}",
+            report.findings,
+        );
+        assert_eq!(ghost[0].severity, Severity::Blocking);
+        assert_eq!(
+            ghost[0].key().target.as_deref(),
+            Some("step:only"),
+            "the finding keys at the pack resource it was raised in, got {:?}",
+            ghost[0],
+        );
+        assert!(report.has_blocking(), "the dangling schema-ref blocks");
+
+        // Arm 2 — `{{schema:adr}}` in a workflow whose origin pack ships no `adr`
+        // (empty origin catalog): CLEAN, because membership is asked of the composed
+        // set (`schemas()` carries `adr`), never the per-origin surface.
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &workflows,
+            &OnlyStepSource("{{schema:adr}}\n"),
+            &record,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
+        .expect("store sweep runs");
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "workflow-refs.schema-ref-resolves"),
+            "a composed-set doctype resolves clean regardless of the origin pack: {:?}",
+            report.findings,
         );
     }
 

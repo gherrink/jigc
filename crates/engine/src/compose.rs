@@ -2691,12 +2691,19 @@ pub fn workflow_refs_with_deltas(
 ///   resolution would emit `task-ref-in-no-task-workflow` for essentially every
 ///   command-ref — **fabricated drift, not real** (`validation.md` → the membership-only
 ///   load-bearing line; the design-review B1 fix).
+/// - `schema-ref-resolves` — **doctype membership only** ([`find_schema_ref_membership`],
+///   M43): each lone `{{schema:<doctype>}}` names a doctype in `doctypes`, the **composed
+///   cascade's** full doctype-id set. Deliberately NOT scoped per-origin-pack like the
+///   command catalog: a methodology step legitimately solicits a dev doctype — the
+///   composition model, not per-origin doctype scoping (`surface-contract.md` → The
+///   schema projection).
 ///
 /// The **task-data-dependent** checks — `placeholder-resolves` over `{{task.*}}`,
 /// `at-marker-on-non-scalar` — are inherently compose-time and **stay at `jigc start`**
 /// ([`workflow_refs`]); they are not run here. Reuses the `workflow-refs.*` check ids
-/// (no new id, no severity-inventory growth). A pure function of its inputs (the
-/// determinism boundary; no I/O, clock, or LLM, and — by construction — no task).
+/// (`schema-ref-resolves` fires at compose too — one id, two fire points). A pure
+/// function of its inputs (the determinism boundary; no I/O, clock, or LLM, and — by
+/// construction — no task).
 ///
 /// `workflow_id` is the definition's id — the caller's handle, and the only place it exists
 /// (every check below is a pure helper over bytes). It is what each finding is keyed at: this
@@ -2708,6 +2715,7 @@ pub fn workflow_refs_store(
     workflow_bytes: &[u8],
     source: &dyn StepSource,
     catalog: &CommandCatalog,
+    doctypes: &std::collections::BTreeSet<String>,
 ) -> Vec<Finding> {
     let workflow_ref = workflow_resource(workflow_id);
 
@@ -2732,7 +2740,8 @@ pub fn workflow_refs_store(
     }
 
     // Per expanded step body: the reserved-marker shadow checks, then the
-    // membership-only command-ref check (no `render_command`, no task data).
+    // membership-only command-ref check (no `render_command`, no task data) and
+    // the membership-only schema-ref check (the composed doctype set, M43).
     for step in &composition.steps {
         let step_ref = step_resource(&step.id);
         if let Some(finding) = find_run_shadow(&step.body) {
@@ -2746,6 +2755,11 @@ pub fn workflow_refs_store(
         }
         findings.extend(
             find_command_ref_membership(&step.body, catalog)
+                .into_iter()
+                .map(|finding| at_resource(finding, &step_ref)),
+        );
+        findings.extend(
+            find_schema_ref_membership(&step.body, doctypes)
                 .into_iter()
                 .map(|finding| at_resource(finding, &step_ref)),
         );
@@ -2815,6 +2829,41 @@ fn find_command_ref_membership(body: &str, catalog: &CommandCatalog) -> Vec<Find
                 blocking_workflow_refs(
                     "workflow-refs.command-ref-resolves",
                     format!("command-ref `{{{{cli.{id}}}}}` resolves to no catalog entry"),
+                    Location::at(offset + 1, 1),
+                )
+            })
+        })
+        .collect()
+}
+
+/// The **membership-only** schema-ref check ([`workflow_refs_store`], M43): for each
+/// lone `{{schema:<doctype>}}` line in `body`, a blocking
+/// `workflow-refs.schema-ref-resolves` [`Finding`] (located at that body-relative
+/// line) when `doctypes` has no entry for `<doctype>`; a member yields none.
+///
+/// `doctypes` is the **composed cascade's** full doctype-id set — deliberately NOT the
+/// per-origin scope the command-ref path resolves against: a methodology-pack step
+/// legitimately solicits a dev doctype, so membership is asked of the one composed set
+/// every compose would feed (`surface-contract.md` → The schema projection: the
+/// composition model, not per-origin doctype scoping). Mirrors the compose-time
+/// emit-path finding ([`emit_line`]) so the one check id carries the same message
+/// shape at both fire points.
+fn find_schema_ref_membership(
+    body: &str,
+    doctypes: &std::collections::BTreeSet<String>,
+) -> Vec<Finding> {
+    body.lines()
+        .enumerate()
+        .filter_map(|(offset, line)| {
+            let inner = parse_lone_placeholder(line.trim())?;
+            let doctype = inner.strip_prefix("schema:")?.trim();
+            (!doctypes.contains(doctype)).then(|| {
+                blocking_workflow_refs(
+                    "workflow-refs.schema-ref-resolves",
+                    format!(
+                        "schema-ref `{{{{schema:{doctype}}}}}` resolves to no doctype in the \
+                         composed cascade"
+                    ),
                     Location::at(offset + 1, 1),
                 )
             })
@@ -6272,6 +6321,13 @@ explain what changes (nothing appears if it supersedes none).
 
     // --- M20 T1: the store-scope `workflow-refs` target (task-less) ---
 
+    /// The empty doctype set — the store-scope fixtures that carry no
+    /// `{{schema:<doctype>}}` refs are membership-clean against any set, so the
+    /// M43 schema-ref check is inert for them by construction.
+    fn no_doctypes() -> std::collections::BTreeSet<String> {
+        std::collections::BTreeSet::new()
+    }
+
     /// `workflow_refs_store` runs only the **task-independent** checks: a clean
     /// `single-task` yields zero findings, and each task-independent break trips
     /// **exactly one** blocking finding with the right `code` (and located line). The
@@ -6288,6 +6344,7 @@ explain what changes (nothing appears if it supersedes none).
             SINGLE_TASK.as_bytes(),
             &single_task_source(),
             &catalog,
+            &no_doctypes(),
         );
         assert!(
             clean.is_empty(),
@@ -6297,8 +6354,13 @@ explain what changes (nothing appears if it supersedes none).
 
         // 1) A dangling include id (no step file in the cascade) → include-resolves.
         let dangling_wf = b"---\nwhen: x\n---\n{{ include: step:not-a-step }}\n";
-        let dangling =
-            workflow_refs_store("single-task", dangling_wf, &single_task_source(), &catalog);
+        let dangling = workflow_refs_store(
+            "single-task",
+            dangling_wf,
+            &single_task_source(),
+            &catalog,
+            &no_doctypes(),
+        );
         insta::assert_snapshot!(
             finding_codes(&dangling),
             @"workflow-refs.include-resolves @ 1:1"
@@ -6310,7 +6372,13 @@ explain what changes (nothing appears if it supersedes none).
             ("b", "prose b\n{{ include: step:a }}\n"),
         ]);
         let cyclic_wf = b"---\nwhen: x\n---\n{{ include: step:a }}\n";
-        let cyclic = workflow_refs_store("single-task", cyclic_wf, &cyclic_src, &catalog);
+        let cyclic = workflow_refs_store(
+            "single-task",
+            cyclic_wf,
+            &cyclic_src,
+            &catalog,
+            &no_doctypes(),
+        );
         insta::assert_snapshot!(
             finding_codes(&cyclic),
             @"workflow-refs.include-cycle-absent @ 1:1"
@@ -6318,7 +6386,13 @@ explain what changes (nothing appears if it supersedes none).
 
         // 3) A workflow body with a prose line → body-include-only.
         let prose_wf = b"---\nwhen: x\n---\n{{ include: step:locate }}\nthis is prose\n";
-        let prose = workflow_refs_store("single-task", prose_wf, &single_task_source(), &catalog);
+        let prose = workflow_refs_store(
+            "single-task",
+            prose_wf,
+            &single_task_source(),
+            &catalog,
+            &no_doctypes(),
+        );
         insta::assert_snapshot!(
             finding_codes(&prose),
             @"workflow-refs.body-include-only @ 5:1"
@@ -6327,7 +6401,7 @@ explain what changes (nothing appears if it supersedes none).
         // 4) A step body line starting `Run: ` → run-marker-not-shadowed.
         let run_src = MapSource::new(&[("only", "do the thing\nRun: jigc do-it\nthen stop\n")]);
         let only_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
-        let run = workflow_refs_store("single-task", only_wf, &run_src, &catalog);
+        let run = workflow_refs_store("single-task", only_wf, &run_src, &catalog, &no_doctypes());
         insta::assert_snapshot!(
             finding_codes(&run),
             @"workflow-refs.run-marker-not-shadowed @ 2:1"
@@ -6335,7 +6409,8 @@ explain what changes (nothing appears if it supersedes none).
 
         // 5) A step body line starting `Spawn: ` → spawn-marker-not-shadowed.
         let spawn_src = MapSource::new(&[("only", "do the thing\nSpawn: a sub-task\nthen stop\n")]);
-        let spawn = workflow_refs_store("single-task", only_wf, &spawn_src, &catalog);
+        let spawn =
+            workflow_refs_store("single-task", only_wf, &spawn_src, &catalog, &no_doctypes());
         insta::assert_snapshot!(
             finding_codes(&spawn),
             @"workflow-refs.spawn-marker-not-shadowed @ 2:1"
@@ -6343,7 +6418,7 @@ explain what changes (nothing appears if it supersedes none).
 
         // 6) A step body line starting `Checkpoint: ` → checkpoint-marker-not-shadowed.
         let cp_src = MapSource::new(&[("only", "do the thing\nCheckpoint: a halt\nthen stop\n")]);
-        let cp = workflow_refs_store("single-task", only_wf, &cp_src, &catalog);
+        let cp = workflow_refs_store("single-task", only_wf, &cp_src, &catalog, &no_doctypes());
         insta::assert_snapshot!(
             finding_codes(&cp),
             @"workflow-refs.checkpoint-marker-not-shadowed @ 2:1"
@@ -6355,7 +6430,7 @@ explain what changes (nothing appears if it supersedes none).
             "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run: workflow:sub-task\n---\nSpawn a sub-task per item.\n",
         )]);
         let fan_wf = b"---\nwhen: x\n---\n{{ include: step:fan }}\n";
-        let fan = workflow_refs_store("single-task", fan_wf, &fan_src, &catalog);
+        let fan = workflow_refs_store("single-task", fan_wf, &fan_src, &catalog, &no_doctypes());
         // The pairing check is the family's one location-less constructor (`Finding::block`);
         // carrying its workflow target now gives it a `1:1` location (M42 T7).
         insta::assert_snapshot!(
@@ -6406,7 +6481,13 @@ explain what changes (nothing appears if it supersedes none).
 
         // A dangling `{{cli.unknown}}` command-ref → command-ref-resolves at its line.
         let unknown_src = MapSource::new(&[("only", "first\n{{ cli.unknown }}\nlast\n")]);
-        let unknown = workflow_refs_store("single-task", only_wf, &unknown_src, &catalog);
+        let unknown = workflow_refs_store(
+            "single-task",
+            only_wf,
+            &unknown_src,
+            &catalog,
+            &no_doctypes(),
+        );
         insta::assert_snapshot!(
             finding_codes(&unknown),
             @"workflow-refs.command-ref-resolves @ 2:1"
@@ -6416,10 +6497,66 @@ explain what changes (nothing appears if it supersedes none).
 
         // A present command-ref id → clean (membership passes).
         let present_src = MapSource::new(&[("only", "{{ cli.validate-task }}\n")]);
-        let present = workflow_refs_store("single-task", only_wf, &present_src, &catalog);
+        let present = workflow_refs_store(
+            "single-task",
+            only_wf,
+            &present_src,
+            &catalog,
+            &no_doctypes(),
+        );
         assert!(
             present.is_empty(),
             "a catalog-present command-ref yields zero findings, got {present:?}"
+        );
+    }
+
+    /// The store-scope schema-ref path (M43) is **membership-only against the
+    /// composed cascade's doctype set**: a lone `{{schema:<doctype>}}` naming a
+    /// doctype absent from the fed set is exactly one blocking
+    /// `schema-ref-resolves` finding, located at its body line and keyed at its
+    /// step resource; a member is clean — even though the workflow's own **origin
+    /// catalog** knows nothing doctype-shaped at all (the deliberate divergence
+    /// from the per-origin command-ref membership path: a methodology step
+    /// legitimately solicits a dev doctype — `surface-contract.md` → The schema
+    /// projection).
+    #[test]
+    fn workflow_refs_store_resolves_schema_refs_against_the_composed_doctype_set() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let only_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+        let composed: std::collections::BTreeSet<String> =
+            ["adr".to_owned(), "spec".to_owned()].into();
+
+        // A dangling `{{schema:ghost}}` → schema-ref-resolves at its line, at its step.
+        let ghost_src = MapSource::new(&[("only", "author it:\n{{ schema:ghost }}\nthen stop\n")]);
+        let ghost = workflow_refs_store("single-task", only_wf, &ghost_src, &catalog, &composed);
+        insta::assert_snapshot!(
+            finding_codes(&ghost),
+            @"workflow-refs.schema-ref-resolves @ 2:1"
+        );
+        assert_eq!(ghost.len(), 1, "exactly the membership check trips");
+        assert_eq!(ghost[0].severity, crate::finding::Severity::Blocking);
+        assert_eq!(
+            ghost[0].key().target.as_deref(),
+            Some("step:only"),
+            "the schema-ref break keys at the step it lives in, got {:?}",
+            ghost[0]
+        );
+
+        // A composed-set member → clean, regardless of what the origin catalog holds
+        // (the not-per-origin pin: membership is asked of the ONE composed set).
+        let member_src = MapSource::new(&[("only", "{{schema:adr}}\n")]);
+        let member = workflow_refs_store("single-task", only_wf, &member_src, &catalog, &composed);
+        assert!(
+            member.is_empty(),
+            "a composed-set doctype yields zero findings, got {member:?}"
+        );
+
+        // An inline mention in prose stays inert — only the lone-line form is a ref.
+        let inline_src = MapSource::new(&[("only", "prose mentioning {{schema:ghost}} inline\n")]);
+        let inline = workflow_refs_store("single-task", only_wf, &inline_src, &catalog, &composed);
+        assert!(
+            inline.is_empty(),
+            "an inline schema mention is inert at store scope, got {inline:?}"
         );
     }
 
@@ -6443,7 +6580,8 @@ explain what changes (nothing appears if it supersedes none).
             );
             let src = MapSource::new(&[("only", &format!("{{{{ cli.{id} }}}}\n"))]);
             let only_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
-            let findings = workflow_refs_store("single-task", only_wf, &src, &catalog);
+            let findings =
+                workflow_refs_store("single-task", only_wf, &src, &catalog, &no_doctypes());
             assert!(
                 findings.is_empty(),
                 "store scope must emit NO finding for the task.*-arg command-ref `{id}` (B1), got {findings:?}"
@@ -6486,14 +6624,26 @@ explain what changes (nothing appears if it supersedes none).
     }
 
     /// `workflow_refs_store` is a pure function of `(workflow_id, workflow_bytes, source,
-    /// catalog)` — the determinism boundary, by construction task-less. The same
-    /// inputs twice yield byte-identical findings.
+    /// catalog, doctypes)` — the determinism boundary, by construction task-less. The
+    /// same inputs twice yield byte-identical findings.
     #[test]
     fn workflow_refs_store_is_deterministic() {
         let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
         let src = single_task_source();
-        let first = workflow_refs_store("single-task", SINGLE_TASK.as_bytes(), &src, &catalog);
-        let second = workflow_refs_store("single-task", SINGLE_TASK.as_bytes(), &src, &catalog);
+        let first = workflow_refs_store(
+            "single-task",
+            SINGLE_TASK.as_bytes(),
+            &src,
+            &catalog,
+            &no_doctypes(),
+        );
+        let second = workflow_refs_store(
+            "single-task",
+            SINGLE_TASK.as_bytes(),
+            &src,
+            &catalog,
+            &no_doctypes(),
+        );
         assert_eq!(
             finding_codes(&first),
             finding_codes(&second),

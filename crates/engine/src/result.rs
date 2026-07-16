@@ -215,6 +215,7 @@ const CHECK_INVENTORY: &[(&str, &str)] = &[
     ("workflow-refs", "placeholder-resolves"),
     ("workflow-refs", "include-resolves"),
     ("workflow-refs", "command-ref-resolves"),
+    ("workflow-refs", "schema-ref-resolves"),
     ("workflow-refs", "include-cycle-absent"),
     ("workflow-refs", "at-marker-on-non-scalar"),
     ("workflow-refs", "run-marker-not-shadowed"),
@@ -1173,11 +1174,11 @@ mod tests {
 
     /// Golden lock on the post-pass **membership** count. `CHECK_INVENTORY` is the
     /// `(probe, check)` set the M6 severity post-pass re-grades — a deliberate
-    /// **subset** of the **33** keyed `validation.<probe>.<check>.severity` checks
-    /// (`validation.md` → MVP check inventory, the single source of truth; the 33 is
+    /// **subset** of the **34** keyed `validation.<probe>.<check>.severity` checks
+    /// (`validation.md` → MVP check inventory, the single source of truth; the 34 is
     /// itself pinned over the embedded `knobs.yaml` by
-    /// `knobs::tests::per_check_severity_surface_reconciles_to_the_33_19_14_inventory`).
-    /// It carries **30** rows = the 33 keyed checks **minus the 3 compose-time marker
+    /// `knobs::tests::per_check_severity_surface_reconciles_to_the_34_20_14_inventory`).
+    /// It carries **31** rows = the 34 keyed checks **minus the 3 compose-time marker
     /// checks** deliberately excluded from the post-pass (`spawn-marker-not-shadowed`,
     /// `checkpoint-marker-not-shadowed`, `fan-out-join-paired`) — the divergence the
     /// sibling `owner_artifact_present_is_a_check_inventory_row` test names
@@ -1197,17 +1198,28 @@ mod tests {
     /// `changelog-recording.gate-granted-unused` row is a **finalize-scope** advisory
     /// (the granted-and-unused changelog gate — keyed precisely so a project can
     /// promote it to `blocking` with one cascade line, `validation.md` → The
-    /// changelog-gate advisory), so it too is a member (29 → 30). By severity that is
-    /// 16 intrinsic (19 keyed intrinsic − the 3 excluded) + 14 tunable. Pinning the
-    /// length makes any inventory add/remove trip the gate, forcing `validation.md` +
-    /// `knobs.yaml` to move in lockstep.
+    /// changelog-gate advisory), so it too is a member (29 → 30); the M43
+    /// `workflow-refs.schema-ref-resolves` row is the `{{schema:<doctype>}}`
+    /// generation-seam membership check — like its `command-ref-resolves` sibling it
+    /// fires at compose *and* reaches the store sweep's report funnel (not a
+    /// compose-time-only marker check), so it too is a member (30 → 31). By severity
+    /// that is 17 intrinsic (20 keyed intrinsic − the 3 excluded) + 14 tunable.
+    /// Pinning the length makes any inventory add/remove trip the gate, forcing
+    /// `validation.md` + `knobs.yaml` to move in lockstep.
     #[test]
     fn check_inventory_membership_count_is_stable() {
         assert_eq!(
             CHECK_INVENTORY.len(),
-            30,
-            "the post-pass membership set is 30 rows (33 keyed checks − 3 compose-time \
+            31,
+            "the post-pass membership set is 31 rows (34 keyed checks − 3 compose-time \
              marker checks); update validation.md → MVP check inventory in lockstep",
+        );
+
+        // The M43 schema-ref membership check is a member — its findings reach the
+        // store sweep's serialization funnel, the command-ref-resolves precedent.
+        assert!(
+            is_inventory_check("workflow-refs", "schema-ref-resolves"),
+            "schema-ref-resolves follows the command-ref-resolves precedent into CHECK_INVENTORY",
         );
 
         // The 3 deliberately-excluded compose-time marker checks are NOT members — the
