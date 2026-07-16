@@ -2075,11 +2075,13 @@ impl StepSource for FillStepSource<'_> {
         // The pass has no failure of its own in M4 (orphan/survivor is the gate's
         // job, already run); on the unreachable `Err` the unfilled body is kept.
         let body = apply_slot_fills(id, &stamped, self.fills).unwrap_or(stamped);
-        // The fill pass rewrites only the body; the step kind passes through.
+        // The fill pass rewrites only the body; the step kind (and the
+        // `states-constraints:` declaration) passes through.
         Some(StepDef {
             id: def.id,
             body,
             kind: def.kind,
+            states_constraints: def.states_constraints,
         })
     }
 }
@@ -4061,6 +4063,7 @@ mod tests {
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![Reads {
                 role: "spec".to_owned(),

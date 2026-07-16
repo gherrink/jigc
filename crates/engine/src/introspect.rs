@@ -197,6 +197,7 @@ mod tests {
             usage: usage.map(str::to_owned),
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: Vec::new(),
             reads: Vec::new(),
             includes: Vec::new(),

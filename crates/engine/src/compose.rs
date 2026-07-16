@@ -74,6 +74,25 @@ pub struct Reads {
     pub doc_type: String,
 }
 
+/// A workflow's `suppressed:` declaration — the machine-visible *why* behind a
+/// hidden (`selectable: false`) workflow (M43 law 2, `surface-contract.md` →
+/// The suppression fence).
+///
+/// `expires` is carried **verbatim**: the declared value `never` marks a
+/// permanent-by-design hide (spawned-never-picked, verb-routed); any other
+/// string is the condition under which the hide should be re-examined (the
+/// expiry-audit obligation applies only to non-`never` conditions). Both
+/// fields are **required-shaped when present** — a `suppressed:` block missing
+/// either (or with a blank value) is a blocking load finding, so the
+/// front-matter's unknown-key tolerance cannot silently eat a typo'd block.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Suppressed {
+    /// Why this workflow is hidden from the router/orientation catalog.
+    pub reason: String,
+    /// `never` (permanent by design) or the condition that un-hides it.
+    pub expires: String,
+}
+
 /// A parsed workflow definition: its metadata front-matter plus the ordered
 /// include id list lifted from the include-only body.
 ///
@@ -101,6 +120,12 @@ pub struct WorkflowDef {
     /// whose only commit boundary is the parent milestone's `finalize`) sets
     /// this `false` so the router never offers it as a top-level pick.
     pub selectable: bool,
+    /// The `suppressed: {reason, expires}` declaration (M43 law 2). `None` when
+    /// the front-matter omits the block; *presence-when-hidden* is the pack
+    /// factory's assert over the shipped packs, never the loader's — a
+    /// project-layer workflow shadow stays on skip-on-absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppressed: Option<Suppressed>,
     /// The doctypes the agent may create during the task (default empty).
     pub allows_create: Vec<AllowsCreate>,
     /// The context roles bound from existing committed docs (default empty).
@@ -125,10 +150,53 @@ struct WorkflowFrontMatter {
     creates_task: bool,
     #[serde(default = "default_true")]
     selectable: bool,
+    #[serde(default)]
+    suppressed: Option<SuppressedFrontMatter>,
     #[serde(rename = "allows-create", default)]
     allows_create: Vec<AllowsCreate>,
     #[serde(default)]
     reads: Vec<Reads>,
+}
+
+/// The `suppressed:` block as authored — both keys optional at the serde
+/// layer so [`validate_suppressed`] can reject a missing/blank one with a
+/// *dedicated* blocking finding (required-shaped when present), rather than
+/// the generic malformed-front-matter envelope.
+#[derive(Deserialize)]
+struct SuppressedFrontMatter {
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    expires: Option<String>,
+}
+
+/// Shape-check an authored `suppressed:` block into [`Suppressed`] (M43 law 2,
+/// `surface-contract.md` → The suppression fence). Both fields are required
+/// and non-blank; `expires` is carried verbatim (`never` or a condition). A
+/// violation is a blocking `workflow-refs.suppressed-malformed` [`Finding`] —
+/// present-but-malformed must block, so the front-matter's unknown-key
+/// tolerance cannot silently eat a typo'd key inside the block.
+fn validate_suppressed(block: SuppressedFrontMatter) -> Result<Suppressed, Finding> {
+    let malformed = |msg: &str| {
+        blocking_workflow_refs(
+            "workflow-refs.suppressed-malformed",
+            format!("workflow front-matter `suppressed:` block is malformed: {msg}"),
+            Location::at(1, 1),
+        )
+    };
+    let reason = block
+        .reason
+        .filter(|r| !r.trim().is_empty())
+        .ok_or_else(|| malformed("`suppressed` requires a non-empty `reason:`"))?;
+    let expires = block
+        .expires
+        .filter(|e| !e.trim().is_empty())
+        .ok_or_else(|| {
+            malformed(
+                "`suppressed` requires an `expires:` (`never`, or the condition that un-hides)",
+            )
+        })?;
+    Ok(Suppressed { reason, expires })
 }
 
 fn default_true() -> bool {
@@ -1606,6 +1674,13 @@ pub struct StepDef {
     /// The step kind, parsed from the front-matter markers. A plain step (no
     /// `fan-out:`/`join:`/`checkpoint:` marker) is [`StepKind::Plain`].
     pub kind: StepKind,
+    /// The finding codes whose binding contracts this step's prose states
+    /// (`states-constraints:` front-matter — M43 law 3, `surface-contract.md` →
+    /// The stated-at fence). Default empty. Config, not a step-kind marker:
+    /// consumed by the pack factory's every-member-has-a-declarer assert,
+    /// never by composition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub states_constraints: Vec<String>,
 }
 
 /// A step's kind, parsed from its front-matter markers (`workflow-dialect.md` →
@@ -1651,8 +1726,9 @@ pub enum StepKind {
 }
 
 /// The config-family front-matter of a step definition, as YAML — the optional
-/// `fan-out:` / `join:` / `checkpoint:` markers. All default absent (a plain step
-/// needs no front-matter); the kind validation happens in [`load_step_def`].
+/// `fan-out:` / `join:` / `checkpoint:` markers plus the `states-constraints:`
+/// declaration (M43, not a marker). All default absent (a plain step needs no
+/// front-matter); the kind validation happens in [`load_step_def`].
 #[derive(Deserialize)]
 struct StepFrontMatter {
     #[serde(rename = "fan-out", default)]
@@ -1661,6 +1737,8 @@ struct StepFrontMatter {
     join: Option<serde_yaml_ng::Value>,
     #[serde(default)]
     checkpoint: Option<CheckpointMarker>,
+    #[serde(rename = "states-constraints", default)]
+    states_constraints: Vec<String>,
 }
 
 /// The `fan-out:` marker body: `over` (the list-source path) and `run` (the
@@ -1686,10 +1764,10 @@ struct CheckpointMarker {
 /// `---`-fenced front-matter block (config-family YAML — a step's optional config,
 /// e.g. a `fan-out` marker), the body is the **post-fence remainder, byte-for-byte**;
 /// otherwise the body is the **whole file, byte-for-byte** (a plain step needs no
-/// front-matter). The only failure is non-UTF-8 bytes — a blocking conformance
-/// [`Finding`] (the settled block envelope, `DECISIONS.md` 2026-05-31). The
-/// front-matter is *not* parsed here: this task's single concern is the verbatim
-/// id+body split; consuming a step's config lands when a step kind needs it.
+/// front-matter). Failures are non-UTF-8 bytes and a malformed step kind — each
+/// a blocking conformance [`Finding`] (the settled block envelope, `DECISIONS.md`
+/// 2026-05-31). The front-matter parse ([`parse_step_kind`]) yields the step's
+/// kind plus its `states-constraints:` declaration (M43, default empty).
 pub fn load_step_def(id: impl Into<String>, bytes: &[u8]) -> Result<StepDef, Finding> {
     let text = std::str::from_utf8(bytes).map_err(|_| {
         blocking_workflow_refs(
@@ -1705,27 +1783,30 @@ pub fn load_step_def(id: impl Into<String>, bytes: &[u8]) -> Result<StepDef, Fin
         // No fence → a plain step, no front-matter to parse.
         None => (None, text),
     };
-    let kind = match front {
+    let (kind, states_constraints) = match front {
         Some(front) => parse_step_kind(front)?,
-        None => StepKind::Plain,
+        None => (StepKind::Plain, Vec::new()),
     };
     Ok(StepDef {
         id: id.into(),
         body: body.to_owned(),
         kind,
+        states_constraints,
     })
 }
 
 /// Parse a step's front-matter YAML into its [`StepKind`], honoring the
 /// `fan-out:` / `join:` / `checkpoint:` markers (`workflow-dialect.md` → On-disk
-/// definition format). A step is **exactly one kind**: a blocking, **located**
+/// definition format), plus the `states-constraints:` code list (M43 — config,
+/// not a marker, so it never counts toward exclusivity; default empty). A step
+/// is **exactly one kind**: a blocking, **located**
 /// `workflow-refs.step-kind-malformed` [`Finding`] (pointing at the front-matter,
 /// line 2) rejects: malformed YAML, **more than one** marker present (the
 /// three-marker mutual-exclusivity check, M15), a `fan-out` missing `over` or
 /// `run` (both required), or a `checkpoint` missing/blank `reason`. Front-matter
 /// that declares no marker — any other config a step might carry — is
 /// [`StepKind::Plain`].
-fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
+fn parse_step_kind(front: &str) -> Result<(StepKind, Vec<String>), Finding> {
     // The front-matter begins on line 2 (line 1 is the opening `---` fence).
     let malformed = |msg: &str| {
         blocking_workflow_refs(
@@ -1736,6 +1817,7 @@ fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
     };
     let meta: StepFrontMatter = serde_yaml_ng::from_str(front)
         .map_err(|source| malformed(&format!("not valid config-family YAML: {source}")))?;
+    let states_constraints = meta.states_constraints;
 
     // Mutual exclusivity across all three markers: a step is exactly one kind.
     let marker_count =
@@ -1755,19 +1837,19 @@ fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
             .run
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| malformed("`fan-out` requires a non-empty `run:`"))?;
-        return Ok(StepKind::FanOut { over, run });
+        return Ok((StepKind::FanOut { over, run }, states_constraints));
     }
     if meta.join.is_some() {
-        return Ok(StepKind::Join);
+        return Ok((StepKind::Join, states_constraints));
     }
     if let Some(checkpoint) = meta.checkpoint {
         let reason = checkpoint
             .reason
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| malformed("`checkpoint` requires a non-empty `reason:`"))?;
-        return Ok(StepKind::Checkpoint { reason });
+        return Ok((StepKind::Checkpoint { reason }, states_constraints));
     }
-    Ok(StepKind::Plain)
+    Ok((StepKind::Plain, states_constraints))
 }
 
 /// Parse one workflow definition's raw bytes into a [`WorkflowDef`].
@@ -1779,7 +1861,9 @@ fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
 /// ATX heading, a non-include placeholder — is a blocking conformance
 /// [`Finding`] (`workflow-refs.body-include-only`, `workflow-dialect.md` →
 /// Workflow body is include-only). The finding is the settled block envelope, not
-/// a new error type (`DECISIONS.md` 2026-05-31 → block payload).
+/// a new error type (`DECISIONS.md` 2026-05-31 → block payload). A present
+/// `suppressed:` block is shape-checked ([`validate_suppressed`], M43) —
+/// required-shaped when present, absent stays legal at the loader.
 pub fn load_workflow_def(bytes: &[u8]) -> Result<WorkflowDef, Finding> {
     let text = std::str::from_utf8(bytes).map_err(|_| {
         blocking_workflow_refs(
@@ -1809,12 +1893,15 @@ pub fn load_workflow_def(bytes: &[u8]) -> Result<WorkflowDef, Finding> {
     let body_start_line = text[..text.len() - body.len()].lines().count() + 1;
     let includes = parse_include_only_body(body, body_start_line)?;
 
+    let suppressed = meta.suppressed.map(validate_suppressed).transpose()?;
+
     Ok(WorkflowDef {
         when: meta.when.filter(|w| !w.trim().is_empty()),
         description: meta.description,
         usage: meta.usage,
         creates_task: meta.creates_task,
         selectable: meta.selectable,
+        suppressed,
         allows_create: meta.allows_create,
         reads: meta.reads,
         includes,
@@ -4149,6 +4236,7 @@ Slightly higher write latency for resilience.
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: Vec::new(),
             reads: vec![Reads {
                 role: "spec".to_owned(),
@@ -4170,6 +4258,7 @@ Slightly higher write latency for resilience.
                        {{ @task.spec#criteria }}\n"
                     .to_owned(),
                 kind: StepKind::Plain,
+                states_constraints: Vec::new(),
             })
         }
     }
@@ -4977,6 +5066,114 @@ allows-create: [{type: adr, as: decision}]
         assert!(def.reads.is_empty());
     }
 
+    /// M43 T2 done-criterion (`surface-contract.md` → The suppression fence): a
+    /// well-formed `suppressed: {reason, expires}` block round-trips onto
+    /// `WorkflowDef` — `expires: never` is the declared permanent-by-design
+    /// value, carried verbatim.
+    #[test]
+    fn suppressed_round_trips_with_expires_never() {
+        let def = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: spawned by fan-out, never picked\n  expires: never\n---\n{{ include: step:locate }}\n",
+        )
+        .expect("loads");
+        assert_eq!(
+            def.suppressed,
+            Some(Suppressed {
+                reason: "spawned by fan-out, never picked".to_owned(),
+                expires: "never".to_owned(),
+            })
+        );
+    }
+
+    /// A condition string is equally legal as `expires:` — the non-`never` arm
+    /// carries the condition under which the hide should be re-examined.
+    #[test]
+    fn suppressed_round_trips_with_expires_condition() {
+        let def = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: the router cannot yet match on this axis\n  expires: the router catalog discriminates on spec-bound intent\n---\n{{ include: step:locate }}\n",
+        )
+        .expect("loads");
+        assert_eq!(
+            def.suppressed,
+            Some(Suppressed {
+                reason: "the router cannot yet match on this axis".to_owned(),
+                expires: "the router catalog discriminates on spec-bound intent".to_owned(),
+            })
+        );
+    }
+
+    /// An omitted `suppressed:` key defaults to `None` — no error. The loader
+    /// stays skip-on-absent; *presence-when-hidden* is the pack factory's
+    /// assert over the shipped packs (M43 T3), never the loader's.
+    #[test]
+    fn suppressed_defaults_none_when_omitted() {
+        let def = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\n---\n{{ include: step:locate }}\n",
+        )
+        .expect("loads");
+        assert_eq!(def.suppressed, None);
+    }
+
+    /// A present `suppressed:` block missing `reason:` is a blocking load
+    /// finding — the fence fields are **required-shaped when present**, so the
+    /// front-matter's unknown-key tolerance cannot silently eat a typo'd key.
+    #[test]
+    fn suppressed_missing_reason_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  expires: never\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("missing reason rejected");
+        assert_eq!(err.code, "workflow-refs.suppressed-malformed");
+        assert_eq!(err.severity, Severity::Blocking);
+    }
+
+    /// A blank `reason:` is equally malformed — an empty why is no why.
+    #[test]
+    fn suppressed_empty_reason_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: \"   \"\n  expires: never\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("empty reason rejected");
+        assert_eq!(err.code, "workflow-refs.suppressed-malformed");
+        assert_eq!(err.severity, Severity::Blocking);
+    }
+
+    /// A present `suppressed:` block missing `expires:` is a blocking load
+    /// finding — a hide must declare `never` or its re-examination condition.
+    #[test]
+    fn suppressed_missing_expires_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: verb-routed, never picked\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("missing expires rejected");
+        assert_eq!(err.code, "workflow-refs.suppressed-malformed");
+        assert_eq!(err.severity, Severity::Blocking);
+    }
+
+    /// A blank `expires:` is equally malformed — a blank is neither `never`
+    /// nor a condition.
+    #[test]
+    fn suppressed_empty_expires_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: verb-routed\n  expires: \"\"\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("blank expires rejected");
+        assert_eq!(err.code, "workflow-refs.suppressed-malformed");
+        assert_eq!(err.severity, Severity::Blocking);
+    }
+
+    /// A `suppressed:` value that is not a map at all fails the front-matter
+    /// parse — blocking, never silently tolerated as an unknown-shaped key.
+    #[test]
+    fn suppressed_non_map_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed: true\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("non-map suppressed rejected");
+        assert_eq!(err.code, "workflow-refs.malformed-front-matter");
+        assert_eq!(err.severity, Severity::Blocking);
+    }
+
     /// `creates-task` defaults to `true` when the front-matter omits the key
     /// (`workflow-dialect.md` → On-disk format).
     #[test]
@@ -5250,6 +5447,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["plan-gate".to_owned()],
@@ -5322,6 +5520,54 @@ explain what changes (nothing appears if it supersedes none).
             .expect_err("missing reason rejected");
         assert_eq!(err.code, "workflow-refs.step-kind-malformed");
         assert!(err.location.is_some(), "finding is located");
+    }
+
+    /// M43 T2 done-criterion (`surface-contract.md` → The stated-at fence): a
+    /// `states-constraints:` front-matter list parses onto `StepDef` — config,
+    /// not a step-kind marker, so the step stays `Plain` and the body is
+    /// untouched.
+    #[test]
+    fn states_constraints_parse_onto_step_def() {
+        let def = load_step_def(
+            "finalize",
+            b"---\nstates-constraints: [finalize.left-out, finalize.nothing-staged]\n---\nStage and finalize.\n",
+        )
+        .expect("loads");
+        assert_eq!(
+            def.states_constraints,
+            vec!["finalize.left-out", "finalize.nothing-staged"]
+        );
+        assert_eq!(def.kind, StepKind::Plain);
+        assert_eq!(def.body, "Stage and finalize.\n");
+    }
+
+    /// `states-constraints:` defaults empty — on a front-matter-less plain step
+    /// and on front-matter that omits the key alike.
+    #[test]
+    fn states_constraints_default_empty() {
+        let plain = load_step_def("locate", b"Just prose.\n").expect("loads");
+        assert!(plain.states_constraints.is_empty());
+
+        let marked = load_step_def("join-tasks", b"---\njoin: {}\n---\nbody\n").expect("loads");
+        assert!(marked.states_constraints.is_empty());
+    }
+
+    /// `states-constraints:` coexists with a step-kind marker — it is not a
+    /// fourth marker, so it never trips the mutual-exclusivity check.
+    #[test]
+    fn states_constraints_coexist_with_a_marker() {
+        let def = load_step_def(
+            "plan-gate",
+            b"---\ncheckpoint:\n  reason: new-fork-at-plan\nstates-constraints: [finalize.promote-clobber]\n---\nbody\n",
+        )
+        .expect("loads");
+        assert_eq!(
+            def.kind,
+            StepKind::Checkpoint {
+                reason: "new-fork-at-plan".to_owned(),
+            }
+        );
+        assert_eq!(def.states_constraints, vec!["finalize.promote-clobber"]);
     }
 
     proptest::proptest! {
@@ -5608,6 +5854,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["locate".to_owned(), "not-a-step".to_owned()],
@@ -5627,6 +5874,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["a".to_owned()],
@@ -5669,6 +5917,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: false,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["fan".to_owned(), "join".to_owned(), "plain".to_owned()],
@@ -5717,6 +5966,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: false,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["outer".to_owned()],
@@ -5751,6 +6001,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["parent".to_owned()],
@@ -5789,6 +6040,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["parent".to_owned()],
@@ -5834,6 +6086,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["project-implement".to_owned()],
@@ -5867,6 +6120,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["a".to_owned()],
@@ -5897,6 +6151,7 @@ explain what changes (nothing appears if it supersedes none).
             usage: None,
             creates_task: true,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["a".to_owned()],
@@ -5937,6 +6192,7 @@ explain what changes (nothing appears if it supersedes none).
                 usage: None,
                 creates_task: true,
                 selectable: true,
+                suppressed: None,
                 allows_create: vec![],
                 reads: vec![],
                 includes: ids.clone(),
@@ -7687,6 +7943,7 @@ Follow the house rule.
             usage: None,
             creates_task: false,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],
@@ -7742,6 +7999,7 @@ Follow the house rule.
             usage: None,
             creates_task: false,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],
@@ -7771,6 +8029,7 @@ Follow the house rule.
             usage: None,
             creates_task: false,
             selectable: true,
+            suppressed: None,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],

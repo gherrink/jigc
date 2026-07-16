@@ -5697,6 +5697,7 @@ Effects.
                 id: "only".to_string(),
                 body: self.0.to_string(),
                 kind: crate::compose::StepKind::Plain,
+                states_constraints: Vec::new(),
             })
         }
     }
