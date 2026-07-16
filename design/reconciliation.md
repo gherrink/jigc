@@ -67,13 +67,13 @@ For `DRIFTED + TOUCHED`, both sides have moved: the on-disk file changed since t
 conflict on adr:rate-limit-at-the-gateway:
   external edit since 2026-05-28T14:03:00Z + task add-rate-limiter has staged changes.
   resolution:
-    - jigc task discard-write adr:rate-limit-at-the-gateway   # drop the task's changes
-    - revert the file on disk                                  # drop the human's edit
+    - jigc task discard <task-id>   # drop the whole task's staged writes
+    - revert the file on disk       # drop the human's edit
 ```
 
 Resolution paths:
 
-- Agent discards the task's writes for this doc (explicit op).
+- Agent discards the **whole task** (`jigc task discard <id>`) — no per-doc discard exists. (A per-write discard verb was sketched at MVP and never built; the route was repaired to the real verb at M43, [DECISIONS.md](../DECISIONS.md) → 2026-07-16 Settle. Doc-granular discard is deferred with the same machinery as three-way merge.)
 - Human reverts the on-disk edit; the task's writes are kept.
 - **Three-way merge** of both sides is deferred — it parallels override-conflict resolution ([overrides.md](overrides.md)) and rides on the same future machinery.
 

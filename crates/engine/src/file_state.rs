@@ -949,6 +949,15 @@ fn conformance_advisory_finding(path: &str, cause: Option<Finding>) -> Finding {
 /// file level): both the on-disk file and the task's working area moved. File
 /// granularity, explicit-discard route, never a silent merge (three-way merge is
 /// deferred).
+///
+/// The route names **real verbs only** (the M43 ghost-verb repair, `DECISIONS.md`
+/// 2026-07-16 Settle: a per-write discard verb was designed at MVP and never built —
+/// clap's did-you-mean steered to `task discard`, destroying the task unwarned). The honest resolution pair: discard the **whole task** — the engine
+/// has no task id at this seam, so the mechanical span carries the declared
+/// `<task-id>` placeholder the agent fills — or revert the external edit on disk. The
+/// jigc span rides the checked [`crate::finding::Route::mechanical`] constructor
+/// (`surface-contract.md` → The route fence), so a verb that does not parse cannot
+/// be taught here again.
 fn conflict_block_finding(path: &str) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -957,9 +966,11 @@ fn conflict_block_finding(path: &str) -> Finding {
             "conflict on `{path}`: an external edit and this task's staged writes both changed it"
         ),
         Some(Location::addressed(path, 1, 1)),
-        Some(format!(
-            "discard the task's writes (`jigc task discard-write {path}`) or revert the file on disk"
-        ).into()),
+        Some(crate::finding::Route::mechanical(
+            ["jigc", "task", "discard", "<task-id>"],
+            " to drop this task's staged writes (discard retires the whole task — no \
+             per-doc discard exists), or revert the external edit on disk to keep them",
+        )),
     )
 }
 
@@ -1246,13 +1257,21 @@ Referrers must point at the new decision.
         let f = &findings[0];
         assert_eq!(f.code, "reconciliation.conflict-block");
         assert_eq!(f.severity, Severity::Blocking);
-        let route = f
-            .route
-            .as_deref()
-            .expect("conflict carries a discard route");
+        let route = f.route.as_ref().expect("conflict carries a discard route");
+        // The M43 ghost-verb repair (`DECISIONS.md` 2026-07-16 Settle): the route names
+        // only real verbs — the whole-task `jigc task discard <task-id>` (honest that no
+        // per-write discard exists) or the human on-disk revert — never the never-built
+        // per-write discard verb.
+        assert_eq!(
+            route.as_str(),
+            "`jigc task discard <task-id>` to drop this task's staged writes (discard \
+             retires the whole task — no per-doc discard exists), or revert the external \
+             edit on disk to keep them",
+            "the conflict route names the real verbs only"
+        );
         assert!(
-            route.contains("discard") || route.contains("revert"),
-            "the conflict route names the explicit-discard / revert paths: {route:?}"
+            matches!(route.kind(), crate::finding::RouteKind::Mechanical { .. }),
+            "the jigc span rides the checked mechanical constructor"
         );
 
         // No silent merge: neither the recorded hash nor the edge index moved.
