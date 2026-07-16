@@ -466,7 +466,6 @@ fn promoted_owner_artifact_does_not_poison_later_finalizes() {
     fs::create_dir_all(repo.path().join("completions/artifacts/M17")).expect("mk owned home");
     fs::write(repo.path().join(artifact), "the genuine audit transcript\n")
         .expect("write owner-artifact");
-    git(repo.path(), &["add", artifact]);
 
     assert_ok(
         &jigc_methodology(
@@ -477,6 +476,9 @@ fn promoted_owner_artifact_does_not_poison_later_finalizes() {
         ),
         "`jigc start --workflow completion M17`",
     );
+    // Staged AFTER the mint — the artifact is this task's own work, and a pre-mint
+    // stage would (correctly) trip the M43 carryover gate.
+    git(repo.path(), &["add", artifact]);
     let create = jigc_methodology(
         repo.path(),
         home.path(),

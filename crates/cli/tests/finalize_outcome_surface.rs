@@ -245,7 +245,6 @@ fn landed_finalize_after_oob(format: Option<&str>) -> String {
     init_repo(repo.path());
 
     commit_prior_adr(repo.path(), home.path());
-    oob_edit_committed_adr(repo.path());
 
     let task = "tighten-the-cache-docs";
     let out = jigc(
@@ -259,6 +258,10 @@ fn landed_finalize_after_oob(format: Option<&str>) -> String {
         ],
     );
     assert_ok(&out, "`jigc start` (task B)");
+    // The OOB edit lands + stages DURING the task — a pre-mint stage would
+    // (correctly) trip the M43 carryover gate; the absorb classification under
+    // test is indifferent to when the human staged it.
+    oob_edit_committed_adr(repo.path());
     fill_commit(repo.path(), home.path(), task);
 
     let out = finalize(repo.path(), home.path(), task, format);

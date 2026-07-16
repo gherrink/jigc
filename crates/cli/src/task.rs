@@ -35,7 +35,9 @@ use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::file_state::{self, FileStateRecord};
-use engine::finalize::{Promotion, RepinDecision, decide_base_repin, plan_finalize};
+use engine::finalize::{
+    Promotion, RepinDecision, decide_base_repin, decide_carryover, plan_finalize,
+};
 use engine::finding::{Finding, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
@@ -99,6 +101,12 @@ pub enum TaskCommand {
         /// dirty-tree sweep). A dry-run never requires `--approve`.
         #[arg(long)]
         dry_run: bool,
+        /// Declare the carry-over of pre-task staged changes deliberate: land index
+        /// entries staged before this task existed instead of refusing
+        /// (`finalize.carried-staged`). On a migration task it composes with
+        /// `--approve` — two independent declarations. Inert when nothing is carried.
+        #[arg(long)]
+        carry_staged: bool,
     },
     /// Bind an already-committed doc to one of the task's declared context roles,
     /// so `task.<role>` resolves to it on the resume re-compose.
@@ -127,8 +135,9 @@ impl TaskCommand {
                 id,
                 approve,
                 dry_run,
+                carry_staged,
             } => {
-                return run_finalize(cwd, &id, format, approve, dry_run);
+                return run_finalize(cwd, &id, format, approve, dry_run, carry_staged);
             }
             TaskCommand::Bind { role, addr, id } => run_bind(cwd, &role, &addr, &id, format),
         };
@@ -358,7 +367,14 @@ fn changelog_entry_count(schema: &Schema, source: &str) -> usize {
 /// aborts non-zero with git's stderr surfaced and no working-area change. On a successful
 /// commit, run post-commit (advance the file-state hashes, remove the working area) —
 /// best-effort: a failure there is logged, not raised (the commit is already truth).
-fn run_finalize(cwd: &Path, id: &str, format: Format, approve: bool, dry_run: bool) -> Outcome {
+fn run_finalize(
+    cwd: &Path,
+    id: &str,
+    format: Format,
+    approve: bool,
+    dry_run: bool,
+    carry_staged: bool,
+) -> Outcome {
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
@@ -366,7 +382,7 @@ fn run_finalize(cwd: &Path, id: &str, format: Format, approve: bool, dry_run: bo
             return Outcome::failure();
         }
     };
-    match task.finalize(id, format, approve, dry_run) {
+    match task.finalize(id, format, approve, dry_run, carry_staged) {
         Ok(outcome) => outcome,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
@@ -736,7 +752,14 @@ impl TaskArea {
     /// on a hook/git rejection (git's stderr surfaced, no envelope — not a validation
     /// outcome). An orchestration error (git unavailable, malformed pin) bubbles as
     /// `Err`.
-    fn finalize(&self, id: &str, format: Format, approve: bool, dry_run: bool) -> Result<Outcome> {
+    fn finalize(
+        &self,
+        id: &str,
+        format: Format,
+        approve: bool,
+        dry_run: bool,
+        carry_staged: bool,
+    ) -> Result<Outcome> {
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
         let schemas = self.schemas()?;
@@ -899,6 +922,38 @@ impl TaskArea {
                 println!();
             }
             return Ok(Outcome::success());
+        }
+
+        // M43 — the carryover gate (`design/surface-contract.md` → The carryover gate):
+        // refuse to let index entries staged BEFORE this task existed silently ride its
+        // whole-index commit — one blocking routed finding per carried path. On the
+        // COMMITTING path only, after the `--dry-run` branch (the forecast must render)
+        // and ahead of the migration review gate (a blocking refusal precedes the
+        // human-fidelity hold, like the planner's validation blocks). `--carry-staged`
+        // converts the undecidable intent to a declared one (the `--approve` mold; on a
+        // migration the two compose, each gating its own concern). The engine decides
+        // over CLI-supplied git facts: the pre-task snapshot every minting door
+        // persisted, the same probe re-run now, and the migration's recorded retire
+        // pathspec (that deletion is the task's own work, exempt). A task minted before
+        // the snapshot existed reads `None` and fails open (the declared bound).
+        if !carry_staged {
+            let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
+                format!(
+                    "could not read the staged snapshot for task at {:?}",
+                    self.dir
+                )
+            })?;
+            let retire_exempt = state::read_source_path(&self.dir).with_context(|| {
+                format!("could not read the source path for task at {:?}", self.dir)
+            })?;
+            let carried = decide_carryover(
+                snapshot.as_ref(),
+                &git_staged_snapshot(&self.repo_root)?,
+                retire_exempt.as_deref(),
+            );
+            if !carried.is_empty() {
+                return self.blocked(carried, format);
+            }
         }
 
         if is_migration && !approve {

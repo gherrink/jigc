@@ -2100,6 +2100,7 @@ mod cli_parse {
                     id: "move-cache".to_string(),
                     approve: false,
                     dry_run: false,
+                    carry_staged: false,
                 },
             }
         );
@@ -2116,6 +2117,7 @@ mod cli_parse {
                     id: "move-cache".to_string(),
                     approve: false,
                     dry_run: true,
+                    carry_staged: false,
                 },
             }
         );

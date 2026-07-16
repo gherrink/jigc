@@ -496,12 +496,12 @@ fn flow20_the_gate_passes_on_a_staged_artifact_and_the_decisions_log_is_appended
     let task = milestone.to_lowercase();
     let artifact = "completions/artifacts/M16/audit.md";
 
+    start_completion(repo.path(), home.path(), milestone);
     // The orchestrator's same-transaction recording: durably stage + `git add` the
     // owner-artifact BEFORE finalize, so validate sees it tracked (the M3 lesson the
-    // BLOCK untracked case above proves is load-bearing).
+    // BLOCK untracked case above proves is load-bearing) — and AFTER the mint, as the
+    // task's own work (a pre-mint stage would correctly trip the M43 carryover gate).
     stage_owner_artifact(repo.path(), artifact, "the genuine audit transcript\n");
-
-    start_completion(repo.path(), home.path(), milestone);
     let addr = create_completion_record(repo.path(), home.path(), milestone);
     author_meta(repo.path(), home.path(), &addr, "green", artifact);
     author_finding(
@@ -864,9 +864,9 @@ fn flow20_a_red_verdict_is_recorded_not_certified() {
     let milestone = "M16";
     let task = milestone.to_lowercase();
     let artifact = "completions/artifacts/M16/audit.md";
-    stage_owner_artifact(repo.path(), artifact, "a red audit transcript\n");
-
     start_completion(repo.path(), home.path(), milestone);
+    // Staged after the mint — the artifact is this task's own work (M43 carryover gate).
+    stage_owner_artifact(repo.path(), artifact, "a red audit transcript\n");
     let addr = create_completion_record(repo.path(), home.path(), milestone);
     // A RED verdict — the deliverable did NOT hold. The engine must still land it: the
     // verdict is authored prose-judgment, not an engine pass/fail gate.

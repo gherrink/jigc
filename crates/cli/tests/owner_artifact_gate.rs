@@ -378,16 +378,7 @@ fn finalize_lands_on_a_staged_owner_artifact() {
     seed_fixture_pack(pack.path());
     list_fixture_pack(repo.path(), pack.path());
 
-    // The owner-artifact is durably staged under the owned home and git-tracked (the
-    // orchestrator's same-transaction recording — proven via `git add`, which the real
-    // finalize's `git add --all` would also do, here made explicit so validate sees it
-    // tracked before the commit lands).
     let artifact = "completions/artifacts/M16/audit.md";
-    fs::create_dir_all(repo.path().join("completions/artifacts/M16")).expect("mk owned home");
-    fs::write(repo.path().join(artifact), "the genuine audit transcript\n")
-        .expect("write owner-artifact");
-    git(repo.path(), &["add", artifact]);
-
     let task = "record-the-completion";
     author_completion(
         repo.path(),
@@ -396,6 +387,16 @@ fn finalize_lands_on_a_staged_owner_artifact() {
         task,
         artifact,
     );
+
+    // The owner-artifact is durably staged under the owned home and git-tracked (the
+    // orchestrator's same-transaction recording — proven via `git add`, made explicit
+    // so validate sees it tracked before the commit lands). Staged AFTER the mint, as
+    // the task's own work (a pre-mint stage would correctly trip the M43 carryover
+    // gate).
+    fs::create_dir_all(repo.path().join("completions/artifacts/M16")).expect("mk owned home");
+    fs::write(repo.path().join(artifact), "the genuine audit transcript\n")
+        .expect("write owner-artifact");
+    git(repo.path(), &["add", artifact]);
 
     let out = jigc(repo.path(), home.path(), &["task", "finalize", task]);
     let rendered = format!(

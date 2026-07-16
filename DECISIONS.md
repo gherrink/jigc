@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-16 — M43 Inc 2 T3: the carryover refuse precedes the migration review gate — one elaboration pin
+
+On the committing path the refuse sits **after the `--dry-run` branch** (the forecast must render — planner-pinned) and **before the `is_migration && !approve` review hold**: a blocking refusal precedes the human-fidelity hold, exactly as `plan_finalize`'s validation blocks already do (the review gate has never rendered over a blocked plan). Observable composition on a migration finalize with a foreign carryover: `--approve` alone → exit 3 (`finalize.carried-staged`), `--carry-staged` alone → exit 4 (review pending), both → lands — the two declarations independent in both directions, per the surface-contract pin.
+
 ## 2026-07-16 — M43 Inc 2 T2: the carryover decision — two elaboration pins
 
 **(1) The route is `Route::human`, verb-neutral:** `finalize.carried-staged` names both exits — unstage (`git restore --staged -- <path>`) or re-run *the finalize* with `--carry-staged` — as a human-judgment route, not a mechanical one: which exit is right is undecidable intent, and the unstage half is a git command outside the mechanical route's `jigc`-argv fence; "the finalize" stays verb-neutral so the one constructor serves the task (T3) and milestone (T4) arms unchanged. **(2) Exempt-side-only normalization:** only the recorded retire path is lexically normalized before the exempt comparison (the `plan_clobber_guard` source-path precedent — the record is authored prose and may carry `./`); the snapshot/current paths are git-canonical already and compare raw.
