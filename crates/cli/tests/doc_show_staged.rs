@@ -483,6 +483,107 @@ fn a_transient_commit_doc_is_staged_readable() {
     );
 }
 
+/// The stale-read hint (M43 Inc 5 T3; `design/surface-contract.md` → law 2 + the
+/// style guide): a **task-less** read of a committed doc that is ALSO staged in an
+/// open task prints one **stderr** line naming the open task id + the staged-read
+/// command — on the plain read AND the `--format json` read — while **stdout stays
+/// byte-identical** to the no-open-task serve (the canonical render / the pinned
+/// json carry no second additive key). With no open task staging the doc, the hint
+/// is absent.
+#[test]
+fn a_task_less_read_of_a_staged_elsewhere_doc_hints_on_stderr() {
+    let repo = TempDir::new("stale-hint");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // Commit the adr through a first task, which finalize retires.
+    start_task(repo.path(), home.path(), "add rate limiter");
+    let task = "add-rate-limiter";
+    stage_cache_strategy_adr(repo.path(), home.path(), task);
+    fill_commit(repo.path(), home.path(), task);
+    assert_ok(
+        &jigc(repo.path(), home.path(), &["task", "finalize", task], None),
+        "`jigc task finalize` — the committed adr",
+    );
+
+    // (1) No open task stages the adr: plain + json serve clean, hint ABSENT.
+    let plain_before = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:cache-strategy"],
+        None,
+    );
+    assert_ok(&plain_before, "the task-less plain read, no open task");
+    assert!(
+        !stderr_of(&plain_before).contains("staged"),
+        "no open task stages the doc — no hint; got:\n{}",
+        stderr_of(&plain_before),
+    );
+    let json_before = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:cache-strategy", "--format", "json"],
+        None,
+    );
+    assert_ok(&json_before, "the task-less json read, no open task");
+    assert!(
+        !stderr_of(&json_before).contains("staged"),
+        "no open task stages the doc — no hint on json either; got:\n{}",
+        stderr_of(&json_before),
+    );
+
+    // (2) A second open task stages an edit (copy-on-first-touch), leaving the
+    //     committed copy behind the staged one.
+    start_task(repo.path(), home.path(), "tune rate limiter");
+    let other = "tune-rate-limiter";
+    set_slot(
+        repo.path(),
+        home.path(),
+        "adr:cache-strategy#decision",
+        other,
+        b"Cache remotely.\n",
+    );
+
+    // (3) Plain: stdout byte-identical; the hint on stderr names the open task id
+    //     + the copy-runnable staged-read command.
+    let plain_after = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:cache-strategy"],
+        None,
+    );
+    assert_ok(&plain_after, "the task-less plain read, staged elsewhere");
+    assert_eq!(
+        plain_after.stdout, plain_before.stdout,
+        "stdout stays the committed serve, byte-identical with and without the open task"
+    );
+    let stderr = stderr_of(&plain_after);
+    assert!(
+        stderr.contains("tune-rate-limiter")
+            && stderr.contains("jigc doc show adr:cache-strategy --task tune-rate-limiter"),
+        "the hint names the open task id + the staged-read command; got:\n{stderr}"
+    );
+
+    // (4) json: same split — pinned stdout untouched, hint on stderr.
+    let json_after = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:cache-strategy", "--format", "json"],
+        None,
+    );
+    assert_ok(&json_after, "the task-less json read, staged elsewhere");
+    assert_eq!(
+        json_after.stdout, json_before.stdout,
+        "the pinned json stays byte-identical — the hint is stderr-only, never a key"
+    );
+    let stderr = stderr_of(&json_after);
+    assert!(
+        stderr.contains("tune-rate-limiter")
+            && stderr.contains("jigc doc show adr:cache-strategy --task tune-rate-limiter"),
+        "the json read carries the same stderr hint; got:\n{stderr}"
+    );
+}
+
 /// `--task` is a real argument now: a bad task id routes to `jigc task list` (the
 /// shared wrong-id route), and the misleading clap tip — "unexpected argument
 /// '--task'… to pass '--task' as a value, use '-- --task'" — is gone.

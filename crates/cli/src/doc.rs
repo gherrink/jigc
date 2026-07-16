@@ -1815,6 +1815,7 @@ fn run_show(
     match read {
         Ok(out) => {
             println!("{out}");
+            stale_read_hint(&jigc_home, &address);
             Ok(())
         }
         Err(failure) => Err(reroute_unadopted(
@@ -1825,6 +1826,53 @@ fn run_show(
             failure,
         )),
     }
+}
+
+/// The **stale-read hint** (M43; `design/surface-contract.md` → law 2 + the style
+/// guide; `design/doc-read-surface.md` → The stale-read hint): a task-less `doc show`
+/// serves the **committed** copy, but when the addressed doc is also **staged in an
+/// open task**, that serve may be behind the staged working copy — so the read prints
+/// one advisory line on **stderr** naming the open task id(s) + the staged-read
+/// command. Stdout stays the canonical render / the pinned json, byte-identical (no
+/// second additive key rides the committed shape).
+///
+/// Existence check only, over [`state::list_active_task_ids`] (the single task
+/// enumeration source) + [`state::instance_path`] (the one owner of the
+/// `docs/<type>:<slug>.md` layout) — no new enumerator, no content read. The
+/// staged-read command is a [`engine::finding::Route::mechanical`], so the route
+/// fence proves it parses; with more than one staging task, the ids are listed and
+/// the command carries the `<task-id>` placeholder (the shared placeholder form).
+fn stale_read_hint(jigc_home: &Path, address: &Address) {
+    let jigc_root = jigc_home.join(".jigc");
+    let tasks = jigc_root.join("tasks");
+    let staged_in: Vec<String> = state::list_active_task_ids(&jigc_root)
+        .into_iter()
+        .filter(|id| {
+            state::instance_path(
+                &tasks.join(id),
+                address.r#type.as_str(),
+                address.slug.as_str(),
+            )
+            .is_file()
+        })
+        .collect();
+    let doc = format!("{}:{}", address.r#type, address.slug);
+    let addr = address.to_string();
+    let task_arg = match staged_in.as_slice() {
+        [] => return,
+        [id] => id.as_str(),
+        _ => "<task-id>",
+    };
+    eprintln!(
+        "note: `{doc}` is also staged in open task{} {} — the committed copy served here may \
+         be stale; staged read: {}",
+        if staged_in.len() == 1 { "" } else { "s" },
+        staged_in.join(", "),
+        engine::finding::Route::mechanical(
+            ["jigc", "doc", "show", addr.as_str(), "--task", task_arg],
+            "",
+        ),
+    );
 }
 
 /// The **staged arm** of `jigc doc show` — `--task <id>` serves the task's staged
