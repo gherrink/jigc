@@ -276,6 +276,16 @@ pub fn assert_schema_freeze(pack: &dyn PackSource) -> anyhow::Result<()> {
 /// permanent-by-design hide; a *malformed* block is already rejected by the
 /// loader's required-shape check). Missing ⇒ fail, naming the workflow — the
 /// `decided-task` lesson made mechanical.
+///
+/// **The catalog shape fence (the style guide's floor):** every **selectable
+/// work-workflow** (`creates-task: true && selectable: true` — the router
+/// catalog's population) must carry non-empty `when:`/`description:`/`usage:`,
+/// and its `when:` must be mechanically shaped per [`assert_when_shape`]. The
+/// scope is exactly the catalog: a non-selectable or `creates-task: false`
+/// workflow keeps `introspection.md`'s skip-on-absent, so project-authored
+/// workflows in a manifest-less pack are doubly outside the fence. The lazy
+/// catalog assert in `start.rs` (`selectable_workflows`) stays; this factory
+/// fence fires first, at every door.
 fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
     use anyhow::Context;
 
@@ -303,7 +313,69 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
                     id.as_str(),
                 );
             }
+            if def.creates_task && def.selectable {
+                for (field, value) in [
+                    ("when", &def.when),
+                    ("description", &def.description),
+                    ("usage", &def.usage),
+                ] {
+                    if value.as_deref().is_none_or(|v| v.trim().is_empty()) {
+                        anyhow::bail!(
+                            "pack-load catalog shape fence failed: selectable work-workflow \
+                             `{}` carries no `{field}:` — the router catalog and `describe` \
+                             narrate from these fields \
+                             (design/surface-contract.md → The catalog shape fence)\n\
+                             route: author a non-empty `{field}:` in the workflow's front-matter",
+                            id.as_str(),
+                        );
+                    }
+                }
+                if let Some(when) = &def.when {
+                    assert_when_shape(id.as_str(), when)?;
+                }
+            }
         }
+    }
+    Ok(())
+}
+
+/// The `when:` catalog line's char cap (the catalog shape fence's length half).
+/// The line interpolates mid-sentence into the router catalog beside its
+/// neighbours, so it must stay a short situation phrase
+/// (`design/workflow-dialect.md` → The `when:`-line craft convention); the
+/// longest shipped selectable `when:` today is 104 chars
+/// (`architecture-documentation`), so the cap leaves authoring headroom without
+/// licensing a paragraph.
+const CATALOG_WHEN_MAX_CHARS: usize = 120;
+
+/// The `when:` mechanical-shape half of the catalog shape fence: one line,
+/// period-less (it interpolates mid-sentence), and at most
+/// [`CATALOG_WHEN_MAX_CHARS`] chars — the `workflow-dialect.md` craft rules'
+/// checkable half. The when-NOT-clause assert is deliberately absent (prose
+/// semantics — declined at M43 Settle #7; the when-NOT discipline lives on
+/// `usage:` via the review checklist).
+fn assert_when_shape(workflow: &str, when: &str) -> anyhow::Result<()> {
+    let bail = |defect: &str| {
+        anyhow::bail!(
+            "pack-load catalog shape fence failed: selectable work-workflow `{workflow}`'s \
+             `when:` line {defect} — the line interpolates mid-sentence into the router \
+             catalog (design/workflow-dialect.md → The `when:`-line craft convention; \
+             design/surface-contract.md → The catalog shape fence)\n\
+             route: rewrite the `when:` as one short, period-less situation phrase",
+        )
+    };
+    let when = when.trim();
+    if when.contains('\n') {
+        return bail("spans multiple lines");
+    }
+    if when.ends_with('.') {
+        return bail("ends with a period");
+    }
+    let chars = when.chars().count();
+    if chars > CATALOG_WHEN_MAX_CHARS {
+        return bail(&format!(
+            "is {chars} chars, over the {CATALOG_WHEN_MAX_CHARS}-char cap"
+        ));
     }
     Ok(())
 }
