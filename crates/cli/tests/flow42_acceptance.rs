@@ -361,15 +361,10 @@ fn v1_folded_slot_template_round_trips_prose_intact() {
     let composed_text = stdout_of(&composed);
 
     // Extract the shipped skeleton verbatim, substitute the fields + a multi-line body.
+    // The generated `{{schema:adr}}` skeleton (M43): the title is the one fill-me
+    // field placeholder; `status`/`date`/`supersedes` render tree-only.
     let skeleton = extract_author_skeleton(&composed_text, "adr");
-    let payload = fill_slots(
-        &skeleton
-            .replace(
-                "\"<the decision, as a short noun phrase>\"",
-                "Fidelity Probe Decision",
-            )
-            .replace("\"<proposed | accepted | superseded>\"", "accepted"),
-    );
+    let payload = fill_slots(&skeleton.replace("\"<the title>\"", "Fidelity Probe Decision"));
 
     // The migrate task id is the one the guidance emits (slug-capped) — parse it from the
     // composed `--task <id>` verb rather than reconstruct it (the emitted-artifact contract).

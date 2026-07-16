@@ -1,42 +1,16 @@
-Migrate the foreign PRD into a managed `prd` at `prds/`. Below is the foreign source the
-CLI staged for you (read-only context — you author the canonical record through the write
+Migrate the foreign PRD into a managed `prd`. Below is the foreign source the CLI
+staged for you (read-only context — you author the canonical record through the write
 verbs, you never edit this file or place anything yourself):
 
 {{ source }}
 
-Author the WHOLE canonical prd in ONE declarative batch payload — the CLI creates the
-record at `prds/<title-slug>` and places its vision/context slots and every requirement
-over a single staged buffer. Pipe the payload on stdin:
+The target schema and its batch payload, both generated from the resolved `prd`
+schema, follow — the CLI creates the record and places every prose slot and requirement
+over a single staged buffer:
 
-jigc doc author prd --from-file - --task {{task.id}} <<'EOF'
-title: "<the prd's subject, as a short noun phrase>"
-sections:
-  - id: vision
-    set:
-      vision: |-
-        <<the product vision — the outcome, in a sentence or two>>
-  - id: requirements
-    items:
-      - title: "<a short label for this requirement>"
-        set:
-          statement: |-
-            <<the requirement, in a sentence or two>>
-      - title: "<a short label for the next requirement>"
-        set:
-          statement: |-
-            <<the next requirement, in a sentence or two>>
-  - id: context
-    set:
-      context: |-
-        <<why it is needed and the constraints that shape it>>
-EOF
+{{ schema:prd }}
 
-The `<<…>>` around each prose slot (`vision`, `context`, each requirement `statement`) is
-REQUIRED literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are
-NOT a fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (The
-inline `title`s take a bare value with no markers; wrapping one is rejected.)
-
-Map the foreign PRD's headings onto this fixed shape:
+Map the foreign PRD's headings onto the schema above:
 
   - the foreign Vision / Overview / Summary / Goal heading maps to the `vision` slot;
   - the foreign Context / Background / Motivation / Constraints heading maps to the

@@ -1,52 +1,34 @@
-Migrate the foreign ADR into a managed `adr` at `decisions/`. Below is the foreign
-source the CLI staged for you (read-only context — you author the canonical record
-through the write verbs, you never edit this file or place anything yourself):
+Migrate the foreign ADR into a managed `adr`. Below is the foreign source the CLI
+staged for you (read-only context — you author the canonical record through the write
+verbs, you never edit this file or place anything yourself):
 
 {{ source }}
 
-Author the WHOLE canonical ADR in ONE declarative batch payload — the CLI creates the
-record at `decisions/<title-slug>` and places its status field and every prose slot
-over a single staged buffer. Pipe the payload on stdin:
+The target schema and its batch payload, both generated from the resolved `adr`
+schema, follow — the CLI creates the record and places every field and prose slot
+over a single staged buffer:
 
-jigc doc author adr --from-file - --task {{task.id}} <<'EOF'
-title: "<the decision, as a short noun phrase>"
-sections:
-  - id: status
-    set:
-      status: "<proposed | accepted | superseded>"
-  - id: context
-    set:
-      context: |-
-        <<the forces at play that made the decision necessary>>
-  - id: decision
-    set:
-      decision: |-
-        <<what we decided, in a sentence or two>>
-  - id: consequences
-    set:
-      consequences: |-
-        <<the tradeoffs and follow-on effects>>
-EOF
+{{ schema:adr }}
 
-The `<<…>>` around each prose slot (`context`, `decision`, `consequences`) is REQUIRED
-literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are NOT a
-fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (Inline
-fields — `status`, `date`, `supersedes`, the `title` — take a bare value with no markers;
-wrapping one is rejected.)
-
-Map the foreign ADR's headings onto this fixed four-part schema:
+Map the foreign ADR's headings onto the schema above:
 
   - the foreign Status / state line maps to the `status` field (see the enum map below);
   - the foreign Context / Background / Problem heading maps to the `context` slot;
+  - the foreign Options / Alternatives / Considered-options heading maps to the
+    optional `options` slot (omit the entry when the foreign source weighed none);
   - the foreign Decision heading maps to the `decision` slot;
   - the foreign Consequences / Outcome / Tradeoffs heading maps to the `consequences` slot.
 
-The `status` field is one of exactly three members: proposed / accepted / superseded.
-Map the foreign status onto the nearest member — `Proposed`/`Draft` to proposed,
+The `status` field is authored under the `status` section's `set:` block. Map the
+foreign status onto the nearest enum member — `Proposed`/`Draft` to proposed,
 `Accepted` to accepted, `Superseded`/`Deprecated`/`Rejected` to superseded — and record
 the foreign status word verbatim in the `context` prose when it carries nuance the
-three-member enum drops (`Accepted (revised)`, `Rejected`). A value outside the three is
-rejected at the write.
+enum drops (`Accepted (revised)`, `Rejected`). A value outside the enum is rejected at
+the write:
+
+  - id: status
+    set:
+      status: "<the mapped member>"
 
 The `date` records WHEN the decision was adopted. TRANSCRIBE the foreign source's date
 (its `Date:` line or dated heading) verbatim into the `status` section's `set:` block as
@@ -55,10 +37,9 @@ survives the migration. OMIT `date` ONLY when the foreign source carries no date
 migration the CLI does NOT fabricate today's date, so a dateless source stays dateless
 (no false decision history).
 
-SUPERSEDES edges — wire only an IN-SET supersession. The `adr` schema carries a
-`supersedes` (adr→adr) relation. When the foreign ADR supersedes a prior decision you ARE
-also migrating in this pass, author the edge: add a `supersedes` field to the `status`
-section's `set:` block as a typed bracket-list of the target slug(s) —
+SUPERSEDES edges — wire only an IN-SET supersession. When the foreign ADR supersedes a
+prior decision you ARE also migrating in this pass, author the edge: add a `supersedes`
+field to the `status` section's `set:` block as a typed bracket-list of the target slug(s) —
 
   - id: status
     set:

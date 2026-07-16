@@ -472,4 +472,16 @@ fn shipped_guidance_payload_skeleton_parses_as_a_valid_spec_payload() {
          author payload; skeleton:\n{skeleton}\nerror: {:?}",
         parsed.err(),
     );
+
+    // M43 Inc-3 T4 — the generated `{{schema:spec}}` projection names `derived-from`
+    // (the spec→prd edge the hand-written template omitted; law 1: a template cannot
+    // understate the schema) at the RESOLVED docs-root home.
+    assert!(
+        composed.contains("`derived-from`: ref -> prd"),
+        "the generated projection must name the `derived-from` edge; composed:\n{composed}",
+    );
+    assert!(
+        composed.contains("`docs/specs/<slug>.md`"),
+        "the spec home renders resolved through docs-root; composed:\n{composed}",
+    );
 }

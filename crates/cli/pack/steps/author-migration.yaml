@@ -4,65 +4,40 @@ doc through the write verbs, you never edit this file or place anything yourself
 
 {{ source }}
 
-Author the WHOLE canonical changelog in ONE declarative batch payload — the CLI
-creates-or-updates the singleton and places every release, change-group and notes
-slot over a single staged buffer, so migrating dozens of releases is one call, not
-hundreds. Pipe the payload on stdin:
+The target schema and its batch payload, both generated from the resolved `changelog`
+schema, follow — the CLI creates-or-updates the singleton and places every release,
+change-group and notes slot over a single staged buffer, so migrating dozens of
+releases is one call, not hundreds:
 
-jigc doc author changelog --from-file - --task {{task.id}} <<'EOF'
-title: Changelog
-sections:
-  - id: releases
-    items:
-      - title: "<version>"          # the version string, oldest release first
-        set:
-          date: "<historical-date>" # see the date rule below — OMIT this key when dateless
-          link: "<diff-url>"         # OPTIONAL — omit when the release carries no compare/diff URL
-        sections:
-          - id: changes
-            items:
-              - title: "<category>"  # one of the six members below — the group's id
-                set:
-                  notes: |-
-                    <<- one bullet per change in this category>>
-EOF
-
-The `<<…>>` around a slot value (`notes`) is REQUIRED literal wrapping — the `<<`/`>>`
-markers tell the CLI this is slot prose, they are NOT a fill-me placeholder to delete.
-Keep them; replace only the text BETWEEN them. (Inline fields — `date`, `link`, the
-item `title` — take a bare value with no markers; wrapping one is rejected.)
+{{ schema:changelog }}
 
 Re-author every RELEASE from the foreign file, oldest to newest, as an item under
 `releases`. The item `title` is the version string (its id is minted from it — e.g.
 `1.2.0` mints `120`).
 
-The change-group `title` is the CATEGORY and MUST be one of the six enum members:
-added / changed / deprecated / removed / fixed / security. Map each foreign category
-heading onto exactly one member, and MERGE many-to-one where two foreign headings
-land on the same member (e.g. "Improvements" + "Enhancements" → `changed`): the enum
-is the group's id, so two foreign categories collapsing onto one member share its
-SINGLE group — emit one `changes` item for that member and merge both sets of bullets
-into its `notes`. A category outside the six is rejected at the write.
+The change-group `title` is the CATEGORY — one of the enum members the schema above
+lists. Map each foreign category heading onto exactly one member, and MERGE many-to-one
+where two foreign headings land on the same member (e.g. "Improvements" +
+"Enhancements" → `changed`): the category is the group's id, so two foreign categories
+collapsing onto one member share its SINGLE group — emit one `changes` item for that
+member and merge both sets of bullets into its `notes`. A category outside the enum is
+rejected at the write.
 
 When a foreign file carries NO category headings at all, infer the member from each
 change's commit prefix: a `feat:` change is `added`, a `fix:` change is `fixed`
 (fall back to `changed` for anything else).
 
-Set each release `date` from the foreign file's HISTORICAL date when one is present
-(use it exactly as it appears, ISO `YYYY-MM-DD`). When the foreign source is DATELESS,
-OMIT the `date` key entirely — no date is stamped, so no history is fabricated.
+Set each release's `date` from the foreign file's HISTORICAL date when one is present:
+add `date: "<YYYY-MM-DD>"` to the release item's `set:` block, exactly as it appears in
+the source — an authored date overwrites the CLI's on-create stamp. When the foreign
+source is DATELESS, OMIT the `date` key entirely — no date is stamped, so no history is
+fabricated.
 
 If the foreign release carries a compare/diff URL, map it to the optional `link`
 field; otherwise omit it (there is no other home for it, and the rest of the foreign
 preamble is dropped).
 
-For any foreign change NOT yet cut into a release (an `[Unreleased]` section), author
-its change-groups under the `unreleased-changes` section instead — same category
-map+merge rule, the staging area rather than a release:
-
-  - id: unreleased-changes
-    items:
-      - title: "<category>"
-        set:
-          notes: |-
-            <<- one bullet per staged change in this category>>
+Any foreign change NOT yet cut into a release (an `[Unreleased]` section) is authored
+as change-groups under the `unreleased-changes` section — same category map+merge
+rule, the staging area rather than a release. When the foreign file has no unreleased
+changes, omit the `unreleased-changes` entry entirely.

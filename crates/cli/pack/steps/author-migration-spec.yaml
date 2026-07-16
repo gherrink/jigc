@@ -1,43 +1,16 @@
-Migrate the foreign spec into a managed `spec` at `specs/`. Below is the foreign source
-the CLI staged for you (read-only context — you author the canonical record through the
-write verbs, you never edit this file or place anything yourself):
+Migrate the foreign spec into a managed `spec`. Below is the foreign source the CLI
+staged for you (read-only context — you author the canonical record through the write
+verbs, you never edit this file or place anything yourself):
 
 {{ source }}
 
-Author the WHOLE canonical spec in ONE declarative batch payload — the CLI creates the
-record at `specs/<title-slug>` and places its goal/context slots and every criterion over
-a single staged buffer. Pipe the payload on stdin:
+The target schema and its batch payload, both generated from the resolved `spec`
+schema, follow — the CLI creates the record and places every field and prose slot
+over a single staged buffer:
 
-jigc doc author spec --from-file - --task {{task.id}} <<'EOF'
-title: "<the spec's subject, as a short noun phrase>"
-sections:
-  - id: goal
-    set:
-      goal: |-
-        <<what this spec delivers — the outcome, in a sentence or two>>
-  - id: context
-    set:
-      context: |-
-        <<why it is needed and the constraints that shape it>>
-  - id: criteria
-    items:
-      - title: "<a short label for this criterion>"
-        set:
-          statement: |-
-            <<the criterion, testably phrased>>
-      - title: "<a short label for the next criterion>"
-        set:
-          statement: |-
-            <<the next criterion, testably phrased>>
-EOF
+{{ schema:spec }}
 
-The `<<…>>` around each prose slot (`goal`, `context`, each criterion `statement`) is
-REQUIRED literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are
-NOT a fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (Inline
-fields — `maps-to-test`, the `title`s — take a bare value with no markers; wrapping one is
-rejected.)
-
-Map the foreign spec's headings onto this fixed shape:
+Map the foreign spec's headings onto the schema above:
 
   - the foreign Goal / Overview / Summary / Objective heading maps to the `goal` slot;
   - the foreign Context / Background / Motivation / Constraints heading maps to the
@@ -47,10 +20,17 @@ Map the foreign spec's headings onto this fixed shape:
     `statement`. A bullet list, a numbered list, or a table of criteria all fold to one item
     each; keep them one statement apiece, never lumped into a single block.
 
-The `maps-to-test` field is OPTIONAL. A foreign spec that names no test does NOT get a
-fabricated anchor — leave `maps-to-test` off the item entirely; a migrated spec with no
-test anchors finalizes clean. Wire `maps-to-test` only when the foreign criterion already
-cites a concrete test symbol you can carry over verbatim.
+The `derived-from` edge is IN-STORE-ONLY. Author it (under the `meta` section's `set:`
+block, as `derived-from: "prd:<slug>"`) only when the PRD it names is already in the
+committed store or migrating in this same pass — a dangling ref blocks finalize forever.
+A foreign "from the X PRD" reference with no in-store target folds into the `context`
+prose instead.
+
+The `maps-to-test` field carries a real test anchor. A foreign spec that names no test
+does NOT get a fabricated anchor — leave `maps-to-test` off the item entirely; a migrated
+spec with no test anchors finalizes clean. Wire `maps-to-test` (in the criterion item's
+`set:` block, as `maps-to-test: "<path>#<test-fn>"`) only when the foreign criterion
+already cites a concrete test symbol you can carry over verbatim.
 
 A foreign "decided by ADR-X" / "see the auth ADR" reference has no structural edge in the
 spec schema (there is no `decided-by` relation) — fold it into the `context` prose instead;

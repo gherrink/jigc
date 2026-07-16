@@ -1,48 +1,17 @@
-Migrate the foreign architecture document into a managed `arch-doc` at `architecture/`.
-Below is the foreign source the CLI staged for you (read-only context — you author the
-canonical record through the write verbs, you never edit this file or place anything
-yourself):
+Migrate the foreign architecture document into a managed `arch-doc`. Below is the
+foreign source the CLI staged for you (read-only context — you author the canonical
+record through the write verbs, you never edit this file or place anything yourself):
 
 {{ source }}
 
-Author the WHOLE canonical arch-doc in ONE declarative batch payload — the CLI creates
-the record at `architecture/<title-slug>` and places its `cites` edge, its `overview`
-slot, and every component over a single staged buffer. This is the ONLY authoring call:
-the migration commit doc is auto-provisioned for you, so never `doc author commit`. Pipe
-the payload on stdin:
+The target schema and its batch payload, both generated from the resolved `arch-doc`
+schema, follow — the CLI creates the record and places every edge, slot, and component
+over a single staged buffer. This is the ONLY authoring call: the migration commit doc
+is auto-provisioned for you, so never `doc author commit`.
 
-jigc doc author arch-doc --from-file - --task {{task.id}} <<'EOF'
-title: "<the part of the system this document covers, as a short noun phrase>"
-sections:
-  - id: meta
-    set:
-      cites: "[adr:<slug-of-a-cited-decision>]"
-  - id: overview
-    set:
-      overview: |-
-        <<what this part of the system is and the boundary it owns>>
-  - id: components
-    items:
-      - title: "<the first component's name>"
-        set:
-          description: |-
-            <<this component's responsibility, in prose>>
-          implemented-by: "<path>#<symbol>"
-      - title: "<another component's name>"
-        set:
-          description: |-
-            <<this component's responsibility, in prose>>
-EOF
+{{ schema:arch-doc }}
 
-The `<<…>>` around each prose slot (`overview`, each component `description`) is REQUIRED
-literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are NOT a
-fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (Inline
-fields — `cites`, `implemented-by`, the `title`s — take a bare value with no markers;
-wrapping one is rejected.)
-
-Map the foreign architecture document's headings onto this fixed three-section schema —
-the section ids stay the fixed single words `meta` / `overview` / `components` (a
-multi-word section id is rejected; component *titles* on `###` headings are free text):
+Map the foreign architecture document's headings onto the schema above:
 
   - the foreign Overview / Introduction / Summary heading maps to the `overview` slot;
   - each foreign component / module / subsystem section maps to one `components` item —
@@ -57,21 +26,28 @@ boundary statement for the `overview` (from the document title and the component
 the foreign doc carries no overview / introduction / summary section.
 
 `implemented-by` is OPTIONAL — anchor a concrete `path#symbol` you can carry over verbatim
-from the foreign source, else OMIT it (an omitted anchor finalizes clean). Architectural
-components are coarser than one symbol; a prose pointer ("the auth module") is not a
-resolvable anchor — leave it off. A PRESENT anchor whose symbol has vanished blocks finalize
-at `doc-code.symbol-exists`.
+from the foreign source (add `implemented-by: "<path>#<symbol>"` to the component item's
+`set:` block), else OMIT it (an omitted anchor finalizes clean). Architectural components
+are coarser than one symbol; a prose pointer ("the auth module") is not a resolvable
+anchor — leave it off. A PRESENT anchor whose symbol has vanished blocks finalize at
+`doc-code.symbol-exists`.
 
-`cites` is bracketed, IN-STORE-ONLY, drop-to-prose otherwise. Author multiple citations as
-ONE bracketed list `[adr:a, adr:b]` (set-field replaces, it does not append). A foreign
-"see ADR-12" becomes `cites: [adr:<slug>]` ONLY when that adr is already in the committed
-store; an out-of-store decision reference is folded into the `overview` prose instead, never
-authored as a dangling ref (a dangling `cites` blocks finalize forever).
+`cites` is bracketed, IN-STORE-ONLY, drop-to-prose otherwise. Author it under the `meta`
+section's `set:` block, multiple citations as ONE bracketed list (set-field replaces, it
+does not append):
+
+  - id: meta
+    set:
+      cites: "[adr:<slug-of-a-cited-decision>, …]"
+
+A foreign "see ADR-12" becomes a `cites` element ONLY when that adr is already in the
+committed store; an out-of-store decision reference is folded into the `overview` prose
+instead, never authored as a dangling ref (a dangling `cites` blocks finalize forever).
 
 Committed-first ordering: a cited adr must be migrated and committed BEFORE the arch-doc
 that cites it (the `ref-resolves` gate resolves against the committed store OR this task's
 working area, and arch-doc's `allows-create` cannot mint an adr in-task). When a corpus
-migrates ADRs and arch-docs together, migrate the `decisions/` corpus first.
+migrates ADRs and arch-docs together, migrate the ADR corpus first.
 
 Component titles must be SLUG-DISTINCT — two titles that slugify identically fail the whole
 batch atomically (`write.already-present`). Give each component a distinct name.

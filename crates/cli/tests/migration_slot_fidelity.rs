@@ -401,11 +401,14 @@ macro_rules! fold_safe_cases {
 
 fold_safe_cases! {
     // ---- dev pack ----
+    // The generated `{{schema:adr}}` skeleton (M43) carries no inline-field
+    // placeholders: `status`/`date`/`supersedes` are default/CLI-stamped/optional, so
+    // they render tree-only and the skeleton is pure slots.
     adr_slot_prose_fold_safe: "adr", Pack::Dev,
         "docs/adr/0001-fidelity.md",
         "# 1. A decision\n\n## Status\n\nAccepted\n\n## Context\n\nForces.\n\n\
 ## Decision\n\nWe chose.\n\n## Consequences\n\nTradeoffs.\n",
-        [("\"<proposed | accepted | superseded>\"", "accepted")];
+        [];
 
     prd_slot_prose_fold_safe: "prd", Pack::Dev,
         "old-prd.md",
@@ -417,20 +420,23 @@ fold_safe_cases! {
         "# Some spec\n\n## Goal\n\nDeliver it.\n\n## Acceptance Criteria\n\n- does A\n",
         [];
 
+    // The generated `{{schema:arch-doc}}` skeleton (M43) omits the optional `cites`
+    // ref and the pack-typed `implemented-by` (tree-only), so it is pure slots.
     arch_doc_slot_prose_fold_safe: "arch-doc", Pack::Dev,
         "old-arch.md",
         "# The subsystem\n\n## Overview\n\nWhat it owns.\n\n## Components\n\n### A part\n\nDoes work.\n",
-        // `cites` is a well-formed but out-of-store ref: author checks ref *shape*;
-        // dangling-ref resolution is a finalize gate, not an author gate.
-        [("\"[adr:<slug-of-a-cited-decision>]\"", "\"[adr:some-decision]\"")];
+        [];
 
+    // The generated `{{schema:changelog}}` skeleton (M43) authors the category as the
+    // item's `title:` (the enum id-source, members offered); `date` is CLI-stamped so
+    // it renders tree-only. The enum-title placeholder appears twice (the
+    // `unreleased-changes` group + the release's nested `changes` group) — both must
+    // hold a valid member for the write to land.
     changelog_slot_prose_fold_safe: "changelog", Pack::Dev,
         "old-changelog.md",
         "# Changelog\n\n## 1.0.0\n\n### Added\n\n- a feature\n",
         [
-            ("\"<historical-date>\"", "2020-01-01"),
-            ("\"<category>\"", "added"),
-            ("\"<version>\"", "1.0.0"),
+            ("\"<added | changed | deprecated | removed | fixed | security>\"", "added"),
         ];
 
     // ---- methodology pack ----

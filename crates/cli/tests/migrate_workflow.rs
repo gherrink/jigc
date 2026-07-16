@@ -300,6 +300,33 @@ fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
         );
     }
 
+    // (3a) M43 Inc-3 T4 — the generated `{{schema:adr}}` projection replaces the
+    // hand-enumerated skeleton (law 1: a template cannot understate the schema). The
+    // composed view names ALL FIVE adr sections — including `options`, the slot the
+    // hand-written template famously omitted — at the RESOLVED home (docs-root
+    // applied), and the "fixed four-part" lie is gone.
+    for section in [
+        "- `status` (front-matter fields):",
+        "- `context`: prose slot",
+        "- `options`: prose slot (optional)",
+        "- `decision`: prose slot",
+        "- `consequences`: prose slot",
+    ] {
+        assert!(
+            stdout.contains(section),
+            "the generated projection must name {section:?}; stdout:\n{stdout}",
+        );
+    }
+    assert!(
+        stdout.contains("`docs/decisions/<slug>.md`"),
+        "the adr home renders resolved through docs-root, never the schema-raw \
+         `decisions/`; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("fixed four-part"),
+        "the hand-enumerated `fixed four-part schema` lie must be gone; stdout:\n{stdout}",
+    );
+
     // (4) The foreign-status → 3-enum mapping: proposed / accepted / superseded.
     for member in ["proposed", "accepted", "superseded"] {
         assert!(
