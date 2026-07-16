@@ -78,7 +78,7 @@ The **one bounded exception** is `fan-out`, where a runtime-resolved list yields
 A step's body is a block of two leaf kinds:
 
 - **`instruction`** — static directive prose: "run this exact command," "author this doc slot," "reason about X." (The visual grammar that distinguishes these in the emitted output is the open emitted-format question.)
-- **`placeholder`** — read-path, `{{…}}`, CLI-filled before the agent sees it. Four kinds:
+- **`placeholder`** — read-path, `{{…}}`, CLI-filled before the agent sees it. Five kinds:
 
 | kind | resolves to | notes |
 |---|---|---|
@@ -86,6 +86,7 @@ A step's body is a block of two leaf kinds:
 | **data-value** `{{path}}` / `{{@path}}` | by default, the path's **address**; with `@`, the **content** at that address (see below) | the context-assembly core |
 | **include** `{{include: step:validate-refs}}` | a step/block by id, expanded recursively | cycle-checked at validate-time (phase 6 of [resolution algorithm](overrides.md#resolution-algorithm)) |
 | **fill** `{{fill: extra-guidance}}` | the content a `slot-fill` delta supplies for this extension point, or the pack default body (empty if none) | a pack-declared override point; applied at phase 5 *before* expansion; **no nested `{{fill:}}`**; orphan + survivor flagged by `workflow-refs` ([overrides.md](overrides.md#the-fill-placeholder--slot-fill-targets)) |
+| **schema** `{{schema:adr}}` (M43) | the named doctype's **schema projection** — the resolved section/field/enum tree + the `jigc doc author` payload skeleton, generated from the composed cascade's resolved schema (homes render `docs-root`-resolved; the placement branch renders its literal file) | the law-1 generation seam ([surface-contract.md](surface-contract.md#the-schema-projection-law-1)): a soliciting template never hand-enumerates what the schema can project. **Lone-line only**; a doctype absent from the composed cascade — unfed or dangling alike — **blocks** (`workflow-refs.schema-ref-resolves`, at compose *and* the store sweep — never silently empty, unlike the `{{source}}` seam's empty-not-finding); an inline mention in prose stays inert |
 
 **Address vs content — the `@` marker.** A data-value path resolves to the **address** of its target by default; prefix with `@` to dereference and get the **content** at that address. One uniform rule across all depths:
 

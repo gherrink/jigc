@@ -562,6 +562,31 @@ fn emit_line(
         return Ok(ctx.source.clone().unwrap_or_default());
     }
 
+    // Schema projection: a lone `{{schema:<doctype>}}` placeholder — the law-1
+    // generation seam (`surface-contract.md` → The schema projection). The `{{source}}`
+    // mold covers the feed mechanics only; the unfedness stance is the opposite: a
+    // doctype absent from the fed map — unfed context or dangling ref alike — BLOCKS
+    // (`workflow-refs.schema-ref-resolves`), never renders silently empty (which would
+    // be a new lie). A resolvable ref renders the resolved schema's section/field/enum
+    // tree + the `doc author` payload skeleton ([`render_schema_projection`]).
+    if let Some(inner) = parse_lone_placeholder(trimmed)
+        && let Some(doctype) = inner.strip_prefix("schema:")
+    {
+        let doctype = doctype.trim();
+        let schema = ctx.schemas.get(doctype).ok_or_else(|| {
+            blocking_workflow_refs(
+                "workflow-refs.schema-ref-resolves",
+                format!(
+                    "schema-ref `{{{{schema:{doctype}}}}}` resolves to no doctype in the \
+                     composed cascade"
+                ),
+                Location::at(1, 1),
+            )
+        })?;
+        let task = ctx.task.as_ref().map(|t| t.id.as_str());
+        return Ok(render_schema_projection(schema, task));
+    }
+
     // Content: a lone `{{@<path>}}` data-value placeholder.
     if let Some(inner) = parse_lone_placeholder(trimmed)
         && let Some(path_text) = inner.strip_prefix('@')
@@ -643,8 +668,9 @@ pub fn resolve_inline_data_values(body: &str, ctx: &crate::data_value::ComposeCo
 
 /// The per-line token-anywhere scan behind [`resolve_inline_data_values`], the
 /// [`next_fill_token`] discipline: a `{{…}}` whose
-/// trimmed inner is `fill:`-shaped (phase 5's), `cli.`-prefixed, `@`-prefixed, or
-/// `include:`-shaped (the lone-line classes) is **skipped** — the scan resumes
+/// trimmed inner is `fill:`-shaped (phase 5's), `cli.`-prefixed, `@`-prefixed,
+/// `include:`-shaped, or `schema:`-shaped (the lone-line classes) is **skipped** —
+/// the scan resumes
 /// just past its `{{`, leaving the token for its own phase. Every other inner is
 /// tried as a bare data-value path; one that fails — a malformed path, an
 /// unresolvable path, or a **collection** resolution (`catalog` / `store.*` /
@@ -671,6 +697,7 @@ fn emit_inline_data_values(line: &str, ctx: &crate::data_value::ComposeContext) 
             || inner.starts_with("cli.")
             || inner.starts_with('@')
             || inner.starts_with("include:")
+            || inner.starts_with("schema:")
             || inner == "source"
         {
             rewritten.push_str(&line[cursor..open + 2]);
@@ -876,6 +903,417 @@ fn blockquote(prose: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Render the `{{schema:<doctype>}}` projection — the law-1 generation seam
+/// (`surface-contract.md` → The schema projection): the resolved schema's
+/// section/field/enum tree plus the `jigc doc author` payload skeleton, generated
+/// from the fed [`crate::schema::Schema`] so a soliciting template can never
+/// hand-enumerate (and understate) the schema — a future schema bump re-renders
+/// correctly by construction.
+///
+/// Requiredness is read off the **shared authority**
+/// [`crate::validate::is_author_required`] (M40 Settle #4 — never a second
+/// predicate): the skeleton includes exactly the author-suppliable leaves (an
+/// author-required or `optional:` field, every prose slot), while CLI-stamped
+/// (`default:`/`set:`) fields, optional refs, and pack-typed fields appear in the
+/// **tree** with their stamping/adjudication named instead. The home line handles
+/// the placement branch (`location: None`, literal `placement.file` —
+/// `storage.md` → Placement); a located home renders the *fed* `location:`, which
+/// the CLI resolves through `docs-root` before feeding, so the printed path is
+/// repo-real by construction. `task` (the composing task's id, when one exists)
+/// makes the demonstrated `jigc doc author` line copy-runnable.
+fn render_schema_projection(schema: &crate::schema::Schema, task: Option<&str>) -> String {
+    let mut out = String::new();
+    out.push_str(&projection_home_line(schema));
+    out.push_str("\n\n");
+    for section in &schema.sections {
+        projection_tree_section(&mut out, section);
+    }
+    out.push('\n');
+    out.push_str(
+        "Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` \
+         value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the \
+         `<<`/`>>` markers and replace only the text between them (an inline field takes a \
+         bare value — wrapping one is rejected). An entry marked `# optional` may be omitted \
+         entirely. Pipe the payload on stdin:\n\n",
+    );
+    let task_arg = task.map(|id| format!(" --task {id}")).unwrap_or_default();
+    out.push_str(&format!(
+        "jigc doc author {} --from-file -{task_arg} <<'EOF'\n",
+        schema.ty
+    ));
+    out.push_str(&format!("title: {}\n", projection_title_value(schema)));
+    let body = projection_skeleton_sections(&schema.sections, 2);
+    if !body.is_empty() {
+        out.push_str("sections:\n");
+        out.push_str(&body);
+    }
+    out.push_str("EOF");
+    out
+}
+
+/// The projection's home line: the doctype + where its instances live — the
+/// literal `placement.file` for a placement doctype, the (cascade-resolved, fed)
+/// `location:` for a located one, or the transient statement for a sink-only type.
+fn projection_home_line(schema: &crate::schema::Schema) -> String {
+    let ty = &schema.ty;
+    if let Some(placement) = &schema.placement {
+        format!(
+            "The `{ty}` schema — the managed singleton at `{}`.",
+            placement.file
+        )
+    } else if let Some(location) = &schema.location {
+        if schema.singleton {
+            format!("The `{ty}` schema — the managed singleton at `{location}{ty}.md`.")
+        } else if let Some(id_from) = &schema.id_from {
+            format!(
+                "The `{ty}` schema — each instance a managed file at `{location}<slug>.md`, \
+                 its `<slug>` minted from `{id_from}`."
+            )
+        } else {
+            format!("The `{ty}` schema — each instance a managed file at `{location}<slug>.md`.")
+        }
+    } else {
+        format!("The `{ty}` schema — transient (no committed file).")
+    }
+}
+
+/// The skeleton's `title:` value: a singleton's title is **fixed and known**
+/// (`display-title:` when declared, else the type id — the fixed slug), so it
+/// renders literally; a per-instance doctype's title is the author's (the
+/// id-source), so it renders as a fill-me placeholder.
+fn projection_title_value(schema: &crate::schema::Schema) -> String {
+    if schema.singleton {
+        schema
+            .display_title
+            .clone()
+            .unwrap_or_else(|| schema.ty.clone())
+    } else {
+        "\"<the title>\"".to_owned()
+    }
+}
+
+/// Append one top-level section's **tree** lines: the section id plus its leaves,
+/// each annotated with its type (enum members spelled out) and its authoring
+/// obligation ([`field_tree_annotation`]).
+fn projection_tree_section(out: &mut String, section: &crate::schema::Section) {
+    match &section.body {
+        crate::schema::SectionBody::Simple { slot, fields } => {
+            match slot {
+                Some(slot) => {
+                    let optional = if slot.optional { " (optional)" } else { "" };
+                    let hint = slot
+                        .hint
+                        .as_deref()
+                        .map(|h| format!(" — {h}"))
+                        .unwrap_or_default();
+                    out.push_str(&format!("- `{}`: prose slot{optional}{hint}\n", section.id));
+                }
+                None if section.header => {
+                    out.push_str(&format!("- `{}` (front-matter fields):\n", section.id));
+                }
+                None => {
+                    out.push_str(&format!("- `{}` (fields):\n", section.id));
+                }
+            }
+            for field in fields {
+                out.push_str(&format!("    - {}\n", field_tree_line(field, None)));
+            }
+        }
+        crate::schema::SectionBody::Repeatable { repeatable } => {
+            projection_tree_repeatable(out, &section.id, repeatable, 0);
+        }
+    }
+}
+
+/// Append a repeatable section's tree lines at `indent`, recursing into nested
+/// repeatables one level deeper (the item leaves in block order).
+fn projection_tree_repeatable(
+    out: &mut String,
+    id: &str,
+    repeatable: &crate::schema::Repeatable,
+    indent: usize,
+) {
+    let pad = " ".repeat(indent);
+    out.push_str(&format!(
+        "{pad}- `{id}`: repeatable items, one per `{}`:\n",
+        repeatable.id_from
+    ));
+    let leaf_pad = " ".repeat(indent + 4);
+    for leaf in &repeatable.block {
+        match leaf {
+            crate::schema::Leaf::Field(field) => {
+                out.push_str(&format!(
+                    "{leaf_pad}- {}\n",
+                    field_tree_line(field, Some(&repeatable.id_from))
+                ));
+            }
+            crate::schema::Leaf::Slot { id, slot } => {
+                let optional = if slot.optional { " (optional)" } else { "" };
+                let hint = slot
+                    .hint
+                    .as_deref()
+                    .map(|h| format!(" — {h}"))
+                    .unwrap_or_default();
+                out.push_str(&format!("{leaf_pad}- `{id}`: prose slot{optional}{hint}\n"));
+            }
+            crate::schema::Leaf::Repeatable { id, repeatable } => {
+                projection_tree_repeatable(out, id, repeatable, indent + 4);
+            }
+        }
+    }
+}
+
+/// One field's tree line: `` `<id>`: <type> — <obligation> ``. `id_from` is the
+/// enclosing repeatable's id-source field id, whose value is authored as the item's
+/// `title:` payload key rather than a `set:` entry.
+fn field_tree_line(field: &crate::schema::Field, id_from: Option<&str>) -> String {
+    format!(
+        "`{}`: {}{}",
+        field.id,
+        field_type_text(field),
+        field_tree_annotation(field, id_from)
+    )
+}
+
+/// A field's rendered type: enum members spelled out (`of:`), a ref's target +
+/// cardinality, a pack-declared type by its name, the native spelling otherwise.
+fn field_type_text(field: &crate::schema::Field) -> String {
+    use crate::schema::FieldType;
+    match &field.ty {
+        FieldType::Enum => match &field.of {
+            Some(members) => format!("enum, one of: {}", members.join(" | ")),
+            None => "enum".to_owned(),
+        },
+        FieldType::String => "string".to_owned(),
+        FieldType::Date => "date".to_owned(),
+        FieldType::Bool => "bool".to_owned(),
+        FieldType::Int => "int".to_owned(),
+        FieldType::OwnedLocation => "owned-location".to_owned(),
+        FieldType::Ref => {
+            let to = field.to.as_deref().unwrap_or("<type>");
+            let card = field.card.as_deref().unwrap_or("0..1");
+            format!("ref -> {to} ({card})")
+        }
+        FieldType::Pack(pack) => pack.name.clone(),
+    }
+}
+
+/// A field's authoring-obligation annotation, in obligation order: the item
+/// id-source (authored as `title:`), a `default:`/`set:` CLI stamp, an `optional:`
+/// field, an optional ref or pack-typed field (no author obligation —
+/// [`crate::validate::is_author_required`]'s exemptions, named), else
+/// author-required.
+fn field_tree_annotation(field: &crate::schema::Field, id_from: Option<&str>) -> String {
+    if id_from == Some(field.id.as_str()) {
+        return " — the item's id-source (authored as the item's `title:` payload key)".to_owned();
+    }
+    if let Some(default) = &field.default {
+        return format!(" — defaults to `{default}` unless authored");
+    }
+    if let Some(set) = &field.set {
+        return format!(" — CLI-stamped ({set}) unless authored");
+    }
+    if field.optional {
+        return " — optional".to_owned();
+    }
+    if matches!(field.ty, crate::schema::FieldType::Pack(_)) {
+        return " — optional; adjudicated at finalize".to_owned();
+    }
+    if crate::validate::is_optional_ref(field) {
+        return " — optional".to_owned();
+    }
+    debug_assert!(crate::validate::is_author_required(field));
+    " — author-required".to_owned()
+}
+
+/// Whether a field joins the payload **skeleton**: exactly the author-suppliable
+/// leaves — author-required per the shared predicate, or an `optional:` field
+/// (whose value only the author can supply). CLI-stamped (`default:`/`set:`)
+/// fields, optional refs, and pack-typed fields stay tree-only.
+fn field_in_skeleton(field: &crate::schema::Field) -> bool {
+    crate::validate::is_author_required(field) || field.optional
+}
+
+/// A skeleton field's fill-me placeholder value, by type: enum members offered,
+/// a date's ISO shape, a ref's `<type>:<slug>` form (bracket-list when the
+/// cardinality admits several).
+fn field_skeleton_value(field: &crate::schema::Field) -> String {
+    use crate::schema::FieldType;
+    match &field.ty {
+        FieldType::Enum => match &field.of {
+            Some(members) => format!("\"<{}>\"", members.join(" | ")),
+            None => format!("\"<the {}>\"", field.id),
+        },
+        FieldType::Date => "\"<YYYY-MM-DD>\"".to_owned(),
+        FieldType::Bool => "\"<true | false>\"".to_owned(),
+        FieldType::Int => "\"<an integer>\"".to_owned(),
+        FieldType::Ref => {
+            let to = field.to.as_deref().unwrap_or("<type>");
+            let card = field.card.as_deref().unwrap_or("0..1");
+            if card.contains('*') {
+                format!("\"[{to}:<the target's slug>, …]\"")
+            } else {
+                format!("\"{to}:<the target's slug>\"")
+            }
+        }
+        _ => format!("\"<the {}>\"", field.id),
+    }
+}
+
+/// A skeleton slot's fill-me prose (between the `<<…>>` markers): the slot's
+/// authored `hint:` when one is declared, else a generic fill-me.
+fn slot_skeleton_prose(id: &str, slot: &crate::schema::Slot) -> String {
+    slot.hint
+        .clone()
+        .unwrap_or_else(|| format!("the {id} prose"))
+}
+
+/// Render the payload-skeleton entries for `sections` at `indent` (the `- id:`
+/// column), recursing into nested repeatables (`+8` per level — the payload's
+/// `items:`/`sections:` nesting). A section with nothing author-suppliable is
+/// omitted; a section whose every included leaf is optional carries the
+/// `# optional` marker on its entry line.
+fn projection_skeleton_sections(sections: &[crate::schema::Section], indent: usize) -> String {
+    let mut out = String::new();
+    let pad = " ".repeat(indent);
+    for section in sections {
+        match &section.body {
+            crate::schema::SectionBody::Simple { slot, fields } => {
+                let included: Vec<&crate::schema::Field> = fields
+                    .iter()
+                    .filter(|field| field_in_skeleton(field))
+                    .collect();
+                if slot.is_none() && included.is_empty() {
+                    continue; // nothing author-suppliable — tree-only section.
+                }
+                let all_optional =
+                    slot.as_ref().is_none_or(|s| s.optional) && included.iter().all(|f| f.optional);
+                let section_comment = if all_optional {
+                    " # optional — omit this entry if unused"
+                } else {
+                    ""
+                };
+                out.push_str(&format!("{pad}- id: {}{section_comment}\n", section.id));
+                out.push_str(&format!("{pad}  set:\n"));
+                if let Some(slot) = slot {
+                    let slot_comment = if slot.optional && !all_optional {
+                        " # optional — omit this key if unused"
+                    } else {
+                        ""
+                    };
+                    out.push_str(&format!("{pad}    {}: |-{slot_comment}\n", section.id));
+                    out.push_str(&format!(
+                        "{pad}      <<{}>>\n",
+                        slot_skeleton_prose(&section.id, slot)
+                    ));
+                }
+                for field in included {
+                    let comment = if field.optional && !all_optional {
+                        " # optional — omit if unused"
+                    } else {
+                        ""
+                    };
+                    out.push_str(&format!(
+                        "{pad}    {}: {}{comment}\n",
+                        field.id,
+                        field_skeleton_value(field)
+                    ));
+                }
+            }
+            crate::schema::SectionBody::Repeatable { repeatable } => {
+                out.push_str(&format!("{pad}- id: {}\n", section.id));
+                out.push_str(&format!("{pad}  items:\n"));
+                out.push_str(&projection_skeleton_item(repeatable, indent + 4));
+            }
+        }
+    }
+    out
+}
+
+/// Render one demonstration item for a repeatable at `indent` (the `- title:`
+/// column): the item's `title:` (the id-source — enum members offered when the
+/// id-source field is an enum), its author-suppliable `set:` leaves in block
+/// order, and its nested repeatables recursed under `sections:`.
+fn projection_skeleton_item(repeatable: &crate::schema::Repeatable, indent: usize) -> String {
+    use crate::schema::Leaf;
+    let mut out = String::new();
+    let pad = " ".repeat(indent);
+
+    // The item's `title:` — the id-source field's value; an enum id-source offers
+    // its members (the id *is* the member).
+    let title = repeatable
+        .block
+        .iter()
+        .find_map(|leaf| match leaf {
+            Leaf::Field(field)
+                if field.id == repeatable.id_from && field.ty == crate::schema::FieldType::Enum =>
+            {
+                field
+                    .of
+                    .as_ref()
+                    .map(|members| format!("\"<{}>\"", members.join(" | ")))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| format!("\"<the {}>\"", repeatable.id_from));
+    out.push_str(&format!("{pad}- title: {title}\n"));
+
+    // The item's `set:` map — author-suppliable leaves in block order, the
+    // id-source field excluded (it is authored as `title:` above).
+    let mut set = String::new();
+    for leaf in &repeatable.block {
+        match leaf {
+            Leaf::Field(field) => {
+                if field.id == repeatable.id_from || !field_in_skeleton(field) {
+                    continue;
+                }
+                let comment = if field.optional {
+                    " # optional — omit if unused"
+                } else {
+                    ""
+                };
+                set.push_str(&format!(
+                    "{pad}    {}: {}{comment}\n",
+                    field.id,
+                    field_skeleton_value(field)
+                ));
+            }
+            Leaf::Slot { id, slot } => {
+                let comment = if slot.optional {
+                    " # optional — omit this key if unused"
+                } else {
+                    ""
+                };
+                set.push_str(&format!("{pad}    {id}: |-{comment}\n"));
+                set.push_str(&format!(
+                    "{pad}      <<{}>>\n",
+                    slot_skeleton_prose(id, slot)
+                ));
+            }
+            Leaf::Repeatable { .. } => {}
+        }
+    }
+    if !set.is_empty() {
+        out.push_str(&format!("{pad}  set:\n"));
+        out.push_str(&set);
+    }
+
+    // Nested repeatables — the payload's `sections:` recursion.
+    let mut nested = String::new();
+    for leaf in &repeatable.block {
+        if let Leaf::Repeatable { id, repeatable } = leaf {
+            nested.push_str(&format!("{}- id: {id}\n", " ".repeat(indent + 4)));
+            nested.push_str(&format!("{}  items:\n", " ".repeat(indent + 4)));
+            nested.push_str(&projection_skeleton_item(repeatable, indent + 8));
+        }
+    }
+    if !nested.is_empty() {
+        out.push_str(&format!("{pad}  sections:\n"));
+        out.push_str(&nested);
+    }
+    out
 }
 
 /// Emit a resolved bare `{{<path>}}` data-value as inline Reason text: a
@@ -2686,6 +3124,7 @@ mod tests {
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -2883,6 +3322,236 @@ If your decision supersedes an earlier one, here is that decision:
         assert!(
             unfed.is_empty(),
             "an unfed source seam must clear the gate (empty-not-finding), got {unfed:?}"
+        );
+    }
+
+    /// A located fixture doctype for the `{{schema:<doctype>}}` projection tests —
+    /// one of each leaf posture the renderer must project: a defaulted enum, a
+    /// CLI-stamped date, an author-required enum, an `optional:` field, a required
+    /// ref, an optional ref, a required + an optional slot, and a nested repeatable
+    /// whose inner id-source is an enum.
+    fn note_schema() -> crate::schema::Schema {
+        crate::schema::load_schema(
+            br#"
+type: note
+location: notes/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [draft, final], default: draft }
+      - { id: date, type: date, set: on-create }
+      - { id: kind, type: enum, of: [memo, report] }
+      - { id: weight, type: int, optional: true }
+      - { id: derives, type: ref, to: prd, card: "1..1" }
+      - { id: relates, type: ref, to: note, card: "0..*" }
+  - id: summary
+    slot: { hint: "What the note says, in a sentence." }
+  - id: details
+    slot: { optional: true, hint: "The longer story." }
+  - id: points
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: note, slot: { hint: "The point, stated plainly." } }
+        - id: subpoints
+          repeatable:
+            id-from: label
+            block:
+              - { id: label, type: enum, of: [pro, con] }
+              - { id: text, slot: { optional: true } }
+"#,
+        )
+        .expect("the note fixture schema loads")
+    }
+
+    /// Core done-criterion (M43 inc-3 T1): a lone `{{schema:<doctype>}}` renders the
+    /// **pinned projection** — home line (the *fed* location, resolved by the CLI
+    /// before feeding), the section/field/enum tree (enum members spelled out;
+    /// defaulted/CLI-stamped/optional/author-required each named), and the
+    /// `jigc doc author` payload skeleton (author-suppliable leaves only, `<<…>>`
+    /// slot wrapping, nested repeatables recursed, the composing task's id on the
+    /// command line). The golden pins the emitted bytes — the agent-facing artifact.
+    #[test]
+    fn schema_projection_renders_the_pinned_tree_and_skeleton() {
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let mut ctx = emit_ctx();
+        ctx.schemas.insert("note".to_owned(), note_schema());
+        let emitted = emit_step_body("{{ schema:note }}\n", &ctx, &catalog).expect("emits");
+        insta::assert_snapshot!(emitted, @r#"
+        The `note` schema — each instance a managed file at `notes/<slug>.md`, its `<slug>` minted from `title`.
+
+        - `meta` (front-matter fields):
+            - `status`: enum, one of: draft | final — defaults to `draft` unless authored
+            - `date`: date — CLI-stamped (on-create) unless authored
+            - `kind`: enum, one of: memo | report — author-required
+            - `weight`: int — optional
+            - `derives`: ref -> prd (1..1) — author-required
+            - `relates`: ref -> note (0..*) — optional
+        - `summary`: prose slot — What the note says, in a sentence.
+        - `details`: prose slot (optional) — The longer story.
+        - `points`: repeatable items, one per `title`:
+            - `title`: string — the item's id-source (authored as the item's `title:` payload key)
+            - `note`: prose slot — The point, stated plainly.
+            - `subpoints`: repeatable items, one per `label`:
+                - `label`: enum, one of: pro | con — the item's id-source (authored as the item's `title:` payload key)
+                - `text`: prose slot (optional)
+
+        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). An entry marked `# optional` may be omitted entirely. Pipe the payload on stdin:
+
+        jigc doc author note --from-file - --task emit-four-classes <<'EOF'
+        title: "<the title>"
+        sections:
+          - id: meta
+            set:
+              kind: "<memo | report>"
+              weight: "<an integer>" # optional — omit if unused
+              derives: "prd:<the target's slug>"
+          - id: summary
+            set:
+              summary: |-
+                <<What the note says, in a sentence.>>
+          - id: details # optional — omit this entry if unused
+            set:
+              details: |-
+                <<The longer story.>>
+          - id: points
+            items:
+              - title: "<the title>"
+                set:
+                  note: |-
+                    <<The point, stated plainly.>>
+                sections:
+                  - id: subpoints
+                    items:
+                      - title: "<pro | con>"
+                        set:
+                          text: |- # optional — omit this key if unused
+                            <<the text prose>>
+        EOF
+        "#);
+    }
+
+    /// The placement branch (`location: None`, literal `placement.file` —
+    /// `storage.md` → Placement): a placement singleton's projection renders its
+    /// **literal file home** and its fixed `title:` (the `display-title:`), and a
+    /// task-less composition omits `--task` from the demonstrated command line.
+    #[test]
+    fn schema_projection_placement_singleton_renders_its_literal_home() {
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let handbook = crate::schema::load_schema(
+            br#"
+type: handbook
+placement: { file: HANDBOOK.md }
+display-title: Handbook
+singleton: true
+id-from: title
+sections:
+  - id: body
+    slot: { hint: "The handbook body." }
+"#,
+        )
+        .expect("the handbook fixture schema loads");
+        let mut ctx = crate::data_value::ComposeContext::default();
+        ctx.schemas.insert("handbook".to_owned(), handbook);
+        let emitted = emit_step_body("{{ schema:handbook }}\n", &ctx, &catalog).expect("emits");
+        insta::assert_snapshot!(emitted, @"
+        The `handbook` schema — the managed singleton at `HANDBOOK.md`.
+
+        - `body`: prose slot — The handbook body.
+
+        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). An entry marked `# optional` may be omitted entirely. Pipe the payload on stdin:
+
+        jigc doc author handbook --from-file - <<'EOF'
+        title: Handbook
+        sections:
+          - id: body
+            set:
+              body: |-
+                <<The handbook body.>>
+        EOF
+        ");
+    }
+
+    /// The unfedness stance — the deliberate opposite of the `{{source}}` seam's
+    /// empty-not-finding: a `{{schema:<id>}}` whose id is **absent from the fed
+    /// map** (dangling ref and wholly-unfed context alike) is the blocking, routed
+    /// `workflow-refs.schema-ref-resolves` finding — never a silent empty render
+    /// (`surface-contract.md` → The schema projection: "never silently empty,
+    /// which would be a new lie").
+    #[test]
+    fn schema_ref_dangling_or_unfed_blocks_with_route() {
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+
+        // Dangling: the map is fed, but not with `ghost`.
+        let mut fed = emit_ctx();
+        fed.schemas.insert("note".to_owned(), note_schema());
+        let dangling = emit_step_body("{{ schema:ghost }}\n", &fed, &catalog)
+            .expect_err("a dangling schema-ref must block");
+        assert_eq!(dangling.code, "workflow-refs.schema-ref-resolves");
+        assert_eq!(dangling.severity, Severity::Blocking);
+        assert!(
+            dangling.message.contains("{{schema:ghost}}"),
+            "the finding names the offending ref; got {:?}",
+            dangling.message
+        );
+        assert!(
+            dangling.route.is_some(),
+            "a blocking finding carries a route (the M43 floor); got {dangling:?}"
+        );
+
+        // Unfed: an empty schema map blocks identically — never silently empty.
+        let unfed = emit_step_body("{{ schema:note }}\n", &emit_ctx(), &catalog)
+            .expect_err("an unfed schema-ref must block");
+        assert_eq!(unfed.code, "workflow-refs.schema-ref-resolves");
+    }
+
+    /// The compose-scope gate: a workflow whose step body carries a dangling
+    /// `{{schema:ghost}}` surfaces the blocking finding through the real
+    /// [`workflow_refs`] gate, **stamped at its step resource** (the pack-resource
+    /// key form every `workflow-refs.*` finding carries).
+    #[test]
+    fn schema_ref_dangling_blocks_at_the_workflow_refs_gate() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let src = MapSource::new(&[("author-it", "author the doc:\n{{ schema:ghost }}\n")]);
+        let wf = b"---\nwhen: x\n---\n{{ include: step:author-it }}\n";
+        let findings = workflow_refs(wf, &src, &catalog, &compose_ctx());
+        assert_eq!(
+            findings.len(),
+            1,
+            "exactly one blocking finding, got {findings:?}"
+        );
+        assert_eq!(findings[0].code, "workflow-refs.schema-ref-resolves");
+        assert_eq!(
+            findings[0]
+                .location
+                .as_ref()
+                .and_then(|l| l.address.as_deref()),
+            Some("step:author-it"),
+            "the finding keys at its pack resource; got {findings:?}"
+        );
+    }
+
+    /// The inline-scan skip discipline: an **inline** `{{schema:…}}` mention in
+    /// prose stays inert-verbatim (fed or not) — the projection is a lone-line
+    /// class only, and prose *mentioning* the syntax must never brick a compose.
+    #[test]
+    fn inline_schema_mention_stays_inert() {
+        let mut ctx = emit_ctx();
+        ctx.schemas.insert("note".to_owned(), note_schema());
+        let line = "the {{schema:note}} placeholder renders the tree; {{schema:ghost}} dangles\n";
+        assert_eq!(
+            resolve_inline_data_values(line, &ctx),
+            line,
+            "inline schema tokens are skipped verbatim, resolvable and dangling alike"
         );
     }
 
@@ -3141,6 +3810,7 @@ Slightly higher write latency for resilience.
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -3229,6 +3899,7 @@ Slightly higher write latency for resilience.
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         };
         let emitted_unbound =
             emit_step_body_with(body, &ctx_unbound, &catalog, Some(&store_unbound)).expect("emits");
@@ -3358,6 +4029,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -4511,6 +5183,7 @@ explain what changes (nothing appears if it supersedes none).
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -5081,6 +5754,7 @@ explain what changes (nothing appears if it supersedes none).
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -5227,6 +5901,7 @@ explain what changes (nothing appears if it supersedes none).
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         };
 
         let emitted = emit_step_body("{{ catalog }}\n", &ctx, &empty_catalog).expect("emits");
@@ -5243,6 +5918,7 @@ explain what changes (nothing appears if it supersedes none).
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         };
         let emitted_empty =
             emit_step_body("{{ catalog }}\n", &empty_ctx, &empty_catalog).expect("emits");
@@ -5275,6 +5951,7 @@ explain what changes (nothing appears if it supersedes none).
             store,
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         };
 
         // A two-spec store renders one `> <address>` line per instance, fed order.
@@ -5291,6 +5968,7 @@ explain what changes (nothing appears if it supersedes none).
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         };
         let emitted_empty =
             emit_step_body("{{ store.specs }}\n", &empty_ctx, &empty_catalog).expect("emits");
@@ -6664,6 +7342,7 @@ Follow the house rule.
             store: std::collections::BTreeMap::new(),
             milestone: ids.iter().map(|s| (*s).to_owned()).collect(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -6795,6 +7474,7 @@ Follow the house rule.
             store: std::collections::BTreeMap::new(),
             milestone: list.enumerate(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -6900,6 +7580,7 @@ Follow the house rule.
             store: std::collections::BTreeMap::new(),
             milestone: order.iter().map(|s| (*s).to_owned()).collect(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         };
         let forward = compose(
             &def,

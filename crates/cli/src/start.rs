@@ -799,6 +799,7 @@ pub(crate) fn compose_migrate_in_repo(
         selectable,
         store_feed,
         Some(foreign),
+        schemas,
     );
 
     let stepsource = CascadeStepSource::new(pack, &resolved, project_config);
@@ -1054,6 +1055,7 @@ fn compose_core(
             selectable,
             store,
             seam,
+            schemas,
         )
     } else {
         // The `creates-task: false` compose contract: no mint, no working area,
@@ -1066,6 +1068,11 @@ fn compose_core(
             task: None,
             catalog: selectable,
             store,
+            // The composed cascade's resolved doctype set — the `{{schema:<doctype>}}`
+            // projection's feed, identical on the no-task arm (a `creates-task: false`
+            // workflow's steps may solicit an authoring too; an unfed map would turn
+            // every `{{schema:…}}` into the blocking dangling-ref finding).
+            schemas,
             // The `fan-out` list-source (`{{milestone.tasks}}`). Empty for the
             // single-`start` no-task path (the router); fed the milestone's
             // id-sorted sub-task list by the `jigc milestone execute` dispatch —
@@ -1784,7 +1791,18 @@ fn compose_task_workflow(
     let advise_research = warrants_research_advisory(&def, &store_feed);
 
     // No source seam on the resume path — the seam is fed only by `jigc migrate`.
-    let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed, None);
+    // The schema feed clones: `schemas` is still needed below for the committed-store
+    // index + the `ContentStore` wiring.
+    let ctx = build_context(
+        id,
+        &intent,
+        &def,
+        &bound,
+        selectable,
+        store_feed,
+        None,
+        schemas.clone(),
+    );
     // Resume reads steps through the layer-aware [`CascadeStepSource`] over the *live*
     // cascade (a project `steps/<id>.yaml` whole-file shadow wins) and scopes its
     // pack-default arm to the resumed workflow's origin pack — so every
@@ -1937,6 +1955,10 @@ fn committed_store(
 /// `roles` is empty (nothing is bound yet); on `--task <id>` resume it carries
 /// the binds recorded since (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding
 /// at create).
+// Each engine-native context feed pins to one argument (the [`ComposeContext`]
+// fields it binds); bundling them would obscure the seam — the same call
+// [`compose_core`] makes on its argument list.
+#[allow(clippy::too_many_arguments)]
 fn build_context(
     id: &str,
     intent: &str,
@@ -1945,6 +1967,7 @@ fn build_context(
     catalog: Vec<CatalogEntry>,
     store: BTreeMap<String, Vec<Address>>,
     seam: Option<&str>,
+    schemas: BTreeMap<String, Schema>,
 ) -> ComposeContext {
     let mut roles: BTreeMap<String, Option<Address>> = BTreeMap::new();
     // The task's commit doc — the engine-native sink, bound to `commit:<id>`.
@@ -1988,6 +2011,11 @@ fn build_context(
         // The CLI-owned source seam — the staged foreign bytes fed by `jigc migrate`,
         // `None` on every other compose path (`auto-migration.md` → The source seam).
         source: seam.map(str::to_owned),
+        // The composed cascade's resolved doctype set (`CascadeDefs::all_schemas` —
+        // per-origin-pack, post-`docs-root`), keyed by type id — the
+        // `{{schema:<doctype>}}` projection's feed, so the rendered homes are
+        // resolved by construction (`surface-contract.md` → The schema projection).
+        schemas,
     }
 }
 
@@ -4049,6 +4077,7 @@ mod tests {
             Vec::new(),
             BTreeMap::new(),
             None,
+            BTreeMap::new(),
         );
 
         // The declared-but-unbound `reads` role resolves to absent/empty text — no

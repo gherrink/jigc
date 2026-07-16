@@ -249,6 +249,18 @@ pub struct ComposeContext {
     /// staged foreign bytes and the resolver does **no** file I/O (the determinism
     /// boundary; the CLI owns the read).
     pub source: Option<String>,
+    /// The composed cascade's **resolved doctype schemas**, keyed by type id
+    /// (`schema.ty` — never the committed-store collection keying above) — the
+    /// `{{schema:<doctype>}}` projection's feed
+    /// ([surface-contract.md](../../../design/surface-contract.md) → The schema
+    /// projection). The CLI feeds its cascade-resolved schema set (per-origin-pack,
+    /// post-`docs-root` resolution) at every compose site, so the projection
+    /// renders **resolved** homes by construction; the engine does no schema I/O
+    /// (the determinism boundary), mirroring how `catalog`/`store` are fed. Unlike
+    /// the `source` seam's empty-not-finding stance, a `{{schema:<id>}}` whose id
+    /// is absent from this map **blocks** (`workflow-refs.schema-ref-resolves`) —
+    /// an unfed projection silently rendering empty would be a new lie.
+    pub schemas: BTreeMap<String, crate::schema::Schema>,
 }
 
 /// What a data-value [`Path`] resolves to against a [`ComposeContext`] — the
@@ -733,6 +745,7 @@ mod tests {
             store: BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -821,6 +834,7 @@ mod tests {
             store: BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         };
 
         for path in [
@@ -873,6 +887,7 @@ mod tests {
             store: BTreeMap::new(),
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
@@ -939,6 +954,7 @@ mod tests {
             store,
             milestone: Vec::new(),
             source: None,
+            schemas: std::collections::BTreeMap::new(),
         }
     }
 
