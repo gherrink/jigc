@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-16 — M43 Inc 2 T2: the carryover decision — two elaboration pins
+
+**(1) The route is `Route::human`, verb-neutral:** `finalize.carried-staged` names both exits — unstage (`git restore --staged -- <path>`) or re-run *the finalize* with `--carry-staged` — as a human-judgment route, not a mechanical one: which exit is right is undecidable intent, and the unstage half is a git command outside the mechanical route's `jigc`-argv fence; "the finalize" stays verb-neutral so the one constructor serves the task (T3) and milestone (T4) arms unchanged. **(2) Exempt-side-only normalization:** only the recorded retire path is lexically normalized before the exempt comparison (the `plan_clobber_guard` source-path precedent — the record is authored prose and may carry `./`); the snapshot/current paths are git-canonical already and compare raw.
+
 ## 2026-07-16 — M43 Inc 2 T1: the staged snapshot at the doors — two elaboration pins
 
 **(1) Probe flags:** the pinned probe runs as `git diff --cached --raw -z --no-renames --abbrev=40` — `--no-renames` so a staged rename reports as its D + A halves (the deletion half is exactly what an entry-only view misses) and the parse is independent of the user's `diff.renames` config (the `git_staged_paths` precedent); `--abbrev=40` because raw output abbreviates object names by default and the snapshot's blobs must compare stably at finalize. **(2) A clean index writes `Some(empty)`, never nothing:** every door always writes `staged-snapshot.json` (an empty one when nothing is staged), so `None` means exactly one thing — *minted before the gate existed* — and the fail-open bound never swallows a probed-clean door. At `milestone create` the probe runs **before** the record commit touches the index.

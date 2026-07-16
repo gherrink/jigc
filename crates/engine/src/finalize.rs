@@ -55,10 +55,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::file_state::hash_bytes;
-use crate::finding::{Finding, Location, Severity};
+use crate::finding::{Finding, Location, Route, Severity};
 use crate::result::{SCHEMA_VERSION, ValidationReport};
 use crate::schema::Schema;
-use crate::state::BasePin;
+use crate::state::{BasePin, StagedSnapshot};
 use crate::write;
 
 /// The working-area sub-directory holding the task's staged doc instances
@@ -489,6 +489,97 @@ pub fn decide_base_repin(
         head_sha,
         &overlapping,
     )])
+}
+
+/// The **carryover decision** at the finalize commit boundary
+/// (`design/surface-contract.md` → The carryover gate; M43): which currently-staged
+/// paths were *staged before this task existed* — one blocking routed [`Finding`] per
+/// carried path (`finalize.carried-staged`, keyed at the **file path** — the
+/// `migrate-corpus.*` one-refusal-per-candidate precedent), so a foreign pre-staged
+/// change (add, modify, **or delete**) cannot silently ride the task's commit.
+///
+/// A pure decision over CLI-supplied git facts (the [`decide_base_repin`] mold — the
+/// engine never shells out): `snapshot` is the pre-task staged state the task-minting
+/// door persisted ([`crate::state::read_staged_snapshot`]); `current` the same probe
+/// re-run at finalize preflight. A path is **carried** iff its `(path, blob)` pair
+/// matches a snapshot entry (the same path restaged to a *different* blob is the
+/// task's own work), or it is a snapshot staged-deletion still staged (an entry-only
+/// comparison is structurally blind to a pre-task `git rm` — the trial's A7 case).
+/// `retire_exempt` is a migration task's recorded retire pathspec
+/// ([`crate::state::read_source_path`]) — that deletion is the task's own, never a
+/// carryover. A **`None` snapshot yields no findings** — the declared fail-open bound
+/// (a task minted pre-M43 finalizes as today).
+///
+/// Findings come out **sorted by path** across both halves (one union `BTreeSet`) —
+/// byte-identical whatever order the sets were built in (Validation hardening #7).
+/// A separate decision fn rather than a planner phase, so the CLI can keep the refuse
+/// on the **committing** path only — a planner-internal refuse would also block the
+/// `--dry-run` forecast, which consumes the plan.
+pub fn decide_carryover(
+    snapshot: Option<&StagedSnapshot>,
+    current: &StagedSnapshot,
+    retire_exempt: Option<&str>,
+) -> Vec<Finding> {
+    // Missing snapshot ⇒ fail-open: a task minted before the gate existed finalizes
+    // as today (the declared bound).
+    let Some(snapshot) = snapshot else {
+        return Vec::new();
+    };
+    // The recorded retire path is stored prose (may carry `./`); the git-fact paths
+    // are already repo-relative canonical — normalize the exempt side only (the
+    // `plan_clobber_guard` source-path precedent).
+    let exempt = retire_exempt.map(|p| crate::store::lexical_normalize(Path::new(p)));
+
+    // The carried union, path-sorted by construction: entries whose (path, blob)
+    // still match, plus snapshot deletions still staged. A `bool` discriminates the
+    // two halves so the finding can say *what* is carried.
+    let mut carried: BTreeMap<&str, bool> = BTreeMap::new();
+    for (path, blob) in &snapshot.entries {
+        if current.entries.get(path) == Some(blob) {
+            carried.insert(path, false);
+        }
+    }
+    for path in &snapshot.deletions {
+        if current.deletions.contains(path) {
+            carried.insert(path, true);
+        }
+    }
+    carried
+        .into_iter()
+        .filter(|(path, _)| exempt.as_deref() != Some(Path::new(path)))
+        .map(|(path, is_deletion)| carried_staged_finding(path, is_deletion))
+        .collect()
+}
+
+/// One blocking `finalize.carried-staged` finding for one carried path — a staged
+/// change (`is_deletion: false`) or a staged deletion (`true`) that predates the task.
+/// Its subject is the **file** the commit would silently absorb, so it
+/// [keys at its path](file_location) (the file-path target form — mid-carry the path
+/// may be foreign, with no managed identity). The route names both exits: unstage it,
+/// or re-run finalize with `--carry-staged` to declare the carry-over deliberate (the
+/// `--approve` mold — undecidable intent converted to a declared one). Which exit is
+/// right is a judgment call, so the route is [`Route::human`].
+fn carried_staged_finding(path: &str, is_deletion: bool) -> Finding {
+    let what = if is_deletion {
+        "staged for deletion"
+    } else {
+        "staged"
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.carried-staged",
+        format!(
+            "`{path}` was already {what} before this task existed — refusing to let a \
+             pre-task staged {} silently ride this task's commit",
+            if is_deletion { "deletion" } else { "change" },
+        ),
+        Some(file_location(path)),
+        Some(Route::human(format!(
+            "unstage it (`git restore --staged -- {path}`) if it is not this task's work, \
+             or re-run the finalize with `--carry-staged` to declare the carry-over \
+             deliberate"
+        ))),
+    )
 }
 
 /// Plan the **milestone** `finalize` transaction — the thin sibling of
@@ -2446,6 +2537,162 @@ sections:
                 .contains("decisions/keep-sessions-in-memory.md"),
             "the block names the colliding promote destination: {:?}",
             err[0].message
+        );
+    }
+
+    /// Build a [`StagedSnapshot`] from literal `(path, blob)` entries + deletion paths.
+    fn staged(entries: &[(&str, &str)], deletions: &[&str]) -> StagedSnapshot {
+        let mut snapshot = StagedSnapshot::default();
+        for (path, blob) in entries {
+            snapshot.entries.insert(path.to_string(), blob.to_string());
+        }
+        for path in deletions {
+            snapshot.deletions.insert(path.to_string());
+        }
+        snapshot
+    }
+
+    /// The carryover gate's core discrimination (`design/surface-contract.md` → The
+    /// carryover gate): an index entry whose `(path, blob)` **both** match the
+    /// pre-task snapshot is carried — one blocking `finalize.carried-staged` finding,
+    /// keyed at the **file path** (the file-path target form), carrying a route that
+    /// names both exits (unstage, or declare with `--carry-staged`). A path staged
+    /// only *after* mint is the task's own work and never flagged.
+    #[test]
+    fn carryover_matching_entry_is_carried_and_routed() {
+        let snapshot = staged(&[("src/foreign.rs", "aaaa1111")], &[]);
+        let current = staged(
+            &[("src/foreign.rs", "aaaa1111"), ("src/mine.rs", "bbbb2222")],
+            &[],
+        );
+        let findings = decide_carryover(Some(&snapshot), &current, None);
+        assert_eq!(findings.len(), 1, "one finding per carried path — only one");
+        let finding = &findings[0];
+        assert_eq!(finding.code, "finalize.carried-staged");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(
+            finding.key().target.as_deref(),
+            Some("src/foreign.rs"),
+            "keyed at the carried file path (the file-path target form)",
+        );
+        assert!(
+            finding.message.contains("src/foreign.rs"),
+            "the message names the carried path: {:?}",
+            finding.message
+        );
+        let route = finding.route.as_deref().expect("blocking ⇒ routed");
+        assert!(
+            route.contains("--carry-staged"),
+            "the route names the declare-it-deliberate override: {route:?}"
+        );
+        assert!(
+            route.contains("git restore --staged"),
+            "the route names the unstage exit: {route:?}"
+        );
+        // Through the serialization seam: the route floor + declared-target asserts hold.
+        serde_json::to_string(&crate::finding::Findings::from(findings))
+            .expect("the carried-staged finding passes the finding-key seam");
+    }
+
+    /// The same path **restaged to a different blob** is the task's own work — the
+    /// snapshot pair no longer matches, so nothing is carried. Likewise a snapshot
+    /// entry the agent unstaged entirely, and a snapshot **deletion** since restored.
+    #[test]
+    fn carryover_restaged_or_cleared_paths_are_not_carried() {
+        let snapshot = staged(
+            &[("src/a.rs", "aaaa1111"), ("src/b.rs", "cccc3333")],
+            &["gone.md"],
+        );
+        // a.rs restaged to new content; b.rs unstaged; gone.md's deletion restored.
+        let current = staged(&[("src/a.rs", "dddd4444")], &[]);
+        assert_eq!(
+            decide_carryover(Some(&snapshot), &current, None),
+            Vec::new(),
+            "a restaged / cleared / restored path is not a carryover",
+        );
+    }
+
+    /// A snapshot **staged deletion still staged** at finalize is carried — the
+    /// entry-blind A7 case: a pre-task `git rm` must not silently ride the commit.
+    #[test]
+    fn carryover_snapshot_deletion_still_staged_is_carried() {
+        let snapshot = staged(&[], &["legacy/OLD.md"]);
+        let current = staged(&[], &["legacy/OLD.md"]);
+        let findings = decide_carryover(Some(&snapshot), &current, None);
+        assert_eq!(findings.len(), 1, "the staged deletion is carried");
+        assert_eq!(findings[0].code, "finalize.carried-staged");
+        assert_eq!(findings[0].key().target.as_deref(), Some("legacy/OLD.md"));
+        assert!(
+            findings[0].message.contains("deletion"),
+            "the message says what is carried — a staged deletion: {:?}",
+            findings[0].message
+        );
+    }
+
+    /// The migration's **own retire pathspec is exempt** — that deletion is the
+    /// task's — while every other carried path still blocks. The exempt path is
+    /// compared lexically normalized (the recorded `source-path` precedent).
+    #[test]
+    fn carryover_retire_pathspec_is_exempt_others_still_block() {
+        let snapshot = staged(&[("notes.md", "aaaa1111")], &["legacy/CHANGES.md"]);
+        let current = staged(&[("notes.md", "aaaa1111")], &["legacy/CHANGES.md"]);
+        let findings = decide_carryover(Some(&snapshot), &current, Some("./legacy/CHANGES.md"));
+        assert_eq!(
+            findings.len(),
+            1,
+            "the retire path is exempt; the entry is not"
+        );
+        assert_eq!(findings[0].key().target.as_deref(), Some("notes.md"));
+    }
+
+    /// **Missing snapshot ⇒ fail-open** (the declared bound: a task minted pre-M43
+    /// finalizes as today) — and, distinctly, an **empty** snapshot carries nothing
+    /// (everything staged since mint is the task's own).
+    #[test]
+    fn carryover_missing_snapshot_fails_open_empty_snapshot_carries_nothing() {
+        let current = staged(&[("src/foreign.rs", "aaaa1111")], &["legacy/OLD.md"]);
+        assert_eq!(
+            decide_carryover(None, &current, None),
+            Vec::new(),
+            "no snapshot (pre-M43 mint) ⇒ fail-open, no findings",
+        );
+        assert_eq!(
+            decide_carryover(Some(&StagedSnapshot::default()), &current, None),
+            Vec::new(),
+            "an empty snapshot (clean index at mint) carries nothing",
+        );
+    }
+
+    /// The finding list is **sorted by path across both halves** (entries ∪
+    /// deletions) — a pure function of the carried *set*, byte-identical however the
+    /// input sets were built (Validation hardening #7: the sets are fed here in
+    /// id-order and in reverse, asserting identical output).
+    #[test]
+    fn carryover_findings_sort_by_path_and_are_order_invariant() {
+        let entries = [("b.md", "aaaa1111"), ("d.md", "cccc3333")];
+        let deletions = ["a.md", "c.md"];
+        let snapshot = staged(&entries, &deletions);
+        let current = staged(&entries, &deletions);
+        let findings = decide_carryover(Some(&snapshot), &current, None);
+        let targets: Vec<Option<String>> = findings.iter().map(|f| f.key().target).collect();
+        assert_eq!(
+            targets,
+            ["a.md", "b.md", "c.md", "d.md"].map(|p| Some(p.to_string())),
+            "one finding per carried path, path-sorted across entries and deletions",
+        );
+
+        // Divergent build order: the same sets inserted in reverse yield the
+        // byte-identical finding list.
+        let mut entries_rev = entries;
+        entries_rev.reverse();
+        let mut deletions_rev = deletions;
+        deletions_rev.reverse();
+        let snapshot_rev = staged(&entries_rev, &deletions_rev);
+        let current_rev = staged(&entries_rev, &deletions_rev);
+        assert_eq!(
+            findings,
+            decide_carryover(Some(&snapshot_rev), &current_rev, None),
+            "the decision is a function of the sets — identical across build orders",
         );
     }
 }
