@@ -1180,10 +1180,107 @@ fn run_orient(format: Format) -> Outcome {
     }
 }
 
+/// The honest sibling tip for an unknown-subcommand **semantic guess** — never a
+/// silent alias (M43 law 2, `DECISIONS.md` 2026-07-16 Settle, cross-cutting; trial
+/// provenance: A1 papercut, log rec 254).
+///
+/// A curated, code-side map keys on `(parent, guessed verb)` — the guesses agents
+/// actually reached for in the trials — and supplies a tip naming what the real
+/// sibling **does** (its effect), because clap's bare did-you-mean can steer wrong:
+/// a `task discard-write` guesser suggested toward `discard` would destroy the whole
+/// task. The tip only *appends* — the guess stays a genuine clap usage error (exit 2,
+/// clap's own error + usage output untouched, printed by `main`'s clap-error arm).
+///
+/// Every command span rides the checked [`Route::mechanical`](engine::finding::Route)
+/// constructor, so a tip naming a verb that stops parsing fails the T2 parse fence at
+/// construction (`design/surface-contract.md` → The route fence) — this map cannot
+/// grow a ghost verb. An uncurated guess (or a curated verb under the wrong parent)
+/// returns `None`: inert, never an error.
+///
+/// `argv` is the raw process argv; the parent is the token immediately preceding the
+/// guessed verb, so the map fires only where the guess actually sat (a global flag
+/// between parent and guess misses the tip — best-effort by design, the clap error
+/// still prints).
+pub(crate) fn unknown_subcommand_tip(err: &clap::Error, argv: &[String]) -> Option<String> {
+    use clap::error::{ContextKind, ContextValue};
+    use engine::finding::Route;
+
+    if err.kind() != clap::error::ErrorKind::InvalidSubcommand {
+        return None;
+    }
+    let guess = match err.get(ContextKind::InvalidSubcommand)? {
+        ContextValue::String(guess) => guess.as_str(),
+        _ => return None,
+    };
+    let parent = argv
+        .windows(2)
+        .find(|pair| pair[1] == guess)
+        .map(|pair| pair[0].as_str())?;
+    let tip = match (parent, guess) {
+        ("task", "discard-write") => format!(
+            "tip: no per-write discard exists — {}",
+            Route::mechanical(
+                ["jigc", "task", "discard", "<task-id>"],
+                " abandons the WHOLE task (removes its working area and every staged \
+                 write); to back out a single external edit, revert that file on disk \
+                 instead",
+            )
+            .as_str()
+        ),
+        ("task", "status") => format!(
+            "tip: {}; {}",
+            Route::mechanical(
+                ["jigc", "task", "list"],
+                " enumerates the active tasks (id + minting workflow + intent)",
+            )
+            .as_str(),
+            Route::mechanical(
+                ["jigc", "task", "validate", "<task-id>"],
+                " previews the finalize gate for one task — what still blocks",
+            )
+            .as_str(),
+        ),
+        _ => return None,
+    };
+    Some(tip)
+}
+
 #[cfg(test)]
 mod cli_parse {
     use super::*;
     use clap::Parser;
+
+    /// Every curated sibling-map entry builds its tip **with the T2 parse fence
+    /// installed**: each command span rides `Route::mechanical`, so a map entry
+    /// naming a verb that does not parse against the real CLI panics here — the
+    /// map cannot grow a ghost verb, independent of which guesses the integration
+    /// arms happen to drive (`design/surface-contract.md` → The route fence).
+    #[test]
+    fn every_curated_sibling_tip_passes_the_route_parse_fence() {
+        crate::route_fence::install();
+        for (parent, guess) in [("task", "discard-write"), ("task", "status")] {
+            let err = Cli::try_parse_from(["jigc", parent, guess])
+                .expect_err("a curated guess is an unknown subcommand");
+            let argv: Vec<String> = ["jigc", parent, guess].map(String::from).into();
+            let tip = unknown_subcommand_tip(&err, &argv)
+                .unwrap_or_else(|| panic!("the curated guess `{parent} {guess}` must yield a tip"));
+            assert!(
+                tip.starts_with("tip: "),
+                "the tip is identifiable as a tip; got: {tip}"
+            );
+        }
+    }
+
+    /// A clap error that is not `InvalidSubcommand` never yields a tip — the map
+    /// intercepts semantic guesses only, not ordinary usage errors.
+    #[test]
+    fn a_non_subcommand_usage_error_yields_no_tip() {
+        let err = Cli::try_parse_from(["jigc", "task", "validate"])
+            .expect_err("`task validate` with no id is a usage error");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+        let argv: Vec<String> = ["jigc", "task", "validate"].map(String::from).into();
+        assert_eq!(unknown_subcommand_tip(&err, &argv), None);
+    }
 
     #[test]
     fn start_defaults_to_agent_format() {

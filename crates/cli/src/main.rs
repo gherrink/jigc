@@ -70,6 +70,14 @@ fn main() -> ExitCode {
             // (`use_stderr()` is false); a genuine usage error prints to stderr and exits 2.
             let code = if err.use_stderr() { 2 } else { 0 };
             let _ = err.print();
+            // The M43 law-2 sibling tip: an unknown subcommand an agent plausibly
+            // guessed gets an honest tip naming what the real sibling *does* — never
+            // a silent alias; clap's own output above and the exit code are untouched
+            // (`cli::unknown_subcommand_tip`; DECISIONS.md 2026-07-16 Settle).
+            let argv: Vec<String> = std::env::args().collect();
+            if let Some(tip) = cli::unknown_subcommand_tip(&err, &argv) {
+                eprintln!("{tip}");
+            }
             Outcome::code(code)
         }
     };
