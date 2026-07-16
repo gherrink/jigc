@@ -1,5 +1,5 @@
 ---
-when: build from a committed spec whose acceptance criteria already exist
+when: a committed spec already covers the intent, with acceptance criteria to build against
 description: An implementation pass driven by a committed spec — locate against it, implement, optionally record a decision, and commit.
 usage: a spec already exists and you are turning its agreed criteria into code.
 creates-task: true

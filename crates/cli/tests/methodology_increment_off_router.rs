@@ -41,6 +41,13 @@
 //! enum, or `selectable: true` flipping it into the catalog) goes red here, not
 //! silently.
 //!
+//! M43 Inc 4 T1 (fork 2) FLIPS `decided-task` to `selectable: true` — the 2026-06-13
+//! hide's expiry (the router-flip) fired long ago and the authoring-spine
+//! categorization was the original miscall, so the decided-task negatives below
+//! reddened deliberately and are rewritten POSITIVE: the catalog must list it with
+//! its decision-axis `when` hint. The knobs guard keeps its decided-task negative —
+//! the `default-workflow.of` enum is a valid-values list, not a selectable mirror.
+//!
 //! Two leak vectors, two guards:
 //!   (a) The **front-door catalog** (the live path). Bare `jigc start` (no intent)
 //!       over `JIGC_PACK_DIR=<methodology>` orients to the clean-no-task state and
@@ -132,7 +139,7 @@ fn run_jigc(repo: &Path, home: &Path, pack_dir: &Path, args: &[&str]) -> std::pr
 }
 
 #[test]
-fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
+fn bare_start_over_methodology_lists_the_selectables_never_increment() {
     // (a) The live front-door catalog. Set up the methodology project, then bare
     // `jigc start` (no intent) — the read-only orientation over the clean-no-task
     // state. The catalog it composes is filtered to the selectable (`creates-task:
@@ -163,8 +170,10 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
     );
     let human_out = String::from_utf8(human.stdout).expect("utf-8 stdout");
     assert!(
-        human_out.contains("dev-task — implement one scoped change test-first, end-to-end"),
-        "the orientation catalog must list the `dev-task` selection line; got:\n{human_out}",
+        human_out
+            .contains("dev-task — implement one scoped change test-first, recording no decision"),
+        "the orientation catalog must list the `dev-task` selection line (the M43 \
+         decision-axis `when` hint); got:\n{human_out}",
     );
     // The selection-catalog lines are the `  - <id> — <when>` entries; assert no
     // catalog line names `increment` (scope to the catalog so the temp-repo path in
@@ -211,18 +220,21 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
          catalog-leak class — `record-dogfood` is `selectable: false`, off-router by \
          construction); catalog lines: {catalog_lines:?}",
     );
-    // M17 self-hosting dogfood: the same M8 catalog-leak guard, named for the
-    // lightweight decision-recording workflow. `decided-task` is `creates-task: true,
-    // selectable: false` — it mints a task (riding the create-gate + finalize-promote
-    // spine) but stays out of the selectable catalog; it is invoked only off-router via
-    // `--workflow decided-task`. Keeping it off-router holds the single-default catalog
-    // invariant until the router-flip (≥2 selectable work-workflows) is built. A leak
-    // (`selectable: true`) would surface it here; assert no catalog line names it.
+    // M43 fork 2 (the un-hide): `decided-task` flips `selectable: true` — the
+    // 2026-06-13 hide's expiry (the router-flip) fired long ago, and the
+    // authoring-spine categorization was the original miscall (it is a
+    // work-workflow with a decision step). The old negative guard reddened
+    // deliberately and is rewritten POSITIVE: the catalog must list decided-task
+    // with its decision-axis `when` hint (records-a-decision is the axis that
+    // discriminates it from `dev-task`).
     assert!(
-        !catalog_lines.iter().any(|l| l.contains("decided-task")),
-        "the model-free selection catalog must NOT name `decided-task` (the M8 \
-         catalog-leak class — `decided-task` is `selectable: false`, off-router by \
-         construction); catalog lines: {catalog_lines:?}",
+        catalog_lines.iter().any(|l| l.contains(
+            "decided-task — implement one scoped change test-first, recording the design \
+             decision it makes"
+        )),
+        "the model-free selection catalog must list `decided-task` with its decision-axis \
+         `when` hint (M43 fork 2 — the hide's expiry fired, selectable: true); \
+         catalog lines: {catalog_lines:?}",
     );
 
     // JSON emitted bytes: the `workflows` array carries exactly one entry, `dev-task`
@@ -251,10 +263,17 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
         .collect();
     assert_eq!(
         ids,
-        vec!["dev-task", "do-research", "form-vision", "park-idea"],
-        "the selectable catalog must be exactly [dev-task, do-research, form-vision, park-idea] — \
-         the four selectable work-workflows (`do-research`, `form-vision`, and `park-idea` are \
-         `selectable: true` by design, M37 §3; parking must be discoverable, fork 5); `increment` \
+        vec![
+            "decided-task",
+            "dev-task",
+            "do-research",
+            "form-vision",
+            "park-idea"
+        ],
+        "the selectable catalog must be exactly [decided-task, dev-task, do-research, \
+         form-vision, park-idea] — the five selectable work-workflows (`do-research`, \
+         `form-vision`, and `park-idea` are `selectable: true` by design, M37 §3; \
+         `decided-task` joins at M43 fork 2 — the hide's expiry fired); `increment` \
          must not leak in (M8 catalog-leak class); got:\n{json_out}",
     );
     // T3 (planning): the explicit planning-named negative over the same JSON bytes —
@@ -281,13 +300,13 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
         "the selectable catalog must NOT name `record-dogfood` — it is `selectable: false`, \
          off-router (M8 catalog-leak class); got:\n{json_out}",
     );
-    // M17 self-hosting dogfood: the explicit decided-task-named negative over the same
-    // JSON bytes — `ids == [dev-task]` already excludes it by construction, but the named
-    // guard makes the decided-task leak falsifiable (documented != delivered).
+    // M43 fork 2: the explicit decided-task-named POSITIVE over the same JSON bytes
+    // — the exact-set assert above already includes it, but the named guard makes a
+    // re-hide regression falsifiable on its own (documented != delivered).
     assert!(
-        !ids.contains(&"decided-task"),
-        "the selectable catalog must NOT name `decided-task` — it is `selectable: false`, \
-         off-router (M8 catalog-leak class); got:\n{json_out}",
+        ids.contains(&"decided-task"),
+        "the selectable catalog must name `decided-task` — `selectable: true` since M43 \
+         fork 2 (the 2026-06-13 hide's expiry fired); got:\n{json_out}",
     );
 }
 
@@ -335,19 +354,23 @@ fn knobs_default_workflow_enum_does_not_name_increment() {
         "`default-workflow.of` must NOT name `record-dogfood` (the forbidden M8 catalog-leak \
          — `record-dogfood` is `selectable: false`, off-router); got enum: {names:?}",
     );
-    // M17 self-hosting dogfood: the same static-leak guard, named for `decided-task`.
-    // Adding it to the enum would make the `selectable: false` decision-recording workflow
-    // a router-selectable default — exactly the M8 catalog-leak this task forbids.
+    // M43 fork 2 revised this guard's decided-task rationale, not its assertion: the
+    // enum is a VALID-VALUES list for the `default-workflow` knob, not a mirror of the
+    // selectable catalog (dev's enum likewise omits selectable workflows). `decided-task`
+    // is `selectable: true` since M43, but the pack's default stays `dev-task` — the
+    // enum deliberately does not grow with the catalog.
     assert!(
         !names.contains(&"decided-task"),
-        "`default-workflow.of` must NOT name `decided-task` (the forbidden M8 catalog-leak — \
-         `decided-task` is `selectable: false`, off-router); got enum: {names:?}",
+        "`default-workflow.of` must NOT name `decided-task` — the enum is the knob's \
+         valid-values list, not a selectable mirror, and the pack default stays `dev-task` \
+         (M43 fork 2); got enum: {names:?}",
     );
     assert_eq!(
         names,
         vec!["dev-task"],
         "`default-workflow.of` must stay the single-entry [dev-task] enum (byte-unchanged \
-         from base, forbidding `increment`, `planning`, `completion`, `record-dogfood`, and \
-         `decided-task`); got: {names:?}",
+         from base, forbidding `increment`, `planning`, `completion`, and `record-dogfood`; \
+         `decided-task` is selectable since M43 but the enum is a valid-values list, not a \
+         catalog mirror); got: {names:?}",
     );
 }

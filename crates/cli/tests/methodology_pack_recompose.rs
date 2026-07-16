@@ -233,7 +233,7 @@ fn bare_start_orients_with_the_methodology_workflow_its_when_hint_and_pack_label
         "orientation must list the methodology workflow `dev-task`; got:\n{stdout}",
     );
     assert!(
-        stdout.contains("implement one scoped change test-first, end-to-end"),
+        stdout.contains("implement one scoped change test-first, recording no decision"),
         "orientation must carry the `dev-task` `when` hint; got:\n{stdout}",
     );
     assert!(

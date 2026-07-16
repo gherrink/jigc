@@ -1,5 +1,5 @@
 ---
-when: implement one scoped change test-first, end-to-end
+when: implement one scoped change test-first, recording no decision
 description: The reduced-linear dev-workflow — scope the task, implement test-first, run the project's own gate, and land exactly one commit, all as one pass.
 usage: the work is one coherent change you can carry from intent to a single commit, and you want the test-first discipline kept visible.
 creates-task: true

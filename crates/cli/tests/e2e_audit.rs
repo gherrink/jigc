@@ -932,11 +932,11 @@ const NO_OVERRIDE_ROUTER_GOLDEN: &str = "\
 These are the selectable work-workflows, each with the situation it fits:
 
 - architecture-documentation — document the architecture of a part of the system, tying its components to the code that implements them
-- implement-from-spec — build from a committed spec whose acceptance criteria already exist
+- implement-from-spec — a committed spec already covers the intent, with acceptance criteria to build against
 - plan — draft the specification for upcoming work before writing any code
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
 - quick-fix — apply a small commit-only fix that touches no documented code and records no decision
-- single-task — implement one scoped change end-to-end
+- single-task — implement one scoped change end-to-end, recording the decisions it makes
 
 Pick the workflow whose situation best fits the intent, then re-run with that
 choice and the original intent:

@@ -991,7 +991,7 @@ mod tests {
         let body = read_text(&pack, PackResourceKind::Workflows, "single-task");
         insta::assert_snapshot!(body, @r###"
         ---
-        when: implement one scoped change end-to-end
+        when: implement one scoped change end-to-end, recording the decisions it makes
         description: An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task.
         usage: the work is one coherent change you can hold in your head and carry from intent to commit in a single pass.
         creates-task: true
