@@ -131,9 +131,7 @@ pub(crate) fn jigc_home_or_repo(start: &Path) -> Result<PathBuf> {
 pub(crate) fn require_project_config(start: &Path) -> Result<PathBuf> {
     let project_config = jigc_home_or_repo(start)?.join(".jigc").join("config");
     if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
+        return Err(crate::locate::not_set_up());
     }
     Ok(project_config)
 }
@@ -1569,10 +1567,11 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
     let head = read_head(&repo_root)?;
     if pinned.sha != head.sha {
         bail!(
-            "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or `jigc task discard {id}`",
+            "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or {}",
             pinned.short,
             head.short,
             pinned.short,
+            engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
         );
     }
 
@@ -1585,7 +1584,9 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
         .with_context(|| format!("could not read the recorded workflow for `{id}`"))?
         .with_context(|| {
             format!(
-                "task `{id}` has no recorded workflow — discard it with `jigc task discard {id}` and re-start with `jigc start`"
+                "task `{id}` has no recorded workflow — discard it with {} and re-start with {}",
+                engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
+                engine::finding::Route::mechanical(["jigc", "start"], ""),
             )
         })?;
     compose_task_workflow(
@@ -1629,7 +1630,11 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
     let task_dir = jigc_home.join(".jigc").join("tasks").join(id);
     if !task_dir.is_dir() {
         bail!(
-            "no task `{id}` — list a milestone's sub-tasks with `jigc milestone list-tasks <milestone-id>`"
+            "no task `{id}` — list a milestone's sub-tasks with {}",
+            engine::finding::Route::mechanical(
+                ["jigc", "milestone", "list-tasks", "<milestone-id>"],
+                ""
+            ),
         );
     }
 
@@ -1639,10 +1644,11 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
     let head = read_head(&repo_root)?;
     if pinned.sha != head.sha {
         bail!(
-            "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or `jigc task discard {id}`",
+            "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or {}",
             pinned.short,
             head.short,
             pinned.short,
+            engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
         );
     }
 
@@ -1655,8 +1661,21 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
     let recorded = state::read_workflow_id(&task_dir)
         .with_context(|| format!("could not read the recorded workflow for `{id}`"))?
         .with_context(|| {
+            // The full, parseable re-seed form — the old bare `jigc milestone add-task`
+            // span never parsed (required args short); the T7 fence forces it honest.
             format!(
-                "task `{id}` has no recorded workflow — discard it with `jigc task discard {id}` and re-seed it with `jigc milestone add-task`"
+                "task `{id}` has no recorded workflow — discard it with {} and re-seed it with {}",
+                engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
+                engine::finding::Route::mechanical(
+                    [
+                        "jigc",
+                        "milestone",
+                        "add-task",
+                        "<milestone-id>",
+                        "\"<intent>\""
+                    ],
+                    "",
+                ),
             )
         })?;
     if recorded != workflow_id {

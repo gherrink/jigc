@@ -2854,7 +2854,10 @@ impl ActiveTask {
         // ambiguous error and `jigc task list` share, so they never disagree.
         let mut ids = state::list_active_task_ids(&jigc_root);
         match ids.len() {
-            0 => bail!("no active task — start one with `jigc start`"),
+            0 => bail!(
+                "no active task — start one with {}",
+                engine::finding::Route::mechanical(["jigc", "start"], ""),
+            ),
             1 => {
                 let id = ids.pop().expect("one task id");
                 let dir = tasks.join(&id);
@@ -2978,9 +2981,16 @@ impl ActiveTask {
     fn workflow_gate(&self) -> Result<WorkflowDef> {
         let workflow_id = state::read_workflow_id(&self.dir)
             .context("could not read the task's recorded workflow")?
-            .context(
-                "the active task has no recorded workflow — discard it with `jigc task discard <id>` and re-start with `jigc start`",
-            )?;
+            .with_context(|| {
+                // The discard span names the concrete task id (the style guide's "the
+                // exact next command for the state at hand"), riding the checked
+                // constructor like every T7 span.
+                format!(
+                    "the active task has no recorded workflow — discard it with {} and re-start with {}",
+                    engine::finding::Route::mechanical(["jigc", "task", "discard", &self.id], ""),
+                    engine::finding::Route::mechanical(["jigc", "start"], ""),
+                )
+            })?;
         let bytes = self
             .pack
             .read(
@@ -3012,7 +3022,8 @@ fn parse_verb_addr(pack: &dyn PackSource, addr: &str) -> Result<Address> {
         anyhow!(
             "malformed address `{addr}`: {err} — a doc is addressed as `<type>:<slug>`, \
              e.g. `adr:single-node-cache` (a singleton doctype like `changelog` or `vision` \
-             may be named bare)\n  route: run `jigc describe` for the doctype surface"
+             may be named bare)\n  route: run {} for the doctype surface",
+            engine::finding::Route::mechanical(["jigc", "describe"], ""),
         )
     })
 }
@@ -3138,9 +3149,16 @@ fn read_staged(path: &Path, addr: &str) -> Result<String> {
     // tail into `{err:#}` — a dead end. The absent-instance case is the expected reason
     // this read fails, so surface the provision route alone (M36 Inc-4).
     std::fs::read_to_string(path).map_err(|_| {
+        let start = engine::finding::Route::mechanical(["jigc", "start"], "");
+        // The full, parseable form — the old bare `jigc doc create` span never parsed
+        // (required args short), which the T7 parse fence surfaced and forces honest.
+        let create = engine::finding::Route::mechanical(
+            ["jigc", "doc", "create", "<type>", "--title", "\"X\""],
+            "",
+        );
         anyhow!(
-            "no staged instance for `{addr}` — provision it first (`jigc start` / `jigc doc create`). \
-             Note: `jigc doc create <type> --title \"X\"` derives the id from the title (`X` → slug), \
+            "no staged instance for `{addr}` — provision it first ({start} / {create}). \
+             Note: {create} derives the id from the title (`X` → slug), \
              not the task id — address writes at that title-derived id"
         )
     })

@@ -143,8 +143,9 @@ pub(crate) fn relocate_freeze_exempt(
     if pack::frozen_doctype_versions(pack).contains_key(&schema.ty) {
         anyhow::bail!(
             "`{}` is a frozen doctype — relocate it through the version-gated \
-             `jigc migrate-corpus`, not the freeze-exempt path",
-            schema.ty
+             {}, not the freeze-exempt path",
+            schema.ty,
+            engine::finding::Route::mechanical(["jigc", "migrate-corpus"], ""),
         );
     }
     let current = orphan::home_of(schema).ok_or_else(|| {

@@ -28,6 +28,15 @@ const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[
     // The write-reject routes (engine `write.rs` → `write_route`): the doctype whose
     // resolved schema `jigc doc schema` projects.
     ("<doctype>", "adr"),
+    // The T7 anyhow-embedded routes (`design/surface-contract.md` → The route fence,
+    // closing paragraph): the milestone id a wrong-id reject routes through
+    // (`jigc milestone list-tasks <milestone-id>`), the foreign-source path + target
+    // doctype of the `jigc migrate` rejects, and the doctype positional of the
+    // provision hint's `jigc doc create <type> --title "X"` form (named `<type>`
+    // after the verb's own usage line, distinct from the write-reject `<doctype>`).
+    ("<milestone-id>", "dummy-milestone-id"),
+    ("<path>", "CHANGELOG.md"),
+    ("<type>", "adr"),
 ];
 
 /// Install the parse fence into the engine's `Route::mechanical` constructor hook.

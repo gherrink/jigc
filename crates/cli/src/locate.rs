@@ -42,6 +42,20 @@ const PROJECT_CONFIG_REL: &str = ".jigc/config";
 /// The team-layer sub-path under `$HOME` (`~/.config/jigc/`).
 const TEAM_CONFIG_REL: &str = ".config/jigc";
 
+/// The one not-set-up rejection every project-layer-requiring verb shares —
+/// `jigc describe` / `ingest` / `migrate` / `migrate-corpus` / `upgrade` / the
+/// compose paths all converge on this constructor when the `.jigc/config/` cascade
+/// layer is absent (M43 T7: the anyhow-embedded route rewrite,
+/// `design/surface-contract.md` → The route fence, closing paragraph). The
+/// `jigc setup` span rides the checked [`engine::finding::Route::mechanical`]
+/// constructor, so the CLI-seam parse fence asserts it parses against the real CLI.
+pub(crate) fn not_set_up() -> anyhow::Error {
+    let setup = engine::finding::Route::mechanical(["jigc", "setup"], "");
+    anyhow::anyhow!(
+        "this project isn't set up — run {setup} (no `.jigc/config/` cascade layer found)"
+    )
+}
+
 /// Locate the cascade sources starting from `start`, resolving the team path
 /// from `$HOME`.
 pub fn locate(start: &Path) -> Result<RunContext> {

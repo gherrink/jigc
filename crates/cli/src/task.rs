@@ -1259,8 +1259,9 @@ impl TaskArea {
             .with_context(|| format!("could not read the recorded workflow for {:?}", self.dir))?
             .with_context(|| {
                 format!(
-                    "task at {:?} has no recorded workflow — discard it and re-start with `jigc start`",
-                    self.dir
+                    "task at {:?} has no recorded workflow — discard it and re-start with {}",
+                    self.dir,
+                    engine::finding::Route::mechanical(["jigc", "start"], ""),
                 )
             })?;
         let bytes = self

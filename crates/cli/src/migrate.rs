@@ -102,9 +102,9 @@ fn ensure_migratable(pack: &dyn PackSource, doctype: &str) -> Result<()> {
     } else {
         format!("unknown doctype `{doctype}`")
     };
-    bail!(
-        "{message}; migratable doctypes: {set}\n  route: re-run `jigc migrate <path> --as <doctype>` with one of: {set}"
-    );
+    let route =
+        engine::finding::Route::mechanical(["jigc", "migrate", "<path>", "--as", "<doctype>"], "");
+    bail!("{message}; migratable doctypes: {set}\n  route: re-run {route} with one of: {set}");
 }
 
 /// Normalize the verb's `path` arg to a clean repo-relative string for recording as the
@@ -140,9 +140,7 @@ fn repo_relative_source_path(repo_root: &Path, path: &str) -> String {
 fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<crate::start::Composition> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
+        return Err(crate::locate::not_set_up());
     }
     let repo_root = ctx.repo_root;
     let project_config = repo_root.join(".jigc").join("config");
@@ -162,8 +160,12 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<crate::start
     // path and route back to the verb with a readable source (M36 Inc-4, errors-with-
     // remediation).
     let foreign = std::fs::read_to_string(&foreign_path).map_err(|_| {
+        // The runtime doctype rides the span's argv (a real value parses like any value);
+        // `<path>` is a declared dummy-table placeholder.
+        let route =
+            engine::finding::Route::mechanical(["jigc", "migrate", "<path>", "--as", doctype], "");
         anyhow!(
-            "could not read the foreign `{doctype}` source at {}\n  route: check the path, then re-run `jigc migrate <path> --as {doctype}` with a readable file",
+            "could not read the foreign `{doctype}` source at {}\n  route: check the path, then re-run {route} with a readable file",
             foreign_path.display()
         )
     })?;

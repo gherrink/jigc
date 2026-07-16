@@ -1,0 +1,552 @@
+//! M43 Inc 1 T7 — the anyhow-embedded route rewrite, bounded to shipped verbs' error
+//! strings that carry `` `jigc …` `` command spans (`design/surface-contract.md` → The
+//! route fence, closing paragraph: an errorish surface is still a surface; prose-only
+//! error text untouched).
+//!
+//! Every rewritten site builds its span through the checked
+//! `engine::finding::Route::mechanical` constructor, so the CLI-seam parse fence (T2)
+//! asserts the span parses against the real CLI at construction. The fence is
+//! debug-posture and `main` installs it, so the binary these arms drive carries it
+//! **live**: a rewritten span that stopped parsing panics the construction (exit 101,
+//! never the asserted clean exit 1) — each arm therefore proves both the emitted
+//! message bytes *and* that its spans passed the fence.
+//!
+//! One arm per rewritten family, asserting the **emitted stderr bytes** (the emitted
+//! bytes are the contract). Four messages changed under the fence; the rest are pinned
+//! goldens:
+//!
+//! - the absent-staged-instance provision hint names the **full, parseable**
+//!   `doc create` form (the bare `jigc doc create` never parsed — a required arg short);
+//! - the milestone-discard wrong-id route carries the declared `<milestone-id>`
+//!   placeholder (was the undeclared, ambiguous `<id>`);
+//! - the sub-task re-seed route names the **full** `milestone add-task` form (bare
+//!   `jigc milestone add-task` never parsed);
+//! - the doc-verb no-recorded-workflow reject names the **concrete** task id in its
+//!   discard span (was the undeclared `<id>` — the style guide's "the exact next
+//!   command for the state at hand").
+//!
+//! Out of scope, per the planner bound: T5's converged wrong-task-id sites
+//! (`no_such_task_route.rs`), the hook-rejection verbatim-stderr channel
+//! (`finalize.md:78`), prose-only error text, and `Finding` routes (the T3 floor).
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        let unique = format!(
+            "jigc-anyhow-route-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        );
+        path.push(unique);
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Run a `git` command in `repo`, asserting success.
+fn git(repo: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Initialize a real git repo with one commit — **without** the `.jigc/config/`
+/// project layer (the not-set-up arm needs its absence).
+fn init_repo_bare(repo: &Path) {
+    git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+    fs::write(repo.join("README.md"), "hello\n").expect("write file");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+}
+
+/// Initialize a real git repo with one commit + the `.jigc/config/` project layer.
+fn init_repo(repo: &Path) {
+    init_repo_bare(repo);
+    fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
+}
+
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, capturing output.
+fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Assert `out` is a **clean operational error** (exit 1 — never a fence panic's 101)
+/// whose stderr is exactly `expected`.
+fn assert_error_bytes(out: &std::process::Output, expected: &str) {
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "expected a clean operational error (a fence panic would exit 101); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8(out.stderr.clone()).expect("utf-8 stderr");
+    assert_eq!(stderr, expected, "the emitted error bytes are the contract");
+}
+
+/// Like [`assert_error_bytes`] but for messages carrying run-dependent values
+/// (temp paths, shas): asserts exit 1 + every `needles` substring present.
+fn assert_error_contains(out: &std::process::Output, needles: &[&str]) {
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "expected a clean operational error (a fence panic would exit 101); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8(out.stderr.clone()).expect("utf-8 stderr");
+    for needle in needles {
+        assert!(
+            stderr.contains(needle),
+            "stderr must carry {needle:?}; got:\n{stderr}",
+        );
+    }
+}
+
+/// Mint a top-level `single-task` task with a controlled slug.
+fn mint_task(repo: &Path, home: &Path, slug: &str) {
+    let out = jigc(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "--slug",
+            slug,
+            "Do the thing",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "minting `{slug}` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// Mint a milestone + one `single-task` sub-task (`do-the-thing`) under it.
+fn mint_subtask(repo: &Path, home: &Path) -> &'static str {
+    let created = jigc(repo, home, &["milestone", "create", "Rework"]);
+    assert!(
+        created.status.success(),
+        "`milestone create` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr),
+    );
+    let added = jigc(
+        repo,
+        home,
+        &[
+            "milestone",
+            "add-task",
+            "rework",
+            "Do the thing",
+            "--workflow",
+            "single-task",
+        ],
+    );
+    assert!(
+        added.status.success(),
+        "`add-task` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&added.stderr),
+    );
+    "do-the-thing"
+}
+
+// ── the not-set-up family (six sites, one shared helper) ────────────────────────────
+
+/// Every project-layer-requiring verb emits the **one** not-set-up rejection with the
+/// `jigc setup` route — the six formerly-duplicated `bail!` sites converge on the
+/// shared `locate::not_set_up` constructor, whose span rides the parse fence.
+#[test]
+fn not_set_up_family_emits_the_one_setup_route() {
+    let repo = TempDir::new("not-set-up");
+    let home = TempDir::new("home");
+    init_repo_bare(repo.path());
+
+    const EXPECTED: &str =
+        "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)\n";
+    let arms: &[&[&str]] = &[
+        &["describe"],
+        &["ingest"],
+        &["migrate", "README.md", "--as", "changelog"],
+        &["migrate-corpus"],
+        &["upgrade"],
+        &["start", "Do something"],
+    ];
+    for args in arms {
+        let out = jigc(repo.path(), home.path(), args);
+        assert_error_bytes(&out, EXPECTED);
+    }
+}
+
+// ── the no-active-task reject (`doc.rs` → `ActiveTask::resolve`, zero tasks) ────────
+
+/// A doc write verb with no active task routes to `jigc start` — the span rides the
+/// checked constructor (distinct from the T5 wrong-id state, which routes `task list`).
+#[test]
+fn no_active_task_routes_to_start() {
+    let repo = TempDir::new("no-active");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "set-field", "adr:x#status", "--value", "accepted"],
+    );
+    assert_error_bytes(&out, "no active task — start one with `jigc start`\n");
+}
+
+// ── the malformed-address reject (`doc.rs` → `parse_verb_addr`) ─────────────────────
+
+/// A malformed doc address keeps its example + the `jigc describe` route, the span
+/// riding the checked constructor.
+#[test]
+fn malformed_doc_address_routes_to_describe() {
+    let repo = TempDir::new("bad-addr");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    mint_task(repo.path(), home.path(), "my-task");
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            "bad-addr",
+            "--value",
+            "x",
+            "--task",
+            "my-task",
+        ],
+    );
+    assert_error_bytes(
+        &out,
+        "malformed address `bad-addr`: missing ':' between type and slug — a doc is \
+         addressed as `<type>:<slug>`, e.g. `adr:single-node-cache` (a singleton doctype \
+         like `changelog` or `vision` may be named bare)\n  route: run `jigc describe` \
+         for the doctype surface\n",
+    );
+}
+
+// ── the absent-staged-instance reject (`doc.rs` → `read_staged`) — bytes CHANGED ────
+
+/// The provision hint names the **full, parseable** `doc create` form: the old bare
+/// `` `jigc doc create` `` span never parsed (required args short) — the parse fence
+/// forces the honest, copy-adaptable form.
+#[test]
+fn absent_staged_instance_names_the_full_create_form() {
+    let repo = TempDir::new("no-instance");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    mint_task(repo.path(), home.path(), "my-task");
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "add-item",
+            "adr:ghost#options",
+            "--title",
+            "An option",
+            "--task",
+            "my-task",
+        ],
+    );
+    assert_error_bytes(
+        &out,
+        "no staged instance for `adr:ghost#options` — provision it first (`jigc start` / \
+         `jigc doc create <type> --title \"X\"`). Note: `jigc doc create <type> --title \"X\"` \
+         derives the id from the title (`X` → slug), not the task id — address writes at \
+         that title-derived id\n",
+    );
+}
+
+// ── the migrate rejects (`migrate.rs`) ──────────────────────────────────────────────
+
+/// A non-migratable doctype routes back to the verb with the live set; the
+/// placeholder-carrying span rides the checked constructor (the `<path>` placeholder
+/// joins the declared dummy table).
+#[test]
+fn not_migratable_doctype_routes_back_to_migrate() {
+    let repo = TempDir::new("bad-doctype");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["migrate", "README.md", "--as", "bogus"],
+    );
+    assert_error_contains(
+        &out,
+        &[
+            "unknown doctype `bogus`; migratable doctypes: ",
+            "\n  route: re-run `jigc migrate <path> --as <doctype>` with one of: ",
+        ],
+    );
+}
+
+/// An unreadable foreign source routes back to the verb, the runtime doctype riding
+/// the span's argv (a real value parses like any value).
+#[test]
+fn unreadable_foreign_source_routes_back_to_migrate() {
+    let repo = TempDir::new("unreadable");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["migrate", "missing.md", "--as", "changelog"],
+    );
+    assert_error_contains(
+        &out,
+        &[
+            "could not read the foreign `changelog` source at ",
+            "\n  route: check the path, then re-run `jigc migrate <path> --as changelog` \
+             with a readable file",
+        ],
+    );
+}
+
+// ── the unknown-milestone rejects (`milestone.rs`) ──────────────────────────────────
+
+/// An unknown milestone id routes to minting it — the four formerly-duplicated sites
+/// converge on one shared constructor, its quoted-title span riding the fence.
+#[test]
+fn unknown_milestone_routes_to_create() {
+    let repo = TempDir::new("no-milestone");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    const EXPECTED: &str = "milestone `nope` does not exist\n  route: create it first \
+                            with `jigc milestone create \"<title>\"`\n";
+    for args in [
+        ["milestone", "list-tasks", "nope"],
+        ["milestone", "execute", "nope"],
+    ] {
+        let out = jigc(repo.path(), home.path(), &args);
+        assert_error_bytes(&out, EXPECTED);
+    }
+}
+
+/// The discard wrong-id variant carries the **declared** `<milestone-id>` placeholder
+/// (was the undeclared, ambiguous `<id>` — the dummy table is the declared set).
+#[test]
+fn milestone_discard_wrong_id_names_list_tasks_with_the_declared_placeholder() {
+    let repo = TempDir::new("discard-wrong");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["milestone", "discard", "nope"]);
+    assert_error_bytes(
+        &out,
+        "milestone `nope` does not exist\n  route: check the milestone id \
+         (`jigc milestone list-tasks <milestone-id>` names a live milestone's sub-tasks); \
+         nothing was discarded\n",
+    );
+}
+
+// ── the frozen-doctype relocate reject (`relocate.rs`) ──────────────────────────────
+
+/// A frozen doctype's relocate refusal routes to the version-gated verb, the span
+/// riding the checked constructor.
+#[test]
+fn frozen_doctype_relocate_routes_to_migrate_corpus() {
+    let repo = TempDir::new("relocate-frozen");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["relocate", "changelog", "--from", "docs/"],
+    );
+    assert_error_bytes(
+        &out,
+        "`changelog` is a frozen doctype — relocate it through the version-gated \
+         `jigc migrate-corpus`, not the freeze-exempt path\n",
+    );
+}
+
+// ── the rename rejects (`rename.rs`) ────────────────────────────────────────────────
+
+/// Both rename rejects — the malformed address and the missing doc — keep their
+/// `jigc describe` route, the spans riding the checked constructor.
+#[test]
+fn rename_rejects_route_to_describe() {
+    let repo = TempDir::new("rename");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let malformed = jigc(repo.path(), home.path(), &["rename", "bad", "--to", "X"]);
+    assert_error_bytes(
+        &malformed,
+        "`bad` is not a `<type>:<slug>` address — e.g. `adr:single-node-cache`\n  \
+         route: run `jigc describe` for the doctype surface\n",
+    );
+
+    let missing = jigc(
+        repo.path(),
+        home.path(),
+        &["rename", "adr:nope", "--to", "X"],
+    );
+    assert_error_bytes(
+        &missing,
+        "no managed doc `adr:nope` to rename (expected at docs/decisions/nope.md)\n  \
+         route: check the id (or run `jigc describe` for the doctype surface)\n",
+    );
+}
+
+// ── the pinned-base mismatch (`start.rs`, both resume forms) ────────────────────────
+
+/// A resumed task off its pinned base routes to `git checkout` (not a jigc span —
+/// untouched prose) or `jigc task discard <the concrete id>`, the jigc span riding
+/// the checked constructor with the runtime id in its argv.
+#[test]
+fn pinned_base_mismatch_routes_to_task_discard() {
+    let repo = TempDir::new("pinned");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    mint_task(repo.path(), home.path(), "my-task");
+
+    fs::write(repo.path().join("more.md"), "more\n").expect("write file");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "second"]);
+
+    let out = jigc(repo.path(), home.path(), &["start", "--task", "my-task"]);
+    assert_error_contains(
+        &out,
+        &[
+            "task `my-task` is pinned to base ",
+            " — switch back with `git checkout ",
+            "` or `jigc task discard my-task`\n",
+        ],
+    );
+}
+
+// ── the missing-workflow-record family (four sites, three verbs) ────────────────────
+
+/// A task working area whose recorded workflow is gone rejects with the discard +
+/// re-start/re-seed routes — every span riding the checked constructor:
+/// the resume form keeps its bytes; the sub-task re-entry names the **full**
+/// `milestone add-task` form (the bare span never parsed); the doc-verb form names
+/// the **concrete** task id (was the undeclared `<id>`); `task bind` keeps its
+/// span-less discard prose + the `jigc start` span.
+#[test]
+fn missing_workflow_record_family_routes_to_discard_and_restart() {
+    // Resume (`jigc start --task`) + the doc verb + `task bind` — a top-level task.
+    let repo = TempDir::new("no-workflow");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    mint_task(repo.path(), home.path(), "my-task");
+    fs::remove_file(repo.path().join(".jigc/tasks/my-task/workflow"))
+        .expect("remove the workflow record");
+
+    let resume = jigc(repo.path(), home.path(), &["start", "--task", "my-task"]);
+    assert_error_bytes(
+        &resume,
+        "task `my-task` has no recorded workflow — discard it with \
+         `jigc task discard my-task` and re-start with `jigc start`\n",
+    );
+
+    let doc_verb = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "create", "adr", "--title", "T", "--task", "my-task"],
+    );
+    assert_error_bytes(
+        &doc_verb,
+        "the active task has no recorded workflow — discard it with \
+         `jigc task discard my-task` and re-start with `jigc start`\n",
+    );
+
+    let bind = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "bind", "decision", "adr:x", "my-task"],
+    );
+    assert_error_contains(
+        &bind,
+        &["has no recorded workflow — discard it and re-start with `jigc start`"],
+    );
+
+    // Sub-task re-entry (`jigc workflow <W> --task`) — a milestone sub-task.
+    let repo2 = TempDir::new("no-workflow-sub");
+    let home2 = TempDir::new("home");
+    init_repo(repo2.path());
+    let sub = mint_subtask(repo2.path(), home2.path());
+    fs::remove_file(repo2.path().join(format!(".jigc/tasks/{sub}/workflow")))
+        .expect("remove the workflow record");
+
+    let reentry = jigc(
+        repo2.path(),
+        home2.path(),
+        &["workflow", "single-task", "--task", sub],
+    );
+    assert_error_bytes(
+        &reentry,
+        "task `do-the-thing` has no recorded workflow — discard it with \
+         `jigc task discard do-the-thing` and re-seed it with \
+         `jigc milestone add-task <milestone-id> \"<intent>\"`\n",
+    );
+}
+
+// ── the sub-task wrong-id reject (`start.rs` → workflow re-entry) ───────────────────
+
+/// A `jigc workflow` re-entry naming no live sub-task routes to `milestone
+/// list-tasks` — the `<milestone-id>` placeholder joins the declared dummy table.
+#[test]
+fn workflow_reentry_unknown_task_names_list_tasks() {
+    let repo = TempDir::new("reentry-wrong");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["workflow", "sub-task", "--task", "nope"],
+    );
+    assert_error_bytes(
+        &out,
+        "no task `nope` — list a milestone's sub-tasks with \
+         `jigc milestone list-tasks <milestone-id>`\n",
+    );
+}

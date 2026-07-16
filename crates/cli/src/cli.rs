@@ -968,9 +968,7 @@ fn require_doc_code_probe() -> Result<()> {
 fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
-        anyhow::bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
+        return Err(crate::locate::not_set_up());
     }
     // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); the store
     // sweep does no git I/O, so jigc_home is the single base it needs (M31 Inc 2 / WF3).

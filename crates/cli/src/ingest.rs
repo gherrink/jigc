@@ -28,7 +28,7 @@
 //!   a synthesized blocking finding routing the human to relocate it (jigc never
 //!   auto-moves — detect-and-route).
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use engine::file_state::FileStateRecord;
@@ -490,9 +490,7 @@ pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let project_config = jigc_home.join(".jigc").join("config");
     if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
+        return Err(crate::locate::not_set_up());
     }
     Ok(jigc_home)
 }

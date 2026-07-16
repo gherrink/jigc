@@ -96,7 +96,8 @@ pub(crate) fn run(
     let old_abs = repo_root.join(&old_rel);
     if !old_abs.is_file() {
         bail!(
-            "no managed doc `{ty}:{old_slug}` to rename (expected at {old_rel})\n  route: check the id (or run `jigc describe` for the doctype surface)"
+            "no managed doc `{ty}:{old_slug}` to rename (expected at {old_rel})\n  route: check the id (or run {} for the doctype surface)",
+            engine::finding::Route::mechanical(["jigc", "describe"], ""),
         );
     }
     let old_source = std::fs::read_to_string(&old_abs)
@@ -538,7 +539,8 @@ fn parse_addr(addr: &str) -> Result<(String, String)> {
     let malformed = || {
         anyhow!(
             "`{addr}` is not a `<type>:<slug>` address — e.g. `adr:single-node-cache`\n  \
-             route: run `jigc describe` for the doctype surface"
+             route: run {} for the doctype surface",
+            engine::finding::Route::mechanical(["jigc", "describe"], ""),
         )
     };
     let (ty, slug) = addr.split_once(':').ok_or_else(malformed)?;

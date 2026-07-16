@@ -18,7 +18,7 @@
 //! shadow; `worked-examples.md` → flow 14). The project layer is also the "is this
 //! project set up" setup gate, exactly as `jigc ingest` requires it.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use engine::compose::{WorkflowDef, load_workflow_def};
@@ -97,9 +97,7 @@ fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     // + pack, so jigc_home is the single base it needs (no git, no worktree code).
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     if !jigc_home.join(".jigc").join("config").is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
+        return Err(crate::locate::not_set_up());
     }
     Ok(jigc_home)
 }

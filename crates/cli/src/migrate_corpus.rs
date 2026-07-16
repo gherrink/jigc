@@ -1414,9 +1414,7 @@ fn committed_slugs(repo_root: &Path, location: &str) -> Vec<String> {
 pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
-        anyhow::bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
+        return Err(crate::locate::not_set_up());
     }
     Ok(ctx.jigc_home)
 }

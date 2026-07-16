@@ -205,6 +205,21 @@ impl MilestoneCommand {
     }
 }
 
+/// The one does-not-exist rejection the milestone verbs share (`list-tasks` /
+/// `provision` / `execute` / `finalize` — each rejecting an absent
+/// `.jigc/milestones/<id>/` workbench; M43 T7, `design/surface-contract.md`
+/// → The route fence, closing paragraph). The quoted-title span rides the checked
+/// [`engine::finding::Route::mechanical`] constructor, so the CLI-seam parse fence
+/// asserts it parses against the real CLI. `discard` keeps its own variant (check the
+/// id, don't mint — a discard should never route to *creating* the milestone).
+fn no_such_milestone(milestone_id: &str) -> anyhow::Error {
+    let create =
+        engine::finding::Route::mechanical(["jigc", "milestone", "create", "\"<title>\""], "");
+    anyhow::anyhow!(
+        "milestone `{milestone_id}` does not exist\n  route: create it first with {create}"
+    )
+}
+
 /// `jigc milestone create "<title>"` — read HEAD, then mint the milestone area
 /// with that single shared base and an empty task list. Ensures `.jigc/.gitignore`
 /// lists `milestones/` (the area is disposable runtime state). Returns the summary
@@ -884,9 +899,7 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
-        bail!(
-            "milestone `{milestone_id}` does not exist\n  route: create it first with `jigc milestone create \"<title>\"`"
-        );
+        return Err(no_such_milestone(milestone_id));
     }
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
@@ -931,9 +944,7 @@ fn run_provision(cwd: &Path, milestone_id: &str) -> Result<String> {
 
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
-        bail!(
-            "milestone `{milestone_id}` does not exist\n  route: create it first with `jigc milestone create \"<title>\"`"
-        );
+        return Err(no_such_milestone(milestone_id));
     }
     // The single shared base pin every sub-task inherited — the commit the worktrees
     // detach at, never a fresh HEAD.
@@ -1141,8 +1152,14 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
 
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
+        // `<milestone-id>` is the declared dummy-table placeholder (the old `<id>` was
+        // undeclared and ambiguous against the task-id sites).
+        let list_tasks = engine::finding::Route::mechanical(
+            ["jigc", "milestone", "list-tasks", "<milestone-id>"],
+            "",
+        );
         bail!(
-            "milestone `{milestone_id}` does not exist\n  route: check the milestone id (`jigc milestone list-tasks <id>` names a live milestone's sub-tasks); nothing was discarded"
+            "milestone `{milestone_id}` does not exist\n  route: check the milestone id ({list_tasks} names a live milestone's sub-tasks); nothing was discarded"
         );
     }
     let list = read_task_list(&dir)
@@ -1313,9 +1330,7 @@ fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Compositi
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
-        bail!(
-            "milestone `{milestone_id}` does not exist\n  route: create it first with `jigc milestone create \"<title>\"`"
-        );
+        return Err(no_such_milestone(milestone_id));
     }
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
@@ -1476,9 +1491,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
 
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
-        bail!(
-            "milestone `{milestone_id}` does not exist\n  route: create it first with `jigc milestone create \"<title>\"`"
-        );
+        return Err(no_such_milestone(milestone_id));
     }
 
     // The committed edge index is keyed to the milestone's shared base (the commit every
