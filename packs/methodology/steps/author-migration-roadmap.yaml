@@ -1,38 +1,22 @@
 Migrate the foreign roadmap into the managed `roadmap` singleton — the running
-milestone spine, managed directly at `docs/roadmap.md`. Below is the foreign source
-the CLI staged for you (read-only context — you author the canonical record through
-the write verbs, you never edit this file or place anything yourself):
+milestone spine. Below is the foreign source the CLI staged for you (read-only
+context — you author the canonical record through the write verbs, you never edit
+this file or place anything yourself):
 
 {{ source }}
 
-Author the WHOLE canonical roadmap in ONE declarative batch payload — the CLI creates
-the fixed-slug singleton (`title: Roadmap` stays exactly as written; the CLI owns the
-placement at `docs/roadmap.md`) and mints every milestone item over a single staged
-buffer. Pipe the payload on stdin:
+The target schema and its batch payload, both generated from the resolved `roadmap`
+schema, follow — the CLI creates the fixed-slug singleton (the `title: Roadmap` line
+stays exactly as written; the CLI owns the placement) and mints every milestone item
+over a single staged buffer:
 
-jigc doc author roadmap --from-file - --task {{task.id}} <<'EOF'
-title: Roadmap
-sections:
-  - id: milestones
-    items:
-      - title: "<milestone>"   # one item per foreign milestone, in the foreign order
-        set:
-          proves: |-
-            <<what this milestone proves — the capability it converts from planned to demonstrated>>
-          decomposition: |-
-            <<the milestone's breakdown, as prose — each increment's deliverable and the tasks that build it, one level>>
-EOF
-
-The `<<…>>` around each slot value (`proves`, `decomposition`) is REQUIRED literal
-wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are NOT a
-fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (The
-item `title` takes a bare value with no markers; the `title: Roadmap` line stays the
-bare fixed value.) BOTH slot keys go in the ONE `set:` map of the same item — never
-split a milestone across two items.
+{{ schema:roadmap }}
 
 Re-author every MILESTONE from the foreign roadmap, in the foreign order, as one item
 under `milestones` — a foreign milestone / phase / epic / numbered-stage heading maps
-to one item, titled from the foreign name. Then fill its two slots mechanically:
+to one item, titled from the foreign name. BOTH slot keys go in the ONE `set:` map of
+the same item — never split a milestone across two items. Fill the two slots
+mechanically:
 
   - `proves` — the foreign goal / outcome / "done means" statement for that
     milestone; when the foreign roadmap states none, derive it from the milestone's

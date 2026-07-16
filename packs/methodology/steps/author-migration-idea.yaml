@@ -1,30 +1,14 @@
-Migrate the foreign parked-idea note into a managed `idea` at `ideas/`. Below is the
-foreign source the CLI staged for you (read-only context — you author the canonical
-record through the write verbs, you never edit this file or place anything yourself):
+Migrate the foreign parked-idea note into a managed `idea`. Below is the foreign
+source the CLI staged for you (read-only context — you author the canonical record
+through the write verbs, you never edit this file or place anything yourself):
 
 {{ source }}
 
-Author the WHOLE canonical idea in ONE declarative batch payload — the CLI creates the
-record at `ideas/<title-slug>` and places its header fields and description slot over a
-single staged buffer. Pipe the payload on stdin:
+The target schema and its batch payload, both generated from the resolved `idea`
+schema, follow — the CLI creates the record and places its header fields and
+description slot over a single staged buffer:
 
-jigc doc author idea --from-file - --task {{task.id}} <<'EOF'
-title: "<the idea, as a short noun phrase>"
-sections:
-  - id: meta
-    set:
-      trigger: "<what would bring this idea back — the condition to revisit it>"
-      date: "<historical-date>" # see the date rule below — OMIT this key when dateless
-  - id: description
-    set:
-      description: |-
-        <<the shaped direction — what it is and why it might be worth doing>>
-EOF
-
-The `<<…>>` around the `description` slot value is REQUIRED literal wrapping — the
-`<<`/`>>` markers tell the CLI this is slot prose, they are NOT a fill-me placeholder to
-delete. Keep them; replace only the text BETWEEN them. (Inline fields — `trigger`,
-`date`, the `title` — take a bare value with no markers; wrapping one is rejected.)
+{{ schema:idea }}
 
 The `trigger` field is REQUIRED — the de-park condition that would resurface this idea.
 Map it mechanically:
@@ -34,10 +18,11 @@ Map it mechanically:
   - the foreign note names NO condition → derive the trigger from the idea's own subject
     ("a concrete need for <the idea's subject> shows up") — never leave `trigger` out.
 
-Set the `date` from the foreign source's HISTORICAL date when one is present (use it
-exactly as it appears, ISO `YYYY-MM-DD`). When the foreign source is DATELESS, OMIT the
-`date` key entirely — in migration the CLI does NOT fabricate today's date, so a dateless
-note stays dateless (no false history).
+Set the `date` from the foreign source's HISTORICAL date when one is present: add
+`date: "<YYYY-MM-DD>"` to the `meta` section's `set:` map, exactly as it appears in the
+source — an authored date overwrites the CLI's on-create stamp. When the foreign source
+is DATELESS, OMIT the `date` key entirely — in migration the CLI does NOT fabricate
+today's date, so a dateless note stays dateless (no false history).
 
 Everything else in the foreign note — the sketch, the rationale, the caveats — folds
 into the `description` prose. A foreign reference to another document becomes plain

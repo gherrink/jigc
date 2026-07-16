@@ -1,41 +1,26 @@
 Migrate the foreign decisions log into the managed `decisions-log` singleton — the
-running log of decisions made, managed directly at `docs/decisions-log.md`. Below is
-the foreign source the CLI staged for you (read-only context — you author the
-canonical record through the write verbs, you never edit this file or place anything
-yourself):
+running log of decisions made. Below is the foreign source the CLI staged for you
+(read-only context — you author the canonical record through the write verbs, you
+never edit this file or place anything yourself):
 
 {{ source }}
 
-Author the WHOLE canonical log in ONE declarative batch payload — the CLI creates the
-fixed-slug singleton (`title: Decisions-Log` stays exactly as written; the CLI owns
-the placement at `docs/decisions-log.md`) and mints every entry over a single staged
-buffer. Pipe the payload on stdin:
+The target schema and its batch payload, both generated from the resolved
+`decisions-log` schema, follow — the CLI creates the fixed-slug singleton (the
+`title: Decisions Log` line stays exactly as written; the CLI owns the placement) and
+mints every entry over a single staged buffer:
 
-jigc doc author decisions-log --from-file - --task {{task.id}} <<'EOF'
-title: Decisions-Log
-sections:
-  - id: entries
-    items:
-      - title: "<the decision>"   # one entry per foreign decision, oldest first
-        set:
-          date: "<historical-date>" # PER ENTRY — the date rule below; OMIT this key when THIS entry is dateless
-          why: |-
-            <<why this was decided — the reasoning, in a sentence or two>>
-EOF
-
-The `<<…>>` around the `why` slot value is REQUIRED literal wrapping — the `<<`/`>>`
-markers tell the CLI this is slot prose, they are NOT a fill-me placeholder to
-delete. Keep them; replace only the text BETWEEN them. (The `date` field and the item
-`title` take bare values with no markers; wrapping one is rejected.)
+{{ schema:decisions-log }}
 
 Re-author every DECISION from the foreign log, oldest first, as one item under
 `entries`, titled with the decision itself (strip a leading date from a foreign
 heading — the date belongs in the `date` field, never the title).
 
-Decide the `date` key PER ENTRY, mechanically — never once for the whole file:
+Decide the `date` PER ENTRY, mechanically — never once for the whole file:
 
-  - THIS entry carries a date in the foreign source → TRANSCRIBE it exactly as it
-    appears (ISO `YYYY-MM-DD`) in that entry's `date` key;
+  - THIS entry carries a date in the foreign source → TRANSCRIBE it: add
+    `date: "<YYYY-MM-DD>"` to that entry's `set:` map, exactly as it appears in the
+    source — an authored date overwrites the CLI's on-create stamp;
   - THIS entry carries NO date → OMIT the `date` key for that entry. In migration
     the CLI does NOT stamp today's date, so a dateless entry renders dateless — no
     false history. Never fill a gap with today, and never copy a neighbouring

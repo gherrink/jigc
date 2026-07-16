@@ -1,7 +1,7 @@
 Migrate the foreign milestone-close record into a managed per-milestone
-`completion-record` at `completions/`. Below is the foreign source the CLI staged for
-you (read-only context — you author the canonical record through the write verbs,
-you never edit this file or place anything yourself):
+`completion-record`. Below is the foreign source the CLI staged for you (read-only
+context — you author the canonical record through the write verbs, you never edit
+this file or place anything yourself):
 
 {{ source }}
 
@@ -12,30 +12,12 @@ completion record: author nothing, run `jigc task discard {{task.id}}`, and eith
 leave the file unmanaged or re-run `jigc migrate <path> --as <doctype>` with the
 doctype it actually is. There is NO rung that fabricates a verdict.
 
-Otherwise author the WHOLE canonical record in ONE declarative batch payload — the
-CLI creates the per-milestone record (the slug is minted from the title: the
-milestone this record closes) and places its header fields and findings over a
-single staged buffer. Pipe the payload on stdin:
+Otherwise the target schema and its batch payload, both generated from the resolved
+`completion-record` schema, follow — the CLI creates the per-milestone record (the
+slug is minted from the title: the milestone this record closes) and places its
+header fields and findings over a single staged buffer:
 
-jigc doc author completion-record --from-file - --task {{task.id}} <<'EOF'
-title: "<milestone>"
-sections:
-  - id: meta
-    set:
-      verdict: "<green-or-red>"   # the verdict mapping below
-      owner-artifact: "completions/artifacts/<milestone>/<file>"  # the artifact ladder below
-  - id: findings
-    items:
-      - title: "<the finding>"    # one item per foreign audit/review finding; when the source records none, author no items
-        set:
-          severity: "<blocking-or-advisory>"
-          disposition: "<fixed-or-deferred-or-contested>"
-          evidence: "<the file:line, repro, or trace, as recorded — a plain string>"
-EOF
-
-EVERY `set:` value in this payload is an inline FIELD (`verdict`, `owner-artifact`,
-`severity`, `disposition`, `evidence`) — bare values, no `<<…>>` markers; wrapping
-one is rejected. The `title` values are bare too.
+{{ schema:completion-record }}
 
 Map the `verdict` mechanically: the foreign record closes the milestone clean
 (done / shipped / accepted / all criteria met) → `green`; it records the close with
@@ -74,3 +56,5 @@ the foreign record treated it as must-fix, `advisory` otherwise; `disposition` i
 unresolved-but-accepted finding is `deferred`); `evidence` is a plain STRING (the
 file:line, repro, or trace as recorded) — never a managed ref, and a foreign
 reference to a document that is not in the store stays prose inside that string.
+When the foreign record states its outcome but records NO findings, author no
+`findings` items — omit that entry entirely.

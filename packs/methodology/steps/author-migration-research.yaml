@@ -1,41 +1,16 @@
-Migrate the foreign research/investigation note into a managed `research` doc at
-`research/`. Below is the foreign source the CLI staged for you (read-only context — you
-author the canonical record through the write verbs, you never edit this file or place
-anything yourself):
+Migrate the foreign research/investigation note into a managed `research` doc. Below is
+the foreign source the CLI staged for you (read-only context — you author the canonical
+record through the write verbs, you never edit this file or place anything yourself):
 
 {{ source }}
 
-Author the WHOLE canonical research doc in ONE declarative batch payload — the CLI
-creates the record at `research/<title-slug>` and places its header date and three prose
-slots over a single staged buffer. Pipe the payload on stdin:
+The target schema and its batch payload, both generated from the resolved `research`
+schema, follow — the CLI creates the record and places every prose slot over a single
+staged buffer:
 
-jigc doc author research --from-file - --task {{task.id}} <<'EOF'
-title: "<the investigation, as a short noun phrase>"
-sections:
-  - id: meta
-    set:
-      date: "<historical-date>" # see the date rule below — OMIT this key when dateless
-  - id: question
-    set:
-      question: |-
-        <<the question this research set out to answer>>
-  - id: findings
-    set:
-      findings: |-
-        <<what was found — the evidence and what it shows>>
-  - id: sources
-    set:
-      sources: |-
-        <<where the evidence came from — links, references, prior art>>
-EOF
+{{ schema:research }}
 
-The `<<…>>` around each prose slot (`question`, `findings`, `sources`) is REQUIRED
-literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are NOT a
-fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (Inline
-fields — `date`, the `title` — take a bare value with no markers; wrapping one is
-rejected.)
-
-Map the foreign note's content onto this fixed three-slot shape — mechanically:
+Map the foreign note's content onto the schema above — mechanically:
 
   - the foreign Question / Problem / "what we wanted to know" framing maps to the
     `question` slot; when the foreign note states no question, derive it from what the
@@ -46,10 +21,17 @@ Map the foreign note's content onto this fixed three-slot shape — mechanically
     `sources` slot; when the foreign note names no source, record where the evidence
     came from in a phrase ("first-hand notes from <context>").
 
-Set the `date` from the foreign source's HISTORICAL date when one is present (use it
-exactly as it appears, ISO `YYYY-MM-DD`). When the foreign source is DATELESS, OMIT the
-`date` key entirely — in migration the CLI does NOT fabricate today's date, so a dateless
-note stays dateless (no false history).
+Set the `date` from the foreign source's HISTORICAL date when one is present — an
+authored date overwrites the CLI's on-create stamp. The generated payload above omits
+the `meta` entry (its `date` is CLI-stamped by default), so TRANSCRIBING a historical
+date means adding the entry, exactly as the date appears in the source:
+
+  - id: meta
+    set:
+      date: "<YYYY-MM-DD>"
+
+When the foreign source is DATELESS, add no `meta` entry — in migration the CLI does
+NOT fabricate today's date, so a dateless note stays dateless (no false history).
 
 The research schema is a ref-free leaf — it declares no structural ref, so a foreign
 cross-reference stays plain prose in the slot it belongs to; never invent a field for it.

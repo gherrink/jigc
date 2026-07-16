@@ -440,10 +440,14 @@ fold_safe_cases! {
         ];
 
     // ---- methodology pack ----
+    // The generated `{{schema:<doctype>}}` skeletons (M43 T5) render CLI-stamped
+    // `date` fields tree-only, so the old `<historical-date>` placeholder rows are
+    // gone; the remaining fill-me fields are free-text placeholders (left as-is —
+    // the skeleton drives verbatim) plus the enum members `doc author` validates.
     research_slot_prose_fold_safe: "research", Pack::Methodology,
         "old-notes.md",
         "# Spreadsheet pain notes\n\nUsers re-import hourly.\n",
-        [("\"<historical-date>\"", "2020-01-01")];
+        [];
 
     vision_slot_prose_fold_safe: "vision", Pack::Methodology,
         "old-vision.md",
@@ -453,7 +457,7 @@ fold_safe_cases! {
     idea_slot_prose_fold_safe: "idea", Pack::Methodology,
         "old-idea.md",
         "# A parked idea\n\nSome shaped direction worth keeping.\n",
-        [("\"<historical-date>\"", "2020-01-01")];
+        [];
 
     roadmap_slot_prose_fold_safe: "roadmap", Pack::Methodology,
         "old-roadmap.md",
@@ -463,15 +467,12 @@ fold_safe_cases! {
     decisions_log_slot_prose_fold_safe: "decisions-log", Pack::Methodology,
         "old-decisions.md",
         "# Decisions\n\n## 2020-01-01 chose X\n\nBecause reasons.\n",
-        [("\"<historical-date>\"", "2020-01-01")];
+        [];
 
     deferral_ledger_slot_prose_fold_safe: "deferral-ledger", Pack::Methodology,
         "old-deferrals.md",
         "# Deferrals\n\n## An owed thing\n\nDeferred until later.\n",
-        [
-            ("\"<historical-date>\"", "2020-01-01"),
-            ("\"<Decision-or-Idea>\"", "Decision"),
-        ];
+        [("\"<Decision | Idea>\"", "Decision")];
 }
 
 /// The `completion-record` template is **deliberately absent** from the fold-safety

@@ -508,6 +508,25 @@ fn migrate_completion_record_verbatim_source_rung_and_the_floored_gate() {
          `owner-artifact` into; stdout:\n{composed}",
     );
 
+    // M43 Inc-3 T5 — the generated `{{schema:completion-record}}` projection: the
+    // located per-milestone mint renders its resolved home (methodology locations
+    // stay flat — the recorded docs-root divergence), and the tree spells out the
+    // enum members + the findings repeatable the hand template restated.
+    for line in [
+        "The `completion-record` schema — each instance a managed file at \
+         `completions/<slug>.md`, its `<slug>` minted from `title`.",
+        "`verdict`: enum, one of: green | red — author-required",
+        "`owner-artifact`: owned-location — author-required",
+        "- `findings`: repeatable items, one per `title`:",
+        "`severity`: enum, one of: blocking | advisory — author-required",
+        "`disposition`: enum, one of: fixed | deferred | contested — author-required",
+    ] {
+        assert!(
+            composed.contains(line),
+            "the generated projection must render {line:?}; composed:\n{composed}",
+        );
+    }
+
     let authored = ok_stdout(
         jigc(
             repo.path(),
@@ -843,6 +862,23 @@ fn migrate_roadmap_two_slot_item_renders_both_sub_headings() {
         "the composed guidance carries the batch author verb; stdout:\n{composed}",
     );
 
+    // M43 Inc-3 T5 — the generated `{{schema:roadmap}}` projection replaces the
+    // hand-enumerated skeleton (law 1: a template cannot understate the schema).
+    // The placement singleton's home renders at its LITERAL file (docs-root never
+    // applies — the T1 placement branch), and the items tree names the repeatable
+    // + both its slots.
+    for line in [
+        "The `roadmap` schema — the managed singleton at `docs/roadmap.md`.",
+        "- `milestones`: repeatable items, one per `title`:",
+        "- `proves`: prose slot",
+        "- `decomposition`: prose slot",
+    ] {
+        assert!(
+            composed.contains(line),
+            "the generated projection must render {line:?}; composed:\n{composed}",
+        );
+    }
+
     let authored = ok_stdout(
         jigc(
             repo.path(),
@@ -955,4 +991,33 @@ fn shipped_guidance_payload_skeletons_parse_for_all_seven_doctypes() {
             parsed.err(),
         );
     }
+}
+
+/// M43 Inc-3 T5 — the store sweep over the composed `[dev ▸ methodology]` pair stays
+/// clean: `workflow-refs.schema-ref-resolves` (blocking) scans every shipped workflow
+/// of BOTH origin packs against the composed cascade's doctype set, so a mistyped
+/// `{{schema:<doctype>}}` ref in any rewritten migrate template would fail this
+/// through the real binary.
+#[test]
+fn store_sweep_over_the_composed_pair_stays_clean() {
+    let repo = TempDir::new("sweep");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["validate"], None);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        out.status.success(),
+        "`jigc validate` over the composed pair must exit 0 (no blocking finding); \
+         got:\n{rendered}",
+    );
+    assert!(
+        !rendered.contains("schema-ref-resolves"),
+        "no shipped workflow may carry a dangling `{{{{schema:<doctype>}}}}` ref; \
+         got:\n{rendered}",
+    );
 }
