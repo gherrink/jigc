@@ -26,6 +26,7 @@ mod pack;
 mod relocate;
 mod rename;
 mod render;
+mod route_fence;
 mod setup;
 mod start;
 mod task;
@@ -54,6 +55,10 @@ use std::time::Instant;
 /// Install is gated on the knob because teeing repoints fd 1/2 at a pipe (`isatty` → false),
 /// which suppresses clap's terminal colour; keeping that cost on the opted-in operator alone.
 fn main() -> ExitCode {
+    // The M43 route fence: install the mechanical-route argv validator before anything can
+    // construct a route, so every debug-build run (incl. the flow suites driving this binary)
+    // carries the parse assert live. A release build stores it and never consults it.
+    route_fence::install();
     let started = Instant::now();
     let logs_dir = invocation_log::enabled_logs_dir();
     let tee = logs_dir.as_ref().and_then(|_| OutputTee::install());

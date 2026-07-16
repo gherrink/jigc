@@ -419,16 +419,52 @@ pub enum RouteKind {
     Informational,
 }
 
+/// The installed CLI-seam argv validator for [`Route::mechanical`] — the parse half of the
+/// M43 route fence ([surface-contract.md](../../../design/surface-contract.md) → The route
+/// fence, pinned mechanics). The engine is clap-blind by layering (no CLI dependency), so it
+/// cannot check "this argv parses against the real CLI" itself; the CLI installs the check at
+/// process start ([`install_mechanical_argv_validator`], the injected-validator shape) and the
+/// constructor consults it debug-only — enforcement rides the suite, never a release panic.
+static MECHANICAL_ARGV_VALIDATOR: std::sync::OnceLock<MechanicalArgvValidator> =
+    std::sync::OnceLock::new();
+
+/// The shape of the CLI-seam argv validator: `Ok(())` if the argv parses against the real
+/// CLI, `Err(reason)` otherwise.
+pub type MechanicalArgvValidator = fn(&[String]) -> Result<(), String>;
+
+/// Install the CLI-seam argv validator [`Route::mechanical`] consults (the parse assert of
+/// the M43 route fence). Idempotent — the first install wins: a process has exactly one CLI,
+/// so `main` and the CLI test seam install the same function.
+pub fn install_mechanical_argv_validator(validator: MechanicalArgvValidator) {
+    let _ = MECHANICAL_ARGV_VALIDATOR.set(validator);
+}
+
 impl Route {
     /// A copy-runnable command route. The flat text is composed here and only here —
     /// `` `<argv joined by spaces>` `` + `tail` verbatim — the one composition rule,
     /// so a mechanical route's text can never drift from its argv.
+    ///
+    /// **The parse fence** (debug posture, the seam-assert class): a mechanical route whose
+    /// `argv` does not parse against the real CLI **cannot be constructed** — the CLI-installed
+    /// validator ([`install_mechanical_argv_validator`]) panics the construction in debug
+    /// builds, so the fence rides the suite; a release binary never pays or panics.
     pub fn mechanical<I, S>(argv: I, tail: impl Into<String>) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
         let argv: Vec<String> = argv.into_iter().map(Into::into).collect();
+        // The parse fence (debug posture — compiled out of release builds, like the
+        // sibling key-seam asserts): consult the CLI-installed validator, if any.
+        #[cfg(debug_assertions)]
+        if let Some(validate) = MECHANICAL_ARGV_VALIDATOR.get()
+            && let Err(reason) = validate(&argv)
+        {
+            panic!(
+                "a `Route::mechanical` argv must parse against the real CLI: {reason} — \
+                 argv {argv:?} (design/surface-contract.md → The route fence)"
+            );
+        }
         let tail = tail.into();
         let text = format!("`{}`{}", argv.join(" "), tail);
         Self {
