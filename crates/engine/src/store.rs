@@ -14,7 +14,9 @@
 //! `adr`, id `single-node-cache`. So resolving `adr:single-node-cache` to a file is
 //! purely `<repo-root>/<schema.location>/<slug>.md` — no redundant id is read from
 //! the file. A type with **no `location:`** (a transient sink type like `commit`,
-//! whose sink is the git message) has no committed path and is not store-readable.
+//! whose sink is the git message) has no committed path and is not
+//! committed-store-readable — its **staged** working copy in an open task is, via
+//! [`read_slice_staged`] (M43, the staged arm).
 //!
 //! ## The round-trip on a committed file ([parsing.md](../../../implementation/parsing.md) → Round-trip guarantees)
 //!
@@ -30,7 +32,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use crate::address::{Address, Fragment};
-use crate::finding::{Finding, Location, Severity};
+use crate::finding::{Finding, Location, Route, Severity};
 use crate::parse::{self, Document, ParsedItem};
 use crate::schema::Schema;
 use crate::write;
@@ -112,13 +114,96 @@ pub fn read_slice(
     let address_str = address.to_string();
     let type_name = address.r#type.as_str();
     let slug = address.slug.as_str();
+    let schema = resolve_read_schema(schemas, address, &address_str)?;
+
+    // Identity is the path: `<repo_root>/<location>/<slug>.md`. A transient
+    // (location-less) type has no committed path and is not committed-store-readable
+    // — its staged working copy in an open task is ([`read_slice_staged`], M43).
+    let Some(path) = canonical_path(repo_root, schema, slug) else {
+        return Err(block(
+            "store.transient-type",
+            format!(
+                "doctype `{type_name}` is transient (no `location:`); `{address_str}` is not committed"
+            ),
+            &address_str,
+            "the referenced doctype has no committed location".to_string(),
+        ));
+    };
+
+    read_parse_slice(
+        schema,
+        &path,
+        address,
+        &address_str,
+        "fix the committed file so it conforms to its schema",
+        |err| {
+            block(
+                "store.not-found",
+                format!(
+                    "could not read `{address_str}` at `{}`: {err}",
+                    path.display()
+                ),
+                &address_str,
+                "create the referenced doc, or fix the reference to an existing one; a doc \
+                 staged in an open task is not committed yet — read it with `jigc task diff <id>`"
+                    .to_string(),
+            )
+        },
+    )
+}
+
+/// Read the **staged** working copy of `address` in an open task — the instance at
+/// `<task_dir>/docs/<type>:<slug>.md` ([`crate::state::instance_path`], the one owner
+/// of the working-area layout) — through the **identical** parse/slice/render path
+/// the committed read uses (M43, [surface-contract.md](../../../design/surface-contract.md)
+/// → law 2: the staged read; the source-selection extraction).
+///
+/// Differences from the committed arm are confined to source selection:
+///
+/// - **no `canonical_path` gate** — a **transient** doctype (`commit:<task-id>`) is
+///   legal here: its staged working copy is a real file even though it never commits
+///   (the B9 staging-key leak's sanctioned read address, closed from the read side);
+///   the singleton-slug guard stays (a staged singleton is still the one instance);
+/// - an **absent staged instance** blocks `store.not-staged`, routed on the **real
+///   state** under `repo_root`: a committed sibling exists → read it task-less
+///   (`jigc doc show <addr>`); nothing exists anywhere → nothing to read yet.
+pub fn read_slice_staged(
+    repo_root: &Path,
+    task_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    address: &Address,
+) -> Result<String, Finding> {
+    let address_str = address.to_string();
+    let schema = resolve_read_schema(schemas, address, &address_str)?;
+    let path =
+        crate::state::instance_path(task_dir, address.r#type.as_str(), address.slug.as_str());
+    read_parse_slice(
+        schema,
+        &path,
+        address,
+        &address_str,
+        "fix the staged working copy so it conforms to its schema",
+        |_| not_staged_block(repo_root, schema, address, &address_str),
+    )
+}
+
+/// Resolve `address`'s doctype to its schema — shared by both read arms: the
+/// unknown-type block and the singleton-slug guard live here, so the staged arm
+/// inherits them unchanged.
+fn resolve_read_schema<'a>(
+    schemas: &'a BTreeMap<String, Schema>,
+    address: &Address,
+    address_str: &str,
+) -> Result<&'a Schema, Finding> {
+    let type_name = address.r#type.as_str();
+    let slug = address.slug.as_str();
 
     // Resolve the type to its schema.
     let Some(schema) = schemas.get(type_name) else {
         return Err(block(
             "store.unknown-type",
             format!("unknown doctype `{type_name}` for `{address_str}`"),
-            &address_str,
+            address_str,
             "list the available doctypes with `jigc describe`".to_string(),
         ));
     };
@@ -138,45 +223,35 @@ pub fn read_slice(
                 "`{address_str}` names no committed doc: `{type_name}` is a singleton, so its only address is `{type_name}:{}`",
                 schema.ty
             ),
-            &address_str,
+            address_str,
             format!(
                 "read `{type_name}:{}` — a singleton doctype has one instance at a fixed slug",
                 schema.ty
             ),
         ));
     }
+    Ok(schema)
+}
 
-    // Identity is the path: `<repo_root>/<location>/<slug>.md`. A transient
-    // (location-less) type has no committed path and is not store-readable.
-    let Some(path) = canonical_path(repo_root, schema, slug) else {
-        return Err(block(
-            "store.transient-type",
-            format!(
-                "doctype `{type_name}` is transient (no `location:`); `{address_str}` is not committed"
-            ),
-            &address_str,
-            "the referenced doctype has no committed location".to_string(),
-        ));
-    };
-
-    // Read the committed bytes; a missing file is a located block, not a panic.
-    let mut source = std::fs::read_to_string(&path).map_err(|err| {
-        block(
-            "store.not-found",
-            format!(
-                "could not read `{address_str}` at `{}`: {err}",
-                path.display()
-            ),
-            &address_str,
-            "create the referenced doc, or fix the reference to an existing one; a doc \
-             staged in an open task is not committed yet — read it with `jigc task diff <id>`"
-                .to_string(),
-        )
-    })?;
+/// The shared parse/slice tail of both read arms: read the bytes at `path` (`missing`
+/// shapes the arm-specific block when they cannot be read), strip a leading BOM,
+/// parse against `schema`, and serve the whole doc or the addressed `#fragment` —
+/// **one path**, so a staged read can never diverge from the committed read's
+/// parse/slice/render semantics (M43 — the source-selection extraction).
+fn read_parse_slice(
+    schema: &Schema,
+    path: &Path,
+    address: &Address,
+    address_str: &str,
+    fix_route: &str,
+    missing: impl FnOnce(std::io::Error) -> Finding,
+) -> Result<String, Finding> {
+    // Read the bytes; a missing file is a located block, not a panic.
+    let mut source = std::fs::read_to_string(path).map_err(missing)?;
     // Tolerate a leading BOM on read (Windows-editor edits) before parse + slice.
     parse::strip_leading_bom(&mut source);
 
-    // Parse the committed file against its schema; conformance failures surface the
+    // Parse the file against its schema; conformance failures surface the
     // first blocking finding (re-located onto the address for the caller).
     let doc = parse::parse_sections(schema, &source).map_err(|findings| {
         let why = findings
@@ -189,21 +264,58 @@ pub fn read_slice(
                 "`{address_str}` at `{}` does not parse: {why}",
                 path.display()
             ),
-            &address_str,
-            "fix the committed file so it conforms to its schema".to_string(),
+            address_str,
+            fix_route.to_string(),
         )
     })?;
 
-    // No fragment → the whole committed doc, byte-for-byte (the parse above already
+    // No fragment → the whole doc, byte-for-byte (the parse above already
     // enforced conformance / surfaced the unparseable block).
     match &address.fragment {
         None => Ok(source),
-        Some(fragment) => slice_fragment(schema, &doc, &source, fragment, &address_str),
+        Some(fragment) => slice_fragment(schema, &doc, &source, fragment, address_str),
     }
 }
 
-/// Build a blocking store-read [`Finding`] with a located message and a route.
-fn block(code: &str, message: String, address: &str, route: String) -> Finding {
+/// The staged arm's absent-instance block, routed on the **real state** under
+/// `repo_root` (blocking ⇒ route, the M43 Inc-1 floor): a committed sibling exists →
+/// a [`Route::mechanical`] task-less read; nothing exists anywhere → nothing to read
+/// yet (a transient doctype never has a committed sibling, so it lands here too).
+fn not_staged_block(
+    repo_root: &Path,
+    schema: &Schema,
+    address: &Address,
+    address_str: &str,
+) -> Finding {
+    let committed_sibling =
+        canonical_path(repo_root, schema, address.slug.as_str()).is_some_and(|p| p.is_file());
+    if committed_sibling {
+        block(
+            "store.not-staged",
+            format!("`{address_str}` is not staged in this task — only its committed copy exists"),
+            address_str,
+            Route::mechanical(
+                ["jigc", "doc", "show", address_str],
+                " — the task-less read serves the committed copy",
+            ),
+        )
+    } else {
+        block(
+            "store.not-staged",
+            format!(
+                "`{address_str}` is not staged in this task and has no committed copy — nothing to read yet"
+            ),
+            address_str,
+            "create or author the doc in this task first — a staged copy exists only after a write"
+                .to_string(),
+        )
+    }
+}
+
+/// Build a blocking store-read [`Finding`] with a located message and a route
+/// (a plain-`String` route is a [`Route`]-`Human` direction; the staged arm's
+/// committed-sibling block passes a [`Route::mechanical`]).
+fn block(code: &str, message: String, address: &str, route: impl Into<Route>) -> Finding {
     Finding::graded(
         Severity::Blocking,
         code,
@@ -1395,6 +1507,203 @@ Nothing pinned yet.
             read_slice(root.path(), &schemas, &date).expect("release field leaf resolves"),
             "2026-07-01",
             "a per-item field resolves to its rendered canonical value",
+        );
+    }
+
+    /// The canonical staged transient `commit` doc (`docs/commit:<task-id>.md`) — the
+    /// writer's exact byte form (the `write.rs` commit golden): front matter (`type`),
+    /// the H1, the `## Summary`/`## Body` slots, the empty `## Trailers` repeatable.
+    const STAGED_COMMIT: &str = "\
+---
+type: feat
+---
+
+# Add gateway rate limiting
+
+## Summary
+
+Add a per-client rate limit at the gateway.
+
+## Body
+
+Centralize limiting at the gateway.
+
+## Trailers
+";
+
+    /// (M43 inc-5 T1) The **staged arm**: [`read_slice_staged`] serves a task's staged
+    /// working copy at `<task_dir>/docs/<type>:<slug>.md` — whole-doc, byte-for-byte —
+    /// while the committed arm still misses the same address (the proof the serve came
+    /// from the staged source, never a committed sibling).
+    #[test]
+    fn staged_read_serves_a_whole_staged_doc_byte_for_byte() {
+        let repo = TempRoot::new("staged-whole-repo");
+        let task = TempRoot::new("staged-whole-task");
+        let staged = crate::state::instance_path(task.path(), "adr", "single-node-cache");
+        std::fs::create_dir_all(staged.parent().unwrap()).expect("mk task docs/");
+        std::fs::write(&staged, COMMITTED_ADR).expect("stage the adr");
+
+        let address = Address::parse("adr:single-node-cache").expect("valid address");
+        let whole = read_slice_staged(repo.path(), task.path(), &schemas(), &address)
+            .expect("the staged whole-doc read serves");
+        assert_eq!(
+            whole, COMMITTED_ADR,
+            "the staged read is byte-for-byte the staged copy"
+        );
+
+        let committed_miss = read_slice(repo.path(), &schemas(), &address)
+            .expect_err("no committed sibling exists — the staged arm alone served");
+        assert_eq!(committed_miss.code, "store.not-found");
+    }
+
+    /// (M43 inc-5 T1) Every slice depth serves through the **identical
+    /// parse/slice/render path**: over the same bytes — committed in the repo root,
+    /// staged in a task's working area — the `#section`, `#section/item`, and
+    /// `#section/item/leaf` slices are byte-identical across the two arms (source
+    /// selection is the only difference between them).
+    #[test]
+    fn staged_slices_are_byte_identical_to_committed_slices_over_the_same_bytes() {
+        let repo = TempRoot::new("staged-slice-repo");
+        let task = TempRoot::new("staged-slice-task");
+        write_committed_adr(repo.path());
+        let spec = repo.path().join("specs").join("gateway-rate-limiting.md");
+        std::fs::create_dir_all(spec.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&spec, COMMITTED_SPEC).expect("write committed spec");
+        for (ty, slug, bytes) in [
+            ("adr", "single-node-cache", COMMITTED_ADR),
+            ("spec", "gateway-rate-limiting", COMMITTED_SPEC),
+        ] {
+            let staged = crate::state::instance_path(task.path(), ty, slug);
+            std::fs::create_dir_all(staged.parent().unwrap()).expect("mk task docs/");
+            std::fs::write(&staged, bytes).expect("stage the doc");
+        }
+
+        let schemas = schemas();
+        for addr in [
+            "adr:single-node-cache#decision",
+            "spec:gateway-rate-limiting#criteria",
+            "spec:gateway-rate-limiting#criteria/rejects-burst",
+            "spec:gateway-rate-limiting#criteria/rejects-burst/statement",
+        ] {
+            let address = Address::parse(addr).expect("valid address");
+            let committed = read_slice(repo.path(), &schemas, &address)
+                .unwrap_or_else(|err| panic!("committed `{addr}` resolves; got {err:?}"));
+            let staged = read_slice_staged(repo.path(), task.path(), &schemas, &address)
+                .unwrap_or_else(|err| panic!("staged `{addr}` resolves; got {err:?}"));
+            assert_eq!(
+                staged, committed,
+                "`{addr}` slices byte-identically through both arms"
+            );
+        }
+
+        // One depth pinned directly, so both arms can't be broken in unison.
+        let leaf = Address::parse("spec:gateway-rate-limiting#criteria/rejects-burst/statement")
+            .expect("valid address");
+        assert_eq!(
+            read_slice_staged(repo.path(), task.path(), &schemas, &leaf)
+                .expect("staged leaf resolves"),
+            "The gateway rejects the 101st request in a rolling 60s window.",
+        );
+    }
+
+    /// (M43 inc-5 T1) A **transient** doctype is legal on the staged arm — no
+    /// `canonical_path` gate: `commit:<task-id>` staged at `docs/commit:<id>.md`
+    /// serves whole and at slice depth (the B9 staging-key leak's sanctioned read
+    /// address, closed from the read side) — while the committed arm keeps its
+    /// transient gate untouched.
+    #[test]
+    fn staged_read_serves_a_transient_commit_doc() {
+        let repo = TempRoot::new("staged-transient-repo");
+        let task = TempRoot::new("staged-transient-task");
+        let staged =
+            crate::state::instance_path(task.path(), "commit", "add-gateway-rate-limiting");
+        std::fs::create_dir_all(staged.parent().unwrap()).expect("mk task docs/");
+        std::fs::write(&staged, STAGED_COMMIT).expect("stage the commit doc");
+        let schemas = schemas();
+
+        let whole = Address::parse("commit:add-gateway-rate-limiting").expect("valid address");
+        assert_eq!(
+            read_slice_staged(repo.path(), task.path(), &schemas, &whole)
+                .expect("a staged transient commit doc serves"),
+            STAGED_COMMIT,
+            "the staged transient read is byte-for-byte the staged copy"
+        );
+
+        let summary =
+            Address::parse("commit:add-gateway-rate-limiting#summary").expect("valid address");
+        assert_eq!(
+            read_slice_staged(repo.path(), task.path(), &schemas, &summary)
+                .expect("a staged transient slice serves"),
+            "Add a per-client rate limit at the gateway.",
+        );
+
+        let gate = read_slice(repo.path(), &schemas, &whole)
+            .expect_err("the committed arm keeps the transient gate");
+        assert_eq!(gate.code, "store.transient-type");
+    }
+
+    /// (M43 inc-5 T1) An **absent staged instance** blocks `store.not-staged`, routed
+    /// on the **real state**: a committed sibling exists → the route names the
+    /// task-less read (`jigc doc show <addr>`); nothing exists anywhere → nothing to
+    /// read yet. Blocking ⇒ route present (the Inc-1 floor).
+    #[test]
+    fn staged_read_of_an_absent_instance_blocks_on_the_real_state() {
+        let repo = TempRoot::new("not-staged-repo");
+        let task = TempRoot::new("not-staged-task");
+        write_committed_adr(repo.path());
+        let schemas = schemas();
+
+        // A committed sibling exists → read it task-less.
+        let addr = Address::parse("adr:single-node-cache").expect("valid address");
+        let err = read_slice_staged(repo.path(), task.path(), &schemas, &addr)
+            .expect_err("an absent staged instance blocks");
+        assert_eq!(err.severity, Severity::Blocking);
+        assert_eq!(err.code, "store.not-staged");
+        assert!(err.location.is_some(), "the block is located");
+        let route = err.route.as_deref().expect("the block carries a route");
+        assert!(
+            route.contains("jigc doc show adr:single-node-cache"),
+            "the route names the task-less read of the committed copy: {route}"
+        );
+        assert!(
+            !route.contains("--task"),
+            "the recovery is the task-less read: {route}"
+        );
+
+        // Nothing exists anywhere → nothing to read yet.
+        let ghost = Address::parse("adr:ghost").expect("valid address");
+        let err = read_slice_staged(repo.path(), task.path(), &schemas, &ghost)
+            .expect_err("an absent staged instance with no committed sibling blocks");
+        assert_eq!(err.code, "store.not-staged");
+        assert!(
+            err.message.contains("nothing to read yet"),
+            "the block states the real state: {err:?}"
+        );
+        let route = err
+            .route
+            .as_deref()
+            .expect("blocking ⇒ route (the Inc-1 floor)");
+        assert!(
+            !route.contains("doc show"),
+            "no committed copy exists to point at: {route}"
+        );
+    }
+
+    /// (M43 inc-5 T1) The **singleton-slug guard stays** on the staged arm: a
+    /// placement doctype answers only its canonical `<type>:<type>` address, staged
+    /// or committed — any other slug blocks rather than serving the singleton's
+    /// content for an invalid reference.
+    #[test]
+    fn staged_read_keeps_the_singleton_slug_guard() {
+        let repo = TempRoot::new("staged-singleton-repo");
+        let task = TempRoot::new("staged-singleton-task");
+        let addr = Address::parse("changelog:wrong-slug").expect("valid address");
+        let err = read_slice_staged(repo.path(), task.path(), &schemas(), &addr)
+            .expect_err("a non-canonical singleton slug blocks on the staged arm too");
+        assert_eq!(err.code, "store.not-found");
+        assert!(
+            err.message.contains("singleton"),
+            "the block names the singleton rule: {err:?}"
         );
     }
 

@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-16 — M43 Inc 5 T1: the staged-source arm in `store.rs` — three elaboration pins
+
+**(1) The not-staged block is `store.not-staged`, discriminated on `canonical_path(...).is_file()`** — a committed sibling exists → a `Route::mechanical(["jigc","doc","show","<addr>"], …)` task-less read (store.rs's first mechanical route); nothing anywhere (a transient doctype always lands here — it never has a committed sibling) → a Human "nothing to read yet — create or author first" route. Blocking ⇒ route, the Inc-1 floor. **(2) The staged arm resolves its path through `state::instance_path`** — the `docs/<type>:<slug>.md` layout constant keeps its one owner; store.rs never restates it. **(3) The shared parse/slice tail's `store.unparseable` route is arm-parameterized** — the committed arm keeps *"fix the committed file so it conforms to its schema"* **byte-identical** (the `reroute_unadopted` discriminator and the `managed_vs_foreign` pins depend on the exact string); the staged arm says *"fix the staged working copy…"*, because the shared tail claiming a staged doc is committed would be a law-1 lie. Identical-path proof: one `read_parse_slice` tail by construction, plus a byte-identity test driving the same bytes through both arms at every slice depth.
+
 ## 2026-07-16 — M43 Increment 5 planning: decomposition
 
 Cut [Increment 5](implementation/roadmap.md) (the staged read + the honest staged keys — fork 1 + the transient-address rider, A14) into **4 ordered single-concern tasks**, grounded at HEAD `d5affef` (tree clean; Inc 1–4 landed, so `Route` exists and every new blocking finding constructs a route under the widened floor). Design of record: [surface-contract.md](design/surface-contract.md) (law 1 "repo-real or a typed identity", law 2 names the staged read), [doc-read-surface.md](design/doc-read-surface.md) (the R7 section T2 revises), the Settle items 3, 9 and 12.
