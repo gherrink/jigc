@@ -658,7 +658,7 @@ fn drift_store_finding(path: &str) -> Finding {
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
             "review the out-of-band edit to `{path}` and re-author it through the owning workflow"
-        )),
+        ).into()),
     )
 }
 
@@ -679,7 +679,7 @@ fn unbaselined_finding(path: &str) -> Finding {
         "file-state.un-baselined",
         format!("committed doc `{path}` is not yet baselined in the file-state record"),
         Some(Location::addressed(path, 1, 1)),
-        Some("no action needed — the doc is baselined on its next author or finalize".to_string()),
+        Some("no action needed — the doc is baselined on its next author or finalize".into()),
     )
 }
 
@@ -862,7 +862,7 @@ fn rename_strong_finding(path: &str, from: &str, suspect: &str) -> Finding {
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
             "adopt it as a CLI-owned rename (re-points every referrer atomically): `jigc rename {from} --to \"<New Title>\"`; or revert the move: `git mv {suspect} {path}`"
-        )),
+        ).into()),
     )
 }
 
@@ -877,7 +877,7 @@ fn rename_weak_finding(path: &str, from: &str) -> Finding {
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
             "restore {path}, or confirm the deletion by dropping it from the index: `jigc unmanage {path}`"
-        )),
+        ).into()),
     )
 }
 
@@ -892,7 +892,7 @@ fn absorb_finding(path: &str) -> Finding {
         "reconciliation.absorb",
         format!("external edit absorbed: `{path}`"),
         Some(Location::addressed(path, 1, 1)),
-        Some("no action needed — the external edit was absorbed into the baseline".to_string()),
+        Some("no action needed — the external edit was absorbed into the baseline".into()),
     )
 }
 
@@ -913,7 +913,7 @@ fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
         "reconciliation.conformance-block",
         format!("nonconformant edit on `{path}`: {detail}"),
         Some(Location::addressed(path, line, 1)),
-        Some("fix the file to restore conformance, or revert the edit".to_string()),
+        Some("fix the file to restore conformance, or revert the edit".into()),
     )
 }
 
@@ -938,9 +938,10 @@ fn conformance_advisory_finding(path: &str, cause: Option<Finding>) -> Finding {
         "reconciliation.conformance-block",
         format!("unvetted file `{path}` in a managed location is not schema-conformant: {detail}"),
         Some(Location::addressed(path, line, 1)),
-        Some(format!(
-            "ingest, migrate, or move `{path}` out of the managed location to resolve it"
-        )),
+        Some(
+            format!("ingest, migrate, or move `{path}` out of the managed location to resolve it")
+                .into(),
+        ),
     )
 }
 
@@ -958,7 +959,7 @@ fn conflict_block_finding(path: &str) -> Finding {
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
             "discard the task's writes (`jigc task discard-write {path}`) or revert the file on disk"
-        )),
+        ).into()),
     )
 }
 
@@ -973,7 +974,7 @@ fn baseline_adopt_finding(path: &str) -> Finding {
         "file-state.baseline-adopt",
         format!("baseline adopted: `{path}`"),
         Some(Location::addressed(path, 1, 1)),
-        Some("no action needed — the baseline was adopted on first encounter".to_string()),
+        Some("no action needed — the baseline was adopted on first encounter".into()),
     )
 }
 
@@ -987,7 +988,7 @@ fn drift_finding(path: &str) -> Finding {
         "file-state.hash-matches",
         format!("on-disk content of `{path}` differs from the recorded state"),
         Some(Location::addressed(path, 1, 1)),
-        Some(format!("reconcile {path}")),
+        Some(format!("reconcile {path}").into()),
     )
 }
 

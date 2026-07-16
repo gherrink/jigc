@@ -209,7 +209,7 @@ fn block(code: &str, message: String, address: &str, route: String) -> Finding {
         code,
         message,
         Some(Location::addressed(address, 1, 1)),
-        Some(route),
+        Some(route.into()),
     )
 }
 

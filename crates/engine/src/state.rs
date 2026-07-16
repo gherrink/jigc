@@ -610,9 +610,12 @@ fn collision_finding(id: &str) -> Finding {
         "task.serial-collision",
         format!("task `{id}` is already active"),
         Some(Location::addressed(format!("task:{id}"), 1, 1)),
-        Some(format!(
-            "resume with `jigc start --task {id}` or abandon with `jigc task discard {id}`"
-        )),
+        Some(
+            format!(
+                "resume with `jigc start --task {id}` or abandon with `jigc task discard {id}`"
+            )
+            .into(),
+        ),
     )
 }
 
@@ -956,7 +959,7 @@ fn unknown_doctype_finding(
             set.join(", ")
         ),
         Some(doctype_scoped_location(type_name)),
-        Some("run `jigc describe` to see the doctypes you can author".to_string()),
+        Some("run `jigc describe` to see the doctypes you can author".into()),
     )
 }
 
@@ -981,9 +984,7 @@ fn instance_collision_finding(address: &str) -> Finding {
         "create.serial-collision",
         format!("instance `{address}` already exists in the working area"),
         Some(Location::addressed(address, 1, 1)),
-        Some(format!(
-            "edit the existing `{address}` instead of re-creating it"
-        )),
+        Some(format!("edit the existing `{address}` instead of re-creating it").into()),
     )
 }
 
@@ -1000,7 +1001,7 @@ fn empty_title_finding(type_name: &str) -> Finding {
             "`jigc doc create {type_name}` needs a title that yields an id, but the given title is empty or slugs to nothing"
         ),
         Some(doctype_scoped_location(type_name)),
-        Some("re-run with a non-empty `--title` (its slug becomes the doc id)".to_string()),
+        Some("re-run with a non-empty `--title` (its slug becomes the doc id)".into()),
     )
 }
 
@@ -1018,9 +1019,7 @@ fn gate_blocked_finding(type_name: &str, gate: &[crate::compose::AllowsCreate]) 
             allowed.join(", ")
         ),
         Some(doctype_scoped_location(type_name)),
-        Some(format!(
-            "to loosen, add `{type_name}` to `allows-create` in project config"
-        )),
+        Some(format!("to loosen, add `{type_name}` to `allows-create` in project config").into()),
     )
 }
 

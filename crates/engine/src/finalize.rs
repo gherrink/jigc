@@ -390,11 +390,14 @@ fn clobber_finding(destination: &str) -> Finding {
              there — refusing to clobber it"
         ),
         Some(file_location(destination)),
-        Some(format!(
-            "a file already occupies `{destination}`: if it is a hand-authored/foreign file, \
+        Some(
+            format!(
+                "a file already occupies `{destination}`: if it is a hand-authored/foreign file, \
              remove or adopt it; if it is another managed doc, retitle this one so it slugs \
              differently or resolve the collision; then re-run `jigc task finalize`"
-        )),
+            )
+            .into(),
+        ),
     )
 }
 
@@ -728,7 +731,7 @@ fn migration_no_replacement_finding(source_path: &str) -> Finding {
         Some(
             "author the canonical doc (e.g. `jigc doc create <doctype> --task <id>`), then \
              re-run `jigc task finalize <id> --approve`"
-                .to_string(),
+                .into(),
         ),
     )
 }
@@ -762,7 +765,7 @@ fn task_missing_finding(unit: Unit, task_dir: &Path) -> Finding {
             task_dir.display()
         ),
         Some(unit.location()),
-        Some("start a task with `jigc start \"<intent>\"`".to_string()),
+        Some("start a task with `jigc start \"<intent>\"`".into()),
     )
 }
 
@@ -866,7 +869,7 @@ fn base_mismatch_finding(unit: Unit, base: &BasePin, head_sha: &str) -> Finding 
         "finalize.base-mismatch",
         message,
         Some(unit.location()),
-        Some(route),
+        Some(route.into()),
     )
 }
 
@@ -895,10 +898,13 @@ fn base_overlap_finding(
             base.short
         ),
         Some(unit.location()),
-        Some(format!(
-            "resolve the overlap on `{paths}` against the new history, or discard the task \
+        Some(
+            format!(
+                "resolve the overlap on `{paths}` against the new history, or discard the task \
              with `jigc task discard`"
-        )),
+            )
+            .into(),
+        ),
     )
 }
 
@@ -912,7 +918,7 @@ fn empty_commit_finding(unit: Unit) -> Finding {
         "finalize.empty-commit",
         "task validated but produced no diff — nothing to finalize",
         Some(unit.location()),
-        Some("make a change, then re-run `jigc task finalize`".to_string()),
+        Some("make a change, then re-run `jigc task finalize`".into()),
     )
 }
 

@@ -864,7 +864,7 @@ fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool) -> Finding {
         "schema-conformance.unadopted-instance",
         message,
         Some(Location::addressed(rel_key, 1, 1)),
-        Some(adoption_route(ty, rel_key, migratable)),
+        Some(adoption_route(ty, rel_key, migratable).into()),
     )
 }
 
@@ -1171,7 +1171,7 @@ fn version_currency_break(stamp: Option<u32>, current: u32, rel_key: &str) -> Fi
         SCHEMA_VERSION_CURRENT_CODE,
         message,
         None,
-        Some(route),
+        Some(route.into()),
     )
 }
 
@@ -1212,7 +1212,7 @@ fn route_schema_conformance(
         ),
     };
     for finding in findings {
-        finding.route = Some(route.clone());
+        finding.route = Some(route.clone().into());
     }
 }
 
@@ -1831,10 +1831,13 @@ pub fn repeatable_populated(schema: &Schema, doc: &Document, exempt: &str) -> Ve
                 section.id
             ),
             Some(Location::addressed(section.id.clone(), 1, 1)),
-            Some(format!(
-                "populate the section, or exempt `{token}` via the \
+            Some(
+                format!(
+                    "populate the section, or exempt `{token}` via the \
                  `validation.schema-conformance.repeatable-populated.exempt` knob"
-            )),
+                )
+                .into(),
+            ),
         ));
     }
     findings
@@ -1921,7 +1924,7 @@ pub fn surplus_sections_absent(schema: &Schema, source: &str) -> Vec<Finding> {
         Some(
             "fold the surplus content into a schema section or remove it — jigc \
              never reads or splices it"
-                .to_string(),
+                .into(),
         ),
     )]
 }

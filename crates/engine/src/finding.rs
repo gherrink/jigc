@@ -372,6 +372,149 @@ impl std::ops::Deref for Findings {
     }
 }
 
+/// An agent-facing repair direction, as [`Finding::route`] carries it — the **internal
+/// route value** of the M43 route fence
+/// ([surface-contract.md](../../../design/surface-contract.md) → The route fence). Three
+/// kinds ([`RouteKind`]): `Mechanical` (a copy-runnable command), `Human` (a direction
+/// only a human judgment can take), `Informational` ("no action needed"). The kind is
+/// **internal**: on the wire a route is still today's flat string — `Serialize` projects
+/// [`Route::as_str`] **byte-identical** to the pre-M43 `Option<String>`, so the pinned
+/// envelope golden does not move, and `Deserialize` maps any string to `Human` (a
+/// reloaded `Mechanical` degrades to `Human` but serializes identically, so nothing is
+/// lost on the wire). The wire tagged-union stays deferred with its recorded trigger
+/// ([decisions-pending.md](../../../implementation/decisions-pending.md) → `route`
+/// tagged-union promotion).
+///
+/// Fields are private, so a route exists only through its constructors: the flat `text`
+/// is composed **once**, from the kind's own parts, and cannot drift from them.
+/// `From<String>` / `From<&str>` map to `Human`, so producer migration is per-producer —
+/// an un-migrated call site keeps compiling (and keeps its exact bytes) via `Into`.
+/// Derefs to `str`, so readers that render the route as a string are unchanged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Route {
+    /// The flat string this route projects to — the wire shape.
+    text: String,
+    /// The kind taxonomy — internal until the wire union is promoted.
+    kind: RouteKind,
+}
+
+/// The route **kind taxonomy** — the act-vs-inform discrimination a driver needs,
+/// recorded internally ahead of the deferred wire promotion
+/// ([surface-contract.md](../../../design/surface-contract.md) → The route fence:
+/// `Mechanical{argv}` subsumes the retired `run-command` sketch). The route's prose
+/// lives on [`Route`]'s `text`, not the variant, so the flat wire projection has one
+/// home for every kind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RouteKind {
+    /// A copy-runnable command: `argv` is the exact argv (leading `jigc`) the flat text
+    /// backticks; `tail` is trailing prose appended **verbatim** after the closing
+    /// backtick — it carries its own leading separator, and is empty for a bare command.
+    /// The CLI-seam parse fence asserts the argv parses against the real CLI at
+    /// construction time; the engine stores it clap-blind.
+    Mechanical { argv: Vec<String>, tail: String },
+    /// A direction only a human can take — and the `Deserialize` / `From<String>`
+    /// default, so an un-migrated producer's route lands here.
+    Human,
+    /// "No action needed" — informs, directs nothing.
+    Informational,
+}
+
+impl Route {
+    /// A copy-runnable command route. The flat text is composed here and only here —
+    /// `` `<argv joined by spaces>` `` + `tail` verbatim — the one composition rule,
+    /// so a mechanical route's text can never drift from its argv.
+    pub fn mechanical<I, S>(argv: I, tail: impl Into<String>) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let argv: Vec<String> = argv.into_iter().map(Into::into).collect();
+        let tail = tail.into();
+        let text = format!("`{}`{}", argv.join(" "), tail);
+        Self {
+            text,
+            kind: RouteKind::Mechanical { argv, tail },
+        }
+    }
+
+    /// A human-judgment direction — the flat text verbatim.
+    pub fn human(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            kind: RouteKind::Human,
+        }
+    }
+
+    /// A "no action needed" notice — the flat text verbatim.
+    pub fn informational(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            kind: RouteKind::Informational,
+        }
+    }
+
+    /// The flat string this route projects to (also reachable via `Deref<Target = str>`).
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    /// The kind taxonomy this route was constructed as.
+    pub fn kind(&self) -> &RouteKind {
+        &self.kind
+    }
+}
+
+impl std::ops::Deref for Route {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.text
+    }
+}
+
+impl std::fmt::Display for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+impl From<String> for Route {
+    /// An un-migrated producer's string route is a [`RouteKind::Human`] direction.
+    fn from(text: String) -> Self {
+        Route::human(text)
+    }
+}
+
+impl From<&str> for Route {
+    /// See [`From<String>`] — the same per-producer migration seam.
+    fn from(text: &str) -> Self {
+        Route::human(text)
+    }
+}
+
+impl Serialize for Route {
+    /// **Byte-identical to the pre-M43 string**: a route serializes as its flat text
+    /// only — the kind never reaches the wire (the tagged union stays deferred), so the
+    /// pinned envelope golden does not move.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.text)
+    }
+}
+
+impl<'de> Deserialize<'de> for Route {
+    /// The wire carries the flat string only, so a reloaded route is [`RouteKind::Human`]
+    /// — a `Mechanical` route degrades to `Human` on a round-trip but serializes
+    /// identically, so the wire bytes are preserved exactly.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Route::human(String::deserialize(deserializer)?))
+    }
+}
+
 /// The one envelope every problem surfaces through: a [`Severity`], a stable
 /// machine `code`, a human-readable `message`, an optional [`Location`], and an
 /// optional `route` directing the agent's next action.
@@ -415,8 +558,9 @@ pub struct Finding {
     /// Where this finding points, when a source coordinate is known.
     pub location: Option<Location>,
     /// An optional repair direction the engine never executes; present on a hard
-    /// block. Projects as `null` when absent (the pinned envelope keeps the key).
-    pub route: Option<String>,
+    /// block. Internally a [`Route`] (kind-carrying, M43); on the wire still the flat
+    /// string. Projects as `null` when absent (the pinned envelope keeps the key).
+    pub route: Option<Route>,
 }
 
 /// Split a dotted `code` into its `(probe, check)` handle on the **first** `.` — the
@@ -532,7 +676,7 @@ impl Finding {
     pub fn block(
         code: impl Into<String>,
         message: impl Into<String>,
-        route: impl Into<String>,
+        route: impl Into<Route>,
     ) -> Self {
         let code = code.into();
         let (probe, check) = split_code(&code);
@@ -558,7 +702,7 @@ impl Finding {
         code: impl Into<String>,
         message: impl Into<String>,
         location: Option<Location>,
-        route: Option<String>,
+        route: Option<Route>,
     ) -> Self {
         let code = code.into();
         let (probe, check) = split_code(&code);
@@ -795,6 +939,98 @@ mod tests {
         assert_eq!(Severity::from_token("warning"), Some(Severity::Warning));
         assert_eq!(Severity::from_token("advisory"), Some(Severity::Advisory));
         assert_eq!(Severity::from_token("nonsense"), None);
+    }
+
+    /// The M43 route fence, first slice: each [`Route`] kind projects to its **flat
+    /// string** — byte-identical to the pre-M43 `Option<String>` wire, so no driver
+    /// sees a shape change (the tagged union stays deferred,
+    /// `implementation/decisions-pending.md` → `route` tagged-union promotion). A
+    /// `Mechanical` route composes as the backticked argv + verbatim tail (empty tail
+    /// adds nothing); `Human` / `Informational` are their text verbatim.
+    #[test]
+    fn route_variants_project_to_their_flat_string() {
+        let mechanical =
+            Route::mechanical(["jigc", "task", "list"], " to see every minted task id");
+        assert_eq!(
+            serde_json::to_value(&mechanical).expect("serializes"),
+            serde_json::json!("`jigc task list` to see every minted task id"),
+            "a mechanical route projects as the backticked argv + verbatim tail",
+        );
+        assert_eq!(
+            serde_json::to_value(Route::mechanical(["jigc", "task", "list"], ""))
+                .expect("serializes"),
+            serde_json::json!("`jigc task list`"),
+            "an empty tail appends nothing",
+        );
+
+        let human = Route::human("order the task that creates `adr:cache` first");
+        assert_eq!(
+            serde_json::to_value(&human).expect("serializes"),
+            serde_json::json!("order the task that creates `adr:cache` first"),
+            "a human route projects as its text verbatim",
+        );
+
+        let informational = Route::informational("no action needed — staying plain is correct");
+        assert_eq!(
+            serde_json::to_value(&informational).expect("serializes"),
+            serde_json::json!("no action needed — staying plain is correct"),
+            "an informational route projects as its text verbatim",
+        );
+    }
+
+    /// The envelope path: a [`Finding`] carrying a `Mechanical` route serializes its
+    /// `route` field as the flat string — on the wire, indistinguishable from a `Human`
+    /// route with the same text (the internal kind is invisible until the wire union is
+    /// promoted).
+    #[test]
+    fn finding_route_field_is_the_flat_string_for_every_kind() {
+        let mechanical = Finding::graded(
+            Severity::Blocking,
+            "finalize.left-out",
+            "the staged set leaves tracked changes out",
+            Some(Location::addressed("adr:new#decision", 1, 1)),
+            Some(Route::mechanical(
+                ["jigc", "task", "validate", "<id>"],
+                " to see what's left",
+            )),
+        );
+        let json = serde_json::to_value(&mechanical).expect("serializes");
+        assert_eq!(
+            json["route"],
+            serde_json::json!("`jigc task validate <id>` to see what's left"),
+            "the envelope's route field is the flat string",
+        );
+
+        let mut as_human = mechanical.clone();
+        as_human.route = Some(Route::human("`jigc task validate <id>` to see what's left"));
+        assert_eq!(
+            serde_json::to_value(&as_human).expect("serializes")["route"],
+            json["route"],
+            "a human route with the same text is byte-identical on the wire",
+        );
+    }
+
+    /// `Deserialize` maps the flat wire string to [`RouteKind::Human`] — a reloaded
+    /// `Mechanical` route **degrades to Human** and re-serializes byte-identical, so
+    /// nothing is lost on the wire (the accepted internal-slice bound; the wire union
+    /// that would preserve the kind stays deferred). `From<String>` is the same seam:
+    /// an un-migrated producer's string route lands as `Human`.
+    #[test]
+    fn route_deserializes_to_human() {
+        let mechanical = Route::mechanical(["jigc", "task", "list"], "");
+        let wire = serde_json::to_string(&mechanical).expect("serializes");
+        let back: Route = serde_json::from_str(&wire).expect("deserializes");
+        assert!(matches!(back.kind(), RouteKind::Human));
+        assert_eq!(back.as_str(), mechanical.as_str());
+        assert_eq!(
+            serde_json::to_string(&back).expect("serializes"),
+            wire,
+            "a reloaded route re-serializes byte-identical",
+        );
+
+        let from_string = Route::from("run the corpus migration".to_string());
+        assert!(matches!(from_string.kind(), RouteKind::Human));
+        assert_eq!(from_string.as_str(), "run the corpus migration");
     }
 
     /// A hard block is a blocking finding that carries a route — not a new type.

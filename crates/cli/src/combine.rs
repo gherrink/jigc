@@ -199,7 +199,7 @@ fn collision_finding(colliding: &[(&String, &BTreeSet<String>)]) -> Finding {
         Some(
             "have the contending sub-tasks touch distinct files, or combine their \
              overlapping changes by hand"
-                .to_string(),
+                .into(),
         ),
     )
 }

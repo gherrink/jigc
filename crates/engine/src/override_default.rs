@@ -232,7 +232,7 @@ fn delta_block(code: &str, target_str: &str, message: String, route: String) -> 
         code,
         message,
         Some(Location::addressed(target_str, 1, 1)),
-        Some(route),
+        Some(route.into()),
     )
 }
 

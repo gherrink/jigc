@@ -463,15 +463,18 @@ pub fn collect_repeatable(
                                 item.title
                             ),
                             Some(Location::addressed(title_address, 1, 1)),
-                            Some(format!(
-                                "start a task (`jigc start \"<intent>\"`), then run \
+                            Some(
+                                format!(
+                                    "start a task (`jigc start \"<intent>\"`), then run \
                                  `jigc doc retitle-item {ty}:{slug}#{}/{} --title \
                                  \"<new title>\"` within it — `retitle-item` needs an \
                                  active task, and the heading retitles with its `{{#id}}` \
                                  anchor frozen (a descriptive title that drops the stale \
                                  symbol also clears this)",
-                                section.id, item.id
-                            )),
+                                    section.id, item.id
+                                )
+                                .into(),
+                            ),
                         ));
                     }
                 }

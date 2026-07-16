@@ -342,7 +342,7 @@ fn near_miss_finding(rel_path: &str, source: &str, home: &Schema) -> Finding {
                         Some(fragment) => Location::addressed(fragment, loc.line, loc.col),
                         None => Location::at(loc.line, loc.col),
                     }),
-                Some(route),
+                Some(route.into()),
             );
             match home_identity(rel_path, home) {
                 Some(identity) => {
@@ -367,7 +367,7 @@ fn near_miss_finding(rel_path: &str, source: &str, home: &Schema) -> Finding {
             "ingest.needs-reconcile",
             format!("`{rel_path}` does not conform to the `{}` schema", home.ty),
             Some(Location::addressed(rel_path, 1, 1)),
-            Some(route),
+            Some(route.into()),
         ),
     }
 }
@@ -417,9 +417,7 @@ fn wrong_location_finding(rel_path: &str, conformant: Option<&Schema>) -> Findin
             "conformant `{ty}` at `{rel_path}` sits outside `{location}` — relocate to adopt (jigc never auto-moves)"
         ),
         Some(Location::addressed(rel_path, 1, 1)),
-        Some(format!(
-            "move {rel_path} into {location}, then re-run `jigc ingest`"
-        )),
+        Some(format!("move {rel_path} into {location}, then re-run `jigc ingest`").into()),
     )
 }
 

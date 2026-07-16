@@ -1344,13 +1344,16 @@ impl TaskArea {
                  task recorded no changelog entry",
             ),
             Some(work_unit_location(id)),
-            Some(format!(
-                "if the change is user-facing, record it — `jigc doc create changelog \
+            Some(
+                format!(
+                    "if the change is user-facing, record it — `jigc doc create changelog \
                  --title Changelog --task {id}`, then `jigc doc add-item \
                  changelog:changelog#unreleased-changes --title <category> --task {id}` \
                  (after a landed commit: `jigc start --workflow record-change \
                  \"<what changed>\"`); if it is not user-facing, no action is needed",
-            )),
+                )
+                .into(),
+            ),
         )))
     }
 
@@ -1937,7 +1940,7 @@ fn nothing_staged_finding(task_id: &str) -> Finding {
         "finalize.nothing-staged",
         "you staged nothing — the working tree has changes but the index is empty",
         Some(work_unit_location(task_id)),
-        Some("`git add` your changes, then re-run `jigc task finalize`".to_string()),
+        Some("`git add` your changes, then re-run `jigc task finalize`".into()),
     )
 }
 
@@ -1969,7 +1972,7 @@ fn stage_failed_finding(task_id: &str, git_error: &str) -> Finding {
         Some(
             "resolve the embedded git failure (e.g. remove a stale `.git/index.lock`), \
              then re-run `jigc task finalize`"
-                .to_string(),
+                .into(),
         ),
     )
 }

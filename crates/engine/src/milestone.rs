@@ -436,7 +436,7 @@ fn store_block(code: &str, message: String, address: &str, route: String) -> Fin
         code,
         message,
         Some(Location::addressed(address, 1, 1)),
-        Some(route),
+        Some(route.into()),
     )
 }
 
@@ -451,7 +451,7 @@ fn no_criteria_finding(spec_addr: &str) -> Finding {
         Some(Location::addressed(spec_addr, 1, 1)),
         Some(
             "add `criteria` items to the spec, or add sub-tasks with `jigc milestone add-task`"
-                .to_string(),
+                .into(),
         ),
     )
 }
@@ -487,7 +487,7 @@ fn unknown_milestone_finding(milestone_id: &str) -> Finding {
             1,
             1,
         )),
-        Some("create it first with `jigc milestone create \"<title>\"`".to_string()),
+        Some("create it first with `jigc milestone create \"<title>\"`".into()),
     )
 }
 
@@ -510,10 +510,7 @@ pub fn stale_base_finding(milestone_id: &str, base_short: &str) -> Finding {
             1,
             1,
         )),
-        Some(
-            "restore the base commit, or re-pin the milestone's base, then re-run the op"
-                .to_string(),
-        ),
+        Some("restore the base commit, or re-pin the milestone's base, then re-run the op".into()),
     )
 }
 
@@ -526,7 +523,7 @@ fn sub_task_collision_finding(milestone_id: &str, sub_id: &str) -> Finding {
         "milestone.sub-task-collision",
         format!("sub-task `{sub_id}` is already in milestone `{milestone_id}`"),
         Some(Location::addressed(format!("task:{sub_id}"), 1, 1)),
-        Some("add the sub-task with a distinct intent".to_string()),
+        Some("add the sub-task with a distinct intent".into()),
     )
 }
 
@@ -733,7 +730,7 @@ pub fn terminal_milestone_finding(milestone_id: &str, status: &str) -> Finding {
         )),
         Some(format!(
             "read the settled record with `jigc doc show milestone-record:{milestone_id}`; new work starts a new milestone (`jigc milestone create \"<title>\"`)"
-        )),
+        ).into()),
     )
 }
 
@@ -769,7 +766,7 @@ pub fn record_exists_finding(milestone_id: &str, status: Option<&str>) -> Findin
             1,
             1,
         )),
-        Some(route),
+        Some(route.into()),
     )
 }
 
@@ -786,7 +783,7 @@ fn read_back_finding(cause: Option<&Finding>) -> Finding {
         "milestone.record-read-back",
         format!("could not re-derive milestone state from its record: {why}"),
         Some(Location::addressed("milestone-record", 1, 1)),
-        Some("reconcile the milestone record, then re-run the milestone op".to_string()),
+        Some("reconcile the milestone record, then re-run the milestone op".into()),
     )
 }
 
@@ -1109,9 +1106,7 @@ fn record_flip_finding(
             1,
             1,
         )),
-        Some(format!(
-            "reconcile the milestone record, then re-run the {op}"
-        )),
+        Some(format!("reconcile the milestone record, then re-run the {op}").into()),
     )
 }
 
@@ -1701,7 +1696,7 @@ fn same_doc_clash_finding(address: &str, staged: &[StagedDoc]) -> Finding {
         Some(Location::addressed(address, 1, 1)),
         Some(
             "have the contending sub-tasks edit distinct docs, or merge their intent by hand"
-                .to_string(),
+                .into(),
         ),
     )
 }
@@ -1730,7 +1725,7 @@ fn cross_group_collision_finding(final_address: &str, contenders: &[(String, Str
         Some(
             "have the contending sub-tasks write distinct docs, or rename one so the \
              suffixed and pre-existing addresses no longer collide"
-                .to_string(),
+                .into(),
         ),
     )
 }
@@ -1746,7 +1741,7 @@ fn missing_schema_finding(milestone_id: &str, sub_id: &str, address: &str) -> Fi
             "colliding staged doc `{address}` in sub-task `{sub_id}` of milestone `{milestone_id}` has an unknown doctype"
         ),
         Some(Location::addressed(address, 1, 1)),
-        Some("re-stage the doc under a known doctype".to_string()),
+        Some("re-stage the doc under a known doctype".into()),
     )
 }
 
@@ -1766,7 +1761,7 @@ fn splice_finding(
             "could not rewrite the self-reference `{relation}` of colliding doc `{address}` in milestone `{milestone_id}`: {err:?}"
         ),
         Some(Location::addressed(address, 1, 1)),
-        Some("re-stage the colliding doc so its self-reference is well-formed".to_string()),
+        Some("re-stage the colliding doc so its self-reference is well-formed".into()),
     )
 }
 
@@ -1782,7 +1777,7 @@ fn missing_provenance_finding(milestone_id: &str, sub_id: &str, address: &str) -
             "staged doc `{address}` in sub-task `{sub_id}` of milestone `{milestone_id}` has no recorded provenance"
         ),
         Some(Location::addressed(address, 1, 1)),
-        Some("re-stage the doc so its provenance is recorded".to_string()),
+        Some("re-stage the doc so its provenance is recorded".into()),
     )
 }
 
@@ -1804,10 +1799,7 @@ fn isolation_finding(milestone_id: &str, sub_id: &str, address: &str) -> Finding
              own sub-area"
         ),
         Some(Location::addressed(address, 1, 1)),
-        Some(
-            "re-stage the doc inside its own sub-task area, or drop the stray attribution"
-                .to_string(),
-        ),
+        Some("re-stage the doc inside its own sub-task area, or drop the stray attribution".into()),
     )
 }
 
@@ -1845,7 +1837,7 @@ fn collision_finding(id: &str) -> Finding {
         Some(Location::addressed(format!("milestone:{id}"), 1, 1)),
         Some(format!(
             "add tasks with `jigc milestone add-task {id} \"<intent>\"` or pick a different title"
-        )),
+        ).into()),
     )
 }
 

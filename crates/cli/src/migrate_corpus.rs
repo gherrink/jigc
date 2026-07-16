@@ -1019,7 +1019,7 @@ fn blocked_finding(code: &str, path: &str, message: String, route: String) -> Fi
         code,
         message,
         Some(Location::addressed(path, 1, 1)),
-        Some(route),
+        Some(route.into()),
     )
 }
 

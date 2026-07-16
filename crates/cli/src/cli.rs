@@ -910,7 +910,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
                 Some(
                     "move it under the current resolved root (re-point `docs-root` to cover \
                      it) or drop it with `jigc unmanage`"
-                        .to_string(),
+                        .into(),
                 ),
             )
         } else {
@@ -929,7 +929,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
                      un-ingested foreign doc, not a tracked strand"
                 ),
                 Some(engine::finding::Location::addressed(rel, 1, 1)),
-                Some(route),
+                Some(route.into()),
             )
         };
         report.findings.push(finding);

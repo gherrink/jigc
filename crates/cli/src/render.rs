@@ -1959,7 +1959,7 @@ mod tests {
             "schema-conformance.surplus-sections-absent",
             "a surplus section is present",
             Some(engine::finding::Location::at(9, 1)),
-            Some("remove the surplus section".to_owned()),
+            Some("remove the surplus section".into()),
         );
 
         let _ = doc_ack(
@@ -2657,7 +2657,7 @@ mod tests {
             "reconciliation.orphaned-docs",
             "file outside the resolved roots",
             None,
-            Some("ingest or move the file".to_string()),
+            Some("ingest or move the file".into()),
         );
         assert!(
             !finding_line(&routed, false).contains("no action needed"),
@@ -3429,7 +3429,7 @@ mod tests {
                 code,
                 format!("a store-scope finding under `{code}`"),
                 Some(Location::addressed("decisions/cache.md", 1, 1)),
-                Some("follow the finding's own route".to_string()),
+                Some("follow the finding's own route".into()),
             )
         };
         let gate_nowhere = ValidationReport::new(
@@ -3548,7 +3548,7 @@ mod tests {
                         "file-state.un-baselined",
                         "committed doc `docs/decisions/cache-it.md` is not yet baselined",
                         Some(Location::addressed("docs/decisions/cache-it.md", 1, 1)),
-                        Some("no action needed".to_string()),
+                        Some("no action needed".into()),
                     ),
                 ],
                 &resolved,
@@ -3648,7 +3648,7 @@ mod tests {
                 engine::validate::SCHEMA_VERSION_CURRENT_CODE,
                 "field `schema-version` is schema-version 1, below the current schema-version 2",
                 None,
-                Some("run `jigc migrate-corpus` to upgrade it".to_string()),
+                Some("run `jigc migrate-corpus` to upgrade it".into()),
             )],
             &resolved,
         );

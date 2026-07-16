@@ -130,7 +130,7 @@ pub fn binary_mismatch_finding(jigc_home: &Path, corpus_stale: bool) -> Option<F
         "store-version.binary-mismatch",
         message,
         None,
-        Some(route),
+        Some(route.into()),
     ))
 }
 

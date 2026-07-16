@@ -1255,7 +1255,7 @@ fn dirty_worktree_finding(milestone_id: &str, dirty: &[(PathBuf, Vec<String>)]) 
             "get the work out of those worktrees first (commit, stash, or copy it), then re-run \
              `jigc milestone discard {milestone_id}` — or re-run with `--force` to abandon the \
              milestone and destroy the uncommitted work"
-        )),
+        ).into()),
     )
 }
 

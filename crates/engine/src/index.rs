@@ -684,9 +684,7 @@ fn dangling_mention(from: &str, mention: &str) -> Finding {
              committed doc (the renamed/deleted-doc case); correct or drop the mention",
         ),
         Some(Location::addressed(format!("{from}#{mention}"), 1, 1)),
-        Some(format!(
-            "correct or drop the `#{mention}` mention in `{from}`"
-        )),
+        Some(format!("correct or drop the `#{mention}` mention in `{from}`").into()),
     )
 }
 
@@ -783,7 +781,7 @@ fn below_inverse_minimum(
              below the inverse-card minimum of {min}",
         ),
         Some(Location::addressed(format!("{target}#{relation}"), 1, 1)),
-        Some(format!("author a `{relation}` referrer of `{target}`")),
+        Some(format!("author a `{relation}` referrer of `{target}`").into()),
     )
 }
 
@@ -850,7 +848,7 @@ fn dangling(edge: &Edge) -> Finding {
             1,
             1,
         )),
-        Some("fix the reference, create the target in this task, or drop the field".to_string()),
+        Some("fix the reference, create the target in this task, or drop the field".into()),
     )
 }
 

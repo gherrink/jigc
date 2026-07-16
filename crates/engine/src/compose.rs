@@ -1548,7 +1548,7 @@ fn anchor_position(ids: &[String], anchor_id: &str) -> Result<usize, Finding> {
             Some(Location::at(1, 1)),
             Some(format!(
                 "remove or re-target the structural-op anchored at `{anchor_id}` with `jigc config` (the anchor it names is not in the include list)"
-            )),
+            ).into()),
         )
     })
 }
@@ -2449,7 +2449,7 @@ pub fn workflow_refs_with_fills(
                 Some(format!(
                     "remove or re-target the slot-fill on `step:{}#{}` with `jigc config fill` (the `{{{{fill:}}}}` point it names is not in the resolved step body)",
                     delta.target.step_id, delta.target.fill_id
-                )),
+                ).into()),
             ));
         }
     }

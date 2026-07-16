@@ -1078,7 +1078,7 @@ mod tests {
             "schema-conformance.required-field-present",
             "required field `status` is missing",
             Some(Location::at(12, 1)),
-            Some("run `jigc doc set-field …`".to_owned()),
+            Some("run `jigc doc set-field …`".into()),
         );
 
         let report = ValidationReport::new(vec![degenerate], &resolved);
@@ -1127,7 +1127,7 @@ mod tests {
                 "schema-conformance.required-slot-present",
                 "required slot is empty",
                 Some(Location::addressed("adr:pick-a-db", line, 1)),
-                Some("run `jigc doc set-slot …`".to_owned()),
+                Some("run `jigc doc set-slot …`".into()),
             )
         };
 

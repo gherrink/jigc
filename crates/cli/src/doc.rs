@@ -228,8 +228,18 @@ pub enum DocCommand {
 /// blocking finding is the same envelope the rest of the CLI uses; only the
 /// happy-path *output* of `doc` stays plain (the staged buffer / new address).
 enum DocFailure {
-    Block(Finding),
+    /// Boxed because [`Finding`] is much larger than the orchestration variant
+    /// (the `large_enum_variant` lint — it grew when `route` became the
+    /// kind-carrying [`engine::finding::Route`]).
+    Block(Box<Finding>),
     Orchestration(anyhow::Error),
+}
+
+impl DocFailure {
+    /// A blocking finding, boxed into the [`DocFailure::Block`] arm.
+    fn block(finding: Finding) -> Self {
+        DocFailure::Block(Box::new(finding))
+    }
 }
 
 impl From<anyhow::Error> for DocFailure {
@@ -313,7 +323,7 @@ impl DocCommand {
                         return Outcome::failure();
                     }
                 };
-                let report = engine::result::ValidationReport::new(vec![finding], &resolved);
+                let report = engine::result::ValidationReport::new(vec![*finding], &resolved);
                 eprint!("{}", render::validation(format, &report));
                 if format != Format::Json {
                     eprintln!();
@@ -352,7 +362,7 @@ fn machine_maintained_guard(doctype: &str, verb: &str, target: &str) -> Result<(
     if doctype != crate::milestone::MILESTONE_RECORD_TYPE {
         return Ok(());
     }
-    Err(DocFailure::Block(Finding::graded(
+    Err(DocFailure::block(Finding::graded(
         Severity::Blocking,
         "write.machine-maintained",
         format!(
@@ -366,7 +376,7 @@ fn machine_maintained_guard(doctype: &str, verb: &str, target: &str) -> Result<(
              `jigc milestone add-task` appends sub-tasks, `jigc task finalize` advances a \
              sub-task's status, `jigc milestone finalize` joins it, and `jigc milestone \
              discard` settles an abandoned one; read it with `jigc doc show`"
-                .to_string(),
+                .into(),
         ),
     )))
 }
@@ -444,7 +454,7 @@ fn apply_field_target(
     // here, the per-leaf verb AND the `doc author` batch (via `apply_leaf`) inherit
     // the reject in one place, killing the or-insert corruption shapes.
     if let Some(finding) = id_from_field_guard(schema, &target, uri, value) {
-        return Err(DocFailure::Block(finding));
+        return Err(DocFailure::block(finding));
     }
     Ok(match target {
         FieldTarget::Section { section, field } => set_field_validated(
@@ -563,7 +573,7 @@ fn repoint_empty_value(failure: DocFailure, addr: &str, value: &str) -> DocFailu
     {
         finding.route = Some(format!(
             "to clear a field, use `jigc doc set-field {addr} --unset` (an empty value is not a clear)"
-        ));
+        ).into());
         return DocFailure::Block(finding);
     }
     failure
@@ -678,7 +688,7 @@ fn id_from_field_guard(
             1,
             1,
         )),
-        Some(route),
+        Some(route.into()),
     ))
 }
 
@@ -855,7 +865,7 @@ fn apply_add_item_target(
     // of the mistake, not deferred to finalize. The batch (`apply_leaf`) inherits this
     // by sharing this path.
     if let Some(finding) = id_from_enum_block(schema, doc_head(uri), &target, title) {
-        return Err(DocFailure::Block(finding));
+        return Err(DocFailure::block(finding));
     }
     Ok(match target {
         AddItemTarget::TopLevel { section } => {
@@ -1182,7 +1192,7 @@ fn run_retitle_item(
                 format!("{section}/{}", items.join("/"))
             }
         };
-        return Err(DocFailure::Block(Finding::graded(
+        return Err(DocFailure::block(Finding::graded(
             Severity::Blocking,
             "write.machine-maintained",
             format!(
@@ -1196,13 +1206,13 @@ fn run_retitle_item(
                 "leave the record to the milestone verbs — `jigc milestone add-task` \
                  appends sub-tasks and `jigc task finalize` advances their status; no \
                  manual retitle applies"
-                    .to_string(),
+                    .into(),
             ),
         )));
     }
 
     if let Some(finding) = retitle_enum_refusal(&schema, &address, &target, addr, title) {
-        return Err(DocFailure::Block(finding));
+        return Err(DocFailure::block(finding));
     }
 
     let path = staged_path(&task.dir, &address, &task.id)?;
@@ -1321,11 +1331,14 @@ fn retitle_enum_refusal(
             1,
             1,
         )),
-        Some(format!(
-            "run `jigc doc remove-item {addr}` then `jigc doc add-item {dest} \
+        Some(
+            format!(
+                "run `jigc doc remove-item {addr}` then `jigc doc add-item {dest} \
              --title \"{title}\"` under the target category, moving the prose in the \
              same motion"
-        )),
+            )
+            .into(),
+        ),
     ))
 }
 
@@ -1770,7 +1783,7 @@ fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
     let read = match format {
         Format::Json => show_json(&jigc_home, &schemas, &address).map(|value| render::json(&value)),
         Format::Agent | Format::Human => {
-            engine::store::read_slice(&jigc_home, &schemas, &address).map_err(DocFailure::Block)
+            engine::store::read_slice(&jigc_home, &schemas, &address).map_err(DocFailure::block)
         }
     };
     match read {
@@ -1850,7 +1863,7 @@ fn reroute_unadopted(
         .list(engine::packsource::PackResourceKind::Workflows)
         .iter()
         .any(|id| *id == engine::packsource::ResourceId::from(format!("migrate-{ty}").as_str()));
-    finding.route = Some(engine::validate::adoption_route(ty, &rel, migratable));
+    finding.route = Some(engine::validate::adoption_route(ty, &rel, migratable).into());
     DocFailure::Block(finding)
 }
 
@@ -1882,12 +1895,12 @@ fn run_schema(cwd: &Path, doctype: &str, format: Format) -> Result<(), DocFailur
     let pack = make_pack()?;
     let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
     let Some(schema) = schemas.get(doctype) else {
-        return Err(DocFailure::Block(Finding::graded(
+        return Err(DocFailure::block(Finding::graded(
             Severity::Blocking,
             "store.unknown-type",
             format!("unknown doctype `{doctype}`"),
             Some(Location::addressed(doctype, 1, 1)),
-            Some("list the available doctypes with `jigc describe`".to_string()),
+            Some("list the available doctypes with `jigc describe`".into()),
         )));
     };
     // The pinned top-level `schema-version`: the doctype's freeze-manifest version
@@ -1924,12 +1937,12 @@ fn run_list(cwd: &Path, doctype: Option<&str>, format: Format) -> Result<(), Doc
     if let Some(ty) = doctype
         && !schemas.contains_key(ty)
     {
-        return Err(DocFailure::Block(Finding::graded(
+        return Err(DocFailure::block(Finding::graded(
             Severity::Blocking,
             "store.unknown-type",
             format!("unknown doctype `{ty}`"),
             Some(Location::addressed(ty, 1, 1)),
-            Some("list the available doctypes with `jigc describe`".to_string()),
+            Some("list the available doctypes with `jigc describe`".into()),
         )));
     }
     // The discriminator's two inputs — the manifest version map (its precondition: it answers
@@ -2297,7 +2310,7 @@ fn show_json(
         ..address.clone()
     };
     let source =
-        engine::store::read_slice(jigc_home, schemas, &whole).map_err(DocFailure::Block)?;
+        engine::store::read_slice(jigc_home, schemas, &whole).map_err(DocFailure::block)?;
     let schema = schemas
         .get(address.r#type.as_str())
         .expect("read_slice resolved the type, so it is in the schema set");
@@ -2306,7 +2319,7 @@ fn show_json(
     match &address.fragment {
         None => Ok(whole_doc_json(schema, &doc, &source, address)),
         Some(fragment) => {
-            engine::store::read_slice(jigc_home, schemas, address).map_err(DocFailure::Block)?;
+            engine::store::read_slice(jigc_home, schemas, address).map_err(DocFailure::block)?;
             Ok(fragment_json(schema, &doc, &source, fragment))
         }
     }
@@ -3051,7 +3064,7 @@ fn staged_path(task_dir: &Path, address: &Address, task_id: &str) -> Result<Path
     if within_area(&area, &dest) {
         Ok(dest)
     } else {
-        Err(DocFailure::Block(barrier_block(task_id, address)))
+        Err(DocFailure::block(barrier_block(task_id, address)))
     }
 }
 
@@ -3106,9 +3119,7 @@ fn barrier_block(task_id: &str, address: &Address) -> Finding {
              within its own sub-area"
         ),
         Some(Location::addressed(&address, 1, 1)),
-        Some(format!(
-            "address the doc with a slug inside task `{task_id}`'s own area"
-        )),
+        Some(format!("address the doc with a slug inside task `{task_id}`'s own area").into()),
     )
 }
 
@@ -3314,12 +3325,11 @@ fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
 fn block(finding: &Finding, verb: &str, subject: &str) -> DocFailure {
     let mut finding = finding.clone();
     if finding.route.is_none() {
-        finding.route = Some(format!(
-            "retry `jigc doc {verb} {subject}` with a conforming value"
-        ));
+        finding.route =
+            Some(format!("retry `jigc doc {verb} {subject}` with a conforming value").into());
     }
     stamp_target(&mut finding, subject);
-    DocFailure::Block(finding)
+    DocFailure::block(finding)
 }
 
 /// Stamp `subject` as the finding's [`Location::address`] — the string its stable
