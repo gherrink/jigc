@@ -16,7 +16,9 @@
 //! **skipped** (skip-on-absent — describe is a menu, not a gate). Enumeration is
 //! over the **unfiltered** definition set (every workflow, not the
 //! `creates-task && selectable` catalog), sorted by id so the projection is
-//! deterministic regardless of input order.
+//! deterministic regardless of input order. A **hidden** workflow's narration
+//! additionally carries its suppression clause — it is hidden from the router
+//! catalog, plus the declared `suppressed.reason` (M43 law 2; [`weave_workflow`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -102,12 +104,10 @@ impl Description {
         let mut workflow_proses: Vec<DefinitionProse> = workflows
             .into_iter()
             .filter_map(|(id, def)| {
-                weave(id, def.description.as_deref(), def.usage.as_deref()).map(|prose| {
-                    DefinitionProse {
-                        kind: DefinitionKind::Workflow,
-                        id: id.to_owned(),
-                        prose,
-                    }
+                weave_workflow(id, def).map(|prose| DefinitionProse {
+                    kind: DefinitionKind::Workflow,
+                    id: id.to_owned(),
+                    prose,
                 })
             })
             .collect();
@@ -152,6 +152,47 @@ impl Description {
     }
 }
 
+/// Weave one workflow's full narration: the authored `description:` / `usage:`
+/// weave ([`weave`]) plus — for a hidden workflow — the **suppression clause**
+/// carrying the declared reason (M43 law 2, `surface-contract.md` → The
+/// suppression fence: "`jigc describe` prints the reason for a hidden workflow,
+/// so `describe` and the orient catalog stop contradicting each other"):
+///
+/// - suppressed + narrated → "`<weave>`. It is hidden from the router catalog:
+///   `<reason>`."
+/// - suppressed with neither authored field → "*id* is hidden from the router
+///   catalog: `<reason>`." — the declared reason counts as an authored field, so
+///   it never vanishes behind the both-absent skip.
+/// - not suppressed → the plain [`weave`], byte-unchanged (inert).
+///
+/// The clause boundary is controlled the same way [`weave`] controls its own:
+/// strip at most one trailing period off each side and rejoin with `. `, so prose
+/// that already ends in a period is unchanged and prose that doesn't is fixed. A
+/// blank reason is treated as absent (the loader rejects one on a shipped pack;
+/// the assembler stays graceful on hand-built defs).
+fn weave_workflow(id: &str, def: &WorkflowDef) -> Option<String> {
+    let base = weave(id, def.description.as_deref(), def.usage.as_deref());
+    let reason = def
+        .suppressed
+        .as_ref()
+        .map(|s| s.reason.trim())
+        .filter(|r| !r.is_empty());
+    match (base, reason) {
+        (Some(base), Some(reason)) => {
+            let base = base.strip_suffix('.').unwrap_or(&base);
+            let reason = reason.strip_suffix('.').unwrap_or(reason);
+            Some(format!(
+                "{base}. It is hidden from the router catalog: {reason}."
+            ))
+        }
+        (None, Some(reason)) => {
+            let reason = reason.strip_suffix('.').unwrap_or(reason);
+            Some(format!("{id} is hidden from the router catalog: {reason}."))
+        }
+        (base, None) => base,
+    }
+}
+
 /// Weave one definition's authored `description:` / `usage:` into a structured
 /// prose sentence (`introspection.md` → The authored fields):
 ///
@@ -185,7 +226,7 @@ fn weave(id: &str, description: Option<&str>, usage: Option<&str>) -> Option<Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compose::{CommandArg, CommandRef};
+    use crate::compose::{CommandArg, CommandRef, Suppressed};
     use std::collections::BTreeMap;
 
     /// A minimal `WorkflowDef` carrying only the two authored fields the weave
@@ -393,6 +434,83 @@ mod tests {
         assert_eq!(
             description.definitions[0].prose,
             "Reach for x when you need the menu."
+        );
+    }
+
+    /// A hidden (`selectable: false`) workflow's narration carries the suppression
+    /// clause — it says the workflow is hidden from the router catalog and names
+    /// the declared reason (M43 T6, `surface-contract.md` → The suppression fence:
+    /// "`jigc describe` prints the reason for a hidden workflow"). The clause joins
+    /// *after* the authored weave, with a controlled sentence boundary.
+    #[test]
+    fn suppressed_workflow_narrates_hidden_from_the_router_catalog_with_reason() {
+        let mut def = workflow(
+            Some("one sub-task of a milestone."),
+            Some("a milestone execution fans out."),
+        );
+        def.selectable = false;
+        def.suppressed = Some(Suppressed {
+            reason: "spawned by fan-out, never picked".to_owned(),
+            expires: "never".to_owned(),
+        });
+        let description =
+            Description::assemble([("sub-task", &def)], std::iter::empty(), &empty_catalog());
+
+        assert_eq!(description.definitions.len(), 1);
+        assert_eq!(
+            description.definitions[0].prose,
+            "sub-task is one sub-task of a milestone. Reach for it when a milestone \
+             execution fans out. It is hidden from the router catalog: spawned by \
+             fan-out, never picked.",
+        );
+    }
+
+    /// The omitting context is inert: a workflow WITHOUT a `suppressed:` block
+    /// narrates exactly the pre-M43 weave — no hidden clause, no changed bytes.
+    #[test]
+    fn unsuppressed_workflow_narration_carries_no_hidden_clause() {
+        let def = workflow(
+            Some("one sub-task of a milestone."),
+            Some("a milestone execution fans out."),
+        );
+        let description =
+            Description::assemble([("sub-task", &def)], std::iter::empty(), &empty_catalog());
+
+        assert_eq!(
+            description.definitions[0].prose,
+            "sub-task is one sub-task of a milestone. Reach for it when a milestone execution fans out.",
+        );
+        assert!(
+            !description.definitions[0]
+                .prose
+                .contains("hidden from the router catalog"),
+            "the hidden clause must not appear on an unsuppressed workflow",
+        );
+    }
+
+    /// A suppressed workflow with NEITHER authored field is still narrated — the
+    /// declared reason is an authored field for skip-on-absent purposes, so law 2's
+    /// "describe prints the reason for a hidden workflow" holds unconditionally
+    /// (the reason must not vanish behind the both-absent skip).
+    #[test]
+    fn suppressed_only_workflow_is_still_narrated() {
+        let mut def = workflow(None, None);
+        def.selectable = false;
+        def.suppressed = Some(Suppressed {
+            reason: "verb-routed — reached only through `jigc migrate`".to_owned(),
+            expires: "never".to_owned(),
+        });
+        let description = Description::assemble(
+            [("migrate-spec", &def)],
+            std::iter::empty(),
+            &empty_catalog(),
+        );
+
+        assert_eq!(description.definitions.len(), 1);
+        assert_eq!(
+            description.definitions[0].prose,
+            "migrate-spec is hidden from the router catalog: verb-routed — reached \
+             only through `jigc migrate`.",
         );
     }
 

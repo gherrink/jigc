@@ -437,6 +437,122 @@ fn describe_breaks_a_paragraph_per_definition() {
     });
 }
 
+/// The `suppressed: {reason, …}` declarations of every hidden (`selectable: false`)
+/// workflow in the two shipped embedded packs, read from the pack sources on disk
+/// (the same files `include_dir!` embeds), keyed `(workflow id, reason)`. Derived,
+/// not hard-coded — the hidden set grows/shrinks with the packs.
+fn shipped_hidden_workflows() -> Vec<(String, String)> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let pack_dirs = [
+        manifest.join("pack").join("workflows"),
+        manifest
+            .join("..")
+            .join("..")
+            .join("packs")
+            .join("methodology")
+            .join("workflows"),
+    ];
+    let mut hidden = Vec::new();
+    for dir in pack_dirs {
+        for entry in fs::read_dir(&dir).expect("read pack workflows dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+                continue;
+            }
+            let text = fs::read_to_string(&path).expect("read workflow yaml");
+            let front_matter = text
+                .strip_prefix("---\n")
+                .and_then(|rest| rest.split_once("\n---\n"))
+                .map(|(fm, _)| fm)
+                .expect("workflow file carries front-matter");
+            let value: serde_yaml_ng::Value =
+                serde_yaml_ng::from_str(front_matter).expect("front-matter parses as YAML");
+            if value["selectable"].as_bool() != Some(false) {
+                continue;
+            }
+            let reason = value["suppressed"]["reason"]
+                .as_str()
+                .expect("a hidden shipped workflow carries suppressed.reason (the pack-load fence)")
+                .to_owned();
+            let id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .expect("workflow id from file stem")
+                .to_owned();
+            hidden.push((id, reason));
+        }
+    }
+    hidden
+}
+
+#[test]
+fn describe_projects_the_suppression_reason_for_hidden_workflows() {
+    // M43 Increment 4, T6 — `jigc describe` prints the suppressed reason for a
+    // hidden workflow, so describe (the unfiltered menu) and the orient catalog
+    // (which filters `selectable: false` out) stop contradicting each other
+    // (`design/surface-contract.md` → The suppression fence, last sentence).
+    // Driven over the EMITTED bytes of the real binary against the real shipped
+    // hidden set, derived from the pack sources — every hidden workflow's entry
+    // must say it is hidden from the router catalog and carry its declared reason.
+    let repo = TempDir::new("suppression");
+    set_up_repo(repo.path());
+    // Compose the embedded methodology pack too (the in-binary marker), so the
+    // narrated menu covers BOTH shipped packs' hidden sets — the derivation below
+    // walks both pack sources.
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write the compose marker");
+    let home = TempDir::new("home");
+
+    let hidden = shipped_hidden_workflows();
+    assert!(
+        hidden.iter().any(|(id, _)| id == "sub-task"),
+        "the shipped hidden set must include sub-task (the fan-out unit); got {hidden:?}",
+    );
+
+    let json = describe_json(repo.path(), home.path());
+    let definitions = json["definitions"]
+        .as_array()
+        .expect("the projection carries a definitions array");
+    let out = describe_stdout(repo.path(), home.path());
+
+    for (id, reason) in &hidden {
+        // The entry: the hidden workflow's own narration carries the clause + the
+        // verbatim declared reason (the weave strips at most one trailing period).
+        let prose = definitions
+            .iter()
+            .find(|d| d["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("hidden workflow `{id}` must be narrated by describe"))["prose"]
+            .as_str()
+            .expect("a definition prose");
+        let reason = reason.trim().trim_end_matches('.');
+        assert!(
+            prose.contains("hidden from the router catalog"),
+            "`{id}`'s entry must say it is hidden from the router catalog; got: {prose:?}",
+        );
+        assert!(
+            prose.contains(reason),
+            "`{id}`'s entry must carry its declared suppression reason; got: {prose:?}",
+        );
+        // The emitted prose surface carries the same narration (the bytes an agent
+        // reads), not just the JSON projection.
+        assert!(
+            out.contains(reason),
+            "the emitted prose must carry `{id}`'s suppression reason; got:\n{out}",
+        );
+    }
+
+    // The new clause must not break the non-contractual posture — the projection
+    // stays hostile-to-parsing with the suppression reasons woven in.
+    assert_non_contractual_prose(&out).unwrap_or_else(|why| {
+        panic!(
+            "the projection with suppression reasons must stay non-contractual prose: {why}\n--- output ---\n{out}"
+        )
+    });
+}
+
 #[test]
 fn predicate_fails_on_a_structured_catalog_and_on_json() {
     // The OTHER direction — the predicate must REJECT a parseable rendering of the

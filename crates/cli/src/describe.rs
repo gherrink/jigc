@@ -215,6 +215,51 @@ mod tests {
         );
     }
 
+    /// M43 T6 — describe over a pack with a `selectable: false` workflow prints
+    /// that workflow's suppressed reason in its entry (`surface-contract.md` →
+    /// The suppression fence, last sentence). A project shadow hides
+    /// `single-task` with a declared `suppressed:` block; the projection's entry
+    /// must say it is hidden from the router catalog and carry the reason —
+    /// while an unsuppressed definition's narration stays clause-free (the
+    /// omitting context is inert).
+    #[test]
+    fn describe_prints_the_suppressed_reason_for_a_hidden_workflow() {
+        let repo = TempDir::new("suppressed");
+        let project_config = set_up_repo(repo.path());
+
+        let reason = "held back while the shadow trial runs";
+        let workflows = project_config.join("workflows");
+        fs::create_dir_all(&workflows).expect("mk workflows shadow dir");
+        fs::write(
+            workflows.join("single-task.yaml"),
+            format!(
+                "---\nwhen: a scoped change\ndescription: An end-to-end scoped change.\nusage: the work is one coherent change.\ncreates-task: true\nselectable: false\nsuppressed:\n  reason: {reason}\n  expires: the shadow trial concludes\n---\n{{{{ include: step:noop }}}}\n"
+            ),
+        )
+        .expect("write hidden workflow shadow");
+
+        let description = run(repo.path()).expect("describe runs over the hidden shadow");
+
+        let single_task = prose_for(&description, "single-task")
+            .expect("the hidden workflow is still narrated (describe is the unfiltered set)");
+        assert!(
+            single_task.contains("hidden from the router catalog"),
+            "the entry must say the workflow is hidden from the router catalog; got: {single_task:?}"
+        );
+        assert!(
+            single_task.contains(reason),
+            "the entry must carry the declared suppression reason; got: {single_task:?}"
+        );
+
+        // The omitting context: an unsuppressed pack definition narrates with NO
+        // hidden clause — the projection change is scoped to suppressed workflows.
+        let adr = prose_for(&description, "adr").expect("adr is narrated from the pack");
+        assert!(
+            !adr.contains("hidden from the router catalog"),
+            "an unsuppressed definition must not gain the hidden clause; got: {adr:?}"
+        );
+    }
+
     /// A both-fields-absent project shadow leaves that definition NOT narrated:
     /// skip-on-absent holds THROUGH the cascade (the resolved definition is what the
     /// assembler reads, so a shadow that strips both authored fields removes the
