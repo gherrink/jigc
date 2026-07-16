@@ -295,10 +295,16 @@ fn build_v2(dir: &Path) -> PathBuf {
          {{ cli.set-commit-summary }}\n<<author: {{ task.commit#summary }}>>\n",
     )
     .expect("write v2 implement");
-    // finalize: changed body (the fork's upstream moved on).
+    // finalize: changed body (the fork's upstream moved on). The
+    // `states-constraints:` declaration is kept — a manifest-shipping pack must
+    // stay stated-at-fence-conformant (the M43 pack-load fence), and this test's
+    // subject is the changed BODY, not a withdrawn declarer.
     fs::write(
         steps.join("finalize.yaml"),
-        "Validate and commit the task as one logical commit (v2 rewrite):\n\n\
+        "---\n\
+         states-constraints: [finalize.left-out, finalize.nothing-staged, finalize.carried-staged]\n\
+         ---\n\
+         Validate and commit the task as one logical commit (v2 rewrite):\n\n\
          {{ cli.finalize-task }}\n",
     )
     .expect("write v2 finalize");

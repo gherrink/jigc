@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: arch-doc, as: arch-doc}]
 ---
 {{ include: step:author-migration-arch-doc }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

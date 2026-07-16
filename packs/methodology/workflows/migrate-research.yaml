@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: research, as: research}]
 ---
 {{ include: step:author-migration-research }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

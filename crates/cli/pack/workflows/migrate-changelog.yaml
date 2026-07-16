@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: changelog, as: changelog}]
 ---
 {{ include: step:author-migration }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

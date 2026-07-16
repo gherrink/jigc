@@ -1,0 +1,14 @@
+---
+states-constraints: [finalize.promote-clobber]
+---
+Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
+it renders the foreign source against the canonical rewrite and holds (exit 4),
+because the CLI guarantees structure, never content-faithfulness. Review that
+fidelity diff, then re-run the same finalize with `--approve` to write the
+canonical doc, RETIRE the foreign original, and commit — approval is the one
+destructive gate. If the promote destination is already occupied by a committed
+file that is not the foreign original being rewritten in place, finalize blocks
+rather than clobbering it: retitle the doc so it slugs differently, or resolve
+the collision, then finalize again.
+
+{{ include: step:finalize }}

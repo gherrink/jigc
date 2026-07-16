@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: decisions-log, as: log}]
 ---
 {{ include: step:author-migration-decisions-log }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

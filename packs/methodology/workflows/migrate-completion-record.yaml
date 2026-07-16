@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: completion-record, as: record}]
 ---
 {{ include: step:author-migration-completion-record }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

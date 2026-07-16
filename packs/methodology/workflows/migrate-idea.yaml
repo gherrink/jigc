@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: idea, as: idea}]
 ---
 {{ include: step:author-migration-idea }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

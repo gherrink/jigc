@@ -192,7 +192,11 @@ explain what changes (nothing appears if it supersedes none).
 
 Validate and commit the task as one logical commit. Make sure your code edits
 are staged (`git add`) first — finalize commits only the staged set plus the
-docs it manages:
+docs it manages; unstaged edits and untracked files are left out, and with
+nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+this task was minted makes finalize refuse too (one blocking finding per
+carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
 
 Run: `jigc task finalize add-rate-limiter`
 create-gates: adr, changelog

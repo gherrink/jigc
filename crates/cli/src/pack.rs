@@ -339,6 +339,80 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The **ambush-class finding-code set** (M43 law 3 — `design/surface-contract.md`
+/// → The stated-at fence, structural tier): the codes whose binding contracts are
+/// irreducibly prose, so the statement cannot be seam-generated from a code-owned
+/// constant — a soliciting step must carry it and declare so
+/// (`states-constraints:` front-matter). Code-side beside its assert, **not**
+/// pack config: the obligation is jigc's, not the pack author's. Membership
+/// (verified against the real producers): `finalize.promote-clobber` (the
+/// `--approve`/clobber/retire contract, engine `finalize.rs`) · the
+/// staging-contract pair `finalize.left-out` (engine `finding.rs`) +
+/// `finalize.nothing-staged` (the CLI index-empty block) · the M43
+/// `finalize.carried-staged` carryover gate.
+const AMBUSH_CLASS_CODES: [&str; 4] = [
+    "finalize.promote-clobber",
+    "finalize.left-out",
+    "finalize.nothing-staged",
+    "finalize.carried-staged",
+];
+
+/// **The stated-at fence (law 3, structural tier)** — `design/surface-contract.md`
+/// → The stated-at fence: every member of [`AMBUSH_CLASS_CODES`] must have at
+/// least one declarer among the pack's steps' `states-constraints:` front-matter,
+/// so each contract is stated where it binds instead of first appearing in its
+/// block message (an ambush even when the block is correct).
+///
+/// Scope mirrors [`assert_workflow_front_matter`]: **manifest-shipping
+/// constituents, each checked in isolation** — every shipped pack loaded *alone*
+/// (the methodology-alone dogfood path) must carry every declarer itself; a
+/// manifest-less seeded / project-local pack stays on skip-on-absent. Both sides
+/// are structural (the codes are enumerable since the M42 key work; the
+/// declaration is YAML) — no prose-matching. Honest bound: this proves the
+/// *obligation* is carried, never that the prose is good (the review checklist's
+/// job).
+fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
+    for owner in pack.origin_packs(PackResourceKind::Config, &manifest_id) {
+        let mut declared = std::collections::BTreeSet::new();
+        for id in owner.list(PackResourceKind::Steps) {
+            let bytes = owner
+                .read(PackResourceKind::Steps, &id)
+                .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
+            let def = engine::compose::load_step_def(id.as_str(), &bytes).map_err(|finding| {
+                anyhow::anyhow!(
+                    "pack-load step-front-matter sweep failed on `{}`: {}",
+                    id.as_str(),
+                    finding.message,
+                )
+            })?;
+            declared.extend(def.states_constraints);
+        }
+        let undeclared: Vec<&str> = AMBUSH_CLASS_CODES
+            .into_iter()
+            .filter(|code| !declared.contains(*code))
+            .collect();
+        if !undeclared.is_empty() {
+            anyhow::bail!(
+                "pack-load stated-at fence failed: no step of this pack declares \
+                 `states-constraints:` for the ambush-class code(s) {} — the contract \
+                 would first appear in its block message, an ambush \
+                 (design/surface-contract.md → The stated-at fence)\n\
+                 route: state each contract in the step that solicits the write it gates \
+                 and declare its code in that step's `states-constraints:` front-matter",
+                undeclared
+                    .iter()
+                    .map(|code| format!("`{code}`"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The `when:` catalog line's char cap (the catalog shape fence's length half).
 /// The line interpolates mid-sentence into the router catalog beside its
 /// neighbours, so it must stay a short situation phrase
@@ -602,22 +676,27 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     let pack = make_pack_from_marker(pack_dir, listed, compose_methodology)?;
     assert_schema_freeze(pack.as_ref())?;
 
-    // The eager workflow-front-matter sweep (M43, `design/surface-contract.md`
-    // → The fences): memoized for the two embedded compositions (their bytes
-    // cannot change within a process; `make_pack` has ~38 call sites), recomputed
-    // whenever a filesystem pack is in the set (its tree is live-mutable).
-    // `anyhow::Error` is not `Clone`, so the cache carries the rendered message.
+    // The eager front-matter sweeps (M43, `design/surface-contract.md` → The
+    // fences): the workflow sweep (suppression + catalog shape) and the step
+    // sweep (the stated-at fence). Memoized for the two embedded compositions
+    // (their bytes cannot change within a process; `make_pack` has ~38 call
+    // sites), recomputed whenever a filesystem pack is in the set (its tree is
+    // live-mutable). `anyhow::Error` is not `Clone`, so the cache carries the
+    // rendered message.
     if embedded_only {
         static EMBEDDED_SWEEPS: [std::sync::OnceLock<Result<(), String>>; 2] =
             [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
         EMBEDDED_SWEEPS[usize::from(compose_methodology)]
             .get_or_init(|| {
-                assert_workflow_front_matter(pack.as_ref()).map_err(|err| format!("{err:#}"))
+                assert_workflow_front_matter(pack.as_ref())
+                    .and_then(|()| assert_stated_at(pack.as_ref()))
+                    .map_err(|err| format!("{err:#}"))
             })
             .clone()
             .map_err(|msg| anyhow::anyhow!(msg))?;
     } else {
         assert_workflow_front_matter(pack.as_ref())?;
+        assert_stated_at(pack.as_ref())?;
     }
     Ok(pack)
 }
@@ -1351,7 +1430,10 @@ mod tests {
     /// `author-migration-arch-doc` (the M26 `migrate-arch-doc` workflow's
     /// foreign-source-driven, arch-doc-shaped migration step — the `overview` slot +
     /// repeatable `components` items carrying a `description` slot and an optional
-    /// `implemented-by` code anchor, plus the bracketed in-store `cites` edge).
+    /// `implemented-by` code anchor, plus the bracketed in-store `cites` edge), plus
+    /// `migration-finalize` (the M43 migration-finalize solicit — the
+    /// `--approve`/clobber/retire contract stated above its `step:finalize` include,
+    /// `states-constraints`-declared for the stated-at fence).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -1377,6 +1459,7 @@ mod tests {
                 ResourceId::from("join-tasks"),
                 ResourceId::from("locate"),
                 ResourceId::from("locate-from-spec"),
+                ResourceId::from("migration-finalize"),
                 ResourceId::from("milestone-finalize"),
                 ResourceId::from("present-catalog"),
                 ResourceId::from("project-finalize"),
@@ -1474,9 +1557,16 @@ mod tests {
         let pack = EmbeddedPack::new();
         let body = read_text(&pack, PackResourceKind::Steps, "finalize");
         insta::assert_snapshot!(body, @"
+        ---
+        states-constraints: [finalize.left-out, finalize.nothing-staged, finalize.carried-staged]
+        ---
         Validate and commit the task as one logical commit. Make sure your code edits
         are staged (`git add`) first — finalize commits only the staged set plus the
-        docs it manages:
+        docs it manages; unstaged edits and untracked files are left out, and with
+        nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+        this task was minted makes finalize refuse too (one blocking finding per
+        carried path): unstage it, or pass `--carry-staged` to declare the carryover
+        deliberate.
 
         {{ cli.finalize-task }}
         ");

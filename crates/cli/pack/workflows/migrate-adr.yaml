@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: adr, as: decision}]
 ---
 {{ include: step:author-migration-adr }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

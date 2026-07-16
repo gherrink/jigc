@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: vision, as: vision}]
 ---
 {{ include: step:author-migration-vision }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

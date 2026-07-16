@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: deferral-ledger, as: ledger}]
 ---
 {{ include: step:author-migration-deferral-ledger }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

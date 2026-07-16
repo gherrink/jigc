@@ -10,4 +10,4 @@ suppressed:
 allows-create: [{type: spec, as: spec}]
 ---
 {{ include: step:author-migration-spec }}
-{{ include: step:finalize }}
+{{ include: step:migration-finalize }}

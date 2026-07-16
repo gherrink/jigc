@@ -1,7 +1,13 @@
+---
+states-constraints: [finalize.left-out, finalize.nothing-staged, finalize.carried-staged]
+---
 Land the change as exactly one logical commit. finalize commits the git index —
 `git add` your code edits before you finalize, because it commits only what you
 have staged, plus the docs it manages. Unstaged edits and untracked files are
-left out of the commit.
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
 
 finalize renders the commit doc; it does not fill it, so set its header and prose
 first.

@@ -447,7 +447,11 @@ explain what changes (nothing appears if it supersedes none).
 
 Validate and commit the task as one logical commit. Make sure your code edits
 are staged (`git add`) first — finalize commits only the staged set plus the
-docs it manages:
+docs it manages; unstaged edits and untracked files are left out, and with
+nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+this task was minted makes finalize refuse too (one blocking finding per
+carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
 
 Run: `jigc task finalize add-a-thing`
 create-gates: adr, changelog
@@ -497,7 +501,10 @@ that merely compiles in your head.
 Land the change as exactly one logical commit. finalize commits the git index —
 `git add` your code edits before you finalize, because it commits only what you
 have staged, plus the docs it manages. Unstaged edits and untracked files are
-left out of the commit.
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
 
 finalize renders the commit doc; it does not fill it, so set its header and prose
 first.
