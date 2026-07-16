@@ -151,7 +151,9 @@ The full generated bootstrap (`crates/cli/src/adapter.rs:1024` + `:1032`) says, 
 
 ---
 
-# The candidate rc.7 fix scope (fix-shaped findings, pending the human's charter call)
+# The candidate rc.7 fix scope
+
+*(**Chartered 2026-07-16 as M43 — the surface-contract wave**: the items below land as instances of three named laws — nothing lies · nothing hides · nothing ambushes — plus a surface style guide for the judgment tier; scope + the six Settle forks in [decisions-pending.md](../../../implementation/decisions-pending.md) → The rc.7 wave; [DECISIONS.md](../../../DECISIONS.md) → 2026-07-16.)*
 
 Consolidated from both parts + the log analysis; each is mechanical against a verified defect or a one-line-wording gap — none engages an invariant without the noted record:
 
