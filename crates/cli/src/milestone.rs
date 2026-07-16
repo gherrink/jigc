@@ -131,6 +131,12 @@ pub enum MilestoneCommand {
     Finalize {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
+        /// Declare the pre-milestone staged index state deliberate: proceed past the
+        /// carryover refuse (`finalize.carried-staged`). The aggregate commit is built
+        /// from the sub-task worktrees, so the carried entries never ride it — they
+        /// stay staged across the boundary either way. Inert when nothing is carried.
+        #[arg(long)]
+        carry_staged: bool,
     },
     /// Abandon the milestone: settle its committed record to the `discarded` terminal
     /// (a genuinely **joined** sub-task stays `joined` — it really did land) in one
@@ -162,8 +168,12 @@ impl MilestoneCommand {
         // `finalize` is the commit boundary: it materializes the join and drives the
         // shared finalize-plan executor (git I/O), returning a process exit code rather
         // than a one-line summary — so it, too, has its own dispatch arm.
-        if let MilestoneCommand::Finalize { milestone_id } = self {
-            return dispatch_finalize(cwd, format, &milestone_id);
+        if let MilestoneCommand::Finalize {
+            milestone_id,
+            carry_staged,
+        } = self
+        {
+            return dispatch_finalize(cwd, format, &milestone_id, carry_staged);
         }
         // `execute` composes a workflow and emits the composed view (not a one-line
         // summary), so — like `join`/`finalize` — it has its own dispatch arm.
@@ -1446,8 +1456,13 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
 /// same-doc clash, an unknown milestone) or an orchestration error routes to stderr and
 /// exits non-zero **before** any commit. A landed commit prints a summary and exits 0.
 /// `design/finalize.md` → `fan-out` finalize (single-commit form).
-fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
-    match run_milestone_finalize(cwd, format, milestone_id) {
+fn dispatch_finalize(
+    cwd: &Path,
+    format: Format,
+    milestone_id: &str,
+    carry_staged: bool,
+) -> Outcome {
+    match run_milestone_finalize(cwd, format, milestone_id, carry_staged) {
         Ok(code) => code,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
@@ -1476,7 +1491,12 @@ fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Outcome 
 /// area; (4) the **shared** [`crate::task::execute_finalize_plan`] executor promotes, stages
 /// (incl. the flipped record), and commits in **one** boundary, removing the milestone area on
 /// success. The engine performs no git; the CLI reads HEAD and locates `.jigc/`.
-fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Result<Outcome> {
+fn run_milestone_finalize(
+    cwd: &Path,
+    format: Format,
+    milestone_id: &str,
+    carry_staged: bool,
+) -> Result<Outcome> {
     // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); HEAD + the
     // git commit/stage stay on the worktree `repo_root` (M31 Inc 2 / WF3). The promote
     // transaction (`try_execute_finalize_plan` / `execute_finalize_plan`) is kept on
@@ -1607,6 +1627,37 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         Ok(plan) => plan,
         Err(findings) => return blocked(&jigc_home, format, findings),
     };
+
+    // M43 — the carryover gate's milestone arm (`design/surface-contract.md` → The
+    // carryover gate): `milestone create` was the shared checkout's aggregate-index
+    // door, and this is where its snapshot is consumed — refuse to finalize over
+    // index state staged BEFORE the milestone existed, one blocking routed finding
+    // per carried path. Honest-wording bound (law 1): both aggregate channels below
+    // (Combine, ChainPerSubtask) build from throwaway indexes / dedicated worktrees
+    // over targeted pathspecs and land via `--ff-only`, so a live-index foreign
+    // entry structurally CANNOT ride the milestone commit — the refuse is the
+    // declare-at-the-boundary rule, not a leak fix, and the finding says the entry
+    // STAYS STAGED across the boundary (`CarryoverBoundary::Milestone`).
+    // `--carry-staged` declares it deliberate; a milestone created pre-M43 has no
+    // snapshot and fails open (the declared bound). No retire exemption — only a
+    // migration task retires a source. Placed after the planner (its validation /
+    // base-mismatch / empty-commit blocks keep precedence, the task-finalize
+    // precedent) and before either commit channel; a block here drops the
+    // `RecordFlipGuard`, restoring the pre-flip record bytes.
+    if !carry_staged {
+        let snapshot = engine::state::read_staged_snapshot(&dir).with_context(|| {
+            format!("could not read the staged snapshot for milestone `{milestone_id}`")
+        })?;
+        let carried = engine::finalize::decide_carryover(
+            snapshot.as_ref(),
+            &crate::task::git_staged_snapshot(&repo_root)?,
+            None,
+            engine::finalize::CarryoverBoundary::Milestone,
+        );
+        if !carried.is_empty() {
+            return blocked(&jigc_home, format, carried);
+        }
+    }
 
     // `squash: false` — lay down the per-sub-task commits in id order now (the planner's
     // preflight has validated base == HEAD against the pre-boundary HEAD; these commits then

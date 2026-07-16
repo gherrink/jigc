@@ -36,7 +36,7 @@ use engine::address::Address;
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::file_state::{self, FileStateRecord};
 use engine::finalize::{
-    Promotion, RepinDecision, decide_base_repin, decide_carryover, plan_finalize,
+    CarryoverBoundary, Promotion, RepinDecision, decide_base_repin, decide_carryover, plan_finalize,
 };
 use engine::finding::{Finding, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
@@ -950,6 +950,7 @@ impl TaskArea {
                 snapshot.as_ref(),
                 &git_staged_snapshot(&self.repo_root)?,
                 retire_exempt.as_deref(),
+                CarryoverBoundary::Task,
             );
             if !carried.is_empty() {
                 return self.blocked(carried, format);

@@ -2038,6 +2038,30 @@ mod cli_parse {
             Command::Milestone {
                 verb: MilestoneCommand::Finalize {
                     milestone_id: "cache-rework".to_string(),
+                    carry_staged: false,
+                },
+            }
+        );
+    }
+
+    /// The carryover override is opt-in (M43 T4): `--carry-staged` defaults false —
+    /// pre-milestone staged state must be *declared*, never implied.
+    #[test]
+    fn milestone_finalize_parses_carry_staged() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "milestone",
+            "finalize",
+            "cache-rework",
+            "--carry-staged",
+        ])
+        .expect("`jigc milestone finalize <id> --carry-staged` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::Finalize {
+                    milestone_id: "cache-rework".to_string(),
+                    carry_staged: true,
                 },
             }
         );

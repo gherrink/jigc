@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-16 — M43 Inc 2 T4: the milestone arm — two elaboration pins
+
+**(1) The finding's message is boundary-discriminated (`CarryoverBoundary::Task`/`Milestone`), the route shared:** the planner-verified honest-wording bound (law 1) — both milestone aggregate channels build from throwaway indexes/dedicated worktrees over targeted pathspecs and land `--ff-only`, so a live-index foreign entry structurally *cannot* ride the milestone commit — makes the task wording ("silently ride this task's commit") a lie on the milestone arm; the milestone message says the entry **stays staged across the boundary** (the refuse is the declare-at-the-boundary rule, not a leak fix), while T2's verb-neutral `Route::human` serves both arms unchanged as pinned. **(2) Gate placement mirrors the task arm:** after `plan_milestone_finalize` (validation/base-mismatch/empty-commit blocks keep precedence) and before either commit channel — a block there drops the `RecordFlipGuard`, restoring the pre-flip record. No retire exemption on the milestone arm (only a migration task retires a source); the create-time snapshot from the milestone area is the one consumed.
+
 ## 2026-07-16 — M43 Inc 2 T3: the carryover refuse precedes the migration review gate — one elaboration pin
 
 On the committing path the refuse sits **after the `--dry-run` branch** (the forecast must render — planner-pinned) and **before the `is_migration && !approve` review hold**: a blocking refusal precedes the human-fidelity hold, exactly as `plan_finalize`'s validation blocks already do (the review gate has never rendered over a blocked plan). Observable composition on a migration finalize with a foreign carryover: `--approve` alone → exit 3 (`finalize.carried-staged`), `--carry-staged` alone → exit 4 (review pending), both → lands — the two declarations independent in both directions, per the surface-contract pin.

@@ -491,12 +491,29 @@ pub fn decide_base_repin(
     )])
 }
 
+/// Which finalize boundary the carryover refuse speaks for. The **wording** differs
+/// because the *facts* differ (surface-contract law 1 — say the truth): a task
+/// finalize is a whole-index commit a carried entry WOULD silently ride; a milestone
+/// finalize builds its aggregate from the sub-task worktrees over targeted pathspecs
+/// (throwaway indexes, dedicated worktrees, an `--ff-only` land), so a live-index
+/// entry structurally CANNOT ride it — it **stays staged across the boundary**, and
+/// the refuse is the declare-at-the-boundary rule, not a leak fix. The decision
+/// itself is identical; only the finding's message/route change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CarryoverBoundary {
+    /// `jigc task finalize` — the whole-index commit.
+    Task,
+    /// `jigc milestone finalize` — the aggregate commit built from the sub-task
+    /// worktrees; a carried entry stays staged, never committed here.
+    Milestone,
+}
+
 /// The **carryover decision** at the finalize commit boundary
 /// (`design/surface-contract.md` → The carryover gate; M43): which currently-staged
-/// paths were *staged before this task existed* — one blocking routed [`Finding`] per
-/// carried path (`finalize.carried-staged`, keyed at the **file path** — the
+/// paths were *staged before this work unit existed* — one blocking routed [`Finding`]
+/// per carried path (`finalize.carried-staged`, keyed at the **file path** — the
 /// `migrate-corpus.*` one-refusal-per-candidate precedent), so a foreign pre-staged
-/// change (add, modify, **or delete**) cannot silently ride the task's commit.
+/// change (add, modify, **or delete**) never crosses the boundary undeclared.
 ///
 /// A pure decision over CLI-supplied git facts (the [`decide_base_repin`] mold — the
 /// engine never shells out): `snapshot` is the pre-task staged state the task-minting
@@ -508,7 +525,8 @@ pub fn decide_base_repin(
 /// `retire_exempt` is a migration task's recorded retire pathspec
 /// ([`crate::state::read_source_path`]) — that deletion is the task's own, never a
 /// carryover. A **`None` snapshot yields no findings** — the declared fail-open bound
-/// (a task minted pre-M43 finalizes as today).
+/// (a task minted pre-M43 finalizes as today). `boundary` selects the honest wording
+/// for the refusing verb ([`CarryoverBoundary`]).
 ///
 /// Findings come out **sorted by path** across both halves (one union `BTreeSet`) —
 /// byte-identical whatever order the sets were built in (Validation hardening #7).
@@ -519,6 +537,7 @@ pub fn decide_carryover(
     snapshot: Option<&StagedSnapshot>,
     current: &StagedSnapshot,
     retire_exempt: Option<&str>,
+    boundary: CarryoverBoundary,
 ) -> Vec<Finding> {
     // Missing snapshot ⇒ fail-open: a task minted before the gate existed finalizes
     // as today (the declared bound).
@@ -547,38 +566,59 @@ pub fn decide_carryover(
     carried
         .into_iter()
         .filter(|(path, _)| exempt.as_deref() != Some(Path::new(path)))
-        .map(|(path, is_deletion)| carried_staged_finding(path, is_deletion))
+        .map(|(path, is_deletion)| carried_staged_finding(path, is_deletion, boundary))
         .collect()
 }
 
 /// One blocking `finalize.carried-staged` finding for one carried path — a staged
-/// change (`is_deletion: false`) or a staged deletion (`true`) that predates the task.
-/// Its subject is the **file** the commit would silently absorb, so it
+/// change (`is_deletion: false`) or a staged deletion (`true`) that predates the work
+/// unit. Its subject is the **file** staged before the boundary's unit existed, so it
 /// [keys at its path](file_location) (the file-path target form — mid-carry the path
 /// may be foreign, with no managed identity). The route names both exits: unstage it,
 /// or re-run finalize with `--carry-staged` to declare the carry-over deliberate (the
 /// `--approve` mold — undecidable intent converted to a declared one). Which exit is
-/// right is a judgment call, so the route is [`Route::human`].
-fn carried_staged_finding(path: &str, is_deletion: bool) -> Finding {
+/// right is a judgment call, so the route is [`Route::human`]. The message states the
+/// boundary's real consequence ([`CarryoverBoundary`], law 1): a task's whole-index
+/// commit would silently absorb the entry; a milestone's aggregate cannot carry it —
+/// the entry stays staged across the boundary either way.
+fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoundary) -> Finding {
     let what = if is_deletion {
         "staged for deletion"
     } else {
         "staged"
     };
+    let kind = if is_deletion { "deletion" } else { "change" };
+    let (message, route) = match boundary {
+        CarryoverBoundary::Task => (
+            format!(
+                "`{path}` was already {what} before this task existed — refusing to let a \
+                 pre-task staged {kind} silently ride this task's commit"
+            ),
+            format!(
+                "unstage it (`git restore --staged -- {path}`) if it is not this task's work, \
+                 or re-run the finalize with `--carry-staged` to declare the carry-over \
+                 deliberate"
+            ),
+        ),
+        CarryoverBoundary::Milestone => (
+            format!(
+                "`{path}` was already {what} before this milestone existed — the aggregate \
+                 commit is built from the sub-task worktrees and cannot carry it, so the \
+                 {kind} stays staged, undeclared, across this boundary"
+            ),
+            format!(
+                "unstage it (`git restore --staged -- {path}`) if it is stale, or re-run \
+                 the finalize with `--carry-staged` to declare it deliberate (it stays \
+                 staged either way)"
+            ),
+        ),
+    };
     Finding::graded(
         Severity::Blocking,
         "finalize.carried-staged",
-        format!(
-            "`{path}` was already {what} before this task existed — refusing to let a \
-             pre-task staged {} silently ride this task's commit",
-            if is_deletion { "deletion" } else { "change" },
-        ),
+        message,
         Some(file_location(path)),
-        Some(Route::human(format!(
-            "unstage it (`git restore --staged -- {path}`) if it is not this task's work, \
-             or re-run the finalize with `--carry-staged` to declare the carry-over \
-             deliberate"
-        ))),
+        Some(Route::human(route)),
     )
 }
 
@@ -2565,7 +2605,7 @@ sections:
             &[("src/foreign.rs", "aaaa1111"), ("src/mine.rs", "bbbb2222")],
             &[],
         );
-        let findings = decide_carryover(Some(&snapshot), &current, None);
+        let findings = decide_carryover(Some(&snapshot), &current, None, CarryoverBoundary::Task);
         assert_eq!(findings.len(), 1, "one finding per carried path — only one");
         let finding = &findings[0];
         assert_eq!(finding.code, "finalize.carried-staged");
@@ -2606,7 +2646,7 @@ sections:
         // a.rs restaged to new content; b.rs unstaged; gone.md's deletion restored.
         let current = staged(&[("src/a.rs", "dddd4444")], &[]);
         assert_eq!(
-            decide_carryover(Some(&snapshot), &current, None),
+            decide_carryover(Some(&snapshot), &current, None, CarryoverBoundary::Task),
             Vec::new(),
             "a restaged / cleared / restored path is not a carryover",
         );
@@ -2618,7 +2658,7 @@ sections:
     fn carryover_snapshot_deletion_still_staged_is_carried() {
         let snapshot = staged(&[], &["legacy/OLD.md"]);
         let current = staged(&[], &["legacy/OLD.md"]);
-        let findings = decide_carryover(Some(&snapshot), &current, None);
+        let findings = decide_carryover(Some(&snapshot), &current, None, CarryoverBoundary::Task);
         assert_eq!(findings.len(), 1, "the staged deletion is carried");
         assert_eq!(findings[0].code, "finalize.carried-staged");
         assert_eq!(findings[0].key().target.as_deref(), Some("legacy/OLD.md"));
@@ -2636,7 +2676,12 @@ sections:
     fn carryover_retire_pathspec_is_exempt_others_still_block() {
         let snapshot = staged(&[("notes.md", "aaaa1111")], &["legacy/CHANGES.md"]);
         let current = staged(&[("notes.md", "aaaa1111")], &["legacy/CHANGES.md"]);
-        let findings = decide_carryover(Some(&snapshot), &current, Some("./legacy/CHANGES.md"));
+        let findings = decide_carryover(
+            Some(&snapshot),
+            &current,
+            Some("./legacy/CHANGES.md"),
+            CarryoverBoundary::Task,
+        );
         assert_eq!(
             findings.len(),
             1,
@@ -2652,12 +2697,17 @@ sections:
     fn carryover_missing_snapshot_fails_open_empty_snapshot_carries_nothing() {
         let current = staged(&[("src/foreign.rs", "aaaa1111")], &["legacy/OLD.md"]);
         assert_eq!(
-            decide_carryover(None, &current, None),
+            decide_carryover(None, &current, None, CarryoverBoundary::Task),
             Vec::new(),
             "no snapshot (pre-M43 mint) ⇒ fail-open, no findings",
         );
         assert_eq!(
-            decide_carryover(Some(&StagedSnapshot::default()), &current, None),
+            decide_carryover(
+                Some(&StagedSnapshot::default()),
+                &current,
+                None,
+                CarryoverBoundary::Task
+            ),
             Vec::new(),
             "an empty snapshot (clean index at mint) carries nothing",
         );
@@ -2673,7 +2723,7 @@ sections:
         let deletions = ["a.md", "c.md"];
         let snapshot = staged(&entries, &deletions);
         let current = staged(&entries, &deletions);
-        let findings = decide_carryover(Some(&snapshot), &current, None);
+        let findings = decide_carryover(Some(&snapshot), &current, None, CarryoverBoundary::Task);
         let targets: Vec<Option<String>> = findings.iter().map(|f| f.key().target).collect();
         assert_eq!(
             targets,
@@ -2691,8 +2741,51 @@ sections:
         let current_rev = staged(&entries_rev, &deletions_rev);
         assert_eq!(
             findings,
-            decide_carryover(Some(&snapshot_rev), &current_rev, None),
+            decide_carryover(
+                Some(&snapshot_rev),
+                &current_rev,
+                None,
+                CarryoverBoundary::Task
+            ),
             "the decision is a function of the sets — identical across build orders",
         );
+    }
+
+    /// The **milestone boundary's wording is law-1 honest** (`design/surface-contract.md`
+    /// → The carryover gate; the T4 honest-wording bound): the aggregate commit is built
+    /// from the sub-task worktrees over targeted pathspecs, so a live-index entry
+    /// structurally cannot ride it — the finding says the entry **stays staged** across
+    /// the boundary and never claims it would ride the commit. The task boundary keeps
+    /// its whole-index-commit truth.
+    #[test]
+    fn carryover_milestone_boundary_wording_says_stays_staged_never_ride() {
+        let snapshot = staged(&[("foreign.txt", "aaaa1111")], &["gone.md"]);
+        let current = staged(&[("foreign.txt", "aaaa1111")], &["gone.md"]);
+        let findings = decide_carryover(
+            Some(&snapshot),
+            &current,
+            None,
+            CarryoverBoundary::Milestone,
+        );
+        assert_eq!(findings.len(), 2, "both halves still carry — same decision");
+        for finding in &findings {
+            assert_eq!(finding.code, "finalize.carried-staged");
+            assert!(
+                finding.message.contains("milestone") && finding.message.contains("stays staged"),
+                "the milestone message names the boundary and the stays-staged truth: {:?}",
+                finding.message
+            );
+            let route = finding.route.as_deref().expect("blocking ⇒ routed");
+            assert!(
+                !finding.message.contains("ride") && !route.contains("ride"),
+                "the milestone wording never claims the entry would ride the aggregate \
+                 commit; message: {:?}\nroute: {route:?}",
+                finding.message
+            );
+            assert!(
+                route.contains("--carry-staged") && route.contains("git restore --staged"),
+                "the route names both exits: {route:?}"
+            );
+        }
     }
 }

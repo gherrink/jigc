@@ -1,4 +1,5 @@
-//! M43 Increment 2 / T3 — the **carryover gate** at `jigc task finalize`
+//! M43 Increment 2 / T3+T4 — the **carryover gate** at `jigc task finalize` and
+//! `jigc milestone finalize`
 //! (`design/surface-contract.md` → The carryover gate; the trial's #1-ranked v1 gate).
 //!
 //! A foreign change staged **before the task existed** (a pre-mint `git add` /
@@ -11,6 +12,16 @@
 //! post-mint staging never trips the gate, a `--dry-run` still renders its forecast
 //! (the refuse sits on the committing path only), and a migration's recorded retire
 //! pathspec is exempt (that deletion is the task's own work).
+//!
+//! The **milestone arm** (T4): `jigc milestone create` is the shared checkout's
+//! aggregate-index door — its create-time snapshot is what `milestone finalize`
+//! refuses against, same code, same override flag. One honest-wording bound (law 1):
+//! both aggregate channels build from throwaway indexes / dedicated worktrees over
+//! targeted pathspecs and land via `--ff-only`, so a live-index foreign entry
+//! structurally CANNOT ride the milestone commit — the finding says the entry **stays
+//! staged across the boundary**, never that it would ride it (the refuse is the
+//! declare-at-the-boundary rule, not a leak fix), and `--carry-staged` proceeds with
+//! the entry left staged, uncommitted.
 //!
 //! Every arm drives the real binary and asserts on the emitted findings envelope /
 //! the landed git commit — never a reconstruction.
@@ -586,5 +597,218 @@ fn the_migration_retire_pathspec_is_exempt() {
     assert!(
         repo.path().join("CHANGELOG.md").exists() && !repo.path().join("HISTORY.md").exists(),
         "the migration lands: canonical doc promoted, foreign source retired"
+    );
+}
+
+// ───────────────────────── the milestone arm (T4) ─────────────────────────
+
+/// Write the `[dev ▸ methodology]` compose marker — the milestone-record flip is what
+/// gives a docs-only milestone a non-empty finalize commit (the
+/// `milestone_record_finalize` precedent), so the finalize reaches the carryover gate
+/// instead of the empty-commit guard.
+fn write_compose_marker(repo: &Path) {
+    fs::create_dir_all(repo.join(".jigc").join("config")).expect("mk project config");
+    fs::write(
+        repo.join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write compose marker");
+}
+
+/// create → add-task ×2 — the milestone whose create-time snapshot the finalize gate
+/// consumes. Each op lands its own path-scoped record commit, so a pre-create staged
+/// foreign entry stays staged (and same-blob) all the way to finalize.
+fn setup_milestone(repo: &Path, home: &Path) {
+    ok(
+        repo,
+        home,
+        &["milestone", "create", "Cache rework"],
+        "jigc milestone create",
+    );
+    ok(
+        repo,
+        home,
+        &[
+            "milestone",
+            "add-task",
+            "cache-rework",
+            "Warm the read cache",
+        ],
+        "milestone add-task #1",
+    );
+    ok(
+        repo,
+        home,
+        &[
+            "milestone",
+            "add-task",
+            "cache-rework",
+            "Evict cold entries",
+        ],
+        "milestone add-task #2",
+    );
+}
+
+/// A foreign file staged **before `milestone create`** blocks `milestone finalize`
+/// with one blocking routed `finalize.carried-staged` **per carried path** — and the
+/// wording is law-1 honest: the entry **stays staged across the boundary** (the
+/// aggregate is built from the sub-task worktrees and structurally cannot carry it),
+/// never "would ride the commit". Nothing is committed by the block.
+#[test]
+fn a_pre_create_staged_add_blocks_milestone_finalize_per_path() {
+    let repo = TempDir::new("ms-add");
+    let home = TempDir::new("ms-home");
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+
+    // The foreign pre-staged adds — staged BEFORE the milestone exists.
+    fs::write(
+        repo.path().join("foreign-a.txt"),
+        "not this milestone's work\n",
+    )
+    .expect("write a");
+    fs::write(repo.path().join("foreign-b.txt"), "also not\n").expect("write b");
+    git(repo.path(), &["add", "foreign-a.txt", "foreign-b.txt"]);
+
+    setup_milestone(repo.path(), home.path());
+
+    let before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
+    let findings = blocked_findings(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["milestone", "finalize", "cache-rework", "--format", "json"],
+            None,
+        ),
+        "jigc milestone finalize (pre-create staged adds)",
+    );
+    let carried = carried_staged(&findings);
+    assert_eq!(
+        carried.len(),
+        2,
+        "exactly ONE finding per carried path (two foreign paths staged); got:\n{findings:#?}"
+    );
+    assert_carried(&carried[0], "foreign-a.txt");
+    assert_carried(&carried[1], "foreign-b.txt");
+
+    // The honest-wording bound: the milestone aggregate cannot carry a live-index
+    // entry, so the finding must say the entry STAYS STAGED — and must never claim
+    // it would ride the milestone commit.
+    for finding in &carried {
+        let message = finding["message"].as_str().expect("message is a string");
+        let route = finding["route"].as_str().expect("route is a string");
+        assert!(
+            message.contains("milestone"),
+            "the message names the milestone boundary; got: {message}"
+        );
+        assert!(
+            message.contains("stays staged"),
+            "the message says the entry stays staged across the boundary; got: {message}"
+        );
+        assert!(
+            !message.contains("ride") && !route.contains("ride"),
+            "the milestone wording must never claim the entry would ride the aggregate \
+             commit (it structurally cannot); message: {message}\nroute: {route}"
+        );
+    }
+
+    // Nothing committed: the refusal precedes any side effect.
+    assert_eq!(
+        git(repo.path(), &["rev-list", "--count", "HEAD"]),
+        before,
+        "the blocked milestone finalize commits nothing"
+    );
+}
+
+/// `--carry-staged` **proceeds** — and proves the honest wording: the landed
+/// aggregate commit does NOT carry the foreign entry (it is built from the sub-task
+/// worktrees over targeted pathspecs), and the entry is **still staged after the
+/// land**.
+#[test]
+fn milestone_carry_staged_proceeds_and_the_foreign_entry_stays_staged() {
+    let repo = TempDir::new("ms-declared");
+    let home = TempDir::new("ms-home2");
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+
+    fs::write(
+        repo.path().join("foreign-a.txt"),
+        "deliberately left staged\n",
+    )
+    .expect("write a");
+    git(repo.path(), &["add", "foreign-a.txt"]);
+
+    setup_milestone(repo.path(), home.path());
+
+    ok(
+        repo.path(),
+        home.path(),
+        &["milestone", "finalize", "cache-rework", "--carry-staged"],
+        "jigc milestone finalize --carry-staged",
+    );
+
+    // The landed aggregate commit carries the milestone's own record flip — and NOT
+    // the foreign entry (structurally cannot; the declared carry is a stay-staged).
+    let committed = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        committed
+            .lines()
+            .any(|l| l == "docs/milestone-records/cache-rework.md"),
+        "the record flip rides the aggregate commit; files:\n{committed}"
+    );
+    assert!(
+        !committed.lines().any(|l| l == "foreign-a.txt"),
+        "the foreign entry does NOT ride the milestone aggregate commit; files:\n{committed}"
+    );
+
+    // ... and it is STILL staged after the land (law 1: it stays staged).
+    let staged = git(repo.path(), &["diff", "--cached", "--name-only"]);
+    assert!(
+        staged.lines().any(|l| l == "foreign-a.txt"),
+        "the foreign entry stays staged across the boundary; staged:\n{staged}"
+    );
+}
+
+/// **Missing snapshot ⇒ fail-open** (the declared bound): a milestone created
+/// pre-M43 has no create-time snapshot in its area, so its finalize proceeds as
+/// today — no `--carry-staged` needed — and the foreign entry still neither rides
+/// the aggregate nor leaves the index.
+#[test]
+fn milestone_missing_snapshot_fails_open() {
+    let repo = TempDir::new("ms-failopen");
+    let home = TempDir::new("ms-home3");
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+
+    fs::write(repo.path().join("foreign-a.txt"), "pre-create staged\n").expect("write a");
+    git(repo.path(), &["add", "foreign-a.txt"]);
+
+    setup_milestone(repo.path(), home.path());
+
+    // Simulate a pre-M43 milestone: no create-time snapshot in the area.
+    fs::remove_file(
+        repo.path()
+            .join(".jigc")
+            .join("milestones")
+            .join("cache-rework")
+            .join("staged-snapshot.json"),
+    )
+    .expect("remove the create-time snapshot");
+
+    ok(
+        repo.path(),
+        home.path(),
+        &["milestone", "finalize", "cache-rework"],
+        "jigc milestone finalize (no snapshot — fail-open)",
+    );
+    let committed = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        !committed.lines().any(|l| l == "foreign-a.txt"),
+        "the foreign entry still does not ride the aggregate; files:\n{committed}"
+    );
+    let staged = git(repo.path(), &["diff", "--cached", "--name-only"]);
+    assert!(
+        staged.lines().any(|l| l == "foreign-a.txt"),
+        "the foreign entry is still staged after the fail-open land; staged:\n{staged}"
     );
 }
