@@ -516,8 +516,8 @@ fn operational_error_honors_json() {
         .as_str()
         .unwrap_or_else(|| panic!("`error` carries the anyhow chain as a string; got:\n{stderr}"));
     assert!(
-        chain.contains("no task `nonexistent`") && chain.contains("jigc start"),
-        "the chain carries the start-a-task route; got:\n{chain}",
+        chain.contains("no task `nonexistent`") && chain.contains("jigc task list"),
+        "the chain carries the task-list route (M43: wrong-id routes converge); got:\n{chain}",
     );
 
     // ── agent (default): today's plain text, byte-unchanged ──────────────────────
@@ -534,7 +534,7 @@ fn operational_error_honors_json() {
     );
     assert_eq!(
         String::from_utf8(out.stderr).expect("utf-8 stderr"),
-        "no task `nonexistent` — start one with `jigc start \"<intent>\"`\n",
+        "no task `nonexistent` — list live tasks with `jigc task list`\n",
         "the agent-format operational error stays the plain `{{err:#}}` bytes",
     );
 }

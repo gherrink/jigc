@@ -1560,7 +1560,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
     let jigc_home = jigc_home_or_repo(start)?;
     let task_dir = jigc_home.join(".jigc").join("tasks").join(id);
     if !task_dir.is_dir() {
-        bail!("no task `{id}` — list live tasks with `jigc start`");
+        return Err(crate::task::no_such_task(id));
     }
 
     // The task is pinned to its base; never operate it off its pinned commit.

@@ -2828,8 +2828,8 @@ impl ActiveTask {
     /// Resolve the active task from `cwd` + an optional explicit `--task <id>`
     /// (`design/write-commands.md` → The write-time `--task`-scoped barrier:
     /// active-task resolution). **Explicit `--task <id>` wins** — it resolves
-    /// `<repo>/.jigc/tasks/<id>/` directly, rejecting `no task <id>` if absent
-    /// (mirroring `start::reenter_in_repo`). Else: the **single** active task
+    /// `<repo>/.jigc/tasks/<id>/` directly, rejecting with the shared task-list
+    /// route (`crate::task::no_such_task`) if absent. Else: the **single** active task
     /// directory under `<repo>/.jigc/tasks/`; **none** rejects with the start-a-task
     /// route, **more than one** with no `--task` rejects asking for the selector.
     fn resolve(cwd: &Path, task_id: Option<&str>) -> Result<Self> {
@@ -2840,7 +2840,7 @@ impl ActiveTask {
         if let Some(id) = task_id {
             let dir = tasks.join(id);
             if !dir.is_dir() {
-                bail!("no task `{id}` — list live tasks with `jigc task list`");
+                return Err(crate::task::no_such_task(id));
             }
             return Ok(Self {
                 id: id.to_string(),

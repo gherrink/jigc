@@ -258,7 +258,7 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> Outcome {
 /// (`design/command-output-contract.md` §2 → The task-state verbs join the envelope).
 ///
 /// **Not idempotent** — an already-absent area rejects at [`TaskArea::resolve`] (exit 1,
-/// the start-a-task route), which runs *before* any removal could. The prior claim of
+/// the task-list route), which runs *before* any removal could. The prior claim of
 /// idempotence here was false, and it stood behind a `discarded` effect key on the ack
 /// that could only ever have held the constant `true`; the distinction it wanted —
 /// *removed* vs *was already gone* — already lives one layer up, in **exit 0 + this ack**
@@ -285,7 +285,7 @@ fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
 /// role: the five-step enforcement; `workflow-dialect.md` → `reads`).
 ///
 /// Five-step enforcement: (1) the task `<id>` resolves to a live working area
-/// (`TaskArea::resolve` bails with the start-a-task route otherwise); (2) `<role>`
+/// (`TaskArea::resolve` bails with the task-list route otherwise); (2) `<role>`
 /// is one of the task's workflow-declared `reads` roles, else reject listing the
 /// declared roles; (3) `<addr>` resolves in the committed store — its canonical
 /// `<location>/<slug>.md` exists at HEAD — else `no such doc <addr>`; (4) the
@@ -410,6 +410,23 @@ pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeR
     }
 }
 
+/// The one no-such-task rejection every wrong-task-id surface shares — `jigc task
+/// <verb> <id>` ([`TaskArea::resolve`]), `jigc start --task <id>`
+/// (`crate::start::resume_in_repo`), and `jigc doc <verb> … --task <id>`
+/// (`crate::doc`'s active-task resolution) all converge on the one factual recovery,
+/// `jigc task list` (`DECISIONS.md` 2026-07-16 M43 Settle, cross-cutting: wrong-id
+/// routes converge — the old `start --task` route claimed `jigc start` lists live
+/// tasks, which it never did). The route span goes through the checked
+/// [`engine::finding::Route::mechanical`] constructor, so the CLI-seam parse fence
+/// asserts it parses against the real CLI.
+///
+/// The **no-active-task** state (no `--task` given, no task exists) is a different
+/// state with a correct start-route and does not converge here.
+pub(crate) fn no_such_task(id: &str) -> anyhow::Error {
+    let route = engine::finding::Route::mechanical(["jigc", "task", "list"], "");
+    anyhow::anyhow!("no task `{id}` — list live tasks with {route}")
+}
+
 /// A named task's working area. `repo_root` is the **worktree** (code, the git index,
 /// HEAD — every `git` shell-out routes here); `jigc_root` (and the doc-store base
 /// `jigc_home`) bind to **jigc_home**, the main checkout, so all worktrees of one
@@ -427,7 +444,7 @@ impl TaskArea {
     /// Resolve the task `id`'s working area from `cwd`. The repo root is the nearest
     /// `.git` ancestor (the worktree); jigc_home is the main checkout, and the task dir is
     /// `<jigc_home>/.jigc/tasks/<id>/`. A task that does not exist rejects with the
-    /// start-a-task route.
+    /// task-list route ([`no_such_task`]).
     fn resolve(cwd: &Path, id: &str) -> Result<Self> {
         let repo_root = discover_repo_root(cwd)
             .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
@@ -435,7 +452,7 @@ impl TaskArea {
         let jigc_root = jigc_home.join(".jigc");
         let dir = jigc_root.join("tasks").join(id);
         if !dir.is_dir() {
-            bail!("no task `{id}` — start one with `jigc start \"<intent>\"`");
+            return Err(no_such_task(id));
         }
         Ok(Self {
             repo_root,

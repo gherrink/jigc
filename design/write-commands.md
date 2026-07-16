@@ -255,7 +255,7 @@ This is the **spec → implementation seam**: a `plan` task authors and commits 
 
 **Enforcement at every `jigc task bind <role> <addr> <id>`:**
 
-1. Resolve task `<id>`. **No such task** → reject: `"no task \`<id>\` — start one with \`jigc start\`"`.
+1. Resolve task `<id>`. **No such task** → reject: `"no task \`<id>\` — list live tasks with \`jigc task list\`"` (the shared wrong-id route — M43: every wrong-task-id surface converges on `jigc task list`).
 2. `<role>` ∉ the workflow's declared read-roles → reject, listing the declared roles.
 3. `<addr>` does not resolve in the **committed store** → reject: `"no such doc \`<addr>\`"`. `bind` targets committed docs only — a doc the *same* task creates uses the create-gate's `as:` form instead.
 4. The target's doctype ≠ the role's declared `type` → reject with the mismatch.
