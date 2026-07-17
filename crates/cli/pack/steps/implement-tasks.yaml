@@ -3,5 +3,6 @@ fan-out:
   over: "{{ milestone.tasks }}"
   run:  workflow:sub-task
 ---
-Spawn a sub-agent per sub-task and implement it. Each runs in its own isolated
-working area keyed by task id.
+Spawn a sub-agent per sub-task (one per `Spawn:` line below) and implement it.
+Each runs in its own isolated working area keyed by task id. Wait for every
+spawned sub-task to report complete before moving on — nothing is merged yet.

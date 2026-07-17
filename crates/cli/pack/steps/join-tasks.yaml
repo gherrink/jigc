@@ -1,5 +1,8 @@
 ---
 join: {}
 ---
-All sub-tasks are complete and have been merged by task-id order. Continue with
-the merged effective state.
+Once every spawned sub-task reports complete, run the join: it merges the
+sub-tasks' staged docs by task-id order and reports the merged state — it
+commits nothing:
+
+{{ cli.milestone-join }}

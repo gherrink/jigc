@@ -1650,19 +1650,32 @@ fn milestone_execute_composes_the_real_fanout_join_finalize_workflow() {
          got:\n{stdout}",
     );
 
-    // The join barrier prose sits AFTER the spawns and BEFORE the finalize Run line.
-    let join_at = stdout
-        .find("merged by task-id order")
-        .expect("the join-tasks step's barrier prose must compose into the view");
+    // C1 (round-2 surface fixes) — the compose teaches the FULL order: provision →
+    // spawn → wait-for-completions → join (merge + report, commits nothing) →
+    // finalize (the one commit). The join step is an INSTRUCTION with its own `Run:`
+    // line, never static text posing as a state report (the corpus's strongest
+    // misreading: an agent believed the fan-out had already run and went straight to
+    // finalize).
     let last_spawn_at = stdout
         .rfind("Spawn: `cd .jigc/worktrees/")
         .expect("at least one Spawn directive");
+    let join_prose_at = stdout
+        .find("Once every spawned sub-task reports complete")
+        .expect("the join-tasks step must be conditional on the sub-tasks completing");
+    let join_run_at = stdout
+        .find("Run: `jigc milestone join <MILESTONE_ID>`")
+        .expect("the join-tasks step must resolve a `Run:` line — the join is taught");
     let run_at = stdout
         .find("Run: `jigc milestone finalize <MILESTONE_ID>`")
         .expect("the milestone-finalize step must resolve a `Run:` line");
     assert!(
-        last_spawn_at < join_at && join_at < run_at,
-        "the view must be fan-out → join barrier → finalize Run, in that order; got:\n{stdout}",
+        last_spawn_at < join_prose_at && join_prose_at < join_run_at && join_run_at < run_at,
+        "the view must be fan-out → wait → join Run → finalize Run, in that order; got:\n{stdout}",
+    );
+    // State-honesty: no compose-time text may assert the fan-out already ran.
+    assert!(
+        !stdout.contains("All sub-tasks are complete"),
+        "the compose must not print a state report as static text; got:\n{stdout}",
     );
 
     // Composition is fan-out-join-paired — a paired workflow raises no

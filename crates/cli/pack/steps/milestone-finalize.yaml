@@ -1,4 +1,5 @@
-The parent finalize is the commit boundary for the whole milestone — validate the
-merged effective state and commit per the `finalize.fan-out.squash` knob:
+After a clean join, the parent finalize is the one commit boundary for the whole
+milestone — validate the merged effective state and commit per the
+`finalize.fan-out.squash` knob:
 
 {{ cli.milestone-finalize }}

@@ -112,6 +112,14 @@ commands:
       - { agent: milestone_id, hint: "the milestone:<slug> id being executed" }
     hint: "Provision one detached base-pin worktree per sub-task before the fan-out."
 
+  - id: milestone-join
+    command: jigc
+    args:
+      - "milestone"
+      - "join"
+      - { agent: milestone_id, hint: "the milestone:<slug> id being executed" }
+    hint: "Merge the sub-tasks' staged docs by task-id order and report — commits nothing."
+
   - id: milestone-finalize
     command: jigc
     args:

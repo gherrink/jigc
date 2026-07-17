@@ -4916,6 +4916,25 @@ A failed charge retries with exponential backoff, capped at five attempts.
               ],
               "hint": "The milestone commit boundary — validate the merged join + commit per the squash knob."
             },
+            "milestone-join": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "milestone"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "join"
+                },
+                {
+                  "kind": "agent",
+                  "agent": "milestone_id",
+                  "hint": "the milestone:<slug> id being executed"
+                }
+              ],
+              "hint": "Merge the sub-tasks' staged docs by task-id order and report — commits nothing."
+            },
             "milestone-provision": {
               "command": "jigc",
               "args": [
