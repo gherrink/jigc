@@ -1790,9 +1790,17 @@ fn compose_task_workflow(
     // workflow strips (or keeps) the `author-vision` advisory block identically.
     let advise_research = warrants_research_advisory(&def, &store_feed);
 
-    // No source seam on the resume path — the seam is fed only by `jigc migrate`.
+    // The source seam re-feeds from the persisted artifact: `jigc migrate` stages the
+    // foreign bytes at `<task_dir>/source`, and the resume / re-entry compose must
+    // surface them through `{{source}}` exactly as the minting compose did — the
+    // serial-collision route ("resume with `jigc start --task <id>`") lands here, so
+    // an unfed seam rendered the foreign content EMPTY (M43 Inc 6 T4; `DECISIONS.md`
+    // 2026-07-16 M43 Settle → the migrate resume re-feeds the persisted source).
+    // Absent on every non-migration task (nothing stages the file), so those resumes
+    // feed `None` and stay byte-identical.
     // The schema feed clones: `schemas` is still needed below for the committed-store
     // index + the `ContentStore` wiring.
+    let staged_source = read_staged_source(task_dir, id)?;
     let ctx = build_context(
         id,
         &intent,
@@ -1800,7 +1808,7 @@ fn compose_task_workflow(
         &bound,
         selectable,
         store_feed,
-        None,
+        staged_source.as_deref(),
         schemas.clone(),
     );
     // Resume reads steps through the layer-aware [`CascadeStepSource`] over the *live*
@@ -1879,6 +1887,24 @@ fn compose_task_workflow(
         // did not happen (`design/workflow-dialect.md` → The `task minted:` header).
         minted: false,
     })
+}
+
+/// Read a task's persisted source-seam artifact (`<task_dir>/source`, staged by
+/// `jigc migrate` at mint — [`crate::migrate::SOURCE_FILE`]) if present, so a resumed
+/// or re-entered migration task re-feeds [`ComposeContext::source`] with the same
+/// foreign bytes the minting compose fed (`auto-migration.md` → The source seam).
+/// `None` when the file is absent — every non-migration task — keeping those
+/// composes byte-identical. A present-but-unreadable artifact is a hard error, not a
+/// silent `None`: composing the migration workflow with an empty seam is exactly the
+/// defect this read exists to close.
+fn read_staged_source(task_dir: &Path, id: &str) -> Result<Option<String>> {
+    let path = task_dir.join(crate::migrate::SOURCE_FILE);
+    if !path.exists() {
+        return Ok(None);
+    }
+    std::fs::read_to_string(&path)
+        .map(Some)
+        .with_context(|| format!("could not read the staged foreign source for `{id}`"))
 }
 
 /// Enumerate the committed managed store into the `store` data-value feed: for every
@@ -2008,8 +2034,10 @@ fn build_context(
         store,
         // No milestone in this single-`start` compose path (see the no-task arm).
         milestone: Vec::new(),
-        // The CLI-owned source seam — the staged foreign bytes fed by `jigc migrate`,
-        // `None` on every other compose path (`auto-migration.md` → The source seam).
+        // The CLI-owned source seam — the staged foreign bytes fed by `jigc migrate`
+        // at mint and re-fed from the persisted `<task_dir>/source` on resume /
+        // re-entry; `None` whenever no source is staged — every non-migration compose
+        // (`auto-migration.md` → The source seam).
         source: seam.map(str::to_owned),
         // The composed cascade's resolved doctype set (`CascadeDefs::all_schemas` —
         // per-origin-pack, post-`docs-root`), keyed by type id — the

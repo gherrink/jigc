@@ -1405,3 +1405,162 @@ fn a_first_time_migration_into_empty_decisions_is_unaffected() {
     );
     assert_ingest_adopted(repo.path(), home.path(), &pack, "use-postgresql");
 }
+
+// ---------------------------------------------------------------------------
+// M43 Increment 6, T4 — the resume re-feeds the persisted source (RC-lacon log
+// surprise 1; `DECISIONS.md` 2026-07-16 M43 Settle → cross-cutting: the migrate
+// resume re-feeds the persisted source). `jigc migrate` stages the foreign bytes
+// at `<task_dir>/source` and feeds the seam at mint, but the resume compose spine
+// hardcoded `None` — so the serial-collision route ("resume with `jigc start
+// --task <id>`") landed on a view whose `{{source}}` rendered EMPTY. The resume
+// must read the persisted source back and re-feed the seam; re-invoking the
+// identical `jigc migrate` must route to that now-working resume; and a
+// non-migration resume (no staged source) stays byte-identical to today.
+// ---------------------------------------------------------------------------
+
+/// The headline: after `jigc migrate`, `jigc start --task <id>` re-feeds the
+/// persisted source — the resumed view surfaces the foreign bytes verbatim, and is
+/// byte-identical to the minting compose minus its `task minted:` header (the seam,
+/// the guidance, the gates line, and the footer all re-compose identically).
+#[test]
+fn a_resumed_migration_re_feeds_the_persisted_source() {
+    let repo = TempDir::new("resume-source");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    let rel = commit_foreign_adr(repo.path(), "0007-resume-source", FOREIGN_POSTGRES);
+    let composed = migrate(repo.path(), home.path(), &pack, &rel);
+    let task = migration_task("0007-resume-source");
+
+    // The resume — the exact invocation the serial-collision route names.
+    let resumed = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["start", "--task", &task],
+            None,
+        ),
+        "jigc start --task <migration-task>",
+    );
+    assert!(
+        resumed.contains("We will use PostgreSQL as the primary datastore."),
+        "the resumed migration re-feeds the persisted source — the foreign bytes \
+         surface through `{{{{source}}}}` on `jigc start --task <id>`:\n{resumed}",
+    );
+    // Byte-strong: the resume IS the minting compose, minus the mint announcement.
+    assert_eq!(
+        composed,
+        format!("task minted: {task}\n\n{resumed}"),
+        "the resumed view is byte-identical to the minting compose minus its \
+         `task minted:` header",
+    );
+}
+
+/// Re-invoking the identical `jigc migrate` on a live migration exits non-zero and
+/// surfaces the `task.serial-collision` block through the migrate error path — its
+/// route naming the (now source-carrying) resume, `jigc start --task <id>` — and
+/// mints nothing new.
+#[test]
+fn re_invoking_migrate_on_a_live_migration_routes_to_the_resume() {
+    let repo = TempDir::new("reinvoke");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    let rel = commit_foreign_adr(repo.path(), "0008-reinvoke", FOREIGN_POSTGRES);
+    migrate(repo.path(), home.path(), &pack, &rel);
+    let task = migration_task("0008-reinvoke");
+
+    // The IDENTICAL re-invocation: same path, same doctype — the per-file id
+    // collides into the serial-collision route, never a double-mint.
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", &rel, "--as", "adr"],
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "re-invoking the identical `jigc migrate` on a live migration must exit \
+         non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // The `task.serial-collision` block surfaces end-to-end (message + route) —
+    // never swallowed on the migrate error path.
+    assert!(
+        stderr.contains(&format!("task `{task}` is already active")),
+        "the serial-collision block names the live migration task:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!("jigc start --task {task}")),
+        "the route names the resume that now carries the source:\n{stderr}",
+    );
+}
+
+/// The omitting context (the M4 front-door brick): a NON-migration task stages no
+/// source artifact, so its resume feeds the seam nothing — even with a live
+/// migration task's staged source sitting in the same `.jigc/tasks/` tree. The
+/// resumed view carries none of the foreign bytes and stays byte-identical to its
+/// own minting compose minus the `task minted:` header (the pre-change resume
+/// contract).
+#[test]
+fn a_non_migration_resume_stays_source_free() {
+    let repo = TempDir::new("resume-inert");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    // A live migration task WITH a staged source — the bleed hazard.
+    let rel = commit_foreign_adr(repo.path(), "0010-bystander", FOREIGN_POSTGRES);
+    migrate(repo.path(), home.path(), &pack, &rel);
+
+    // An ordinary work task in the same repo.
+    let minted = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["start", "--workflow", "single-task", "add a thing"],
+            None,
+        ),
+        "jigc start --workflow single-task",
+    );
+    let resumed = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["start", "--task", "add-a-thing"],
+            None,
+        ),
+        "jigc start --task add-a-thing",
+    );
+    assert!(
+        !resumed.contains("We will use PostgreSQL"),
+        "a non-migration resume feeds the seam nothing — no foreign bytes bleed \
+         across tasks:\n{resumed}",
+    );
+    assert_eq!(
+        minted,
+        format!("task minted: add-a-thing\n\n{resumed}"),
+        "the non-migration resume stays byte-identical to its minting compose \
+         minus the `task minted:` header",
+    );
+}
