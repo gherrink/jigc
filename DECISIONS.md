@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-17 — M43 Inc 9 T2: the reconcile/back-out chapter — one elaboration pin
+
+The Settle-#12 rider lands as MIGRATING.md → *Reconciling and backing out* (seven gates in meeting order: `--dry-run` forecast · the review hold with `--approve` the sole destructive gate · the same-path `M`-never-`D`+`A` land · the carryover refuse + `--carry-staged` · `task discard` workbench-only · `milestone discard` record-settles · OOB detect-and-route), every claim exercised live against the built binary per the M42-T10 lesson. **Pin:** the live re-verify caught QUICKSTART.md's finalize paragraph still stating the **pre-M30 sweep world** ("any untracked file the sweep sucked in") — the binary demonstrably *leaves out and names* untracked work — so the paragraph is corrected in the same motion (it is the paragraph the back-out cross-ref extends; a law-1 lie could not stay beside the chapter that documents the truth).
+
 ## 2026-07-17 — M43 Increment 9 planning: decomposition
 
 Cut [Increment 9](implementation/roadmap.md) (flow 44 + the docs chapter + the fold-back) into **5 ordered single-concern tasks**, grounded at HEAD `426f854` (tree clean; Inc 1–8 landed, so every flow-44 arm behavior already ships with its own per-increment red — this increment writes the composite acceptance, the user-facing chapter, and the fold-back prose only; **zero engine/CLI code change**, verified below by the per-arm shipped-basis list). The design of record is [surface-contract.md](design/surface-contract.md) (the proof split + the neighbour-doc revision ledger) and the Settle riders ([DECISIONS.md](DECISIONS.md) → 2026-07-16 M43 Settle #12 + the review-baked kind-taxonomy call).

@@ -107,11 +107,20 @@ If validation blocks (a dangling forward reference, a missing required slot, a
 malformed value), finalize makes no commit and surfaces the findings with a
 route for the next action. Fix and re-run.
 
-A landed finalize prints a **pre-commit manifest** — the file-set the commit
-carried, with any untracked file the sweep sucked in flagged distinctly (so a
-stray `scratch.txt` stands out). To see that set *before* committing, run
-`jigc task finalize <id> --dry-run`: it prints the manifest and stops, changing
-nothing.
+A landed finalize prints a **manifest** — the file-set the commit carried (the
+git index: what you staged plus the docs jigc promotes), with a distinct
+**left-out** list naming any unstaged or untracked work the commit excluded (so
+a stray `scratch.txt` stands out as left behind, never swept in). To see that
+set *before* committing, run `jigc task finalize <id> --dry-run`: it prints the
+manifest and stops, changing nothing. A change staged *before* the task existed
+refuses to ride the commit (`finalize.carried-staged`) unless you declare it
+with `--carry-staged`.
+
+Changed your mind? **`jigc task discard <id>`** abandons the task — it removes
+only the working area under `.jigc/tasks/`; no commit is made and the committed
+store is untouched. The full reconcile/back-out ladder (the migration review
+hold, the carryover gate, out-of-band edits) is in
+[MIGRATING.md](MIGRATING.md) → Reconciling and backing out.
 
 **What lands in your repo:** finalize promotes each managed doc under the
 **`docs-root`** parent (default `docs/`) at its doctype's location —
