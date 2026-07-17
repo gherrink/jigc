@@ -1381,12 +1381,20 @@ fn form_d_implement_from_spec_mints_and_composes_the_locate_from_spec_step() {
         stdout.contains("> spec:gateway-rate-limiting"),
         "the locate-from-spec step must surface the committed spec via {{store.specs}}; got:\n{stdout}",
     );
-    // ... the bind `Run:` line — runnable as emitted: the agent fills <SPEC_ID> and
-    // the trailing task id is resolved (the `jigc task bind <role> <addr> <id>` clap
-    // surface needs all three positionals, so the emitted form must carry the id) ...
+    // ... the bind `Run:` line — runnable as emitted: the agent fills <SPEC_ADDRESS>
+    // (round-2 D5: the placeholder teaches the FULL `spec:<slug>` address form — the
+    // old `<SPEC_ID>` invited the bare slug, which `task bind` rejects as a malformed
+    // address) and the trailing task id is resolved (the `jigc task bind <role>
+    // <addr> <id>` clap surface needs all three positionals) ...
     assert!(
-        stdout.contains("Run: `jigc task bind spec <SPEC_ID> implement-gateway-rate-limiting`"),
-        "the locate-from-spec step must emit a runnable `jigc task bind spec <SPEC_ID> <id>` line carrying the resolved task id; got:\n{stdout}",
+        stdout
+            .contains("Run: `jigc task bind spec <SPEC_ADDRESS> implement-gateway-rate-limiting`"),
+        "the locate-from-spec step must emit a runnable `jigc task bind spec <SPEC_ADDRESS> <id>` line carrying the resolved task id; got:\n{stdout}",
+    );
+    // ... with the surrounding prose teaching the full-address form.
+    assert!(
+        stdout.contains("the `spec:` prefix included"),
+        "the step prose must teach the full `spec:<slug>` address form; got:\n{stdout}",
     );
     // ... and the re-compose `Run:` line carrying the resolved task id.
     assert!(

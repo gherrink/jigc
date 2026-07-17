@@ -1,8 +1,13 @@
-Create the prd, then author its slots:
+Create the prd, then author its `vision` and `context` slots on the address
+`create` prints — the created doc is a `prd`, so the write address is
+`prd:<slug>#<slot>`:
 
 {{ cli.create-prd }}
 <<author: {{ task.brief#vision }}>>
 <<author: {{ task.brief#context }}>>
+
+jigc doc set-slot prd:<slug>#vision --from-file - --task {{task.id}}
+jigc doc set-slot prd:<slug>#context --from-file - --task {{task.id}}
 
 Then add one requirement per thing the product must do. For each, mint the item
 and write its requirement in prose:

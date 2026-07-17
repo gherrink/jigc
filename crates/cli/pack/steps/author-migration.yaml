@@ -5,9 +5,10 @@ doc through the write verbs, you never edit this file or place anything yourself
 {{ source }}
 
 The target schema and its batch payload, both generated from the resolved `changelog`
-schema, follow — the CLI creates-or-updates the singleton and places every release,
-change-group and notes slot over a single staged buffer, so migrating dozens of
-releases is one call, not hundreds:
+schema, follow — the CLI creates-or-updates the fixed-slug singleton (the
+`title: Changelog` line stays exactly as written; the CLI owns the placement) and
+places every release, change-group and notes slot over a single staged buffer, so
+migrating dozens of releases is one call, not hundreds:
 
 {{ schema:changelog }}
 

@@ -1071,14 +1071,36 @@ fn render_schema_projection(schema: &crate::schema::Schema, task: Option<&str>) 
     // heading-depth ceiling is stated with the slot-prose skeleton — above the
     // heredoc that solicits the prose it gates — verbatim from the write-path
     // source. A slot-less schema solicits no slot prose, so it stays inert.
-    if sections_declare_a_slot(&schema.sections) {
+    let declares_slot = sections_declare_a_slot(&schema.sections);
+    if declares_slot {
         out.push_str(&crate::write::slot_ceiling_statement());
         out.push(' ');
     }
-    out.push_str(
-        "An entry marked `# optional` may be omitted entirely. Pipe the payload on \
-         stdin:\n\n",
-    );
+    out.push_str("An entry marked `# optional` may be omitted entirely.");
+    // The repeat-per-item rule (round-2 D8): the skeleton demonstrates ONE item per
+    // repeatable — never stated before, so a migrator authored one item where the
+    // foreign source carried many. Gated on a repeatable being present.
+    if sections_declare_a_repeatable(&schema.sections) {
+        out.push_str(
+            " A repeatable's demonstrated item entry is a template — repeat one `- title:` \
+             entry per item.",
+        );
+    }
+    // The whole-pair rule with a two-line demonstration (round-2 D8): multi-line
+    // prose was never shown, so the one-pair-around-all-lines shape was guessable
+    // wrong (one pair per line). Gated on a slot being present.
+    if declares_slot {
+        out.push_str(
+            " Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block \
+             scalar — a two-line slot is authored as\n\n\
+             <slot-id>: |-\n  \
+             <<The first line of the prose\n  \
+             and its second line, inside the SAME pair.>>\n\n\
+             Pipe the payload on stdin:\n\n",
+        );
+    } else {
+        out.push_str(" Pipe the payload on stdin:\n\n");
+    }
     let task_arg = task.map(|id| format!(" --task {id}")).unwrap_or_default();
     out.push_str(&format!(
         "jigc doc author {} --from-file -{task_arg} <<'EOF'\n",
@@ -1141,6 +1163,15 @@ fn sections_declare_a_slot(sections: &[crate::schema::Section]) -> bool {
             repeatable_declares_a_slot(repeatable)
         }
     })
+}
+
+/// Whether any section is a repeatable — the scope gate for the repeat-per-item
+/// rule: the projection states "repeat one entry per item" only where a skeleton
+/// item entry is actually demonstrated.
+fn sections_declare_a_repeatable(sections: &[crate::schema::Section]) -> bool {
+    sections
+        .iter()
+        .any(|section| matches!(&section.body, crate::schema::SectionBody::Repeatable { .. }))
 }
 
 /// The repeatable arm of [`sections_declare_a_slot`], recursing through nested
@@ -3736,7 +3767,13 @@ sections:
                 - `label`: enum, one of: pro | con — the item's id-source (authored as the item's `title:` payload key)
                 - `text`: prose slot (optional)
 
-        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. Pipe the payload on stdin:
+        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+        <slot-id>: |-
+          <<The first line of the prose
+          and its second line, inside the SAME pair.>>
+
+        Pipe the payload on stdin:
 
         jigc doc author note --from-file - --task emit-four-classes <<'EOF'
         title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id, capped at the first 5 words / 50 chars
@@ -3801,7 +3838,13 @@ sections:
 
         - `body`: prose slot — The handbook body.
 
-        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. Pipe the payload on stdin:
+        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+        <slot-id>: |-
+          <<The first line of the prose
+          and its second line, inside the SAME pair.>>
+
+        Pipe the payload on stdin:
 
         jigc doc author handbook --from-file - <<'EOF'
         title: Handbook
@@ -4695,8 +4738,8 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 },
                 {
                   "kind": "agent",
-                  "agent": "spec_id",
-                  "hint": "the spec:<slug> id picked from the committed specs above"
+                  "agent": "spec_address",
+                  "hint": "the full spec:<slug> address picked from the committed specs above"
                 },
                 {
                   "kind": "from",

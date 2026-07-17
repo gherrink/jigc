@@ -100,7 +100,7 @@ commands:
       - "task"
       - "bind"
       - "spec"
-      - { agent: spec_id, hint: "the spec:<slug> id picked from the committed specs above" }
+      - { agent: spec_address, hint: "the full spec:<slug> address picked from the committed specs above" }
       - { from: "task.id" }
     hint: "Bind the spec this work implements to the task's spec role."
 
