@@ -494,8 +494,9 @@ fn probe_1_upgrade_blocks_dry_runs_self_commits_and_greens() {
     assert_ok(&dry, "`jigc migrate-corpus --dry-run`");
     let dry_out = stdout_of(&dry);
     assert!(
-        dry_out.contains("1 migrated") && dry_out.contains("docs/deferral-ledger.md"),
-        "the dry run SHOWS the pending work; stdout:\n{dry_out}",
+        dry_out.contains("1 would migrate") && dry_out.contains("docs/deferral-ledger.md"),
+        "the dry run SHOWS the pending work (in the conditional — F2, never past-tense over \
+         writes that never happened); stdout:\n{dry_out}",
     );
     assert_eq!(
         fs::read_to_string(repo.join("docs/deferral-ledger.md")).expect("read the ledger"),

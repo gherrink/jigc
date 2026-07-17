@@ -529,6 +529,37 @@ fn missing_workflow_record_family_routes_to_discard_and_restart() {
     );
 }
 
+// ── the sub-task workflow-mismatch reject (`start.rs` → workflow re-entry) ──────────
+
+/// A `jigc workflow <W>` re-entry whose `<W>` ≠ the sub-task's recorded workflow rejects
+/// with the `workflow-refs.workflow-mismatch` block. Both `jigc workflow … --task …`
+/// spans (the one the agent ran + the recorded re-run form) now ride the checked
+/// constructor (F4 — the route-fence seam-sweep), so this arm — driving the binary with
+/// the fence live — proves they parse (a non-parsing span would panic construction, exit
+/// 101, never the asserted clean exit 1) and pins the emitted span bytes against drift.
+#[test]
+fn workflow_reentry_mismatch_names_both_workflow_spans() {
+    let repo = TempDir::new("reentry-mismatch");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let sub = mint_subtask(repo.path(), home.path());
+
+    // Re-enter the `single-task` sub-task naming a *different* workflow.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["workflow", "quick-fix", "--task", sub],
+    );
+    assert_error_contains(
+        &out,
+        &[
+            "`jigc workflow quick-fix --task do-the-thing` names workflow `quick-fix`",
+            "was minted with `single-task` — re-entry must compose the recorded workflow",
+            "re-run as `jigc workflow single-task --task do-the-thing`",
+        ],
+    );
+}
+
 // ── the sub-task wrong-id reject (`start.rs` → workflow re-entry) ───────────────────
 
 /// A `jigc workflow` re-entry naming no live sub-task routes to `milestone

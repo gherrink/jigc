@@ -692,8 +692,16 @@ fn id_from_field_guard(
              (`jigc milestone add-task` / `jigc milestone finalize`), never a manual write"
         )
     } else if declared.is_some_and(|f| f.ty == FieldType::Enum) {
+        // The `remove-item` span goes through the checked constructor (F4 — the route-fence
+        // seam-sweep); the `add-item … --title "<value>"` span stays inline (its quoted,
+        // possibly multi-word title is not a flat-argv token). Text is unchanged.
+        let remove_addr = format!("{doc}#{item_path}");
+        let remove = engine::finding::Route::mechanical(
+            ["jigc", "doc", "remove-item", remove_addr.as_str()],
+            "",
+        );
         format!(
-            "run `jigc doc remove-item {doc}#{item_path}` then `jigc doc add-item {dest} \
+            "run {remove} then `jigc doc add-item {dest} \
              --title \"{value}\"` under the target category, moving the prose in the \
              same motion"
         )
@@ -1369,11 +1377,18 @@ fn retitle_enum_refusal(
             1,
         )),
         Some(
-            format!(
-                "run `jigc doc remove-item {addr}` then `jigc doc add-item {dest} \
+            {
+                // The `remove-item` span goes through the checked constructor (F4 — the
+                // route-fence seam-sweep); the quoted `add-item … --title "<title>"` span
+                // stays inline. Text is unchanged.
+                let remove =
+                    engine::finding::Route::mechanical(["jigc", "doc", "remove-item", addr], "");
+                format!(
+                    "run {remove} then `jigc doc add-item {dest} \
              --title \"{title}\"` under the target category, moving the prose in the \
              same motion"
-            )
+                )
+            }
             .into(),
         ),
     ))

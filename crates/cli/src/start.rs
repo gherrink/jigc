@@ -1703,14 +1703,22 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
             )
         })?;
     if recorded != workflow_id {
+        // Both `jigc workflow … --task …` spans go through the checked constructor (F4 —
+        // the route-fence seam-sweep), so the parse fence proves them, exactly like the
+        // sibling `discard` / `add-task` spans a few lines up. The rendered text is
+        // unchanged (`Route`'s Display is the backticked span).
+        let ran =
+            engine::finding::Route::mechanical(["jigc", "workflow", workflow_id, "--task", id], "");
+        let reentry = engine::finding::Route::mechanical(
+            ["jigc", "workflow", recorded.as_str(), "--task", id],
+            "",
+        );
         return Err(finding_to_err(Finding::block(
             "workflow-refs.workflow-mismatch",
             format!(
-                "`jigc workflow {workflow_id} --task {id}` names workflow `{workflow_id}`, but sub-task `{id}` was minted with `{recorded}` — re-entry must compose the recorded workflow"
+                "{ran} names workflow `{workflow_id}`, but sub-task `{id}` was minted with `{recorded}` — re-entry must compose the recorded workflow"
             ),
-            format!(
-                "re-run as `jigc workflow {recorded} --task {id}`, or re-seed the sub-task with the intended `--workflow`"
-            ),
+            format!("re-run as {reentry}, or re-seed the sub-task with the intended `--workflow`"),
         )));
     }
 
@@ -2929,11 +2937,18 @@ impl<'a> CascadeDefs<'a> {
 pub(crate) fn read_workflow(pack: &dyn PackSource, id: &str) -> Result<Vec<u8>> {
     pack.read(PackResourceKind::Workflows, &ResourceId::from(id))
         .map_err(|_| {
-            finding_to_err(Finding::block(
-                "workflow-refs.unknown-workflow",
-                format!("no workflow `{id}` — list the selectable work-workflows with `jigc start`"),
-                "run `jigc start` to see the selectable work-workflows, then re-run `jigc start --workflow <id> \"<intent>\"`",
-            ))
+            {
+                // The bare `jigc start` span goes through the checked constructor (F4 — the
+                // route-fence seam-sweep); the `--workflow <id> "<intent>"` span stays inline
+                // (its quoted `"<intent>"` placeholder is not a flat-argv token). Text is
+                // unchanged.
+                let start = engine::finding::Route::mechanical(["jigc", "start"], "");
+                finding_to_err(Finding::block(
+                    "workflow-refs.unknown-workflow",
+                    format!("no workflow `{id}` — list the selectable work-workflows with {start}"),
+                    format!("run {start} to see the selectable work-workflows, then re-run `jigc start --workflow <id> \"<intent>\"`"),
+                ))
+            }
         })
 }
 
