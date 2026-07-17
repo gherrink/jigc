@@ -1640,10 +1640,21 @@ fn form_d_sub_task_mints_and_composes_fan_out_free_without_finalize() {
 
     // Fan-out-free, on the EMITTED bytes — the contract is what the agent runs.
     // No `finalize` step: the composed view carries no `jigc task finalize` Run line
-    // (the parent's `jigc milestone finalize` is the only commit boundary).
+    // (the parent's `jigc milestone finalize` is the only commit boundary). The prose
+    // MAY name the command — only to ban it (asserted below); what must never appear
+    // is a `Run:` affordance for it.
     assert!(
-        !stdout.contains("jigc task finalize"),
+        !stdout.contains("Run: `jigc task finalize"),
         "sub-task is finalize-free — its composed view must emit no `jigc task finalize` Run line; got:\n{stdout}",
+    );
+    // C0 (round-2 surface fixes) — the author-commit step states the boundary precisely:
+    // staging (`git add`) is required (the milestone folds each worktree's staged index),
+    // committing is banned, and the two commit-shaped commands are banned BY NAME so an
+    // agent cannot read "never run git here" as contradicting the `git add` instruction.
+    assert!(
+        stdout.contains("never `git commit` and never `jigc task finalize`"),
+        "the author-commit prose must ban committing (git commit / jigc task finalize) by \
+         name while requiring `git add`; got:\n{stdout}",
     );
     // No `fan-out`/`join` step: a sub-agent's workflow can never itself fan out, so
     // the composed view emits no `Spawn:` directive (the fan-out emit class).

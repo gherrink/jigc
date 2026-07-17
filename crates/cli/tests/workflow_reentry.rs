@@ -221,9 +221,11 @@ fn workflow_reentry_composes_w_with_the_equality_guard() {
         String::from_utf8_lossy(&composed_sub.stderr),
     );
     let composed_sub_out = String::from_utf8(composed_sub.stdout).expect("utf-8 stdout");
+    // The prose MAY name `jigc task finalize` — only to ban it (the C0 author-commit
+    // wording); what must never appear is a `Run:` affordance for it.
     assert!(
-        !composed_sub_out.contains("jigc task finalize"),
-        "the fan-out-free sub-task view must emit no `jigc task finalize` line; got:\n{composed_sub_out}",
+        !composed_sub_out.contains("Run: `jigc task finalize"),
+        "the fan-out-free sub-task view must emit no `jigc task finalize` Run line; got:\n{composed_sub_out}",
     );
 }
 

@@ -403,9 +403,9 @@ fn machine_maintained_guard(doctype: &str, verb: &str, target: &str) -> Result<(
         Some(Location::addressed(target, 1, 1)),
         Some(
             "leave the record to the milestone verbs — `jigc milestone create` opens it, \
-             `jigc milestone add-task` appends sub-tasks, `jigc task finalize` advances a \
-             sub-task's status, `jigc milestone finalize` joins it, and `jigc milestone \
-             discard` settles an abandoned one; read it with `jigc doc show`"
+             `jigc milestone add-task` appends sub-tasks, `jigc milestone finalize` joins \
+             it and advances every sub-task's status, and `jigc milestone discard` settles \
+             an abandoned one; read it with `jigc doc show`"
                 .into(),
         ),
     )))
@@ -689,7 +689,7 @@ fn id_from_field_guard(
         format!(
             "the milestone-record is machine-maintained — `{field}` mirrors the \
              sub-task's work-unit id and changes only through the milestone verbs \
-             (`jigc milestone add-task` / `jigc task finalize`), never a manual write"
+             (`jigc milestone add-task` / `jigc milestone finalize`), never a manual write"
         )
     } else if declared.is_some_and(|f| f.ty == FieldType::Enum) {
         format!(
@@ -1241,8 +1241,8 @@ fn run_retitle_item(
             Some(Location::addressed(&uri, 1, 1)),
             Some(
                 "leave the record to the milestone verbs — `jigc milestone add-task` \
-                 appends sub-tasks and `jigc task finalize` advances their status; no \
-                 manual retitle applies"
+                 appends sub-tasks and `jigc milestone finalize` advances their status; \
+                 no manual retitle applies"
                     .into(),
             ),
         )));

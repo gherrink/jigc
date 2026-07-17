@@ -263,6 +263,17 @@ fn every_doc_write_verb_refuses_a_milestone_record_and_moves_no_bytes() {
             stderr.contains("route: ") && stderr.contains("jigc milestone"),
             "`{verb}`'s route must name the milestone verbs; stderr:\n{stderr}",
         );
+        // C0 (round-2 surface fixes): the route must NOT name `jigc task finalize` —
+        // the record's sub-task statuses advance at `jigc milestone finalize` (the
+        // join status-flip folds into that one commit); a per-sub-task `task finalize`
+        // is no part of the milestone flow and, run in a fan-out worktree, lands a
+        // commit on the detached HEAD and strands the sub-task's work outside the
+        // milestone boundary.
+        assert!(
+            !stderr.contains("jigc task finalize"),
+            "`{verb}`'s route must not claim `jigc task finalize` advances a sub-task's \
+             status (it is the destructive command in a fan-out worktree); stderr:\n{stderr}",
+        );
 
         // No bytes moved — the guard fires before the copy-in staging (which is itself
         // part of the defect: it stages the record to promote at the sub-task's finalize).

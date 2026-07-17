@@ -186,6 +186,14 @@ fn retitle_item_on_a_milestone_record_refuses_with_the_machine_maintained_route(
         stderr.contains("jigc milestone"),
         "the route points at the milestone verbs; stderr:\n{stderr}",
     );
+    // C0 (round-2 surface fixes): the route must NOT name `jigc task finalize` — the
+    // record's sub-task statuses advance at `jigc milestone finalize`, and a per-sub-task
+    // `task finalize` run in a fan-out worktree strands the sub-task's work.
+    assert!(
+        !stderr.contains("jigc task finalize"),
+        "the route must not claim `jigc task finalize` advances a sub-task's status; \
+         stderr:\n{stderr}",
+    );
 
     // No bytes moved: the committed record is untouched and the guard fired before
     // any staged copy-in.
@@ -248,5 +256,11 @@ fn set_field_task_id_route_does_not_name_retitle_item_on_a_milestone_record() {
     assert!(
         stderr.contains("jigc milestone"),
         "the route points at the milestone verbs; stderr:\n{stderr}",
+    );
+    // C0 (round-2 surface fixes): same truth here — no `jigc task finalize` in the route.
+    assert!(
+        !stderr.contains("jigc task finalize"),
+        "the route must not claim `jigc task finalize` advances a sub-task's status; \
+         stderr:\n{stderr}",
     );
 }
