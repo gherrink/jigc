@@ -537,6 +537,63 @@ pub fn read_task_list(milestone_dir: &Path) -> std::io::Result<TaskList> {
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
+/// The milestone whose task list carries `task_id` as a sub-task, if any — the
+/// **membership discriminator** the per-task finalize guard keys on (round-2 D1;
+/// the batch-C C0 verdict: the parent milestone's finalize is the *only* commit
+/// boundary for a sub-task, so `jigc task finalize <sub-id>` has zero legitimate
+/// use and is destructive in a fan-out worktree).
+///
+/// Scans `<jigc_root>/milestones/*/tasks.json` in **sorted directory order** (a
+/// deterministic answer if an id ever appeared in two lists — the mint's
+/// within-milestone collision check makes that unreachable in practice). A missing
+/// or malformed area is skipped, never an error: a terminal milestone's torn-down
+/// workbench simply no longer claims its sub-tasks (its `.jigc/tasks/<id>/` areas
+/// are gone with it).
+pub fn owning_milestone(jigc_root: &Path, task_id: &str) -> Option<String> {
+    let milestones = jigc_root.join("milestones");
+    let mut ids: Vec<String> = std::fs::read_dir(&milestones)
+        .ok()?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            entry
+                .file_type()
+                .ok()?
+                .is_dir()
+                .then(|| entry.file_name().to_string_lossy().into_owned())
+        })
+        .collect();
+    ids.sort();
+    ids.into_iter().find(|id| {
+        read_task_list(&milestone_dir(jigc_root, id))
+            .is_ok_and(|list| list.tasks.iter().any(|t| t == task_id))
+    })
+}
+
+/// The **sub-task finalize refusal** (round-2 D1, the promote-clobber refusal
+/// class — protecting an always-wrong destructive op, not preventing a legitimate
+/// one): `jigc task finalize <sub-id>` on a milestone sub-task lands a commit on
+/// the fan-out worktree's detached HEAD, empties the staged index the milestone
+/// combine folds, and the later `jigc milestone finalize` silently lands WITHOUT
+/// the work while the record claims the sub-task joined. The route names the one
+/// real commit boundary, riding the checked [`Route`](crate::finding::Route)
+/// constructor so the CLI-seam parse fence proves the argv.
+pub fn sub_task_finalize_finding(milestone_id: &str, task_id: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.milestone-sub-task",
+        format!(
+            "task `{task_id}` is a sub-task of milestone `{milestone_id}` — the parent \
+             milestone's finalize is the only commit boundary; a per-sub-task finalize \
+             would land a commit outside it and strand this sub-task's work"
+        ),
+        Some(Location::addressed(format!("task:{task_id}"), 1, 1)),
+        Some(crate::finding::Route::mechanical(
+            ["jigc", "milestone", "finalize", milestone_id],
+            " — the milestone finalize folds every sub-task's staged work into the one aggregate commit",
+        )),
+    )
+}
+
 /// Read the persisted single shared [`BasePin`] of a milestone from its area
 /// (`<jigc_root>/milestones/<id>/base.json`) — the base every sub-task inherits.
 /// A missing or malformed pin is an error (it is written at mint).

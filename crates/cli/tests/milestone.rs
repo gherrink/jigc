@@ -2815,3 +2815,164 @@ fn milestone_finalize_squash_true_genuine_reentry_materializes_transient_then_la
         "the aggregate must combine the disjoint worktree code; got:\n{tree:?}",
     );
 }
+
+/// **Round-2 D1 — the sub-task finalize guard** (the batch-C live probe as a test):
+/// `jigc task finalize <sub-id>` on a milestone sub-task, run from inside the
+/// provisioned fan-out worktree with a filled commit doc and staged work, must
+/// REFUSE with the routed blocking `finalize.milestone-sub-task` finding naming
+/// `jigc milestone finalize <milestone-id>` — the promote-clobber refusal class
+/// (an always-wrong destructive op: the milestone combine folds the sub-task
+/// staged indexes directly, so a per-sub-task finalize has zero legitimate use).
+///
+/// RED before the guard: the finalize landed a commit on the worktree's detached
+/// HEAD, emptied the staged index the combine folds, and the later
+/// `jigc milestone finalize` silently landed WITHOUT the work while the record
+/// claimed the sub-task joined.
+#[test]
+fn task_finalize_on_a_milestone_sub_task_refuses_with_the_milestone_route() {
+    let repo = TempDir::new("subtask-finalize-guard");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    // The workflow re-entry needs a set-up project — an empty `.jigc/config/` layer
+    // is the marker (the same seed the reachability tests use).
+    fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("mk config layer");
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    assert!(
+        run_milestone(
+            repo.path(),
+            home.path(),
+            &["add-task", "cache-rework", "Area low"]
+        )
+        .status
+        .success(),
+        "add-task must exit 0",
+    );
+    let provisioned = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+
+    let wt = repo.path().join(".jigc").join("worktrees").join("area-low");
+    assert!(wt.is_dir(), "the area-low worktree must be provisioned");
+
+    // Re-enter from inside the worktree (provisions `commit:area-low`), then author
+    // the commit doc — so the pre-guard code path would genuinely LAND a commit (the
+    // destructive probe), not merely block on commit-doc validation.
+    let reentry = run_jigc_in(
+        &wt,
+        home.path(),
+        &["workflow", "sub-task", "--task", "area-low"],
+        None,
+    );
+    assert!(
+        reentry.status.success(),
+        "sub-task re-entry must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&reentry.stderr),
+    );
+    let set_field = run_jigc_in(
+        &wt,
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            "commit:area-low#type",
+            "--value",
+            "feat",
+            "--task",
+            "area-low",
+        ],
+        None,
+    );
+    assert!(
+        set_field.status.success(),
+        "set-field must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&set_field.stderr),
+    );
+    let set_slot = run_jigc_in(
+        &wt,
+        home.path(),
+        &[
+            "doc",
+            "set-slot",
+            "commit:area-low#summary",
+            "--from-file",
+            "-",
+            "--task",
+            "area-low",
+        ],
+        Some(b"rework the low cache path\n"),
+    );
+    assert!(
+        set_slot.status.success(),
+        "set-slot must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&set_slot.stderr),
+    );
+
+    // Staged, uncommitted work in the worktree — exactly what the milestone combine
+    // folds, and what the pre-guard finalize consumed.
+    fs::write(wt.join("lru.py"), "print('lru')\n").expect("write worktree code");
+    let add = Command::new("git")
+        .args(["add", "lru.py"])
+        .current_dir(&wt)
+        .output()
+        .expect("git add in the worktree");
+    assert!(add.status.success(), "git add must succeed");
+
+    let head_before = git_capture_in(&wt, &["rev-parse", "HEAD"]);
+
+    let finalized = run_jigc_in(&wt, home.path(), &["task", "finalize", "area-low"], None);
+    let stderr = String::from_utf8_lossy(&finalized.stderr);
+    assert!(
+        !finalized.status.success(),
+        "`jigc task finalize` on a milestone sub-task must refuse; stdout:\n{}",
+        String::from_utf8_lossy(&finalized.stdout),
+    );
+    assert!(
+        stderr.contains("finalize.milestone-sub-task"),
+        "the refusal must carry the `finalize.milestone-sub-task` key; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("`jigc milestone finalize cache-rework`"),
+        "the route must name the parent milestone's finalize verbatim; stderr:\n{stderr}",
+    );
+
+    // No commit landed on the detached worktree HEAD…
+    assert_eq!(
+        git_capture_in(&wt, &["rev-parse", "HEAD"]),
+        head_before,
+        "the refusal must land no commit on the worktree's detached HEAD",
+    );
+    // …and the staged index the milestone combine folds is intact.
+    let staged = git_capture_in(&wt, &["diff", "--cached", "--name-only"]);
+    assert!(
+        staged.lines().any(|l| l == "lru.py"),
+        "the staged work the combine folds must survive the refusal; staged:\n{staged}",
+    );
+}
+
+/// `git <args>` in `dir`, captured stdout trimmed — the worktree-side sibling of the
+/// repo-bound helpers above (the guard test reads the detached worktree HEAD/index).
+fn git_capture_in(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string()
+}

@@ -796,6 +796,22 @@ impl TaskArea {
         dry_run: bool,
         carry_staged: bool,
     ) -> Result<Outcome> {
+        // The sub-task membership guard (round-2 D1; the batch-C C0 verdict): a task
+        // that is a milestone sub-task refuses the per-task finalize BEFORE anything
+        // else runs — the parent milestone's finalize is the only commit boundary, and
+        // a per-sub-task finalize in a fan-out worktree lands a commit on the detached
+        // HEAD, empties the staged index the combine folds, and strands the work while
+        // the record claims it joined. The promote-clobber refusal class: the guarded
+        // op has zero legitimate use (the milestone folds staged indexes directly).
+        if let Some(milestone_id) = engine::milestone::owning_milestone(&self.jigc_root, id) {
+            return self.blocked(
+                vec![engine::milestone::sub_task_finalize_finding(
+                    &milestone_id,
+                    id,
+                )],
+                format,
+            );
+        }
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
         let schemas = self.schemas()?;
