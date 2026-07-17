@@ -36,22 +36,21 @@ A finding is `{ target, probe, severity, message, route }`:
 
 - **target** — the address it concerns (`spec:auth-flow#criteria/rate-limit`)
 - **probe** — who raised it · **severity** — engine-assigned via cascade · **message** — human-readable (always present)
-- **route** — a repair direction the engine **never executes**, **always present** (the route floor below — never `null`). **As built, `route` is a `String`** (a human-readable prose direction; the pinned `Finding` JSON envelope). The tagged-union form below — `fill-leaf {address}` · `run-command {command-ref}` · `reconcile {target}` — is the **aspirational** target shape; promoting `route` to it is a deferred cross-cutting result-contract change (it would re-shape the pinned golden and every route producer), **not** assumed by any current probe (M5's `override-default` emits a `String` route):
-  `fill-leaf {address}` · `run-command {command-ref}` · `reconcile {target}`
+- **route** — a repair direction the engine **never executes**, **always present** (the route floor below — never `null`). **On the wire, `route` is a `String`** (a human-readable prose direction; the pinned `Finding` JSON envelope — as built, unchanged at M43). Internally (M43) every route is constructed as a typed `Route` value — the **kind taxonomy**: **`Mechanical { argv, tail }`** (a copy-runnable `jigc` command, parse-asserted against the real CLI) · **`Human(String)`** (a real fix jigc cannot execute) · **`Informational(String)`** (a genuine no-op) — serializing byte-identical to the string form ([surface-contract.md](surface-contract.md) → The route fence). That taxonomy is also the **future wire tagged-union**; promoting the wire shape stays a deferred cross-cutting result-contract change (it would re-shape the pinned golden and every route producer — [decisions-pending.md](../implementation/decisions-pending.md)). It supersedes the earlier `fill-leaf`/`run-command`/`reconcile` union sketched here (retired at the M43 fold-back, rationale engaged: a driver's real need is **act-vs-inform** — `Mechanical{argv}` subsumes `run-command`, and `fill-leaf`/`reconcile` were mechanical routes to *specific verbs*, not kinds; [DECISIONS.md](../DECISIONS.md) → 2026-07-16 M43 planning: the Settle).
 
 ```text
 { target:   spec:auth-flow#criteria/rate-limit,
   probe:    doc-code,
   severity: blocking,                          # from cascade; probe default was blocking
   message:  "criterion maps to no test",
-  route:    fill-leaf spec:auth-flow#criteria/rate-limit/maps-to-test }
+  route:    "point the criterion at a real test, or correct the cited symbol" }
 ```
 
 Because findings are **navigable state**, a `fix-drift` workflow can `fan-out` over `{{store.findings}}` and route each to its repair — *validate → compose a repair workflow → agent authors the fix → re-validate*. The loop closes while the engine still only **detects and routes**. The route is a *direction*, not a guarantee the repair is correct or complete — the agent still reasons and authors.
 
 ### The route floor
 
-**Every finding carries a route — two kinds, never `null`** (M41 Fork 2 / V15 established the floor over advisories; **M43 widens it to blocking validation/gate findings** — [surface-contract.md](surface-contract.md) → The route fence; the contract owner is [command-output-contract.md](command-output-contract.md) → §route). This **supersedes** the earlier "route is optional / `none` is fine where there's no mechanical route" model: the no-op case is reified as an explicit route *value*, not a null.
+**Every finding carries a route — two kinds, never `null`** (M41 Fork 2 / V15 established the floor over advisories, under this section's pre-M43 name *the advisory-route floor* — the name inbound pointers from that era still carry; **M43 widens it to blocking validation/gate findings** — [surface-contract.md](surface-contract.md) → The route fence; the contract owner is [command-output-contract.md](command-output-contract.md) → §route). This **supersedes** the earlier "route is optional / `none` is fine where there's no mechanical route" model: the no-op case is reified as an explicit route *value*, not a null.
 
 - A **repair route** names an action — **mechanical** (`run jigc …`) *or* a **non-mechanical human** one (`correct or drop the mention`, `author a referrer` — a real fix jigc cannot execute). The two route-less advisories the engine emitted — `schema-conformance.mention-resolves` (a dangling in-prose mention) and `schema-completeness.inverse-cardinality` (a below-minimum completeness obligation) — carry human repair routes, not the no-op.
 - An **informational route** (`no action needed …`) marks a genuine no-op — an uncheckable-by-design outcome (e.g. `doc-code.unsupported-language`) or a pure routing note (a `file-state` baseline-adopt / absorb).

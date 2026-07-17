@@ -87,7 +87,7 @@ Active task: add-rate-limiter
 > workflow-refs · blocking
 > {{ task.spec#criteria }} resolves to no spec — task.spec binding missing.
 
-Run: `jigc task bind --role spec --addr spec:auth-flow`   — set the binding
+Run: `jigc task bind spec spec:auth-flow add-rate-limiter` — set the binding
 Run: `jigc task discard add-rate-limiter`                 — abandon
 ```
 

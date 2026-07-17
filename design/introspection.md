@@ -108,7 +108,7 @@ The cost — overriding one `usage:` line means restating that definition's whol
 ## Command surface (settled M11)
 
 - **`jigc describe`** — whole-menu, **no positional argument**. Emits the prose projection of every resolved workflow + doctype (and command-ref `hint`s). A single-item form (`jigc describe <id>`) is **not** built — it would blur the `describe` / `--explain` boundary; revisit only if a real need appears.
-- Enumeration is over the **unfiltered** definition set (every workflow, not the selectable-only catalog `{{catalog}}` surfaces, which filters to `creates-task && selectable`).
+- Enumeration is over the **unfiltered** definition set (every workflow, not the selectable-only catalog `{{catalog}}` surfaces, which filters to `creates-task && selectable`). Since M43, a `selectable: false` workflow's entry additionally says it is **hidden from the router catalog** and carries its declared `suppressed.reason` ([surface-contract.md](surface-contract.md) → The suppression fence) — so describe and the orient catalog stop contradicting each other about what exists.
 - The output is rendered as discursive prose per the format contract above; the routing footer convention applies (agent/human surfaces, not JSON — though describe's whole point is to *not* be JSON-shaped).
 
 **Deferred:** **left-behind pointers** — advertising `jigc describe` from composed-workflow output / the orientation footer. It touches the bootstrap/emit path (scope beyond a standalone read command) and is a secondary affordance; describe works when called directly. Revisit post-M11 (a single orientation-footer line is the likely minimal form).
