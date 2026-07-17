@@ -112,8 +112,11 @@ pub enum Command {
         task: String,
     },
 
-    /// Write managed docs — `jigc doc <verb> <addr>` over the active task's
-    /// working area.
+    /// Read and write managed docs — the `jigc doc <verb>` surface.
+    ///
+    /// The write verbs (`create`/`add-item`/`set-field`/`set-slot`/`author`/…)
+    /// work the active task's working area; the read verbs
+    /// (`show`/`schema`/`list`) serve the committed store.
     Doc {
         #[command(subcommand)]
         verb: DocCommand,

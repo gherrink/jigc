@@ -37,10 +37,11 @@ use std::path::{Component, Path, PathBuf};
 /// the active task's working area.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum DocCommand {
-    /// Mint a new managed instance (agent-initiated, create-gated). The title the
-    /// slug is minted from is supplied inline with `--title` — always literally
-    /// `--title`, whatever the doctype's `id-from` field is named; the CLI mints +
-    /// places per the schema.
+    /// Mint a new managed instance (agent-initiated, create-gated).
+    ///
+    /// The title the slug is minted from is supplied inline with `--title` —
+    /// always literally `--title`, whatever the doctype's `id-from` field is
+    /// named; the CLI mints + places per the schema.
     Create {
         /// The doctype to create (e.g. `adr`).
         r#type: String,
@@ -61,8 +62,10 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Mint a repeatable item into a section (`<type>:<slug>#<section>`), id-slugged
-    /// from `--title`. The CLI mints the `{#id}` anchor + appends the item block.
+    /// Mint a repeatable item into a section, id-slugged from `--title`.
+    ///
+    /// The section is addressed `<type>:<slug>#<section>`; the CLI mints the
+    /// `{#id}` anchor + appends the item block.
     AddItem {
         /// The section address — `<type>:<slug>#<section>` (the repeatable section the
         /// item is minted into).
@@ -75,10 +78,11 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Remove a repeatable item — a top-level item (`<type>:<slug>#<section>/<id>`) or a
-    /// nested one (`#<section>/<parent>/.../<nested-section>/<id>`) — without discarding
-    /// the task (a general recovery verb over the engine's `remove_item` /
-    /// `remove_nested_item`).
+    /// Remove a repeatable item (top-level or nested) without discarding the task.
+    ///
+    /// Addresses a top-level item (`<type>:<slug>#<section>/<id>`) or a nested one
+    /// (`#<section>/<parent>/.../<nested-section>/<id>`) — a general recovery verb
+    /// over the engine's `remove_item` / `remove_nested_item`.
     RemoveItem {
         /// The item address — top-level `<type>:<slug>#<section>/<id>` or the nested
         /// section-qualified chain `#<section>/<parent>/.../<nested-section>/<id>`.
@@ -87,13 +91,14 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Retitle a repeatable item's heading with its `{#id}` anchor **frozen** — the
-    /// retitle-without-reslug invariant's verb at item level. Addresses the same item
-    /// forms as `remove-item`: top-level `<type>:<slug>#<section>/<id>` or the nested
-    /// section-qualified chain. An item whose id derives from an **enum** field
-    /// (e.g. a changelog change-group's `category`) refuses unconditionally — a
-    /// member change is an identity change — routing to `remove-item` + `add-item`
-    /// under the target category.
+    /// Retitle a repeatable item's heading — its `{#id}` anchor stays frozen.
+    ///
+    /// The retitle-without-reslug invariant's verb at item level. Addresses the
+    /// same item forms as `remove-item`: top-level `<type>:<slug>#<section>/<id>`
+    /// or the nested section-qualified chain. An item whose id derives from an
+    /// **enum** field (e.g. a changelog change-group's `category`) refuses
+    /// unconditionally — a member change is an identity change — routing to
+    /// `remove-item` + `add-item` under the target category.
     RetitleItem {
         /// The item address — top-level `<type>:<slug>#<section>/<id>` or the nested
         /// section-qualified chain `#<section>/<parent>/.../<nested-section>/<id>`.
@@ -105,11 +110,12 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Set a field leaf's value (inline, adjudicated at write time). For a
-    /// list-cardinality (`0..*`) ref, set ALL values in one call with the inline-list
-    /// form `--value "[a, b, c]"` — repeated single-value calls replace the whole list
-    /// (and are rejected once it is populated, to prevent silently dropping prior
-    /// entries).
+    /// Set a field leaf's value (inline, adjudicated at write time).
+    ///
+    /// For a list-cardinality (`0..*`) ref, set ALL values in one call with the
+    /// inline-list form `--value "[a, b, c]"` — repeated single-value calls
+    /// replace the whole list (and are rejected once it is populated, to prevent
+    /// silently dropping prior entries).
     SetField {
         /// The leaf address — `<type>:<slug>#<field>` (or `#<section>/<field>`).
         addr: String,
@@ -138,15 +144,16 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Author a whole instance from one declarative payload — the doctype-general
-    /// batch verb. Applies the equivalent `create` plus N `add-item` / `set-slot` /
-    /// `set-field` over a single buffer, persisting once. In the payload, a slot
-    /// value is a YAML block scalar wrapped in literal `<<…>>` markers (`summary: |`
-    /// then, indented beneath it, `<<the prose>>`) — required syntax that tags the
-    /// value as slot prose, not a fill-me placeholder to delete; the block scalar
-    /// keeps multi-paragraph and bulleted prose intact where a quoted flow scalar
-    /// would fold the line breaks. An inline field takes a bare value (wrapping one
-    /// is rejected).
+    /// Author a whole instance from one declarative payload — the batch verb.
+    ///
+    /// The doctype-general batch write: applies the equivalent `create` plus N
+    /// `add-item` / `set-slot` / `set-field` over a single buffer, persisting once.
+    /// In the payload, a slot value is a YAML block scalar wrapped in literal
+    /// `<<…>>` markers (`summary: |` then, indented beneath it, `<<the prose>>`) —
+    /// required syntax that tags the value as slot prose, not a fill-me
+    /// placeholder to delete; the block scalar keeps multi-paragraph and bulleted
+    /// prose intact where a quoted flow scalar would fold the line breaks. An
+    /// inline field takes a bare value (wrapping one is rejected).
     ///
     /// Reach for `author` to write a whole instance in one shot (a migration, or any
     /// many-leaf doc) — it collapses what would be a `create` + N follow-up calls.
@@ -181,9 +188,11 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Read a managed doc (or an addressed `#section`/item/leaf slice) through the
-    /// canonical parse/render path. **Committed by default**: task-less, it reads the
-    /// **committed** store — the view a fresh session or a teammate on a clone sees.
+    /// Read a managed doc, or an addressed `#section`/item/leaf slice of it.
+    ///
+    /// Served through the canonical parse/render path. **Committed by default**:
+    /// task-less, it reads the **committed** store — the view a fresh session or a
+    /// teammate on a clone sees.
     /// A doc still staged in an open task is not committed yet; read it with
     /// `--task <id>`, which serves that task's **staged** working copy through the
     /// identical parse/slice path (the read-back of an in-flight write) — including a
@@ -203,8 +212,9 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Project a doctype's **resolved** schema (the cascade-composed shape as loaded,
-    /// injected stamp field included) — the third read surface, next to `describe`
+    /// Project a doctype's **resolved** schema (the cascade-composed shape as loaded).
+    ///
+    /// Injected stamp field included — the third read surface, next to `describe`
     /// (the non-contractual menu) and `doc show` (the committed-content read).
     /// `--format json` is the separately-pinned, explicitly versioned contract
     /// (`contract-version: 3` — `design/doc-read-surface.md` → Why json is a contract
@@ -214,14 +224,17 @@ pub enum DocCommand {
         /// The doctype whose resolved schema to project (e.g. `adr`).
         doctype: String,
     },
-    /// List the **committed** store surface by identity — the fourth read surface, next to
-    /// `describe` (the menu), `doc show` (the content read) and `doc schema` (the schema
-    /// read). Every instance of one doctype (or of every persisted doctype), slug-sorted,
-    /// carrying its `<type>:<slug>` identity, its repo-relative path, and its **registration
-    /// state**: `managed` (jigc's own doc) or `unregistered` (a file at a managed home jigc
-    /// never adopted — adopt it with `jigc ingest` / `jigc migrate <path> --as <doctype>`).
-    /// `--format json` is the pinned shape `{"docs":[{id, path, state}]}` (no in-band version
-    /// integer — `design/doc-read-surface.md` → the fourth read surface). Task-less: it
+    /// List the **committed** store surface by identity, slug-sorted.
+    ///
+    /// The fourth read surface, next to `describe` (the menu), `doc show` (the
+    /// content read) and `doc schema` (the schema read). Every instance of one
+    /// doctype (or of every persisted doctype) carries its `<type>:<slug>`
+    /// identity, its repo-relative path, and its **registration state**:
+    /// `managed` (jigc's own doc) or `unregistered` (a file at a managed home
+    /// jigc never adopted — adopt it with `jigc ingest` / `jigc migrate <path>
+    /// --as <doctype>`). `--format json` is the pinned shape
+    /// `{"docs":[{id, path, state}]}` (no in-band version integer —
+    /// `design/doc-read-surface.md` → the fourth read surface). Task-less: it
     /// reads the committed store, never an open task's staged buffer.
     List {
         /// The doctype to list (optional — omit to list every persisted doctype).
