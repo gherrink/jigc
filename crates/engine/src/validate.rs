@@ -1578,7 +1578,8 @@ fn staged_display(filename: &str, schemas: &BTreeMap<String, Schema>) -> String 
 /// resolved cascade raises a blocking `schema-conformance.unknown-type`, keyed —
 /// message and target — at the `<type>:<slug>` identity derivable from the staged
 /// filename (M43 A14: the typed-identity form; `display` equals that identity for an
-/// unknown type by [`staged_display`]'s construction).
+/// unknown type by [`staged_display`]'s construction), routed at its recovery like
+/// every gate block ([`conformance_route`] — the route floor).
 fn conformance_for(
     filename: &str,
     schemas: &BTreeMap<String, Schema>,
@@ -1590,14 +1591,12 @@ fn conformance_for(
     // path→URI flip keys on (never the `docs/<type>:<slug>.md` working-area path).
     let identity = filename.strip_suffix(".md").unwrap_or(filename);
     let Some(schema) = schemas.get(ty) else {
-        return vec![Finding::graded(
-            Severity::Blocking,
+        return vec![blocking_conformance(
             "schema-conformance.unknown-type",
             format!(
                 "staged doc `{identity}` has type `{ty}`, which the resolved cascade does not define"
             ),
             Some(Location::addressed(identity, 1, 1)),
-            None,
         )];
     };
     let mut findings = match parse_sections(schema, source) {
@@ -2408,6 +2407,15 @@ pub(crate) fn conformance_route(code: &str) -> Route {
                 "<value>",
             ],
             " to correct the value",
+        ),
+        // Two-branch judgment: either a pack/config change dropped the doctype from
+        // the resolved cascade mid-task, or the staged file is a stray out-of-band
+        // write into the working area — which side is broken is the human's call, so
+        // the route is human (`jigc describe` is the check, not the repair).
+        "schema-conformance.unknown-type" => Route::human(
+            "check the type against `jigc describe` — restore the doctype's cascade \
+             entry if a pack/config change removed it, or remove or re-type the stray \
+             staged file",
         ),
         // Two-branch judgment: either the recorded path is wrong or the named file is
         // missing — which side is broken is the human's call, so the route is human.
@@ -4435,6 +4443,54 @@ Bursty-but-honest clients see occasional 429s.
                 .all(|f| !f.code.starts_with("file-state.")),
             "an unknown-type instance is file-state-silent: {:?}",
             report.findings
+        );
+    }
+
+    /// (M43 completion audit) The route floor over the `unknown-type` block: the
+    /// finding must survive the serialization seam — `Finding`'s `Serialize` asserts
+    /// blocking ⇒ route present, and `schema-conformance.` is **not** route-exempt —
+    /// and the route must name the recovery for the trigger states (a pack/config
+    /// change dropped the doctype from the resolved cascade mid-task, or the staged
+    /// file is a stray out-of-band write into the working area): check the type
+    /// against `jigc describe`, then restore the cascade entry or remove/re-type the
+    /// stray staged file.
+    #[test]
+    fn unknown_type_block_routes_through_the_serialization_seam() {
+        let area = TempArea::new("unknown-route");
+        area.stage("mystery:zed.md", b"whatever\n");
+        let mut record = FileStateRecord::new();
+
+        let report = validate_task(
+            area.dir(),
+            &schemas(),
+            &mut record,
+            area.dir(),
+            area.dir(),
+            area.dir(),
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &never_tracked(),
+            &BTreeSet::new(),
+            area.dir(),
+        )
+        .expect("sweep runs");
+
+        let unknown = report
+            .findings
+            .iter()
+            .find(|f| f.code == "schema-conformance.unknown-type")
+            .expect("the unknown type blocks");
+        // The seam itself: serializing a route-less, non-exempt blocking finding
+        // fires the route-floor assert (`finding.rs` → `Serialize`), so this line
+        // alone is the floor's presence proof.
+        let wire = serde_json::to_value(unknown).expect("the finding serializes");
+        let route = wire["route"]
+            .as_str()
+            .expect("blocking implies a route, never null");
+        assert!(
+            route.contains("`jigc describe`"),
+            "the route names the doctype check: {route}"
         );
     }
 
