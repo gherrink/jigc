@@ -182,6 +182,14 @@ pub enum Command {
         /// message for the live set.
         #[arg(long = "as")]
         r#as: String,
+
+        /// Override the migrated doc's slug (`<doctype>:<slug>`), decoupling the id
+        /// from the authored title. Taken **verbatim** and validated as a well-formed
+        /// slug before any task is minted — a malformed value is rejected, never
+        /// silently re-slugified (`jigc doc create --slug`'s discipline, recorded in
+        /// the migration task and applied when the agent authors the target doc).
+        #[arg(long)]
+        slug: Option<String>,
     },
 
     /// Migrate the committed managed corpus onto the current schema — `jigc
@@ -343,7 +351,9 @@ impl Cli {
             Command::Uninstall => run_uninstall(self.format),
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
-            Command::Migrate { path, r#as } => run_migrate(self.format, &path, &r#as),
+            Command::Migrate { path, r#as, slug } => {
+                run_migrate(self.format, &path, &r#as, slug.as_deref())
+            }
             Command::MigrateCorpus { no_commit, dry_run } => {
                 run_migrate_corpus(self.format, migrate_corpus::Options { no_commit, dry_run })
             }
@@ -554,7 +564,7 @@ fn run_ingest(format: Format) -> Outcome {
 /// foreign file, a serial collision, or a blocking compose finding surfaces on stderr
 /// (with its route) and exits non-zero (`design/auto-migration.md` → The `jigc migrate`
 /// verb / The source seam).
-fn run_migrate(format: Format, path: &str, doctype: &str) -> Outcome {
+fn run_migrate(format: Format, path: &str, doctype: &str, slug_override: Option<&str>) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -562,7 +572,7 @@ fn run_migrate(format: Format, path: &str, doctype: &str) -> Outcome {
             return Outcome::failure();
         }
     };
-    migrate::run(&cwd, path, doctype, format)
+    migrate::run(&cwd, path, doctype, slug_override, format)
 }
 
 /// Run `jigc migrate-corpus` against the current working directory: locate the repo +
@@ -1513,6 +1523,31 @@ mod cli_parse {
             Command::Migrate {
                 path: "CHANGELOG.md".to_string(),
                 r#as: "changelog".to_string(),
+                slug: None,
+            }
+        );
+    }
+
+    /// (M43 inc-6 T2) `--slug` on `jigc migrate` parses as the optional doc-id
+    /// override — recorded at mint and applied when the agent authors the target doc.
+    #[test]
+    fn migrate_parses_the_slug_override() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "migrate",
+            "CHANGELOG.md",
+            "--as",
+            "changelog",
+            "--slug",
+            "release-log",
+        ])
+        .expect("`jigc migrate <path> --as <doctype> --slug <s>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Migrate {
+                path: "CHANGELOG.md".to_string(),
+                r#as: "changelog".to_string(),
+                slug: Some("release-log".to_string()),
             }
         );
     }

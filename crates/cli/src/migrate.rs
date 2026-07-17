@@ -37,14 +37,21 @@ use std::path::{Component, Path, PathBuf};
 /// diff-friendly style as the `intent`/`workflow` task files).
 pub(crate) const SOURCE_FILE: &str = "source";
 
-/// Run `jigc migrate <path> --as <doctype>` against `cwd`: locate the repo + project
-/// layer, read the foreign file, mint the off-router migration task, stage the foreign
-/// bytes, compose the `migrate-<doctype>` workflow over the source seam, render the
-/// composed view through `format`, and print it. A clean run exits 0; an unknown
-/// doctype, a missing foreign file, a serial collision, or a blocking compose finding
-/// surfaces on stderr (with its route) and exits non-zero.
-pub fn run(cwd: &Path, path: &str, doctype: &str, format: Format) -> Outcome {
-    match migrate_in_repo(cwd, path, doctype) {
+/// Run `jigc migrate <path> --as <doctype>` (optional `--slug`) against `cwd`: locate
+/// the repo + project layer, read the foreign file, mint the off-router migration
+/// task, stage the foreign bytes, compose the `migrate-<doctype>` workflow over the
+/// source seam, render the composed view through `format`, and print it. A clean run
+/// exits 0; an unknown doctype, a malformed `--slug`, a missing foreign file, a serial
+/// collision, or a blocking compose finding surfaces on stderr (with its route) and
+/// exits non-zero.
+pub fn run(
+    cwd: &Path,
+    path: &str,
+    doctype: &str,
+    slug_override: Option<&str>,
+    format: Format,
+) -> Outcome {
+    match migrate_in_repo(cwd, path, doctype, slug_override) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
             Outcome::success()
@@ -137,7 +144,12 @@ fn repo_relative_source_path(repo_root: &Path, path: &str) -> String {
 /// happens before composition so the seam can be fed off the just-staged bytes; a
 /// failed compose leaves the minted task in place for inspection / re-entry (the
 /// determinism boundary keeps the seam read CLI-owned).
-fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<crate::start::Composition> {
+fn migrate_in_repo(
+    cwd: &Path,
+    path: &str,
+    doctype: &str,
+    slug_override: Option<&str>,
+) -> Result<crate::start::Composition> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
         return Err(crate::locate::not_set_up());
@@ -151,6 +163,19 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<crate::start
     // permanent orphan in `jigc task list`).
     let pack = crate::pack::make_pack()?;
     ensure_migratable(pack.as_ref(), doctype)?;
+
+    // Validate a `--slug` override BEFORE minting (the same mint-after-validate
+    // discipline as `ensure_migratable`: a rejected value strands no task dir). The
+    // value drives the migrated doc's id **verbatim** — a malformed one is rejected,
+    // never silently re-slugified (the `doc create --slug` reject precedent;
+    // `DECISIONS.md` 2026-07-06 M39 planning → Slug (G6)).
+    if let Some(slug) = slug_override
+        && !engine::slug::is_slug(slug)
+    {
+        bail!(
+            "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
+        );
+    }
 
     // Read the foreign file's bytes (the source the seam carries). Resolve the path
     // against the repo root so a repo-relative `CHANGELOG.md` reaches the root file.
@@ -199,6 +224,15 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<crate::start
             minted.id
         )
     })?;
+
+    // Record the validated `--slug` override as a SOURCE_PATH_FILE-sibling task-state
+    // file, read back by `doc author` to drive the target doc's id verbatim
+    // ([`engine::state::read_slug_override`]). Absent on a slug-less migrate — the
+    // author then derives the slug from the payload title, byte-identical to before.
+    if let Some(slug) = slug_override {
+        state::persist(&minted.dir.join(state::SLUG_OVERRIDE_FILE), slug.as_bytes())
+            .with_context(|| format!("could not record the slug override for `{}`", minted.id))?;
+    }
 
     // Compose the migration workflow over the minted task with the foreign bytes fed
     // into the source seam — the composed view's `{{source}}` surfaces them verbatim.

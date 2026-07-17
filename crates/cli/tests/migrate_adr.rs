@@ -1219,6 +1219,160 @@ fn a_same_path_migration_rewrites_in_place() {
     assert_ingest_adopted(repo.path(), home.path(), &pack, "use-postgresql");
 }
 
+// ---------------------------------------------------------------------------
+// M43 Increment 6, T2 — `--slug` on `jigc migrate`, threaded via task state to
+// `doc author`'s `create_gated` override (RC-lacon A2; `DECISIONS.md` 2026-07-16
+// M43 Inc 6 decomposition → T2). The override drives the PROMOTED DOC's id
+// verbatim — decoupled from the authored title — while the task id stays the
+// per-file `migrate-adr-<slug(source-path)>`. A malformed value is rejected
+// BEFORE minting (the `ensure_migratable` mint-after-validate discipline), never
+// silently re-slugified. The omitting contexts stay byte-identical to today: a
+// slug-less migrate is pinned by `migrate_adr_finalize_writes_retires_and_adopts`
+// (ack `adr:use-postgresql`, the title-derived slug), and a non-migration
+// `doc author` by the `doc_write.rs` suite — no override file, `None` read.
+// ---------------------------------------------------------------------------
+
+/// The headline: `jigc migrate <path> --as adr --slug pinned-decision`, then
+/// `doc author adr` with a payload whose title slugs DIFFERENTLY
+/// (`Use PostgreSQL` → `use-postgresql`), acks `adr:pinned-decision` — the
+/// override, not the title, drives the id — and `finalize --approve` promotes to
+/// `docs/decisions/pinned-decision.md` (byte-stable), retiring the foreign
+/// original. The title-derived path is never created.
+#[test]
+fn a_migrate_slug_override_drives_the_promoted_id() {
+    let repo = TempDir::new("slug-override");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    let rel = commit_foreign_adr(repo.path(), "0005-pin-the-id", FOREIGN_POSTGRES);
+    let composed = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["migrate", &rel, "--as", "adr", "--slug", "pinned-decision"],
+            None,
+        ),
+        "jigc migrate <adr> --as adr --slug pinned-decision",
+    );
+    assert!(
+        composed.contains("We will use PostgreSQL"),
+        "the slug-carrying migrate still composes the source seam:\n{composed}",
+    );
+
+    // The payload title slugs to `use-postgresql` — the ack must carry the OVERRIDE.
+    let task = migration_task("0005-pin-the-id");
+    let authored = ok_stdout(
+        author_adr(repo.path(), home.path(), &pack, &task, PAYLOAD_POSTGRES),
+        "jigc doc author adr (slug override)",
+    );
+    assert_eq!(
+        authored, "adr:pinned-decision",
+        "the recorded `--slug` override drives the authored doc id, not the title",
+    );
+
+    let approve = finalize_approve(repo.path(), home.path(), &pack, &task);
+    assert!(
+        approve.status.success(),
+        "finalize --approve on the slug-overridden migration must land; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&approve.stdout),
+        String::from_utf8_lossy(&approve.stderr),
+    );
+
+    // Promoted at the OVERRIDE slug, byte-stable; the title-derived path never created.
+    let body = assert_committed_byte_stable(repo.path(), &pack, "pinned-decision");
+    assert!(
+        body.contains("# Use PostgreSQL") && body.contains("We will use PostgreSQL"),
+        "the promoted doc keeps the authored title — only the id is overridden:\n{body}",
+    );
+    assert!(
+        !repo
+            .path()
+            .join("docs")
+            .join("decisions")
+            .join("use-postgresql.md")
+            .exists(),
+        "the title-derived slug path is never created when `--slug` overrides",
+    );
+    // The foreign original is retired in the same commit that adds the override path.
+    assert!(
+        !repo.path().join(&rel).exists(),
+        "the approved migration retires the foreign original"
+    );
+    let name_status = git(
+        repo.path(),
+        &["show", "--name-status", "--no-renames", "--format=", "HEAD"],
+    );
+    assert!(
+        name_status.contains("A\tdocs/decisions/pinned-decision.md")
+            && name_status.contains(&format!("D\t{rel}")),
+        "one commit adds the override-slugged doc + retires the foreign original:\n{name_status}",
+    );
+}
+
+/// A malformed `--slug` rejects BEFORE any task is minted (the mint-after-validate
+/// discipline): non-zero exit, the reject-verbatim message (never a silent
+/// re-slugify), `jigc task list` unchanged, and no task dir stranded.
+#[test]
+fn a_malformed_migrate_slug_rejects_before_minting() {
+    let repo = TempDir::new("slug-malformed");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+    let rel = commit_foreign_adr(repo.path(), "0006-bad-slug", FOREIGN_POSTGRES);
+
+    let list_before = ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["task", "list"], None),
+        "jigc task list (before)",
+    );
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", &rel, "--as", "adr", "--slug", "Pinned Decision"],
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "a malformed `--slug` must reject (exit non-zero); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("is not a valid slug"),
+        "the reject names the malformed slug verbatim — never silently re-slugified:\n{stderr}",
+    );
+
+    // Nothing minted: the task list is unchanged and no per-file task dir exists.
+    let list_after = ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["task", "list"], None),
+        "jigc task list (after)",
+    );
+    assert_eq!(
+        list_before, list_after,
+        "a rejected `--slug` strands no task — `jigc task list` is unchanged",
+    );
+    assert!(
+        !repo
+            .path()
+            .join(".jigc")
+            .join("tasks")
+            .join(migration_task("0006-bad-slug"))
+            .exists(),
+        "no migration task dir is minted for the rejected `--slug`",
+    );
+}
+
 /// (c) **Regression** — a normal first-time `jigc migrate <foreign>.md --as adr` into a
 /// non-colliding, empty `docs/decisions/` is **unaffected** by the guard: it promotes, retires
 /// the foreign original, commits, and a follow-up `jigc ingest` reports it **adopted**. The

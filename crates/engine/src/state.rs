@@ -61,6 +61,15 @@ const WORKFLOW_FILE: &str = "workflow";
 /// verb writes it under the same name the engine planner reads ([`read_source_path`]).
 pub const SOURCE_PATH_FILE: &str = "source-path";
 
+/// The working-area file recording a migration task's `--slug` override
+/// (`jigc migrate <path> --as <doctype> --slug <s>`), read back by `doc author`
+/// to drive the created target doc's id verbatim (the gated-create slug
+/// override — M43 Inc 6 T2). Absent on a slug-less migrate and on every
+/// non-migration task — the author then derives the slug from the payload
+/// title, byte-identical to before. Public so the CLI `migrate` verb writes it
+/// under the same name the author read-back uses ([`read_slug_override`]).
+pub const SLUG_OVERRIDE_FILE: &str = "slug-override";
+
 /// The working-area sub-directory holding a task's staged doc instances
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
 /// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
@@ -563,6 +572,20 @@ pub fn read_workflow_id(task_dir: &Path) -> std::io::Result<Option<String>> {
 pub fn read_source_path(task_dir: &Path) -> std::io::Result<Option<String>> {
     match std::fs::read_to_string(task_dir.join(SOURCE_PATH_FILE)) {
         Ok(path) => Ok(Some(path)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+/// Read the persisted **slug override** of a migration task from its working
+/// area (`<task_dir>/slug-override`) — the `--slug` value `jigc migrate`
+/// recorded at mint, fed to the gated create so the target doc's id is the
+/// override verbatim, decoupled from the authored title (M43 Inc 6 T2). A
+/// missing file yields [`None`] — the slug-less / non-migration case (the id
+/// derives from the title as ever), never an error.
+pub fn read_slug_override(task_dir: &Path) -> std::io::Result<Option<String>> {
+    match std::fs::read_to_string(task_dir.join(SLUG_OVERRIDE_FILE)) {
+        Ok(slug) => Ok(Some(slug)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err),
     }
@@ -2578,6 +2601,27 @@ sections:
         assert!(
             !RolesRecord::path_in(&bare_dir).exists(),
             "a bare-form entry (no `as:` role) binds nothing — no roles.json written"
+        );
+    }
+
+    /// (M43 inc-6 T2) The slug-override task-state round-trip: the `migrate` verb
+    /// persists the `--slug` value under [`SLUG_OVERRIDE_FILE`]; [`read_slug_override`]
+    /// reads it back verbatim, and an absent file (a slug-less migrate / any
+    /// non-migration task) is `None`, never an error.
+    #[test]
+    fn read_slug_override_round_trips_and_absent_is_none() {
+        let root = TempRoot::new("slug-override");
+        let task_dir = root.path().join("tasks").join("migrate-adr-x");
+        assert_eq!(
+            read_slug_override(&task_dir).expect("an absent override is not an error"),
+            None,
+            "no override file reads back as None (the slug-less / non-migration case)",
+        );
+        persist(&task_dir.join(SLUG_OVERRIDE_FILE), b"pinned-decision").expect("persist");
+        assert_eq!(
+            read_slug_override(&task_dir).expect("the persisted override reads back"),
+            Some("pinned-decision".to_string()),
+            "the recorded override reads back verbatim",
         );
     }
 

@@ -1684,6 +1684,15 @@ fn run_author(
         .get(doctype)
         .map(|s| on_create_doc_fields(s, migration, schema_version))
         .unwrap_or_default();
+    // A migration minted with `jigc migrate … --slug <s>` recorded the override into
+    // the task working area (M43 Inc 6 T2); read-if-present and drive the created
+    // doc's id verbatim through the same `create_gated` override `doc create --slug`
+    // uses. File-presence keying suffices: a migrate workflow's `allows-create` is a
+    // single `{type: <target>}` entry, so any gated author here IS the target doctype.
+    // Absent on every non-migration task (and a slug-less migrate) — `None`, the
+    // title-derived slug, byte-identical to before.
+    let slug_override = state::read_slug_override(&task.dir)
+        .context("could not read the task's migration slug override")?;
     // The create persists the empty doc through the gated path (gate + squatter seams).
     let created = state::create_gated(
         &task.dir,
@@ -1693,8 +1702,7 @@ fn run_author(
         &plan.title,
         &task.jigc_home,
         &on_create,
-        // `doc author` derives the slug from the payload title, never a `--slug` flag.
-        None,
+        slug_override.as_deref(),
     )
     .map_err(|f| block(&f, "author", doctype))?;
     // `create_gated` admitted the doctype, so it is in the loaded set — resolve the
