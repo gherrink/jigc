@@ -53,7 +53,7 @@ Available workflows:
 
 Recent: 3 finalizations on this branch · last: add-rate-limiter (2026-05-27)
 
-Run: `jigc start "<intent>"`   — routes among the workflows above; re-run with `--workflow <chosen>`
+Run: `jigc start "<intent>"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it
 ```
 
 **3. Active task** — a task in progress, not blocked:

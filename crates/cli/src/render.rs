@@ -108,7 +108,7 @@ pub fn orientation_clean(
         out.push('\n');
     }
     out.push_str(
-        "\nRun: `jigc start \"<intent>\"`   — routes among the workflows above; pick one, then re-run with `--workflow <chosen>`\n",
+        "\nRun: `jigc start \"<intent>\"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it\n",
     );
     // The off-catalog next-step verbs — one route-prose line per verb the pack-set
     // ships (same shape for each), so milestone planning + the existing-project
@@ -2100,10 +2100,10 @@ mod tests {
 
     /// The clean-no-task orientation (state 2) prints the provenance header, the
     /// available-workflows catalog with each `when` hint, the `jigc start`
-    /// next-step directive, and ends with the routing footer. Post-flip the
-    /// next-step leads to the **routing** flow (`jigc start "<intent>"` composes
-    /// the router, which routes among the workflows above), not a direct
-    /// single-task mint (`workflow-dialect.md` → Workflow selection).
+    /// next-step directive, and ends with the routing footer. The directive
+    /// claims no CLI selection work (`surface-contract.md` law 1 — behaviour
+    /// claims match knobs): `jigc start "<intent>"` *presents* the catalog, the
+    /// *agent* picks, and `--workflow <chosen>` composes — never "routes among".
     #[test]
     fn render_orientation_clean_has_header_catalog_and_footer() {
         // No off-catalog verbs present → no extra route-prose line (the omitting
@@ -2123,14 +2123,18 @@ mod tests {
           - single-task — Implement one well-scoped change.
           - project-setup — Set up the development pack on a fresh repo.
 
-        Run: `jigc start "<intent>"`   — routes among the workflows above; pick one, then re-run with `--workflow <chosen>`
+        Run: `jigc start "<intent>"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         "#);
 
-        // The next-step leads to the routing flow, not a direct single-task mint.
+        // The next-step tells the truth: the CLI presents, the agent picks.
         assert!(
-            text.contains("routes among the workflows above"),
+            text.contains("presents the workflows above"),
             "got:\n{text}",
+        );
+        assert!(
+            !text.contains("routes among"),
+            "orientation must not claim the CLI does selection work; got:\n{text}",
         );
         assert!(
             !text.contains("default workflow (single-task)"),
@@ -2173,7 +2177,7 @@ mod tests {
         );
         // The off-catalog lines follow the catalog's routing directive.
         let routing_at = text
-            .find("routes among the workflows above")
+            .find("presents the workflows above")
             .expect("routing directive present");
         let planning_at = text
             .find("--workflow planning")
