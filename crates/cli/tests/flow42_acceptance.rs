@@ -668,9 +668,10 @@ fn two_dangling_ref_sweep_emits_two_uniquely_keyed_findings_every_advisory_route
 // ───────────── Arm V3/V6 — the schema read surface: enum members + field→section ─────────────
 
 /// **Arm V3/V6.** `jigc doc schema adr --format json` projects the per-field enum members
-/// (`of`) and the top-level field→owning-`section` mapping (contract-version 2, proven
-/// byte-verbatim in `doc_schema.rs`): the `status` field carries its enum members and names
-/// the `status` section it lives under.
+/// (`of`) and the top-level field→owning-`section` mapping (contract-version 3 since M43
+/// rc.7 — the settable write addresses joined; proven byte-verbatim in `doc_schema.rs`):
+/// the `status` field carries its enum members, names the `status` section it lives
+/// under, and names its concrete `set-field` write address.
 #[test]
 fn doc_schema_shows_enum_members_and_field_sections() {
     let repo = TempDir::new("schema");
@@ -687,7 +688,7 @@ fn doc_schema_shows_enum_members_and_field_sections() {
     let value: serde_json::Value =
         serde_json::from_str(&stdout_of(&out)).expect("the schema projection is json");
     assert_eq!(
-        value["contract-version"], 2,
+        value["contract-version"], 3,
         "the projection carries the pinned contract version"
     );
 
@@ -704,6 +705,10 @@ fn doc_schema_shows_enum_members_and_field_sections() {
     assert_eq!(
         status["section"], "status",
         "a top-level field names its owning section; got:\n{status}",
+    );
+    assert_eq!(
+        status["set-field"], "adr:<slug>#status/status",
+        "a settable field names its concrete set-field write address; got:\n{status}",
     );
 }
 

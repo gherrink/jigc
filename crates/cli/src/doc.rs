@@ -207,7 +207,7 @@ pub enum DocCommand {
     /// injected stamp field included) — the third read surface, next to `describe`
     /// (the non-contractual menu) and `doc show` (the committed-content read).
     /// `--format json` is the separately-pinned, explicitly versioned contract
-    /// (`contract-version: 2` — `design/doc-read-surface.md` → Why json is a contract
+    /// (`contract-version: 3` — `design/doc-read-surface.md` → Why json is a contract
     /// here); plain text is a non-contractual human listing. Task-less — a schema
     /// projection is never task-scoped.
     Schema {
@@ -2163,8 +2163,9 @@ struct DocRow {
 /// as they evolve. Golden-pinned at ship (`crates/cli/tests/doc_schema.rs`).
 #[derive(serde::Serialize)]
 struct SchemaContract<'a> {
-    /// The projection's own version — 2 since M41 rc.5 (the `of`/`section` field
-    /// keys joined the projection; bumps on any structural change to these keys).
+    /// The projection's own version — 3 since M43 rc.7 (the settable write-verb
+    /// addresses joined the projection; 2 was the M41 rc.5 `of`/`section` join;
+    /// bumps on any structural change to these keys).
     #[serde(rename = "contract-version")]
     contract_version: u32,
     /// The doctype id.
@@ -2182,7 +2183,7 @@ struct SchemaContract<'a> {
 }
 
 /// One field of the pinned projection: `{id, type, of?, required, author-required,
-/// default?, set?, section?}`. `required` is presence-in-a-conformant-instance —
+/// default?, set?, section?, set-field?}`. `required` is presence-in-a-conformant-instance —
 /// the author must supply it OR the CLI stamps it (`default:`/`set:`);
 /// `author-required` is the shared engine predicate
 /// ([`engine::validate::is_author_required`]) — the same authority the create
@@ -2191,7 +2192,12 @@ struct SchemaContract<'a> {
 /// depths, so an agent reads the legal values without a failed-write probe);
 /// `section` names the field's owning simple-section — **top-level only** (an item
 /// field carries its section structurally, under `sections[].item`) (M41 rc.5,
-/// V3+V6+V11 the `doc author` discoverability cluster).
+/// V3+V6+V11 the `doc author` discoverability cluster); `set-field` is the field's
+/// concrete write-verb address (instance parts placeheld: `<slug>`, `<id>`) —
+/// **absent** when the field is not directly settable: a `set:`-derived field is
+/// CLI-stamped (writing it fights the deriver / the freeze gate), and a block's
+/// `id-from` leaf is the item's identity (the heading IS the value — the write-time
+/// guard routes to `retitle-item` / remove+add) (M43 rc.7, Settle #10).
 #[derive(serde::Serialize)]
 struct ContractField<'a> {
     id: &'a str,
@@ -2208,17 +2214,25 @@ struct ContractField<'a> {
     set: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     section: Option<&'a str>,
+    #[serde(rename = "set-field", skip_serializing_if = "Option::is_none")]
+    set_field: Option<String>,
 }
 
 /// One section of the pinned projection: `{id, kind: "slot"|"repeatable",
-/// optional?, item?}` — `optional` only on an optional slot section, `item` only
-/// on a repeatable.
+/// optional?, set-slot?|add-item?, item?}` — `optional` only on an optional slot
+/// section; `set-slot` (the section's write address) only on a slot, `add-item`
+/// and `item` only on a repeatable (M43 rc.7: every section entry names its
+/// owning write verb by carrying its address under that verb's key).
 #[derive(serde::Serialize)]
 struct ContractSection<'a> {
     id: &'a str,
     kind: &'static str,
     #[serde(skip_serializing_if = "is_false")]
     optional: bool,
+    #[serde(rename = "set-slot", skip_serializing_if = "Option::is_none")]
+    set_slot: Option<String>,
+    #[serde(rename = "add-item", skip_serializing_if = "Option::is_none")]
+    add_item: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     item: Option<ContractItem<'a>>,
 }
@@ -2233,18 +2247,24 @@ struct ContractItem<'a> {
     nested: Vec<ContractNested<'a>>,
 }
 
-/// One item slot: `{id, optional?}`.
+/// One item slot: `{id, optional?, set-slot}` — an item slot is always directly
+/// settable, so its write address is unconditional.
 #[derive(serde::Serialize)]
 struct ContractSlot<'a> {
     id: &'a str,
     #[serde(skip_serializing_if = "is_false")]
     optional: bool,
+    #[serde(rename = "set-slot")]
+    set_slot: String,
 }
 
-/// One nested repeatable inside an item: `{id, item}` (the recursion point).
+/// One nested repeatable inside an item: `{id, add-item, item}` (the recursion
+/// point; `add-item` is the nested block's write address).
 #[derive(serde::Serialize)]
 struct ContractNested<'a> {
     id: &'a str,
+    #[serde(rename = "add-item")]
+    add_item: String,
     item: ContractItem<'a>,
 }
 
@@ -2256,7 +2276,12 @@ fn is_false(value: &bool) -> bool {
 /// Build the pinned [`SchemaContract`] over the resolved `schema`, deterministically
 /// in schema-declared order (fields, sections, and item leaves each walk the loaded
 /// definition top to bottom — no hash-container order ever reaches the output).
+/// Addresses are **type-level**: the instance parts are placeheld (`<slug>` for the
+/// doc, `<id>` for each enclosing item's minted id at that depth — the real values
+/// come from `doc list` / `doc show`'s item `id` key), so the projection stays a
+/// schema read, never an instance read.
 fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContract<'_> {
+    let doc = format!("{}:<slug>", schema.ty);
     let mut fields = Vec::new();
     let mut sections = Vec::new();
     for section in &schema.sections {
@@ -2268,8 +2293,13 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
                 fields.extend(declared.iter().map(|field| {
                     // A top-level field carries its owning simple-section id; an item
                     // field carries its section structurally (`contract_item` leaves
-                    // `section: None`).
-                    let mut field = contract_field(field);
+                    // `section: None`). No doc-level `id-from` exclusion: a doc's id
+                    // source is its H1 title, never a declared header field.
+                    let address = field
+                        .set
+                        .is_none()
+                        .then(|| format!("{doc}#{}/{}", section.id, field.id));
+                    let mut field = contract_field(field, address);
                     field.section = Some(&section.id);
                     field
                 }));
@@ -2278,6 +2308,8 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
                         id: &section.id,
                         kind: "slot",
                         optional: slot.optional,
+                        set_slot: Some(format!("{doc}#{}", section.id)),
+                        add_item: None,
                         item: None,
                     });
                 }
@@ -2286,12 +2318,17 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
                 id: &section.id,
                 kind: "repeatable",
                 optional: false,
-                item: Some(contract_item(repeatable)),
+                set_slot: None,
+                add_item: Some(format!("{doc}#{}", section.id)),
+                item: Some(contract_item(
+                    repeatable,
+                    &format!("{doc}#{}/<id>", section.id),
+                )),
             }),
         }
     }
     SchemaContract {
-        contract_version: 2,
+        contract_version: 3,
         ty: &schema.ty,
         schema_version,
         fields,
@@ -2299,8 +2336,10 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
     }
 }
 
-/// Project one schema field into its pinned [`ContractField`].
-fn contract_field(field: &engine::schema::Field) -> ContractField<'_> {
+/// Project one schema field into its pinned [`ContractField`]. `set_field` is the
+/// caller-computed write address — `None` when the field is not directly settable
+/// (a `set:`-derived field, or the block's `id-from` leaf; see [`ContractField`]).
+fn contract_field(field: &engine::schema::Field, set_field: Option<String>) -> ContractField<'_> {
     let author_required = engine::validate::is_author_required(field);
     ContractField {
         id: &field.id,
@@ -2312,24 +2351,35 @@ fn contract_field(field: &engine::schema::Field) -> ContractField<'_> {
         set: field.set.as_deref(),
         // Set by `schema_contract` for a top-level field; item fields stay None.
         section: None,
+        set_field,
     }
 }
 
 /// Project a repeatable's item template, recursing into nested repeatables.
-fn contract_item(repeatable: &Repeatable) -> ContractItem<'_> {
+/// `prefix` is the item's placeheld chain address (`<type>:<slug>#<section>/<id>`,
+/// one `/<id>` per depth) — each leaf's write address hangs off it.
+fn contract_item<'a>(repeatable: &'a Repeatable, prefix: &str) -> ContractItem<'a> {
     let mut fields = Vec::new();
     let mut slots = Vec::new();
     let mut nested = Vec::new();
     for leaf in &repeatable.block {
         match leaf {
-            Leaf::Field(field) => fields.push(contract_field(field)),
+            Leaf::Field(field) => {
+                // The block's `id-from` leaf is the item's identity — the heading IS
+                // the value, so it is `retitle-item` territory, never `set-field`.
+                let address = (field.set.is_none() && field.id != repeatable.id_from)
+                    .then(|| format!("{prefix}/{}", field.id));
+                fields.push(contract_field(field, address));
+            }
             Leaf::Slot { id, slot } => slots.push(ContractSlot {
                 id,
                 optional: slot.optional,
+                set_slot: format!("{prefix}/{id}"),
             }),
             Leaf::Repeatable { id, repeatable } => nested.push(ContractNested {
                 id,
-                item: contract_item(repeatable),
+                add_item: format!("{prefix}/{id}"),
+                item: contract_item(repeatable, &format!("{prefix}/{id}/<id>")),
             }),
         }
     }
@@ -2363,6 +2413,14 @@ fn schema_listing(schema: &Schema, schema_version: Option<u32>) -> String {
             if section.optional {
                 out.push_str(" (optional)");
             }
+            // The section's write-verb address, mirrored from the pinned json
+            // (non-contractual presentation — only the json shape is the pin).
+            if let Some(addr) = &section.set_slot {
+                out.push_str(&format!(" (set-slot: {addr})"));
+            }
+            if let Some(addr) = &section.add_item {
+                out.push_str(&format!(" (add-item: {addr})"));
+            }
             out.push('\n');
             if let Some(item) = &section.item {
                 push_item_lines(&mut out, item, 2);
@@ -2392,6 +2450,11 @@ fn push_field_line(out: &mut String, field: &ContractField<'_>, depth: usize) {
     if let Some(set) = field.set {
         out.push_str(&format!(" (set: {set})"));
     }
+    // The field's write address, mirrored from the pinned json (non-contractual
+    // presentation); a non-settable field's line stays address-less — inert.
+    if let Some(addr) = &field.set_field {
+        out.push_str(&format!(" (set-field: {addr})"));
+    }
     if field.author_required {
         out.push_str(" *");
     }
@@ -2420,11 +2483,15 @@ fn push_item_lines(out: &mut String, item: &ContractItem<'_>, depth: usize) {
         if slot.optional {
             out.push_str(" (optional)");
         }
+        out.push_str(&format!(" (set-slot: {})", slot.set_slot));
         out.push('\n');
     }
     for nested in &item.nested {
         out.push_str(&"  ".repeat(depth));
-        out.push_str(&format!("- {}: repeatable\n", nested.id));
+        out.push_str(&format!(
+            "- {}: repeatable (add-item: {})\n",
+            nested.id, nested.add_item
+        ));
         push_item_lines(out, &nested.item, depth + 1);
     }
 }

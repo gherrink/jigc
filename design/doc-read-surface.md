@@ -84,12 +84,14 @@ Pinned once here; every doctype's json read conforms. The **milestone record is 
 `jigc describe`'s output is deliberately **non-contractual** — format-hostile to parsing so nothing depends on it ([introspection.md](introspection.md) → Non-contractual by design). `jigc doc show --format json` is the deliberate inverse: its whole purpose is machine consumption (fresh-clone continuation re-derives milestone state from it), so it **is** a stable contract, pinned at 1.0. The two read surfaces sit on opposite sides of the same axis on purpose: describe is a menu you orient by, `doc show` is content you compute over. **A third surface joins at M40**: `jigc doc schema <doctype> --format json` — the structural projection that *cannot* ride describe (its format predicate forbids parseable structure) — ships as a **separately-pinned, explicitly versioned contract**, pinned here:
 
 ```json
-{ "contract-version": 2, "type": <doctype>, "schema-version": <the doctype's stamped version, else null>,
-  "fields":   [ { "id", "type", "of"?, "required", "author-required", "default"?, "set"?, "section"? }, … ],
-  "sections": [ { "id", "kind": "slot"|"repeatable", "optional"?, "item": { "fields", "slots", "nested" } }, … ] }
+{ "contract-version": 3, "type": <doctype>, "schema-version": <the doctype's stamped version, else null>,
+  "fields":   [ { "id", "type", "of"?, "required", "author-required", "default"?, "set"?, "section"?, "set-field"? }, … ],
+  "sections": [ { "id", "kind": "slot"|"repeatable", "optional"?, "set-slot"?|"add-item"?,
+                  "item": { "fields", "slots": [ { "id", "optional"?, "set-slot" }, … ],
+                            "nested": [ { "id", "add-item", "item" }, … ] } }, … ] }
 ```
 
-— the `item` object is **recursive** for nested repeatables (`nested` carries the inner blocks); a field's `of` carries an `enum`'s legal members (universal across depths — an agent reads the legal values from the contract, no failed-write probe), and `section` names the owning simple-section id (**top-level fields only** — an item field carries its section structurally, under `sections[].item`); `contract-version` bumps on any structural change to this projection — **no additive carve-out** (the M41 rc.5 addition of the `of`/`section` keys bumped it **1→2**) — the *values* track the schemas as they evolve, the *keys/structure* are the pin; golden-pinned at ship ([introspection.md](introspection.md)).
+— the `item` object is **recursive** for nested repeatables (`nested` carries the inner blocks); a field's `of` carries an `enum`'s legal members (universal across depths — an agent reads the legal values from the contract, no failed-write probe), and `section` names the owning simple-section id (**top-level fields only** — an item field carries its section structurally, under `sections[].item`). **Every settable entry names its owning write verb by carrying its concrete address under that verb's key** (M43 rc.7): a field's `set-field`, a slot section's / item slot's `set-slot`, a repeatable's / nested block's `add-item` — instance parts **placeheld** (`<slug>` for the doc, `<id>` for each enclosing item's minted id at that depth; the real values come from `doc list` / `doc show`'s item `id` key — the projection stays type-level, e.g. adr `status` → `adr:<slug>#status/status`). The key is **absent** where the entry is not directly settable — a `set:`-derived (CLI-stamped) field, and a block's `id-from` leaf (the heading IS the value: `retitle-item` / remove+add territory, and the write-time guard routes there) — absence meaning *not directly settable*, never an error. `contract-version` bumps on any structural change to this projection — **no additive carve-out** (the M41 rc.5 addition of the `of`/`section` keys bumped it **1→2**; the M43 rc.7 addition of the write-address keys bumped it **2→3**) — the *values* track the schemas as they evolve, the *keys/structure* are the pin; golden-pinned at ship ([introspection.md](introspection.md)).
 
 ## `jigc doc list` — the fourth read surface (M42)
 
@@ -116,7 +118,7 @@ Five independently-governed version/posture regimes ride jigc's machine surfaces
 |---|---|---|
 | `jigc doc show --format json` (above) | **none** — no version key, and no version constant exists in the code | pinned shape; additive keys **pre-1.0 only**, then a versioned extension |
 | `jigc doc list --format json` (M42, above) | **none** — by declaration, above | the `doc show` posture |
-| `jigc doc schema --format json` (above) | **`contract-version`**, currently **2** ([doc.rs:1750-1757](../crates/cli/src/doc.rs)) | bumps on **any** structural change — **no additive carve-out** |
+| `jigc doc schema --format json` (above) | **`contract-version`**, currently **3** ([doc.rs:2165-2170](../crates/cli/src/doc.rs)) | bumps on **any** structural change — **no additive carve-out** |
 | The command-output contract — composed output, write-acks, findings ([command-output-contract.md](command-output-contract.md)) | **none** — by declaration | the `doc show` posture |
 | The **result contract** — `engine::result::SCHEMA_VERSION`, currently **2** ([result.rs:19](../crates/engine/src/result.rs)) | **`schema_version`**, a top-level key on every result envelope (orientation, `describe`, the validation report, the block/error envelope) | bumped only when a public result type's json projection changes in a way an external consumer must notice |
 | `jigc describe` (prose) | n/a | **explicitly non-contractual** ([introspection.md](introspection.md) → Non-contractual by design) |

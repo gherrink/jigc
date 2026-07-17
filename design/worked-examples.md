@@ -2589,12 +2589,13 @@ $ jigc doc set-slot arch-doc:cache-layer#components/session-store/description --
 > ok                                                   # the SAME item address still lands post-retitle
 $ jigc task finalize retitle-the-store                 # re-commits the doc, anchor frozen
 
-# ── Arm 4 (F1) · `doc schema` returns the separately-pinned contract shape (contract-version 2). ──
+# ── Arm 4 (F1) · `doc schema` returns the separately-pinned contract shape (contract-version 3). ──
 $ jigc doc schema adr --format json
-> { "contract-version": 2, "type": "adr", "schema-version": 2,
->   "fields": [ { "id": "status", "of": ["proposed","accepted","superseded"], …, "section": "status" },
+> { "contract-version": 3, "type": "adr", "schema-version": 2,
+>   "fields": [ { "id": "status", "of": ["proposed","accepted","superseded"], …, "section": "status",
+>                 "set-field": "adr:<slug>#status/status" },
 >               …, { "id": "schema-version", "author-required": false, …, "section": "status" } ],
->   "sections": [ { "id": "context", … }, { "id": "options", "optional": true, … },
+>   "sections": [ { "id": "context", …, "set-slot": "adr:<slug>#context" }, { "id": "options", "optional": true, … },
 >                 { "id": "decision", … }, { "id": "consequences", … } ] }
 
 # ── Arm 5 (F2) · a methodology migration lands the root VISION.md.  [dev ▸ methodology] ──
@@ -2620,7 +2621,7 @@ $ jigc validate
 1. **The pre-staged `git rm` finalize lands one clean commit (F7).** A user who pre-staged the foreign original's retirement before finalize still lands the approved migration: the retirement pathspec is discriminated on the **index**, not HEAD, so the stage phase never fatals — exactly one whole-index commit carries the promoted `CHANGELOG.md` **and** the pre-staged `D HISTORY.md`.
 2. **Gitignored trees never enter the funnel; a hollow adopt is annotated (F8+F4).** A gitignored `node_modules/**.md` is absent from the triage report (the candidate set is `git ls-files --cached --others --exclude-standard -- '*.md'`), while a structurally hollow roadmap at its placement home still **adopts** — its row carrying the pinned `repeatable-populated` annotation (`adopted — structurally empty: 0 milestones`), never a flipped verdict, never silence.
 3. **Retitle-item round-trips with identity intact (F5/F6).** The staged copy differs from the committed bytes in exactly the heading-title bytes (the `{#id}` anchor byte-frozen), a follow-up `set-slot` at the **same** item address lands (every inbound address survives), and finalize re-commits the retitled doc clean.
-4. **`doc schema` serves the pinned contract (F1).** `jigc doc schema adr --format json` returns contract-version 2 (the M41 rc.5 bump adding per-field `of` enum members + the field→section mapping) with the doctype's frozen `schema-version: 2`, the loader-injected `schema-version` stamp field rendered `author-required: false`, and the four adr sections in schema order with `options` flagged optional. (The byte-verbatim goldens live in `doc_schema.rs`.)
+4. **`doc schema` serves the pinned contract (F1).** `jigc doc schema adr --format json` returns contract-version 3 (the M43 rc.7 bump adding the settable write-verb addresses; 2 was the M41 rc.5 `of`/`section` join) with the doctype's frozen `schema-version: 2`, the loader-injected `schema-version` stamp field rendered `author-required: false`, and the four adr sections in schema order with `options` flagged optional. (The byte-verbatim goldens live in `doc_schema.rs`.)
 5. **A methodology migration lands the root vision (F2/F10).** `jigc migrate old-vision.md --as vision` under `[dev ▸ methodology]` composes the batch-author guidance; the approved finalize lands exactly one commit writing the managed singleton at the repo-root literal `VISION.md` (the placement home, `# Vision` display-H1) and retiring the foreign original.
 6. **The stamped corpus validates clean (A1).** A committed unstamped (v0) methodology doc — frozen by the M40 methodology manifest — is detected + routed `migrate` by `jigc validate`; `jigc migrate-corpus` appends exactly the `schema-version: 1` stamp line (bytes otherwise unchanged); the re-validate runs clean — no `schema-conformance` finding, no `migrate` route left.
 
@@ -2657,8 +2658,9 @@ $ jigc validate --format json    # over a committed adr with `supersedes: [adr:g
 
 # ── Arm V3/V6 · the schema read surface projects enum members + field→section. ──
 $ jigc doc schema adr --format json
-> { "contract-version": 2, …,
->   "fields": [ { "id": "status", "of": ["proposed","accepted","superseded"], …, "section": "status" }, … ] }
+> { "contract-version": 3, …,
+>   "fields": [ { "id": "status", "of": ["proposed","accepted","superseded"], …, "section": "status",
+>                 "set-field": "adr:<slug>#status/status" }, … ] }
 
 # ── Arm F4 · the first methodology v1→v2 value-remap, byte-faithful.  [dev ▸ methodology] ──
 $ jigc migrate-corpus       # over a committed v1 docs/deferral-ledger.md carrying `kind: D` + `kind: I`
@@ -2682,7 +2684,7 @@ $ jigc doc set-field adr:anchor-decision#status/cites-code --unset --format json
 1. **Folded-slot template fidelity (V1).** A foreign ADR migrates through `jigc migrate --as adr`; the composed author skeleton's `|-` block-scalar slots keep a multi-paragraph + bulleted body's line breaks through the `jigc doc author` → finalize round-trip — the committed prose carries the body verbatim (a folding flow scalar would collapse the breaks). The task id is parsed from the emitted `--task <id>` verb, never reconstructed.
 2. **The driver contract (F1).** `jigc start --format json` carries `task` — present-and-`null` on the `creates-task: false` router arm, the minted slug on a work-workflow — and a `jigc doc set-field --format json` write-ack decomposes its address into `op` + `target{doctype, slug, section, leaf}` + a literal empty `findings` envelope.
 3. **The stable finding key + the advisory-route floor (F2/finding-key).** A committed adr whose `0..*` `supersedes` carries two dangling targets fans exactly two `schema-conformance.ref-resolves` findings with **distinct** `(code, target)` keys (`adr:<slug>#supersedes/<to-slug>` — one keyed finding per dangling target), and **every** finding the store sweep emits carries a non-null `route` (the V15 / Fork-2 floor). Store-scope `validate` is report-only, so it exits 0 with the blocking content findings present.
-4. **The schema read surface (V3/V6).** `jigc doc schema adr --format json` (contract-version 2) projects the enum members (`of`) on the `status` field and the top-level field→owning-`section` mapping.
+4. **The schema read surface (V3/V6).** `jigc doc schema adr --format json` (contract-version 3 since M43 rc.7 — the settable write addresses joined) projects the enum members (`of`) on the `status` field, the top-level field→owning-`section` mapping, and the field's concrete `set-field` write address.
 5. **The first methodology v1→v2 value-remap (F4).** `jigc migrate-corpus` remaps a committed v1 `deferral-ledger`'s `kind: D` → `kind: Decision` (and `I` → `Idea`) byte-faithful to a real v2 canonical oracle — the enum rename + the stamp bump `1`→`2` are the whole delta; every other byte is preserved.
 6. **The first real-binary Vue proof (F3).** A committed arch-doc component whose `implemented-by` anchor names a **fabricated** `.vue` script symbol **blocks** at the finalize gate (`doc-code.symbol-exists`, exit non-zero — the SFC's `<script setup>` is extracted and parsed under the vendored TypeScript grammar); re-pointed at a **real** composable (`useCounter`), the same finalize passes.
 7. **The optional-scalar clear (V5).** `jigc doc set-field <addr> --unset` clears an optional adr header scalar (`cites-code`) — the field line is gone and the ack names the clear (`unset: true`) — and the doc re-conforms: a follow-up `set-field` over the now-absent field lands.
