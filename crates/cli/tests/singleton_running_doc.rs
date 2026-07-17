@@ -29,11 +29,11 @@
 //!       finalize-preflight with `reconciliation.conflict-block` (the baseline is
 //!       recorded by the cold finalize FIRST, then the committed file is drifted
 //!       out-of-band — an unrecorded-baseline drift would vacuously baseline-adopt);
-//!   (d) **the non-singleton `create` regression holds** — a committed-slug `create`
-//!       of the embedded **non-singleton** `adr` doctype stays **mint-or-reject**
-//!       (the shared-primitive gate, review finding I-2), so the `single-task`
-//!       ADR/superseding flow is unchanged (the full-flow proof rides the unchanged
-//!       `superseding_decision.rs`; this file pins the gate's reject branch directly).
+//!   (d) **copy-in keys on the canonical path only** — a `create` of the embedded
+//!       **non-singleton** `adr` doctype over a committed body at an OFF-canonical
+//!       path mints fresh + serial-rejects on re-create (since M43 inc-7 T1 the
+//!       copy-in is doctype-blind for the CANONICAL committed path —
+//!       `create_or_update.rs` pins that half; this arm pins the boundary).
 
 use std::fs;
 use std::io::Write;
@@ -590,20 +590,23 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
 }
 
 #[test]
-fn non_singleton_create_over_a_committed_slug_stays_mint_or_reject() {
-    // (d) The shared-primitive regression (review finding I-2). The copy-in branch is
-    // gated to `singleton` doctypes; a `create` of the embedded NON-singleton `adr`
-    // over an already-committed slug must stay MINT-OR-REJECT (serial-collision),
-    // never copy-in — so the `single-task` ADR/superseding flow is unchanged (its
-    // full-flow proof rides the unchanged `superseding_decision.rs`; this pins the
-    // gate's reject branch through the binary). The fixture pack's `keep-runlog`
-    // create-gate does NOT admit `adr`, so the test runs the embedded `single-task`
-    // workflow (no fixture pack listed) for a faithful regression.
+fn non_singleton_create_over_an_off_canonical_committed_body_mints_fresh() {
+    // (d) The copy-in keys on the slug's CANONICAL committed path only (revised at
+    // M43 inc-7 T1: the copy-in is doctype-blind — a committed instance at the
+    // canonical home IS copied in for update, `create_or_update.rs`). This arm pins
+    // the boundary: a committed body at an OFF-canonical path (here `decisions/`,
+    // while the default `docs-root: docs/` homes the adr at `docs/decisions/`) is
+    // not this slug's committed instance, so the create mints fresh and a re-create
+    // serial-rejects — copy-in never reads a body from a path the schema does not
+    // own. The fixture pack's `keep-runlog` create-gate does NOT admit `adr`, so the
+    // test runs the embedded `single-task` workflow (no fixture pack listed).
     let repo = TempDir::new("regress");
     let home = TempDir::new("home");
     init_repo(repo.path());
 
-    // A committed ADR at its canonical path — the slug the create must collide on.
+    // A committed ADR body at an OFF-canonical path (`decisions/`, not the
+    // docs-root-nested `docs/decisions/` the adr schema owns) — the create must
+    // not read it as this slug's committed instance.
     fs::create_dir_all(repo.path().join("decisions")).expect("mk decisions/");
     fs::write(
         repo.path().join("decisions").join("single-node-cache.md"),
@@ -615,8 +618,8 @@ fn non_singleton_create_over_a_committed_slug_stays_mint_or_reject() {
     git(repo.path(), &["add", "decisions/single-node-cache.md"]);
     git(repo.path(), &["commit", "-q", "-m", "commit the prior adr"]);
 
-    // Start a `single-task` (embedded pack) and attempt to `create adr --title
-    // "Single node cache"` — the slug collides with the committed `single-node-cache`.
+    // Start a `single-task` (embedded pack) and `create adr --title "Single node
+    // cache"` — the slug matches the off-canonical committed body's stem.
     let task = "supersede-the-cache";
     assert_ok(
         &jigc(
@@ -627,17 +630,16 @@ fn non_singleton_create_over_a_committed_slug_stays_mint_or_reject() {
         "`jigc start --workflow single-task` (regression)",
     );
 
-    // The non-singleton committed-slug create is NOT a copy-in; with no staged
-    // instance it mints fresh (the committed adr is absent from the working area, and
-    // the gate keeps mint-or-reject — it does not copy the committed body in). Prove
-    // the mint did NOT pull in the committed prose: a fresh skeleton, not the old body.
+    // The off-canonical committed body is NOT a copy-in source: the slug's canonical
+    // home (`docs/decisions/single-node-cache.md`) is empty, so the create mints the
+    // fresh skeleton. Prove the mint did NOT pull in the off-home prose.
     let create = jigc_doc(
         repo.path(),
         home.path(),
         &["create", "adr", "--title", "Single node cache"],
         None,
     );
-    assert_ok(&create, "`doc create adr` (non-singleton, fresh mint)");
+    assert_ok(&create, "`doc create adr` (off-canonical body, fresh mint)");
     let staged = fs::read_to_string(
         repo.path()
             .join(".jigc")
@@ -649,8 +651,8 @@ fn non_singleton_create_over_a_committed_slug_stays_mint_or_reject() {
     .expect("read staged adr");
     assert!(
         !staged.contains("The ORIGINAL committed decision."),
-        "a non-singleton create must NOT copy the committed body in (mint-or-reject, \
-         not copy-in); got:\n{staged}",
+        "a create must NOT copy an off-canonical body in (copy-in keys on the \
+         canonical committed path only); got:\n{staged}",
     );
 
     // A second create of the same slug now collides on the working-area instance and

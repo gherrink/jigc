@@ -957,9 +957,14 @@ pub enum DocAck {
     /// A `create` minted a whole doc at `address`/`target`. The target is the head only
     /// (`doctype`+`slug`, no fragment); its effect is the whole created doc, read back via
     /// `doc show` (so no per-op effect key — `design/command-output-contract.md` §2).
+    /// `existed` is the **always-present** create-or-update discriminator (M43 inc-7 T1,
+    /// contract §2): `false` on a fresh mint, `true` when the committed doc at the slug's
+    /// canonical home was copied in for update — law 1's "an ack that says 'created'
+    /// distinguishes created from already-existed" (`design/surface-contract.md`).
     Created {
         address: String,
         target: AckTarget,
+        existed: bool,
         findings: Findings,
     },
     /// An `add-item` minted the item at `address`/`target`. `target.item` is the **minted**
@@ -1051,11 +1056,15 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             })),
             // `create` / `add-item` / `author` join the envelope: `op` + the decomposed
             // `target` + `findings`. No per-op effect key — their effect is the whole
-            // doc / the new item, read back via `doc show` (contract §2).
+            // doc / the new item, read back via `doc show` (contract §2). `create`
+            // additionally carries the always-present `existed` discriminator.
             DocAck::Created {
-                target, findings, ..
+                target,
+                existed,
+                findings,
+                ..
             } => json(&serde_json::json!({
-                "op": "create", "target": target, "findings": findings,
+                "op": "create", "target": target, "existed": existed, "findings": findings,
             })),
             DocAck::AddedItem {
                 target, findings, ..
@@ -1080,7 +1089,14 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             }
             // Agent-text is the bare address the verbs printed before joining the envelope
             // (byte-identical): the minted doc address (`create`/`author`) or the minted
-            // item address (`add-item`) — the next address an agent drives.
+            // item address (`add-item`) — the next address an agent drives. A copy-in
+            // `create` appends the create-or-update note (M43 inc-7 T1) so the surface
+            // states the effect: the committed body was carried in, not minted fresh.
+            DocAck::Created {
+                address,
+                existed: true,
+                ..
+            } => format!("{address} (already existed — copied in for update)"),
             DocAck::Created { address, .. }
             | DocAck::AddedItem { address, .. }
             | DocAck::Authored { address, .. } => address.clone(),

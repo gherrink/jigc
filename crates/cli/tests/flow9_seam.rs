@@ -17,10 +17,12 @@
 //!     and records `edited-from-base`) — write *distinct* slugs. `jigc milestone
 //!     join` consumes the real `docs/<addr>.md` + `provenance.json` of each area and
 //!     reports a clean merge (exit 0).
-//!   - **Mixed same-slug case BLOCKS.** One sub-area `created`s `adr:eviction-policy`;
-//!     a sibling `edited-from-base` the *same* committed-at-base slug. The real
-//!     `created` × `edited-from-base` overlap on one address is a partition violation
-//!     the join blocks with `join.same-doc-clash`, committing nothing.
+//!   - **Same-slug overlap case BLOCKS.** One sub-area reaches the committed-at-base
+//!     `adr:eviction-policy` via `doc create` (the M43 create-or-update copy-in —
+//!     `edited-from-base`); a sibling `edited-from-base` the *same* slug via
+//!     copy-on-first-touch. Two real edits overlapping on one address is a partition
+//!     violation the join blocks with `join.same-doc-clash`, committing nothing (the
+//!     rule also covers the mixed `created` × `edited-from-base` case, engine-unit-pinned).
 //!
 //! The discipline that makes this the seam proof and not a re-run of
 //! `flow9_milestone_join.rs`: **no `stage_doc` hand-staging.** Every staged input the
@@ -310,17 +312,20 @@ fn real_task_writes_feed_a_clean_disjoint_join() {
     );
 }
 
-/// **The seam — a real `edited-from-base` × `created` overlap on one slug BLOCKS
-/// `join.same-doc-clash`.** subA `created`s `adr:eviction-policy` through the binary;
-/// subB `edited-from-base` the *same* committed-at-base slug (copy-on-first-touch).
-/// The mixed provenance on one address is a partition violation the join blocks,
-/// committing nothing — driven entirely through real `--task` writes (no hand-staging).
+/// **The seam — a real two-area overlap on one committed-at-base slug BLOCKS
+/// `join.same-doc-clash`.** subA reaches `adr:eviction-policy` through `doc create`
+/// (which, since M43 inc-7 T1, copies the committed body in — `edited-from-base`, the
+/// create-or-update path); subB `edited-from-base` the *same* committed-at-base slug
+/// (copy-on-first-touch). Two edits to one committed slug is the partition violation
+/// the join blocks (`milestone.rs` step 3 — the rule also covers the mixed
+/// created × edited case, engine-unit-pinned), committing nothing — driven entirely
+/// through real `--task` writes (no hand-staging).
 #[test]
-fn a_real_edited_from_base_times_created_overlap_blocks_same_doc_clash() {
+fn a_real_two_area_overlap_on_a_committed_slug_blocks_same_doc_clash() {
     let (repo, home, sub_a, sub_b) = milestone_with_two_subtasks("clash");
 
-    // subA: `created` `adr:eviction-policy` (its title slugs to `eviction-policy`,
-    // colliding with the committed-at-base slug subB will edit).
+    // subA: `doc create adr` on the committed-at-base slug — the create-or-update
+    // copy-in (`edited-from-base`), then a real splice over the copied-in body.
     expect_ok(
         &run_doc(
             repo.path(),
@@ -373,13 +378,15 @@ fn a_real_edited_from_base_times_created_overlap_blocks_same_doc_clash() {
         "edit the base-committed ADR in subB (copy-on-first-touch)",
     );
 
-    // The two real-written manifests carry the mixed provenance on the same address:
-    // subA `created`, subB `edited-from-base`.
+    // Both real-written manifests record `edited-from-base` on the same address —
+    // subA via the create-or-update copy-in, subB via copy-on-first-touch: two
+    // divergent edits to one committed-at-base slug.
     let prov_a = fs::read_to_string(docs_area(repo.path(), &sub_a).join("provenance.json"))
         .expect("subA provenance.json");
     assert!(
-        prov_a.contains("\"adr:eviction-policy\": \"created\""),
-        "subA's manifest must record `created`; got:\n{prov_a}",
+        prov_a.contains("\"adr:eviction-policy\": \"edited-from-base\""),
+        "subA's manifest must record `edited-from-base` (the create copied the \
+         committed body in); got:\n{prov_a}",
     );
     let prov_b = fs::read_to_string(docs_area(repo.path(), &sub_b).join("provenance.json"))
         .expect("subB provenance.json");

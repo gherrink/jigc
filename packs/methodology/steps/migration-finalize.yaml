@@ -8,9 +8,11 @@ fidelity diff, then re-run the same finalize with `--approve` to write the
 canonical doc, RETIRE the foreign original, and commit — approval is the one
 destructive gate. A source already sitting at its canonical destination is
 rewritten in place on approval — the committed file is modified, nothing is
-retired. If the promote destination is occupied by a committed file that is
-not the foreign original being rewritten in place, finalize blocks rather
-than clobbering it: retitle the doc so it slugs differently, or resolve the
-collision, then finalize again.
+retired. A destination already committed when the doc was authored was copied
+in as the edit base (the create said so), so approval updates that committed
+file in place — review the fidelity diff before approving. Finalize blocks
+(finalize.promote-clobber) only when a file appeared at the destination after
+the doc was created: resolve that collision, or retitle the doc so it slugs
+differently, then finalize again.
 
 {{ include: step:finalize }}

@@ -24,11 +24,14 @@
 //!     deferred to a misleading finalize dangle.
 //!   - **RED 2 — the ordering-contract dangle** — superseding a NOT-yet-migrated sibling
 //!     makes finalize block on `schema-conformance.ref-resolves`, nothing committed.
-//!   - **RED 4 — the finalize-promote clobber guard** — a title-slug collision across the
-//!     corpus blocks at `finalize.promote-clobber`, the committed doc byte-intact, nothing
-//!     committed; while the SAME-PATH migration (M43 fork 5 — the foreign file already at
-//!     its canonical destination) rewrites in place, review-before-destroy (`M` never
-//!     `D`+`A`, nothing retired).
+//!   - **RED 4 — destination-occupied convergence** — a title-slug collision across the
+//!     corpus converges by the M43 create-or-update copy-in (inc-7 T1): the author edits
+//!     from the committed base and `--approve` lands an ordinary in-place update, the 2nd
+//!     foreign retired — no `finalize.promote-clobber` ambush (the guard's remaining
+//!     reachable set, post-create drift, is pinned by `create_or_update.rs`); while the
+//!     SAME-PATH migration (M43 fork 5 — the foreign file already at its canonical
+//!     destination) rewrites in place, review-before-destroy (`M` never `D`+`A`, nothing
+//!     retired).
 //!   - **RED 5 — the out-of-set supersedes drop** — a prior the operator won't migrate is
 //!     dropped to PROSE (no `supersedes` ref authored), and that record finalizes clean
 //!     with no edge — the escape hatch, distinct from the dangle that blocks.
@@ -775,12 +778,14 @@ fn flow27_red_ordering_contract_dangle_blocks() {
     );
 }
 
-/// RED 4a — the finalize-promote clobber guard, title-slug collision across the corpus.
-/// With `docs/decisions/use-mysql.md` committed, a SECOND foreign ADR at a distinct path whose
-/// authored title slugs to the SAME `use-mysql` blocks at `finalize.promote-clobber`: no
-/// clobber, nothing committed, the committed ADR byte-intact, the 2nd foreign not retired.
+/// RED 4a — title-slug collision across the corpus converges by copy-in update (M43
+/// inc-7 T1). With `docs/decisions/use-mysql.md` committed, a SECOND foreign ADR at a
+/// distinct path whose authored title slugs to the SAME `use-mysql` is authored over the
+/// **copied-in committed base** (`edited-from-base` — the doctype-blind create-or-update)
+/// and `--approve` lands an ordinary in-place update: no `finalize.promote-clobber`, the
+/// destination byte-intact under the identical payload, the 2nd foreign retired.
 #[test]
-fn flow27_red_clobber_guard_title_slug_collision() {
+fn flow27_title_slug_collision_converges_by_copy_in_update() {
     let repo = TempDir::new("collision");
     let home = TempDir::new("home");
     let pack = dev_pack();
@@ -842,30 +847,29 @@ fn flow27_red_clobber_guard_title_slug_collision() {
     );
     assert_eq!(
         authored, "adr:use-mysql",
-        "the colliding author succeeds in the working area — the collision is a \
-         finalize-promote concern, not a write-time one",
+        "the colliding author succeeds in the working area — the create copied the \
+         committed body in for update",
     );
 
     let out = finalize(repo.path(), home.path(), &pack, &second_task, true);
-    assert!(
-        !out.status.success(),
-        "a colliding title must block at finalize-promote (non-zero exit); stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
     let rendered = streams(&out);
     assert!(
-        rendered.contains("finalize.promote-clobber")
-            && rendered.contains("docs/decisions/use-mysql.md"),
-        "the block is the clobber guard naming the destination it refused to overwrite:\n{rendered}",
+        out.status.success(),
+        "a colliding title converges as a copy-in update (exit 0); streams:\n{rendered}",
+    );
+    assert!(
+        !rendered.contains("finalize.promote-clobber"),
+        "an edited-from-base re-promote never trips the clobber guard; got:\n{rendered}",
     );
     assert_eq!(
-        count_with_foreign,
+        count_with_foreign + 1,
         git(repo.path(), &["rev-list", "--count", "HEAD"])
             .parse::<u32>()
             .unwrap(),
-        "the clobber block commits nothing past the foreign-tracking commit",
+        "the migration lands exactly one commit past the foreign-tracking commit",
     );
+    // The identical payload chained over the copied-in base re-derives the same
+    // canonical doc — the destination is byte-intact (an update, never a clobber).
     assert_eq!(
         fs::read(
             repo.path()
@@ -875,11 +879,11 @@ fn flow27_red_clobber_guard_title_slug_collision() {
         )
         .expect("committed adr"),
         committed_before,
-        "the already-committed ADR is byte-intact after the refused clobber",
+        "the same payload over the copied-in base lands byte-identical",
     );
     assert!(
-        repo.path().join(second_rel).exists(),
-        "the blocked migration does not retire the 2nd foreign original",
+        !repo.path().join(second_rel).exists(),
+        "the landed migration retires the 2nd foreign original",
     );
 }
 

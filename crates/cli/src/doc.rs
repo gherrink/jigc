@@ -1624,9 +1624,12 @@ fn run_create(
     .map_err(|f| block(&f, "create", type_name))?;
     // A whole-doc create carries only the target head (`doctype`+`slug`) — contract §2.
     let target = whole_doc_ack_target(&created.address)?;
-    // `create` mints the schema-generated skeleton (only the declared sections, any
-    // in-location squatter blank-seeded), so it is structurally surplus-free — its
-    // `findings` are always empty (`design/command-output-contract.md` §2).
+    // A fresh `create` mints the schema-generated skeleton (only the declared sections,
+    // any in-location squatter blank-seeded), so it is structurally surplus-free; a
+    // copy-in carries the committed body, whose conformance/drift are finalize-
+    // preflight's concern — either way the ack's `findings` are always empty
+    // (`design/command-output-contract.md` §2). `existed` is the create-or-update
+    // discriminator the engine copy-in decides (M43 inc-7 T1).
     println!(
         "{}",
         render::doc_ack(
@@ -1634,6 +1637,7 @@ fn run_create(
             &render::DocAck::Created {
                 address: created.address,
                 target,
+                existed: created.existed,
                 findings: Findings::default(),
             },
         )

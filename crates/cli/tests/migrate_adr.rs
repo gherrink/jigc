@@ -948,13 +948,15 @@ fn a_non_migration_doc_create_adr_still_stamps_today() {
 }
 
 // ---------------------------------------------------------------------------
-// M25 Increment 4, T2 — finalize-promote clobber guard acceptance (the deliverable's
-// Proves; `auto-migration.md` → Honest bounds → the data-loss clobber guard;
-// `worked-examples.md` → flow 27), revised at M43 (fork 5, the same-path carve-out). A
-// migration whose promote destination holds a DISTINCT committed managed doc **blocks at
-// finalize-promote** instead of silently clobbering it — while the same-path migration
-// (recorded source == destination) rewrites IN PLACE, review-before-destroy — driven
-// end-to-end through the built binary on the NON-SINGLETON `adr` shape.
+// M25 Increment 4, T2 — finalize-promote destination handling (the deliverable's
+// Proves; `auto-migration.md` → Honest bounds; `worked-examples.md` → flow 27),
+// revised at M43 (fork 5, the same-path carve-out; inc-7 T1, the doctype-blind
+// create-or-update copy-in). A migration whose promote destination holds a committed
+// managed doc **copies it in at author time** and lands an ordinary in-place update
+// (review-before-destroy via the `--approve` hold) — the same-path migration
+// (recorded source == destination) rewrites IN PLACE — driven end-to-end through the
+// built binary on the NON-SINGLETON `adr` shape. The clobber guard's remaining
+// reachable set is post-create drift (`create_or_update.rs`).
 // ---------------------------------------------------------------------------
 
 /// The **per-file** migration task id for an arbitrary repo-relative source `rel` — the
@@ -984,14 +986,18 @@ fn finalize_approve(repo: &Path, home: &Path, pack: &Path, task: &str) -> std::p
     )
 }
 
-/// (a) **Title-slug collision across the doctype dir** — with `docs/decisions/use-postgresql.md`
-/// already committed (a first migration), a SECOND foreign ADR at a distinct off-canonical
-/// path whose authored title slugs to the SAME `use-postgresql` must **block at
-/// finalize-promote** (`finalize.promote-clobber`): no clobber, nothing committed, the
-/// committed ADR byte-intact, and the 2nd foreign original NOT retired (the all-or-nothing
-/// transaction never ran). The data-loss case is conformant-over-conformant.
+/// (a) **Title-slug collision across the doctype dir converges by copy-in update
+/// (M43 inc-7 T1)** — with `docs/decisions/use-postgresql.md` already committed (a first
+/// migration), a SECOND foreign ADR at a distinct off-canonical path whose authored title
+/// slugs to the SAME `use-postgresql` no longer ambushes at `finalize.promote-clobber`:
+/// the author's create **copies the committed body in** (`edited-from-base` — the
+/// create-or-update path, doctype-blind since M43), the payload chains over that base,
+/// and `--approve` lands an ordinary re-promote — the destination updated in place, the
+/// 2nd foreign original retired. The review hold (exit 4 sans `--approve`) stays the
+/// destructive gate; the clobber guard's reachable set narrows to **post-create drift**
+/// (pinned by `create_or_update.rs`).
 #[test]
-fn a_title_slug_collision_blocks_at_finalize_promote() {
+fn a_title_slug_collision_converges_by_copy_in_update() {
     let repo = TempDir::new("collision");
     let home = TempDir::new("home");
     let pack = dev_pack();
@@ -1018,9 +1024,6 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
             .join("use-postgresql.md"),
     )
     .expect("committed adr");
-    let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
-        .parse()
-        .unwrap();
 
     // A SECOND foreign ADR at a DISTINCT off-canonical path; the agent authors it with the
     // SAME title (`Use PostgreSQL`), which slugs to the already-occupied `use-postgresql`.
@@ -1036,43 +1039,49 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
     );
     assert_eq!(
         authored, "adr:use-postgresql",
-        "the 2nd author succeeds in the working area — the collision is a finalize-promote \
-         concern, not a write-time one",
+        "the 2nd author succeeds in the working area — the create copied the committed \
+         body in for update",
+    );
+    // The create-or-update copy-in recorded `edited-from-base` — an ordinary re-promote
+    // at finalize, never the Created-gated clobber ambush.
+    let provenance = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join(&task)
+            .join("docs")
+            .join("provenance.json"),
+    )
+    .expect("read the migration task's provenance");
+    assert!(
+        provenance.contains("\"adr:use-postgresql\": \"edited-from-base\""),
+        "the colliding author copies in and records `edited-from-base`; got:\n{provenance}",
     );
 
-    // finalize --approve must BLOCK with `finalize.promote-clobber` naming the destination.
+    // finalize --approve lands the update — no `finalize.promote-clobber`.
     let out = finalize_approve(repo.path(), home.path(), &pack, &task);
-    assert!(
-        !out.status.success(),
-        "a colliding title must block at finalize-promote (exit non-zero); stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
     let streams = format!(
         "{}{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
     assert!(
-        streams.contains("finalize.promote-clobber")
-            && streams.contains("docs/decisions/use-postgresql.md"),
-        "the block is the clobber guard naming the destination it refused to overwrite:\n{streams}",
+        out.status.success(),
+        "a colliding title converges as a copy-in update (exit 0); streams:\n{streams}",
     );
-
-    // Commits nothing (the all-or-nothing transaction never ran).
+    assert!(
+        !streams.contains("finalize.promote-clobber"),
+        "an edited-from-base re-promote never trips the clobber guard; got:\n{streams}",
+    );
     assert_eq!(
-        count_with_foreign,
+        count_with_foreign + 1,
         git(repo.path(), &["rev-list", "--count", "HEAD"])
             .parse::<u32>()
             .unwrap(),
-        "the clobber block commits nothing past the foreign-tracking commit",
+        "the migration lands exactly one commit past the foreign-tracking commit",
     );
-    assert_eq!(
-        count_with_foreign,
-        count_before + 1,
-        "only the foreign-tracking commit landed — the migration did not",
-    );
-    // The committed ADR is byte-intact — never clobbered.
+    // The identical payload chained over the copied-in base re-derives the same canonical
+    // doc — the committed ADR is byte-intact (an update, never a blank-seeded clobber).
     assert_eq!(
         fs::read(
             repo.path()
@@ -1082,19 +1091,20 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
         )
         .expect("committed adr"),
         committed_before,
-        "the already-committed ADR is byte-intact after the refused clobber",
+        "the same payload over the copied-in base lands byte-identical",
     );
-    // The 2nd foreign original is NOT retired (no transaction ran).
+    // The 2nd foreign original IS retired — the all-or-nothing transaction ran.
     assert!(
-        repo.path().join(&rel).exists(),
-        "the blocked migration does not retire the 2nd foreign original",
+        !repo.path().join(&rel).exists(),
+        "the landed migration retires the 2nd foreign original",
     );
 }
 
 /// (b) **The same-path migration rewrites in place (M43 fork 5)** — `jigc migrate
 /// docs/decisions/<slug>.md --as adr` where the foreign file already sits at the canonical
-/// destination: the working area seeds BLANK (the copy-in is singleton-gated — no
-/// Frankenstein doc), a plain finalize holds at the review gate (exit 4) rendering the
+/// destination: the working area seeds BLANK (the in-location-squatter exception —
+/// source-path-keyed, so the non-conformant foreign body is never the edit base), a
+/// plain finalize holds at the review gate (exit 4) rendering the
 /// fidelity diff, and `--approve` — the sole destructive gate — rewrites the committed
 /// file IN PLACE: one commit whose name-status shows `M <path>` (never `D`+`A`), the
 /// committed file now the byte-stable rewrite, nothing retired.

@@ -322,9 +322,12 @@ fn plan_retirements(
 /// in-place `M`-not-`D`+`A` landing. Both path sides are
 /// [`crate::store::lexical_normalize`]d so a `./`-prefixed or redundant-component
 /// spelling still matches. (Pre-M43 the exclusion was `singleton`-gated — mirroring the
-/// M24 blank-seed copy-in gate — which bounded every non-singleton same-path migration
-/// out of end-to-end authoring; the create side needed no change for the carve-out, as
-/// a non-singleton create always seeds blank.)
+/// then-`singleton`-gated blank-seed copy-in — which bounded every non-singleton
+/// same-path migration out of end-to-end authoring. M43 inc-7 T1 then made the
+/// create-side copy-in doctype-blind too: a create over a committed same-slug doc
+/// copies in and records `EditedFromBase`, so it never reaches this guard — the
+/// guard's reachable set narrows to **post-create drift**, a destination file that
+/// appears only after the `Created` mint.)
 ///
 /// Each staged promotion's `<type>:<slug>` address is recovered from its source file stem
 /// (the [`plan_promotions`] naming convention) and looked up in the task's provenance

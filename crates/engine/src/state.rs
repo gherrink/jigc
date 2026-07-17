@@ -774,6 +774,12 @@ pub struct CreatedDoc {
     pub address: String,
     /// The staged instance path, `<task_dir>/docs/<type>:<slug>.md`.
     pub path: PathBuf,
+    /// The create-or-update discriminator (M43 inc-7 T1): `true` when a committed
+    /// instance already occupied the slug's canonical home and was **copied in for
+    /// update** ([`copy_in`], `edited-from-base`); `false` on a fresh mint. Feeds the
+    /// `doc create` ack's always-present `existed` key
+    /// (`design/command-output-contract.md` §2).
+    pub existed: bool,
 }
 
 /// **The `create`/provisioning verb** against the task working area — the
@@ -794,22 +800,22 @@ pub struct CreatedDoc {
 ///    area → reject with a blocking `create.serial-collision` [`Finding`] carrying a
 ///    route, never silently suffixed (`structural-grammar.md` → minting: the numeric
 ///    suffix is the post-MVP `fan-out`/`join` case only; serial mints reject).
-/// 4. **Idempotent create for a committed singleton** (`methodology-docs.md` → The
-///    engine work, item 2; review findings B-5/I-2). When `type_name` is a
-///    `singleton: true` doctype whose **committed** `<location>/<ty>.md` already
-///    exists under `repo_root`, `create` **copies that committed body in** via
-///    [`copy_in`] (recording `edited-from-base`) instead of minting blank — killing
-///    the clobber-on-blank landmine and giving create-or-update. The copy-in branch
-///    is **gated to `singleton`** so the shared primitive is unchanged for every
-///    other doctype: a non-singleton committed-slug collision is *not* this case (the
-///    working-area collision below still rejects, and a `single-task` ADR re-create
-///    keeps mint-or-reject). Copy-in does **not** reconcile (review I-1) — OOB drift
-///    over the committed doc is caught at finalize-preflight, not here. **Exception:**
-///    the in-location squatter ([`migration_targets_canonical_destination`],
-///    `auto-migration.md` → Hardening #8) — a migration task whose recorded
-///    `source-path` is this slug's canonical destination seeds **blank** (skips the
-///    copy-in) so the author sequence builds onto a clean skeleton, not the
-///    non-conformant foreign body.
+/// 4. **Idempotent create-or-update for a committed instance** (`methodology-docs.md`
+///    → The engine work, item 2; review findings B-5/I-2; doctype-blind since M43
+///    inc-7 T1 — `DECISIONS.md` → 2026-07-16 M43 planning: the Settle, review-baked).
+///    When the minted slug's **committed** canonical file already exists under
+///    `repo_root`, `create` **copies that committed body in** via [`copy_in`]
+///    (recording `edited-from-base`, [`CreatedDoc::existed`] `true`) instead of
+///    minting blank — killing the clobber-on-blank landmine and giving
+///    create-or-update for singleton and non-singleton alike (pre-M43 the branch was
+///    `singleton`-gated, so a non-singleton create-over-committed seeded blank and
+///    ambushed at the finalize clobber gate). Copy-in does **not** reconcile
+///    (review I-1) — OOB drift over the committed doc is caught at
+///    finalize-preflight, not here. **Exception:** the in-location squatter
+///    ([`migration_targets_canonical_destination`], `auto-migration.md` →
+///    Hardening #8) — a migration task whose recorded `source-path` is this slug's
+///    canonical destination seeds **blank** (skips the copy-in) so the author
+///    sequence builds onto a clean skeleton, not the non-conformant foreign body.
 /// 5. **Provision** the empty instance at `docs/<type>:<slug>.md` via
 ///    [`provision_doc`] and return its [`CreatedDoc`] address + path.
 pub fn create(
@@ -882,29 +888,32 @@ pub fn create(
         return Err(instance_collision_finding(&address));
     }
 
-    // 4. Idempotent create for a committed singleton: gated to `singleton`, a
-    //    committed `<location>/<ty>.md` under `repo_root` is copied in for editing
-    //    rather than minted blank (the B-5 clobber fix). Copy-in records
+    // 4. Idempotent create-or-update: a committed instance at the slug's canonical
+    //    path under `repo_root` is copied in for editing rather than minted blank
+    //    (the B-5 clobber fix; doctype-blind since M43 inc-7 T1). Copy-in records
     //    `edited-from-base`; drift is finalize-preflight's concern, not copy-in's.
     //    **Exception — the in-location squatter** (`design/auto-migration.md` →
     //    Path-collision guard / Hardening #8): when a migration task's recorded
     //    `source-path` IS this slug's canonical destination, the committed body is the
     //    non-conformant foreign file being replaced, so seed **blank** (skip the
     //    copy-in) and let the author sequence build onto a clean skeleton. The
-    //    discriminator is the source-path match, never singleton-ness — so a
-    //    non-migration create, and an off-canonical migration, both still copy in.
+    //    discriminator is the source-path match — a non-migration create, and an
+    //    off-canonical migration, both still copy in.
     let migration_squatter = migration_targets_canonical_destination(task_dir, schema, &slug)
         .map_err(|err| io_finding(&address, "read the migration source path", &err))?;
     if !migration_squatter
-        && schema.singleton
         && let Some(committed) = crate::store::canonical_path(repo_root, schema, &slug)
         && committed.is_file()
     {
         let body = std::fs::read_to_string(&committed)
-            .map_err(|err| io_finding(&address, "read the committed singleton", &err))?;
+            .map_err(|err| io_finding(&address, "read the committed instance", &err))?;
         let path = copy_in(task_dir, type_name, &slug, &body)
-            .map_err(|err| io_finding(&address, "copy in the committed singleton", &err))?;
-        return Ok(CreatedDoc { address, path });
+            .map_err(|err| io_finding(&address, "copy in the committed instance", &err))?;
+        return Ok(CreatedDoc {
+            address,
+            path,
+            existed: true,
+        });
     }
 
     // 5. Provision the (optionally on-create-seeded) instance and return its
@@ -912,7 +921,11 @@ pub fn create(
     //    the unchanged empty template.
     let path = provision_doc(task_dir, schema, &slug, &title, on_create)
         .map_err(|err| io_finding(&address, "provision the instance", &err))?;
-    Ok(CreatedDoc { address, path })
+    Ok(CreatedDoc {
+        address,
+        path,
+        existed: false,
+    })
 }
 
 /// **The agent-initiated `create`** — [`create`] gated by the workflow's resolved
@@ -949,7 +962,7 @@ pub fn create_gated(
     let Some(entry) = gate.iter().find(|e| e.doc_type == type_name) else {
         return Err(gate_blocked_finding(type_name, gate));
     };
-    // Step 4: admitted → mint + provision (or copy-in a committed singleton) — the
+    // Step 4: admitted → mint + provision (or copy-in a committed instance) — the
     // `slug_override` (the front door's `--slug`) drives the minted id verbatim.
     let created = create(
         task_dir,
@@ -2078,18 +2091,18 @@ sections:
         );
     }
 
-    /// (M16 inc-2 T2 — the shared-primitive regression guard, review I-2) The
-    /// committed-copy-in branch is **gated to `singleton`**: a **non-singleton**
-    /// `create` on a slug whose committed `<location>/<slug>.md` exists STILL returns
-    /// the unchanged blocking `create.serial-collision` (after the slug is also staged
-    /// in the working area) — copy-in must never leak into the shared primitive the
-    /// `single-task` ADR/superseding flow depends on. The collision fires on the
-    /// working-area path, exactly as before; the committed file is irrelevant to a
-    /// non-singleton create. See `design/methodology-docs.md` → The engine work (item
-    /// 2, the shared-primitive regression).
+    /// (M43 inc-7 T1 — create-or-update for committed non-singletons; `DECISIONS.md`
+    /// → 2026-07-16 M43 planning: the Settle, review-baked) The committed-copy-in
+    /// branch is **doctype-blind**: a **non-singleton** `create` on a slug whose
+    /// committed `<location>/<slug>.md` exists copies that committed body in
+    /// (`existed: true`, `edited-from-base` provenance) instead of seeding blank —
+    /// the M16 create-or-update intent extended past `singleton`, dissolving the
+    /// blank-Created clobber ambush at finalize. A fresh mint reports
+    /// `existed: false`; a same-slug re-create still rejects with the unchanged
+    /// `create.serial-collision` (the staged working copy survives).
     #[test]
-    fn non_singleton_create_keeps_mint_or_reject_over_a_committed_slug() {
-        let root = TempRoot::new("non-singleton-regression");
+    fn non_singleton_create_copies_a_committed_slug_in_for_update() {
+        let root = TempRoot::new("non-singleton-copy-in");
         let task_dir = root.path().join("tasks").join("supersede");
 
         // An `adr` doctype is non-singleton with a committed `decisions/` location.
@@ -2105,17 +2118,15 @@ sections:
         let mut schemas = std::collections::BTreeMap::new();
         schemas.insert("adr".to_string(), adr.clone());
 
-        // A committed adr at the slug's canonical path — the warm condition a
-        // singleton would copy-in over.
+        // A committed adr at the slug's canonical path — the warm condition.
         let committed = "---\n---\n\n# Rate limit\n\n## Decision\n\nLimit at the gateway.\n";
         let committed_path = crate::store::canonical_path(root.path(), &adr, "rate-limit")
             .expect("adr has a committed path");
         std::fs::create_dir_all(committed_path.parent().unwrap()).expect("mk decisions/");
         std::fs::write(&committed_path, committed).expect("commit the prior adr");
 
-        // First create mints fresh (the committed file does NOT trigger copy-in for a
-        // non-singleton): the mint path runs, recording `created`.
-        let first = create(
+        // The warm create copies the committed body in — never seeds blank.
+        let warm = create(
             &task_dir,
             &schemas,
             "adr",
@@ -2124,24 +2135,55 @@ sections:
             &[],
             None,
         )
-        .expect("a non-singleton create mints fresh over a committed slug");
-        assert_eq!(first.address, "adr:rate-limit");
-        let minted = std::fs::read_to_string(&first.path).expect("read minted");
+        .expect("a non-singleton create over a committed slug copies in");
+        assert_eq!(warm.address, "adr:rate-limit");
+        assert!(
+            warm.existed,
+            "the copy-in reports `existed: true` — the ack discriminator's source",
+        );
+        let staged = std::fs::read_to_string(&warm.path).expect("read staged");
         assert_eq!(
-            minted,
-            write::render(&adr, &empty_instance(&adr, "Rate limit")),
-            "a non-singleton create mints the empty template, never copies the committed body in",
+            staged, committed,
+            "the working copy carries the committed body verbatim (copy-in)",
         );
         assert_eq!(
             ProvenanceRecord::load(&task_dir)
                 .expect("provenance loads")
                 .get("adr:rate-limit"),
-            Some(Provenance::Created),
-            "a non-singleton create records `created`, never `edited-from-base`",
+            Some(Provenance::EditedFromBase),
+            "the copy-in records `edited-from-base` — an ordinary re-promote at finalize",
+        );
+        // The committed source is untouched (copy-in writes only the working copy).
+        assert_eq!(
+            std::fs::read_to_string(&committed_path).expect("read committed"),
+            committed,
+            "copy-in never touches the committed source",
+        );
+
+        // A fresh mint (no committed instance at the slug's canonical path) reports
+        // `existed: false` and provisions the empty template.
+        let fresh = create(
+            &task_dir,
+            &schemas,
+            "adr",
+            "Burst limit",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("a fresh non-singleton create still mints");
+        assert!(
+            !fresh.existed,
+            "a fresh mint reports `existed: false` — the key's other arm",
+        );
+        assert_eq!(
+            std::fs::read_to_string(&fresh.path).expect("read minted"),
+            write::render(&adr, &empty_instance(&adr, "Burst limit")),
+            "a fresh create still mints the empty template",
         );
 
         // A second create of the same slug rejects with the UNCHANGED blocking
-        // serial-collision — copy-in never substituted for the reject.
+        // serial-collision — the staged working copy survives (the steady-state guard).
         let collide = create(
             &task_dir,
             &schemas,
@@ -2151,7 +2193,7 @@ sections:
             &[],
             None,
         )
-        .expect_err("a non-singleton committed-slug re-create rejects, unchanged");
+        .expect_err("a same-slug re-create rejects, unchanged");
         assert_eq!(collide.severity, Severity::Blocking);
         assert_eq!(collide.code, "create.serial-collision");
         assert!(
