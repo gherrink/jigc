@@ -339,17 +339,22 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The **ambush-class finding-code set** (M43 law 3 — `design/surface-contract.md`
-/// → The stated-at fence, structural tier): the codes whose binding contracts are
-/// irreducibly prose, so the statement cannot be seam-generated from a code-owned
-/// constant — a soliciting step must carry it and declare so
-/// (`states-constraints:` front-matter). Code-side beside its assert, **not**
-/// pack config: the obligation is jigc's, not the pack author's. Membership
-/// (verified against the real producers): `finalize.promote-clobber` (the
-/// `--approve`/clobber/retire contract, engine `finalize.rs`) · the
-/// staging-contract pair `finalize.left-out` (engine `finding.rs`) +
-/// `finalize.nothing-staged` (the CLI index-empty block) · the M43
-/// `finalize.carried-staged` carryover gate.
+/// The **ambush-class constraint-identifier set** (M43 law 3 —
+/// `design/surface-contract.md` → The stated-at fence, structural tier): the
+/// identifiers whose binding contracts are irreducibly prose, so the statement
+/// cannot be seam-generated from a code-owned constant — a soliciting step must
+/// carry it and declare so (`states-constraints:` front-matter). Code-side
+/// beside its assert, **not** pack config: the obligation is jigc's, not the
+/// pack author's. Membership (verified against the real producers): three are
+/// **minted finding codes** — `finalize.promote-clobber` (the
+/// `--approve`/clobber/retire contract, engine `finalize.rs`) ·
+/// `finalize.nothing-staged` (the CLI index-empty block, `task.rs`) · the M43
+/// `finalize.carried-staged` carryover gate (engine `finalize.rs`) — and one is
+/// **not**: `finalize.left-out` names the staging contract whose only
+/// production surface is the M42 pre/post-commit left-out **print**
+/// (`task.rs::emit_left_out_advisory` / `render::left_out_advisory`) —
+/// print-over-refuse by the M42 settle, so no producer mints it as a `Finding`;
+/// the string serves here purely as the contract's declared identifier.
 const AMBUSH_CLASS_CODES: [&str; 4] = [
     "finalize.promote-clobber",
     "finalize.left-out",
@@ -367,8 +372,10 @@ const AMBUSH_CLASS_CODES: [&str; 4] = [
 /// constituents, each checked in isolation** — every shipped pack loaded *alone*
 /// (the methodology-alone dogfood path) must carry every declarer itself; a
 /// manifest-less seeded / project-local pack stays on skip-on-absent. Both sides
-/// are structural (the codes are enumerable since the M42 key work; the
-/// declaration is YAML) — no prose-matching. Honest bound: this proves the
+/// are structural (the members are the fixed identifiers of
+/// [`AMBUSH_CLASS_CODES`] — mostly M42-keyed finding codes, one a declared
+/// print-surface contract identifier; the declaration is YAML) — no
+/// prose-matching. Honest bound: this proves the
 /// *obligation* is carried, never that the prose is good (the review checklist's
 /// job).
 fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
