@@ -1454,13 +1454,18 @@ impl TaskArea {
                  task recorded no changelog entry",
             ),
             Some(work_unit_location(id)),
+            // The landed-state route leads (M43 pre-trial surface polish A6): this
+            // advisory prints after the finalize commit lands, where the in-task
+            // `--task <id>` verbs are dead — the in-task form follows, marked as
+            // the before-finalize option (it is live on the `task validate` preview).
             Some(
                 format!(
-                    "if the change is user-facing, record it — `jigc doc create changelog \
-                 --title Changelog --task {id}`, then `jigc doc add-item \
-                 changelog:changelog#unreleased-changes --title <category> --task {id}` \
-                 (after a landed commit: `jigc start --workflow record-change \
-                 \"<what changed>\"`); if it is not user-facing, no action is needed",
+                    "if the change is user-facing, record it — `jigc start --workflow \
+                 record-change \"<what changed>\"` (or, before finalize, in-task: \
+                 `jigc doc create changelog --title Changelog --task {id}`, then \
+                 `jigc doc add-item changelog:changelog#unreleased-changes \
+                 --title <category> --task {id}`); if it is not user-facing, \
+                 no action is needed",
                 )
                 .into(),
             ),

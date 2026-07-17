@@ -287,6 +287,27 @@ fn a_granted_but_unused_changelog_gate_advises_at_the_task_and_still_lands() {
         "every advisory carries a route (the universal advisory-route floor); got:\n{finding:#?}",
     );
 
+    // M43 pre-trial surface polish A6 — the route leads with the LANDED-state
+    // option: this advisory prints after the finalize commit lands, where the
+    // in-task `--task <id>` verbs are dead. The `record-change` route comes
+    // first; the in-task form follows, marked as the before-finalize option.
+    let route = finding["route"].as_str().expect("route is a string");
+    let landed_at = route
+        .find("jigc start --workflow record-change")
+        .unwrap_or_else(|| panic!("the route carries the landed-state form; got: {route}"));
+    let in_task_at = route
+        .find("jigc doc create changelog")
+        .unwrap_or_else(|| panic!("the route carries the in-task form; got: {route}"));
+    assert!(
+        landed_at < in_task_at,
+        "the landed-state route must come FIRST (the advisory prints after the \
+         commit landed, when the in-task verbs are dead); got: {route}"
+    );
+    assert!(
+        route.contains("before finalize"),
+        "the in-task form must be marked as the before-finalize option; got: {route}"
+    );
+
     let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
         .unwrap();
