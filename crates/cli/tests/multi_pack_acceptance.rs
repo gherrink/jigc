@@ -397,6 +397,7 @@ required Conventional-Commits type — your editorial call on what this change
 does — then stage the summary prose:
 
 Run: `jigc doc set-field commit:add-a-thing#type --value <COMMIT_TYPE> --task add-a-thing`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
 Run: `jigc doc set-slot commit:add-a-thing#summary --from-file - --task add-a-thing`
 <<author: commit:add-a-thing#summary>>
 
@@ -512,6 +513,7 @@ first.
 Set the Conventional-Commits type:
 
 Run: `jigc doc set-field commit:add-rate-limiter#type --value <TYPE> --task add-rate-limiter`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
 
 Set the scope — the area this change touches:
 

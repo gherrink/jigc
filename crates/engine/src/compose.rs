@@ -533,7 +533,9 @@ fn is_bare_char(ch: char) -> bool {
 /// - **Run** — a line that is a lone `{{cli.<id>}}` placeholder resolves the
 ///   command-ref in `catalog` via [`render_command`] and emits
 ///   `` Run: `<cmd>` `` (the command in backticks, machine-extractable by
-///   `` ^Run: `(.+)`$ ``).
+///   `` ^Run: `(.+)`$ ``). A command arg targeting an **enum field** of a fed
+///   schema appends one adjacent generated members line below the `Run:` line,
+///   never inside the backticks ([`enum_member_lines`] — law 1, M43 B11).
 /// - **Content** — a line that is a lone `{{@<path>}}` data-value resolves via
 ///   the seq-5 resolver; a bound resolution ([`Resolution::Content`] /
 ///   [`Resolution::Address`]) emits a `> ` Markdown blockquote of the resolved
@@ -610,7 +612,12 @@ fn emit_line(
             )
         })?;
         let rendered = render_command(cmd, ctx)?;
-        return Ok(format!("Run: `{rendered}`"));
+        let mut emitted = format!("Run: `{rendered}`");
+        for members_line in enum_member_lines(cmd, ctx) {
+            emitted.push('\n');
+            emitted.push_str(&members_line);
+        }
+        return Ok(emitted);
     }
 
     // Author: a `<<author: {{<path>}}>>` directive — wrapper preserved, only the
@@ -694,6 +701,61 @@ fn emit_line(
     // fill-applied (agent/project-authored) prose is never rewritten at emit
     // (`DECISIONS.md` 2026-06-12 — the determinism boundary applied).
     Ok(line.to_owned())
+}
+
+/// The generated enum-members lines for one rendered command-ref — law 1's
+/// "never hand-enumerate what the schema can project" applied to the composed
+/// `Run:` line (`surface-contract.md` → The three laws; M43 Inc 7 B11).
+///
+/// Each `from:` arg whose resolved address fragment names an **enum field** of a
+/// doctype in `ctx.schemas` yields one adjacent line carrying the members
+/// generated from the schema's [`crate::schema::Field::of`] — outside the
+/// backticked span, so the machine-extractable `` ^Run: `(.+)`$ `` command stays
+/// untouched. A doctype absent from the fed map yields no line (implicit
+/// enrichment — not the `{{schema:}}` blocking stance, which governs explicit
+/// refs only), as does a non-field or non-enum fragment. Swallowing parse/resolve
+/// failures here masks nothing: [`render_command`] has already resolved the same
+/// paths and surfaced any failure as a blocking [`Finding`].
+fn enum_member_lines(cmd: &CommandRef, ctx: &crate::data_value::ComposeContext) -> Vec<String> {
+    use crate::address::Fragment;
+    use crate::data_value::{Path, Resolution};
+    let mut lines = Vec::new();
+    for arg in &cmd.args {
+        let CommandArg::From { from } = arg else {
+            continue;
+        };
+        let Ok(path) = Path::parse(from) else {
+            continue;
+        };
+        let Ok(Resolution::Address { address } | Resolution::Content { address }) =
+            path.resolve(ctx)
+        else {
+            continue;
+        };
+        let Some(Fragment::Unit(unit)) = &address.fragment else {
+            continue;
+        };
+        let Some(schema) = ctx.schemas.get(address.r#type.as_str()) else {
+            continue;
+        };
+        let members = schema.sections.iter().find_map(|section| {
+            let crate::schema::SectionBody::Simple { fields, .. } = &section.body else {
+                return None;
+            };
+            fields
+                .iter()
+                .find(|field| field.id == unit.as_str())
+                .and_then(|field| field.of.as_ref())
+        });
+        let Some(members) = members else {
+            continue;
+        };
+        lines.push(format!(
+            "The `{unit}` value is one of: {}",
+            members.join(" | ")
+        ));
+    }
+    lines
 }
 
 /// Resolve every **inline** `{{<path>}}` bare data-value token in a **step-file
@@ -3364,6 +3426,97 @@ If your decision supersedes an earlier one, here is that decision:
         "#);
     }
 
+    /// T2/B11 done-criterion (`cli_run_line_carries_generated_enum_members`):
+    /// composing `{{cli.set-commit-type}}` under a **fed** commit schema emits the
+    /// `Run:` line plus one adjacent line — outside the backticked span — carrying
+    /// all 11 members generated from the schema's `Field.of` (law 1: never
+    /// hand-enumerate what the schema can project; `surface-contract.md` → The
+    /// three laws). Generated, not hand-built: mutating the fed schema's member
+    /// list mutates the emitted line.
+    #[test]
+    fn cli_run_line_carries_generated_enum_members() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let mut ctx = emit_ctx();
+        let commit_schema =
+            crate::schema::load_schema(include_bytes!("../../cli/pack/schemas/commit.yaml"))
+                .expect("the shipped commit schema loads");
+        ctx.schemas
+            .insert("commit".to_owned(), commit_schema.clone());
+
+        let emitted = emit_step_body("{{ cli.set-commit-type }}", &ctx, &catalog).expect("emits");
+        assert_eq!(
+            emitted,
+            "Run: `jigc doc set-field commit:emit-four-classes#type --value <COMMIT_TYPE> \
+             --task emit-four-classes`\n\
+             The `type` value is one of: feat | fix | docs | style | refactor | perf | test \
+             | build | ci | chore | revert",
+            "the enum-members line must render adjacent to the Run line, outside the \
+             backticked span, carrying all 11 members from Field.of"
+        );
+
+        // Generated from the schema, never hand-enumerated: a mutated member list
+        // re-renders the line.
+        let mut mutated = commit_schema;
+        let type_field = mutated
+            .sections
+            .iter_mut()
+            .find_map(|section| match &mut section.body {
+                crate::schema::SectionBody::Simple { fields, .. } => {
+                    fields.iter_mut().find(|f| f.id == "type")
+                }
+                crate::schema::SectionBody::Repeatable { .. } => None,
+            })
+            .expect("the commit schema has a `type` field");
+        type_field
+            .of
+            .as_mut()
+            .expect("enum members")
+            .push("wip".to_owned());
+        ctx.schemas.insert("commit".to_owned(), mutated);
+
+        let emitted = emit_step_body("{{ cli.set-commit-type }}", &ctx, &catalog).expect("emits");
+        assert!(
+            emitted.ends_with("| revert | wip"),
+            "mutating the fed schema must mutate the generated line, got {emitted:?}"
+        );
+    }
+
+    /// The omitting contexts stay inert (never error): an **unfed** schema map
+    /// emits the bare `Run:` line with no enum-members line (implicit enrichment —
+    /// not the `{{schema:}}` blocking stance, which governs explicit refs only),
+    /// and a fed schema whose targeted leaf is **not an enum field** (the
+    /// `#summary` slot) emits no line either.
+    #[test]
+    fn enum_members_line_is_inert_when_unfed_or_target_not_enum() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+
+        // Unfed schemas → the bare Run line, no finding.
+        let ctx = emit_ctx();
+        let emitted = emit_step_body("{{ cli.set-commit-type }}", &ctx, &catalog).expect("emits");
+        assert_eq!(
+            emitted,
+            "Run: `jigc doc set-field commit:emit-four-classes#type --value <COMMIT_TYPE> \
+             --task emit-four-classes`",
+            "an unfed schema map must render no enum-members line"
+        );
+
+        // Fed schema, non-enum target (a slot) → the bare Run line.
+        let mut fed = emit_ctx();
+        fed.schemas.insert(
+            "commit".to_owned(),
+            crate::schema::load_schema(include_bytes!("../../cli/pack/schemas/commit.yaml"))
+                .expect("the shipped commit schema loads"),
+        );
+        let emitted =
+            emit_step_body("{{ cli.set-commit-summary }}", &fed, &catalog).expect("emits");
+        assert_eq!(
+            emitted,
+            "Run: `jigc doc set-slot commit:emit-four-classes#summary --from-file - \
+             --task emit-four-classes`",
+            "a non-enum target must render no enum-members line"
+        );
+    }
+
     /// The unbound-`@` → empty-line case in isolation (empty-not-finding): a
     /// declared-but-unbound `@`-path resolves to [`Resolution::Absent`], which the
     /// emitter writes as an empty line — never a `> ` blockquote, never a finding.
@@ -4867,7 +5020,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 {
                   "kind": "agent",
                   "agent": "commit_type",
-                  "hint": "the Conventional-Commits type for what changed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, or revert"
+                  "hint": "the Conventional-Commits type for what changed — the composed step renders the members from the commit schema"
                 },
                 {
                   "kind": "literal",

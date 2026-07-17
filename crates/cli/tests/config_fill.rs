@@ -142,6 +142,7 @@ required Conventional-Commits type — your editorial call on what this change
 does — then stage the summary prose:
 
 Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
 Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
 <<author: commit:add-rate-limiter#summary>>
 

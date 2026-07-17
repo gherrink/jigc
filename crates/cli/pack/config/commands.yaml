@@ -26,7 +26,7 @@ commands:
       - "set-field"
       - { from: "task.commit#type" }
       - "--value"
-      - { agent: commit_type, hint: "the Conventional-Commits type for what changed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, or revert" }
+      - { agent: commit_type, hint: "the Conventional-Commits type for what changed — the composed step renders the members from the commit schema" }
       - "--task"
       - { from: "task.id" }
     hint: "Set the required Conventional-Commits type."

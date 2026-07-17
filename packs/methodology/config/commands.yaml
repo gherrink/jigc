@@ -15,7 +15,7 @@ commands:
       - "set-field"
       - { from: "task.commit#type" }
       - "--value"
-      - { agent: type, hint: "the Conventional-Commits type — one of feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert" }
+      - { agent: type, hint: "the Conventional-Commits type — the composed step renders the members from the commit schema" }
       - "--task"
       - { from: "task.id" }
     hint: "Set the commit header type before finalize."
