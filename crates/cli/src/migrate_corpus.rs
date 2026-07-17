@@ -147,6 +147,19 @@ pub struct CorpusMigrationReport {
     /// commit boundary, so it stays out of the report's serialized surface.
     #[serde(skip)]
     touched: Vec<String>,
+    /// `--dry-run` — the run **suppressed the write** (nothing on disk changed). Threaded into
+    /// the report so both surfaces say what the run *is*: the render frames every migrated path
+    /// as *"would migrate"* under a *"dry run — nothing written"* header (past-tense
+    /// *"migrated N"* over writes that never happened is a Law 1 lie — M43 surface census, F2),
+    /// and the JSON carries `dry_run` so a driver distinguishes the preview from an applying run
+    /// (`commit: null` alone cannot — `--no-commit` also commits nothing).
+    pub dry_run: bool,
+    /// `--no-commit` — the run **wrote** the migrated bytes but staged and committed nothing.
+    /// Internal to the text renderer's commit-status line (an applying run that landed nothing
+    /// says so explicitly, distinct from both the dry-run preview and the committed run); the
+    /// JSON already distinguishes it by `dry_run: false` + `commit: null`.
+    #[serde(skip)]
+    pub(crate) no_commit: bool,
 }
 
 /// Run `jigc migrate-corpus` against `cwd`: locate the repo + project layer, build the
@@ -443,6 +456,8 @@ pub(crate) fn migrate_committed_corpus(
         blocked: Findings::default(),
         commit: None,
         touched: Vec::new(),
+        dry_run: options.dry_run,
+        no_commit: options.no_commit,
     };
 
     // Prepare every candidate doc across the corpus (heterogeneous: each carries its own

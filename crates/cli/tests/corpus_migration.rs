@@ -958,9 +958,15 @@ fn migrate_corpus_no_commit_migrates_but_lands_nothing() {
         base,
         "`--no-commit` commits nothing — HEAD is unchanged; stdout:\n{out}",
     );
+    // `--no-commit` names no *landed* commit, and says so honestly (F2 — the run wrote the
+    // bytes but staged nothing; distinct from both the committed run and the dry-run preview).
     assert!(
-        !out.contains("committed"),
-        "`--no-commit` names no landed commit; stdout:\n{out}",
+        out.contains("written but NOT committed (`--no-commit`)"),
+        "`--no-commit` states it wrote but did not commit; stdout:\n{out}",
+    );
+    assert!(
+        !out.contains("only the migrated paths were staged"),
+        "`--no-commit` names no landed commit sha; stdout:\n{out}",
     );
 }
 
@@ -1003,9 +1009,15 @@ fn migrate_corpus_dry_run_writes_nothing_and_commits_nothing() {
     let dry = jigc(repo.path(), home.path(), &["migrate-corpus", "--dry-run"]);
     let dry_out = String::from_utf8_lossy(&dry.stdout).into_owned();
     assert_ok(&dry, "`jigc migrate-corpus --dry-run`");
+    // A dry run speaks in the conditional and says nothing was written (F2 — never past-tense
+    // `migrated` over writes that never happened).
     assert!(
-        dry_out.contains("2 migrated") && dry_out.contains("CHANGELOG.md"),
+        dry_out.contains("2 would migrate") && dry_out.contains("CHANGELOG.md"),
         "the dry run reports the migration it WOULD make; stdout:\n{dry_out}",
+    );
+    assert!(
+        dry_out.contains("dry run — nothing written"),
+        "the dry-run header says what the run IS — nothing written; stdout:\n{dry_out}",
     );
 
     assert_eq!(
@@ -1043,9 +1055,16 @@ fn migrate_corpus_dry_run_writes_nothing_and_commits_nothing() {
     let real = jigc(repo.path(), home.path(), &["migrate-corpus", "--no-commit"]);
     let real_out = String::from_utf8_lossy(&real.stdout).into_owned();
     assert_ok(&real, "`jigc migrate-corpus --no-commit` after the dry run");
-    assert_eq!(
+    // The two runs adjudicate the SAME triage set (both name CHANGELOG.md, both 2 docs), but
+    // are byte-distinct: the applying run speaks in the past tense, the dry run in the
+    // conditional (F2 — a dry run must not be byte-indistinguishable from a run that wrote).
+    assert!(
+        real_out.contains("2 migrated") && !real_out.contains("would migrate"),
+        "the applying run speaks in the past tense; stdout:\n{real_out}",
+    );
+    assert_ne!(
         dry_out, real_out,
-        "the dry run prints the identical triage report to the run that applies it",
+        "a dry run must NOT print bytes identical to a run that applied the writes",
     );
 
     // Non-vacuity: the applying run DOES move the bytes and the file-state baseline the dry
@@ -1118,12 +1137,12 @@ fn migrate_corpus_dry_run_reports_the_collision_the_applying_run_reports() {
         "`jigc migrate-corpus --dry-run` over the collision topology",
     );
     assert!(
-        dry_out.contains("1 migrated") && dry_out.contains("1 blocked"),
+        dry_out.contains("1 would migrate") && dry_out.contains("1 blocked"),
         "the dry run adjudicates the collision it would hit — one lands, one blocks; \
          stdout:\n{dry_out}",
     );
     assert_eq!(
-        count(&dry_out, "  migrated   CHANGELOG.md"),
+        count(&dry_out, "  would migrate CHANGELOG.md"),
         1,
         "the shared destination is never reported migrated twice; stdout:\n{dry_out}",
     );
@@ -1140,9 +1159,17 @@ fn migrate_corpus_dry_run_reports_the_collision_the_applying_run_reports() {
     let real = jigc(repo.path(), home.path(), &["migrate-corpus", "--no-commit"]);
     let real_out = String::from_utf8_lossy(&real.stdout).into_owned();
     assert_refused(&real, "`jigc migrate-corpus --no-commit` after the dry run");
-    assert_eq!(
+    // Same triage set on the collision topology (one lands, `legacy.md` blocks) but byte-distinct
+    // framing — the preview says `would migrate`, the applying run says `migrated` (F2).
+    assert!(
+        real_out.contains("1 migrated")
+            && real_out.contains("blocked    docs/changelog/legacy.md")
+            && !real_out.contains("would migrate"),
+        "the applying run reports the same collision in the past tense; stdout:\n{real_out}",
+    );
+    assert_ne!(
         dry_out, real_out,
-        "the dry run prints the identical triage report to the run that applies it — on the \
+        "a dry run must NOT print bytes identical to a run that applied the writes — on the \
          collision topology, not just the single-candidate one",
     );
 

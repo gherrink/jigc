@@ -1762,14 +1762,31 @@ pub fn corpus_migration(
     match format {
         Format::Json => json(report),
         Format::Agent | Format::Human => {
-            let mut out = format!(
-                "corpus migration: {} migrated, {} already current, {} blocked\n",
-                report.migrated.len(),
-                report.already_current.len(),
-                report.blocked.len(),
-            );
+            // A `--dry-run` suppressed the write, so it must not speak in the past tense: the
+            // header says what the run IS (nothing written) and every migrated path is framed
+            // `would migrate` — byte-distinct from an applying run, which the pre-F2 renderer
+            // was not (M43 surface census, F2 — Law 1 "acks state the effect").
+            let mut out = if report.dry_run {
+                format!(
+                    "corpus migration (dry run — nothing written): {} would migrate, {} already current, {} blocked\n",
+                    report.migrated.len(),
+                    report.already_current.len(),
+                    report.blocked.len(),
+                )
+            } else {
+                format!(
+                    "corpus migration: {} migrated, {} already current, {} blocked\n",
+                    report.migrated.len(),
+                    report.already_current.len(),
+                    report.blocked.len(),
+                )
+            };
             for path in &report.migrated {
-                out.push_str(&format!("  migrated   {path}\n"));
+                if report.dry_run {
+                    out.push_str(&format!("  would migrate {path}\n"));
+                } else {
+                    out.push_str(&format!("  migrated   {path}\n"));
+                }
             }
             for path in &report.already_current {
                 out.push_str(&format!("  current    {path}\n"));
@@ -1790,13 +1807,27 @@ pub fn corpus_migration(
                     out.push_str(&format!("    route: {route}\n"));
                 }
             }
-            // The commit boundary (`design/corpus-migration.md` → The commit boundary): the
-            // verb lands its own migration, so the report names *where* it landed. Absent when
-            // nothing was committed (nothing migrated, or a re-run that staged no change).
-            if let Some(sha) = &report.commit {
+            // The commit-status line — the three run modes each say what they did with the
+            // writes (F2: all three honestly distinguishable). A dry run wrote nothing and
+            // names the real run that would land it; an applying run either committed (naming
+            // the sha) or, under `--no-commit`, left the writes on disk unstaged and says so.
+            if report.dry_run {
+                if !report.migrated.is_empty() {
+                    out.push_str(
+                        "nothing was written — re-run without `--dry-run` to apply the migration\n",
+                    );
+                }
+            } else if let Some(sha) = &report.commit {
+                // The commit boundary (`design/corpus-migration.md` → The commit boundary): the
+                // verb lands its own migration, so the report names *where* it landed.
                 out.push_str(&format!(
                     "committed {sha} — only the migrated paths were staged\n"
                 ));
+            } else if report.no_commit && !report.migrated.is_empty() {
+                out.push_str(
+                    "written but NOT committed (`--no-commit`) — the migrated paths are on disk \
+                     and unstaged; stage and commit them yourself\n",
+                );
             }
             out.push_str(ROUTING_FOOTER);
             out
