@@ -194,10 +194,28 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
         .context("the embedded pack is missing `config/knobs`")?;
     let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
     let Some(field) = knobs.field(key) else {
+        // Name the closed surface *in the error itself* — no other command enumerates the
+        // settable knobs (bare `jigc start` lists none; `--explain` shows only resolved/set
+        // ones), so a route pointing elsewhere is a dead end (M43 surface census, F3 — Law 2:
+        // the recovery must lead to the fix). The declared set is loaded right here at
+        // adjudication. The `validation.<probe>.<check>.severity` per-check family is a large,
+        // regular cascade surface (its own tuning concern), so it is characterized + counted
+        // rather than spelled out — the primary knobs are named in full.
+        let declared: Vec<&str> = knobs.keys().collect();
+        let primary: Vec<&str> = declared
+            .iter()
+            .copied()
+            .filter(|k| !k.starts_with("validation."))
+            .collect();
+        let validation_count = declared.len() - primary.len();
         return Err(finding_to_err(Finding::block(
             "config.undeclared-key",
             format!("`{key}` is not a settable knob — the cascade surface is closed"),
-            "run `jigc start` to orient; settable knobs are declared by the pack",
+            format!(
+                "set one of the declared knobs: {} — plus {} `validation.<probe>.<check>.severity` per-check cascade keys",
+                primary.join(", "),
+                validation_count,
+            ),
         )));
     };
 
@@ -1253,6 +1271,24 @@ mod tests {
                 "fork ack states target + native path + pinned base: {line}"
             );
         }
+    }
+
+    /// F3 (M43 surface census, Law 2) — an undeclared `config set <key>` names the settable
+    /// knobs *in the error*, since no other command reveals them. The route lists real
+    /// declared keys (`docs-root` among them), not a dead-end pointer.
+    #[test]
+    fn undeclared_key_route_names_the_declared_knobs() {
+        let (repo, _cfg) = repo_with_layer("undeclared");
+        let err = run_set(repo.path(), "not-a-knob", "x").expect_err("an undeclared key rejects");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("set one of the declared knobs:"),
+            "the route enumerates the settable knobs; got:\n{msg}"
+        );
+        assert!(
+            msg.contains("docs-root") && msg.contains("default-workflow"),
+            "the enumerated set names real declared knobs; got:\n{msg}"
+        );
     }
 
     /// The `--format json` config ack is a parseable object, not empty success — each

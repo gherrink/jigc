@@ -662,7 +662,9 @@ fn config_operational_error_honors_json() {
     assert_eq!(
         String::from_utf8(out.stderr).expect("utf-8 stderr"),
         "`bogus-knob` is not a settable knob — the cascade surface is closed\n  \
-         route: run `jigc start` to orient; settable knobs are declared by the pack\n",
+         route: set one of the declared knobs: default-workflow, docs-root, \
+         finalize.fan-out.squash, invocation-log — plus 37 \
+         `validation.<probe>.<check>.severity` per-check cascade keys\n",
         "the agent-format config operational error stays the plain `{{err:#}}` bytes",
     );
 }

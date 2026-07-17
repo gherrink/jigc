@@ -1275,6 +1275,7 @@ fn ack_value_display(value: &serde_json::Value) -> String {
 /// [`DocAck`] / [`TaskAck`] mold, whose bare-line acks likewise carry none). A `set`
 /// that relocates committed docs prints its relocation lines separately, on stderr
 /// (`config::route_docs_root_repoint_orphans`); this ack does not restate them.
+#[derive(Debug)]
 pub enum ConfigAck {
     /// `config set <key> <value>` recorded a `scalar-set`.
     Set { key: String, value: String },
