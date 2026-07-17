@@ -1264,6 +1264,97 @@ fn ack_value_display(value: &serde_json::Value) -> String {
     }
 }
 
+/// A successful `jigc config <verb>` cascade-authoring write's confirmation — the
+/// positive ack the six `config` verbs were missing (they mapped `Ok(())` to silence in
+/// every format, inconsistent with every doc-write ack; the M43 surface census, Law 1
+/// "acks state the effect"). Rendered through `--format` by [`config_ack`]: a terse
+/// `config: <effect>` one-line confirmation on agent-text / human, a small structured
+/// object on JSON.
+///
+/// No routing footer — a cascade-authoring write is not a composed reading surface (the
+/// [`DocAck`] / [`TaskAck`] mold, whose bare-line acks likewise carry none). A `set`
+/// that relocates committed docs prints its relocation lines separately, on stderr
+/// (`config::route_docs_root_repoint_orphans`); this ack does not restate them.
+pub enum ConfigAck {
+    /// `config set <key> <value>` recorded a `scalar-set`.
+    Set { key: String, value: String },
+    /// `config insert-step` spliced a native `step` into `workflow`, `side`
+    /// (`"after"`/`"before"`) the `anchor` step id.
+    InsertStep {
+        workflow: String,
+        step: String,
+        side: &'static str,
+        anchor: String,
+    },
+    /// `config replace-step` swapped the `workflow:<id>#<step-id>` `target` for the
+    /// native `step` (its basename).
+    ReplaceStep { target: String, step: String },
+    /// `config remove-step` dropped the `workflow:<id>#<step-id>` `target`.
+    RemoveStep { target: String },
+    /// `config fill` injected content into the `step:<id>#<fill-id>` `target`.
+    Fill { target: String },
+    /// `config fork` copied the `workflow:<id>#<step-id>` `target`'s body into a native
+    /// `path`, pinning `base` (the blake3 prefix of the copied bytes).
+    Fork {
+        target: String,
+        path: String,
+        base: String,
+    },
+}
+
+/// Render a successful `jigc config <verb>` confirmation ([`ConfigAck`]) to the surface
+/// `format` selects: `agent` / `human` emit the terse `config: <effect>` line (no
+/// footer — symmetric with the bare-line doc/task acks), `json` a small structured
+/// object (`op` + the effect fields), so a `--format json` caller gets a parseable
+/// confirmation instead of empty success.
+pub fn config_ack(format: Format, ack: &ConfigAck) -> String {
+    match format {
+        Format::Json => match ack {
+            ConfigAck::Set { key, value } => json(&serde_json::json!({
+                "op": "config-set", "key": key, "value": value,
+            })),
+            ConfigAck::InsertStep {
+                workflow,
+                step,
+                side,
+                anchor,
+            } => json(&serde_json::json!({
+                "op": "config-insert-step", "workflow": workflow, "step": step,
+                "side": side, "anchor": anchor,
+            })),
+            ConfigAck::ReplaceStep { target, step } => json(&serde_json::json!({
+                "op": "config-replace-step", "target": target, "step": step,
+            })),
+            ConfigAck::RemoveStep { target } => json(&serde_json::json!({
+                "op": "config-remove-step", "target": target,
+            })),
+            ConfigAck::Fill { target } => json(&serde_json::json!({
+                "op": "config-fill", "target": target,
+            })),
+            ConfigAck::Fork { target, path, base } => json(&serde_json::json!({
+                "op": "config-fork", "target": target, "path": path, "base": base,
+            })),
+        },
+        Format::Agent | Format::Human => match ack {
+            ConfigAck::Set { key, value } => format!("config: set `{key}` = `{value}`"),
+            ConfigAck::InsertStep {
+                workflow,
+                step,
+                side,
+                anchor,
+            } => format!("config: inserted step `{step}` into `{workflow}` {side} `{anchor}`"),
+            ConfigAck::ReplaceStep { target, step } => {
+                format!("config: replaced `{target}` with `{step}`")
+            }
+            ConfigAck::RemoveStep { target } => format!("config: removed `{target}`"),
+            ConfigAck::Fill { target } => format!("config: filled `{target}`"),
+            ConfigAck::Fork { target, path, base } => {
+                format!("config: forked `{target}` -> {path} (pinned base {base})")
+            }
+        },
+    }
+}
+
 /// One agent-text finding line: `<severity> · <code> — <message>`, plus an indented
 /// `route:` line when the finding carries a repair direction (the settled
 /// block-payload envelope — a hard block is a blocking finding carrying a route).

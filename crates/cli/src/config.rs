@@ -24,6 +24,7 @@
 
 use crate::invocation_log::Outcome;
 use crate::pack::make_pack;
+use crate::render::ConfigAck;
 use anyhow::{Context, Result, bail};
 use engine::cascade::{
     Anchor, SlotFillTarget, StructuralDelta, StructuralTarget, TrackedForkDelta,
@@ -148,7 +149,12 @@ impl ConfigCommand {
             ConfigCommand::Fork { target } => run_fork(cwd, &target),
         };
         match result {
-            Ok(()) => Outcome::success(),
+            // Every config write states its effect (Law 1 "acks state the effect"; the M43
+            // surface census) — the positive ack the six verbs mapped to silence before.
+            Ok(ack) => {
+                println!("{}", crate::render::config_ack(format, &ack));
+                Outcome::success()
+            }
             Err(err) => {
                 eprintln!("{}", crate::render::operational_error(format, &err));
                 Outcome::failure()
@@ -166,7 +172,7 @@ impl ConfigCommand {
 /// 3. write `scalar.<key> = <value>` into `.jigc/config/manifest.yaml`
 ///    (last-write-wins; any existing `scalar:` entries and `deltas:` block are
 ///    preserved).
-fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
+fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
 
     // `docs-root` treats an empty value as "no prefix" (the flat repo-root layout),
@@ -216,7 +222,11 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
     }
 
     // Step 3 — record the `scalar-set` into the project manifest (last-write-wins).
-    write_scalar(&project_config, key, value)
+    write_scalar(&project_config, key, value)?;
+    Ok(ConfigAck::Set {
+        key: key.to_owned(),
+        value: value.to_owned(),
+    })
 }
 
 /// On a `docs-root` re-point to `new_value`, **detect + route + move** the committed docs the
@@ -341,7 +351,7 @@ fn run_insert_step(
     after: Option<&str>,
     before: Option<&str>,
     file: &Path,
-) -> Result<()> {
+) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
 
     // The native step's id is the source file's basename (`overrides.md` →
@@ -354,10 +364,10 @@ fn run_insert_step(
     let source = std::fs::read(file)
         .with_context(|| format!("could not read source step file {}", file.display()))?;
 
-    // The anchor step id — clap guarantees exactly one of `--after`/`--before`.
-    let (anchor_id, anchor) = match (after, before) {
-        (Some(id), None) => (id, Anchor::After(id.to_owned())),
-        (None, Some(id)) => (id, Anchor::Before(id.to_owned())),
+    // The anchor step id + side — clap guarantees exactly one of `--after`/`--before`.
+    let (anchor_id, anchor, side) = match (after, before) {
+        (Some(id), None) => (id, Anchor::After(id.to_owned()), "after"),
+        (None, Some(id)) => (id, Anchor::Before(id.to_owned()), "before"),
         // clap's `conflicts_with` + `required_unless_present` make both/neither
         // unreachable in practice.
         _ => bail!("insert-step needs exactly one of `--after` / `--before`"),
@@ -383,9 +393,15 @@ fn run_insert_step(
             workflow_id: workflow.to_owned(),
             anchor,
         },
-        step: basename,
+        step: basename.clone(),
     };
-    append_delta(&project_config, &delta)
+    append_delta(&project_config, &delta)?;
+    Ok(ConfigAck::InsertStep {
+        workflow: workflow.to_owned(),
+        step: basename,
+        side,
+        anchor: anchor_id.to_owned(),
+    })
 }
 
 /// `jigc config replace-step <workflow:id#step-id> <file>` — record a `replace`
@@ -403,7 +419,7 @@ fn run_insert_step(
 ///    include list *as of this edit* else reject;
 /// 5. write `steps/<basename>.yaml` (the source bytes) + append the `replace-step`
 ///    delta to the project manifest.
-fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
+fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
     let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
     let step_id = at_step(&parsed);
@@ -441,12 +457,16 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
         .with_context(|| format!("could not write {}", native.display()))?;
     let delta = StructuralDelta::Replace {
         target: parsed,
-        step: basename,
+        step: basename.clone(),
     };
     append_delta_entry(
         &project_config,
         with_basis(delta_to_yaml(&delta), &pack.pack_version(), &displaced),
-    )
+    )?;
+    Ok(ConfigAck::ReplaceStep {
+        target: target.to_owned(),
+        step: basename,
+    })
 }
 
 /// `jigc config remove-step <workflow:id#step-id>` — record a `remove`
@@ -457,7 +477,7 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
 /// the target step-id must be in the workflow's resolved include list *as of this
 /// edit* else reject. On pass, append the `remove-step` delta to the project
 /// manifest.
-fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
+fn run_remove_step(cwd: &Path, target: &str) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
     let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
     let step_id = at_step(&parsed);
@@ -479,7 +499,10 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
     append_delta_entry(
         &project_config,
         with_basis(delta_to_yaml(&delta), &pack.pack_version(), &removed),
-    )
+    )?;
+    Ok(ConfigAck::RemoveStep {
+        target: target.to_owned(),
+    })
 }
 
 /// `jigc config fill <step:id#fill-id> --from-file <path|->` — record a `slot-fill`
@@ -498,7 +521,7 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
 /// 4. `check_fill_point_present` — the `{{fill:<fill-id>}}` point must exist in the
 ///    **resolved** step body (project shadow included) else reject;
 /// 5. write `fills/<fill-id>.md` (the content bytes) + append the `slot-fill` delta.
-fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<()> {
+fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
     let parsed = SlotFillTarget::parse(target).map_err(finding_to_err)?;
     let content = crate::doc::read_handoff(from_file)?;
@@ -516,7 +539,10 @@ fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<()> {
     let native = fills_dir.join(format!("{}.md", parsed.fill_id));
     std::fs::write(&native, content.as_bytes())
         .with_context(|| format!("could not write {}", native.display()))?;
-    append_slot_fill(&project_config, &parsed)
+    append_slot_fill(&project_config, &parsed)?;
+    Ok(ConfigAck::Fill {
+        target: format!("step:{}#{}", parsed.step_id, parsed.fill_id),
+    })
 }
 
 /// `jigc config fork <workflow:id#step-id>` — record a `tracked-fork` delta + copy
@@ -537,7 +563,7 @@ fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<()> {
 /// 5. write `steps/<step-id>.yaml` (the copied bytes) + append the `tracked-fork`
 ///    delta recording `base-version` = the pack version and `base-hash` = the blake3
 ///    of the **copied** bytes (the pinned basis M5 reads).
-fn run_fork(cwd: &Path, target: &str) -> Result<()> {
+fn run_fork(cwd: &Path, target: &str) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
     let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
     let step_id = at_step(&parsed);
@@ -573,7 +599,14 @@ fn run_fork(cwd: &Path, target: &str) -> Result<()> {
         base_version: pack.pack_version(),
         base_hash: engine::file_state::hash_bytes(&bytes),
     };
-    append_fork(&project_config, &delta)
+    append_fork(&project_config, &delta)?;
+    // The blake3 prefix is the pinned basis a later upgrade reconciliation reads back.
+    let base = delta.base_hash.chars().take(12).collect::<String>();
+    Ok(ConfigAck::Fork {
+        target: target.to_owned(),
+        path: format!(".jigc/config/steps/{step_id}.yaml"),
+        base,
+    })
 }
 
 /// Reject a `config fork` of a unit the project layer **already shadows** — the
@@ -1121,6 +1154,120 @@ mod tests {
             },
             step: step.to_owned(),
         }
+    }
+
+    /// A repo (`.git`) with a seeded `.jigc/config/` project layer — the shape the
+    /// `run_*` verbs discover + require. Returns the repo `TempDir` and its layer path.
+    fn repo_with_layer(tag: &str) -> (TempDir, PathBuf) {
+        let repo = TempDir::new(tag);
+        fs::create_dir_all(repo.path().join(".git")).expect("mk .git");
+        let project_config = repo.path().join(".jigc").join("config");
+        fs::create_dir_all(&project_config).expect("mk project layer");
+        fs::write(
+            project_config.join("manifest.yaml"),
+            "scalar:\n  default-workflow: single-task\n",
+        )
+        .expect("seed manifest");
+        (repo, project_config)
+    }
+
+    fn agent_ack(ack: &ConfigAck) -> String {
+        crate::render::config_ack(crate::cli::Format::Agent, ack)
+    }
+
+    /// F1 (M43 surface census, Law 1) — every `config` write returns an effect-stating
+    /// ack instead of silence. Each verb, run against a real embedded-pack cascade,
+    /// renders its `config: <effect>` line.
+    #[test]
+    fn config_verbs_ack_their_effect() {
+        // set — the scalar-set effect.
+        {
+            let (repo, _cfg) = repo_with_layer("ack-set");
+            let ack = run_set(repo.path(), "default-workflow", "quick-fix").expect("set records");
+            assert_eq!(
+                agent_ack(&ack),
+                "config: set `default-workflow` = `quick-fix`"
+            );
+        }
+        // insert-step — the splice effect (step id + workflow + side + anchor).
+        {
+            let (repo, _cfg) = repo_with_layer("ack-insert");
+            let source = repo.path().join("team-extra.yaml");
+            fs::write(&source, "team extra body\n").expect("write source step");
+            let ack = run_insert_step(repo.path(), "single-task", Some("implement"), None, &source)
+                .expect("insert-step records");
+            assert_eq!(
+                agent_ack(&ack),
+                "config: inserted step `team-extra` into `single-task` after `implement`"
+            );
+        }
+        // replace-step — the swap effect (target + replacement basename).
+        {
+            let (repo, _cfg) = repo_with_layer("ack-replace");
+            let source = repo.path().join("project-implement.yaml");
+            fs::write(&source, "{{ include: step:implement }}\n").expect("write source");
+            let ack = run_replace_step(repo.path(), "workflow:single-task#implement", &source)
+                .expect("replace-step records");
+            assert_eq!(
+                agent_ack(&ack),
+                "config: replaced `workflow:single-task#implement` with `project-implement`"
+            );
+        }
+        // remove-step — the drop effect (target).
+        {
+            let (repo, _cfg) = repo_with_layer("ack-remove");
+            let ack = run_remove_step(repo.path(), "workflow:single-task#implement")
+                .expect("remove-step records");
+            assert_eq!(
+                agent_ack(&ack),
+                "config: removed `workflow:single-task#implement`"
+            );
+        }
+        // fill — the inject effect (target). `implement` declares `{{fill: extra-guidance}}`.
+        {
+            let (repo, _cfg) = repo_with_layer("ack-fill");
+            let content = repo.path().join("guidance.md");
+            fs::write(&content, "extra project guidance\n").expect("write fill content");
+            let ack = run_fill(
+                repo.path(),
+                "step:implement#extra-guidance",
+                content.to_str().unwrap(),
+            )
+            .expect("fill records");
+            assert_eq!(
+                agent_ack(&ack),
+                "config: filled `step:implement#extra-guidance`"
+            );
+        }
+        // fork — the copy effect (target + native path + pinned base prefix).
+        {
+            let (repo, _cfg) = repo_with_layer("ack-fork");
+            let ack =
+                run_fork(repo.path(), "workflow:single-task#implement").expect("fork records");
+            let line = agent_ack(&ack);
+            assert!(
+                line.starts_with(
+                    "config: forked `workflow:single-task#implement` -> \
+                     .jigc/config/steps/implement.yaml (pinned base "
+                ),
+                "fork ack states target + native path + pinned base: {line}"
+            );
+        }
+    }
+
+    /// The `--format json` config ack is a parseable object, not empty success — each
+    /// verb's effect is machine-readable (the mold every other write ack follows).
+    #[test]
+    fn config_ack_json_is_parseable() {
+        let ack = ConfigAck::Set {
+            key: "docs-root".to_owned(),
+            value: "docs2".to_owned(),
+        };
+        let out = crate::render::config_ack(crate::cli::Format::Json, &ack);
+        let parsed: serde_json::Value = serde_json::from_str(&out).expect("json ack parses");
+        assert_eq!(parsed["op"], "config-set");
+        assert_eq!(parsed["key"], "docs-root");
+        assert_eq!(parsed["value"], "docs2");
     }
 
     /// T1 done-criterion: append an insert-step then a replace-step into a temp
