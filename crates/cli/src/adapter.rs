@@ -452,17 +452,19 @@ impl std::error::Error for ProfileError {
 }
 
 /// The managed bootstrap file's contents: the canonical routing sentence, the
-/// context-compiler framing, then the output contract — each its own paragraph,
-/// with a trailing newline.
+/// read rule, the context-compiler framing, then the output contract — each
+/// its own paragraph, with a trailing newline.
 ///
 /// A pure function of the embedded contract — no filesystem. The file is wholly
 /// CLI-owned and rewritten in full each `setup`, so it needs no in-file
 /// idempotency markers. The routing sentence stays *routing, not content*
-/// (`design/bootstrap.md` → The sentence); the two lines beneath it are
-/// *use-the-interface* facts — what `jigc` is, and how to read its signals —
-/// not routing rules.
+/// (`design/bootstrap.md` → The sentence); the three lines beneath it are
+/// *use-the-interface* facts — which files are `jigc`'s, what `jigc` is, and
+/// how to read its signals — not routing rules.
 pub fn bootstrap_file() -> String {
-    format!("{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_FRAMING}\n\n{BOOTSTRAP_OUTPUT_CONTRACT}\n")
+    format!(
+        "{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_READ_RULE}\n\n{BOOTSTRAP_FRAMING}\n\n{BOOTSTRAP_OUTPUT_CONTRACT}\n"
+    )
 }
 
 /// Write the managed bootstrap file (`<repo_root>/.jigc/AGENT.md`) with the
@@ -1023,13 +1025,25 @@ const BOOTSTRAP_IMPORT_LINE: &str = "@.jigc/AGENT.md";
 /// part of the sentence.
 const BOOTSTRAP_SENTENCE: &str = "`jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.";
 
-/// The context-compiler framing stated beneath the routing sentence (RC
-/// greenfield trial A4, 2026-07-06): one stable line on what `jigc` *is* and the
+/// The read rule stated beneath the routing sentence (RC lacon trial B17,
+/// 2026-07-17): the crisp discriminator the prohibition above depends on —
+/// which docs are "managed" (the `jigc doc list` set), the sanctioned read
+/// path for them (`jigc doc show`), and the stated complement (everything
+/// else is read freely). It names only stable verbs, never a location
+/// convention or a doc enumeration, so it cannot rot
+/// (`design/assistant-adapter.md` → Inject the bootstrap).
+const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` set; read one with `jigc doc show <doc>`. Everything else — source, tests, any file not in that set — you read freely.";
+
+/// The context-compiler framing stated beneath the read rule (RC greenfield
+/// trial A4, 2026-07-06): one stable line on what `jigc` *is* and the
 /// division of labor, giving the agent the mental model behind the prohibition.
 /// Framing, not content — it names the thesis (categories of ownership), never a
 /// convention or doc list, so it cannot rot (`design/assistant-adapter.md` →
-/// Inject the bootstrap).
-const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles exactly the workflow steps and doc slices your task needs, and owns every structural write — placement, cross-references, commits. You author only the prose.";
+/// Inject the bootstrap). The doc-slices promise is scoped **per-tier** (RC
+/// lacon trial B2, 2026-07-17): a workflow pulls the slices *it declares*, and
+/// a quick fix legitimately declares none — the unscoped "exactly the … slices
+/// your task needs" read as broken on the zero-slice tier.
+const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.";
 
 /// The output contract stated beneath the framing (M36, narrowed 2026-07-06 —
 /// RC greenfield trial A4): the behavioral core only. The per-code enumeration
@@ -1367,16 +1381,19 @@ mod tests {
     }
 
     /// Golden over [`bootstrap_file`]: the canonical routing sentence
-    /// (`design/bootstrap.md` → The sentence, verbatim), the context-compiler
-    /// framing, and the output contract as the managed file body, with a single
-    /// trailing newline. This is the exact content `jigc setup` writes into
-    /// `.jigc/AGENT.md` (rewritten whole each run — no markers).
+    /// (`design/bootstrap.md` → The sentence, verbatim), the read rule, the
+    /// context-compiler framing, and the output contract as the managed file
+    /// body, with a single trailing newline. This is the exact content
+    /// `jigc setup` writes into `.jigc/AGENT.md` (rewritten whole each run —
+    /// no markers).
     #[test]
     fn bootstrap_file_is_the_sentence_body() {
         insta::assert_snapshot!(bootstrap_file(), @r###"
         `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
 
-        `jigc` is a context compiler: it assembles exactly the workflow steps and doc slices your task needs, and owns every structural write — placement, cross-references, commits. You author only the prose.
+        Managed docs are exactly the `jigc doc list` set; read one with `jigc doc show <doc>`. Everything else — source, tests, any file not in that set — you read freely.
+
+        `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
         Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly.
         "###);
@@ -1404,6 +1421,46 @@ mod tests {
             !body.contains("usage error") && !body.contains("exits `3`"),
             "the per-code enumeration is retired from the bootstrap body — \
              the output carries each outcome's meaning; got:\n{body}",
+        );
+    }
+
+    /// The managed bootstrap body states the crisp read rule (M43, RC lacon
+    /// trial B17/B2): managed = the `jigc doc list` set, read via
+    /// `jigc doc show`; everything else is read freely (the complement,
+    /// stated) — and the context-compiler framing scopes the doc-slices
+    /// promise per-tier (a workflow pulls the slices *it declares*; a
+    /// quick-fix legitimately declares none), so the promise no longer reads
+    /// as broken on a zero-slice tier. Driven on the regenerated file itself
+    /// — the bytes `setup` writes at `.jigc/AGENT.md`.
+    #[test]
+    fn bootstrap_file_states_the_read_rule_and_scopes_the_slices_promise() {
+        let dir = TempDir::new();
+        write_bootstrap_file(dir.path()).expect("write bootstrap file");
+        let body = std::fs::read_to_string(dir.path().join(".jigc/AGENT.md"))
+            .expect("read the regenerated AGENT.md");
+
+        assert!(
+            body.contains("`jigc doc list`"),
+            "the read rule names the managed-set discriminator; got:\n{body}",
+        );
+        assert!(
+            body.contains("`jigc doc show"),
+            "the read rule names the managed read path; got:\n{body}",
+        );
+        assert!(
+            body.contains("read freely"),
+            "the complement rule is stated — everything outside the managed set \
+             is read freely; got:\n{body}",
+        );
+        assert!(
+            !body.contains("exactly the workflow steps and doc slices your task needs"),
+            "the unscoped doc-slices promise is retired — the framing scopes \
+             slices to what the workflow declares; got:\n{body}",
+        );
+        assert!(
+            body.contains("declares"),
+            "the framing scopes the doc-slices promise per-tier — a workflow \
+             pulls the slices it declares; got:\n{body}",
         );
     }
 
