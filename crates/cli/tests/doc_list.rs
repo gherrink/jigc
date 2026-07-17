@@ -235,13 +235,15 @@ fn doc_list_projects_the_store_surface_with_its_registration_state() {
     );
 
     // (4) A **transient** (location-less, non-placement) doctype has no committed instance,
-    //     so it yields no rows — at exit 0, never a block.
+    //     so it yields no rows — at exit 0, never a block, and never zero bytes: the
+    //     doctype-filtered empty case prints the empty-set line naming its scope (M43
+    //     Inc 7 / T5; `design/surface-contract.md` → the style guide).
     let transient = jigc(repo.path(), home.path(), &["doc", "list", "commit"]);
     assert_ok(&transient, "`jigc doc list commit`");
     assert_eq!(
         stdout_of(&transient),
-        "",
-        "a transient doctype yields no rows",
+        "jigc doc list — no committed `commit` docs\n",
+        "a doctype-filtered empty listing prints the empty-set line naming the doctype",
     );
     let transient_json = jigc(
         repo.path(),
@@ -253,6 +255,39 @@ fn doc_list_projects_the_store_surface_with_its_registration_state() {
         stdout_of(&transient_json).trim_end(),
         "{\n  \"docs\": []\n}",
         "an empty listing is still the pinned object wrapper",
+    );
+}
+
+/// (M43 inc-7 T5) An **empty listing prints an empty-set line, never zero bytes**
+/// (`design/surface-contract.md` → the style guide; the `task list` empty-roster mold):
+/// the whole-store empty case at exit 0, and the `--format json` shape unchanged (the
+/// pinned object wrapper — the empty-set line is agent-arm prose only).
+#[test]
+fn doc_list_prints_an_empty_set_line_on_an_empty_store() {
+    let repo = TempDir::new("empty");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // (1) The empty store — the empty-set line, exit 0.
+    let plain = jigc(repo.path(), home.path(), &["doc", "list"]);
+    assert_ok(&plain, "`jigc doc list` over an empty store");
+    assert_eq!(
+        stdout_of(&plain),
+        "jigc doc list — no committed docs\n",
+        "the empty store prints the empty-set line, never zero bytes",
+    );
+
+    // (2) The pinned `--format json` shape is unchanged — no prose line rides it.
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "--format", "json"],
+    );
+    assert_ok(&json, "`jigc doc list --format json` over an empty store");
+    assert_eq!(
+        stdout_of(&json).trim_end(),
+        "{\n  \"docs\": []\n}",
+        "the empty listing keeps the pinned object wrapper",
     );
 }
 

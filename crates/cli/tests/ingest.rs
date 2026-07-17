@@ -386,7 +386,9 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
     // collapsed summary carries no adopt-confirmation marker (the structural
     // non-adoption is re-proven against the index + baseline below).
     assert!(
-        report.contains("unmanaged docs/ — 1 file(s) parse against no schema (left untouched)"),
+        report.contains(
+            "unmanaged docs/ — 1 file(s) parse against no schema (left untouched — fine to stay plain)"
+        ),
         "the unmanaged row must collapse into a `docs/` count with no adopt-confirmation:\n{report}",
     );
 

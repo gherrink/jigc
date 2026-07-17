@@ -2109,6 +2109,17 @@ fn run_list(cwd: &Path, doctype: Option<&str>, format: Format) -> Result<(), Doc
     match format {
         Format::Json => println!("{}", render::json(&DocListing { docs: &docs })),
         Format::Agent | Format::Human => {
+            if docs.is_empty() {
+                // The empty-set line (M43 Inc 7 / T5; `design/surface-contract.md` →
+                // the style guide) — zero rows print a stated empty set, never zero
+                // bytes (the `task list` empty-roster mold), naming the filtered
+                // doctype when one scoped the listing. Exit 0: an empty store is a
+                // legitimate state, not an error. JSON keeps the pinned wrapper.
+                match doctype {
+                    Some(ty) => println!("jigc doc list — no committed `{ty}` docs"),
+                    None => println!("jigc doc list — no committed docs"),
+                }
+            }
             for row in &docs {
                 println!("{}  {}  {}", row.id, row.path, row.state);
             }

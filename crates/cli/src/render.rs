@@ -1441,11 +1441,15 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
             }
             // The collapsed unmanaged summary — one line per directory, in sorted
             // directory order (deterministic, independent of row-encounter order).
+            // A8 (M43): the line blesses staying plain as a legitimate end-state —
+            // `unmanaged` describes, it never implies everything must migrate
+            // (`design/surface-contract.md` → the style guide, the verdict-words
+            // bullet).
             for (dir, count) in &unmanaged_by_dir {
                 out.push_str("unmanaged ");
                 out.push_str(dir);
                 out.push_str(&format!(
-                    " — {count} file(s) parse against no schema (left untouched)\n"
+                    " — {count} file(s) parse against no schema (left untouched — fine to stay plain)\n"
                 ));
             }
             // The verdict legend (#9c — less-terse triage): one line per verdict class
@@ -1521,7 +1525,7 @@ const VERDICT_LEGEND: &[(&str, &str)] = &[
     ),
     (
         "unmanaged",
-        "matches no managed schema; left as-is — bring it under management with `jigc migrate <path> --as <doctype>`.",
+        "matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>`.",
     ),
 ];
 
@@ -2987,12 +2991,12 @@ mod tests {
         adoptable decisions/rate-limit.md → adr  (adopted — indexed + baselined, no file moved)
           adopted — structurally empty: 0 milestones
           adopted — 2 surplus trailing sections
-        unmanaged docs/ — 1 file(s) parse against no schema (left untouched)
+        unmanaged docs/ — 1 file(s) parse against no schema (left untouched — fine to stay plain)
 
         What the verdicts above mean, and what to do next:
           adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
           needs-reconcile — parses as the named type but conflicts; fix it per the row's route, then re-run `jigc ingest`.
-          unmanaged — matches no managed schema; left as-is — bring it under management with `jigc migrate <path> --as <doctype>`.
+          unmanaged — matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>`.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -3016,7 +3020,7 @@ mod tests {
         let json_out = ingest(Format::Json, &report);
         assert!(!json_out.contains(ROUTING_FOOTER));
         assert!(!json_out.contains("What the verdicts"));
-        assert!(!json_out.contains("bring it under management"));
+        assert!(!json_out.contains("legitimate end-state"));
         assert!(json_out.contains("\"verdict\": \"needs-reconcile\""));
         assert!(json_out.contains("\"code\": \"conformance.section-missing\""));
         assert!(json_out.contains("\"adopted\": true"));
@@ -3052,6 +3056,52 @@ mod tests {
         assert!(
             !agent.contains("adoptable —") && !agent.contains("needs-reconcile —"),
             "the legend names no absent verdict; got:\n{agent}",
+        );
+    }
+
+    /// A8 (M43 Inc 7): the `unmanaged` surfaces **bless staying plain as a legitimate
+    /// end-state** — the collapsed per-directory line says the files are fine to stay
+    /// plain, and the legend gloss says "no action needed" before *offering* `jigc
+    /// migrate` (never the old imperative that implied everything must migrate) —
+    /// `design/surface-contract.md` → the style guide, the verdict-words bullet. The
+    /// at-home squatter's adopt-it story (`adoptable`/`needs-reconcile` rows) is
+    /// untouched.
+    #[test]
+    fn render_ingest_blesses_staying_plain_for_unmanaged() {
+        use crate::ingest::{IngestReport, TriageRow};
+
+        let report = IngestReport {
+            rows: vec![TriageRow {
+                file: "docs/notes.md".to_string(),
+                best_match: None,
+                verdict: "unmanaged",
+                finding: None,
+                adopted: false,
+                annotations: Vec::new(),
+            }],
+        };
+
+        let agent = ingest(Format::Agent, &report);
+        // The collapsed line blesses the end-state, not just the non-action.
+        assert!(
+            agent.contains(
+                "unmanaged docs/ — 1 file(s) parse against no schema (left untouched — fine to stay plain)"
+            ),
+            "the collapsed unmanaged line blesses staying plain; got:\n{agent}",
+        );
+        // The legend gloss: ignorable in the first breath, migrate offered after.
+        assert!(
+            agent.contains("staying a plain file is a legitimate end-state — no action needed"),
+            "the unmanaged gloss blesses staying plain as a legitimate end-state; got:\n{agent}",
+        );
+        assert!(
+            agent.contains("To bring one under management: `jigc migrate <path> --as <doctype>`"),
+            "`jigc migrate` stays the offered option; got:\n{agent}",
+        );
+        // The old imperative phrasing — an implied obligation — is gone.
+        assert!(
+            !agent.contains("left as-is — bring it under management with"),
+            "no wording implies migration is obligatory; got:\n{agent}",
         );
     }
 
@@ -3108,12 +3158,12 @@ mod tests {
         jigc ingest — 6 candidate(s) classified  (sorted — deterministic report order)
 
         adoptable decisions/keep.md → adr  (adopted — indexed + baselined, no file moved)
-        unmanaged docs/ — 3 file(s) parse against no schema (left untouched)
-        unmanaged src/ — 2 file(s) parse against no schema (left untouched)
+        unmanaged docs/ — 3 file(s) parse against no schema (left untouched — fine to stay plain)
+        unmanaged src/ — 2 file(s) parse against no schema (left untouched — fine to stay plain)
 
         What the verdicts above mean, and what to do next:
           adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
-          unmanaged — matches no managed schema; left as-is — bring it under management with `jigc migrate <path> --as <doctype>`.
+          unmanaged — matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>`.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         // No per-file unmanaged line survives in the text arm (the blow-up we fixed).
