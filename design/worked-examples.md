@@ -2780,3 +2780,90 @@ $ jigc doc create adr --title "Probe Decision" --task work-the-arm  # the emitte
 7. **`validate` emits → `doc show` reads.** The sweep's finding target is an address in the one structural grammar (`adr:cache-sessions#status/status`); fed back **verbatim** to `jigc doc show`, it resolves to the offending value. Red on rc.5: the same string that `doc set-field` accepted, `doc show` refused with `store.no-such-item` — the read contract was not closed under the address grammar its own validator emits.
 8. **A methodology `dev-task` composes the staging contract.** The composed body carries `` `git add` `` **and its consequence** (finalize commits only what you staged) — the verified root cause of the trial's silent partial commits, where the methodology pack composed zero mentions of it. The **omitting context** holds: `increment` composes neither step, so the contract is **inert** there, never leaked and never an error.
 9. **`implement-from-spec` prints no command the binary refuses.** Every `jigc doc create …` line the workflow composes is **run verbatim** and **admitted** by the gate it composes under, and it composes **zero** `doc create changelog` lines — the prompt that instructed a create the binary answered with `create.gate-blocked` is gone.
+
+## 44. The M43 rc.7 wave, end-to-end — every printed surface is a contracted surface (M43)
+
+The M43 rc.7 wave answers the RC lacon trial's verified findings ([completions/artifacts/RC-lacon/findings-verification.md](../completions/artifacts/RC-lacon/findings-verification.md)) under the settled design of record, [surface-contract.md](surface-contract.md) — increments 1–8 prove each feature per-feature; this flow is the **composite acceptance** tying them into nine done-picture arms over the real binary (`crates/cli/tests/flow44_acceptance.rs`). **The claim it proves is one claim: everything jigc prints is a contracted surface — nothing lies, nothing hides, nothing ambushes.** Every arm is a printed surface that lied (arms 1, 4), hid a capability (arms 2, 5, 7, 9), or ambushed (arms 3, 4, 8) at rc.6 and now does not — plus a route that pointed at a broken view (arm 6). The designs of record live elsewhere and are not restated here: the three laws, the fences, and the style guide in [surface-contract.md](surface-contract.md); the `{{schema:}}` generation seam in [workflow-dialect.md](workflow-dialect.md); the carryover gate and the `carried-over` manifest kind in [finalize.md](finalize.md); the same-path carve-out's honest bounds in [auto-migration.md](auto-migration.md); the staged read + marker key in [doc-read-surface.md](doc-read-surface.md); the create-ack `existed` discriminator in [command-output-contract.md](command-output-contract.md). All nine arms run in a real-`jigc setup` repo — the `[dev ▸ methodology]` pack-set a dogfooding project ships. Notation illustrative.
+
+**The declared proof split** ([surface-contract.md](surface-contract.md) → How each fence is proven): the arms below prove the wave's *behaviour changes* through the shipped binary. The **debug-posture fences** — route-construction parse, floor presence, key discrimination — cannot trip in a flow arm without an injected defect, so they prove at the seam (the `crates/engine/src/finding.rs` unit suite; `crates/cli/tests/anyhow_route_spans.rs`); the **release-real pack-load fences** — suppression, catalog shape, stated-at — prove via mutated-filesystem-pack arms through the real binary (`suppression_fence.rs`, `catalog_shape_fence.rs`, `stated_at_fence.rs`). This flow does not re-prove either set.
+
+### The walk — nine arms, one wave
+
+```text
+# ── Arm 1 · the generated migrate template names ALL FIVE adr sections. ──
+$ jigc migrate docs/adr/0001-use-postgresql.md --as adr
+> … the foreign source …
+> - `status` (front-matter fields): …            # generated from the resolved schema
+> - `context`: prose slot                         #   ({{schema:adr}} — the law-1 seam)
+> - `options`: prose slot (optional)              # rc.6: "fixed four-part schema" — no options
+> - `decision`: prose slot
+> - `consequences`: prose slot
+> … `docs/decisions/<slug>.md` …                  # the home RESOLVED through docs-root
+
+# ── Arm 2 · decided-task routes from the catalog, on its decision axis. ──
+$ jigc start "sort out a small change"
+> - dev-task — implement one scoped change test-first, recording no decision
+> - decided-task — implement one scoped change test-first, recording the design decision it makes
+$ jigc start --workflow decided-task "cache the index"   # rc.6: selectable: false, reason-less
+> task minted: cache-the-index … design decision worth keeping …
+
+# ── Arm 3 · a pre-mint staged file refuses at finalize; --carry-staged lands it LABELED. ──
+$ git add foreign-a.txt foreign-b.txt              # staged BEFORE the task exists
+$ jigc task finalize gate-the-carryover
+> blocking · finalize.carried-staged — foreign-a.txt …   # ONE finding per carried path
+>   route: `git restore --staged …`, or declare it with `--carry-staged`
+$ jigc task finalize gate-the-carryover --carry-staged
+>   carried-over foreign-a.txt                     # labeled in the manifest —
+>   carried-over foreign-b.txt                     #   the task's own edit keeps its kind
+>   added feature.rs
+
+# ── Arm 4 · a same-path migration reviews on plain finalize; --approve lands `M`. ──
+$ jigc migrate docs/decisions/use-postgresql.md --as adr   # foreign, AT the canonical home
+$ jigc task finalize <task>                        # exit 4 — the fidelity diff renders
+> migration review required … (foreign source vs canonical rewrite)
+$ jigc task finalize <task> --approve
+# git show --name-status: M docs/decisions/use-postgresql.md — never D+A   # rc.6: clobber-refused
+
+# ── Arm 5 · the staged read round-trips a slot; the marker key is staged-serves-only. ──
+$ jigc doc show adr:cache-strategy#decision --task add-rate-limiter
+> Cache locally.                                   # the very prose the task staged
+$ jigc doc show adr:cache-strategy --task add-rate-limiter --format json
+> { …, "staged": "add-rate-limiter" }              # the ONE additive marker key
+$ jigc task finalize add-rate-limiter && jigc doc show adr:cache-strategy --format json
+> { "type", "slug", "fields", "sections" }         # the committed serve stays unmarked
+
+# ── Arm 6 · the resume re-shows the foreign source; re-invoking migrate routes to it. ──
+$ jigc start --task migrate-adr-docs-adr-0007-resume-source
+> … We will use PostgreSQL as the primary datastore. …   # rc.6: {{source}} rendered EMPTY
+$ jigc migrate docs/adr/0007-resume-source.md --as adr   # the identical re-invocation
+> task `migrate-adr-…` is already active … resume with `jigc start --task migrate-adr-…`
+
+# ── Arm 7 · the enum-members line — generated, adjacent, outside the backticks. ──
+$ jigc start --workflow single-task "add rate limiter"
+> Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
+> The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+# ── Arm 8 · doc create: fresh acks created; over a committed doc, copy-in + existed. ──
+$ jigc doc create adr --title "Cache Strategy" --format json
+> { "op": "create", …, "existed": false }
+# …finalize, then a SECOND task creates the same slug:
+$ jigc doc create adr --title "Cache Strategy" --format json
+> { "op": "create", …, "existed": true }           # the committed body copied in —
+#                                                  #   rc.6: seeded blank → promote-clobber ambush
+
+# ── Arm 9 · an empty store says so. ──
+$ jigc doc list
+> jigc doc list — no committed docs                # rc.6: zero bytes, exit 0
+```
+
+### What it asserts (the M43-wave acceptance bar — flow44_acceptance.rs)
+
+1. **The generated migrate template names all five adr sections.** `jigc migrate <file> --as adr` composes the `{{schema:adr}}` projection — status/context/options/decision/consequences, the home resolved through docs-root (`docs/decisions/<slug>.md`) — and the retired hand-enumerated *"fixed four-part schema"* never appears. Red on rc.6: the template understated the schema (no `options`, the schema-raw `decisions/` path), and a schema bump could not reach prose a human once typed.
+2. **`decided-task` routes from the catalog.** The router catalog lists it with its decision-axis one-liner, discriminated from `dev-task` on the axis agents decide across (*recording the design decision it makes* vs *recording no decision*), and `--workflow decided-task` mints + composes the decision-recording spine over `[dev ▸ methodology]`, placeholder-free. Red on rc.6: `selectable: false` with no recorded reason — a shipped capability no surface named.
+3. **A pre-mint staged file refuses at finalize — and `--carry-staged` lands it labeled.** Two foreign files staged before the mint block with exactly **one blocking `finalize.carried-staged` per carried path** (exit 3, nothing committed), each routed at both exits (`git restore --staged`, or declare with `--carry-staged`); the task's own post-mint staging never trips the gate; and the declared run lands all of it in one commit with the carried entries labeled **`carried-over`** in the manifest while the task's own edit keeps its `added` kind.
+4. **A same-path migration reviews, then `--approve` lands `M`.** A foreign ADR committed at the canonical destination migrates end-to-end: plain finalize holds at the review gate (exit 4) rendering the fidelity diff (foreign source and canonical rewrite both visible, nothing committed), and `--approve` lands exactly **one commit with `M <path>`** — an in-place rewrite, never `D`+`A`. Red on rc.6: the singleton-only carve-out sent every non-singleton same-path case into a clobber refusal whose route taught raw git.
+5. **The staged read round-trips a slot.** `jigc doc show adr:…#decision --task <id>` serves the very prose the task staged; the whole-doc `--format json` staged serve carries exactly the pinned keys plus the **one** marker key `staged: <task-id>`; after finalize the committed serve is byte-shape-identical to the pin — no marker. Red on rc.6: no sanctioned surface could read a staged write back before finalize.
+6. **The resume re-shows the foreign source.** `jigc start --task <migration-id>` re-feeds the persisted source — byte-identical to the minting compose minus its `task minted:` header — and re-invoking the identical `jigc migrate` refuses with the serial-collision block routed at that resume. Red on rc.6: the resume hardcoded no source, so the collision route landed on a view whose `{{source}}` rendered empty.
+7. **The enum-members line is generated and adjacent.** The composed `Run:` line for the commit `type` field is followed **immediately** by `` The `type` value is one of: … `` — generated from `Field.of`, never hand-enumerated, and outside the backticked span so the command stays copy-runnable.
+8. **`doc create` discriminates created-vs-existed.** A fresh create acks `existed: false` (the key always present); a second task's create over the committed same slug **copies the committed body into the working area** and acks `existed: true` — the promote-clobber ambush dissolves into the M16 create-or-update intent.
+9. **An empty store says so.** `jigc doc list` over an empty store prints the empty-set line at exit 0 — never zero bytes — while the pinned `--format json` wrapper stays prose-free (`{"docs": []}`).
