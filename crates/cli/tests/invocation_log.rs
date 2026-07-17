@@ -453,6 +453,207 @@ fn hook_rejected_finalize_is_identifiable_absent_task_is_not() {
     );
 }
 
+/// Knob ON (M43, T4): the **exit-4 migration review hold** names itself in the log — a
+/// migration finalize held without `--approve` writes a record with `exit_code` 4 carrying
+/// the route-exempt error identity `migrate.review-pending`. Before this, the hold logged
+/// `error_code: null` at exit 4 — a coded stop with no *why*, the log-opacity sibling of
+/// the hook-rejected case above. The record must be distinguishable from BOTH the
+/// hook-rejected finalize (`finalize.commit-rejected`, exit 1) and the absent-id failure
+/// (no identity, exit 1): different identity than the former, an identity at all vs the
+/// latter.
+#[test]
+fn migration_review_hold_is_identifiable_in_the_log() {
+    let repo = TempDir::new("hold");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    enable_log(repo.path(), home.path());
+
+    // The off-router migration task id `jigc migrate` mints for HISTORY.md.
+    let task = "migrate-changelog-history";
+
+    // Assert-success runner returning trimmed stdout (the add-item verbs print the minted
+    // address as a bare line).
+    let ok = |args: &[&str], what: &str| -> String {
+        let out = jigc(repo.path(), home.path(), args);
+        assert!(
+            out.status.success(),
+            "`jigc {what}` must succeed; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        String::from_utf8(out.stdout)
+            .expect("utf-8 stdout")
+            .trim_end_matches('\n')
+            .to_owned()
+    };
+    // `set-slot` reads prose from a file; the source lives outside the repo so it never
+    // enters the tree the finalize would commit.
+    let set_slot = |addr: &str, prose: &str| {
+        let source = home.path().join("prose.md");
+        fs::write(&source, prose).expect("write the slot prose");
+        ok(
+            &[
+                "doc",
+                "set-slot",
+                addr,
+                "--from-file",
+                source.to_str().expect("utf-8 path"),
+                "--task",
+                task,
+            ],
+            "doc set-slot",
+        );
+    };
+
+    // Drive the migrate + author spine to the state the review gate holds: a staged
+    // conformant canonical changelog over a foreign HISTORY.md, plus a conformant commit
+    // doc (so finalize reaches the review gate rather than blocking at validate).
+    fs::write(
+        repo.path().join("HISTORY.md"),
+        "# Changelog\n\n## [0.1.0] - 2021-03-09\n### Added\n- First public release.\n",
+    )
+    .expect("write foreign HISTORY.md");
+    ok(&["migrate", "HISTORY.md", "--as", "changelog"], "migrate");
+    ok(
+        &[
+            "doc",
+            "create",
+            "changelog",
+            "--title",
+            "Changelog",
+            "--task",
+            task,
+        ],
+        "doc create",
+    );
+    let release = ok(
+        &[
+            "doc",
+            "add-item",
+            "changelog:changelog#releases",
+            "--title",
+            "0.1.0",
+            "--task",
+            task,
+        ],
+        "doc add-item release",
+    );
+    ok(
+        &[
+            "doc",
+            "set-field",
+            &format!("{release}/date"),
+            "--value",
+            "2021-03-09",
+            "--task",
+            task,
+        ],
+        "doc set-field date",
+    );
+    let group = ok(
+        &[
+            "doc",
+            "add-item",
+            &format!("{release}/changes"),
+            "--title",
+            "Added",
+            "--task",
+            task,
+        ],
+        "doc add-item change-group",
+    );
+    set_slot(&format!("{group}/notes"), "First public release.\n");
+    ok(
+        &[
+            "doc",
+            "set-field",
+            &format!("commit:{task}#type"),
+            "--value",
+            "feat",
+            "--task",
+            task,
+        ],
+        "doc set-field type",
+    );
+    ok(
+        &[
+            "doc",
+            "set-field",
+            &format!("commit:{task}#scope"),
+            "--value",
+            "changelog",
+            "--task",
+            task,
+        ],
+        "doc set-field scope",
+    );
+    set_slot(
+        &format!("commit:{task}#summary"),
+        "adopt the migrated changelog\n",
+    );
+    set_slot(
+        &format!("commit:{task}#body"),
+        "Migrate the foreign HISTORY.md into managed shape.\n",
+    );
+
+    // The review hold: a migration finalize without `--approve` exits 4, committing nothing.
+    let held = jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    assert_eq!(
+        held.status.code(),
+        Some(4),
+        "a migration finalize without --approve holds at exit 4; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&held.stdout),
+        String::from_utf8_lossy(&held.stderr),
+    );
+
+    // The other coded-stop-free failure in the same log: an absent task id.
+    let absent = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", "no-such-task"],
+    );
+    assert!(
+        !absent.status.success(),
+        "finalizing an absent task exits non-zero",
+    );
+
+    let records = log_records(repo.path());
+    // `record_with_arg` reads the LAST record carrying the needle — the finalize, not the
+    // earlier `--task`-scoped authoring writes.
+    let held_rec = record_with_arg(&records, task).expect("the held finalize is logged");
+    let absent_rec =
+        record_with_arg(&records, "no-such-task").expect("the absent-task finalize is logged");
+
+    assert_eq!(
+        held_rec["exit_code"].as_u64(),
+        Some(4),
+        "the review hold records its distinct exit code; got {held_rec}",
+    );
+    assert_eq!(
+        held_rec["finding_codes"].as_array().map(Vec::len),
+        Some(0),
+        "the review hold is a human-fidelity gate, not a Finding — no finding codes \
+         (the measurement.md:62 rationale); got {held_rec}",
+    );
+    assert_eq!(
+        held_rec["error_code"].as_str(),
+        Some("migrate.review-pending"),
+        "the held finalize NAMES its hold in the log; got {held_rec}",
+    );
+
+    // Three-way distinguishability, from the log alone, by why: the hold's identity is not
+    // the hook-rejection's, and the absent-id record carries none at all.
+    assert_ne!(
+        held_rec["error_code"].as_str(),
+        Some("finalize.commit-rejected"),
+        "the hold and a hook rejection carry different identities; got {held_rec}",
+    );
+    assert!(
+        absent_rec["error_code"].is_null(),
+        "an unstructured operational error carries no borrowed identity; got {absent_rec}",
+    );
+}
+
 /// Install a `pre-commit` hook that rejects every commit — the commit-phase (phase 6)
 /// failure class the RC adoption trial hit, and the one the log could not name.
 fn install_rejecting_hook(repo: &Path) {

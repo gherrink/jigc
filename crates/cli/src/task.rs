@@ -997,7 +997,13 @@ impl TaskArea {
             if format != Format::Json {
                 println!();
             }
-            return Ok(Outcome::code(EXIT_REVIEW_PENDING));
+            // The hold names itself in the log (M43): exit 4 alone said a coded stop
+            // happened, never why (`design/finalize.md` → "A failed finalize must be
+            // legible in the invocation log").
+            return Ok(Outcome::coded_error(
+                EXIT_REVIEW_PENDING,
+                invocation_log::ERROR_REVIEW_PENDING,
+            ));
         }
 
         // M42 — say what the commit is about to leave out, BEFORE it commits

@@ -54,6 +54,22 @@ pub struct Outcome {
 /// hook (or git itself) refused the commit, so no commit was made and the task survives intact.
 pub const ERROR_COMMIT_REJECTED: &str = "finalize.commit-rejected";
 
+/// The error identity of the **exit-4 migration review hold** (M43) — a migration finalize
+/// without `--approve` rendered the fidelity diff and stopped, committing nothing. A coded
+/// stop that named no *why* in the log before this: exit 4 with `error_code: null`.
+pub const ERROR_REVIEW_PENDING: &str = "migrate.review-pending";
+
+/// The **error-code registry** — the closed vocabulary of route-exempt error identities an
+/// [`Outcome`] may carry into the log (`design/surface-contract.md` → The error-code
+/// namespace, which mirrors this const member-for-member). It exists so the anti-collision
+/// rule is a test, not prose: no member may collide with the finding-code inventory (the
+/// unit test below), or a log reader could mistake an operational identity for a `Finding`
+/// code. The naming constructors ([`Outcome::error`] / [`Outcome::coded_error`]) debug-assert
+/// membership, so a new identity must join the registry — and thereby the collision test —
+/// to ship. Deliberately **not** a per-verb code mint — errored verbs already write records;
+/// the registry closes at the identities the log genuinely could not distinguish without.
+pub const ERROR_CODE_REGISTRY: &[&str] = &[ERROR_COMMIT_REJECTED, ERROR_REVIEW_PENDING];
+
 impl Outcome {
     /// A clean run — exit 0, no findings.
     pub fn success() -> Self {
@@ -78,6 +94,11 @@ impl Outcome {
     /// route-exempt [`error_code`](Outcome::error_code) the log records (e.g.
     /// [`ERROR_COMMIT_REJECTED`]).
     pub fn error(error_code: &'static str) -> Self {
+        debug_assert!(
+            ERROR_CODE_REGISTRY.contains(&error_code),
+            "an Outcome error identity must be a registry member (join `ERROR_CODE_REGISTRY` \
+             so the collision test covers it)",
+        );
         Self {
             code: 1,
             finding_codes: Vec::new(),
@@ -85,13 +106,30 @@ impl Outcome {
         }
     }
 
-    /// An outcome with an explicit exit code and no findings (e.g. a clap usage error 2, or
-    /// a migration review hold 4).
+    /// An outcome with an explicit exit code and no findings (e.g. a clap usage error 2),
+    /// carrying **no error identity**.
     pub fn code(code: u8) -> Self {
         Self {
             code,
             finding_codes: Vec::new(),
             error_code: None,
+        }
+    }
+
+    /// An explicitly-coded stop that **names itself** — an explicit exit code, no findings,
+    /// carrying a route-exempt [`error_code`](Outcome::error_code) (e.g. the exit-4 migration
+    /// review hold, [`ERROR_REVIEW_PENDING`]). Distinct from [`Outcome::error`], which is
+    /// exit-1-shaped.
+    pub fn coded_error(code: u8, error_code: &'static str) -> Self {
+        debug_assert!(
+            ERROR_CODE_REGISTRY.contains(&error_code),
+            "an Outcome error identity must be a registry member (join `ERROR_CODE_REGISTRY` \
+             so the collision test covers it)",
+        );
+        Self {
+            code,
+            finding_codes: Vec::new(),
+            error_code: Some(error_code),
         }
     }
 
@@ -241,4 +279,44 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32; // [1, 12]
     (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The anti-collision half of the error-code namespace (`design/surface-contract.md` →
+    /// The error-code namespace): no [`ERROR_CODE_REGISTRY`] member collides with the
+    /// finding-code inventory — the two vocabularies share one dotted shape and one log
+    /// field's namespace neighbourhood, so a collision would let a log reader mistake an
+    /// operational identity for a `Finding` code. A test, not a prose rule (the doc's own
+    /// medicine — cheap at 2 members). The AMBUSH_CLASS_CODES membership-assert is the
+    /// shape mold (`pack.rs`).
+    #[test]
+    fn no_registry_member_collides_with_the_finding_inventory() {
+        let inventory: Vec<String> = engine::result::check_inventory_codes().collect();
+        assert!(
+            !inventory.is_empty(),
+            "the projection must yield the real inventory (an empty set passes vacuously)",
+        );
+        for member in ERROR_CODE_REGISTRY {
+            assert!(
+                !inventory.iter().any(|code| code == member),
+                "the error-code registry member `{member}` collides with the finding-code \
+                 inventory — pick an identity no probe owns",
+            );
+        }
+    }
+
+    /// The registry closes at exactly the two mirrored members — the doc mirrors the
+    /// registry member-for-member, and 'errored verbs carry an error code' is this
+    /// Outcome-identity mechanism drawing from it, not a per-verb mint.
+    #[test]
+    fn registry_mirrors_the_declared_members() {
+        assert_eq!(
+            ERROR_CODE_REGISTRY,
+            &[ERROR_COMMIT_REJECTED, ERROR_REVIEW_PENDING],
+            "the registry and design/surface-contract.md mirror each other member-for-member",
+        );
+    }
 }

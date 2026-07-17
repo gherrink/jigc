@@ -245,6 +245,20 @@ const CHECK_INVENTORY: &[(&str, &str)] = &[
     ("changelog-recording", "gate-granted-unused"),
 ];
 
+/// The inventory rows projected to their dotted finding codes (`<probe>.<check>`) —
+/// the small read-only projection of [`CHECK_INVENTORY`] the CLI's error-code
+/// registry collision test checks against (M43, `design/surface-contract.md` → The
+/// error-code namespace): an `Outcome` error identity must never collide with a
+/// finding code, or a log reader could mistake one namespace for the other. (The
+/// `override-default` rows collapse five descriptive codes onto three checks, so
+/// this is the *inventory's* code set, not every code the engine ever emitted —
+/// the registry's members live in verb namespaces no probe owns.)
+pub fn check_inventory_codes() -> impl Iterator<Item = String> {
+    CHECK_INVENTORY
+        .iter()
+        .map(|(probe, check)| format!("{probe}.{check}"))
+}
+
 /// Whether a `(probe, check)` is a keyed inventory row — the membership test that
 /// gates the post-pass (a non-member finding is exempt and keeps its emitted
 /// severity).

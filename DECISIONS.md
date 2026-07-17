@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-17 — M43 Inc 8 T4: the log codes — one elaboration pin
+
+**The registry is load-bearing, not test-only:** `Outcome`'s naming constructors (`error` / the new exit-code-carrying `coded_error`) **debug-assert membership in `ERROR_CODE_REGISTRY`**, so a future error identity cannot ship without joining the registry — and thereby the anti-collision test against the finding-code inventory (`engine::result::check_inventory_codes()`, the small additive projection of the private `CHECK_INVENTORY`). Per the Settle correction, the registry closes at the two mirrored members (`finalize.commit-rejected` · `migrate.review-pending`); `surface-contract.md:60` already stated both, no doc edit owed.
+
 ## 2026-07-17 — M43 Inc 8 T3: the AGENT.md read rule + per-tier slices scoping — two elaboration pins
 
 **(1) The read rule is its own paragraph, second — right after the prohibition it makes actionable** (sentence → read rule → framing → contract): "never read managed docs directly" begs "which docs, and how then?", so the answer sits adjacent, not buried beneath the what-jigc-is framing; it names only the two stable verbs (`jigc doc list` as the managed-set discriminator, `jigc doc show <doc>` as the read path) plus the stated complement ("everything else — source, tests, any file not in that set — you read freely"), never a location convention or doc enumeration, so the rot-proof rule that admitted the framing admits it too. **(2) The per-tier scoping is a subordinate clause, not a caveat sentence** — the framing now promises "the doc slices that workflow declares (a quick fix may declare none)": the promise's scope rides in the same breath as the promise, so the zero-slice tier reads as designed, not broken, and the framing stays one line.
