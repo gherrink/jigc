@@ -25,8 +25,10 @@
 //!   - **RED 2 — the ordering-contract dangle** — superseding a NOT-yet-migrated sibling
 //!     makes finalize block on `schema-conformance.ref-resolves`, nothing committed.
 //!   - **RED 4 — the finalize-promote clobber guard** — a title-slug collision across the
-//!     corpus AND an in-location squatter both block at `finalize.promote-clobber`, the
-//!     committed doc byte-intact, nothing committed.
+//!     corpus blocks at `finalize.promote-clobber`, the committed doc byte-intact, nothing
+//!     committed; while the SAME-PATH migration (M43 fork 5 — the foreign file already at
+//!     its canonical destination) rewrites in place, review-before-destroy (`M` never
+//!     `D`+`A`, nothing retired).
 //!   - **RED 5 — the out-of-set supersedes drop** — a prior the operator won't migrate is
 //!     dropped to PROSE (no `supersedes` ref authored), and that record finalizes clean
 //!     with no edge — the escape hatch, distinct from the dangle that blocks.
@@ -881,12 +883,14 @@ fn flow27_red_clobber_guard_title_slug_collision() {
     );
 }
 
-/// RED 4b — the finalize-promote clobber guard, in-location squatter. `jigc migrate
-/// docs/decisions/<slug>.md --as adr` where the canonical path itself holds a committed managed
-/// doc blocks at `finalize.promote-clobber`, the squatter byte-intact, nothing committed.
+/// 4b (the M43 same-path carve-out, fork 5) — `jigc migrate docs/decisions/<slug>.md --as
+/// adr` where the foreign file already sits at the canonical destination rewrites it IN
+/// PLACE, review-before-destroy: a plain finalize holds at the review gate (exit 4)
+/// rendering the fidelity diff, and `--approve` lands ONE commit whose name-status shows
+/// `M <path>` (never `D`+`A`), the committed file now the rewrite, nothing retired.
 #[test]
-fn flow27_red_clobber_guard_in_location_squatter() {
-    let repo = TempDir::new("squatter");
+fn flow27_same_path_migration_rewrites_in_place() {
+    let repo = TempDir::new("same-path");
     let home = TempDir::new("home");
     let pack = dev_pack();
     init_repo(repo.path());
@@ -895,38 +899,16 @@ fn flow27_red_clobber_guard_in_location_squatter() {
         "jigc setup",
     );
 
-    // Land a committed managed ADR at the canonical docs/decisions/use-mysql.md.
-    let first_rel = "docs/adr/0001-use-mysql.md";
-    commit_foreign(repo.path(), first_rel, FOREIGN_USE_MYSQL);
-    migrate(repo.path(), home.path(), &pack, first_rel, "adr");
-    let first_task = migration_task("adr", first_rel);
-    ok_stdout(
-        author(
-            repo.path(),
-            home.path(),
-            &pack,
-            "adr",
-            &first_task,
-            PAYLOAD_USE_MYSQL,
-        ),
-        "doc author adr (first)",
-    );
-    assert!(
-        finalize(repo.path(), home.path(), &pack, &first_task, true)
-            .status
-            .success(),
-        "the first migration lands",
-    );
-
-    let squatter_rel = "docs/decisions/use-mysql.md";
-    let squatter_before = fs::read(repo.path().join(squatter_rel)).expect("the squatter on disk");
+    // The foreign non-conformant ADR is committed AT the canonical destination — the
+    // user's layout already matches jigc's (the most common brownfield case).
+    let rel = "docs/decisions/use-mysql.md";
+    commit_foreign(repo.path(), rel, FOREIGN_USE_MYSQL);
     let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
         .unwrap();
 
-    // Migrate the canonical doc IN PLACE: source-path == the canonical destination.
-    migrate(repo.path(), home.path(), &pack, squatter_rel, "adr");
-    let task = migration_task("adr", squatter_rel);
+    migrate(repo.path(), home.path(), &pack, rel, "adr");
+    let task = migration_task("adr", rel);
     ok_stdout(
         author(
             repo.path(),
@@ -936,33 +918,73 @@ fn flow27_red_clobber_guard_in_location_squatter() {
             &task,
             PAYLOAD_USE_MYSQL,
         ),
-        "doc author adr (in-location squatter)",
+        "doc author adr (same-path)",
     );
 
-    let out = finalize(repo.path(), home.path(), &pack, &task, true);
-    assert!(
-        !out.status.success(),
-        "an in-location squatter must block at finalize-promote (non-zero exit); stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    let rendered = streams(&out);
-    assert!(
-        rendered.contains("finalize.promote-clobber") && rendered.contains(squatter_rel),
-        "the block is the clobber guard naming the canonical destination:\n{rendered}",
-    );
+    // Plain finalize: the review hold renders the fidelity diff and commits NOTHING.
+    let bare = finalize(repo.path(), home.path(), &pack, &task, false);
     assert_eq!(
-        fs::read(repo.path().join(squatter_rel)).expect("the squatter on disk"),
-        squatter_before,
-        "the in-location squatter is byte-intact after the refused clobber",
+        bare.status.code(),
+        Some(4),
+        "a plain same-path finalize holds at the review gate (exit 4); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&bare.stdout),
+        String::from_utf8_lossy(&bare.stderr),
+    );
+    let review = String::from_utf8_lossy(&bare.stdout).to_string();
+    assert!(
+        review.contains("migration review required")
+            && review.contains("The first product needed a relational datastore")
+            && review.contains("We chose MySQL as the primary datastore."),
+        "the review hold renders the fidelity diff (foreign source + canonical rewrite):\n{review}",
     );
     assert_eq!(
         count_before,
         git(repo.path(), &["rev-list", "--count", "HEAD"])
             .parse::<u32>()
             .unwrap(),
-        "the squatter block commits nothing",
+        "the review hold commits nothing",
     );
+
+    // --approve rewrites IN PLACE: ONE commit, `M <path>` — never `D`+`A`, nothing retired.
+    let out = finalize(repo.path(), home.path(), &pack, &task, true);
+    assert!(
+        out.status.success(),
+        "finalize --approve on the same-path migration must land; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        count_before + 1,
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        "the approved same-path migration lands exactly ONE commit",
+    );
+    let name_status = git(
+        repo.path(),
+        &["show", "--name-status", "--no-renames", "--format=", "HEAD"],
+    );
+    assert!(
+        name_status.lines().any(|l| l == format!("M\t{rel}")),
+        "the same-path migration modifies the canonical doc in place:\n{name_status}",
+    );
+    assert!(
+        !name_status.lines().any(|l| l == format!("D\t{rel}"))
+            && !name_status.lines().any(|l| l == format!("A\t{rel}")),
+        "the in-place rewrite is never a delete+re-add (`D`+`A`):\n{name_status}",
+    );
+
+    // The committed file is now the byte-stable rewrite; the foreign body is gone.
+    let body = assert_committed_byte_stable(repo.path(), &pack, "adr", "use-mysql");
+    assert!(
+        body.contains("status: superseded") && body.contains("We chose MySQL"),
+        "the committed adr is the canonical rewrite:\n{body}",
+    );
+    assert!(
+        !body.contains("The first product needed a relational datastore"),
+        "the committed adr carries none of the foreign source body:\n{body}",
+    );
+    assert_ingest_adopted(repo.path(), home.path(), &pack, "adr", "use-mysql");
 }
 
 /// RED 5 — the out-of-set supersedes drop. A prior the operator will NOT migrate is

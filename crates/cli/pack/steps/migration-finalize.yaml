@@ -6,9 +6,11 @@ it renders the foreign source against the canonical rewrite and holds (exit 4),
 because the CLI guarantees structure, never content-faithfulness. Review that
 fidelity diff, then re-run the same finalize with `--approve` to write the
 canonical doc, RETIRE the foreign original, and commit — approval is the one
-destructive gate. If the promote destination is already occupied by a committed
-file that is not the foreign original being rewritten in place, finalize blocks
-rather than clobbering it: retitle the doc so it slugs differently, or resolve
-the collision, then finalize again.
+destructive gate. A source already sitting at its canonical destination is
+rewritten in place on approval — the committed file is modified, nothing is
+retired. If the promote destination is occupied by a committed file that is
+not the foreign original being rewritten in place, finalize blocks rather
+than clobbering it: retitle the doc so it slugs differently, or resolve the
+collision, then finalize again.
 
 {{ include: step:finalize }}

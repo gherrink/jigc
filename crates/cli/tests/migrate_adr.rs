@@ -950,11 +950,11 @@ fn a_non_migration_doc_create_adr_still_stamps_today() {
 // ---------------------------------------------------------------------------
 // M25 Increment 4, T2 — finalize-promote clobber guard acceptance (the deliverable's
 // Proves; `auto-migration.md` → Honest bounds → the data-loss clobber guard;
-// `worked-examples.md` → flow 27). A migration whose promote destination already holds a
-// committed managed doc **blocks at finalize-promote** instead of silently clobbering it —
-// driven end-to-end through the built binary on the NON-SINGLETON `adr` shape. Without T1's
-// guard each block below would instead promote-clobber and land a commit, so every
-// "commits nothing / byte-intact / squatter intact" assertion is tied to the guard firing.
+// `worked-examples.md` → flow 27), revised at M43 (fork 5, the same-path carve-out). A
+// migration whose promote destination holds a DISTINCT committed managed doc **blocks at
+// finalize-promote** instead of silently clobbering it — while the same-path migration
+// (recorded source == destination) rewrites IN PLACE, review-before-destroy — driven
+// end-to-end through the built binary on the NON-SINGLETON `adr` shape.
 // ---------------------------------------------------------------------------
 
 /// The **per-file** migration task id for an arbitrary repo-relative source `rel` — the
@@ -1091,15 +1091,16 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
     );
 }
 
-/// (b) **In-location squatter** — `jigc migrate docs/decisions/<slug>.md --as adr` where the
-/// canonical path itself holds a committed managed doc must **block at finalize-promote**,
-/// the squatter intact. The retire-skip (source == destination, [`plan_retirements`]) and
-/// the promote-block compose to **no data loss**. Bounded: this proves only the BLOCK —
-/// end-to-end authoring over an in-location squatter stays off-canonical-foreign-path-
-/// bounded (`auto-migration.md` → Honest bounds; M24 blank-seed is singleton-gated).
+/// (b) **The same-path migration rewrites in place (M43 fork 5)** — `jigc migrate
+/// docs/decisions/<slug>.md --as adr` where the foreign file already sits at the canonical
+/// destination: the working area seeds BLANK (the copy-in is singleton-gated — no
+/// Frankenstein doc), a plain finalize holds at the review gate (exit 4) rendering the
+/// fidelity diff, and `--approve` — the sole destructive gate — rewrites the committed
+/// file IN PLACE: one commit whose name-status shows `M <path>` (never `D`+`A`), the
+/// committed file now the byte-stable rewrite, nothing retired.
 #[test]
-fn an_in_location_squatter_blocks_at_finalize_promote() {
-    let repo = TempDir::new("squatter");
+fn a_same_path_migration_rewrites_in_place() {
+    let repo = TempDir::new("same-path");
     let home = TempDir::new("home");
     let pack = dev_pack();
     init_repo(repo.path());
@@ -1108,68 +1109,114 @@ fn an_in_location_squatter_blocks_at_finalize_promote() {
         "jigc setup",
     );
 
-    // Land a committed managed ADR at the canonical `docs/decisions/use-postgresql.md` — the
-    // squatter the in-location migration would overwrite.
-    migrate_one(
-        repo.path(),
-        home.path(),
-        &pack,
-        "0001-use-postgresql",
-        FOREIGN_POSTGRES,
-        PAYLOAD_POSTGRES,
-        "use-postgresql",
-    );
-    let squatter_rel = "docs/decisions/use-postgresql.md";
-    let squatter_before = fs::read(repo.path().join(squatter_rel)).expect("the squatter on disk");
+    // A foreign non-conformant ADR committed AT the canonical destination — the user's
+    // layout already matches jigc's (the most common brownfield case).
+    let rel = "docs/decisions/use-postgresql.md";
+    let path = repo.path().join(rel);
+    fs::create_dir_all(path.parent().unwrap()).expect("create docs/decisions/");
+    fs::write(&path, FOREIGN_POSTGRES).expect("write the same-path foreign adr");
+    git(repo.path(), &["add", rel]);
+    git(repo.path(), &["commit", "-q", "-m", "track foreign adr"]);
     let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
         .unwrap();
 
-    // Migrate the canonical doc IN PLACE: source-path == the canonical destination. The
-    // agent re-authors the same title, so the promote destination is the squatter's path.
-    migrate(repo.path(), home.path(), &pack, squatter_rel);
-    let task = migration_task_for(squatter_rel);
+    migrate(repo.path(), home.path(), &pack, rel);
+    let task = migration_task_for(rel);
     let authored = ok_stdout(
         author_adr(repo.path(), home.path(), &pack, &task, PAYLOAD_POSTGRES),
-        "jigc doc author adr (in-location squatter)",
+        "jigc doc author adr (same-path)",
     );
     assert_eq!(
         authored, "adr:use-postgresql",
-        "the in-location author succeeds in the working area (adr is non-singleton — no \
+        "the same-path author succeeds in the working area (adr is non-singleton — no \
          committed-store copy-in)",
     );
+    // The working area seeded BLANK: the authored doc carries none of the foreign body.
+    let staged = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join(&task)
+            .join("docs")
+            .join("adr:use-postgresql.md"),
+    )
+    .expect("the staged adr in the working area");
+    assert!(
+        !staged.contains("Alternatives were weighed and rejected."),
+        "the same-path foreign body must NOT seed the edit base (no Frankenstein doc):\n{staged}",
+    );
 
-    let out = finalize_approve(repo.path(), home.path(), &pack, &task);
-    assert!(
-        !out.status.success(),
-        "an in-location squatter must block at finalize-promote (exit non-zero); stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
+    // Plain finalize: the review hold renders the fidelity diff and commits NOTHING.
+    let bare = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", &task],
+        None,
     );
-    let streams = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    assert!(
-        streams.contains("finalize.promote-clobber")
-            && streams.contains("docs/decisions/use-postgresql.md"),
-        "the block is the clobber guard naming the canonical destination:\n{streams}",
-    );
-    // No data loss: the squatter is byte-intact and nothing was committed (retire-skip +
-    // promote-block compose to leave the committed doc exactly as it was).
     assert_eq!(
-        fs::read(repo.path().join(squatter_rel)).expect("the squatter on disk"),
-        squatter_before,
-        "the in-location squatter is byte-intact after the refused clobber",
+        bare.status.code(),
+        Some(4),
+        "a plain same-path finalize holds at the review gate (exit 4); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&bare.stdout),
+        String::from_utf8_lossy(&bare.stderr),
+    );
+    let review = String::from_utf8_lossy(&bare.stdout).to_string();
+    assert!(
+        review.contains("migration review required")
+            && review.contains("Alternatives were weighed and rejected.")
+            && review.contains("We will use PostgreSQL as the primary datastore."),
+        "the review hold renders the fidelity diff (foreign source + canonical rewrite):\n{review}",
     );
     assert_eq!(
         count_before,
         git(repo.path(), &["rev-list", "--count", "HEAD"])
             .parse::<u32>()
             .unwrap(),
-        "the squatter block commits nothing",
+        "the review hold commits nothing",
     );
+
+    // --approve rewrites IN PLACE: ONE commit, `M <path>` — never `D`+`A`, nothing retired.
+    let out = finalize_approve(repo.path(), home.path(), &pack, &task);
+    assert!(
+        out.status.success(),
+        "finalize --approve on the same-path migration must land; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        count_before + 1,
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        "the approved same-path migration lands exactly ONE commit",
+    );
+    let name_status = git(
+        repo.path(),
+        &["show", "--name-status", "--no-renames", "--format=", "HEAD"],
+    );
+    assert!(
+        name_status.lines().any(|l| l == format!("M\t{rel}")),
+        "the same-path migration modifies the canonical doc in place:\n{name_status}",
+    );
+    assert!(
+        !name_status.lines().any(|l| l == format!("D\t{rel}"))
+            && !name_status.lines().any(|l| l == format!("A\t{rel}")),
+        "the in-place rewrite is never a delete+re-add (`D`+`A`):\n{name_status}",
+    );
+
+    // The committed file is now the byte-stable rewrite; the foreign body is gone.
+    let body = assert_committed_byte_stable(repo.path(), &pack, "use-postgresql");
+    assert!(
+        body.contains("status: accepted") && body.contains("We will use PostgreSQL"),
+        "the committed adr is the canonical rewrite:\n{body}",
+    );
+    assert!(
+        !body.contains("Alternatives were weighed and rejected."),
+        "the committed adr carries none of the foreign source body:\n{body}",
+    );
+    assert_ingest_adopted(repo.path(), home.path(), &pack, "use-postgresql");
 }
 
 /// (c) **Regression** — a normal first-time `jigc migrate <foreign>.md --as adr` into a

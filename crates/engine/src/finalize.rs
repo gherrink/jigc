@@ -229,7 +229,7 @@ pub fn plan_finalize(
     // promote — irreversible data loss. Block before retire. The in-place migration
     // rewrite (the doc replacing the very foreign original at its own canonical path) is
     // excluded via the retire guard's source-path == destination discriminator.
-    plan_clobber_guard(unit, task_dir, repo_root, &promote.promotions, schemas)?;
+    plan_clobber_guard(unit, task_dir, repo_root, &promote.promotions)?;
 
     // The retire set (`design/auto-migration.md` → Retire-the-foreign-original): a
     // migration task records its repo-relative foreign source path at mint; the planner
@@ -312,29 +312,30 @@ fn plan_retirements(
 /// at base and edited, so re-promoting it over its own canonical path is the intended
 /// copy-on-first-touch update (the NGT committed-field-update path), never a clobber.
 ///
-/// The **in-place SINGLETON migration rewrite** is excluded — and *only* the singleton one:
-/// when a **`singleton`** doctype's recorded foreign `source-path` IS this destination, the
-/// committed file is the very foreign original being rewritten in place (the M24 blank-seed
-/// path, `auto-migration.md` → Path-collision guard / Hardening #8, which is itself
-/// `state.rs` step-4 `&& schema.singleton`-gated) — overwriting it is the whole point. A
-/// **non-singleton** in-location squatter (source == destination) is bounded *out* of
-/// end-to-end authoring (`auto-migration.md` → Honest bounds: "bounded to off-canonical
-/// foreign paths") and must still **block** — the retire-skip ([`plan_retirements`] skips
-/// source == destination) and this promote-block then compose to *no data loss*. Both
-/// path sides are [`crate::store::lexical_normalize`]d so a `./`-prefixed or
-/// redundant-component spelling still matches.
+/// The **in-place migration rewrite** is excluded — for **any** doctype (the M43
+/// same-path carve-out, fork 5, `DECISIONS.md` → 2026-07-16 M43 Settle #5): when the
+/// recorded foreign `source-path` IS this destination, the committed file is the very
+/// foreign original being rewritten in place — overwriting it is the whole point, and
+/// `--approve` stays the sole destructive gate (the review hold renders the fidelity
+/// diff downstream, so the overwrite is review-before-destroy). The retire-skip
+/// ([`plan_retirements`] skips source == destination) and this carve-out compose to an
+/// in-place `M`-not-`D`+`A` landing. Both path sides are
+/// [`crate::store::lexical_normalize`]d so a `./`-prefixed or redundant-component
+/// spelling still matches. (Pre-M43 the exclusion was `singleton`-gated — mirroring the
+/// M24 blank-seed copy-in gate — which bounded every non-singleton same-path migration
+/// out of end-to-end authoring; the create side needed no change for the carve-out, as
+/// a non-singleton create always seeds blank.)
 ///
 /// Each staged promotion's `<type>:<slug>` address is recovered from its source file stem
 /// (the [`plan_promotions`] naming convention) and looked up in the task's provenance
-/// manifest ([`crate::state::ProvenanceRecord`]); its `<type>` resolves the schema in
-/// `schemas` (for the singleton check). A staged doc with no recorded provenance (none was
-/// minted/copied-in here) is not create-provenance, so it never trips the guard.
+/// manifest ([`crate::state::ProvenanceRecord`]). A staged doc with no recorded
+/// provenance (none was minted/copied-in here) is not create-provenance, so it never
+/// trips the guard.
 fn plan_clobber_guard(
     unit: Unit,
     task_dir: &Path,
     repo_root: &Path,
     promotions: &[Promotion],
-    schemas: &BTreeMap<String, Schema>,
 ) -> Result<(), Vec<Finding>> {
     let provenance = crate::state::ProvenanceRecord::load(task_dir)
         .map_err(|err| vec![provenance_io_finding(unit, task_dir, &err)])?;
@@ -354,15 +355,9 @@ fn plan_clobber_guard(
         if provenance.get(address) != Some(crate::state::Provenance::Created) {
             continue; // edited-from-base / unrecorded → never a clobber.
         }
-        // Only a SINGLETON doctype's in-place rewrite is excluded (the M24 blank-seed path
-        // is singleton-gated); a non-singleton in-location squatter must still block.
-        let singleton = address
-            .split_once(':')
-            .and_then(|(ty, _)| schemas.get(ty))
-            .is_some_and(|schema| schema.singleton);
         let dest_norm = crate::store::lexical_normalize(Path::new(&promotion.destination));
-        if singleton && in_place.as_ref() == Some(&dest_norm) {
-            continue; // in-place singleton rewrite — replacing the very foreign original.
+        if in_place.as_ref() == Some(&dest_norm) {
+            continue; // in-place rewrite — replacing the very foreign original (M43, fork 5).
         }
         if repo_root.join(&promotion.destination).is_file() {
             clobbers.push(clobber_finding(&promotion.destination));
@@ -1145,8 +1140,8 @@ mod tests {
     }
 
     /// The `changelog` singleton (fixed slug = the type id, location `changelog/`) — the
-    /// clobber guard's in-place-rewrite exclusion is `singleton`-gated, so the in-place
-    /// test needs a real singleton schema.
+    /// singleton arm of the clobber guard's doctype-blind in-place-rewrite carve-out
+    /// (M43, fork 5), exercised on a real singleton schema.
     fn changelog_schema() -> Schema {
         crate::schema::load_schema_with_types(
             CHANGELOG_YAML,
@@ -1805,7 +1800,8 @@ sections:
     /// whose destination already holds a committed file does **not** block when the
     /// migration's recorded `source-path` IS that destination — the committed file is the
     /// very foreign original being rewritten in place (the M24 blank-seed path), not a
-    /// distinct managed doc. The exclusion is `singleton`-gated and matches the retire
+    /// distinct managed doc. Since M43 (fork 5) the exclusion is doctype-blind — the
+    /// singleton is one instance of the same-path carve-out — and matches the retire
     /// guard's source-path == destination discriminator; a redundantly-spelled source-path
     /// (`./`-prefixed) still matches. Without this exclusion the M24 changelog-squatter
     /// rewrite (flow 26) regresses.
@@ -1853,15 +1849,16 @@ sections:
         }
     }
 
-    /// The contrast that proves the exclusion is **`singleton`-gated** (T2(b), the
-    /// non-singleton in-location squatter, `auto-migration.md` → Honest bounds): a
-    /// **non-singleton** (adr) Created doc whose `source-path` IS its own destination — an
-    /// in-location squatter at the canonical path — still **blocks**, because the M24
-    /// blank-seed / in-place authoring is singleton-gated and does not apply. The retire
-    /// guard skips the source == destination retire AND this promote-block fires, so the
-    /// two compose to **no data loss**.
+    /// The M43 same-path carve-out (fork 5, `DECISIONS.md` → 2026-07-16 M43 Settle #5):
+    /// a **non-singleton** (adr) Created doc whose recorded `source-path` IS its own
+    /// promote destination — the same-path migration — is the in-place rewrite for
+    /// **any** doctype, not a clobber. The plan carries the promotion, **no** clobber
+    /// finding, **no** retirement ([`plan_retirements`] skips source == destination), so
+    /// the two compose to an in-place `M`-not-`D+A` landing; `--approve` stays the sole
+    /// destructive gate downstream. A redundantly-spelled source-path (`./`-prefixed)
+    /// still matches.
     #[test]
-    fn finalize_plan_blocks_a_non_singleton_in_location_squatter() {
+    fn finalize_plan_allows_the_non_singleton_in_place_rewrite() {
         let root = TempRoot::new("clobber-nonsingleton-inplace");
         let task_dir = root.path().join("tasks").join("migrate-adr-inplace");
         let schema = stage_filled_commit(&task_dir, "migrate-adr-inplace");
@@ -1872,39 +1869,49 @@ sections:
             state::Provenance::Created,
         )
         .expect("record created provenance");
+        // The committed file at the canonical destination IS the foreign original.
         state::persist(
             &root.path().join("decisions").join("single-node-cache.md"),
-            b"# a committed managed doc already at the canonical path\n",
+            b"non-conformant foreign adr at the canonical path\n",
         )
-        .expect("commit a managed doc at the destination");
-        // source-path == destination, but adr is NON-singleton → the exclusion does NOT
-        // apply, so the clobber guard still fires.
-        state::persist(
-            &task_dir.join("source-path"),
-            b"decisions/single-node-cache.md",
-        )
-        .expect("record the in-location source path");
+        .expect("commit the foreign original at the destination");
         let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
 
-        let findings = plan_finalize(
-            &task_dir,
-            root.path(),
-            &base(),
-            &base().sha,
-            &clean,
-            true,
-            &schema,
-            "migrate-adr-inplace",
-            &schemas(),
-        )
-        .expect_err("a non-singleton in-location squatter must still block");
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].code, "finalize.promote-clobber");
-        assert!(
-            findings[0]
-                .message
-                .contains("decisions/single-node-cache.md")
-        );
+        for source_path in [
+            "decisions/single-node-cache.md",
+            "./decisions/single-node-cache.md",
+        ] {
+            state::persist(&task_dir.join("source-path"), source_path.as_bytes())
+                .expect("record the same-path migration source path");
+            let plan = plan_finalize(
+                &task_dir,
+                root.path(),
+                &base(),
+                &base().sha,
+                &clean,
+                true,
+                &schema,
+                "migrate-adr-inplace",
+                &schemas(),
+            )
+            .unwrap_or_else(|findings| {
+                panic!("the same-path rewrite `{source_path}` must not clobber: {findings:?}")
+            });
+            assert_eq!(
+                plan.promotions.len(),
+                1,
+                "the plan carries the in-place promotion (source-path `{source_path}`)",
+            );
+            assert_eq!(
+                plan.promotions[0].destination, "decisions/single-node-cache.md",
+                "the non-singleton squatter is rewritten in place (source-path `{source_path}`)",
+            );
+            assert!(
+                plan.retirements.is_empty(),
+                "the same-path rewrite retires nothing — the promote IS the replacement \
+                 (source-path `{source_path}`)",
+            );
+        }
     }
 
     /// GOLDEN: a task that staged both a commit doc and an `adr:single-node-cache`
