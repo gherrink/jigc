@@ -1207,6 +1207,12 @@ pub struct MaterializeOutcome {
     pub docs_dir: PathBuf,
     /// The materialized final `<type>:<slug>` addresses, id-sorted (the overlay keys).
     pub addresses: Vec<String>,
+    /// Each materialized final address → the sub-task id whose area contributed it
+    /// (the overlay's `source_task`, carried through the suffix resolution) — the
+    /// per-sub-task contribution facts the finalize landing manifest names (C2: the
+    /// no-work sub-task becomes visible instead of silently credited). Id-sorted by
+    /// construction ([`BTreeMap`](std::collections::BTreeMap)).
+    pub sources: std::collections::BTreeMap<String, String>,
 }
 
 /// The parent staging-area subfolder a milestone's merged bodies materialize under,
@@ -1274,6 +1280,7 @@ pub fn materialize(
         .map_err(|err| io_finding(milestone_id, "open the parent staging area", &err))?;
 
     let mut addresses = Vec::new();
+    let mut sources = std::collections::BTreeMap::new();
     for (_address, mut staged) in groups {
         // Resolve strictly by task id, the same order `fold_areas` resolves a group in,
         // so the materialized body for a given final address is order-invariant.
@@ -1286,6 +1293,7 @@ pub fn materialize(
             let path = crate::state::instance_path(dir.join(MERGED_AREA).as_path(), ty, slug);
             std::fs::write(&path, &body)
                 .map_err(|err| io_finding(milestone_id, "write a materialized doc body", &err))?;
+            sources.insert(final_address.clone(), d.source_task.clone());
             addresses.push(final_address);
         }
     }
@@ -1295,6 +1303,7 @@ pub fn materialize(
     Ok(MaterializeOutcome {
         docs_dir,
         addresses,
+        sources,
     })
 }
 

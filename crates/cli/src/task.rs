@@ -1594,77 +1594,7 @@ pub(crate) enum StagePolicy {
     },
 }
 
-/// Execute a [`FinalizePlan`]'s commit phases 4–7 (`design/finalize.md` → 4. Promote /
-/// 5. Stage / 6. Commit / 7. Post-commit) — the **shared** executor the per-task
-/// [`TaskArea::finalize`] and the milestone single-commit boundary
-/// (`crate::milestone`) both drive, so the promote/stage/commit/rollback/hash logic is
-/// implemented once, never divergently (the inc-4 doc-elaboration pin, `DECISIONS.md`
-/// 2026-06-04). The engine planner already decided *what* lands *where*; this owns only
-/// the git I/O.
-///
-/// `msg_tmp_dir` is where the rendered message temp file is written (the task working
-/// area / the milestone staging area — both gitignored); `cleanup_dir` is the working
-/// area removed on a landed commit (the task dir / the milestone area). The flow: write
-/// the message to a temp file, copy each promoted doc to its canonical repo path, ensure
-/// `.jigc/.gitignore`, stage per `stage`, commit (**never** `--no-verify`). A hook/git
-/// rejection surfaces git's stderr verbatim, rolls back the promoted copies, and lands no
-/// commit (exit `FAILURE`). On success, post-commit (best-effort: advance the file-state
-/// hashes, invalidate the edge-index stamp, remove the working area).
-///
-/// `stage` selects the stage/commit mechanism ([`StagePolicy`]). The `squash: true`
-/// milestone boundary passes [`StagePolicy::Combine`] (fold the worktree code-sets +
-/// commit the combined tree with the user's hooks running); the migration path its fixed
-/// pathspec.
-// Each argument is a distinct, independent fact (repo/jigc/tmp/cleanup roots, the plan,
-// schemas, the output format, the stage policy) threaded straight to the shared executor;
-// an allow is clearer here than a parameter struct (matching `try_execute_finalize_plan`).
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn execute_finalize_plan(
-    repo_root: &Path,
-    jigc_root: &Path,
-    msg_tmp_dir: &Path,
-    plan: &engine::finalize::FinalizePlan,
-    cleanup_dir: &Path,
-    schemas: &BTreeMap<String, Schema>,
-    format: Format,
-    stage: StagePolicy,
-) -> Result<Outcome> {
-    // Map the landed/failed `Result` onto the historic `Ok(ExitCode)` contract the
-    // per-task and `squash: true` milestone callers expect (a failure surfaces git's
-    // stderr verbatim — through the shared operational-error funnel, so `--format
-    // json` gets the error envelope — and exits `FAILURE`; success exits `SUCCESS`).
-    // The milestone boundary runs no reconcile sweep, so it carries no post-sweep
-    // record to persist (`None` — post-commit loads the durable record as before).
-    match try_execute_finalize_plan(
-        repo_root,
-        jigc_root,
-        msg_tmp_dir,
-        plan,
-        cleanup_dir,
-        schemas,
-        None,
-        stage,
-    )? {
-        // T3 — relay the landed commit's non-blocking hook output (the `squash: true`
-        // milestone boundary; the combine commits the combined tree from a dedicated worktree
-        // where the user's hooks run, so this stream carries that hook output — M31 Inc 5;
-        // `design/finalize.md` → 6. Commit, review B1).
-        Ok(hook_output) => {
-            relay_hook_output(format, &hook_output);
-            Ok(Outcome::success())
-        }
-        Err(err) => {
-            // The `squash: true` milestone boundary's commit-phase rejection: git's stderr
-            // stays verbatim-raw (the hook output IS the correction signal), and the run names
-            // itself in the invocation log — the fan-out arm of the same error identity the
-            // per-task finalize carries.
-            eprintln!("{}", render::operational_error(format, &err));
-            Ok(finalize_failure_outcome(&err))
-        }
-    }
-}
-
-/// The transactional core of [`execute_finalize_plan`]: promote + stage + commit +
+/// The **shared** transactional executor — a [`FinalizePlan`]'s commit phases 4–7: promote + stage + commit +
 /// post-commit, returning `Ok(Ok(hook_output))` when the aggregate landed and
 /// `Ok(Err(_))` when the commit was rejected (the promotions already rolled back). The
 /// `hook_output` is the aggregate `git_commit`'s captured non-blocking-hook stream
@@ -2044,7 +1974,7 @@ impl std::error::Error for CommitRejected {}
 /// carries the route-exempt error identity [`ERROR_COMMIT_REJECTED`](invocation_log::ERROR_COMMIT_REJECTED)
 /// into the invocation log; every other (unstructured `anyhow`) failure carries none.
 ///
-/// Shared by **every** finalize arm — the shared executor ([`execute_finalize_plan`], the
+/// Shared by **every** finalize arm — the shared executor ([`try_execute_finalize_plan`], the
 /// `squash: true` milestone boundary) and the `squash: false` chain + dispatch arms in
 /// `milestone.rs` — because the requirement is about *a finalize that did not commit*, not
 /// about the per-task one: a hook-rejected `jigc milestone finalize` was byte-identical in the

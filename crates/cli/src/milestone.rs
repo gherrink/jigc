@@ -1372,7 +1372,7 @@ fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Compositi
 /// process exits non-zero. The verb **commits nothing** (Increment 4 wires the
 /// suffix-resolved overlay into finalize); a clash leaves the working tree untouched.
 fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
-    let outcome = match run_join(cwd, milestone_id) {
+    let (outcome, sub_tasks) = match run_join(cwd, milestone_id) {
         Ok(outcome) => outcome,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
@@ -1380,8 +1380,12 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
         }
     };
     // The merged-overlay summary always prints (the agent reads the suffix/rewrite
-    // decisions even when the join is clean).
-    println!("{}", render::milestone_join(format, milestone_id, &outcome));
+    // decisions even when the join is clean). The milestone's full id-sorted sub-task
+    // list rides along so the ack can name the doc-less sub-tasks (C3).
+    println!(
+        "{}",
+        render::milestone_join(format, milestone_id, &outcome, &sub_tasks)
+    );
 
     // A blocking finding inside the outcome (e.g. `join.same-doc-clash`) routes to
     // stderr and gates the exit code — nothing is committed regardless.
@@ -1416,8 +1420,10 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
 /// the committed [`EdgeIndex`](engine::index::EdgeIndex) the per-sub-area cross-area
 /// ref walk resolves against. The engine performs no git I/O; the CLI feeds it the
 /// resolved inputs (`design/storage.md` → The by-task-id join). An unknown milestone
-/// (no area) surfaces as the engine's routed `milestone.unknown` block.
-fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
+/// (no area) surfaces as the engine's routed `milestone.unknown` block. Returns the
+/// join outcome paired with the milestone's full **id-sorted** sub-task list — the
+/// set the C3 ack names the doc-less members of.
+fn run_join(cwd: &Path, milestone_id: &str) -> Result<(JoinOutcome, Vec<String>)> {
     // The committed doc-store + `.jigc/` index bind to jigc_home (the main checkout); the
     // join performs no git I/O (the base is the milestone's *stored* pin) (M31 Inc 2).
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
@@ -1448,7 +1454,13 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
     };
     let committed = load_committed(&jigc_home, &jigc_root, &schemas, &head);
 
-    join(&jigc_root, &jigc_home, milestone_id, &schemas, &committed).map_err(finding_to_err)
+    let outcome =
+        join(&jigc_root, &jigc_home, milestone_id, &schemas, &committed).map_err(finding_to_err)?;
+    // The join succeeded, so the milestone area exists — read its full sub-task list
+    // (id-sorted) for the ack's doc-less-member line (C3).
+    let list = read_task_list(&milestone_dir(&jigc_root, milestone_id))
+        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+    Ok((outcome, list.enumerate()))
 }
 
 /// Dispatch `jigc milestone finalize <milestone-id>`: run the materialized join +
@@ -1488,7 +1500,7 @@ fn dispatch_finalize(
 /// its id-ordered sub-task list (a milestone has no commit doc to render — planner-note (b));
 /// (3) [`plan_milestone_finalize`] runs the shared preflight (`base` == HEAD, or advanced over
 /// a record-only range) + empty-commit guard + promote/hash sweep over the materialized staging
-/// area; (4) the **shared** [`crate::task::execute_finalize_plan`] executor promotes, stages
+/// area; (4) the **shared** [`crate::task::try_execute_finalize_plan`] executor promotes, stages
 /// (incl. the flipped record), and commits in **one** boundary, removing the milestone area on
 /// success. The engine performs no git; the CLI reads HEAD and locates `.jigc/`.
 fn run_milestone_finalize(
@@ -1596,6 +1608,13 @@ fn run_milestone_finalize(
         || worktrees_have_staged_code(&worktrees)?
         || record_changed;
 
+    // C2 — the landing manifest's per-sub-task contribution facts, computed PRE-commit
+    // while the fan-out worktrees are still provisioned (a landed boundary tears them
+    // down): each sub-task's merged-doc count (the materialize's address→source map)
+    // and its worktree's staged-code file count. The no-work sub-task reads
+    // `docs: 0, code_files: 0` and renders visibly as `nothing staged`.
+    let contributions = subtask_contributions(&list, &materialized.sources, &worktrees)?;
+
     // The finalize base-guard refinement (`design/team-ready-state.md` → The commit model: the
     // finalize base-guard refinement; `DECISIONS.md` 2026-07-07). Per-op record commits advance
     // HEAD past the pinned base, so `base == HEAD` can never hold once record commits land. The
@@ -1670,7 +1689,7 @@ fn run_milestone_finalize(
     // (before any sub-task commit moves it). If the aggregate finalize fails, `git reset
     // --hard` to this sha returns HEAD + index + working tree to as-if-finalize-was-never-
     // called — no orphaned sub-task commits (`CLAUDE.md` "Writes are transactional";
-    // `design/finalize.md` → Rollback discipline). `execute_finalize_plan` already rolls back
+    // `design/finalize.md` → Rollback discipline). `try_execute_finalize_plan` already rolls back
     // its own promotions; this reset additionally undoes the per-sub-task commits the
     // milestone boundary laid down ahead of it.
     if !squash {
@@ -1713,6 +1732,15 @@ fn run_milestone_finalize(
                 // The boundary landed — the flipped record rode the aggregate commit; disarm
                 // its restore guard so the committed `joined` bytes are not reverted.
                 disarm_record_flip(&mut record_flip);
+                // C2 — the landing manifest, on the mold of the per-task landed summary:
+                // `finalized <sha> — <subject>` + the whole boundary's landed-file set
+                // (`git diff <pre-boundary-HEAD>..HEAD`, so the N+1 chain reads as one
+                // set) + the per-sub-task contribution line.
+                let landed = milestone_landed_summary(&repo_root, &head, &plan, contributions)?;
+                print!("{}", render::milestone_finalized(format, &landed));
+                if format != Format::Json {
+                    println!();
+                }
                 // Relay the aggregate commit's non-blocking hook output (each per-sub-task
                 // commit already relayed its own inside `chain_commit` — every fan-out commit
                 // runs the user's hooks, `design/finalize.md` → 6. Commit).
@@ -1749,29 +1777,48 @@ fn run_milestone_finalize(
         // whole-tree sweep (the code lives in the isolated worktrees, not this checkout). A
         // docs-only (never-provisioned) milestone yields an empty list and degrades to a
         // docs-only commit, byte-identical to what M7 shipped.
-        let code = crate::task::execute_finalize_plan(
+        match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
             &dir,
             &plan,
             &dir,
             &schemas,
-            format,
+            None,
             crate::task::StagePolicy::Combine(worktrees, record_pathspec),
-        )?;
-        // On a landed commit, clean up the per-sub-task working areas too (the executor only
-        // removed the milestone area). A failed/rolled-back finalize exits non-zero and leaves
-        // the areas intact for retry.
-        if code.code == 0 {
-            // The flipped record rode the single combine commit — disarm its restore guard so
-            // the committed `joined` bytes are not reverted.
-            disarm_record_flip(&mut record_flip);
-            cleanup_subtask_areas(&jigc_root, &list);
-            // Tear down the fan-out worktrees on the landed default-path commit too (the
-            // heavier A2 teardown — a non-blocking warning on a leaked worktree).
-            remove_worktrees(&repo_root, &jigc_home, &list);
+        )? {
+            // The boundary landed. Clean up the per-sub-task working areas too (the
+            // executor only removed the milestone area). A failed/rolled-back finalize
+            // exits non-zero and leaves the areas intact for retry.
+            Ok(hook_output) => {
+                // The flipped record rode the single combine commit — disarm its restore
+                // guard so the committed `joined` bytes are not reverted.
+                disarm_record_flip(&mut record_flip);
+                // C2 — the landing manifest (the per-task landed-summary mold): the
+                // highest-stakes commit boundary must not succeed with empty stdout.
+                let landed = milestone_landed_summary(&repo_root, &head, &plan, contributions)?;
+                print!("{}", render::milestone_finalized(format, &landed));
+                if format != Format::Json {
+                    println!();
+                }
+                // T3 — relay the landed combine commit's non-blocking hook output (the
+                // dedicated-worktree commit runs the user's hooks — M31 Inc 5).
+                crate::task::relay_hook_output(format, &hook_output);
+                cleanup_subtask_areas(&jigc_root, &list);
+                // Tear down the fan-out worktrees on the landed default-path commit too
+                // (the heavier A2 teardown — a non-blocking warning on a leaked worktree).
+                remove_worktrees(&repo_root, &jigc_home, &list);
+                Ok(Outcome::success())
+            }
+            // The commit-phase rejection: git's stderr stays verbatim-raw through the
+            // shared operational-error funnel and the run names itself in the invocation
+            // log — behavior unchanged from before the landing manifest; the failure arm
+            // is inlined here so the landed arm can print the manifest.
+            Err(err) => {
+                eprintln!("{}", render::operational_error(format, &err));
+                Ok(crate::task::finalize_failure_outcome(&err))
+            }
         }
-        Ok(code)
     }
 }
 
@@ -2072,6 +2119,113 @@ fn worktree_staged_patch(worktree: &Path) -> Result<Vec<u8>> {
         );
     }
     Ok(out.stdout)
+}
+
+/// Each sub-task's landing-manifest contribution (C2), id-sorted over the milestone's
+/// full task `list`: its merged-doc count from the materialize's address→source map
+/// (`sources`), and its staged-code file count from its still-provisioned fan-out
+/// worktree's index (`git diff --cached --name-only`); a never-provisioned sub-task
+/// counts 0 code files. Computed **pre-commit** — a landed boundary tears the
+/// worktrees down.
+fn subtask_contributions(
+    list: &engine::milestone::TaskList,
+    sources: &std::collections::BTreeMap<String, String>,
+    worktrees: &[PathBuf],
+) -> Result<Vec<render::SubTaskContribution>> {
+    let mut out = Vec::new();
+    for id in list.enumerate() {
+        let docs = sources.values().filter(|source| **source == id).count();
+        let worktree = worktrees
+            .iter()
+            .find(|path| path.file_name().is_some_and(|name| name == id.as_str()));
+        let code_files = match worktree {
+            Some(path) => worktree_staged_file_count(path)?,
+            None => 0,
+        };
+        out.push(render::SubTaskContribution {
+            id,
+            docs,
+            code_files,
+        });
+    }
+    Ok(out)
+}
+
+/// The number of files staged in a fan-out worktree's index (`git diff --cached
+/// --name-only`, non-empty lines) — the code-file half of a sub-task's contribution.
+fn worktree_staged_file_count(worktree: &Path) -> Result<usize> {
+    let out = Command::new("git")
+        .args(["diff", "--cached", "--name-only"])
+        .current_dir(worktree)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git diff --cached --name-only` in worktree {worktree:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count())
+}
+
+/// Assemble the landed-boundary facts for [`render::milestone_finalized`] (C2), read
+/// off the **committed bytes** after the boundary landed: the abbreviated HEAD hash +
+/// subject, and the landed-file manifest as `git diff --name-status --no-renames
+/// <pre-boundary-HEAD> HEAD` — the whole boundary's delta, so the `squash: false` N+1
+/// chain reads as one set, identical to what the single `squash: true` commit shows. A
+/// path among the plan's promotion destinations tags `Promoted`; otherwise the status
+/// letter maps `A`→added / `D`→deleted / else modified (the
+/// `crate::task::classify_landed_manifest` mapping).
+fn milestone_landed_summary(
+    repo_root: &Path,
+    pre_boundary_head: &str,
+    plan: &engine::finalize::FinalizePlan,
+    sub_tasks: Vec<render::SubTaskContribution>,
+) -> Result<render::MilestoneLanded> {
+    let hash = crate::task::git_capture(repo_root, &["rev-parse", "--short", "HEAD"])?;
+    let subject = crate::task::git_capture(repo_root, &["log", "-1", "--pretty=format:%s"])?;
+    let name_status = crate::task::git_capture(
+        repo_root,
+        &[
+            "diff",
+            "--name-status",
+            "--no-renames",
+            pre_boundary_head,
+            "HEAD",
+        ],
+    )?;
+    let promoted: std::collections::HashSet<&str> = plan
+        .promotions
+        .iter()
+        .map(|promotion| promotion.destination.as_str())
+        .collect();
+    let mut manifest = Vec::new();
+    for line in name_status.lines() {
+        let Some((status, path)) = line.trim().split_once('\t') else {
+            continue;
+        };
+        let path = path.trim().to_owned();
+        let kind = if promoted.contains(path.as_str()) {
+            render::ManifestKind::Promoted
+        } else {
+            match status.trim().chars().next().unwrap_or('M') {
+                'A' => render::ManifestKind::Added,
+                'D' => render::ManifestKind::Deleted,
+                _ => render::ManifestKind::Modified,
+            }
+        };
+        manifest.push(render::ManifestEntry { path, kind });
+    }
+    Ok(render::MilestoneLanded {
+        hash,
+        subject,
+        files: manifest.len(),
+        manifest,
+        sub_tasks,
+    })
 }
 
 /// Read HEAD as a [`BasePin`] (full + short SHA) via the user's `git` — the same

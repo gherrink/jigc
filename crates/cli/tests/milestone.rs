@@ -501,15 +501,17 @@ fn milestone_join_suffixes_a_created_collision_and_reports_the_decision() {
     init_repo(repo.path());
     let home = TempDir::new("home");
 
-    // Mint the milestone + two sub-tasks, added in NON-id order (zed before low) so
-    // id-order is not an accident of insertion order. id-sorted: [area-low, area-zed].
+    // Mint the milestone + three sub-tasks, added in NON-id order (zed before low) so
+    // id-order is not an accident of insertion order. id-sorted: [area-idle, area-low,
+    // area-zed]. `area-idle` stages NOTHING — the C3 ack must name it as contributing
+    // no docs instead of silently crediting it.
     assert!(
         run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
             .status
             .success(),
         "create must exit 0",
     );
-    for intent in ["Area zed", "Area low"] {
+    for intent in ["Area zed", "Area low", "Area idle"] {
         assert!(
             run_milestone(
                 repo.path(),
@@ -578,6 +580,21 @@ fn milestone_join_suffixes_a_created_collision_and_reports_the_decision() {
     assert!(
         stdout.contains("adr:eviction-policy"),
         "the disjoint doc must be merged; got:\n{stdout}",
+    );
+    // C3 (round-2 surface fixes) — the ack states its effect FULLY: the sub-task that
+    // staged no docs is named, instead of being silently invisible in a merged list
+    // that only credits contributors.
+    assert!(
+        stdout.contains("no docs staged from: area-idle"),
+        "the join ack must name the sub-task that contributed no docs; got:\n{stdout}",
+    );
+    let no_docs_line = stdout
+        .lines()
+        .find(|l| l.contains("no docs staged from:"))
+        .expect("the no-docs line exists");
+    assert!(
+        !no_docs_line.contains("area-low") && !no_docs_line.contains("area-zed"),
+        "the contributing sub-tasks must NOT be listed as doc-less; got:\n{no_docs_line}",
     );
 
     // Nothing was committed (the verb is not wired to finalize): no new commit and the
@@ -752,16 +769,18 @@ fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
     init_repo(repo.path());
     let home = TempDir::new("home");
 
-    // Mint the milestone + two sub-tasks, added NON-id-order (zed before low) so the
-    // suffix-by-task-id is not an accident of insertion order. id-sorted: [area-low,
-    // area-zed], so `area-low` keeps the bare slug and `area-zed` takes the `-2` suffix.
+    // Mint the milestone + three sub-tasks, added NON-id-order (zed before low) so the
+    // suffix-by-task-id is not an accident of insertion order. id-sorted: [area-idle,
+    // area-low, area-zed], so `area-low` keeps the bare slug and `area-zed` takes the
+    // `-2` suffix. `area-idle` stages NOTHING — the C2 landing manifest must make the
+    // no-work sub-task visible instead of silently crediting it.
     assert!(
         run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
             .status
             .success(),
         "create must exit 0",
     );
-    for intent in ["Area zed", "Area low"] {
+    for intent in ["Area zed", "Area low", "Area idle"] {
         assert!(
             run_milestone(
                 repo.path(),
@@ -808,6 +827,41 @@ fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
         String::from_utf8_lossy(&finalized.stderr),
     );
 
+    // C2 (round-2 surface fixes) — the landing manifest, on the EMITTED bytes: the
+    // highest-stakes commit boundary must not succeed with empty stdout (the blind
+    // reader fell back to raw `git show` — the exact drive-around the tool exists to
+    // prevent). The `jigc task finalize` mold: `finalized <sha> — <subject>` + the
+    // manifest of landed files + the count + the per-sub-task contribution line, the
+    // no-work sub-task visible instead of silently credited.
+    let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("finalized ")
+            && stdout.contains("— Finalize milestone cache-rework (3 sub-tasks)"),
+        "the landing must print `finalized <sha> — <subject>`; got:\n{stdout}",
+    );
+    for line in [
+        "  promoted docs/decisions/cache-strategy.md",
+        "  promoted docs/decisions/cache-strategy-2.md",
+        "  promoted docs/decisions/eviction-policy.md",
+    ] {
+        assert!(
+            stdout.contains(line),
+            "the landing manifest must carry `{line}`; got:\n{stdout}",
+        );
+    }
+    // 4 = the 3 promoted docs + the first-commit `.jigc/.gitignore` config layer the
+    // boundary also lands (named `added` in the manifest — the set is the commit's
+    // real delta, never a curated subset).
+    assert!(
+        stdout.contains("4 files committed"),
+        "the landing must carry the file count; got:\n{stdout}",
+    );
+    assert!(
+        stdout
+            .contains("sub-tasks: area-idle: nothing staged · area-low: 2 docs · area-zed: 1 doc"),
+        "the landing must name each sub-task's contribution, the no-work one included; got:\n{stdout}",
+    );
+
     // EXACTLY ONE new commit.
     assert_eq!(
         rev_list_count(repo.path()),
@@ -815,11 +869,11 @@ fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
         "finalize must land exactly one new commit",
     );
 
-    // The synthesized message: subject names the milestone + its 2 sub-tasks, body lists
+    // The synthesized message: subject names the milestone + its 3 sub-tasks, body lists
     // them id-sorted (`area-low` before `area-zed`).
     let message = head_message(repo.path());
     assert!(
-        message.contains("Finalize milestone cache-rework (2 sub-tasks)"),
+        message.contains("Finalize milestone cache-rework (3 sub-tasks)"),
         "the commit message must be the synthesized projection; got:\n{message}",
     );
     let low_at = message.find("- area-low").expect("body lists area-low");
@@ -2261,6 +2315,19 @@ fn milestone_finalize_squash_true_combines_disjoint_worktree_code() {
          exit 0; got {:?}\nstderr:\n{}",
         finalized.status,
         String::from_utf8_lossy(&finalized.stderr),
+    );
+
+    // C2 (round-2 surface fixes) — the landing manifest names the combined worktree
+    // code alongside the promoted docs, and the contribution line counts each
+    // sub-task's staged code files.
+    let stdout = String::from_utf8_lossy(&finalized.stdout).to_string();
+    assert!(
+        stdout.contains("  added src/low.rs") && stdout.contains("  added src/zed.rs"),
+        "the landing manifest must name both worktrees' combined code; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("sub-tasks: area-low: 1 doc, 1 code file · area-zed: 1 doc, 1 code file"),
+        "the contribution line must count each sub-task's docs + code files; got:\n{stdout}",
     );
 
     // EXACTLY ONE new commit.

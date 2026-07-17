@@ -1751,8 +1751,13 @@ pub fn milestone(format: Format, summary: &str) -> String {
 /// line per merged doc, id-sorted, naming each doc's provenance + contributing
 /// sub-task, and — for a collision-suffixed instance — the `← suffixed -N on
 /// collision` decision plus `; self-ref rewritten` when its own reference was
-/// rewritten in lockstep) followed by the routing footer; `json` emits the
-/// **generic** projection of the [`JoinOutcome`], with no footer (tooling-consumed).
+/// rewritten in lockstep), then — C3 (round-2 surface fixes) — a `no docs staged
+/// from:` line naming every sub-task in `sub_tasks` (the milestone's full id-sorted
+/// list) that contributed NO merged doc, so the ack states its effect fully instead
+/// of silently crediting a no-work sub-task; followed by the routing footer. The line
+/// says "no docs" deliberately — the join merges docs only, and a sub-task may still
+/// carry staged worktree code the finalize folds. `json` emits the **generic**
+/// projection of the [`JoinOutcome`], with no footer (tooling-consumed).
 ///
 /// The suffix decision is read straight off the merged overlay (a pure function of
 /// it, like the merge itself): an entry is a collision suffix iff its address ends
@@ -1762,7 +1767,12 @@ pub fn milestone(format: Format, summary: &str) -> String {
 /// commits nothing — wiring the suffix-resolved overlay into `finalize` is a later
 /// increment (`design/storage.md` → The by-task-id join; `design/worked-examples.md`
 /// → flow 9).
-pub fn milestone_join(format: Format, milestone_id: &str, outcome: &JoinOutcome) -> String {
+pub fn milestone_join(
+    format: Format,
+    milestone_id: &str,
+    outcome: &JoinOutcome,
+    sub_tasks: &[String],
+) -> String {
     match format {
         Format::Json => json(outcome),
         Format::Agent | Format::Human => {
@@ -1786,6 +1796,23 @@ pub fn milestone_join(format: Format, milestone_id: &str, outcome: &JoinOutcome)
                 }
                 out.push('\n');
             }
+            // The doc-less sub-tasks, in the caller's (id-sorted) order — named, never
+            // silently credited by omission.
+            let contributed: std::collections::BTreeSet<&str> = outcome
+                .overlay
+                .values()
+                .map(|doc| doc.source_task.as_str())
+                .collect();
+            let absent: Vec<&str> = sub_tasks
+                .iter()
+                .map(String::as_str)
+                .filter(|id| !contributed.contains(id))
+                .collect();
+            if !absent.is_empty() {
+                out.push_str("  no docs staged from: ");
+                out.push_str(&absent.join(", "));
+                out.push('\n');
+            }
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -1798,6 +1825,100 @@ fn provenance_label(provenance: engine::state::Provenance) -> &'static str {
         engine::state::Provenance::Created => "created",
         engine::state::Provenance::EditedFromBase => "edited-from-base",
     }
+}
+
+/// One sub-task's contribution to a landed milestone boundary (C2, round-2 surface
+/// fixes): its merged-doc count (the materialize's address→source map) and its
+/// worktree's staged-code file count — both computed PRE-commit, while the fan-out
+/// worktrees are still provisioned. `docs: 0, code_files: 0` is the visible no-work
+/// sub-task ("nothing staged"), never a silent credit.
+#[derive(Serialize)]
+pub struct SubTaskContribution {
+    /// The sub-task's work-unit id.
+    pub id: String,
+    /// Merged docs this sub-task's area contributed (transient commit doc included).
+    pub docs: usize,
+    /// Staged code files in this sub-task's fan-out worktree (`git diff --cached
+    /// --name-only`); 0 for a never-provisioned or code-less sub-task.
+    pub code_files: usize,
+}
+
+/// The landed-boundary facts a successful `jigc milestone finalize` confirms back
+/// (C2, round-2 surface fixes — the highest-stakes commit boundary previously
+/// succeeded with EMPTY stdout, driving the reader around the tool to raw `git
+/// show`): the `jigc task finalize` mold's short `hash` + `subject` (the synthesized
+/// milestone message's first line), the whole boundary's landed-file `manifest`
+/// (`git diff --name-status <pre-boundary-HEAD> HEAD`, so the `squash: false` N+1
+/// chain reads as one set), its `files` count, and the per-sub-task contribution
+/// line. Serializes as the `committed` object of the JSON arm — one struct feeds
+/// both arms, so the text/JSON sets are identical by construction.
+#[derive(Serialize)]
+pub struct MilestoneLanded {
+    /// The landed boundary's abbreviated HEAD hash.
+    pub hash: String,
+    /// The landed HEAD subject (the synthesized `Finalize milestone <id> (…)` line).
+    pub subject: String,
+    /// The number of files the boundary landed (`= manifest.len()`).
+    pub files: usize,
+    /// Every path the boundary landed, tagged by how it entered ([`ManifestKind`]:
+    /// promoted docs, added/modified/deleted code from the combined worktrees).
+    pub manifest: Vec<ManifestEntry>,
+    /// Each sub-task's contribution, id-sorted — the no-work one visible.
+    pub sub_tasks: Vec<SubTaskContribution>,
+}
+
+/// Render a **landed** `jigc milestone finalize` to the surface `format` selects
+/// (surfacing, never blocking — the M42 print posture): `agent` / `human` emit
+/// `finalized <hash> — <subject>`, one [`manifest_line`] per landed path, the
+/// `  <n> file(s) committed` tally, and the `  sub-tasks:` contribution line
+/// (`<id>: 1 doc, 1 code file · <id>: nothing staged`), followed by the routing
+/// footer; `json` emits `{"committed": {…}}` — the same [`MilestoneLanded`]
+/// projection, no footer (tooling-consumed).
+pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({ "committed": landed })),
+        Format::Agent | Format::Human => {
+            let mut out = format!("finalized {} — {}\n", landed.hash, landed.subject);
+            for entry in &landed.manifest {
+                out.push_str(&manifest_line(entry));
+                out.push('\n');
+            }
+            let noun = if landed.files == 1 { "file" } else { "files" };
+            out.push_str(&format!("  {} {noun} committed\n", landed.files));
+            if !landed.sub_tasks.is_empty() {
+                let parts: Vec<String> = landed.sub_tasks.iter().map(contribution_label).collect();
+                out.push_str(&format!("  sub-tasks: {}\n", parts.join(" · ")));
+            }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
+/// One sub-task's agent-text contribution label: `<id>: 1 doc, 2 code files`,
+/// either half omitted at zero, and the fully-empty case named `nothing staged`.
+fn contribution_label(contribution: &SubTaskContribution) -> String {
+    if contribution.docs == 0 && contribution.code_files == 0 {
+        return format!("{}: nothing staged", contribution.id);
+    }
+    let mut parts = Vec::new();
+    if contribution.docs > 0 {
+        let noun = if contribution.docs == 1 {
+            "doc"
+        } else {
+            "docs"
+        };
+        parts.push(format!("{} {noun}", contribution.docs));
+    }
+    if contribution.code_files > 0 {
+        let noun = if contribution.code_files == 1 {
+            "code file"
+        } else {
+            "code files"
+        };
+        parts.push(format!("{} {noun}", contribution.code_files));
+    }
+    format!("{}: {}", contribution.id, parts.join(", "))
 }
 
 /// The collision-suffix index `N` (≥ 2) of `address`, iff it ends `-<N>` and the
@@ -2946,12 +3067,20 @@ mod tests {
             findings: Vec::new().into(),
         };
 
-        let agent = milestone_join(Format::Agent, "cache-rework", &outcome);
+        // The milestone's full id-sorted sub-task list — `area-idle` staged nothing, so
+        // the ack must name it as doc-less (C3) rather than silently crediting it.
+        let sub_tasks: Vec<String> = ["area-idle", "area-low", "area-zed", "evict-stale-keys"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let agent = milestone_join(Format::Agent, "cache-rework", &outcome, &sub_tasks);
         insta::assert_snapshot!(agent, @r"
         joined milestone:cache-rework — 3 doc(s) merged
           - adr:cache-strategy  (created · from area-low)
           - adr:cache-strategy-2  (created · from area-zed)  ← suffixed -2 on collision; self-ref rewritten
           - adr:eviction-policy  (edited-from-base · from evict-stale-keys)
+          no docs staged from: area-idle
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -2962,10 +3091,75 @@ mod tests {
         );
 
         // JSON is the generic projection — round-trips, no footer.
-        let json_out = milestone_join(Format::Json, "cache-rework", &outcome);
+        let json_out = milestone_join(Format::Json, "cache-rework", &outcome, &sub_tasks);
         assert!(!json_out.contains(ROUTING_FOOTER));
         let back: JoinOutcome = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, outcome);
+    }
+
+    /// C2 — the `jigc milestone finalize` landing manifest: `finalized <hash> —
+    /// <subject>`, one manifest line per landed path, the file tally, and the
+    /// per-sub-task contribution line with the no-work sub-task visible (`nothing
+    /// staged`). JSON is the same [`MilestoneLanded`] under a `committed` key — one
+    /// struct feeds both arms, so the sets are identical by construction.
+    #[test]
+    fn render_milestone_finalized_names_manifest_and_contributions() {
+        let landed = MilestoneLanded {
+            hash: "b546ca8".to_string(),
+            subject: "Finalize milestone cache-rework (2 sub-tasks)".to_string(),
+            files: 3,
+            manifest: vec![
+                ManifestEntry {
+                    path: "docs/milestone-records/cache-rework.md".to_string(),
+                    kind: ManifestKind::Modified,
+                },
+                ManifestEntry {
+                    path: "docs/decisions/eviction-policy.md".to_string(),
+                    kind: ManifestKind::Promoted,
+                },
+                ManifestEntry {
+                    path: "lru.py".to_string(),
+                    kind: ManifestKind::Added,
+                },
+            ],
+            sub_tasks: vec![
+                SubTaskContribution {
+                    id: "implement-lru-eviction".to_string(),
+                    docs: 1,
+                    code_files: 1,
+                },
+                SubTaskContribution {
+                    id: "wire-cache-metrics-into".to_string(),
+                    docs: 0,
+                    code_files: 0,
+                },
+            ],
+        };
+
+        let agent = milestone_finalized(Format::Agent, &landed);
+        insta::assert_snapshot!(agent, @r"
+        finalized b546ca8 — Finalize milestone cache-rework (2 sub-tasks)
+          modified docs/milestone-records/cache-rework.md
+          promoted docs/decisions/eviction-policy.md
+          added lru.py
+          3 files committed
+          sub-tasks: implement-lru-eviction: 1 doc, 1 code file · wire-cache-metrics-into: nothing staged
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+        assert!(agent.ends_with(ROUTING_FOOTER));
+
+        // JSON — the same struct under `committed`, no footer.
+        let json_out = milestone_finalized(Format::Json, &landed);
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(value["committed"]["hash"], "b546ca8");
+        assert_eq!(value["committed"]["files"], 3);
+        assert_eq!(value["committed"]["manifest"][2]["kind"], "added");
+        assert_eq!(
+            value["committed"]["sub_tasks"][1]["id"],
+            "wire-cache-metrics-into"
+        );
+        assert_eq!(value["committed"]["sub_tasks"][1]["docs"], 0);
     }
 
     /// The `jigc ingest` triage report renders in sorted candidate order: one row
