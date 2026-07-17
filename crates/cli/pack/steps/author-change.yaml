@@ -27,3 +27,12 @@ staged section instead:
 jigc doc add-item changelog:changelog#unreleased-changes --title "<category>" --task {{task.id}}
 #   → prints e.g. changelog:changelog#unreleased-changes/added  (call this <group-addr>)
 jigc doc set-slot <group-addr>/notes --from-file - --task {{task.id}}
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every entry in a single
+write, no printed-address dance. Over an already-committed changelog it copies
+the committed doc in and appends — existing releases are untouched:
+
+jigc doc author changelog --from-file - --task {{task.id}}

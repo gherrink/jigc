@@ -48,3 +48,12 @@ strained, what the verdict rests on, and what this run did NOT test. The verdict
 is authored judgment over the counts, never computed:
 
 jigc doc set-slot dogfood-record:<slug>#judgment --from-file - --task {{task.id}}
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-leaf verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every leaf in a single
+write; the payload's `title:` mints the slug exactly like the create above. The
+transcribe-verbatim and seeded-vs-organic bounds above bind unchanged:
+
+jigc doc author dogfood-record --from-file - --task {{task.id}}

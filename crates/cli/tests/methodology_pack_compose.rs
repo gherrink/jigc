@@ -978,8 +978,14 @@ fn composed_authoring_commands_carry_the_minted_task_id_with_two_active_tasks() 
     );
 
     // EVERY emitted `jigc doc …` line — Run-class and literal — carries the
-    // minted planning id. Asserted over the emitted bytes, line by line.
-    let doc_lines: Vec<&str> = stdout.lines().filter(|l| l.contains("jigc doc ")).collect();
+    // minted planning id. Asserted over the emitted bytes, line by line. One
+    // exemption: a `--help` mention (the batch alternative's grammar pointer,
+    // M43 inc-7 T6) reads the CLI's own help — not a doc write, so it needs no
+    // task disambiguation.
+    let doc_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.contains("jigc doc ") && !l.contains("--help"))
+        .collect();
     assert!(
         !doc_lines.is_empty(),
         "the planning spine must emit `jigc doc …` lines; got:\n{stdout}",

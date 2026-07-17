@@ -9,3 +9,11 @@ showed, and where that evidence came from. The `date` is CLI-set on create:
 jigc doc set-slot research:<slug>#question --from-file - --task {{task.id}}
 jigc doc set-slot research:<slug>#findings --from-file - --task {{task.id}}
 jigc doc set-slot research:<slug>#sources --from-file - --task {{task.id}}
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-leaf verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every leaf in a single
+write; the payload's `title:` mints the slug exactly like the create above:
+
+jigc doc author research --from-file - --task {{task.id}}

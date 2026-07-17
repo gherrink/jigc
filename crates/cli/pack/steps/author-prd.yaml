@@ -9,3 +9,11 @@ and write its requirement in prose:
 
 jigc doc add-item prd:<slug>#requirements --title "<requirement>" --task {{task.id}}
 jigc doc set-slot prd:<slug>#requirements/<id>/statement --from-file - --task {{task.id}}
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-leaf verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every leaf in a single
+write; the payload's `title:` mints the slug exactly like the create above:
+
+jigc doc author prd --from-file - --task {{task.id}}
