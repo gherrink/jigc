@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 use thiserror::Error;
 
-use crate::finding::{Finding, Location, Severity};
+use crate::finding::{Finding, Location, Route, Severity};
 
 /// The scheme every `structural-op` definition-target carries — the literal
 /// `workflow` in `workflow:<id>`. This parser handles the **workflow include
@@ -150,8 +150,23 @@ impl TargetParseError {
 
     /// Project to a located, blocking [`Finding`] — these targets are short
     /// config strings parsed positionally, so the location is the string head.
+    /// Routed at its recovery (the route floor, M43 completion audit): the target
+    /// string is authored in exactly two places — a `jigc config` argument or a
+    /// recorded manifest `deltas:` entry — and the repair is correcting it to the
+    /// grammar there, a human edit no CLI verb performs.
     fn into_finding(self) -> Finding {
-        Finding::blocking(self.code(), self.message(), Location::at(1, 1))
+        Finding::graded(
+            Severity::Blocking,
+            self.code(),
+            self.message(),
+            Some(Location::at(1, 1)),
+            Some(Route::human(
+                "correct the target to the delta-target grammar — `workflow:<id>#<step-id>` \
+                 to name a step position, or `workflow:<id>` with an `after:`/`before:` \
+                 anchor — in the `jigc config <verb>` argument that passed it or the \
+                 recorded `deltas:` entry that carries it",
+            )),
+        )
     }
 }
 
@@ -343,9 +358,21 @@ impl SlotFillTargetParseError {
     }
 
     /// Project to a located, blocking [`Finding`] — these targets are short config
-    /// strings parsed positionally, so the location is the string head.
+    /// strings parsed positionally, so the location is the string head. Routed at
+    /// its recovery (the route floor, M43 completion audit): the
+    /// [`TargetParseError::into_finding`] rationale, for the `step:` namespace.
     fn into_finding(self) -> Finding {
-        Finding::blocking(self.code(), self.message(), Location::at(1, 1))
+        Finding::graded(
+            Severity::Blocking,
+            self.code(),
+            self.message(),
+            Some(Location::at(1, 1)),
+            Some(Route::human(
+                "correct the target to the `step:<step-id>#<fill-id>` grammar in the \
+                 `jigc config fill <target>` argument or the recorded `deltas:` entry \
+                 that carries it",
+            )),
+        )
     }
 }
 
@@ -986,6 +1013,65 @@ mod tests {
         }
     }
 
+    /// (M43 completion audit) The route floor over the `structural-target.*` parse
+    /// errors: every code must survive the serialization seam — `Finding`'s
+    /// `Serialize` asserts blocking ⇒ route present (and a declared target), and
+    /// `structural-target.` is **not** route-exempt — and the route must name the
+    /// recovery: correct the target string to the delta-target grammar, in the
+    /// `jigc config` argument or the recorded `deltas:` entry that carries it.
+    #[test]
+    fn structural_target_parse_errors_route_through_the_serialization_seam() {
+        for (target, anchor, code) in [
+            (
+                "workflow:#validate",
+                None,
+                "structural-target.empty-workflow-id",
+            ),
+            ("adr:foo#decision", None, "structural-target.wrong-scheme"),
+            ("single-task", None, "structural-target.missing-colon"),
+            (
+                "workflow:single-task",
+                None,
+                "structural-target.missing-anchor",
+            ),
+            (
+                "workflow:single-task#",
+                None,
+                "structural-target.empty-step-id",
+            ),
+            (
+                "workflow:single-task",
+                Some(AnchorSpec::After(String::new())),
+                "structural-target.empty-anchor-step-id",
+            ),
+            (
+                "workflow:single-task#validate",
+                Some(AnchorSpec::After("locate".to_owned())),
+                "structural-target.conflicting-anchors",
+            ),
+            (
+                "workflow:naïve#validate",
+                None,
+                "structural-target.non-ascii",
+            ),
+        ] {
+            let finding =
+                StructuralTarget::parse(target, anchor).expect_err("hostile input is a Finding");
+            assert_eq!(finding.code, code, "for {target:?}");
+            // The seam itself: serializing a route-less, non-exempt blocking finding
+            // fires the route-floor assert (`finding.rs` → `Serialize`), so this line
+            // alone is the floor's presence proof.
+            let wire = serde_json::to_value(&finding).expect("the finding serializes");
+            let route = wire["route"]
+                .as_str()
+                .expect("blocking implies a route, never null");
+            assert!(
+                route.contains("`deltas:`") && route.contains("workflow:<id>"),
+                "the route names where the target lives and its grammar, for {code}: {route}"
+            );
+        }
+    }
+
     /// `step:<id>#<fill-id>` parses to its `{step_id, fill_id}` shape, carrying
     /// the step id and fill-id from either side of the `#`.
     #[test]
@@ -1050,6 +1136,36 @@ mod tests {
                 finding.location,
                 Some(Location::at(1, 1)),
                 "hostile input is located, for {target:?}",
+            );
+        }
+    }
+
+    /// (M43 completion audit) The route floor over the `slot-fill-target.*` parse
+    /// errors — the `structural-target.*` seam test's sibling: every code serializes
+    /// through the seam and carries the correct-the-target-string human route.
+    #[test]
+    fn slot_fill_target_parse_errors_route_through_the_serialization_seam() {
+        for (target, code) in [
+            ("step:#extra-guidance", "slot-fill-target.empty-step-id"),
+            ("step:implement#", "slot-fill-target.empty-fill-id"),
+            ("step:implement", "slot-fill-target.missing-hash"),
+            (
+                "workflow:single-task#validate",
+                "slot-fill-target.wrong-scheme",
+            ),
+            ("implement#extra-guidance", "slot-fill-target.missing-colon"),
+            ("step:naïve#extra-guidance", "slot-fill-target.non-ascii"),
+        ] {
+            let finding = SlotFillTarget::parse(target).expect_err("hostile input is a Finding");
+            assert_eq!(finding.code, code, "for {target:?}");
+            // The seam: a route-less, non-exempt blocking finding cannot serialize.
+            let wire = serde_json::to_value(&finding).expect("the finding serializes");
+            let route = wire["route"]
+                .as_str()
+                .expect("blocking implies a route, never null");
+            assert!(
+                route.contains("`deltas:`") && route.contains("step:<step-id>#<fill-id>"),
+                "the route names where the target lives and its grammar, for {code}: {route}"
             );
         }
     }

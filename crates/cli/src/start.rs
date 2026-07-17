@@ -2186,19 +2186,30 @@ impl<'a> CascadeStepSource<'a> {
 
     /// Read + parse a project-owned step file from `<project_config>/steps/<id>.yaml`,
     /// recording a located fault on a missing or malformed file (so the owning layer
-    /// is never silently abandoned for the pack body).
+    /// is never silently abandoned for the pack body). The missing-file fault is
+    /// routed at its recovery (the route floor, M43 completion audit) — a two-branch
+    /// human judgment: either the owned file was deleted out-of-band (restore it) or
+    /// the project layer's claim on the id is stale (drop the `deltas:` entry /
+    /// shadow that references it); which side is broken is the human's call.
     fn project_step(&self, id: &str) -> Option<StepDef> {
         let path = self.project_config.join("steps").join(format!("{id}.yaml"));
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
-                self.record(Finding::blocking(
+                self.record(engine::finding::Finding::graded(
+                    engine::finding::Severity::Blocking,
                     "overrides.project-step-missing",
                     format!(
                         "project layer owns step `{id}` but its file {} is unreadable: {e}",
                         path.display()
                     ),
-                    engine::finding::Location::at(1, 1),
+                    Some(engine::finding::Location::at(1, 1)),
+                    Some(engine::finding::Route::human(format!(
+                        "restore the project step file {}, or drop the project layer's \
+                         claim on `{id}` (remove the `deltas:` entry or shadow that \
+                         references it)",
+                        path.display()
+                    ))),
                 ));
                 return None;
             }
@@ -4611,6 +4622,47 @@ mod tests {
             finding.message.contains("implement"),
             "the located error must name the absent step id; got: {}",
             finding.message,
+        );
+    }
+
+    /// (M43 completion audit) The route floor over `overrides.project-step-missing`:
+    /// the finding must survive the serialization seam — `Finding`'s `Serialize`
+    /// asserts blocking ⇒ route present, and `overrides.` is **not** route-exempt —
+    /// and the route must name the two-branch recovery (restore the project step
+    /// file, or drop the project layer's claim on the id).
+    #[test]
+    fn missing_project_step_finding_routes_through_the_serialization_seam() {
+        let cfg = TempDir::new("cascade-step-missing-route");
+        fs::create_dir_all(cfg.path().join("steps")).expect("mk steps/");
+        // No `implement.yaml` written — the project owns the id but ships no file.
+
+        let pack = FixturePack::with(vec![(
+            PackResourceKind::Steps,
+            "implement",
+            "pack implement body\n",
+        )]);
+        let base = engine::cascade::PackDefaultLayer::new(
+            "dev",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["implement".to_owned()],
+        );
+        let project = OverrideLayer::empty().shadow_file("implement");
+        let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
+
+        let source = CascadeStepSource::new(&pack, &resolved, cfg.path());
+        assert!(source.step("implement").is_none(), "the read fails");
+        let finding = source.take_error().expect("the fault is recorded");
+        assert_eq!(finding.code, "overrides.project-step-missing");
+
+        // The seam: a route-less, non-exempt blocking finding cannot serialize.
+        let wire = serde_json::to_value(&finding).expect("the finding serializes");
+        let route = wire["route"]
+            .as_str()
+            .expect("blocking implies a route, never null");
+        assert!(
+            route.contains("restore") && route.contains("steps/implement.yaml"),
+            "the route names the restore-or-drop recovery at the owned file: {route}"
         );
     }
 

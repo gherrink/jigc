@@ -207,6 +207,16 @@ pub struct FindingKey {
 /// - every `setup.*` / `uninstall.*` — `setup::run` / `run_uninstall` are `Result<_, Finding>`
 ///   (fail-fast, **exactly one finding per invocation**; no `Vec<Finding>` anywhere), so two
 ///   instances of one code can never coexist in one output.
+/// - every `structural-target.*` / `slot-fill-target.*` — `StructuralTarget::parse` /
+///   `SlotFillTarget::parse` are `Result<_, Finding>` (fail-fast, exactly one finding per
+///   invocation) and every caller bails the verb on the first error, so two instances of
+///   one code can never coexist in one output. Declared at the M43 completion audit,
+///   where the family gained its route: seam-admissible by decision, not by the accident
+///   of every caller rendering through `finding_to_err`.
+/// - `overrides.project-step-missing` — recorded into `CascadeStepSource`'s **one-slot**
+///   error sink (`Option<Finding>`, last write wins) and drained as the verb's single
+///   located error, so at most one instance reaches an output. Declared with the route
+///   at the M43 completion audit, same rationale as the parse errors above.
 ///
 /// Anything else with no address is the un-swept state of a family nobody has looked at, and
 /// [`debug_assert_targets_declared`] says so at the seam.
@@ -214,6 +224,9 @@ pub fn is_declared_singleton(code: &str) -> bool {
     code == "store-version.binary-mismatch"
         || code.starts_with("setup.")
         || code.starts_with("uninstall.")
+        || code.starts_with("structural-target.")
+        || code.starts_with("slot-fill-target.")
+        || code == "overrides.project-step-missing"
 }
 
 /// Whether `code` is **route-exempt** under the route floor — the floor's **one-home
