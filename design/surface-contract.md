@@ -83,7 +83,7 @@ A flow arm cannot trip a `debug_assert` without an injected defect, so the accep
 
 ## Honest bounds
 
-- The seam asserts are debug-posture: they hold via the suite, not in a user's release binary (the recorded class posture).
+- The seam asserts are debug-posture: they hold via the suite, not in a user's release binary (the recorded class posture). **And their enforcement is exactly as strong as the suite's traffic through the seam** — the M43 completion audit found four producers violating the route floor under a fully green suite (one never serialized by any test, three rendering via `Display` and never reaching serde). The prescriptive rule this minted: *a fence landing at a seam owes, in the same increment, a sweep that pushes every existing producer through that seam — or an argued enumeration of the producers that cannot reach it, recorded as a decision, not left as an accident of rendering path* ([DECISIONS.md](../DECISIONS.md) → 2026-07-17 M43 completion).
 - The pack-load fences cover the shipped embedded packs; project-layer workflow deltas are outside them by declared scope.
 - The stated-at fence proves presence-of-obligation, never prose quality; the style guide has no machine teeth beyond the shape asserts, by design (the A-3 rationale — re-scoped at M43 to what it actually protects: agent runtime judgment — plus [ideas/cost-of-enforcement.md](../ideas/cost-of-enforcement.md)'s calibration).
 - ~75 literal `jigc` command lines inside pack step prose (author heredocs) carry compose placeholders and are fence-covered only post-compose (the compose-scope `Run:` emission); pre-compose they are style-guide territory.

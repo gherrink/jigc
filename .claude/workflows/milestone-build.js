@@ -155,12 +155,23 @@ const skipThrough = a.skipThrough != null ? Number(a.skipThrough) : 0
 // read phase. So this spells out: ALWAYS re-pass args (resumeFromRunId does NOT restore
 // them), and gives the cache-independent skipThrough fallback. `id`/`baseRef` are
 // interpolated so the line is copy-paste-ready.
-function resumeLine(id, baseRef) {
+//
+// `transient` (M43 lesson, 2026-07-17): an agent that "returned no result" died on
+// infrastructure (API 529/kill after retries), NOT on a design blocker — the tree is
+// clean and there is nothing to fix. The old one-size message said "first resolve the
+// blocker via a build-fixer", which for this class sends the operator hunting for a
+// blocker that does not exist. The halt return is the surface that produces the
+// "how do I resume?" state, so it carries the right recovery for its own cause
+// (the surface-contract law-2 discipline, applied to this harness).
+function resumeLine(id, baseRef, transient) {
   const argsObj = "{ milestone: '" + id + "'" + (baseRef ? ", base: '" + baseRef + "'" : '') + ' }'
+  const prep = transient
+    ? 'This halt is transient-infrastructure-shaped (an agent returned no result after retries — API overload/kill, not a design blocker): if `git status` is clean there is NOTHING to fix — resume immediately; the failed call cache-misses and re-runs live while completed work replays from cache. Then: '
+    : 'First resolve the blocker on `main` via a build-fixer subagent and leave the tree CLEAN, then: '
   return (
     'TO RESUME — re-pass args ALWAYS (RULE 0: resumeFromRunId does NOT restore args; omit them and ' +
     "`milestone` resets to 'the next milestone' and the resume dies at the read phase). " +
-    'First resolve the blocker on `main` via a build-fixer subagent and leave the tree CLEAN, then: ' +
+    prep +
     'Workflow({ scriptPath: <the snapshot path printed at launch>, args: ' + argsObj + ', resumeFromRunId: <this run id> }). ' +
     'If cache-replay will not fast-forward, use the deterministic fallback — a FRESH run (no resumeFromRunId) with ' +
     'args: { milestone: ' + "'" + id + "'" + ', base, skipThrough: <highest fully-built+validated increment> }.'
@@ -461,7 +472,13 @@ for (const inc of increments) {
 }
 
 if (halted) {
-  return { status: 'halted', halted, message: builtMilestone + ' build HALTED — human attention needed before continuing. Prior committed work stands.', resume: resumeLine(builtMilestone, base), milestone: builtMilestone, incrementReports }
+  // Transient-infrastructure halts (an agent returned no result after retries) get the
+  // nothing-to-fix resume message; genuine blockers keep the resolve-first one.
+  const transient = !!(halted.halt && /returned no result/.test(halted.halt.root_cause || ''))
+  const msg = transient
+    ? builtMilestone + ' build HALTED on a transient infrastructure failure (an agent returned no result after retries). Prior committed work stands — if the tree is clean, resume immediately; nothing needs fixing.'
+    : builtMilestone + ' build HALTED — human attention needed before continuing. Prior committed work stands.'
+  return { status: 'halted', halted, message: msg, resume: resumeLine(builtMilestone, base, transient), milestone: builtMilestone, incrementReports }
 }
 
 // ---- milestone-completion audit (independent, adversarial, parallel) ----
