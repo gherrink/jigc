@@ -936,7 +936,7 @@ These are the selectable work-workflows, each with the situation it fits:
 - plan — draft the specification for upcoming work before writing any code
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
 - quick-fix — apply a small commit-only fix that touches no documented code and records no decision
-- single-task — implement one scoped change end-to-end, recording the decisions it makes
+- single-task — implement one scoped change end-to-end, recording its decisions as ADRs
 
 Pick the workflow whose situation best fits the intent, then re-run with that
 choice and the original intent:

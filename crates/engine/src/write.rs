@@ -5769,7 +5769,12 @@ const CEILING_ALLOWED: &str = "####";
 /// the `{{schema:<doctype>}}` projection renders beside the slot-prose skeleton,
 /// so the ceiling is stated where it binds, before it can fail (law 3). Built
 /// from the same depth constants [`slot_ceiling_finding`] enforces with.
-pub(crate) fn slot_ceiling_statement() -> String {
+///
+/// `pub` (not `pub(crate)`) since the M43 pre-trial surface polish: the CLI's
+/// hand-prose statement sites — the pack steps' fresh-authoring solicits and
+/// `jigc doc set-slot --help` — carry this sentence as static text, and their
+/// drift tests compare those emitted bytes against this single source.
+pub fn slot_ceiling_statement() -> String {
     format!(
         "Inside slot prose, headings must sit at `{CEILING_ALLOWED}` depth or deeper — \
          `{CEILING_RESERVED_H2}`/`{CEILING_RESERVED_H3}` are schema-reserved, and Setext \

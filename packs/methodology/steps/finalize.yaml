@@ -10,7 +10,8 @@ refuse too (one blocking finding per carried path): unstage it, or pass
 `--carry-staged` to declare the carryover deliberate.
 
 finalize renders the commit doc; it does not fill it, so set its header and prose
-first.
+first. Inside slot prose, headings must sit at `####` depth or deeper —
+`##`/`###` are schema-reserved, and Setext headings are rejected.
 
 Set the Conventional-Commits type:
 
@@ -20,7 +21,9 @@ Set the scope — the area this change touches:
 
 {{ cli.set-commit-scope }}
 
-Set the subject line:
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
 
 {{ cli.set-commit-summary }}
 

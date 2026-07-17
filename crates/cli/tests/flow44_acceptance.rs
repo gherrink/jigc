@@ -417,13 +417,15 @@ fn decided_task_routes_from_the_catalog_and_composes() {
     assert!(
         catalog.contains(
             "- decided-task — implement one scoped change test-first, \
-             recording the design decision it makes"
+             recording its design decision on the running decisions log"
         ),
         "the catalog lists `decided-task` with its decision-axis one-liner; got:\n{catalog}",
     );
     assert!(
-        catalog
-            .contains("- dev-task — implement one scoped change test-first, recording no decision"),
+        catalog.contains(
+            "- dev-task — implement one scoped change test-first, recording no decision \
+             and touching no documented code"
+        ),
         "the sibling axis discriminates — `dev-task` records none; got:\n{catalog}",
     );
 

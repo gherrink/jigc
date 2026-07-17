@@ -1222,11 +1222,11 @@ mod tests {
     fn single_task_workflow_body_is_the_canonical_definition() {
         let pack = EmbeddedPack::new();
         let body = read_text(&pack, PackResourceKind::Workflows, "single-task");
-        insta::assert_snapshot!(body, @r###"
+        insta::assert_snapshot!(body, @"
         ---
-        when: implement one scoped change end-to-end, recording the decisions it makes
+        when: implement one scoped change end-to-end, recording its decisions as ADRs
         description: An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task.
-        usage: the work is one coherent change you can hold in your head and carry from intent to commit in a single pass.
+        usage: the work is one coherent change you can hold in your head and carry from intent to commit in a single pass. Also the pick when the change touches documented code (a symbol a managed doc names, renamed or reshaped) — its doc gates cover the update, where quick-fix's commit-only path does not.
         creates-task: true
         allows-create: [{type: adr, as: decision}, {type: changelog, as: change}]
         ---
@@ -1235,7 +1235,7 @@ mod tests {
         {{ include: step:record-changelog }}
         {{ include: step:superseded-context }}
         {{ include: step:finalize }}
-        "###);
+        ");
     }
 
     /// The shipped dev pack authors `description:`/`usage:` on **every** workflow
@@ -1501,7 +1501,11 @@ mod tests {
         Implement the change directly in the working tree. `git add` your code edits
         before finalize — it commits only what you have staged. When done, set the
         required Conventional-Commits type — your editorial call on what this change
-        does — then stage the summary prose:
+        does. The subject renders as `<type>(<scope>): <summary>`, so write the
+        summary without a type or scope prefix of its own — the `type` field already
+        carries it. Inside slot prose, headings must sit at `####` depth or deeper —
+        `##`/`###` are schema-reserved, and Setext headings are rejected. Set the
+        type, then stage the summary prose:
 
         {{ cli.set-commit-type }}
         {{ cli.set-commit-summary }}

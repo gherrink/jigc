@@ -1,7 +1,9 @@
 Author this sub-task's own commit prose. The parent milestone's finalize is
 the only commit boundary — never run git here. Set the required
-Conventional-Commits type — your editorial call on what this change does — then
-stage the summary (`scope` and `body` are optional):
+Conventional-Commits type — your editorial call on what this change does. The
+subject renders as `<type>(<scope>): <summary>`, so write the summary without
+a type or scope prefix of its own — the `type` field already carries it. Set
+the type, then stage the summary (`scope` and `body` are optional):
 
 {{ cli.set-commit-type }}
 {{ cli.set-commit-summary }}

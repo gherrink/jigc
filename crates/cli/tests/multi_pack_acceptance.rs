@@ -98,7 +98,7 @@ These are the selectable work-workflows, each with the situation it fits:
 - plan — draft the specification for upcoming work before writing any code
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
 - quick-fix — apply a small commit-only fix that touches no documented code and records no decision
-- single-task — implement one scoped change end-to-end, recording the decisions it makes
+- single-task — implement one scoped change end-to-end, recording its decisions as ADRs
 
 Pick the workflow whose situation best fits the intent, then re-run with that
 choice and the original intent:
@@ -394,7 +394,11 @@ scope before implementing.
 Implement the change directly in the working tree. `git add` your code edits
 before finalize — it commits only what you have staged. When done, set the
 required Conventional-Commits type — your editorial call on what this change
-does — then stage the summary prose:
+does. The subject renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own — the `type` field already
+carries it. Inside slot prose, headings must sit at `####` depth or deeper —
+`##`/`###` are schema-reserved, and Setext headings are rejected. Set the
+type, then stage the summary prose:
 
 Run: `jigc doc set-field commit:add-a-thing#type --value <COMMIT_TYPE> --task add-a-thing`
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
@@ -514,7 +518,8 @@ refuse too (one blocking finding per carried path): unstage it, or pass
 `--carry-staged` to declare the carryover deliberate.
 
 finalize renders the commit doc; it does not fill it, so set its header and prose
-first.
+first. Inside slot prose, headings must sit at `####` depth or deeper —
+`##`/`###` are schema-reserved, and Setext headings are rejected.
 
 Set the Conventional-Commits type:
 
@@ -525,7 +530,9 @@ Set the scope — the area this change touches:
 
 Run: `jigc doc set-field commit:add-rate-limiter#scope --value <SCOPE> --task add-rate-limiter`
 
-Set the subject line:
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
 
 Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
 

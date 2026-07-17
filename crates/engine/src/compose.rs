@@ -6446,7 +6446,11 @@ explain what changes (nothing appears if it supersedes none).
         Implement the change directly in the working tree. `git add` your code edits
         before finalize — it commits only what you have staged. When done, set the
         required Conventional-Commits type — your editorial call on what this change
-        does — then stage the summary prose:
+        does. The subject renders as `<type>(<scope>): <summary>`, so write the
+        summary without a type or scope prefix of its own — the `type` field already
+        carries it. Inside slot prose, headings must sit at `####` depth or deeper —
+        `##`/`###` are schema-reserved, and Setext headings are rejected. Set the
+        type, then stage the summary prose:
 
         Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
         Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`

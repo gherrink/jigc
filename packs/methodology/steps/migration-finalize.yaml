@@ -6,7 +6,10 @@ it renders the foreign source against the canonical rewrite and holds (exit 4),
 because the CLI guarantees structure, never content-faithfulness. Review that
 fidelity diff, then re-run the same finalize with `--approve` to write the
 canonical doc, RETIRE the foreign original, and commit — approval is the one
-destructive gate. A source already sitting at its canonical destination is
+destructive gate. Retired means removed: the foreign file is deleted from the
+worktree and the deletion staged, so the removal lands in the same commit as
+the canonical doc (a `git rm` in effect). A source already sitting at its
+canonical destination is
 rewritten in place on approval — the committed file is modified, nothing is
 retired. A destination already committed when the doc was authored was copied
 in as the edit base (the create said so), so approval updates that committed

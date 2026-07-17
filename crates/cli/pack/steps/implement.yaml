@@ -1,7 +1,11 @@
 Implement the change directly in the working tree. `git add` your code edits
 before finalize — it commits only what you have staged. When done, set the
 required Conventional-Commits type — your editorial call on what this change
-does — then stage the summary prose:
+does. The subject renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own — the `type` field already
+carries it. Inside slot prose, headings must sit at `####` depth or deeper —
+`##`/`###` are schema-reserved, and Setext headings are rejected. Set the
+type, then stage the summary prose:
 
 {{ cli.set-commit-type }}
 {{ cli.set-commit-summary }}

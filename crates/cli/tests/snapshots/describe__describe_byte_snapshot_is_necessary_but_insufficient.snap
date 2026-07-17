@@ -32,7 +32,7 @@ record-change is Record a change on the changelog — create-or-update the singl
 
 router is A selection pass that presents the available work-workflows and routes an intent to the right one. Reach for it when you have an intent but are unsure which work-workflow fits, and want the catalog to choose from.
 
-single-task is An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task. Reach for it when the work is one coherent change you can hold in your head and carry from intent to commit in a single pass.
+single-task is An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task. Reach for it when the work is one coherent change you can hold in your head and carry from intent to commit in a single pass. Also the pick when the change touches documented code (a symbol a managed doc names, renamed or reshaped) — its doc gates cover the update, where quick-fix's commit-only path does not.
 
 sub-task is One sub-task of a milestone — locate, implement, and author a commit into an isolated working area for a later join. Reach for it when a milestone execution needs the unit it fans out to; it is not selected directly. It is hidden from the router catalog: spawned by a milestone execution's fan-out and joined at the parent's finalize — it has no commit boundary of its own, so a router pick could never land.
 

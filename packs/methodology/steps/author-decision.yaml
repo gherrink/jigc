@@ -6,8 +6,10 @@ existing committed log is copied in for append):
 
 {{ cli.create-log }}
 
-Mint one entry per decision and author its `why` — the reasoning, in a sentence or
-two. The `date` is CLI-set on create:
+Mint one entry per decision and author its `why` — the reasoning, in a sentence
+or two; the `date` is CLI-set on create. Inside slot prose, headings must sit
+at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext
+headings are rejected.
 
 jigc doc add-item decisions-log:decisions-log#entries --title "<the decision>" --task {{task.id}}
 jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task {{task.id}}

@@ -65,7 +65,7 @@ These are the selectable work-workflows, each with the situation it fits:
 - plan — draft the specification for upcoming work before writing any code
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
 - quick-fix — apply a small commit-only fix that touches no documented code and records no decision
-- single-task — implement one scoped change end-to-end, recording the decisions it makes
+- single-task — implement one scoped change end-to-end, recording its decisions as ADRs
 
 Pick the workflow whose situation best fits the intent, then re-run with that
 choice and the original intent:
@@ -99,7 +99,11 @@ scope before implementing.
 Implement the change directly in the working tree. `git add` your code edits
 before finalize — it commits only what you have staged. When done, set the
 required Conventional-Commits type — your editorial call on what this change
-does — then stage the summary prose:
+does. The subject renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own — the `type` field already
+carries it. Inside slot prose, headings must sit at `####` depth or deeper —
+`##`/`###` are schema-reserved, and Setext headings are rejected. Set the
+type, then stage the summary prose:
 
 Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
@@ -285,7 +289,7 @@ fn listed_pack_resource_resolves_through_the_cwd_discovered_pack_set() {
     );
     // The base (embedded) pack's `single-task` still lists — the union, base last.
     assert!(
-        stdout.contains("- single-task — implement one scoped change end-to-end, recording the decisions it makes"),
+        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs"),
         "the base pack's single-task must still list alongside the listed pack's workflow \
          (the union read); got:\n{stdout}",
     );
@@ -320,7 +324,7 @@ fn bare_intent_composes_the_router_without_minting() {
     // The router lists the selectable (`creates-task: true`) work-workflows, each as
     // a `- <id> — <when>` option line, and carries the agent-substitution re-run.
     assert!(
-        stdout.contains("- single-task — implement one scoped change end-to-end, recording the decisions it makes"),
+        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs"),
         "the router must list single-task as a `- <id> — <when>` option; got:\n{stdout}",
     );
     assert!(
@@ -1301,7 +1305,7 @@ fn bare_intent_router_lists_architecture_documentation_with_its_when() {
         "the router must list architecture-documentation as a `- <id> — <when>` option; got:\n{stdout}",
     );
     assert!(
-        stdout.contains("- single-task — implement one scoped change end-to-end, recording the decisions it makes"),
+        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs"),
         "the router must still list the existing single-task option; got:\n{stdout}",
     );
 }
@@ -1501,7 +1505,7 @@ fn form_d_router_lists_selectable_workflows_and_re_run_without_minting() {
     // The catalog interpolated to one `- <id> — <when>` line per selectable
     // work-workflow: both `single-task` and `quick-fix`, with their `when` hints.
     assert!(
-        stdout.contains("- single-task — implement one scoped change end-to-end, recording the decisions it makes"),
+        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs"),
         "the router must list single-task as a `- <id> — <when>` option; got:\n{stdout}",
     );
     assert!(

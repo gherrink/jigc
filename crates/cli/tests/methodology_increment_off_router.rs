@@ -170,8 +170,10 @@ fn bare_start_over_methodology_lists_the_selectables_never_increment() {
     );
     let human_out = String::from_utf8(human.stdout).expect("utf-8 stdout");
     assert!(
-        human_out
-            .contains("dev-task — implement one scoped change test-first, recording no decision"),
+        human_out.contains(
+            "dev-task — implement one scoped change test-first, recording no decision \
+             and touching no documented code"
+        ),
         "the orientation catalog must list the `dev-task` selection line (the M43 \
          decision-axis `when` hint); got:\n{human_out}",
     );
@@ -229,8 +231,8 @@ fn bare_start_over_methodology_lists_the_selectables_never_increment() {
     // discriminates it from `dev-task`).
     assert!(
         catalog_lines.iter().any(|l| l.contains(
-            "decided-task — implement one scoped change test-first, recording the design \
-             decision it makes"
+            "decided-task — implement one scoped change test-first, recording its design \
+             decision on the running decisions log"
         )),
         "the model-free selection catalog must list `decided-task` with its decision-axis \
          `when` hint (M43 fork 2 — the hide's expiry fired, selectable: true); \

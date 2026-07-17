@@ -104,7 +104,7 @@ fn clean_no_task_json_is_valid_state_tagged_and_carries_no_footer() {
     assert_eq!(
         single_task["when"],
         serde_json::json!(
-            "implement one scoped change end-to-end, recording the decisions it makes"
+            "implement one scoped change end-to-end, recording its decisions as ADRs"
         ),
         "got:\n{stdout}",
     );
