@@ -40,7 +40,10 @@ pub enum ConfigCommand {
     /// Record a `scalar-set` delta — set a closed-surface knob in the project
     /// layer's `manifest.yaml` `scalar:` block. Adjudicated at write time against
     /// the pack's declared knob (`check_value`): an undeclared key or a wrong-type
-    /// value is rejected non-zero with a routed finding.
+    /// value is rejected non-zero with a routed finding. Setting a location knob
+    /// (`docs-root`) also relocates the committed docs the re-point would strand
+    /// at the prior resolved root — every committed doc under it, managed or not —
+    /// as staged `git mv` moves, printed per file (they land with your next commit).
     Set {
         /// The knob key to set — one of the pack's declared `config/knobs.yaml` keys.
         key: String,
@@ -255,8 +258,15 @@ fn route_docs_root_repoint_orphans(pack: &dyn PackSource, project_config: &Path,
     }
     let new_root = normalize_docs_root(new_value);
     let jigc_root = repo_root.join(".jigc");
+    // The solicit/act honesty pair (round-2 D2+D3): name the sweep's basis — every
+    // committed doc under the prior resolved root, managed or not (committed truth,
+    // deliberately index-blind so a fresh clone still relocates) — and the git state
+    // the moves land in (each is a staged `git mv`, committed by the operator's next
+    // commit, never here).
     eprintln!(
-        "relocating {} committed doc(s) stranded by the `docs-root` re-point to `{new_value}`:",
+        "relocating {} committed doc(s) stranded by the `docs-root` re-point to `{new_value}` \
+         (every committed doc under the prior resolved root, managed or not; each move is a \
+         staged `git mv` — commit it with your next commit):",
         stranded.len()
     );
     for old_rel in &stranded {

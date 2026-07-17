@@ -210,3 +210,139 @@ fn unmanage_drops_one_doc_from_index_and_state_leaving_bytes_and_is_idempotent()
         "(e) a no-op un-manage leaves edges.json byte-identical",
     );
 }
+
+/// **Round-2 D2+D3+D4 — the operator-surface honesty triple** (the r2a:451-458
+/// capture as a test). The `docs-root` relocation sweep walks **committed truth**
+/// (`git ls-files` under the prior resolved root) — deliberately index-blind, so a
+/// fresh clone still relocates — which means a just-`unmanage`d file at the managed
+/// home is still carried by the re-point. That behavior is by design; these are the
+/// honesty obligations around it:
+///
+/// - **D2 (unmanage says so)**: the unmanage report states the file still sits at
+///   the managed home and home-wide ops still carry it.
+/// - **D2+D3 (the relocation says what it sweeps and what git state it leaves)**:
+///   the header names the class (every committed doc under the prior root, managed
+///   or not) and the git state (staged `git mv`, not committed) — and the moves
+///   really are staged renames with HEAD untouched.
+/// - **D4 (`jigc upgrade` names what it checked)**: the clean line is the
+///   config-delta noun — "no recorded config deltas" before the set, "1 recorded
+///   config delta(s) re-apply clean" after — never the task-scoped wording.
+#[test]
+fn docs_root_repoint_carries_the_unmanaged_file_and_the_surfaces_say_so() {
+    let repo = TempDir::new("repoint-honesty");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(out.status.success(), "`jigc setup` must succeed");
+
+    // Seed a conformant adr, adopt it, and COMMIT it (the relocation sweep walks
+    // `git ls-files` — committed truth).
+    let rel = "docs/decisions/rate-limit.md";
+    let doc_path = repo.path().join(rel);
+    fs::create_dir_all(doc_path.parent().unwrap()).expect("mk docs/decisions/");
+    fs::write(&doc_path, CONFORMANT_ADR).expect("write adr");
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(out.status.success(), "`jigc ingest` must succeed");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "adopt the adr"]);
+
+    // D4, zero-delta arm: the clean line names the config-delta noun, not "the task".
+    let out = jigc(repo.path(), home.path(), &["upgrade"]);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success(), "`jigc upgrade` must exit 0");
+    assert!(
+        stdout.contains("no recorded config deltas to check"),
+        "the zero-delta clean line must say no deltas were recorded; got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("the task validates clean"),
+        "`jigc upgrade` must not claim a task validated; got:\n{stdout}",
+    );
+
+    // D2 (unmanage says so): drop the doc from the index — the report must state it
+    // still sits at the managed home and home-wide ops still carry it.
+    let out = jigc(repo.path(), home.path(), &["unmanage", rel]);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success(), "`jigc unmanage` must exit 0");
+    assert!(
+        stdout.contains("still sits at the managed home"),
+        "the unmanage report must state the file is still at the managed home; got:\n{stdout}",
+    );
+
+    // D2+D3: the `docs-root` re-point relocates the just-unmanaged committed file
+    // too, and the header says the sweep class + the git state of the moves.
+    let head_before = {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git rev-parse");
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "set", "docs-root", "docs2"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "`jigc config set docs-root` must exit 0"
+    );
+    assert!(
+        stderr.contains("managed or not"),
+        "the relocation header must name the sweep class (every committed doc under the \
+         prior root, managed or not); got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("staged `git mv`") && stderr.contains("next commit"),
+        "the relocation header must state the git state of the moves; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("docs/decisions/rate-limit.md → docs2/decisions/rate-limit.md"),
+        "the just-unmanaged committed file is still carried by the sweep (the honest, \
+         tested behavior); got:\n{stderr}",
+    );
+    assert!(
+        repo.path().join("docs2/decisions/rate-limit.md").is_file() && !doc_path.exists(),
+        "the move really happened on disk",
+    );
+
+    // The stated git state is true: a staged rename, no commit landed.
+    let head_after = {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git rev-parse");
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    assert_eq!(head_before, head_after, "the relocation commits nothing");
+    let status = {
+        let out = std::process::Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git status");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert!(
+        status
+            .lines()
+            .any(|l| l.starts_with('R') && l.contains("rate-limit.md")),
+        "the move is a STAGED rename awaiting the operator's commit; status:\n{status}",
+    );
+
+    // D4, recorded-delta arm: the clean line now counts the recorded delta.
+    let out = jigc(repo.path(), home.path(), &["upgrade"]);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "`jigc upgrade` must exit 0 with the delta"
+    );
+    assert!(
+        stdout.contains("1 recorded config delta(s) re-apply clean against the current pack"),
+        "the clean line must count the recorded delta(s); got:\n{stdout}",
+    );
+}

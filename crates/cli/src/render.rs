@@ -366,6 +366,22 @@ pub fn validation(format: Format, report: &ValidationReport) -> String {
     )
 }
 
+/// Render the `jigc upgrade` sweep's [`ValidationReport`]: like [`validation`] but the
+/// clean line names **what was checked** — the recorded config deltas re-applied
+/// against the current pack — never the task-scoped wording (round-2 D4: `upgrade`
+/// checks config deltas, not a task, and "no recorded deltas" is a different clean
+/// state than "N deltas re-apply clean").
+pub fn validation_upgrade(format: Format, report: &ValidationReport, checked: usize) -> String {
+    let clean = if checked == 0 {
+        "no findings — no recorded config deltas to check against the current pack".to_string()
+    } else {
+        format!(
+            "no findings — {checked} recorded config delta(s) re-apply clean against the current pack"
+        )
+    };
+    validation_scoped(format, report, &clean, None, None)
+}
+
 /// Render a [`ValidationReport`] for the **store-scope** sweep (`jigc validate`): like
 /// [`validation`] but task-less, so (a) the clean line is store-scoped — it validates the
 /// committed store, not a task, and must not reuse the "the task validates clean" wording
@@ -1580,8 +1596,14 @@ pub fn unmanage(format: Format, report: &crate::unmanage::UnmanageReport) -> Str
         Format::Agent | Format::Human => {
             let mut out = if report.dropped {
                 match &report.identity {
+                    // The still-at-the-managed-home honesty clause (round-2 D2): the
+                    // relocation sweeps (a `docs-root` re-point, `jigc relocate`) walk
+                    // committed truth under the home — deliberately index-blind, so a
+                    // fresh clone still relocates — which means an unmanaged file left
+                    // at the home is still carried by home-wide ops. Say so at the one
+                    // moment the operator makes that state.
                     Some(id) => format!(
-                        "unmanaged {} ({}) — dropped its file-state baseline + forward edges; the file is left on disk\n",
+                        "unmanaged {} ({}) — dropped its file-state baseline + forward edges; the file is left on disk. It still sits at the managed home, so home-wide ops (e.g. a `docs-root` re-point, which relocates every committed doc under the old home — managed or not) still carry it; move it out of the managed location to fully detach it\n",
                         report.path, id,
                     ),
                     None => format!(

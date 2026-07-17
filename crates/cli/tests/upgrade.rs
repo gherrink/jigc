@@ -122,8 +122,11 @@ blocking · override-default.target-exists — override target `workflow:single-
 /// byte for byte — the positive no-findings path. The companion baseline to
 /// `NO_DELTA_BLOCKING_UPGRADE_GOLDEN`: the post-pass must perturb neither the
 /// blocking nor the clean render of the upgrade path.
+/// (Round-2 D4: the clean line names WHAT was checked — the seeded manifest records
+/// one `scalar-set` (`default-workflow`), so the count is 1; the old task-scoped
+/// wording was the wrong noun on a config-delta sweep.)
 const NO_DELTA_CLEAN_UPGRADE_GOLDEN: &str = "\
-no findings — the task validates clean
+no findings — 1 recorded config delta(s) re-apply clean against the current pack
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

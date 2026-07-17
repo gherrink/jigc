@@ -90,6 +90,17 @@ pub(crate) fn upgrade_with_pack(
     Ok(ValidationReport::new(findings, &resolved))
 }
 
+/// The number of recorded config deltas the upgrade sweep checks — structural ops +
+/// slot-fills + tracked forks + `scalar-set` keys, the same surfaces
+/// [`upgrade_with_pack`] feeds the classifier. Read for the clean line's honesty
+/// (round-2 D4: "no findings" must name **what was checked** — a config-delta
+/// re-apply, never "the task", and never the same line for zero deltas and N).
+pub(crate) fn recorded_delta_count(cwd: &Path) -> Result<usize> {
+    let project_config = require_project_layer(cwd)?;
+    let (layer, structural, slot_fills, forks, _bases) = load_project_layer(&project_config)?;
+    Ok(structural.len() + slot_fills.len() + forks.len() + layer.scalar_set_keys().count())
+}
+
 /// Locate the repo root and its `.jigc/config/` project layer — the same preamble
 /// the `jigc config` verbs use (`config.rs`'s `require_project_layer`), replicated
 /// here so the upgrade seam has no cross-module private dependency. Errors with the
