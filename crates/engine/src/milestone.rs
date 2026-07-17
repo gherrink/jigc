@@ -443,6 +443,12 @@ fn store_block(code: &str, message: String, address: &str, route: String) -> Fin
 /// The zero-criteria block: a blocking finding naming the empty spec, routing the
 /// agent to add criteria or seed differently — never a silent empty milestone
 /// (`design/write-commands.md` → Minting a milestone: "nothing to seed from").
+///
+/// The first route arm names the **executable** path (round-2 D6h, verified on the
+/// real binary): `jigc doc add-item <spec>#criteria --title … --task <id>` under a
+/// task copies the committed spec in on first touch, and that task's finalize
+/// re-promotes it — so the criteria repair is a normal in-task write, not a
+/// hand-edit.
 fn no_criteria_finding(spec_addr: &str) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -450,8 +456,13 @@ fn no_criteria_finding(spec_addr: &str) -> Finding {
         format!("spec `{spec_addr}` has no criteria to seed from"),
         Some(Location::addressed(spec_addr, 1, 1)),
         Some(
-            "add `criteria` items to the spec, or add sub-tasks with `jigc milestone add-task`"
-                .into(),
+            format!(
+                "add criteria to the spec in a task — `jigc doc add-item {spec_addr}#criteria \
+                 --title \"<criterion>\" --task <task-id>` copies the committed spec in on \
+                 first touch, and that task's finalize re-promotes it — then re-run; or add \
+                 sub-tasks directly with `jigc milestone add-task`"
+            )
+            .into(),
         ),
     )
 }
@@ -2413,7 +2424,17 @@ Context without any acceptance criteria.
             err.message.contains("empty-plan"),
             "the block names the empty spec: {err:?}"
         );
-        assert!(err.route.is_some(), "the no-criteria block carries a route");
+        // Round-2 D6h: the first route arm names the EXECUTABLE repair path (the
+        // in-task add-item copy-on-first-touch, verified live), never a hand-edit.
+        let route = err
+            .route
+            .as_ref()
+            .expect("the no-criteria block carries a route");
+        assert!(
+            route.contains("`jigc doc add-item spec:empty-plan#criteria")
+                && route.contains("re-promotes"),
+            "the route's first arm names the in-task add-item repair path: {route}"
+        );
 
         // Nothing minted: the task list is still empty and no tasks/ areas exist.
         assert_eq!(

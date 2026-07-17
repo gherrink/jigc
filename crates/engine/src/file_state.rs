@@ -904,7 +904,15 @@ fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
         "reconciliation.conformance-block",
         format!("nonconformant edit on `{path}`: {detail}"),
         Some(Location::addressed(path, line, 1)),
-        Some("fix the file to restore conformance, or revert the edit".into()),
+        // The sanctioning clause (round-2 D7): the adapter rule bans hand-editing
+        // managed files, but out-of-band damage is repaired where it happened — this
+        // is the one case the file is explicitly yours to hand-repair.
+        Some(
+            "fix the file to restore conformance, or revert the edit — this is the one \
+             case a managed file is yours to hand-edit: the damage was made out-of-band, \
+             so it is repaired where it happened"
+                .into(),
+        ),
     )
 }
 

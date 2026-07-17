@@ -2277,13 +2277,22 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Map an engine [`Finding`] to an `anyhow` error carrying its message + route —
-/// the same envelope minting already uses (a hard block is a blocking-severity
-/// finding carrying a route, `DECISIONS.md` 2026-05-31).
+/// Map an engine [`Finding`] to an `anyhow` error carrying its **key** + message +
+/// route — the `severity · code — message` line shape the findings envelope prints
+/// (round-2 D6h: a milestone finding surfaced through the operational-error funnel
+/// used to drop its stable `(code, target)` key, so `milestone.no-criteria` — unlike
+/// every envelope-rendered sibling — was undiscriminable to a driver; the funnel now
+/// carries the key for every milestone finding it converts).
 fn finding_to_err(finding: Finding) -> anyhow::Error {
+    let severity = match finding.severity {
+        engine::finding::Severity::Blocking => "blocking",
+        engine::finding::Severity::Warning => "warning",
+        engine::finding::Severity::Advisory => "advisory",
+    };
+    let head = format!("{severity} · {} — {}", finding.code, finding.message);
     match finding.route {
-        Some(route) => anyhow::anyhow!("{}\n  route: {route}", finding.message),
-        None => anyhow::anyhow!("{}", finding.message),
+        Some(route) => anyhow::anyhow!("{head}\n  route: {route}"),
+        None => anyhow::anyhow!("{head}"),
     }
 }
 

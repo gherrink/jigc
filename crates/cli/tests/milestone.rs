@@ -425,6 +425,17 @@ fn add_from_spec_over_a_zero_criteria_spec_blocks_and_seeds_nothing() {
         stderr.contains("no criteria") && stderr.contains("route:"),
         "the zero-criteria block must carry the `milestone.no-criteria` message + a route; got:\n{stderr}",
     );
+    // Round-2 D6h: the printed block carries its stable finding KEY (the funnel used
+    // to drop it, unlike every envelope-rendered sibling)…
+    assert!(
+        stderr.contains("blocking · milestone.no-criteria — "),
+        "the agent-format block must lead with `blocking · milestone.no-criteria`; got:\n{stderr}",
+    );
+    // …and the route's first arm names the executable in-task repair path.
+    assert!(
+        stderr.contains("`jigc doc add-item spec:empty-plan#criteria"),
+        "the route names the in-task add-item repair; got:\n{stderr}",
+    );
 
     // Nothing was seeded — the task list is still empty.
     let listed = run_milestone(repo.path(), home.path(), &["list-tasks", "empty-work"]);

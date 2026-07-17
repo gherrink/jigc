@@ -1099,8 +1099,12 @@ fn empty_title_finding(type_name: &str) -> Finding {
 }
 
 /// The structured create-gate block (`write-commands.md` → The create-gate, step 5):
-/// a blocking finding naming the disallowed type + the allowed set, carrying the
-/// loosen `run-command` route (the cascade-set config delta the agent can act on).
+/// a blocking finding naming the disallowed type + the allowed set. The route is
+/// honest about the real mechanism (round-2 D6f, verified on the real binary): the
+/// gate is the minting **workflow's** `allows-create:` front-matter — pack
+/// authoring, not project config. No config knob loosens it, and a project
+/// workflow shadow does not reach this enforcement point — so the actionable route
+/// is to run the create under a workflow that grants the type.
 /// Keys at the [bare doctype id](doctype_scoped_location).
 fn gate_blocked_finding(type_name: &str, gate: &[crate::compose::AllowsCreate]) -> Finding {
     let allowed: Vec<&str> = gate.iter().map(|e| e.doc_type.as_str()).collect();
@@ -1112,7 +1116,14 @@ fn gate_blocked_finding(type_name: &str, gate: &[crate::compose::AllowsCreate]) 
             allowed.join(", ")
         ),
         Some(doctype_scoped_location(type_name)),
-        Some(format!("to loosen, add `{type_name}` to `allows-create` in project config").into()),
+        Some(
+            format!(
+                "create `{type_name}` in a task minted from a workflow that grants it \
+                 (`jigc start` lists the catalog) — the gate is the workflow's own \
+                 `allows-create:` front-matter, pack authoring, not a project-config knob"
+            )
+            .into(),
+        ),
     )
 }
 
@@ -2417,9 +2428,20 @@ sections:
             blocked.message.contains("commit") && blocked.message.contains("adr"),
             "the block names the disallowed type and the allowed set: {blocked:?}"
         );
+        // Round-2 D6f: the route is honest about the real mechanism — the gate is the
+        // workflow's own `allows-create:` front-matter (pack authoring); no
+        // project-config knob loosens it, so the route must not claim one does.
+        let route = blocked
+            .route
+            .as_ref()
+            .expect("the gate-block carries a route");
         assert!(
-            blocked.route.is_some(),
-            "the gate-block carries a loosen run-command route"
+            route.contains("allows-create") && route.contains("pack authoring"),
+            "the route names the real mechanism (workflow front-matter, pack authoring): {route}"
+        );
+        assert!(
+            !route.contains("in project config"),
+            "the route must not claim a project-config loosening exists: {route}"
         );
 
         // Unknown type → unknown-doctype reject fires *before* the gate.
