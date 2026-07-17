@@ -542,9 +542,11 @@ fn resolve_research_advisory(text: String, advise: bool) -> String {
 /// The contract is exactly `{task, text}` (`design/command-output-contract.md` §1), so
 /// neither fact can ride the engine's [`ComposedWorkflow`] (every field of which projects
 /// into that JSON). They ride here instead, next to it: the CLI renderer appends the
-/// `task minted:` header and the `create-gates:` line to agent/human text only — the same
-/// frontend-appended mold as the routing footer — and projects the [`ComposedWorkflow`]
-/// alone on `--format json`.
+/// `task minted:` header, the task-state lines (`resume:` / `what's-left:` /
+/// `task scope:`, keyed on the id in [`view.task`](ComposedWorkflow::task) — M43 Inc 7),
+/// and the `create-gates:` line to agent/human text only — the same frontend-appended
+/// mold as the routing footer — and projects the [`ComposedWorkflow`] alone on
+/// `--format json`.
 #[derive(Debug)]
 pub struct Composition {
     /// The composed view — the pinned `{task, text}` JSON projection, verbatim.

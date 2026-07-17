@@ -1568,6 +1568,9 @@ mod tests {
         carried path): unstage it, or pass `--carry-staged` to declare the carryover
         deliberate.
 
+        To see what's left before committing, run `jigc task validate {{task.id}}` — it
+        previews the findings finalize will gate on, without committing anything.
+
         {{ cli.finalize-task }}
         ");
     }

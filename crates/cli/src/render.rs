@@ -126,21 +126,23 @@ pub fn orientation_clean(
 
 /// Render a composed workflow to the surface `format` selects: `agent` / `human`
 /// emit the [`minted_header`], then the engine's four-class composed text, then the
-/// [`create_gates_line`], then the routing footer (`design/workflow-dialect.md` →
-/// Routing footer — every composed workflow output in agent-text and human-pretty ends
-/// with the one-line footer); `json` emits the **generic** JSON projection of the
+/// [`task_state_lines`], then the [`create_gates_line`], then the routing footer
+/// (`design/workflow-dialect.md` → Routing footer — every composed workflow output in
+/// agent-text and human-pretty ends with the one-line footer); `json` emits the
+/// **generic** JSON projection of the
 /// [`ComposedWorkflow`](engine::compose::ComposedWorkflow) with **no** footer and
 /// **no** presentation lines (consumed by tooling, not the agent's reading flow).
 ///
-/// All three presentation lines are appended here, in the frontend — never by the engine,
+/// All the presentation lines are appended here, in the frontend — never by the engine,
 /// which stays presentation-free (the engine view carries the bare text). The composed
-/// text already ends with a trailing newline; the gates line and the footer follow it,
-/// each on its own line, and the header precedes it.
+/// text already ends with a trailing newline; the task-state lines, the gates line, and
+/// the footer follow it, each on its own line, and the header precedes it.
 ///
-/// The header + gates ride on the CLI-side [`Composition`], **not** on the engine's
-/// composed view: the composed-output JSON is pinned at exactly `{task, text}`
-/// (`design/command-output-contract.md` §1), so the agent-facing gate list and mint
-/// announcement are presentation, and add no key to the contract.
+/// The header + task-state + gates ride on the CLI-side [`Composition`], **not** on the
+/// engine's composed view: the composed-output JSON is pinned at exactly `{task, text}`
+/// (`design/command-output-contract.md` §1), so the agent-facing gate list, mint
+/// announcement, and task-state affordances are presentation, and add no key to the
+/// contract.
 ///
 /// Wired into the `jigc start "<intent>"` dispatch (`crate::cli::run_compose`),
 /// which mints a task and emits this composed view.
@@ -152,15 +154,17 @@ pub fn composed(format: Format, view: &Composition) -> String {
         Format::Agent | Format::Human => {
             let text = &view.view.text;
             let header = minted_header(view);
+            let state = task_state_lines(view);
             let gates = create_gates_line(&view.gates);
             let mut out = String::with_capacity(
-                header.len() + text.len() + gates.len() + ROUTING_FOOTER.len() + 1,
+                header.len() + text.len() + state.len() + gates.len() + ROUTING_FOOTER.len() + 1,
             );
             out.push_str(&header);
             out.push_str(text);
             if !text.ends_with('\n') {
                 out.push('\n');
             }
+            out.push_str(&state);
             out.push_str(&gates);
             out.push_str(ROUTING_FOOTER);
             out
@@ -186,6 +190,34 @@ fn minted_header(view: &Composition) -> String {
         (true, Some(id)) => format!("task minted: {id}\n\n"),
         _ => String::new(),
     }
+}
+
+/// The three task-state lines an **id-carrying** compose appends below the composed
+/// text (M43 Inc 7 / B3+B4, `design/surface-contract.md` → law 2 — resume and
+/// what's-left are named by the surfaces producing the state):
+///
+/// - `resume:` — `jigc start --task <id>`, the designated recovery after context loss;
+/// - `what's-left:` — `jigc task validate <id>`, the preview of what finalize gates on;
+/// - `task scope:` — the B3 statement: `jigc doc` writes default to the **single**
+///   active task, and the explicit `--task <id>` is the override that wins when
+///   several are active (`crate::doc`'s task-resolution contract, stated where the
+///   state is produced instead of learned from the more-than-one rejection).
+///
+/// Unlike [`minted_header`] — which states an **invocation fact** (this run minted)
+/// and so stays off a resume — these state **standing affordances of the active-task
+/// state**, as true (and as needed: a resume happens exactly when context was lost) on
+/// a re-compose as on a mint. So they key on the **id's presence**, not on
+/// [`Composition::minted`]; the id-less contexts (the router, a plain named compose)
+/// render **no bytes** — the omitting context stays inert.
+fn task_state_lines(view: &Composition) -> String {
+    let Some(id) = view.view.task.as_deref() else {
+        return String::new();
+    };
+    format!(
+        "resume: `jigc start --task {id}`   — re-composes this workflow if context is lost\n\
+         what's-left: `jigc task validate {id}`   — previews the findings finalize will gate on\n\
+         task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active\n"
+    )
 }
 
 /// The `create-gates:` line a composed task carries immediately before the
@@ -2284,6 +2316,93 @@ mod tests {
         let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back.task.as_deref(), Some("add-rate-limiter"));
         assert!(!back.text.contains("task minted"));
+    }
+
+    /// An **id-carrying** compose appends the three task-state lines (M43 Inc 7 /
+    /// B3+B4): `resume:`, `what's-left:`, and the `task scope:` B3 statement — keyed on
+    /// the id's **presence** (standing affordances of the active-task state), so a
+    /// resume carries them too, while the id-less router renders no bytes. They sit
+    /// between the composed text and the gates line, and never reach the JSON
+    /// projection (the pinned `{task, text}` contract).
+    #[test]
+    fn render_composed_agent_text_states_the_task_affordances() {
+        let text = "Reason about the change.\n".to_string();
+        let minted = Composition {
+            view: ComposedWorkflow {
+                task: Some("add-rate-limiter".to_string()),
+                text: text.clone(),
+            },
+            gates: vec!["adr".to_string()],
+            minted: true,
+        };
+
+        let agent = composed(Format::Agent, &minted);
+        assert!(
+            agent.contains("resume: `jigc start --task add-rate-limiter`"),
+            "got:\n{agent}",
+        );
+        assert!(
+            agent.contains("what's-left: `jigc task validate add-rate-limiter`"),
+            "got:\n{agent}",
+        );
+        let scope = agent
+            .lines()
+            .find(|l| l.starts_with("task scope:"))
+            .unwrap_or_else(|| panic!("a task-scope line renders; got:\n{agent}"));
+        assert!(
+            scope.contains("single active task")
+                && scope.contains("--task add-rate-limiter")
+                && scope.contains("wins"),
+            "the B3 statement: single-active-task default, explicit `--task` wins; \
+             got:\n{scope}",
+        );
+        // Stack order: text, then the task-state lines, then gates, then footer.
+        assert!(
+            agent.contains(
+                "task scope: `jigc doc` writes default to the single active task; \
+                 `--task add-rate-limiter` is the explicit override and wins when \
+                 several are active\ncreate-gates: adr\n— jigc"
+            ),
+            "the task-state lines sit above the gates line + footer; got:\n{agent}",
+        );
+        assert_eq!(composed(Format::Human, &minted), agent);
+
+        // A resume carries the same standing affordances (no mint header).
+        let resumed = Composition {
+            view: ComposedWorkflow {
+                task: Some("add-rate-limiter".to_string()),
+                text: text.clone(),
+            },
+            gates: Vec::new(),
+            minted: false,
+        };
+        let re = composed(Format::Agent, &resumed);
+        assert!(!re.contains("task minted"), "got:\n{re}");
+        assert!(
+            re.contains("what's-left: `jigc task validate add-rate-limiter`"),
+            "got:\n{re}",
+        );
+
+        // The id-less router renders no bytes — the omitting context stays inert.
+        let router = Composition {
+            view: ComposedWorkflow {
+                task: None,
+                text: text.clone(),
+            },
+            gates: Vec::new(),
+            minted: false,
+        };
+        let routed = composed(Format::Agent, &router);
+        for needle in ["resume:", "what's-left:", "task scope:"] {
+            assert!(!routed.contains(needle), "got:\n{routed}");
+        }
+
+        // The pinned `{task, text}` JSON never carries the lines.
+        let json_out = composed(Format::Json, &minted);
+        assert!(!json_out.contains("resume:"), "got:\n{json_out}");
+        assert!(!json_out.contains("task scope:"), "got:\n{json_out}");
+        let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
+        assert!(!back.text.contains("what's-left:"));
     }
 
     /// The `--explain` tree renders to agent-text as the workflow line (winning

@@ -159,7 +159,13 @@ this task was minted makes finalize refuse too (one blocking finding per
 carried path): unstage it, or pass `--carry-staged` to declare the carryover
 deliberate.
 
+To see what's left before committing, run `jigc task validate add-rate-limiter` — it
+previews the findings finalize will gate on, without committing anything.
+
 Run: `jigc task finalize add-rate-limiter`
+resume: `jigc start --task add-rate-limiter`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate add-rate-limiter`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task add-rate-limiter` is the explicit override and wins when several are active
 create-gates: adr, changelog
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";

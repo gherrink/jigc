@@ -454,7 +454,13 @@ this task was minted makes finalize refuse too (one blocking finding per
 carried path): unstage it, or pass `--carry-staged` to declare the carryover
 deliberate.
 
+To see what's left before committing, run `jigc task validate add-a-thing` — it
+previews the findings finalize will gate on, without committing anything.
+
 Run: `jigc task finalize add-a-thing`
+resume: `jigc start --task add-a-thing`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate add-a-thing`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task add-a-thing` is the explicit override and wins when several are active
 create-gates: adr, changelog
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
@@ -527,9 +533,15 @@ Set the body — why this change:
 
 Run: `jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter`
 
+To see what's left before committing, run `jigc task validate add-rate-limiter` — it
+previews the findings finalize will gate on, without committing anything.
+
 Then validate and commit:
 
 Run: `jigc task finalize add-rate-limiter`
+resume: `jigc start --task add-rate-limiter`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate add-rate-limiter`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task add-rate-limiter` is the explicit override and wins when several are active
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

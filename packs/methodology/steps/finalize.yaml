@@ -28,6 +28,9 @@ Set the body — why this change:
 
 {{ cli.set-commit-body }}
 
+To see what's left before committing, run `jigc task validate {{task.id}}` — it
+previews the findings finalize will gate on, without committing anything.
+
 Then validate and commit:
 
 {{ cli.finalize-task }}
