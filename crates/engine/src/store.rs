@@ -157,7 +157,8 @@ pub fn read_slice(
                 format!(
                     "create the referenced doc, or fix the reference to an existing one; a doc \
                      staged in an open task is not committed yet — read it with \
-                     `jigc doc show {address_str} --task <task-id>`"
+                     `jigc doc show {address_str} --task <task-id>` (find the task id with \
+                     `jigc task list`)"
                 ),
             )
         },
@@ -1015,6 +1016,12 @@ A cold node loses its sessions; clients re-authenticate.
         assert!(
             route.contains("jigc doc show adr:does-not-exist#decision --task <task-id>"),
             "route names the staged read of the missed address: {route}"
+        );
+        // (B2, 2026-07-17 surface review) The `<task-id>` placeholder alone left the
+        // id discovery to convention — the route names it.
+        assert!(
+            route.contains("`jigc task list`"),
+            "route names the id-discovery step for the `<task-id>` placeholder: {route}"
         );
         assert!(
             !route.contains("task diff"),

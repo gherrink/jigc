@@ -2375,14 +2375,18 @@ fn blocking_conformance(code: &str, message: String, location: Option<Location>)
 /// so every call site minting a code routes it identically. The mechanical routes carry
 /// the `<address>` / `<value>` placeholders of the CLI-seam dummy table
 /// (`crates/cli/src/route_fence.rs` → `DUMMY_SUBSTITUTIONS`); `<address>` is the finding's
-/// own `key.target`. A new `blocking_conformance` code must declare its route here — the
+/// own `key.target`, and it is **rendered concrete** at the attribution flip
+/// ([`crate::finding::readdress_to_uri`] — B1, 2026-07-17 surface review), so the route
+/// an agent reads carries the real copy-runnable write address, never the placeholder
+/// (`<value>` stays a placeholder: the value is the agent's to supply). A new
+/// `blocking_conformance` code must declare its route here — the
 /// loud panic is the same posture as the seam assert it feeds (`Finding`'s `Serialize`
 /// would refuse the route-less finding anyway; this names the omission at its source).
 pub(crate) fn conformance_route(code: &str) -> Route {
     match code {
         "schema-conformance.required-slot-present" => Route::mechanical(
             ["jigc", "doc", "set-slot", "<address>", "--from-file", "-"],
-            " to fill the empty slot (this finding's target is the address)",
+            " to fill the empty slot",
         ),
         "schema-conformance.required-field-present" => Route::mechanical(
             [

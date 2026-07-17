@@ -32,9 +32,9 @@ use std::process::{Command, Stdio};
 /// path, not only `start_compose`; review B2).
 const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
 blocking · schema-conformance.field-value-conformant — `commit:add-rate-limiter`: field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
-  route: `jigc doc set-field <address> --value <value>` to correct the value
+  route: `jigc doc set-field commit:add-rate-limiter#header/type --value <value>` to correct the value
 blocking · schema-conformance.required-slot-present — `commit:add-rate-limiter`: required slot in section `summary` is empty
-  route: `jigc doc set-slot <address> --from-file -` to fill the empty slot (this finding's target is the address)
+  route: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -` to fill the empty slot
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

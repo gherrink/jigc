@@ -171,6 +171,29 @@ pub fn readdress_to_uri(findings: &mut [Finding], identity: &str) {
             Some(fragment) => format!("{identity}#{fragment}"),
             None => identity.to_string(),
         };
+        // The route half of the flip (2026-07-17 surface-comprehension review, B1): a
+        // mechanical route minted before the doc's identity was in hand carries the
+        // `<address>` placeholder of the CLI-seam dummy table — but here the finding's
+        // real URI address *is* the write address (`<type>:<slug>#<section[/leaf]>` is
+        // exactly the grammar `set-slot`/`set-field` accept), so the placeholder is
+        // rendered concrete and the route becomes copy-runnable. Rebuilt through
+        // [`Route::mechanical`], so the parse fence re-proves the concrete argv.
+        if let Some(route) = &finding.route
+            && let RouteKind::Mechanical { argv, tail } = route.kind()
+            && argv.iter().any(|arg| arg == "<address>")
+        {
+            let argv: Vec<String> = argv
+                .iter()
+                .map(|arg| {
+                    if arg == "<address>" {
+                        uri.clone()
+                    } else {
+                        arg.clone()
+                    }
+                })
+                .collect();
+            finding.route = Some(Route::mechanical(argv, tail.clone()));
+        }
         match &mut finding.location {
             Some(location) => location.address = Some(uri),
             None => finding.location = Some(Location::addressed(uri, 1, 1)),
@@ -814,6 +837,56 @@ impl Finding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The route half of the `path→URI` flip (B1, 2026-07-17 surface review): once
+    /// [`readdress_to_uri`] has the doc's identity in hand, a mechanical route minted
+    /// with the `<address>` placeholder is rebuilt with the finding's **real** URI
+    /// address — copy-runnable, since the URI form is exactly the write grammar
+    /// (`jigc doc set-slot adr:use-sqlite#decision …`). A human route and a mechanical
+    /// route without the placeholder pass through untouched, and the derived
+    /// `key.target` is unchanged by the substitution (the route is not part of the key).
+    #[test]
+    fn readdress_renders_the_address_placeholder_concrete_in_mechanical_routes() {
+        let mut findings = [
+            Finding::graded(
+                Severity::Blocking,
+                "schema-conformance.required-slot-present",
+                "required slot in section `decision` is empty",
+                Some(Location::addressed("decision", 3, 1)),
+                Some(Route::mechanical(
+                    ["jigc", "doc", "set-slot", "<address>", "--from-file", "-"],
+                    " to fill the empty slot",
+                )),
+            ),
+            Finding::graded(
+                Severity::Blocking,
+                "schema-conformance.unknown-type",
+                "staged doc has an unknown type",
+                None,
+                Some(Route::human("check the type against `jigc describe`")),
+            ),
+        ];
+
+        readdress_to_uri(&mut findings, "adr:use-sqlite");
+
+        let route = findings[0].route.as_ref().expect("route kept");
+        assert_eq!(
+            route.as_str(),
+            "`jigc doc set-slot adr:use-sqlite#decision --from-file -` to fill the empty slot",
+            "the placeholder is rendered as the finding's real write address"
+        );
+        assert_eq!(
+            findings[0].key().target.as_deref(),
+            Some("adr:use-sqlite#decision"),
+            "the stable key is the flipped URI, unaffected by the route substitution"
+        );
+        // The human route is untouched — substitution reaches only a mechanical
+        // route carrying the placeholder.
+        assert_eq!(
+            findings[1].route.as_ref().map(|r| r.as_str()),
+            Some("check the type against `jigc describe`"),
+        );
+    }
 
     /// The pinned envelope (`DECISIONS.md` 2026-05-31 → Finding shape; re-pinned M6
     /// for the `(probe, check)` handle): a blocking finding with a `code`, a located
