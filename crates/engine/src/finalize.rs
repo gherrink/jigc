@@ -339,13 +339,15 @@ fn plan_clobber_guard(
 ) -> Result<(), Vec<Finding>> {
     let provenance = crate::state::ProvenanceRecord::load(task_dir)
         .map_err(|err| vec![provenance_io_finding(unit, task_dir, &err)])?;
-    // The in-place migration rewrite's destination (if any) — the foreign source path the
-    // managed write replaces at its own canonical path, normalized for the comparison.
-    let in_place = crate::state::read_source_path(task_dir)
+    // The migration's recorded foreign source path (if any) — kept as recorded for the
+    // finding's naming, normalized for the in-place (source == destination) comparison.
+    let source = crate::state::read_source_path(task_dir)
         .map_err(|err| vec![source_path_io_finding(unit, task_dir, &err)])?
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .map(|s| crate::store::lexical_normalize(Path::new(&s)));
+        .filter(|s| !s.is_empty());
+    let in_place = source
+        .as_deref()
+        .map(|s| crate::store::lexical_normalize(Path::new(s)));
 
     let mut clobbers = Vec::new();
     for promotion in promotions {
@@ -360,7 +362,7 @@ fn plan_clobber_guard(
             continue; // in-place rewrite — replacing the very foreign original (M43, fork 5).
         }
         if repo_root.join(&promotion.destination).is_file() {
-            clobbers.push(clobber_finding(&promotion.destination));
+            clobbers.push(clobber_finding(&promotion.destination, source.as_deref()));
         }
     }
     if clobbers.is_empty() {
@@ -375,24 +377,62 @@ fn plan_clobber_guard(
 /// already holds a file — a committed managed doc that would collide, or a hand-authored /
 /// foreign file (e.g. an existing `VISION.md` at a placement home) — promoting would silently
 /// overwrite it (irreversible data loss). Names the destination it refused to clobber, and
-/// [keys at it](file_location).
-fn clobber_finding(destination: &str) -> Finding {
+/// [keys at it](file_location) — the `(code, target)` key is one for both arms below.
+///
+/// The route discriminates on the recorded migration source (M43 inc-6 T3; RC-lacon
+/// findings-verification → A4; `design/surface-contract.md` → law 2/3) and **never
+/// teaches raw removal** — the pre-M43 "remove or adopt it" was verbatim the A4/A7 trap
+/// that had a user pre-stage a silent `git rm`:
+///
+/// - **`migration_source` is `Some`** — a migration whose recorded foreign source is a
+///   *different* file than the occupied destination (the title-slug collision; the
+///   source == destination case is the in-place rewrite [`plan_clobber_guard`] carves
+///   out, so it never reaches here). The finding names **both** paths and the route ends
+///   at the migration's own continuation: plain finalize → review the fidelity diff →
+///   `--approve` (the sole destructive gate, which also retires the recorded source).
+/// - **`None`** — an ordinary create collision; the route repairs through jigc verbs
+///   only (retitle / an explicit `--slug` / adopt the occupant via `jigc migrate`).
+fn clobber_finding(destination: &str, migration_source: Option<&str>) -> Finding {
+    let (message, route) = match migration_source {
+        Some(source) => (
+            format!(
+                "promoting this migration's doc to `{destination}` would overwrite a file \
+                 already there — and that file is not the migration's recorded source \
+                 (`{source}`); refusing to clobber it"
+            ),
+            format!(
+                "a file already occupies `{destination}`, and this migration's recorded \
+                 source is the different file `{source}`: if the occupant is another \
+                 managed doc, land this migration under a different id — re-author with a \
+                 title that slugs differently, or `jigc task discard <id>` and re-mint \
+                 with `jigc migrate {source} --as <doctype> --slug <different-slug>`; if \
+                 the occupant is itself foreign, adopt it through its own `jigc migrate` \
+                 task first; then re-run `jigc task finalize <id>` to review the fidelity \
+                 diff and `jigc task finalize <id> --approve` to land it (`--approve` also \
+                 retires the recorded source)"
+            ),
+        ),
+        None => (
+            format!(
+                "promoting this task's doc to `{destination}` would overwrite a file already \
+                 there — refusing to clobber it"
+            ),
+            format!(
+                "a file already occupies `{destination}`: if it is another managed doc, \
+                 retitle this task's doc so it slugs differently, or re-create it with an \
+                 explicit `--slug` (`jigc doc create <doctype> --title <title> --slug \
+                 <slug> --task <id>`); if it is a hand-authored/foreign file, bring it \
+                 under management with `jigc migrate {destination} --as <doctype>` in its \
+                 own task; then re-run `jigc task finalize`"
+            ),
+        ),
+    };
     Finding::graded(
         Severity::Blocking,
         "finalize.promote-clobber",
-        format!(
-            "promoting this task's doc to `{destination}` would overwrite a file already \
-             there — refusing to clobber it"
-        ),
+        message,
         Some(file_location(destination)),
-        Some(
-            format!(
-                "a file already occupies `{destination}`: if it is a hand-authored/foreign file, \
-             remove or adopt it; if it is another managed doc, retitle this one so it slugs \
-             differently or resolve the collision; then re-run `jigc task finalize`"
-            )
-            .into(),
-        ),
+        Some(route.into()),
     )
 }
 
@@ -1910,6 +1950,148 @@ sections:
                 plan.retirements.is_empty(),
                 "the same-path rewrite retires nothing — the promote IS the replacement \
                  (source-path `{source_path}`)",
+            );
+        }
+    }
+
+    /// The **migration-case** clobber route (M43 inc-6 T3; RC-lacon findings-verification
+    /// → A4; `design/surface-contract.md` → law 2/3): a migration whose recorded foreign
+    /// `source-path` is a **different** file than the occupied destination still blocks —
+    /// and the finding names **both** the occupied destination and the recorded source,
+    /// teaches **no raw removal** (never "remove"/`git rm` — verbatim the A4 trap that
+    /// staged a silent `git rm`), routes through jigc verbs only, and names the
+    /// post-resolution continuation ending at `--approve` (plain finalize → review →
+    /// approve). The `(code, target)` key is unchanged: `(finalize.promote-clobber,
+    /// <destination>)`.
+    #[test]
+    fn a_migration_clobber_names_the_recorded_source_and_the_approve_continuation() {
+        let root = TempRoot::new("clobber-migration-route");
+        let task_dir = root.path().join("tasks").join("migrate-adr-collide");
+        let schema = stage_filled_commit(&task_dir, "migrate-adr-collide");
+        stage_filled_adr(&task_dir, "single-node-cache");
+        state::record_doc_provenance(
+            &task_dir,
+            "adr:single-node-cache",
+            state::Provenance::Created,
+        )
+        .expect("record created provenance");
+        // The recorded foreign source is a DIFFERENT file than the promote destination —
+        // the title-slug-collision migration (the same-path case never reaches the guard).
+        state::persist(&task_dir.join("source-path"), b"notes/old-decision.md")
+            .expect("record the migration source path");
+        state::persist(
+            &root.path().join("decisions").join("single-node-cache.md"),
+            b"# a different decision already committed here\n",
+        )
+        .expect("commit a prior managed doc at the destination");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let findings = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "migrate-adr-collide",
+            &schemas(),
+        )
+        .expect_err("a colliding migration (source != destination) must still block");
+        assert_eq!(findings.len(), 1, "exactly one clobber finding");
+        assert_eq!(findings[0].code, "finalize.promote-clobber");
+        assert_eq!(
+            target(&findings[0]),
+            Some("decisions/single-node-cache.md"),
+            "the (code, target) key is unchanged — it keys at the destination file",
+        );
+        assert!(
+            findings[0]
+                .message
+                .contains("decisions/single-node-cache.md")
+                && findings[0].message.contains("notes/old-decision.md"),
+            "the block names BOTH the occupied destination and the recorded source: {:?}",
+            findings[0].message
+        );
+        let route = findings[0].route.as_deref().expect("blocking ⇒ routed");
+        assert!(
+            route.contains("notes/old-decision.md"),
+            "the route discriminates on the recorded source, naming it: {route:?}"
+        );
+        assert!(
+            route.contains("--approve"),
+            "the route names the post-resolution continuation including `--approve`: {route:?}"
+        );
+        assert!(
+            route.contains("--slug") && route.contains("jigc migrate"),
+            "the route repairs through jigc verbs (`--slug`, adopt via `jigc migrate`): {route:?}"
+        );
+        for surface in [&findings[0].message, route] {
+            assert!(
+                !surface.to_lowercase().contains("remove")
+                    && !surface.to_lowercase().contains("delete")
+                    && !surface.contains("git rm"),
+                "the clobber block never teaches raw removal (RC-lacon A4/A7): {surface:?}"
+            );
+        }
+    }
+
+    /// The **non-migration** clobber route (M43 inc-6 T3; `design/surface-contract.md` →
+    /// law 2): an ordinary create collision (no recorded `source-path`) routes through
+    /// jigc verbs only — retitle / an explicit `--slug` / adopt the occupant via
+    /// `jigc migrate` — ending at the `jigc task finalize` re-run, never a raw-removal
+    /// instruction.
+    #[test]
+    fn a_non_migration_clobber_routes_through_jigc_verbs_only() {
+        let root = TempRoot::new("clobber-plain-route");
+        let task_dir = root.path().join("tasks").join("record-decision");
+        let schema = stage_filled_commit(&task_dir, "record-decision");
+        stage_filled_adr(&task_dir, "single-node-cache");
+        state::record_doc_provenance(
+            &task_dir,
+            "adr:single-node-cache",
+            state::Provenance::Created,
+        )
+        .expect("record created provenance");
+        state::persist(
+            &root.path().join("decisions").join("single-node-cache.md"),
+            b"# a different decision already committed here\n",
+        )
+        .expect("commit a prior managed doc at the destination");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let findings = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "record-decision",
+            &schemas(),
+        )
+        .expect_err("a created doc clobbering a committed managed doc must block");
+        assert_eq!(findings.len(), 1, "exactly one clobber finding");
+        let route = findings[0].route.as_deref().expect("blocking ⇒ routed");
+        assert!(
+            route.contains("retitle") && route.contains("--slug"),
+            "the managed-collision arm routes through retitle / `--slug`: {route:?}"
+        );
+        assert!(
+            route.contains("jigc migrate"),
+            "the foreign-occupant arm routes through adoption via `jigc migrate`: {route:?}"
+        );
+        assert!(
+            route.contains("jigc task finalize"),
+            "the route ends at the finalize re-run: {route:?}"
+        );
+        for surface in [&findings[0].message, route] {
+            assert!(
+                !surface.to_lowercase().contains("remove")
+                    && !surface.to_lowercase().contains("delete")
+                    && !surface.contains("git rm"),
+                "the clobber block never teaches raw removal (RC-lacon A4/A7): {surface:?}"
             );
         }
     }
