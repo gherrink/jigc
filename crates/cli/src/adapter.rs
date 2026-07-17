@@ -1031,8 +1031,13 @@ const BOOTSTRAP_SENTENCE: &str = "`jigc` is your interface to this project — y
 /// path for them (`jigc doc show`), and the stated complement (everything
 /// else is read freely). It names only stable verbs, never a location
 /// convention or a doc enumeration, so it cannot rot
-/// (`design/assistant-adapter.md` → Inject the bootstrap).
-const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` set; read one with `jigc doc show <doc>`. Everything else — source, tests, any file not in that set — you read freely.";
+/// (`design/assistant-adapter.md` → Inject the bootstrap). The 2026-07-17
+/// surface-comprehension review (B4) added the two edges the flat rule did
+/// not compose with: a doc **staged in the open task** is not yet in the
+/// committed `doc list` set (so the rule read as "read-free" — its sanctioned
+/// read is the task-scoped show, never the file), and an **`unregistered`**
+/// `doc list` row is not yet managed — directly readable until adopted.
+const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; an `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely.";
 
 /// The context-compiler framing stated beneath the read rule (RC greenfield
 /// trial A4, 2026-07-06): one stable line on what `jigc` *is* and the
@@ -1046,14 +1051,20 @@ const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` 
 const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.";
 
 /// The output contract stated beneath the framing (M36, narrowed 2026-07-06 —
-/// RC greenfield trial A4): the behavioral core only. The per-code enumeration
-/// is retired — every non-zero outcome's meaning rides in the command's own
-/// output (blocking findings carry `route:` lines; route-less advisories say
-/// "no action needed"), so a code table here was content that rots. What must
-/// stay is the *behavior*: stop on non-zero, follow the output, never retry
-/// blindly ([`crate::task::EXIT_VALIDATION_BLOCKED`] et al. keep their meanings
-/// — the bootstrap just no longer enumerates them).
-const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly.";
+/// RC greenfield trial A4): the behavioral core — stop on non-zero, follow the
+/// output, never retry blindly — plus, since the 2026-07-17
+/// surface-comprehension review (B4), the **one-line exit-code taxonomy**:
+/// 1 error · 2 usage · 3 blocking findings
+/// ([`crate::task::EXIT_VALIDATION_BLOCKED`]) · 4 migration review hold
+/// ([`crate::task::EXIT_REVIEW_PENDING`]). The 2026-07-06 narrowing retired the
+/// per-code *meanings enumeration* (each outcome's meaning rides in the
+/// command's own output — blocking findings carry `route:` lines, route-less
+/// advisories say "no action needed" — a meanings table here was content that
+/// rots), and that stands; what the review reinstated is the stable numeric
+/// key alone, which both independent readers otherwise had to reverse-engineer
+/// from observed behavior. The four numbers are frozen CLI constants, so the
+/// line cannot rot the way the meanings table could.
+const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings · 4 migration review hold.";
 
 /// The env var that selects a directory adapter-profile source over the
 /// binary-embedded default. The adapter analogue of [`crate::pack`]'s
@@ -1391,21 +1402,25 @@ mod tests {
         insta::assert_snapshot!(bootstrap_file(), @r###"
         `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
 
-        Managed docs are exactly the `jigc doc list` set; read one with `jigc doc show <doc>`. Everything else — source, tests, any file not in that set — you read freely.
+        Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; an `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely.
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
-        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly.
+        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings · 4 migration review hold.
         "###);
     }
 
-    /// The managed bootstrap body states the output contract (M36, narrowed
-    /// 2026-07-06 — RC greenfield trial A4): the behavioral core (stop on
-    /// non-zero, follow the output, never retry blindly) plus the
-    /// context-compiler framing — and NOT the per-code enumeration, whose
-    /// meaning now rides in each command's own output (blocking findings carry
-    /// routes; route-less advisories say "no action needed"). Driven on the
-    /// emitted body itself — the bytes `setup` writes into `.jigc/AGENT.md`.
+    /// The managed bootstrap body states the output contract: the behavioral
+    /// core (stop on non-zero, follow the output, never retry blindly — M36,
+    /// narrowed 2026-07-06) plus the context-compiler framing, and — since the
+    /// 2026-07-17 surface-comprehension review (B4) — the **one-line exit-code
+    /// taxonomy** (1 error · 2 usage · 3 blocking findings · 4 migration
+    /// review hold): both independent readers had to reverse-engineer the
+    /// codes from observed behavior. The 2026-07-06 retirement of the per-code
+    /// *meanings enumeration* stands — each outcome's meaning still rides the
+    /// command's own output; what returns is the stable numeric key alone.
+    /// Driven on the emitted body itself — the bytes `setup` writes into
+    /// `.jigc/AGENT.md`.
     #[test]
     fn bootstrap_file_states_the_output_contract() {
         let body = bootstrap_file();
@@ -1418,9 +1433,8 @@ mod tests {
             "the bootstrap body must carry the what-jigc-is framing; got:\n{body}",
         );
         assert!(
-            !body.contains("usage error") && !body.contains("exits `3`"),
-            "the per-code enumeration is retired from the bootstrap body — \
-             the output carries each outcome's meaning; got:\n{body}",
+            body.contains("1 error · 2 usage · 3 blocking findings · 4 migration review hold"),
+            "the bootstrap body states the one-line exit-code taxonomy (B4); got:\n{body}",
         );
     }
 
@@ -1451,6 +1465,19 @@ mod tests {
             body.contains("read freely"),
             "the complement rule is stated — everything outside the managed set \
              is read freely; got:\n{body}",
+        );
+        // (B4, 2026-07-17 surface review) The two edges the flat rule did not
+        // compose with: a doc staged in the open task (not yet in the committed
+        // `doc list` set — its sanctioned read is the task-scoped show, never the
+        // file) and an `unregistered` row (not yet managed — directly readable
+        // until adopted).
+        assert!(
+            body.contains("--task <id>"),
+            "the read rule names the staged read for a doc in the open task; got:\n{body}",
+        );
+        assert!(
+            body.contains("`unregistered` row"),
+            "the read rule states the unregistered-row edge; got:\n{body}",
         );
         assert!(
             !body.contains("exactly the workflow steps and doc slices your task needs"),
