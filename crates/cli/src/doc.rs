@@ -41,7 +41,9 @@ pub enum DocCommand {
     ///
     /// The title the slug is minted from is supplied inline with `--title` —
     /// always literally `--title`, whatever the doctype's `id-from` field is
-    /// named; the CLI mints + places per the schema.
+    /// named; the CLI mints + places per the schema. The minted slug is the
+    /// title slugged lowercase-kebab, capped at the first 5 words / 50 chars
+    /// (`--slug` overrides the mint).
     Create {
         /// The doctype to create (e.g. `adr`).
         r#type: String,
@@ -134,6 +136,9 @@ pub enum DocCommand {
         task: Option<String>,
     },
     /// Set a slot leaf's prose (multi-line, via stdin or a file).
+    ///
+    /// Inside slot prose, headings must sit at `####` depth or deeper —
+    /// `##`/`###` are schema-reserved, and Setext headings are rejected.
     SetSlot {
         /// The slot address — `<type>:<slug>#<slot>`.
         addr: String,
@@ -158,7 +163,10 @@ pub enum DocCommand {
     /// Reach for `author` to write a whole instance in one shot (a migration, or any
     /// many-leaf doc) — it collapses what would be a `create` + N follow-up calls.
     /// Use `create` then `set-slot`/`set-field`/`add-item` for incremental,
-    /// one-leaf-at-a-time authoring instead.
+    /// one-leaf-at-a-time authoring instead. Run `author` INSTEAD of those verbs,
+    /// never after them — a doc already staged by `create` rejects the second
+    /// create `author` implies. (A committed doc is fine: `author` copies it in
+    /// and updates it.)
     ///
     /// Payload shape (YAML; `--from-file`), mirroring the document's structure:
     ///

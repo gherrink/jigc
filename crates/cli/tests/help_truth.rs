@@ -200,6 +200,57 @@ fn top_level_doc_line_names_the_read_half() {
     );
 }
 
+/// M43 pre-trial surface polish A3 (help half) — `doc set-slot --help` states
+/// the slot heading-depth ceiling, drift-pinned against the engine's
+/// single-source statement (the same sentence the write path enforces).
+#[test]
+fn doc_set_slot_help_states_the_heading_ceiling() {
+    let help = help_stdout(&["doc", "set-slot", "--help"]);
+    let statement = engine::write::slot_ceiling_statement()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        help.contains(&statement),
+        "`doc set-slot --help` must state the heading-depth ceiling verbatim \
+         from the engine source (`{statement}`); got:\n{help}"
+    );
+}
+
+/// M43 pre-trial surface polish A4 — `doc author --help` states the ordering
+/// hazard: author runs INSTEAD of `create` + the per-leaf verbs, never after
+/// them (an already-staged doc rejects the second create). Previously stated
+/// only in one compose (the decided-task author-decision step).
+#[test]
+fn doc_author_help_states_instead_of_never_after() {
+    let help = help_stdout(&["doc", "author", "--help"]);
+    for fragment in ["INSTEAD of", "never after", "rejects the second create"] {
+        assert!(
+            help.contains(fragment),
+            "`doc author --help` must state the ordering hazard fragment \
+             `{fragment}`; got:\n{help}"
+        );
+    }
+}
+
+/// M43 pre-trial surface polish A7 — `doc create --help` states the slug
+/// mint caps, drift-pinned against the engine's `slug` constants (the same
+/// numbers the mint enforces).
+#[test]
+fn doc_create_help_states_the_slug_caps() {
+    let help = help_stdout(&["doc", "create", "--help"]);
+    let caps = format!(
+        "first {} words / {} chars",
+        engine::slug::MAX_WORDS,
+        engine::slug::MAX_CHARS
+    );
+    assert!(
+        help.contains(&caps),
+        "`doc create --help` must state the slug mint caps (`{caps}`) at the \
+         title it binds to; got:\n{help}"
+    );
+}
+
 #[test]
 fn doc_create_help_names_title_literally_and_drops_the_phantom_form() {
     let help = help_stdout(&["doc", "create", "--help"]);

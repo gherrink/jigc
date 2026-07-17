@@ -69,7 +69,11 @@ use crate::file_state::hash_bytes;
 /// trails off into filler. The cut always lands on a `-` boundary, never
 /// mid-word. This is a mint-time cap only; [`is_slug`] is uncapped so a ref to
 /// a pre-existing longer slug still resolves.
-pub(crate) const MAX_WORDS: usize = 5;
+///
+/// `pub` (with [`MAX_CHARS`]) since the M43 pre-trial surface polish: `jigc doc
+/// create --help` states the mint caps as static text, and its drift test pins
+/// the emitted numbers against these constants.
+pub const MAX_WORDS: usize = 5;
 
 /// Character-length backstop, applied *after* the word cap. The word cap alone
 /// leaves a single long word (no `-` to cut on) unbounded, and a minted slug is
@@ -79,7 +83,7 @@ pub(crate) const MAX_WORDS: usize = 5;
 /// length. `50` restores the pre-M39 backstop — well under `NAME_MAX` even with
 /// the `.md` suffix and any `-N` collision suffix. Normal ≤5-word intents sit
 /// far below it, so multi-word behaviour is unchanged.
-pub(crate) const MAX_CHARS: usize = 50;
+pub const MAX_CHARS: usize = 50;
 
 /// The **stated-at statement** of the mint-time caps — the sentence the
 /// `{{schema:<doctype>}}` projection renders at the id-source (`title:`) line,
