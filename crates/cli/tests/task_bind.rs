@@ -436,7 +436,10 @@ fn the_task_state_verbs_ack_their_mutation() {
     );
 
     // `task discard --format json` — the ack names the op + the work unit, carries
-    // `findings: []`, and carries **no** effect key.
+    // `findings: []`, no `discarded` effect key and no `target` — and since the
+    // 2026-07-17 surface review (B3) it enumerates the staged docs the removal
+    // dropped (`dropped`, the `<type>:<slug>` identities): here the task's
+    // provisioned commit doc.
     let discarded = run(
         repo.path(),
         home.path(),
@@ -452,6 +455,11 @@ fn the_task_state_verbs_ack_their_mutation() {
     assert_eq!(ack["op"], "task-discard");
     assert_eq!(ack["task"], task_id);
     assert_eq!(ack["findings"], serde_json::json!([]));
+    assert_eq!(
+        ack["dropped"],
+        serde_json::json!([format!("commit:{task_id}")]),
+        "the discard ack enumerates the dropped staged docs; got:\n{ack}",
+    );
     assert!(
         ack.get("discarded").is_none() && ack.get("target").is_none(),
         "the discard ack carries no effect key and no target; got:\n{ack}",

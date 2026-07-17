@@ -1163,7 +1163,25 @@ pub enum TaskAck {
     /// only ever hold the constant `true`. "Removed" vs "was already gone" is carried one
     /// layer up — exit 0 + this ack vs exit 1 + the error envelope
     /// (`design/command-output-contract.md` §2 → the ⚠ correction).
-    Discarded { task: String },
+    ///
+    /// `dropped` enumerates the **staged docs the removal threw away** (B3, 2026-07-17
+    /// surface review — the style guide's own ack rule, "what a discard threw away":
+    /// the working area's `docs/` set, `<type>:<slug>` identities, sorted). The
+    /// agent-text line marks a transient doctype's instance `(transient)` — it was never
+    /// going to commit as a file anyway; JSON carries the bare identities (an additive
+    /// key, declared in `design/command-output-contract.md` §2).
+    Discarded {
+        task: String,
+        dropped: Vec<DroppedStaged>,
+    },
+}
+
+/// One staged doc a `task discard` threw away: its `<type>:<slug>` identity, plus
+/// whether its doctype is **transient** (no `location:`/`placement:` — the instance
+/// never persists past finalize, so dropping it loses no would-be-committed content).
+pub struct DroppedStaged {
+    pub doc: String,
+    pub transient: bool,
 }
 
 /// Render a successful task-state verb's confirmation ([`TaskAck`]) to the surface
@@ -1179,8 +1197,10 @@ pub fn task_ack(format: Format, ack: &TaskAck) -> String {
                 "op": "task-bind", "task": task, "role": role, "target": target,
                 "findings": [],
             })),
-            TaskAck::Discarded { task } => json(&serde_json::json!({
-                "op": "task-discard", "task": task, "findings": [],
+            TaskAck::Discarded { task, dropped } => json(&serde_json::json!({
+                "op": "task-discard", "task": task,
+                "dropped": dropped.iter().map(|d| d.doc.as_str()).collect::<Vec<_>>(),
+                "findings": [],
             })),
         },
         Format::Agent | Format::Human => match ack {
@@ -1190,7 +1210,26 @@ pub fn task_ack(format: Format, ack: &TaskAck) -> String {
                 address,
                 ..
             } => format!("bound {role} = {address} (task {task})"),
-            TaskAck::Discarded { task } => format!("discarded task {task}"),
+            TaskAck::Discarded { task, dropped } => {
+                if dropped.is_empty() {
+                    format!("discarded task {task}")
+                } else {
+                    let list: Vec<String> = dropped
+                        .iter()
+                        .map(|d| {
+                            if d.transient {
+                                format!("{} (transient)", d.doc)
+                            } else {
+                                d.doc.clone()
+                            }
+                        })
+                        .collect();
+                    format!(
+                        "discarded task {task} — dropped staged edits to: {}",
+                        list.join(", ")
+                    )
+                }
+            }
         },
     }
 }

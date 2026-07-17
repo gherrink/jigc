@@ -359,4 +359,13 @@ fn task_discard_removes_the_working_area_and_exits_zero() {
         !area.exists(),
         "discard must remove `.jigc/tasks/<id>/`; it still exists at {area:?}"
     );
+    // (B3, 2026-07-17 surface review) The ack states what the discard threw away:
+    // the provisioned commit doc was a staged edit silently dropped before; now it is
+    // enumerated, and marked transient (a commit doc never commits as a file anyway).
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("discarded task add-rate-limiter")
+            && stdout.contains("dropped staged edits to: commit:add-rate-limiter (transient)"),
+        "the discard ack enumerates the dropped staged docs; got:\n{stdout}"
+    );
 }

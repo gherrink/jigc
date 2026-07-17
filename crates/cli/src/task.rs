@@ -275,6 +275,7 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> Outcome {
 /// ⚠ correction).
 fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
+    let dropped = dropped_staged_docs(&task);
     std::fs::remove_dir_all(&task.dir)
         .with_context(|| format!("could not discard task `{id}` at {:?}", task.dir))?;
     println!(
@@ -283,10 +284,45 @@ fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
             format,
             &render::TaskAck::Discarded {
                 task: id.to_string(),
+                dropped,
             },
         )
     );
     Ok(())
+}
+
+/// Enumerate the staged docs a `task discard` is about to throw away — the working
+/// area's `docs/<type>:<slug>.md` set, as sorted `<type>:<slug>` identities — so the
+/// ack can state what the removal dropped (B3, 2026-07-17 surface review; the style
+/// guide's ack rule: "what a discard threw away"). Read **before** `remove_dir_all`.
+///
+/// The transient bit rides the resolved schema (no `location:`/`placement:` — the
+/// commit doc): its staged copy was never going to land as a file, so the ack marks
+/// it rather than implying committed content was lost. Best-effort by design: an
+/// unreadable `docs/` dir yields the empty list and a schema-load failure just
+/// leaves the marks off — enumeration must never block the discard itself.
+fn dropped_staged_docs(task: &TaskArea) -> Vec<render::DroppedStaged> {
+    let mut ids: Vec<String> = std::fs::read_dir(task.dir.join("docs"))
+        .map(|entries| {
+            entries
+                .filter_map(|entry| {
+                    let name = entry.ok()?.file_name().into_string().ok()?;
+                    Some(name.strip_suffix(".md")?.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    ids.sort();
+    let schemas = task.schemas().unwrap_or_default();
+    ids.into_iter()
+        .map(|doc| {
+            let ty = doc.split(':').next().unwrap_or("");
+            let transient = schemas
+                .get(ty)
+                .is_some_and(|s| s.location.is_none() && s.placement.is_none());
+            render::DroppedStaged { doc, transient }
+        })
+        .collect()
 }
 
 /// `jigc task bind <role> <addr> <id>` — bind an already-committed doc to one of the
