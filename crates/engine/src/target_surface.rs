@@ -566,10 +566,50 @@ fn scalar(value: &Value, address: &str, guard_findings: &mut Vec<Finding>) -> Op
                      single anchor or add list-element support"
                 ),
                 Some(Location::addressed(address.to_string(), 1, 1)),
-                None,
+                Some(
+                    format!(
+                        "resolve `{address}` to a single code anchor (a list-valued anchor \
+                         is not enumerated) — correct the field value, or add list-element \
+                         support"
+                    )
+                    .into(),
+                ),
             ));
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod multi_valued_anchor_tests {
+    use super::*;
+    use crate::finding::Findings;
+
+    /// The route-floor seam-sweep, exercised through the real `doc-code.multi-valued-anchor`
+    /// guard (M43 surface census): a list-valued `code-anchor` yields no anchor and one
+    /// blocking guard finding that now carries a disambiguation route and drives cleanly
+    /// through the [`Findings`] serialization seam — the traffic whose absence let it ship
+    /// route-less (`DECISIONS.md` 2026-07-17 → the seam-sweep rule).
+    #[test]
+    fn multi_valued_anchor_guard_carries_a_route_through_the_seam() {
+        let mut guard = Vec::new();
+        let anchor = scalar(
+            &Value::List(vec!["a#x".into(), "b#y".into()]),
+            "adr:cache#body/at",
+            &mut guard,
+        );
+        assert!(anchor.is_none(), "a list yields no anchor");
+        assert_eq!(guard.len(), 1, "exactly one guard finding");
+        let route = guard[0]
+            .route
+            .as_ref()
+            .expect("the guard names its recovery");
+        assert!(
+            route.as_str().contains("single code anchor"),
+            "route: {route}"
+        );
+        // A route-less finding would panic the route-floor assert here.
+        serde_json::to_string(&Findings::from(guard)).expect("serializes");
     }
 }
 

@@ -452,7 +452,14 @@ fn provenance_io_finding(unit: Unit, task_dir: &Path, err: &std::io::Error) -> F
             task_dir.display()
         ),
         Some(unit.location()),
-        None,
+        Some(
+            format!(
+                "resolve the read fault on the task provenance manifest under `{}` (a disk \
+                 or permissions problem), then re-run the finalize",
+                task_dir.display()
+            )
+            .into(),
+        ),
     )
 }
 
@@ -877,7 +884,14 @@ fn promote_io_finding(path: &Path, err: &std::io::Error) -> Finding {
             path.display()
         ),
         Some(file_location(path.display())),
-        None,
+        Some(
+            format!(
+                "resolve the read fault on `{}` (a disk or permissions problem), then \
+                 re-run the finalize",
+                path.display()
+            )
+            .into(),
+        ),
     )
 }
 
@@ -917,7 +931,14 @@ fn source_path_io_finding(unit: Unit, task_dir: &Path, err: &std::io::Error) -> 
             task_dir.display()
         ),
         Some(unit.location()),
-        None,
+        Some(
+            format!(
+                "resolve the read fault on the recorded migration source path under `{}` (a \
+                 disk or permissions problem), then re-run the finalize",
+                task_dir.display()
+            )
+            .into(),
+        ),
     )
 }
 
@@ -1102,7 +1123,14 @@ fn render_io_finding(path: &Path, err: &std::io::Error) -> Finding {
             path.display()
         ),
         Some(file_location(path.display())),
-        None,
+        Some(
+            format!(
+                "resolve the read fault on `{}` (a disk or permissions problem), then \
+                 re-run the finalize",
+                path.display()
+            )
+            .into(),
+        ),
     )
 }
 
@@ -1121,6 +1149,35 @@ mod tests {
             .location
             .as_ref()
             .and_then(|location| location.address.as_deref())
+    }
+
+    /// The route-floor seam-sweep, exercised through the real `finalize.*` I/O producers
+    /// (M43 surface census): each I/O fault carries a recovery route and drives cleanly
+    /// through the [`Findings`](crate::finding::Findings) serialization seam — the traffic
+    /// whose absence let all four ship route-less (`DECISIONS.md` 2026-07-17 → the
+    /// seam-sweep rule). A route-less finding would panic the route-floor assert here.
+    #[test]
+    fn finalize_io_findings_carry_a_recovery_route_through_the_seam() {
+        use crate::finding::Findings;
+        let err = || std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let task_dir = Path::new(".jigc/tasks/t1");
+        let findings = vec![
+            render_io_finding(Path::new(".jigc/tasks/t1/commit.md"), &err()),
+            promote_io_finding(Path::new(".jigc/tasks/t1/docs/adr:x.md"), &err()),
+            provenance_io_finding(Unit::Task("t1"), task_dir, &err()),
+            source_path_io_finding(Unit::Task("t1"), task_dir, &err()),
+        ];
+        for f in &findings {
+            assert_eq!(f.severity, Severity::Blocking);
+            let route = f.route.as_ref().expect("an I/O fault names its recovery");
+            assert!(
+                route.as_str().contains("re-run the finalize"),
+                "route names the re-run: {route}"
+            );
+        }
+        // Drives the route-floor + key-uniqueness seams; a route-less finding panics here.
+        let json = serde_json::to_string(&Findings::from(findings)).expect("findings serialize");
+        assert!(json.contains("finalize.render-io"));
     }
 
     /// A no-delta resolved cascade — the post-pass leaves every emitted severity

@@ -1266,4 +1266,361 @@ mod tests {
         let back: Finding = serde_json::from_value(json).expect("deserializes");
         assert_eq!(back, block);
     }
+
+    /// **The route-floor seam-sweep** — the load-bearing half of closing the route-fence
+    /// class, discharging the rule the M43 retrospective minted (`DECISIONS.md` 2026-07-17 →
+    /// the seam-sweep rule: *a fence landing at a seam owes, in the same increment, a sweep
+    /// that pushes every existing producer through that seam — or an argued enumeration of the
+    /// producers that cannot reach it*). The route floor's presence half rides
+    /// [`Finding`]'s `Serialize`, so its strength is exactly the suite's *traffic* through the
+    /// seam — and route-floor violations shipped under a green suite precisely because certain
+    /// producers were never driven through serde (four at M43 completion; seven more found in
+    /// the M43 surface census — all four `finalize.*` I/O faults, `doc-code.multi-valued-anchor`,
+    /// `milestone.area-io`, `task.working-area-io`, two of which render only via `Display` and
+    /// so **structurally cannot** reach the serialize seam).
+    ///
+    /// A per-producer census of *tests* would rot as producers are added. This closes the class
+    /// at the **construction source** instead: it scans the engine's own production source for
+    /// every `Finding::graded(Severity::Blocking, …, None)` and every `Finding::blocking(…)`
+    /// (route-less by definition) and asserts each carries a route-exempt code. A new blocking
+    /// producer that ships route-less — whether or not any test ever serializes it — fails here,
+    /// so it must declare its bucket: route it, or (only if it is a purely-positional parser
+    /// diagnostic) place its code under [`is_route_exempt`]. Bound: engine scope only (the
+    /// contract's home crate; the CLI's few direct producers route through helpers), and it
+    /// reads `code` string literals — a route-less blocking finding built with a non-literal
+    /// code is flagged for manual bucketing rather than resolved.
+    #[test]
+    fn every_production_blocking_finding_is_routed_or_exempt() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        collect_rs(&src, &mut files);
+        assert!(
+            !files.is_empty(),
+            "found no engine source to scan under {src:?}"
+        );
+
+        let mut examined = 0usize;
+        let mut violations = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).expect("read source");
+            let code = production_code(&text);
+            scan_blocking_constructors(&code, file, &mut examined, &mut violations);
+        }
+
+        // Sanity floor: the engine builds dozens of blocking findings, so an empty
+        // `violations` is only trustworthy if the source lexer actually reached them. If a
+        // lexer regression silently dropped every call site, this fires before the emptiness
+        // could read as a false all-clear.
+        assert!(
+            examined >= 30,
+            "the seam-sweep scan examined only {examined} blocking constructors — the source \
+             lexer likely regressed"
+        );
+        assert!(
+            violations.is_empty(),
+            "these PRODUCTION sites construct a route-less, non-exempt blocking finding — a \
+             blocked gate that names no recovery (design/surface-contract.md → The route fence; \
+             DECISIONS.md 2026-07-17 → the seam-sweep rule). Route each (name its recovery), or \
+             — only for a purely-positional parser diagnostic — place its code under \
+             `is_route_exempt`:\n{}",
+            violations.join("\n"),
+        );
+    }
+
+    /// Recursively collect `.rs` files under `dir` — the seam-sweep scan's file set.
+    fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("read dir") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                collect_rs(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    /// Neutralize a source byte that would confuse paren-/comma-matching if it hid inside a
+    /// string or char literal — every structural byte becomes a space; a finding `code`
+    /// literal (only letters, digits, `.`, `-`) is untouched.
+    fn neutralize(c: u8) -> u8 {
+        match c {
+            b'(' | b')' | b'{' | b'}' | b'[' | b']' | b',' | b';' => b' ',
+            _ => c,
+        }
+    }
+
+    /// A view of Rust source with **comments and `#[cfg(test)] mod … {…}` blocks removed** and
+    /// the structural bytes inside string / char literals neutralized (see [`neutralize`]) — so
+    /// the constructor scan never trips on a brace in a test fixture, a comment, or a message
+    /// string, while a finding's `code` literal survives verbatim. Not a full parser: it handles
+    /// line / nested-block comments, normal and raw (`r#"…"#`) strings, and byte/char literals
+    /// (disambiguated from lifetimes) — the whole alphabet the engine's source uses here.
+    fn production_code(text: &str) -> String {
+        let b = text.as_bytes();
+        let n = b.len();
+        let mut out = String::new();
+        let mut i = 0usize;
+        let mut depth = 0usize;
+        // Brace depths at which an open `#[cfg(test)] mod … {` region began; source is test
+        // code while any marker is live. A stack tolerates (rare) nesting.
+        let mut test_markers: Vec<usize> = Vec::new();
+        let mut pending_test = false;
+        let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+        while i < n {
+            let in_test = !test_markers.is_empty();
+            let c = b[i];
+            // Line comment.
+            if c == b'/' && i + 1 < n && b[i + 1] == b'/' {
+                i += 2;
+                while i < n && b[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            // Block comment (Rust block comments nest).
+            if c == b'/' && i + 1 < n && b[i + 1] == b'*' {
+                let mut d = 1usize;
+                i += 2;
+                while i < n && d > 0 {
+                    if b[i] == b'/' && i + 1 < n && b[i + 1] == b'*' {
+                        d += 1;
+                        i += 2;
+                    } else if b[i] == b'*' && i + 1 < n && b[i + 1] == b'/' {
+                        d -= 1;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                continue;
+            }
+            // Raw string: `(b)? r #* "` … `" #*` (boundary-guarded so `for` / `br` in idents
+            // do not match).
+            {
+                let boundary = i == 0 || !is_ident(b[i - 1]);
+                let mut p = i;
+                if boundary && p < n && b[p] == b'b' {
+                    p += 1;
+                }
+                if boundary && p < n && b[p] == b'r' {
+                    let mut h = 0usize;
+                    let mut q = p + 1;
+                    while q < n && b[q] == b'#' {
+                        h += 1;
+                        q += 1;
+                    }
+                    if q < n && b[q] == b'"' {
+                        let mut k = q + 1;
+                        loop {
+                            if k >= n {
+                                break;
+                            }
+                            if b[k] == b'"' {
+                                let mut hh = 0usize;
+                                while k + 1 + hh < n && b[k + 1 + hh] == b'#' {
+                                    hh += 1;
+                                }
+                                if hh >= h {
+                                    k = k + 1 + h;
+                                    break;
+                                }
+                            }
+                            k += 1;
+                        }
+                        if !in_test {
+                            out.push(' ');
+                        }
+                        i = k;
+                        continue;
+                    }
+                }
+            }
+            // Normal string.
+            if c == b'"' {
+                let mut k = i + 1;
+                let mut buf = String::from('"');
+                while k < n {
+                    if b[k] == b'\\' && k + 1 < n {
+                        buf.push('\\');
+                        buf.push(neutralize(b[k + 1]) as char);
+                        k += 2;
+                        continue;
+                    }
+                    if b[k] == b'"' {
+                        buf.push('"');
+                        k += 1;
+                        break;
+                    }
+                    buf.push(neutralize(b[k]) as char);
+                    k += 1;
+                }
+                if !in_test {
+                    out.push_str(&buf);
+                }
+                i = k;
+                continue;
+            }
+            // Char / byte literal vs. lifetime.
+            {
+                let mut p = i;
+                if c == b'b' && i + 1 < n && b[i + 1] == b'\'' {
+                    p += 1;
+                }
+                if p < n && b[p] == b'\'' {
+                    let is_char =
+                        (p + 1 < n && b[p + 1] == b'\\') || (p + 2 < n && b[p + 2] == b'\'');
+                    if is_char {
+                        let mut k = p + 1;
+                        if k < n && b[k] == b'\\' {
+                            k += 2;
+                        } else {
+                            k += 1;
+                        }
+                        if k < n && b[k] == b'\'' {
+                            k += 1;
+                        }
+                        if !in_test {
+                            out.push(' ');
+                        }
+                        i = k;
+                        continue;
+                    }
+                    // Otherwise a lifetime (`'a`, `'_`, `'static`) — fall through and emit `'`.
+                }
+            }
+            // `#[cfg(test)]` — arm the next brace as a test-region opener.
+            if b[i..].starts_with(b"#[cfg(test)]") {
+                pending_test = true;
+                i += "#[cfg(test)]".len();
+                continue;
+            }
+            if c == b'{' {
+                depth += 1;
+                if pending_test {
+                    test_markers.push(depth);
+                    pending_test = false;
+                }
+                if test_markers.is_empty() {
+                    out.push('{');
+                }
+                i += 1;
+                continue;
+            }
+            if c == b'}' {
+                if test_markers.is_empty() {
+                    out.push('}');
+                }
+                if test_markers.last() == Some(&depth) {
+                    test_markers.pop();
+                }
+                depth = depth.saturating_sub(1);
+                i += 1;
+                continue;
+            }
+            if !in_test {
+                out.push(c as char);
+            }
+            i += 1;
+        }
+        out
+    }
+
+    /// Split a call's argument text on **top-level** commas (depth-0 across `()[]{}`), trimming
+    /// and dropping the empty tail a trailing comma leaves.
+    fn top_level_split(s: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut depth = 0i32;
+        let mut last = 0usize;
+        for (k, c) in s.char_indices() {
+            match c {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                ',' if depth == 0 => {
+                    parts.push(s[last..k].to_string());
+                    last = k + 1;
+                }
+                _ => {}
+            }
+        }
+        parts.push(s[last..].to_string());
+        parts
+            .into_iter()
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect()
+    }
+
+    /// The first `"…"` literal inside `arg` (the finding `code`), or `None` for a non-literal.
+    fn extract_str_lit(arg: &str) -> Option<String> {
+        let start = arg.find('"')?;
+        let rest = &arg[start + 1..];
+        let end = rest.find('"')?;
+        Some(rest[..end].to_string())
+    }
+
+    /// Find every `Finding::graded(…)` / `Finding::blocking(…)` in the production `code` view and
+    /// record any that constructs a route-less, non-[`is_route_exempt`] **blocking** finding.
+    fn scan_blocking_constructors(
+        code: &str,
+        file: &std::path::Path,
+        examined: &mut usize,
+        violations: &mut Vec<String>,
+    ) {
+        let bytes = code.as_bytes();
+        for (marker, is_graded) in [("Finding::graded(", true), ("Finding::blocking(", false)] {
+            let mut from = 0usize;
+            while let Some(rel) = code[from..].find(marker) {
+                let open = from + rel + marker.len() - 1; // index of the '('
+                let mut d = 0i32;
+                let mut j = open;
+                let mut close = code.len();
+                while j < bytes.len() {
+                    match bytes[j] {
+                        b'(' => d += 1,
+                        b')' => {
+                            d -= 1;
+                            if d == 0 {
+                                close = j;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                from = (open + 1).max(close);
+                let args = top_level_split(&code[open + 1..close]);
+                *examined += 1;
+
+                let is_blocking = if is_graded {
+                    args.first()
+                        .is_some_and(|a| a.contains("Severity::Blocking"))
+                } else {
+                    true
+                };
+                if !is_blocking {
+                    continue;
+                }
+                let route_less = if is_graded {
+                    args.last().is_some_and(|a| a == "None")
+                } else {
+                    // `Finding::blocking` is route-less by construction.
+                    true
+                };
+                if !route_less {
+                    continue;
+                }
+                let code_arg = if is_graded { args.get(1) } else { args.first() };
+                let finding_code = code_arg.and_then(|a| extract_str_lit(a));
+                let exempt = finding_code.as_deref().is_some_and(is_route_exempt);
+                if !exempt {
+                    let shown = finding_code.unwrap_or_else(|| "<non-literal code>".to_string());
+                    violations.push(format!(
+                        "  {}: {marker}… {shown}, route=None",
+                        file.display()
+                    ));
+                }
+            }
+        }
+    }
 }

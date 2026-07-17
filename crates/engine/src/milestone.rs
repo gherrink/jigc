@@ -1925,7 +1925,11 @@ fn io_finding(id: &str, doing: &str, err: &std::io::Error) -> Finding {
         "milestone.area-io",
         format!("could not {doing} for milestone `{id}`: {err}"),
         Some(Location::addressed(format!("milestone:{id}"), 1, 1)),
-        None,
+        Some(
+            "resolve the underlying I/O condition (a disk or permissions problem on the \
+             `.jigc/` milestone area), then re-run the command"
+                .into(),
+        ),
     )
 }
 
@@ -1933,6 +1937,27 @@ fn io_finding(id: &str, doing: &str, err: &std::io::Error) -> Finding {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// The route-floor seam-sweep, exercised through the real `milestone.area-io` producer
+    /// (M43 surface census): the mint I/O fault carries a recovery route and drives cleanly
+    /// through the [`Findings`] serialization seam — the traffic whose absence let it ship
+    /// route-less (`DECISIONS.md` 2026-07-17 → the seam-sweep rule).
+    #[test]
+    fn area_io_finding_carries_a_recovery_route_through_the_seam() {
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let finding = io_finding("cache-rework", "open the milestone area", &err);
+        assert_eq!(finding.severity, Severity::Blocking);
+        let route = finding
+            .route
+            .as_ref()
+            .expect("an I/O fault names its recovery");
+        assert!(
+            route.as_str().contains("re-run the command"),
+            "route: {route}"
+        );
+        // A route-less finding would panic the route-floor assert here.
+        serde_json::to_string(&Findings::from(vec![finding])).expect("serializes");
+    }
 
     /// A throwaway directory that removes itself on drop — keeps mint tests off
     /// any real `.jigc/` tree (mirrors `state.rs`'s `TempRoot`).
