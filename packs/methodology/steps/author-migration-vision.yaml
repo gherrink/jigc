@@ -1,3 +1,6 @@
+---
+states-constraints: [create.singleton-copy-in]
+---
 Migrate the foreign vision document into the managed `vision` singleton — the project's
 charter. Below is the foreign source the CLI staged for you (read-only context — you
 author the canonical record through the write verbs, you never edit this file or place
@@ -11,6 +14,14 @@ stays exactly as written; the CLI owns the placement) and places every prose slo
 a single staged buffer:
 
 {{ schema:vision }}
+
+If a `vision` is ALREADY committed in the store (a re-run, or one adopted earlier),
+the CLI does not mint a fresh one — it copies the committed body in as your edit
+base, so each slot you set below OVERWRITES the committed prose rather than starting
+blank. Author against what is already there; you are editing the committed doc, not
+replacing it wholesale. The lone exception is a same-path migration — when the
+foreign file you are migrating IS the canonical `VISION.md` — where the CLI seeds a
+blank skeleton and your authoring rebuilds the whole doc.
 
 Map the foreign document's headings onto the schema above:
 

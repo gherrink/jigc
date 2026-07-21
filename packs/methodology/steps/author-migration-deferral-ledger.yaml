@@ -1,3 +1,6 @@
+---
+states-constraints: [create.singleton-copy-in]
+---
 Migrate the foreign owed-and-when record into the managed `deferral-ledger`
 singleton — the running ledger of deferred decisions and parked ideas. Below is the
 foreign source the CLI staged for you (read-only context — you author the canonical
@@ -11,6 +14,15 @@ The target schema and its batch payload, both generated from the resolved
 and mints every entry over a single staged buffer:
 
 {{ schema:deferral-ledger }}
+
+If a `deferral-ledger` is ALREADY committed in the store (a re-run, or one adopted
+earlier), the CLI does not mint a fresh one — it copies the committed body in as
+your edit base, so the entries you author below APPEND to those already there and
+any slot you set overwrites. Re-author only what the foreign source adds; an entry
+the committed doc already holds would double. The lone exception is a same-path
+migration — when the foreign file you are migrating IS the canonical
+`docs/deferral-ledger.md` — where the CLI seeds a blank skeleton and your authoring
+rebuilds the whole doc.
 
 Re-author every DEFERRAL from the foreign record, oldest first, as one item under
 `entries`. Fill its fields mechanically:

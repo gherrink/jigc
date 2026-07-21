@@ -1484,6 +1484,76 @@ mod tests {
         );
     }
 
+    /// (M44 Inc 6 T1) Every migrate author step that solicits a **singleton**
+    /// doctype's authoring — its body carries a `{{schema:<T>}}` ref with `T`
+    /// declared `singleton: true` — states the copy-in/append constraint and
+    /// declares its code (`create.singleton-copy-in`) in `states-constraints:`
+    /// front-matter (the D5 path-local-guidance owe-set; `design/surface-contract.md`
+    /// → The stated-at fence). Checked over both shipped packs: the dev-only
+    /// embedded surface (owes `changelog`) and the composed `[dev ▸ methodology]`
+    /// surface (owes `changelog` + `roadmap`/`decisions-log`/`deferral-ledger`/
+    /// `vision`). The enforcing pack-load fence lands in T2, so this change adds
+    /// no fence and both shipped surfaces still load unchanged.
+    #[test]
+    fn singleton_migrate_author_steps_declare_the_copy_in_constraint() {
+        const COPY_IN_CODE: &str = "create.singleton-copy-in";
+
+        /// Extract every `<T>` from a body's `{{schema:<T>}}` refs (whitespace-tolerant,
+        /// the same `schema:`-prefix the compose seam strips).
+        fn schema_refs(body: &str) -> Vec<String> {
+            let mut out = Vec::new();
+            let mut rest = body;
+            while let Some(open) = rest.find("{{") {
+                rest = &rest[open + 2..];
+                let Some(close) = rest.find("}}") else { break };
+                let inner = rest[..close].trim();
+                if let Some(ty) = inner.strip_prefix("schema:") {
+                    out.push(ty.trim().to_string());
+                }
+                rest = &rest[close + 2..];
+            }
+            out
+        }
+
+        /// Step ids whose body solicits a singleton doctype yet omit the copy-in code.
+        fn offenders(pack: &dyn PackSource) -> Vec<String> {
+            let mut missing = Vec::new();
+            for id in pack.list(PackResourceKind::Steps) {
+                let bytes = pack
+                    .read(PackResourceKind::Steps, &id)
+                    .expect("step is readable");
+                let def = engine::compose::load_step_def(id.as_str(), &bytes)
+                    .expect("step front-matter parses");
+                let solicits_singleton = schema_refs(&def.body).into_iter().any(|ty| {
+                    pack.read(PackResourceKind::Schemas, &ResourceId::from(ty.as_str()))
+                        .ok()
+                        .and_then(|b| load_pack_schema(pack, &b).ok())
+                        .is_some_and(|s| s.singleton)
+                });
+                if solicits_singleton && !def.states_constraints.iter().any(|c| c == COPY_IN_CODE) {
+                    missing.push(id.as_str().to_string());
+                }
+            }
+            missing
+        }
+
+        let dev = EmbeddedPack::new();
+        assert_eq!(offenders(&dev), Vec::<String>::new(), "dev pack");
+
+        let composed = CompositePack::new(vec![
+            Box::new(EmbeddedPack::new()),
+            Box::new(EmbeddedPack::methodology()),
+        ]);
+        assert_eq!(
+            offenders(&composed),
+            Vec::<String>::new(),
+            "composed [dev ▸ methodology]",
+        );
+
+        // T1 adds no fence (that is T2), so the shipped embedded surface still loads.
+        make_pack().expect("the embedded pack loads");
+    }
+
     #[test]
     fn step_locate_body_is_canonical() {
         let pack = EmbeddedPack::new();
