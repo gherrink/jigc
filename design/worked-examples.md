@@ -2868,3 +2868,69 @@ $ jigc doc list
 7. **The enum-members line is generated and adjacent.** The composed `Run:` line for the commit `type` field is followed **immediately** by `` The `type` value is one of: … `` — generated from `Field.of`, never hand-enumerated, and outside the backticked span so the command stays copy-runnable.
 8. **`doc create` discriminates created-vs-existed.** A fresh create acks `existed: false` (the key always present); a second task's create over the committed same slug **copies the committed body into the working area** and acks `existed: true` — the promote-clobber ambush dissolves into the M16 create-or-update intent.
 9. **An empty store says so.** `jigc doc list` over an empty store prints the empty-set line at exit 0 — never zero bytes — while the pinned `--format json` wrapper stays prose-free (`{"docs": []}`).
+
+## 45. The M44 rc.8 wave, end-to-end — the capabilities behave like the gates (M44)
+
+The M44 rc.8 wave answers the rc.7 discoverability rerun's verified findings ([completions/artifacts/RC-adoption/rerun-rc7/findings-verification.md](../completions/artifacts/RC-adoption/rerun-rc7/findings-verification.md)) under the settled decomposition — increments 1–7 prove each feature per-feature; this flow is the **composite acceptance** tying them into seven done-picture arms over the real binary (`crates/cli/tests/flow45_acceptance.rs`). **The claim it proves is one claim: the capabilities behave like the gates — every capability an agent had to *reach for* is now preloaded into the context it can't avoid, or surfaced at the moment of relevance.** M43 made the printed surfaces truthful; M44 makes the *pull* as reliable as the push: the mechanism the rerun named is *the model is reliable at push, unreliable at pull*, so each arm below is a capability that existed on rc.7 and that no agent found — now preloaded (arm 4), surfaced at the moment of relevance (arms 2, 3, 5), or made deterministic where an id collision, a false alarm, or a missing statement leaked (arms 1, 6, 7). The designs of record live elsewhere and are not restated here: the per-file migration id derivation in [storage.md](storage.md) → Identity and [auto-migration.md](auto-migration.md) → Hardening #9; the `write.*` route split in [validation.md](validation.md) and [surface-contract.md](surface-contract.md) law 2; the preview read surface in [surface-contract.md](surface-contract.md) law 2; the AGENT.md preload tier in [assistant-adapter.md](assistant-adapter.md) and the producer set it matches in [command-output-contract.md](command-output-contract.md) §1; the from-knowledge adr door's honest bounds (plain `finalize`, not `migration-finalize`) in [auto-migration.md](auto-migration.md); the per-soliciting-step stated-at fence in [surface-contract.md](surface-contract.md); the fidelity boundary-guard + report-split in [auto-migration.md](auto-migration.md) → Hardening #5. All arms run in a real-`jigc setup` repo — the `[dev ▸ methodology]` pack-set a dogfooding project ships. Notation illustrative.
+
+**The declared proof split** ([surface-contract.md](surface-contract.md) → How each fence is proven): the arms below prove the wave's *behaviour changes* through the shipped binary. Arm 6 is the **release-real pack-load fence** — it cannot trip in a plain flow arm without an injected defect, so it proves via a mutated-filesystem-pack copy through the real binary (the `stated_at_fence.rs` mold). The **debug-posture fences** (route-construction parse, finding-key discrimination) prove at the seam and are not re-proven here.
+
+### The walk — seven arms, one wave
+
+```text
+# ── Arm 1 · two long-slug migrations in ONE directory mint distinct, attributable ids. ──
+$ jigc migrate docs/adr/adopt-the-new-caching-layer-for-reads.md  --as adr
+> task minted: migrate-adr-docs-adr-adopt-the-new-<hashA>
+$ jigc migrate docs/adr/adopt-the-new-caching-layer-for-writes.md --as adr
+> task minted: migrate-adr-docs-adr-adopt-the-new-<hashB>   # same slug window, distinct blake3(path)
+$ jigc migrate docs/adr/adopt-the-new-caching-layer-for-reads.md  --as adr   # the SAME path
+> task `migrate-adr-docs-adr-adopt-the-new-<hashA>` is already active … resume with `jigc start --task …`
+
+# ── Arm 2 · a not-present write routes to a FOLLOWABLE containing-section read. ──
+$ jigc doc remove-item changelog:changelog#releases/9-9-9 --format json
+> blocking · write.not-present
+>   route: `jigc doc show changelog:changelog#releases --task cut-the-release`
+$ jigc doc show changelog:changelog#releases --task cut-the-release   # the emitted route, verbatim
+> … 1-3-0 …                                          # the section's REAL item ids revealed
+
+# ── Arm 3 · the preview composes step text WITHOUT minting. ──
+$ jigc workflow single-task --preview
+> no task minted — run `jigc start --workflow single-task` to mint …   # the mint-first banner (law 3)
+> … --task your-task-id …                            # the identity, never a fictional real id (law 1)
+# no `task minted:` line, no .jigc/tasks/* directory written
+$ jigc --format json workflow single-task --preview
+> { "task": null, "text": "…" }                      # the pinned {task, text} contract
+
+# ── Arm 4 · a generated AGENT.md carries the machine-output paragraph + the read rule. ──
+$ cat .jigc/AGENT.md
+> Every verb speaks `--format json` … the composed producers — `jigc start`, `jigc workflow`,
+> `jigc migrate` — return the minted task id at `.task`; read it there, never from the human line.
+> … to learn how `jigc` itself behaves, ask the installed binary … never a checked-out jigc or pack source tree.
+
+# ── Arm 5 · a from-knowledge adr, fresh on-create date, PLAIN finalize. ──
+$ jigc start --workflow record-decision "adopt blake3 for content hashing"
+> … jigc doc create adr …                            # no foreign source, no transcribe/supersedes prose
+$ jigc task finalize adopt-blake3-for-content-hashing   # PLAIN — no --approve, no review-hold
+# git show HEAD:docs/decisions/adopt-blake3.md → date: <today>   # a FRESH on-create stamp
+
+# ── Arm 6 · a singleton-authoring step lacking the copy-in statement reddens pack-load. ──
+# (a dev-pack copy with author-migration's `states-constraints:` stripped)
+$ JIGC_PACK_DIR=<mutated> jigc start --workflow single-task "probe"
+> error … step `author-migration` references {{schema:changelog}} but does not declare
+>         `create.singleton-copy-in` in states-constraints:                # blocked at pack-load
+
+# ── Arm 7 · project-alpha-2.0 is NOT flagged by the fidelity scan. ──
+$ jigc migrate docs/decisions/adopt-the-dashboard.md --as adr   # foreign Context mentions project-alpha-2.0
+$ jigc task finalize <task>                           # exit 4 — the review renders the fidelity summary
+> version-like token absent from the rewrite: (none)   # `2.0` glued to `dashboard-` is a slug, not a version
+```
+
+### What it asserts (the M44-wave acceptance bar — flow45_acceptance.rs)
+
+1. **Two long-slug migrations in one directory mint distinct, attributable ids.** Two source paths whose first-`MAX_WORDS` slug window collides (two long filenames in one directory sharing their leading words) mint ids that share the capped window `migrate-adr-docs-adr-adopt-the-new` but differ in the trailing 12-hex `blake3(path)` disambiguator; the same file re-derives the same id and serial-collides into the resume route (never a double-mint). Red on rc.7: the legible slug alone drove the id, so the mint's re-slugify cap collapsed two long same-window paths onto one — a serial collision, a lost migration.
+2. **A `write.not-present` routes to a followable containing-section read.** A `remove-item` at a not-yet-minted release id blocks with `write.not-present` routed at `jigc doc show changelog:changelog#releases --task <id>`; running that emitted command **verbatim** resolves and reveals the section's real item ids. Red on rc.7: `write.not-present` shared the shape-question arm, so the route named the *shape* (`doc schema`) and never the corpus's real ids — a dead end.
+3. **The preview composes step text without minting.** `jigc workflow single-task --preview` exits 0 with the mint-first banner and the `your-task-id` identity, provisions **no** `.jigc/tasks/*` directory, and its `--format json` serve is the pinned `{task, text}` contract with `task: null`. Red on rc.7: a mutation-cautious agent could not read what a work-minting workflow would ask of it without consenting to mint.
+4. **A generated `AGENT.md` carries the machine-output paragraph + the read rule.** The managed `.jigc/AGENT.md` `jigc setup` writes states that every verb speaks `--format json` on a successful/validation outcome, that the composed producers `start`/`workflow`/`migrate` return the id at `.task` (never scraped from the human line), and that jigc's own behaviour is learned from the installed binary, never a checked-out jigc/pack source tree. Red on rc.7: those facts lived nowhere preloaded, so the model reached for them and missed.
+5. **A from-knowledge adr lands with a fresh on-create date via plain finalize.** `record-decision` mints, its composed step names **no** foreign source (none of the `author-migration-adr` transcribe/supersedes prose), and authoring the three slots then **plain** `jigc task finalize` (no `--approve`, no review-hold) commits one adr at `docs/decisions/adopt-blake3.md` carrying today's on-create stamp — never a transcribed foreign date. Red on rc.7: the flagship doctype's sole-channel hole — an adr was authorable only inside a code task or a foreign migration.
+6. **A singleton-authoring step lacking the copy-in statement reddens pack-load.** A dev-pack copy whose `author-migration` step (soliciting the `changelog` singleton via `{{schema:changelog}}`) withdrew its `states-constraints: [create.singleton-copy-in]` declaration makes the composing `jigc start` exit non-zero, naming the offending step and the undeclared `create.singleton-copy-in` code. The path-local copy-in guidance is caught by construction from the enumerable `{{schema:<singleton>}}` signal the step already renders, not by author diligence.
+7. **`project-alpha-2.0` is not flagged by the fidelity scan.** A migration whose foreign Context mentions `project-alpha-2.0` and whose rewrite omits it renders the review-gate fidelity summary's bare-token line as `(none)` — the `2.0` glued to `dashboard-` is a slug/identifier fragment, not a droppable version token. Red on rc.7: the scan cried wolf on `2.0`, false-alarming the operator's most-checked advisory surface on a slug.
