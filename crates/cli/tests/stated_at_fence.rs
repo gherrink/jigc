@@ -17,6 +17,15 @@
 //! precedent). Honest bound: the fence proves presence-of-obligation, never
 //! prose quality.
 //!
+//! The M44 Inc 6 **per-soliciting-step tier** (D5 — the path-local-guidance
+//! owe-set) rides the same molds: a step whose body references
+//! `{{schema:<T>}}` with `T` a **singleton** doctype (a create-or-update
+//! singleton author solicit) must declare `create.singleton-copy-in` in its
+//! `states-constraints:` front-matter — the owe-set is derived from the
+//! enumerable structural signal the step already renders, so a template that
+//! omits the copy-in/append statement reddens at pack-load, not by author
+//! diligence.
+//!
 //! This drives the **real `jigc` binary** end-to-end — the emitted exit code +
 //! stderr are the contract (the `freeze_enforcement.rs` /
 //! `suppression_fence.rs` pattern).
@@ -293,6 +302,104 @@ fn a_manifest_less_pack_is_unchecked() {
     assert!(
         out.status.success(),
         "a manifest-less pack must be outside the stated-at fence; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M44 Inc 6 — the per-soliciting-step tier (D5): a `{{schema:<T>}}`-derived
+// owe-set. A step soliciting a **singleton** doctype's authoring must declare
+// `create.singleton-copy-in`.
+// ---------------------------------------------------------------------------
+
+/// The per-soliciting-step fence: a dev-pack copy whose singleton-authoring
+/// migrate step (`author-migration`, soliciting the `changelog` singleton via
+/// `{{schema:changelog}}`) withdrew its
+/// `states-constraints: [create.singleton-copy-in]` declaration is **blocked at
+/// pack-load** — the composing `jigc start` exits non-zero, and stderr names the
+/// undeclared step and the `create.singleton-copy-in` code.
+#[test]
+fn a_stripped_singleton_copy_in_declarer_is_blocked_at_pack_load() {
+    let repo = TempDir::new("ci-repo");
+    let home = TempDir::new("ci-home");
+    let pack = pack_copy("ci-strip", &embedded_pack_tree());
+    init_repo(repo.path());
+    strip_states_constraints(pack.path(), "author-migration");
+
+    let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a singleton-authoring step missing the copy-in declarer must make `jigc start` \
+         exit non-zero; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("create.singleton-copy-in"),
+        "stderr must name the undeclared `create.singleton-copy-in` code; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("author-migration"),
+        "stderr must name the offending `author-migration` step; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("states-constraints"),
+        "stderr must name the missing `states-constraints:` declaration; got:\n{stderr}",
+    );
+}
+
+/// Per-origin isolation: a *listed* methodology-pack copy whose
+/// `author-migration-roadmap` step (soliciting the `roadmap` singleton) withdrew
+/// its copy-in declarer blocks at pack-load too — the singleton resolves within
+/// its own origin pack, so the fence fires per manifest-shipping constituent.
+#[test]
+fn a_stripped_singleton_copy_in_blocks_through_the_listed_pack_path() {
+    let repo = TempDir::new("mci-repo");
+    let home = TempDir::new("mci-home");
+    let pack = pack_copy("mci-strip", &methodology_pack_tree());
+    init_repo(repo.path());
+    strip_states_constraints(pack.path(), "author-migration-roadmap");
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.path().display()),
+    )
+    .expect("write packs.yaml naming the methodology copy");
+
+    let out = run_embedded(repo.path(), home.path(), START);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a listed pack whose singleton-authoring step dropped the copy-in declarer must \
+         block; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("create.singleton-copy-in"),
+        "stderr must name the undeclared `create.singleton-copy-in` code; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("author-migration-roadmap"),
+        "stderr must name the offending `author-migration-roadmap` step; got:\n{stderr}",
+    );
+}
+
+/// The omitting context: a **manifest-less** pack is outside the per-soliciting-step
+/// fence too — the *same* stripped copy-in declarer that the manifest-bearing copy
+/// blocks on loads clean once `config/schema-manifest.yaml` is dropped.
+#[test]
+fn a_singleton_copy_in_manifest_less_pack_is_unchecked() {
+    let repo = TempDir::new("nmci-repo");
+    let home = TempDir::new("nmci-home");
+    let pack = pack_copy("nmci", &embedded_pack_tree());
+    init_repo(repo.path());
+    strip_states_constraints(pack.path(), "author-migration");
+    fs::remove_file(pack.path().join("config").join("schema-manifest.yaml"))
+        .expect("drop the freeze manifest");
+
+    let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
+    assert!(
+        out.status.success(),
+        "a manifest-less pack must be outside the per-soliciting-step fence; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
 }

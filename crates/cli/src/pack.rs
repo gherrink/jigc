@@ -420,6 +420,100 @@ fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The copy-in/append contract's declared identifier (M44 Inc 6, D5 —
+/// `design/surface-contract.md` → The stated-at fence, per-soliciting-step tier):
+/// a step that solicits a **singleton** doctype's authoring must state that an
+/// already-committed singleton is copied in as the edit base (authored items
+/// append / slots overwrite), so the constraint is stated where it binds instead
+/// of first surfacing when an authored item doubles (an ambush). Code-side beside
+/// its assert — the obligation is jigc's, not the pack author's — and **not** a
+/// minted `Finding` code (its production surface is the migrate step's own guide
+/// prose, per the A-3 presence-only tier); the string serves as the declared
+/// identifier the fence checks for.
+const SINGLETON_COPY_IN_CODE: &str = "create.singleton-copy-in";
+
+/// Extract every `<T>` from a step body's `{{schema:<T>}}` references — the same
+/// `schema:`-prefix the compose seam strips (`engine::compose` → the schema
+/// projection). Whitespace-tolerant inside the braces and around the type id.
+fn schema_refs(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = body;
+    while let Some(open) = rest.find("{{") {
+        rest = &rest[open + 2..];
+        let Some(close) = rest.find("}}") else { break };
+        let inner = rest[..close].trim();
+        if let Some(ty) = inner.strip_prefix("schema:") {
+            out.push(ty.trim().to_owned());
+        }
+        rest = &rest[close + 2..];
+    }
+    out
+}
+
+/// **The stated-at fence, per-soliciting-step tier (law 3, D5)** —
+/// `design/surface-contract.md` → The stated-at fence: every step whose body
+/// references `{{schema:<T>}}` where `T` is a **singleton** doctype (a
+/// create-or-update singleton author solicit) must declare
+/// [`SINGLETON_COPY_IN_CODE`] in its `states-constraints:` front-matter, so the
+/// copy-in/append constraint is stated where the authoring is solicited rather
+/// than first surfacing when an authored item doubles.
+///
+/// The owe-set is **derived from the enumerable structural signal the step
+/// already renders** (the `{{schema:<T>}}` ref × `T`'s `singleton` flag — B2-baked:
+/// no separate `authors-into:` marker to drift), so a soliciting template that
+/// omits the statement reddens at pack-load, not by author diligence. Scope
+/// mirrors [`assert_stated_at`]: manifest-shipping constituents, each checked in
+/// isolation; **per-origin schema resolution suffices** — each soliciting step
+/// references a singleton of its own origin pack (the composition model's
+/// cross-pack solicit does not arise for these five steps). Presence-only (A-3):
+/// proves the obligation is carried, never that the prose is good. A manifest-less
+/// pack stays on skip-on-absent.
+fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
+    for owner in pack.origin_packs(PackResourceKind::Config, &manifest_id) {
+        for id in owner.list(PackResourceKind::Steps) {
+            let bytes = owner
+                .read(PackResourceKind::Steps, &id)
+                .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
+            let def = engine::compose::load_step_def(id.as_str(), &bytes).map_err(|finding| {
+                anyhow::anyhow!(
+                    "pack-load step-front-matter sweep failed on `{}`: {}",
+                    id.as_str(),
+                    finding.message,
+                )
+            })?;
+            let solicits_singleton = schema_refs(&def.body).iter().any(|ty| {
+                owner
+                    .read(PackResourceKind::Schemas, &ResourceId::from(ty.as_str()))
+                    .ok()
+                    .and_then(|b| load_pack_schema(owner, &b).ok())
+                    .is_some_and(|s| s.singleton)
+            });
+            if solicits_singleton
+                && !def
+                    .states_constraints
+                    .iter()
+                    .any(|c| c == SINGLETON_COPY_IN_CODE)
+            {
+                anyhow::bail!(
+                    "pack-load stated-at fence failed: step `{}` solicits a singleton \
+                     doctype's authoring (a `{{{{schema:<T>}}}}` ref with `T` singleton) but does \
+                     not declare `{SINGLETON_COPY_IN_CODE}` in `states-constraints:` — the \
+                     copy-in/append contract would first surface when an authored item doubles, \
+                     an ambush (design/surface-contract.md → The stated-at fence)\n\
+                     route: state the copy-in/append constraint above the authoring solicit and \
+                     declare `{SINGLETON_COPY_IN_CODE}` in the step's `states-constraints:` \
+                     front-matter",
+                    id.as_str(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The `when:` catalog line's char cap (the catalog shape fence's length half).
 /// The line interpolates mid-sentence into the router catalog beside its
 /// neighbours, so it must stay a short situation phrase
@@ -685,7 +779,9 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
 
     // The eager front-matter sweeps (M43, `design/surface-contract.md` → The
     // fences): the workflow sweep (suppression + catalog shape) and the step
-    // sweep (the stated-at fence). Memoized for the two embedded compositions
+    // sweeps — the stated-at fence's ambush-class tier ([`assert_stated_at`])
+    // and its M44 per-soliciting-step tier ([`assert_singleton_copy_in_stated`]).
+    // Memoized for the two embedded compositions
     // (their bytes cannot change within a process; `make_pack` has ~38 call
     // sites), recomputed whenever a filesystem pack is in the set (its tree is
     // live-mutable). `anyhow::Error` is not `Clone`, so the cache carries the
@@ -697,6 +793,7 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
             .get_or_init(|| {
                 assert_workflow_front_matter(pack.as_ref())
                     .and_then(|()| assert_stated_at(pack.as_ref()))
+                    .and_then(|()| assert_singleton_copy_in_stated(pack.as_ref()))
                     .map_err(|err| format!("{err:#}"))
             })
             .clone()
@@ -704,6 +801,7 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     } else {
         assert_workflow_front_matter(pack.as_ref())?;
         assert_stated_at(pack.as_ref())?;
+        assert_singleton_copy_in_stated(pack.as_ref())?;
     }
     Ok(pack)
 }
@@ -1496,25 +1594,6 @@ mod tests {
     /// no fence and both shipped surfaces still load unchanged.
     #[test]
     fn singleton_migrate_author_steps_declare_the_copy_in_constraint() {
-        const COPY_IN_CODE: &str = "create.singleton-copy-in";
-
-        /// Extract every `<T>` from a body's `{{schema:<T>}}` refs (whitespace-tolerant,
-        /// the same `schema:`-prefix the compose seam strips).
-        fn schema_refs(body: &str) -> Vec<String> {
-            let mut out = Vec::new();
-            let mut rest = body;
-            while let Some(open) = rest.find("{{") {
-                rest = &rest[open + 2..];
-                let Some(close) = rest.find("}}") else { break };
-                let inner = rest[..close].trim();
-                if let Some(ty) = inner.strip_prefix("schema:") {
-                    out.push(ty.trim().to_string());
-                }
-                rest = &rest[close + 2..];
-            }
-            out
-        }
-
         /// Step ids whose body solicits a singleton doctype yet omit the copy-in code.
         fn offenders(pack: &dyn PackSource) -> Vec<String> {
             let mut missing = Vec::new();
@@ -1530,7 +1609,12 @@ mod tests {
                         .and_then(|b| load_pack_schema(pack, &b).ok())
                         .is_some_and(|s| s.singleton)
                 });
-                if solicits_singleton && !def.states_constraints.iter().any(|c| c == COPY_IN_CODE) {
+                if solicits_singleton
+                    && !def
+                        .states_constraints
+                        .iter()
+                        .any(|c| c == SINGLETON_COPY_IN_CODE)
+                {
                     missing.push(id.as_str().to_string());
                 }
             }
