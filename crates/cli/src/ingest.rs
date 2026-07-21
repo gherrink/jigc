@@ -78,6 +78,64 @@ pub struct IngestReport {
     pub rows: Vec<TriageRow>,
 }
 
+/// The verdict-class rollup + per-directory unmanaged breakdown that rides the
+/// `--format json` projection **beside** `rows` (M44 Inc 7, T4). A machine consumer
+/// reads the scan's shape without re-tallying the row array: the three verdict-class
+/// counts, the adopted sub-count, and the per-directory unmanaged collapse — the same
+/// keying the text arm renders ([`crate::render::ingest`]'s unmanaged-by-dir
+/// aggregation), so the two agree byte-for-byte on the directory key. A pure projection
+/// of `rows`; it flips no verdict and gates nothing.
+#[derive(Clone, Debug, serde::Serialize)]
+struct IngestSummary {
+    /// Candidates conformant at their managed location.
+    adoptable: usize,
+    /// Adoptable candidates actually adopted this run (the schema re-gate passed).
+    adopted: usize,
+    /// Candidates that parse against a schema but conflict (near-miss / wrong-location).
+    needs_reconcile: usize,
+    /// Candidates matching no managed schema.
+    unmanaged: usize,
+    /// Per-directory unmanaged counts, keyed on the candidate's directory (the trailing
+    /// slash form `docs/`, or `./` for a root candidate) — a [`std::collections::BTreeMap`],
+    /// so the breakdown is sorted + order-invariant (same rows in → byte-identical block
+    /// out, independent of row-encounter order).
+    unmanaged_by_directory: std::collections::BTreeMap<String, usize>,
+}
+
+impl IngestSummary {
+    /// Roll the triage rows up into the summary projection: tally each verdict class
+    /// (plus the adopted sub-count) and collapse the unmanaged rows per directory with
+    /// the identical key [`crate::render::ingest`]'s text arm aggregates on.
+    fn of(rows: &[TriageRow]) -> Self {
+        let mut summary = IngestSummary {
+            adoptable: 0,
+            adopted: 0,
+            needs_reconcile: 0,
+            unmanaged: 0,
+            unmanaged_by_directory: std::collections::BTreeMap::new(),
+        };
+        for row in rows {
+            match row.verdict {
+                "adoptable" => summary.adoptable += 1,
+                "needs-reconcile" => summary.needs_reconcile += 1,
+                "unmanaged" => {
+                    summary.unmanaged += 1;
+                    let dir = match row.file.rfind('/') {
+                        Some(i) => row.file[..=i].to_string(),
+                        None => "./".to_string(),
+                    };
+                    *summary.unmanaged_by_directory.entry(dir).or_insert(0) += 1;
+                }
+                _ => {}
+            }
+            if row.adopted {
+                summary.adopted += 1;
+            }
+        }
+        summary
+    }
+}
+
 impl serde::Serialize for IngestReport {
     /// **The uniqueness half of the membership test, for the fourth emitting surface.** A row's
     /// `finding` projects as a [`Finding`], so its *presence* half rides that impl — but the
@@ -86,12 +144,16 @@ impl serde::Serialize for IngestReport {
     /// [`engine::finding::Findings`]. It runs the same check over its own set, from its own
     /// `Serialize` — the guard is on the projection, not on a caller who must remember to call
     /// it (`design/command-output-contract.md` → The membership test).
+    ///
+    /// The emitted struct carries two fields: the full per-row `rows` projection and the
+    /// derived [`IngestSummary`] rollup (T4) — a pure projection of `rows`, no gate.
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let findings: Vec<Finding> = self.rows.iter().filter_map(|r| r.finding.clone()).collect();
         engine::finding::debug_assert_keys_discriminate(&findings);
-        let mut st = serializer.serialize_struct("IngestReport", 1)?;
+        let mut st = serializer.serialize_struct("IngestReport", 2)?;
         st.serialize_field("rows", &self.rows)?;
+        st.serialize_field("summary", &IngestSummary::of(&self.rows))?;
         st.end()
     }
 }

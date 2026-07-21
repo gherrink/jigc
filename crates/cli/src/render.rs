@@ -1572,7 +1572,9 @@ pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
 /// candidate order) followed by the routing footer; a `needs-reconcile` row carries
 /// its routed finding indented beneath (the `severity · code — message` line + the
 /// `route:` line — the same envelope OOB conflicts route through). `json` emits the
-/// **generic** projection of the report with **no** footer (tooling-consumed). This
+/// **generic** projection of the report with **no** footer (tooling-consumed) — the
+/// full per-row `rows` array plus the derived `summary` rollup (verdict-class counts +
+/// the per-directory unmanaged breakdown; M44 T4). This
 /// is the adopt-and-triage surface — adopt is register-only (the edge index +
 /// file-state baseline; no candidate file is moved or rewritten), an adopted row is
 /// marked distinctly (`design/project-setup.md` → Flow 2; `design/worked-examples.md`
@@ -3745,6 +3747,100 @@ mod tests {
             ingest(Format::Agent, &reversed),
             agent,
             "per-directory counts must be order-invariant",
+        );
+    }
+
+    /// T4 (M44 Inc 7): the `--format json` projection carries a `summary` block beside
+    /// `rows` — the three verdict-class counts + the adopted sub-count + the
+    /// per-directory unmanaged collapse (a `BTreeMap`, so the breakdown is sorted +
+    /// order-invariant). `rows` stays the full per-row projection (unchanged). The
+    /// summary is a pure projection of the rows, so it is **byte-identical** under a
+    /// reordered row set (id-order and its reverse), while `rows` reflects input order.
+    #[test]
+    fn render_ingest_json_carries_verdict_summary() {
+        use crate::ingest::{IngestReport, TriageRow};
+        use engine::finding::{Finding, Location, Severity};
+
+        let unmanaged = |file: &str| TriageRow {
+            file: file.to_string(),
+            best_match: None,
+            verdict: "unmanaged",
+            finding: None,
+            adopted: false,
+            annotations: Vec::new(),
+        };
+        let adoptable = TriageRow {
+            file: "decisions/keep.md".to_string(),
+            best_match: Some("adr".to_string()),
+            verdict: "adoptable",
+            finding: None,
+            adopted: true,
+            annotations: Vec::new(),
+        };
+        let needs_reconcile = TriageRow {
+            file: "decisions/auth.md".to_string(),
+            best_match: Some("adr".to_string()),
+            verdict: "needs-reconcile",
+            finding: Some(Finding::graded(
+                Severity::Blocking,
+                "conformance.section-missing",
+                "required section heading `## context` is missing",
+                Some(Location::addressed("decisions/auth.md", 1, 1)),
+                Some("reconcile decisions/auth.md against the `adr` schema".into()),
+            )),
+            adopted: false,
+            annotations: Vec::new(),
+        };
+        let report = IngestReport {
+            rows: vec![
+                adoptable.clone(),
+                needs_reconcile.clone(),
+                unmanaged("docs/a.md"),
+                unmanaged("docs/b.md"),
+                unmanaged("src/x.md"),
+                unmanaged("root.md"),
+            ],
+        };
+
+        let json_out = ingest(Format::Json, &report);
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("ingest json parses");
+        // `rows` is unchanged — every row still projected, in input order.
+        assert_eq!(
+            value["rows"].as_array().expect("a rows array").len(),
+            6,
+            "rows stays the full per-row projection; got:\n{json_out}",
+        );
+        // The summary rolls the verdict classes up + the per-directory unmanaged collapse.
+        assert_eq!(
+            value["summary"],
+            serde_json::json!({
+                "adoptable": 1,
+                "adopted": 1,
+                "needs_reconcile": 1,
+                "unmanaged": 4,
+                "unmanaged_by_directory": { "./": 1, "docs/": 2, "src/": 1 },
+            }),
+            "the summary block projects verdict counts + the per-directory unmanaged collapse; got:\n{json_out}",
+        );
+
+        // Order-invariant: the same rows fed with the unmanaged rows reversed render a
+        // **byte-identical** summary (the per-directory collapse is keyed on the
+        // directory via a BTreeMap, never row-encounter order).
+        let reversed = IngestReport {
+            rows: vec![
+                needs_reconcile,
+                adoptable,
+                unmanaged("root.md"),
+                unmanaged("src/x.md"),
+                unmanaged("docs/b.md"),
+                unmanaged("docs/a.md"),
+            ],
+        };
+        let reversed_value: serde_json::Value =
+            serde_json::from_str(&ingest(Format::Json, &reversed)).expect("ingest json parses");
+        assert_eq!(
+            reversed_value["summary"], value["summary"],
+            "the summary block must be order-invariant",
         );
     }
 

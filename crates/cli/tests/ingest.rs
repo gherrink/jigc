@@ -694,3 +694,101 @@ fn ingest_survives_non_ascii_candidate_filenames() {
         "no C-quoted octal-escaped path may leak into the report:\n{report}"
     );
 }
+
+/// T4 (M44 Inc 7) — the emitted `jigc ingest --format json` bytes carry a `summary`
+/// block beside `rows`: the three verdict-class counts, the adopted sub-count, and the
+/// per-directory unmanaged breakdown. Driven through the real binary (the emitted bytes
+/// are the contract), asserted self-consistently against the emitted `rows` so it holds
+/// regardless of any incidental setup-seeded `.md` candidate, plus the concrete
+/// flow-12 facts (one adopted `adoptable`, two `needs-reconcile`, a `docs/` unmanaged
+/// entry). `rows` stays the full per-row projection.
+#[test]
+fn ingest_json_carries_a_verdict_summary_block() {
+    let repo = TempDir::new("summary");
+    let home = TempDir::new("summary-home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The four flow-12 candidates.
+    write(repo.path(), "docs/decisions/rate-limit.md", CONFORMANT_ADR); // adoptable → adopted
+    write(
+        repo.path(),
+        "docs/decisions/auth-choice.md",
+        NON_CONFORMANT_NEAR_MISS,
+    ); // needs-reconcile (near-miss)
+    write(repo.path(), "docs/old-adr.md", CONFORMANT_ADR); // needs-reconcile (wrong location)
+    write(repo.path(), "docs/notes.md", NON_CONFORMANT_NEAR_MISS); // unmanaged
+
+    let out = jigc(repo.path(), home.path(), &["ingest", "--format", "json"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest --format json` must succeed; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`--format json` emits parseable JSON");
+
+    let rows = json["rows"].as_array().expect("a rows array");
+    let summary = &json["summary"];
+    assert!(
+        summary.is_object(),
+        "the json projection carries a `summary` object beside `rows`:\n{json}",
+    );
+
+    // Self-consistency: every summary count matches the emitted rows it projects — the
+    // summary is a true projection of the same bytes, not a separately-derived tally.
+    let verdict_count =
+        |verdict: &str| -> usize { rows.iter().filter(|r| r["verdict"] == verdict).count() };
+    let adopted_count = rows.iter().filter(|r| r["adopted"] == true).count();
+    assert_eq!(
+        summary["adoptable"],
+        verdict_count("adoptable"),
+        "summary.adoptable must match the emitted adoptable rows:\n{json}",
+    );
+    assert_eq!(
+        summary["needs_reconcile"],
+        verdict_count("needs-reconcile"),
+        "summary.needs_reconcile must match the emitted needs-reconcile rows:\n{json}",
+    );
+    assert_eq!(
+        summary["unmanaged"],
+        verdict_count("unmanaged"),
+        "summary.unmanaged must match the emitted unmanaged rows:\n{json}",
+    );
+    assert_eq!(
+        summary["adopted"], adopted_count,
+        "summary.adopted must match the emitted adopted rows:\n{json}",
+    );
+    // The per-directory unmanaged breakdown sums to the unmanaged count.
+    let by_dir = summary["unmanaged_by_directory"]
+        .as_object()
+        .expect("summary.unmanaged_by_directory is an object");
+    let by_dir_total: u64 = by_dir.values().map(|v| v.as_u64().unwrap()).sum();
+    assert_eq!(
+        by_dir_total,
+        summary["unmanaged"].as_u64().unwrap(),
+        "the per-directory breakdown must sum to summary.unmanaged:\n{json}",
+    );
+
+    // The concrete flow-12 facts: the adopted adr, the two needs-reconcile docs, and a
+    // `docs/` unmanaged entry (`docs/notes.md`).
+    assert_eq!(
+        summary["adopted"], 1,
+        "the one conformant-at-location adr adopts:\n{json}",
+    );
+    assert_eq!(
+        summary["needs_reconcile"], 2,
+        "the near-miss + wrong-location docs are the two needs-reconcile rows:\n{json}",
+    );
+    assert!(
+        by_dir.contains_key("docs/"),
+        "the unmanaged `docs/notes.md` contributes a `docs/` per-directory entry:\n{json}",
+    );
+}
