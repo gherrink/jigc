@@ -351,6 +351,7 @@ fn step_5_the_live_router_catalog_lists_exactly_the_real_work_workflows() {
             "plan",
             "project-setup",
             "quick-fix",
+            "record-decision",
             "single-task",
         ],
         "the live router must list EXACTLY the real selectable work-workflows — no \

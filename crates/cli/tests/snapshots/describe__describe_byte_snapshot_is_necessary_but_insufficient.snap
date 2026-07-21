@@ -30,6 +30,8 @@ quick-fix is A small commit-only fix — locate, implement, and commit, with no 
 
 record-change is Record a change on the changelog — create-or-update the singleton, author a release (or a staged change-group) with its nested category groups, and commit. Reach for it when a user-facing change needs recording on the changelog — staged now, or cut into a versioned release. It is hidden from the router catalog: reached by name for the deliberate record-a-change/cut-a-release pass (`jigc start --workflow record-change`); routine change recording already rides `single-task`'s record-changelog step, so a catalog line would duplicate it.
 
+record-decision is A decision-recording pass that authors an ADR for a choice already made and commits it — no code changes. Reach for it when a call has been made and is worth preserving with its rationale, and there is nothing to build — just the record to lay down.
+
 router is A selection pass that presents the available work-workflows and routes an intent to the right one. Reach for it when you have an intent but are unsure which work-workflow fits, and want the catalog to choose from.
 
 single-task is An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task. Reach for it when the work is one coherent change you can hold in your head and carry from intent to commit in a single pass. Also the pick when the change touches documented code (a symbol a managed doc names, renamed or reshaped) — its doc gates cover the update, where quick-fix's commit-only path does not.

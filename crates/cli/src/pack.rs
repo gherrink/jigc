@@ -1256,8 +1256,8 @@ mod tests {
         let workflows = pack.list(PackResourceKind::Workflows);
         assert_eq!(
             workflows.len(),
-            16,
-            "the shipped pack must carry all 16 workflows; got {workflows:?}",
+            17,
+            "the shipped pack must carry all 17 workflows; got {workflows:?}",
         );
         for id in &workflows {
             let bytes = pack
@@ -1412,7 +1412,10 @@ mod tests {
     }
 
     /// list(Steps) yields the MVP step ids, sorted (the pack lists in stem
-    /// order). The composer's includes resolve against exactly these — the four
+    /// order). The composer's includes resolve against exactly these — `author-adr`
+    /// (the M44 `record-decision` workflow's from-knowledge, create-gated
+    /// adr-authoring step — the `context`/`decision`/`consequences` slots, no foreign
+    /// source and the on-create date stamp kept, sorting first), the four
     /// `single-task` steps, `implement-quick` (the ADR-free variant `quick-fix`
     /// includes), the router's `present-catalog` / `route-to-workflow`,
     /// `author-spec` (the `plan` workflow's create-gated spec-authoring step),
@@ -1448,6 +1451,7 @@ mod tests {
         assert_eq!(
             steps,
             vec![
+                ResourceId::from("author-adr"),
                 ResourceId::from("author-arch-doc"),
                 ResourceId::from("author-change"),
                 ResourceId::from("author-commit"),
