@@ -47,6 +47,14 @@ use std::process::Command;
 /// provisioning: the task's commit doc).
 const FALLBACK_TYPE: &str = "commit";
 
+/// The fixed synthetic task slug the `--preview` compose feeds `build_context` in
+/// place of a minted id (`compose_core`'s preview arm). It is an *identity*, not a
+/// fictional real id: the preview mints nothing, so `view.task` stays `None` and the
+/// render substitutes `--task your-task-id` verbatim, signalling the agent must mint
+/// first (`surface-contract.md` → law 1). Chosen a valid slug so `Address::parse`
+/// (`commit:your-task-id`) and every `{{task.id}}` substitution stays panic-safe.
+const PREVIEW_SLUG: &str = "your-task-id";
+
 /// The well-known commit-doc field/section ids the migration auto-provisioner fills.
 /// The CLI names them by string here for the same reason
 /// [`engine::write::render_commit_message`] does — the commit doctype is the one type
@@ -639,6 +647,7 @@ pub fn compose_in_repo(
         &[],
         None,
         slug_override,
+        false,
     )
 }
 
@@ -676,6 +685,7 @@ pub fn compose_named_in_repo(
         &[],
         None,
         slug_override,
+        false,
     )
 }
 
@@ -731,6 +741,69 @@ pub fn compose_named_no_intent_in_repo(start: &Path, workflow_id: &str) -> Resul
         // No mint on the `creates-task: false` arm (a `creates-task: true` `<X>` was
         // rejected above), so a `--slug` override could never apply here.
         None,
+        false,
+    )
+}
+
+/// Preview the explicitly-named `workflow_id` — the `jigc workflow <id> --preview`
+/// read surface (`design/surface-contract.md` → law 2: nothing hides; the
+/// read-surface spine of `introspection.md` / `doc-read-surface.md`). It composes a
+/// **`creates-task: true`** workflow's step text **without minting a task**, so a
+/// mutation-cautious agent can read what a work-minting workflow will ask *before*
+/// consenting to mint. The composed bytes are byte-identical to a real mint's with
+/// the minted id substituted by [`PREVIEW_SLUG`] — the [`compose_core`] preview arm
+/// skips `mint_in_repo` + `provision_commit_doc` and feeds the fixed synthetic slug,
+/// leaving `view.task = None` and `minted = false`.
+///
+/// Branches on the workflow's `creates-task` declaration (read through the cascade,
+/// the same read the compose path uses), mirroring
+/// [`compose_named_no_intent_in_repo`]'s reject discipline in the **opposite**
+/// direction: a **`creates-task: false`** `<X>` (the router and its kind) mints
+/// nothing to begin with, so `jigc start --workflow <X>` already composes it without
+/// a mint — there is nothing to preview, and it is **rejected** here with that route.
+/// An unknown `<X>` surfaces its routed not-found finding from the cascade read,
+/// before the branch.
+// The `jigc workflow <id> --preview` dispatch (`cli.rs`) that calls this lands in the
+// next increment task (Inc 3 T2, the `--preview` surface + render); T1 ships the
+// compose-path capability + its unit tests. Until that caller exists, the bin build
+// sees no production reference, so the forward-declared public entry is allowed dead.
+#[allow(dead_code)]
+pub fn preview_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
+    let repo_root = discover_repo_root(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let project_config = require_project_config(start)?;
+
+    let pack = make_pack()?;
+    let pack = pack.as_ref();
+    let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
+    // Read the named workflow's `creates-task` declaration through the cascade — the
+    // same definition read `compose_core` performs to decide minting. An unknown
+    // `<X>` is rejected here (the `read_workflow` membership check maps `NotFound` to
+    // a routed finding).
+    let def_bytes =
+        CascadeDefs::new(&resolved, &project_config).read_workflow(pack, workflow_id)?;
+    let def = load_workflow_def(&def_bytes).map_err(finding_to_err)?;
+    if !def.creates_task {
+        bail!(
+            "workflow '{workflow_id}' mints no task, so there is nothing to preview — run it directly: jigc start --workflow {workflow_id}"
+        );
+    }
+
+    let source = CascadeStepSource::new(pack, &resolved, &project_config);
+    // A preview never mints, so it needs no intent to slug and no `--slug` override;
+    // `{{task.intent}}` resolves to empty and `--task {{task.id}}` renders the
+    // synthetic identity.
+    compose_drained(
+        &repo_root,
+        "",
+        pack,
+        workflow_id,
+        &source,
+        &overrides,
+        &[],
+        None,
+        None,
+        true,
     )
 }
 
@@ -770,6 +843,7 @@ pub fn execute_milestone_in_repo(
         None,
         // A milestone execution mints no top-level task, so no `--slug` applies.
         None,
+        false,
     )
 }
 
@@ -908,6 +982,7 @@ pub(crate) fn execute_milestone_core(
         milestone_ids,
         None,
         None,
+        false,
     )
 }
 
@@ -928,6 +1003,7 @@ fn compose_drained(
     milestone_ids: &[String],
     seam: Option<&str>,
     slug_override: Option<&str>,
+    preview: bool,
 ) -> Result<Composition> {
     // Scope the step source's pack-default arm to the composing workflow's origin
     // pack, so its `{{include: step:X}}` resolves against the pack that *defines*
@@ -946,6 +1022,7 @@ fn compose_drained(
         milestone_ids,
         seam,
         slug_override,
+        preview,
     );
     if result.is_err()
         && let Some(located) = source.take_error()
@@ -1005,6 +1082,7 @@ fn compose_core(
     milestone_ids: &[String],
     seam: Option<&str>,
     slug_override: Option<&str>,
+    preview: bool,
 ) -> Result<Composition> {
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
     let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
@@ -1054,7 +1132,29 @@ fn compose_core(
     // the freshly minted id on the work-minting arm, `None` on the
     // `creates-task: false` compose arm.
     let task_id: Option<String>;
-    let ctx = if should_provision_commit_doc(&def) {
+    let ctx = if should_provision_commit_doc(&def) && preview {
+        // The preview arm (`jigc workflow <id> --preview`): compose exactly what
+        // this work-minting workflow will ask, **without minting** — skip
+        // `mint_in_repo` (no HEAD read, no `.jigc/tasks/<id>/` working area) and
+        // `provision_commit_doc` (no staged commit skeleton). `build_context` gets
+        // a fixed synthetic valid slug so the composed bytes are byte-identical to
+        // a real mint's with the minted id textually substituted by
+        // [`PREVIEW_SLUG`] (the mint arm feeds the same empty `RolesRecord`, so the
+        // only difference is the id string). `task_id` stays `None` so `view.task`
+        // carries no fictional id and `minted` is `false` (`surface-contract.md` →
+        // law 1: nothing lies; a preview names no task that exists).
+        task_id = None;
+        build_context(
+            PREVIEW_SLUG,
+            intent,
+            &def,
+            &RolesRecord::new(),
+            selectable,
+            store,
+            seam,
+            schemas,
+        )
+    } else if should_provision_commit_doc(&def) {
         // Mint the task (reads HEAD). Minting after the definition loads so a
         // malformed pack never leaves a task dir behind. The `--slug` override, when
         // present, drives the minted id verbatim (validated inside `mint_in_repo`).
@@ -3586,6 +3686,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("Form-D compose of ingest-existing")
         .view;
@@ -3701,6 +3802,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("no-task compose")
         .view;
@@ -3808,6 +3910,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect_err("the insert's anchor was removed by the earlier delta");
 
@@ -3869,6 +3972,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect_err("the delta introduces an include cycle");
 
@@ -3928,6 +4032,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("flow 3a's different-id re-include composes clean")
         .view;
@@ -4046,6 +4151,7 @@ mod tests {
                 &[],
                 None,
                 None,
+                false,
             )
             .expect("flow composes under the replace delta")
             .view
@@ -4119,6 +4225,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("Form-D compose of a creates-task workflow")
         .view;
@@ -4160,6 +4267,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect_err("an unknown --workflow id must reject");
 
@@ -4171,6 +4279,154 @@ mod tests {
         assert!(
             !repo.path().join(".jigc").join("tasks").exists(),
             "rejection must precede minting — no .jigc/tasks/ dir may be created",
+        );
+    }
+
+    /// The pack a preview test composes over: a `creates-task: true` `single-task`
+    /// whose step body interpolates `{{task.id}}` twice — so the byte-identity
+    /// oracle's id substitution is **non-vacuous** (the id genuinely appears in the
+    /// composed body) — plus the `commit` schema minting provisions and a
+    /// `creates-task: false` `router`. `default-workflow` points at the router so a
+    /// stray cascade-default read would be observably wrong (the preview names the
+    /// workflow explicitly, like Form D).
+    fn preview_pack() -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: dev\ndefault-workflow: router\n",
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (PackResourceKind::Schemas, "commit", COMMIT_SCHEMA),
+            (
+                PackResourceKind::Workflows,
+                "router",
+                "---\nwhen: help me pick a workflow\ncreates-task: false\n---\n{{ include: step:route }}\n",
+            ),
+            (
+                PackResourceKind::Workflows,
+                "single-task",
+                "---\nwhen: implement one scoped change\ncreates-task: true\n---\n{{ include: step:work }}\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "route",
+                "Pick one of the work-workflows below:\n\n{{ catalog }}\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "work",
+                "Working on task {{task.id}} now.\nFinalize with jigc task finalize {{task.id}}.\n",
+            ),
+        ])
+    }
+
+    /// The T1 done-criterion (a)–(c): the `--preview` compose path is
+    /// `compose_core`-minus-mint. Over a `creates-task: true` workflow it (a) writes
+    /// **no** `.jigc/tasks/*` working area and provisions **no** commit doc, (b)
+    /// returns a [`Composition`] with `view.task == None` and `minted == false`
+    /// (`surface-contract.md` → law 1: a preview names no task that exists), and (c)
+    /// is **byte-identical** to a real mint's composed body with the minted id
+    /// textually substituted by [`PREVIEW_SLUG`]. The oracle is an *independent*
+    /// real-mint compose of the same workflow over the same intent — the emitted
+    /// bytes are the contract, so the assertion drives the composed body verbatim.
+    #[test]
+    fn preview_composes_minus_mint_and_is_byte_identical_to_a_real_mint() {
+        let repo = TempDir::new("preview");
+        init_repo_with_commit(repo.path());
+        let pack = preview_pack();
+
+        // The preview compose — the minus-mint arm (preview = true).
+        let source = PackStepSource { pack: &pack };
+        let preview = compose_core(
+            repo.path(),
+            "Add rate limiter",
+            &pack,
+            "single-task",
+            &source,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+            None,
+            None,
+            true,
+        )
+        .expect("preview compose");
+
+        // (a) mints nothing: no working area opens, no commit skeleton stages.
+        assert!(
+            !repo.path().join(".jigc").join("tasks").exists(),
+            "a preview must not open any .jigc/tasks/ dir",
+        );
+        // (b) the view carries no task id and the mint announcement is false.
+        assert_eq!(
+            preview.view.task, None,
+            "a preview names no minted task (law 1)",
+        );
+        assert!(!preview.minted, "a preview mints nothing");
+
+        // (c) the independent byte-identity oracle: a REAL mint compose of the same
+        // workflow over the same intent. Its composed body, with the minted id
+        // substituted by the synthetic slug, must equal the preview body verbatim.
+        let source2 = PackStepSource { pack: &pack };
+        let real = compose_core(
+            repo.path(),
+            "Add rate limiter",
+            &pack,
+            "single-task",
+            &source2,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+            None,
+            None,
+            false,
+        )
+        .expect("real mint compose");
+        let minted_id = real.view.task.clone().expect("a real mint carries its id");
+        assert_eq!(minted_id, "add-rate-limiter");
+        // The fixture body interpolates `{{task.id}}`, so the id genuinely appears —
+        // the oracle substitution is not vacuous.
+        assert!(
+            real.view.text.contains(&minted_id),
+            "the fixture must reference the id so the oracle is non-vacuous; got:\n{}",
+            real.view.text,
+        );
+        let substituted = real.view.text.replace(&minted_id, PREVIEW_SLUG);
+        assert_eq!(
+            preview.view.text, substituted,
+            "the preview body must equal a real mint's with the id → {PREVIEW_SLUG}",
+        );
+        assert!(
+            preview.view.text.contains(PREVIEW_SLUG),
+            "the preview renders the synthetic identity in place of the id; got:\n{}",
+            preview.view.text,
+        );
+    }
+
+    /// The T1 done-criterion (d): [`preview_in_repo`] on a `creates-task: false`
+    /// workflow returns the **routed rejection** — that workflow mints nothing, so
+    /// `jigc start --workflow <id>` already composes it and there is nothing to
+    /// preview. Driven over the embedded pack (the surface `preview_in_repo`
+    /// composes), whose `router` is `creates-task: false`; an empty project config
+    /// dir resolves to a no-shadow cascade over that pack.
+    #[test]
+    fn preview_in_repo_rejects_a_no_task_workflow() {
+        let repo = TempDir::new("preview-reject");
+        init_repo_with_commit(repo.path());
+        // The project layer must be present (require_project_config).
+        fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("mk config dir");
+
+        let err = preview_in_repo(repo.path(), "router")
+            .expect_err("a creates-task: false workflow has nothing to preview");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("router") && msg.contains("jigc start --workflow router"),
+            "the rejection must name the workflow and route to running it directly; got: {msg}",
+        );
+        assert!(
+            !repo.path().join(".jigc").join("tasks").exists(),
+            "the rejection precedes any mint — no .jigc/tasks/ dir",
         );
     }
 
@@ -4828,6 +5084,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("the loser-pack workflow composes")
         .view;
@@ -4876,6 +5133,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("the winner-pack workflow composes")
         .view;
@@ -4917,6 +5175,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("compose over the single-pack composite")
         .view;
@@ -4930,6 +5189,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("compose over the bare pack")
         .view;
@@ -5020,6 +5280,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect(
             "the loser-pack workflow must resolve its own `{{cli.low-cmd}}` against ITS pack's catalog",
@@ -5063,6 +5324,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("the winner-pack workflow composes its own command-ref")
         .view;
@@ -5104,6 +5366,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("compose over the single-pack composite")
         .view;
@@ -5117,6 +5380,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("compose over the bare pack")
         .view;
@@ -5970,6 +6234,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("shadowed flow composes")
         .view;
@@ -5993,6 +6258,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("pack-baseline flow composes")
         .view;
@@ -6020,6 +6286,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("unshadowed other composes under the shadow cascade")
         .view
@@ -6035,6 +6302,7 @@ mod tests {
             &[],
             None,
             None,
+            false,
         )
         .expect("unshadowed other composes under the no-shadow cascade")
         .view
