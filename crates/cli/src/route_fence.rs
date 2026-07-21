@@ -37,6 +37,10 @@ const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[
     ("<milestone-id>", "dummy-milestone-id"),
     ("<path>", "CHANGELOG.md"),
     ("<type>", "adr"),
+    // The task-intent positional of a `jigc start` route (the migrate byte-floor
+    // advisory's from-knowledge alternative, `jigc start --workflow record-decision
+    // <intent>`): a free-text intent an agent fills in with the decision it settled.
+    ("<intent>", "a decision I settled"),
 ];
 
 /// Install the parse fence into the engine's `Route::mechanical` constructor hook.

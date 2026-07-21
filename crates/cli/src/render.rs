@@ -1422,6 +1422,17 @@ fn finding_line(finding: &Finding, gates: bool) -> String {
     line
 }
 
+/// Render a single advisory finding for the agent/human presentation surface — the
+/// migrate byte-floor triviality nudge (M44 Inc 5, `design/auto-migration.md` → The
+/// byte-floor advisory). Delegates to the house [`finding_line`] so the advisory reads
+/// exactly like every other agent-text finding (`advisory · <code> — <message>` plus its
+/// `route:` line). **Presentation-only**: the pinned `{task, text}` JSON contract
+/// [`composed`] projects never carries it — `migrate::run` emits this beside that render,
+/// never inside it.
+pub fn migrate_source_advisory(finding: &Finding) -> String {
+    finding_line(finding, false)
+}
+
 /// Render a successful `jigc setup` install to the surface `format` selects:
 /// `agent` / `human` emit a one-line-per-target summary of what was installed,
 /// followed by the routing footer; `json` emits a generic object naming the two

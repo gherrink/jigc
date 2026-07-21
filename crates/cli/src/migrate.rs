@@ -28,9 +28,21 @@ use crate::invocation_log::Outcome;
 use crate::render;
 use crate::start;
 use anyhow::{Context, Result, anyhow, bail};
+use engine::finding::{Finding, Location, Route, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::state;
 use std::path::{Component, Path, PathBuf};
+
+/// The byte floor below which a foreign source is **too trivial to migrate** — a
+/// near-empty or placeholder file has little prose to preserve, and an agent reaching
+/// for `jigc migrate` on such a source is almost always exploiting migration as an
+/// authoring back door (the rc.7 placeholder-source loophole; `design/auto-migration.md`
+/// → The byte-floor advisory). A source of at least this many bytes migrates silently.
+///
+/// Calibrated **below every shipped foreign fixture** (the smallest is 58 bytes) so a
+/// real foreign document — even a minimal one — never trips the advisory; the guard is a
+/// mechanical byte count (Framing-A), never a content judgment.
+pub(crate) const TRIVIAL_SOURCE_FLOOR: usize = 48;
 
 /// The working-area filename the staged foreign source bytes live at — the read-only
 /// source artifact the source seam surfaces. Plain bytes, read back verbatim (the same
@@ -52,8 +64,24 @@ pub fn run(
     format: Format,
 ) -> Outcome {
     match migrate_in_repo(cwd, path, doctype, slug_override) {
-        Ok(view) => {
+        Ok((view, advisory)) => {
             println!("{}", render::composed(format, &view));
+            // The byte-floor triviality advisory (M44 Inc 5, S2) rides the **agent/human
+            // presentation surface only** — the composed `--format json` stays the pinned
+            // `{task, text}` contract, byte-identical (`render::composed`'s json arm is
+            // untouched). Stream discipline mirrors the finalize advisories
+            // (`task.rs::emit_left_out_advisory`): agent/human text to **stdout** (where
+            // the agent reads the migrate surface), but under `--format json` the
+            // structured envelope owns stdout, so the advisory goes to **stderr** and the
+            // JSON stdout bytes never move. Non-blocking either way — exit 0.
+            if let Some(finding) = advisory {
+                let line = render::migrate_source_advisory(&finding);
+                if matches!(format, Format::Json) {
+                    eprint!("{line}");
+                } else {
+                    print!("{line}");
+                }
+            }
             Outcome::success()
         }
         Err(err) => {
@@ -61,6 +89,35 @@ pub fn run(
             Outcome::failure()
         }
     }
+}
+
+/// The byte-floor triviality advisory (M44 Inc 5, S2) — surfaced when the foreign source
+/// is below [`TRIVIAL_SOURCE_FLOOR`] bytes, `None` otherwise. A non-blocking
+/// [`Severity::Advisory`] finding (its own `migrate.trivial-source` code, colliding with
+/// neither error identity) that names the concrete byte count + floor and routes to the
+/// from-knowledge `jigc start --workflow record-decision <intent>` path — the honest
+/// alternative to migrating a placeholder source (`design/auto-migration.md` → The
+/// byte-floor advisory; `surface-contract.md` law 1). The from-knowledge path never
+/// reaches `migrate`, so it is exempt by construction (no source to measure).
+fn trivial_source_advisory(recorded: &str, doctype: &str, byte_len: usize) -> Option<Finding> {
+    if byte_len >= TRIVIAL_SOURCE_FLOOR {
+        return None;
+    }
+    Some(Finding::graded(
+        Severity::Advisory,
+        "migrate.trivial-source",
+        format!(
+            "the foreign `{doctype}` source at `{recorded}` is {byte_len} bytes — below the \
+             {TRIVIAL_SOURCE_FLOOR}-byte floor for a document worth migrating; a near-empty or \
+             placeholder source has little prose to preserve, so authoring the decision from \
+             knowledge is usually the honest path (migration still composed below)"
+        ),
+        Some(Location::at(1, 1)),
+        Some(Route::mechanical(
+            ["jigc", "start", "--workflow", "record-decision", "<intent>"],
+            " — record the decision from knowledge; no source to migrate",
+        )),
+    ))
 }
 
 /// The off-router `migrate-<doctype>` workflow id — the migration workflow the
@@ -149,7 +206,7 @@ fn migrate_in_repo(
     path: &str,
     doctype: &str,
     slug_override: Option<&str>,
-) -> Result<crate::start::Composition> {
+) -> Result<(crate::start::Composition, Option<Finding>)> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
         return Err(crate::locate::not_set_up());
@@ -205,6 +262,12 @@ fn migrate_in_repo(
     // (review F2).
     let recorded = repo_relative_source_path(&repo_root, path);
 
+    // The byte-floor triviality advisory (S2), computed off the just-read foreign bytes —
+    // presentation-only, surfaced by `run` beside (never inside) the pinned composed
+    // contract. `None` for a normal-sized source; the from-knowledge path never reaches
+    // here, so it is exempt by construction.
+    let advisory = trivial_source_advisory(&recorded, doctype, foreign.len());
+
     // Mint the off-router migration task (the `record-change` shape) + auto-provision its
     // commit doc *filled* off the recorded source path + doctype, then stage the foreign
     // bytes into the working area.
@@ -236,14 +299,15 @@ fn migrate_in_repo(
 
     // Compose the migration workflow over the minted task with the foreign bytes fed
     // into the source seam — the composed view's `{{source}}` surfaces them verbatim.
-    start::compose_migrate_in_repo(
+    let composition = start::compose_migrate_in_repo(
         &repo_root,
         &project_config,
         &minted.dir,
         &minted.id,
         &workflow_id,
         &foreign,
-    )
+    )?;
+    Ok((composition, advisory))
 }
 
 #[cfg(test)]
