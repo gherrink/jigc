@@ -452,18 +452,18 @@ impl std::error::Error for ProfileError {
 }
 
 /// The managed bootstrap file's contents: the canonical routing sentence, the
-/// read rule, the context-compiler framing, then the output contract — each
-/// its own paragraph, with a trailing newline.
+/// read rule, the context-compiler framing, the output contract, then the
+/// machine-output contract — each its own paragraph, with a trailing newline.
 ///
 /// A pure function of the embedded contract — no filesystem. The file is wholly
 /// CLI-owned and rewritten in full each `setup`, so it needs no in-file
 /// idempotency markers. The routing sentence stays *routing, not content*
-/// (`design/bootstrap.md` → The sentence); the three lines beneath it are
-/// *use-the-interface* facts — which files are `jigc`'s, what `jigc` is, and
-/// how to read its signals — not routing rules.
+/// (`design/bootstrap.md` → The sentence); the four lines beneath it are
+/// *use-the-interface* facts — which files are `jigc`'s, what `jigc` is, how to
+/// read its signals, and how to consume its machine output — not routing rules.
 pub fn bootstrap_file() -> String {
     format!(
-        "{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_READ_RULE}\n\n{BOOTSTRAP_FRAMING}\n\n{BOOTSTRAP_OUTPUT_CONTRACT}\n"
+        "{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_READ_RULE}\n\n{BOOTSTRAP_FRAMING}\n\n{BOOTSTRAP_OUTPUT_CONTRACT}\n\n{BOOTSTRAP_MACHINE_OUTPUT}\n"
     )
 }
 
@@ -1036,8 +1036,15 @@ const BOOTSTRAP_SENTENCE: &str = "`jigc` is your interface to this project — y
 /// not compose with: a doc **staged in the open task** is not yet in the
 /// committed `doc list` set (so the rule read as "read-free" — its sanctioned
 /// read is the task-scoped show, never the file), and an **`unregistered`**
-/// `doc list` row is not yet managed — directly readable until adopted.
-const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; an `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely.";
+/// `doc list` row is not yet managed — directly readable until adopted. The
+/// final sentence is the M44 Inc 4 read-rule amendment (change 2, RC rc.7
+/// discoverability rerun, 2026-07-20): project source stays freely readable,
+/// but `jigc`'s **own** behavior is learned from the installed binary
+/// (`--help`/`describe`/`doc schema`), never a checked-out jigc or pack source
+/// tree — which need not match the binary in use. It closes the stale-source
+/// reach the flat "read source freely" clause otherwise licensed, without
+/// contradicting it (the freedom is scoped to *project* source).
+const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; an `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely. That freedom is for *project* source; to learn how `jigc` itself behaves, ask the installed binary (`jigc --help`, `jigc describe`, `jigc doc schema`), never a checked-out jigc or pack source tree — it need not match the binary you run.";
 
 /// The context-compiler framing stated beneath the read rule (RC greenfield
 /// trial A4, 2026-07-06): one stable line on what `jigc` *is* and the
@@ -1065,6 +1072,22 @@ const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the 
 /// from observed behavior. The four numbers are frozen CLI constants, so the
 /// line cannot rot the way the meanings table could.
 const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings · 4 migration review hold.";
+
+/// The machine-output contract stated as the fifth paragraph (M44 Inc 4,
+/// change 1 — RC rc.7 discoverability rerun, 2026-07-20): the preload tier now
+/// carries the two facts a driver otherwise reverse-engineers by scraping text.
+/// **Every verb** speaks `--format json` on a **successful or validation**
+/// outcome — the scope is deliberate (the N4 carve-out): a usage error rejected
+/// by clap *before* the JSON funnel prints plain text, so the claim is Law-1
+/// true only on the success/validation path. **Composed producers**
+/// (`jigc start`/`jigc workflow`/`jigc migrate`) return the minted task id at
+/// `.task` — the pinned `{task, text}` compose shape (`render.rs` →
+/// `compose_json`); `migrate` rides it because it composes the `migrate-<type>`
+/// workflow over the minted task (the rc.7 baseline refuted "migrate lacks
+/// `.task`"). It names only stable global-flag + JSON-key facts, never a per-verb
+/// enumeration, so it cannot rot (`design/assistant-adapter.md` → Inject the
+/// bootstrap). Fenced by the whole-body golden plus [`format_is_a_global_arg`].
+const BOOTSTRAP_MACHINE_OUTPUT: &str = "Every verb speaks `--format json` on a successful or validation outcome: pass it and parse the structured result — do not scrape the human-readable lines (a usage error rejected before parsing still prints plain text, not JSON). The composed producers — `jigc start`, `jigc workflow`, `jigc migrate` — return the minted task id at `.task`; read it there, never from the human line.";
 
 /// The env var that selects a directory adapter-profile source over the
 /// binary-embedded default. The adapter analogue of [`crate::pack`]'s
@@ -1392,21 +1415,24 @@ mod tests {
     }
 
     /// Golden over [`bootstrap_file`]: the canonical routing sentence
-    /// (`design/bootstrap.md` → The sentence, verbatim), the read rule, the
-    /// context-compiler framing, and the output contract as the managed file
-    /// body, with a single trailing newline. This is the exact content
-    /// `jigc setup` writes into `.jigc/AGENT.md` (rewritten whole each run —
-    /// no markers).
+    /// (`design/bootstrap.md` → The sentence, verbatim), the read rule (with the
+    /// M44 Inc 4 binary-derived-behavior amendment), the context-compiler
+    /// framing, the output contract, and the machine-output contract (M44 Inc 4)
+    /// as the managed file body — five paragraphs, with a single trailing
+    /// newline. This is the exact content `jigc setup` writes into
+    /// `.jigc/AGENT.md` (rewritten whole each run — no markers).
     #[test]
     fn bootstrap_file_is_the_sentence_body() {
         insta::assert_snapshot!(bootstrap_file(), @r###"
         `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
 
-        Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; an `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely.
+        Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; an `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely. That freedom is for *project* source; to learn how `jigc` itself behaves, ask the installed binary (`jigc --help`, `jigc describe`, `jigc doc schema`), never a checked-out jigc or pack source tree — it need not match the binary you run.
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
         Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings · 4 migration review hold.
+
+        Every verb speaks `--format json` on a successful or validation outcome: pass it and parse the structured result — do not scrape the human-readable lines (a usage error rejected before parsing still prints plain text, not JSON). The composed producers — `jigc start`, `jigc workflow`, `jigc migrate` — return the minted task id at `.task`; read it there, never from the human line.
         "###);
     }
 
@@ -1435,6 +1461,49 @@ mod tests {
         assert!(
             body.contains("1 error · 2 usage · 3 blocking findings · 4 migration review hold"),
             "the bootstrap body states the one-line exit-code taxonomy (B4); got:\n{body}",
+        );
+        // (M44 Inc 4, change 1) The machine-output paragraph: every verb speaks
+        // `--format json` on a successful/validation outcome (the clap-error
+        // carve-out), and composed producers return the minted id at `.task`,
+        // never scraped from the human line.
+        assert!(
+            body.contains("`--format json`"),
+            "the bootstrap body states the machine-output contract — every verb \
+             speaks `--format json`; got:\n{body}",
+        );
+        assert!(
+            body.contains("`.task`"),
+            "the machine-output paragraph names the `.task` id field composed \
+             producers return; got:\n{body}",
+        );
+        assert!(
+            body.contains("`jigc migrate`"),
+            "the machine-output paragraph names all three composed producers \
+             (start/workflow/migrate); got:\n{body}",
+        );
+        assert!(
+            body.contains("never") && body.contains("human line"),
+            "the machine-output paragraph forbids scraping the human line; got:\n{body}",
+        );
+    }
+
+    /// `--format` is a **global** clap arg, consumed by every dispatch arm — the
+    /// structural fact the machine-output paragraph (M44 Inc 4, change 1) rests
+    /// on: "every verb speaks `--format json`" is only true because a single
+    /// global flag reaches every subcommand. A lightweight fence beneath the
+    /// prose claim.
+    #[test]
+    fn format_is_a_global_arg() {
+        use clap::CommandFactory;
+        let cmd = crate::cli::Cli::command();
+        let format = cmd
+            .get_arguments()
+            .find(|a| a.get_id() == "format")
+            .expect("the `--format` arg is defined on the root command");
+        assert!(
+            format.is_global_set(),
+            "`--format` must be a global arg so every dispatch arm honors it — \
+             the ground the machine-output paragraph stands on",
         );
     }
 
@@ -1488,6 +1557,28 @@ mod tests {
             body.contains("declares"),
             "the framing scopes the doc-slices promise per-tier — a workflow \
              pulls the slices it declares; got:\n{body}",
+        );
+        // (M44 Inc 4, change 2) The read-rule amendment: jigc's own behavior is
+        // derived from the installed binary (`--help`/`describe`/`doc schema`),
+        // never from a checked-out jigc/pack source tree — reconciled with the
+        // preserved "read project source freely" clause.
+        assert!(
+            body.contains("installed binary"),
+            "the read rule derives jigc's behavior from the installed binary; got:\n{body}",
+        );
+        assert!(
+            body.contains("`jigc doc schema`"),
+            "the read rule names the binary-introspection path (doc schema); got:\n{body}",
+        );
+        assert!(
+            body.contains("checked-out"),
+            "the read rule forbids deriving jigc's behavior from a checked-out \
+             jigc/pack source tree; got:\n{body}",
+        );
+        assert!(
+            body.contains("read freely"),
+            "the amendment preserves the existing read-project-source-freely \
+             clause; got:\n{body}",
         );
     }
 
