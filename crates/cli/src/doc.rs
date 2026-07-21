@@ -609,6 +609,39 @@ fn repoint_empty_value(failure: DocFailure, addr: &str, value: &str) -> DocFailu
     failure
 }
 
+/// Enrich a `write.not-present` reject's route to the **followable containing section**
+/// (`jigc doc show <type>:<slug>#<section> --task <id>`) — the M44 Inc 2 route split
+/// (`design/validation.md` → the `write.*` route split; `design/surface-contract.md` law 2:
+/// nothing hides). A not-present is an **item-id** miss: the agent addressed an item that
+/// was never minted, so the schema (the engine's defensive `jigc doc schema` route) is a
+/// dead end — it names the shape, never the corpus's real item ids. The recovery is to
+/// *show the containing section*, whose live item ids reveal the right address.
+///
+/// The section is the write address's fragment **top hop**, so a nested / field-leaf
+/// address strips to the top **showable** section, never an unshowable field-leaf (the N2
+/// pin). Applied as a post-pass at the write-verb dispatch (`run_set_slot` / `run_remove_item`,
+/// where the real URI + resolved task id are in scope) — never threaded through the shared
+/// `apply_slot_target`, so the batch `doc author` path is untouched. A non-`not-present`
+/// block, or an orchestration failure, passes through unchanged.
+fn enrich_not_present_route(failure: DocFailure, uri: &str, task_id: &str) -> DocFailure {
+    let DocFailure::Block(mut finding) = failure else {
+        return failure;
+    };
+    if finding.code != "write.not-present" {
+        return DocFailure::Block(finding);
+    }
+    if let Some((_, fragment)) = uri.split_once('#')
+        && let Some(section) = fragment.split('/').next()
+    {
+        let show_addr = format!("{}#{section}", doc_head(uri));
+        finding.route = Some(engine::finding::Route::mechanical(
+            ["jigc", "doc", "show", &show_addr, "--task", task_id],
+            " to see the section's current item ids, then re-run the write at an existing item",
+        ));
+    }
+    DocFailure::Block(finding)
+}
+
 /// The set-field id-from guard (`design/write-commands.md` → The set-field id-from
 /// guard; DECISIONS.md 2026-07-10 → M40 Settle #7). A repeatable item's `id-from`
 /// field is **heading-derived** — its value lives in the item heading line, not a
@@ -754,7 +787,8 @@ fn run_set_slot(
     // The decomposed ack target, before `target` is consumed by the apply.
     let ack_target = slot_ack_target(&address, &target);
 
-    let edited = apply_slot_target(&schema, &source, target, &uri, &prose)?;
+    let edited = apply_slot_target(&schema, &source, target, &uri, &prose)
+        .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -1114,27 +1148,26 @@ fn run_remove_item(
 
     let edited = match target {
         RemoveItemTarget::TopLevel { section, item } => {
-            engine::write::remove_item(&schema, &source, &section, &item).map_err(|e| {
-                block(
-                    &engine::write::splice_error_finding(&e),
-                    "remove-item",
-                    &uri,
-                )
-            })?
+            engine::write::remove_item(&schema, &source, &section, &item)
         }
         RemoveItemTarget::Nested { section, items } => {
             let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
-            engine::write::remove_nested_item(&schema, &source, &section, &item_ids).map_err(
-                |e| {
-                    block(
-                        &engine::write::splice_error_finding(&e),
-                        "remove-item",
-                        &uri,
-                    )
-                },
-            )?
+            engine::write::remove_nested_item(&schema, &source, &section, &item_ids)
         }
-    };
+    }
+    // A mis-named item → `write.not-present`, enriched to the followable containing section
+    // (M44 Inc 2, [`enrich_not_present_route`]); the resolved task id + real URI are in hand.
+    .map_err(|e| {
+        enrich_not_present_route(
+            block(
+                &engine::write::splice_error_finding(&e),
+                "remove-item",
+                &uri,
+            ),
+            &uri,
+            &task.id,
+        )
+    })?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(

@@ -5068,12 +5068,21 @@ fn write_route(code: &str) -> Route {
             " to see the field's declared type and members, then re-run the write with a \
              conformant value",
         ),
-        "write.unknown-field"
-        | "write.unknown-section"
-        | "write.wrong-shape"
-        | "write.not-present" => Route::mechanical(
+        "write.unknown-field" | "write.unknown-section" | "write.wrong-shape" => Route::mechanical(
             ["jigc", "doc", "schema", "<doctype>"],
             " to see the declared shape, then re-run the write at a declared address",
+        ),
+        // A not-present is an **item-id** miss (the addressed item was never minted), not a
+        // shape question: the schema names the shape, never the corpus's real item ids. The
+        // followable recovery is to *show the containing section* and read its live item ids
+        // — so the CLI seam ([`crate::doc`] `enrich_not_present_route`) overrides this at the
+        // write-verb dispatch, where the doc's `<type>:<slug>#<section>` and the resolved
+        // task id are in hand. This is the defensive fallback for any un-enriched producer:
+        // the `<address>` / `<task-id>` placeholders are declared in the CLI-seam dummy table
+        // (`design/validation.md` → the `write.*` route split; `surface-contract.md` law 2).
+        "write.not-present" => Route::mechanical(
+            ["jigc", "doc", "show", "<address>", "--task", "<task-id>"],
+            " to see the section's current item ids, then re-run the write at an existing item",
         ),
         "write.already-present" => Route::human(
             "the target already exists — edit it in place (`set-field`/`set-slot`) instead \
