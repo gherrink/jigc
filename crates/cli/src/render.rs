@@ -2169,25 +2169,37 @@ pub fn migration_review(
                  fidelity diff below, then approve.\n\n",
             );
             // The structural fidelity summary (`design/auto-migration.md` → Hardening #5):
-            // a release-level delta naming the source releases the rewrite dropped, so a
-            // reviewer needn't eyeball that N of M releases survived. Both sides are
-            // HEURISTIC version-scans over the whole text (the M40 calibration fix — a
-            // heading-only kept-set false-alarmed non-changelog doctypes). Negative guard
-            // (DECISIONS C4, Framing A): display-only — labeled fuzzy, feeds no gate, no
-            // agent logic, no structural decision; never a second structural authority.
+            // a release-level delta naming the source versions the rewrite dropped, split
+            // into package-qualified (`pkg@version`) and bare version categories (the M44
+            // report-split), so a reviewer needn't eyeball that N of M survived and sees
+            // the package binding a bare scan drops. Both sides are HEURISTIC version-scans
+            // over the whole text (the M40 calibration fix — a heading-only kept-set
+            // false-alarmed non-changelog doctypes). Negative guard (DECISIONS C4, Framing
+            // A): display-only — labeled fuzzy, feeds no gate, no agent logic, no
+            // structural decision; never a second structural authority.
             let dropped = dropped_release_versions(foreign, rewrites);
-            // Always render the line — the affirmative `(none)` form on the nothing-dropped
-            // happy path (matching `design/worked-examples.md` flow 26) gives the reviewer a
-            // trustworthy positive signal that the scan ran and found nothing missing; an
-            // absent line is ambiguous. Display-only either way (DECISIONS C4, Framing A).
-            let absent = if dropped.is_empty() {
+            // The report is SPLIT (`design/auto-migration.md` → Hardening #5, the M44
+            // report-split): a package-qualified `pkg@version` and a bare version token
+            // render under two distinct labels, so the reviewer sees the package binding a
+            // bare scan drops. Always render both lines — the affirmative `(none)` form on
+            // a nothing-dropped category (matching `design/worked-examples.md` flow 26)
+            // gives the reviewer a trustworthy positive signal that the scan ran; an absent
+            // line is ambiguous. Display-only either way (DECISIONS C4, Framing A).
+            let package_absent = if dropped.packaged.is_empty() {
                 "(none)".to_string()
             } else {
-                dropped.join(", ")
+                dropped.packaged.join(", ")
+            };
+            let token_absent = if dropped.bare.is_empty() {
+                "(none)".to_string()
+            } else {
+                dropped.bare.join(", ")
             };
             out.push_str(&format!(
                 "fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no \
-                 structural decision): source releases absent from the rewrite: {absent}\n\n",
+                 structural decision):\n  package@version absent from the rewrite: \
+                 {package_absent}\n  version-like token absent from the rewrite: \
+                 {token_absent}\n\n",
             ));
             for (destination, rendered) in rewrites {
                 out.push_str("--- foreign source (staged seam)\n");
@@ -2210,41 +2222,92 @@ pub fn migration_review(
 }
 
 /// The heuristic release-delta for the fidelity summary (`design/auto-migration.md` →
-/// Hardening #5): the version-like tokens scanned out of the `foreign` source that are
-/// absent from the **whole** `rewrites` text, sorted + de-duplicated for a stable
-/// display. Fuzzy by construction (both sides are heuristic scans, so the delta can
-/// miss or invent a release); the result is **display-only** and feeds no structural
-/// decision (DECISIONS C4, Framing A).
-fn dropped_release_versions(foreign: &str, rewrites: &[(String, String)]) -> Vec<String> {
+/// Hardening #5), **report-split** (the M44 report-split): the version-like tokens
+/// scanned out of the `foreign` source that are absent from the **whole** `rewrites`
+/// text, partitioned into package-qualified (`pkg@version`) and bare version categories
+/// so the reviewer sees the package binding a bare scan would drop. Each category is
+/// sorted + de-duplicated over its own token space for a stable display. Fuzzy by
+/// construction (both sides are heuristic scans, so the delta can miss or invent a
+/// release); the result is **display-only** and feeds no structural decision (DECISIONS
+/// C4, Framing A).
+struct DroppedFidelity {
+    /// Package-qualified `pkg@version` mentions absent from the rewrite.
+    packaged: Vec<String>,
+    /// Bare version tokens absent from the rewrite.
+    bare: Vec<String>,
+}
+
+fn dropped_release_versions(foreign: &str, rewrites: &[(String, String)]) -> DroppedFidelity {
     // The kept-set scans the WHOLE rewrite text (the M40 calibration fix,
     // `design/auto-migration.md` → Hardening #5): a heading-only scan was a
     // changelog-shaped assumption (there, releases *are* `### …` headings) that
     // false-alarmed on every other doctype — a version token kept in body prose
-    // still read as "dropped". A kept token anywhere in the rewrite is kept.
-    let mut kept: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // still read as "dropped". A kept mention anywhere in the rewrite is kept. Each
+    // category (packaged / bare) is matched over its own token space (the M44
+    // report-split), so a `pkg@version` demoted to a bare version in the rewrite
+    // surfaces as a dropped package binding — the whole point of the split.
+    let mut kept_packaged: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut kept_bare: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for (_destination, rendered) in rewrites {
-        kept.extend(scan_version_tokens(rendered));
-    }
-    let mut dropped: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for token in scan_version_tokens(foreign) {
-        if !kept.contains(&token) {
-            dropped.insert(token);
+        for mention in scan_version_mentions(rendered) {
+            match mention {
+                VersionMention::Packaged(token) => kept_packaged.insert(token),
+                VersionMention::Bare(token) => kept_bare.insert(token),
+            };
         }
     }
-    dropped.into_iter().collect()
+    let mut dropped_packaged: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    let mut dropped_bare: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for mention in scan_version_mentions(foreign) {
+        match mention {
+            VersionMention::Packaged(token) if !kept_packaged.contains(&token) => {
+                dropped_packaged.insert(token);
+            }
+            VersionMention::Bare(token) if !kept_bare.contains(&token) => {
+                dropped_bare.insert(token);
+            }
+            _ => {}
+        }
+    }
+    DroppedFidelity {
+        packaged: dropped_packaged.into_iter().collect(),
+        bare: dropped_bare.into_iter().collect(),
+    }
 }
 
-/// Every maximal dotted-numeric run in `text` (e.g. `1.0.0`, `0.9`) — a deliberately
-/// fuzzy version-token scan: at least one `.` with a digit on each side, no leading or
-/// doubled dot; a trailing dot is **trimmed**, not rejected (the M40 calibration fix:
-/// a sentence-final `since 1.5.` yields `1.5`, no longer an under-report). A run must
-/// begin at a **word boundary** — a run glued to a preceding ASCII-alphanumeric or `-`
-/// byte is a slug/identifier fragment (`project-alpha-2.0`, `v2.0`), not a version, and is
-/// rejected (the M44 calibration fix). Dash-separated dates (`2021-06-01`) carry no `.`
-/// and so never match. Heuristic only — see [`dropped_release_versions`].
-fn scan_version_tokens(text: &str) -> Vec<String> {
+/// A version-like mention classified by whether it carries a package binding — the
+/// axis of the M44 report-split (`design/auto-migration.md` → Hardening #5).
+enum VersionMention {
+    /// A package-qualified mention `<name>@<version>` (e.g. `lodash@1.0.0`) — the
+    /// version run is preceded by `@` and a package name precedes that `@`.
+    Packaged(String),
+    /// A bare dotted-numeric version token (e.g. `1.0.0`, `0.9`).
+    Bare(String),
+}
+
+/// Whether `b` may appear in a package name for the packaged-mention scan — the common
+/// `[A-Za-z0-9_-]` set (cargo/npm/pip). A `.`, `/`, or scoped-`@` prefix is deliberately
+/// omitted: the scan is a fuzzy advisory aid, and the narrow set avoids grabbing a
+/// preceding version's dots.
+fn is_pkg_name_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
+}
+
+/// Classify every maximal dotted-numeric run in `text` (e.g. `1.0.0`, `0.9`) into a
+/// [`VersionMention`] — a deliberately fuzzy version scan: at least one `.` with a digit
+/// on each side, no leading or doubled dot; a trailing dot is **trimmed**, not rejected
+/// (the M40 calibration fix: a sentence-final `since 1.5.` yields `1.5`, no longer an
+/// under-report). A run glued to a preceding ASCII-alphanumeric or `-` byte is a
+/// slug/identifier fragment (`project-alpha-2.0`, `v2.0`), not a version, and is rejected
+/// (the M44 word-boundary guard). A run preceded by `@`-with-a-package-name is a
+/// package-qualified mention (`lodash@1.0.0` → [`VersionMention::Packaged`], the M44
+/// report-split); a run at any other word boundary is [`VersionMention::Bare`].
+/// Dash-separated dates (`2021-06-01`) carry no `.` and so never match. Heuristic only
+/// — see [`dropped_release_versions`].
+fn scan_version_mentions(text: &str) -> Vec<VersionMention> {
     let bytes = text.as_bytes();
-    let mut tokens = Vec::new();
+    let mut mentions = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i].is_ascii_digit() {
@@ -2252,23 +2315,63 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
             while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
                 i += 1;
             }
-            // Word-boundary guard (the M44 calibration fix, `design/auto-migration.md`
-            // → Hardening #5): a dotted run glued to a preceding ASCII-alphanumeric or
-            // `-` byte is a slug/identifier fragment (`project-alpha-2.0`, `v2.0`), not a
-            // bare version token — reject it, don't cry wolf on the operator's
-            // most-checked advisory surface. A run at start-of-string or after any
-            // other byte (whitespace, punctuation) is a genuine word boundary.
-            let glued =
-                start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'-');
             let token = text[start..i].trim_end_matches('.');
-            if !glued && token.contains('.') && !token.starts_with('.') && !token.contains("..") {
-                tokens.push(token.to_string());
+            let dotted = token.contains('.') && !token.starts_with('.') && !token.contains("..");
+            if !dotted {
+                continue;
+            }
+            let prev = if start > 0 {
+                Some(bytes[start - 1])
+            } else {
+                None
+            };
+            match prev {
+                // Package-qualified: the run is preceded by `@` and a package name
+                // precedes that `@` (the M44 report-split). Carries the binding a bare
+                // scan drops.
+                Some(b'@') => {
+                    let at = start - 1;
+                    let mut j = at;
+                    while j > 0 && is_pkg_name_byte(bytes[j - 1]) {
+                        j -= 1;
+                    }
+                    if j < at {
+                        mentions.push(VersionMention::Packaged(
+                            text[j..i].trim_end_matches('.').to_string(),
+                        ));
+                    } else {
+                        // A bare `@` with no package name — an ordinary bare version.
+                        mentions.push(VersionMention::Bare(token.to_string()));
+                    }
+                }
+                // Word-boundary guard (the M44 calibration fix): a dotted run glued to a
+                // preceding ASCII-alphanumeric or `-` byte is a slug/identifier fragment
+                // (`project-alpha-2.0`, `v2.0`), not a version — reject it, don't cry wolf on
+                // the operator's most-checked advisory surface.
+                Some(b) if b.is_ascii_alphanumeric() || b == b'-' => {}
+                // A run at start-of-string or after any other byte (whitespace,
+                // punctuation) is a genuine word boundary — a bare version token.
+                _ => mentions.push(VersionMention::Bare(token.to_string())),
             }
         } else {
             i += 1;
         }
     }
-    tokens
+    mentions
+}
+
+/// The bare dotted-numeric version tokens in `text` — the [`VersionMention::Bare`]
+/// projection of [`scan_version_mentions`]. Retained as the unit-tested entry point for
+/// the M44 word-boundary guard (see `render_scan_version_tokens_word_boundary_guard`).
+#[cfg(test)]
+fn scan_version_tokens(text: &str) -> Vec<String> {
+    scan_version_mentions(text)
+        .into_iter()
+        .filter_map(|m| match m {
+            VersionMention::Bare(token) => Some(token),
+            VersionMention::Packaged(_) => None,
+        })
+        .collect()
 }
 
 /// Render an **operational error** (an orchestration/`anyhow` failure — not a
@@ -4501,7 +4604,7 @@ mod tests {
         let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
         let summary = out
             .lines()
-            .find(|l| l.contains("source releases absent from the rewrite"))
+            .find(|l| l.contains("version-like token absent from the rewrite"))
             .unwrap_or_else(|| panic!("the review must render the fidelity summary; got:\n{out}"));
         assert!(
             summary.contains("(none)"),
@@ -4527,7 +4630,7 @@ mod tests {
         let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
         let summary = out
             .lines()
-            .find(|l| l.contains("source releases absent from the rewrite"))
+            .find(|l| l.contains("version-like token absent from the rewrite"))
             .unwrap_or_else(|| panic!("the review must render the fidelity summary; got:\n{out}"));
         assert!(
             summary.trim_end().ends_with(": 1.5"),
@@ -4561,5 +4664,60 @@ mod tests {
         );
         // A trailing sentence dot still trims to its token.
         assert_eq!(scan_version_tokens("since 1.5."), vec!["1.5".to_string()]);
+    }
+
+    /// The fidelity summary is **report-split** (Hardening #5, the M44 report-split): a
+    /// package-qualified `pkg@version` and a bare version token render under two
+    /// **distinct** labels, so the reviewer sees the package binding a bare scan drops.
+    /// Advisory / display-only / no gate (Framing A) — unchanged.
+    #[test]
+    fn render_migration_review_fidelity_report_split_packaged_vs_bare() {
+        let foreign = "# Deps\n\nUses lodash@1.0.0 and targets the 3.4 platform.\n";
+        let rewrites = vec![(
+            "docs/prd/deps.md".to_string(),
+            "# Deps PRD\n\n## Context\n\nDependencies to be decided.\n".to_string(),
+        )];
+
+        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
+
+        let pkg_line = out
+            .lines()
+            .find(|l| l.contains("package@version absent from the rewrite"))
+            .unwrap_or_else(|| {
+                panic!("the review must render the package@version label; got:\n{out}")
+            });
+        assert!(
+            pkg_line.contains("lodash@1.0.0"),
+            "the dropped package@version must name lodash@1.0.0; got:\n{pkg_line}",
+        );
+
+        let bare_line = out
+            .lines()
+            .find(|l| l.contains("version-like token absent from the rewrite"))
+            .unwrap_or_else(|| {
+                panic!("the review must render the version-like token label; got:\n{out}")
+            });
+        assert!(
+            bare_line.contains("3.4"),
+            "the dropped bare version must name 3.4; got:\n{bare_line}",
+        );
+
+        // The two categories render on DISTINCT lines — the package binding is not
+        // collapsed into the bare scan (`lodash@1.0.0` must not surface as a bare `1.0.0`).
+        assert_ne!(
+            pkg_line, bare_line,
+            "the two categories render on distinct lines"
+        );
+        assert!(
+            !bare_line.contains("1.0.0"),
+            "the packaged version must not double-count as a bare token; got:\n{bare_line}",
+        );
+
+        // The advisory framing survives (Framing A — never a second structural authority).
+        let lower = out.to_lowercase();
+        assert!(
+            lower.contains("fuzzy") || lower.contains("heuristic"),
+            "the fidelity summary must carry the fuzzy/heuristic label; got:\n{out}",
+        );
     }
 }

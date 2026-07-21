@@ -1779,7 +1779,8 @@ $ jigc task finalize migrate-changelog       # WITHOUT --approve → the review 
 >   CHANGELOG.md (foreign)  →  changelog/changelog.md (canonical)
 >   [the raw fidelity diff, AND a structural release-delta summary (#5):]
 >   ── source releases: 1.4.0, 1.3.2, 1.3.1, … (12)   rewrite releases: 1.4.0, 1.3.2, … (12)
->   ── source releases absent from the rewrite: (none)            ← the reviewer needn't eyeball 12 releases
+>   ── package@version absent from the rewrite: (none)
+>   ── version-like token absent from the rewrite: (none)         ← the reviewer needn't eyeball 12 releases
 > Approve? structure is guaranteed; content-faithfulness is your call.
 $ jigc task finalize migrate-changelog --approve
 > promote changelog/changelog.md · retire CHANGELOG.md · adopt · commit (auto-provisioned commit doc, #4)

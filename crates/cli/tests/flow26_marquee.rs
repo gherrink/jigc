@@ -904,7 +904,7 @@ sections:
     );
     let summary = rendered
         .lines()
-        .find(|l| l.contains("source releases absent from the rewrite"))
+        .find(|l| l.contains("version-like token absent from the rewrite"))
         .unwrap_or_else(|| {
             panic!("the gate must render the release-delta summary; got:\n{rendered}")
         });
@@ -912,11 +912,11 @@ sections:
         summary.contains("1.0.0"),
         "the summary names the dropped 1.0.0; got:\n{summary}",
     );
-    let lower = summary.to_lowercase();
+    let lower = rendered.to_lowercase();
     assert!(
         lower.contains("fuzzy") || lower.contains("heuristic"),
         "the summary carries a fuzzy/heuristic label (Framing A — never a second \
-         structural authority); got:\n{summary}",
+         structural authority); got:\n{rendered}",
     );
     assert!(
         !summary.contains("1.2.0") && !summary.contains("1.1.0"),

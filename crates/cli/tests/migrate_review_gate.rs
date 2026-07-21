@@ -445,10 +445,11 @@ fn review_gate_names_dropped_release_as_fuzzy_advisory_and_feeds_nothing_structu
         String::from_utf8_lossy(&out.stderr),
     );
 
-    // The advisory line names the dropped release and is labeled fuzzy/heuristic.
+    // The advisory line names the dropped release (a bare version token) and the summary
+    // is labeled fuzzy/heuristic (the fuzzy framing rides the fidelity header line).
     let summary_line = rendered
         .lines()
-        .find(|l| l.contains("source releases absent from the rewrite"))
+        .find(|l| l.contains("version-like token absent from the rewrite"))
         .unwrap_or_else(|| {
             panic!("the gate must render the release-delta summary; got:\n{rendered}")
         });
@@ -456,11 +457,11 @@ fn review_gate_names_dropped_release_as_fuzzy_advisory_and_feeds_nothing_structu
         summary_line.contains("0.9.0"),
         "the summary must name the dropped 0.9.0; got:\n{summary_line}"
     );
-    let lower = summary_line.to_lowercase();
+    let lower = rendered.to_lowercase();
     assert!(
         lower.contains("fuzzy") || lower.contains("heuristic"),
         "the summary must carry a fuzzy/heuristic label (Framing A — never a second \
-         structural authority); got:\n{summary_line}"
+         structural authority); got:\n{rendered}"
     );
     // The kept release is NOT listed as absent (the canonical side is precise).
     assert!(
@@ -532,24 +533,26 @@ fn review_gate_renders_none_when_nothing_dropped() {
         String::from_utf8_lossy(&out.stderr),
     );
 
-    // The affirmative form renders verbatim (worked-examples.md flow 26).
+    // The affirmative form renders verbatim (worked-examples.md flow 26): the bare
+    // version-token category reports `(none)` when nothing is dropped.
     let summary_line = rendered
         .lines()
-        .find(|l| l.contains("source releases absent from the rewrite"))
+        .find(|l| l.contains("version-like token absent from the rewrite"))
         .unwrap_or_else(|| {
             panic!(
                 "the gate must render the release-delta summary on the happy path; got:\n{rendered}"
             )
         });
     assert!(
-        summary_line.contains("source releases absent from the rewrite: (none)"),
+        summary_line.contains("version-like token absent from the rewrite: (none)"),
         "the nothing-dropped path must render the affirmative `(none)` form; got:\n{summary_line}"
     );
-    // Still labeled fuzzy/heuristic — the empty case stays inside the advisory framing.
-    let lower = summary_line.to_lowercase();
+    // Still labeled fuzzy/heuristic — the empty case stays inside the advisory framing
+    // (the fuzzy framing rides the fidelity header line).
+    let lower = rendered.to_lowercase();
     assert!(
         lower.contains("fuzzy") || lower.contains("heuristic"),
-        "the `(none)` line must still carry the fuzzy/heuristic label; got:\n{summary_line}"
+        "the `(none)` line must still carry the fuzzy/heuristic label; got:\n{rendered}"
     );
 }
 
