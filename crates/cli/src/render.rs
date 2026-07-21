@@ -2301,8 +2301,10 @@ fn is_pkg_name_byte(b: u8) -> bool {
 /// on each side, no leading or doubled dot; a trailing dot is **trimmed**, not rejected
 /// (the M40 calibration fix: a sentence-final `since 1.5.` yields `1.5`, no longer an
 /// under-report). A run glued to a preceding ASCII-alphanumeric or `-` byte is a
-/// slug/identifier fragment (`project-alpha-2.0`, `v2.0`), not a version, and is rejected
-/// (the M44 word-boundary guard). A run preceded by `@`-with-a-package-name is a
+/// slug/identifier fragment (`project-alpha-2.0`, `dev2.0`), not a version, and is rejected
+/// (the M44 word-boundary guard) — **except** a lone `v`/`V` version marker at a word
+/// boundary (`v1.0.0`), which is the conventional version prefix and yields a bare
+/// version (the M44 completion-audit refinement). A run preceded by `@`-with-a-package-name is a
 /// package-qualified mention (`lodash@1.0.0` → [`VersionMention::Packaged`], the M44
 /// report-split); a run at any other word boundary is [`VersionMention::Bare`].
 /// Dash-separated dates (`2021-06-01`) carry no `.` and so never match. Heuristic only
@@ -2346,9 +2348,20 @@ fn scan_version_mentions(text: &str) -> Vec<VersionMention> {
                         mentions.push(VersionMention::Bare(token.to_string()));
                     }
                 }
+                // Version-marker exception (the M44 completion-audit refinement): a lone
+                // `v`/`V` immediately before the run is the conventional version prefix
+                // (`v1.0.0`), not a slug — accept it as a bare version, but only when the
+                // marker is itself at a word boundary (start-of-string or a non-alphanumeric
+                // byte before it), so `dev2.0` — where `v` is mid-word — still rejects. Must
+                // precede the general word-boundary guard below.
+                Some(b'v') | Some(b'V')
+                    if start == 1 || !bytes[start - 2].is_ascii_alphanumeric() =>
+                {
+                    mentions.push(VersionMention::Bare(token.to_string()));
+                }
                 // Word-boundary guard (the M44 calibration fix): a dotted run glued to a
                 // preceding ASCII-alphanumeric or `-` byte is a slug/identifier fragment
-                // (`project-alpha-2.0`, `v2.0`), not a version — reject it, don't cry wolf on
+                // (`project-alpha-2.0`, `dev2.0`), not a version — reject it, don't cry wolf on
                 // the operator's most-checked advisory surface.
                 Some(b) if b.is_ascii_alphanumeric() || b == b'-' => {}
                 // A run at start-of-string or after any other byte (whitespace,
@@ -4746,11 +4759,19 @@ mod tests {
             scan_version_tokens("project-alpha-2.0").is_empty(),
             "a dotted run glued to `-` is a slug fragment, not a version",
         );
-        // Glued to an ASCII-alphanumeric byte likewise yields nothing.
+        // Glued to a mid-word letter likewise yields nothing (`v` is part of `dev`).
         assert!(
-            scan_version_tokens("v2.0").is_empty(),
-            "a dotted run glued to a letter is not a bare version token",
+            scan_version_tokens("dev2.0").is_empty(),
+            "a dotted run glued to a mid-word letter is not a bare version token",
         );
+        // A lone `v`/`V` version marker at a word boundary IS the conventional prefix —
+        // the run is a bare version (the M44 completion-audit refinement).
+        assert_eq!(scan_version_tokens("v2.0"), vec!["2.0".to_string()]);
+        assert_eq!(
+            scan_version_tokens("since v1.0.0"),
+            vec!["1.0.0".to_string()]
+        );
+        assert_eq!(scan_version_tokens("V3.4"), vec!["3.4".to_string()]);
         // A run at start-of-string is a version.
         assert_eq!(scan_version_tokens("1.0.0"), vec!["1.0.0".to_string()]);
         // After whitespace is a boundary.
@@ -4814,6 +4835,39 @@ mod tests {
         assert!(
             lower.contains("fuzzy") || lower.contains("heuristic"),
             "the fidelity summary must carry the fuzzy/heuristic label; got:\n{out}",
+        );
+    }
+
+    /// A conventional `v`-prefixed release dropped by the rewrite surfaces as a dropped
+    /// version-like token (the M44 completion-audit refinement — the word-boundary guard
+    /// no longer swallows the `v`/`V` version marker on both scan sides), while a
+    /// slug-glued dotted run (`project-alpha-2.0`) stays unreported (the guard still holds).
+    /// Advisory / display-only / no gate (Framing A) — unchanged.
+    #[test]
+    fn render_migration_review_reports_dropped_v_prefixed_version() {
+        let foreign = "# Changelog\n\n## v1.0.0\n\nInitial cut of project-alpha-2.0.\n";
+        let rewrites = vec![(
+            "CHANGELOG.md".to_string(),
+            "# Changelog\n\n## Unreleased\n\nNothing yet.\n".to_string(),
+        )];
+
+        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
+
+        let token_line = out
+            .lines()
+            .find(|l| l.contains("version-like token absent from the rewrite"))
+            .unwrap_or_else(|| {
+                panic!("the review must render the version-like token label; got:\n{out}")
+            });
+        // The dropped `v1.0.0` release surfaces (as its bare `1.0.0` token).
+        assert!(
+            token_line.contains("1.0.0"),
+            "a dropped v-prefixed version must surface as a dropped token; got:\n{token_line}",
+        );
+        // The slug-glued `project-alpha-2.0` run stays unreported (the guard holds).
+        assert!(
+            !token_line.contains("2.0"),
+            "a slug-glued dotted run must not surface as a dropped token; got:\n{token_line}",
         );
     }
 }
