@@ -225,6 +225,52 @@ fn below_floor_json_contract_is_byte_identical_and_advisory_free_on_stdout() {
 }
 
 #[test]
+fn below_floor_non_adr_source_does_not_route_to_the_adr_workflow() {
+    // The byte-floor rider (S2) was scoped to the adr placeholder-source loophole — its
+    // advice ("author the decision from knowledge") and route (`jigc start --workflow
+    // record-decision`) produce an ADR, not the doctype being migrated. A trivial NON-adr
+    // migration must therefore never carry that adr-producing route (surface-contract law
+    // 1: nothing lies).
+    let repo = TempDir::new("nonadr");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    setup_repo(repo.path(), home.path(), &pack);
+
+    fs::write(repo.path().join("cl.md"), TRIVIAL_SOURCE).expect("write trivial source");
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "cl.md", "--as", "changelog"],
+    );
+    assert!(
+        out.status.success(),
+        "a below-floor non-adr migrate must still exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+
+    // Still composes exactly as before — the trivial-source scope change is advisory-only.
+    assert!(
+        stdout.contains("task minted:"),
+        "the non-adr migrate must still mint + compose:\n{stdout}",
+    );
+
+    // The lie: a changelog (or any non-adr) migration must NOT be routed to the
+    // adr-producing `record-decision` workflow.
+    assert!(
+        !stdout.contains("record-decision") && !stderr.contains("record-decision"),
+        "a non-adr migrate must not route to the adr `record-decision` workflow:\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    // The advisory is scoped to adr; a non-adr trivial source emits none.
+    assert!(
+        !stdout.contains("migrate.trivial-source") && !stderr.contains("migrate.trivial-source"),
+        "the trivial-source advisory is adr-scoped — no non-adr migration carries it:\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
+
+#[test]
 fn normal_source_emits_no_advisory() {
     let repo = TempDir::new("normal");
     let home = TempDir::new("home");

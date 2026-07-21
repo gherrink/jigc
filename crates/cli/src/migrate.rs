@@ -91,16 +91,24 @@ pub fn run(
     }
 }
 
-/// The byte-floor triviality advisory (M44 Inc 5, S2) — surfaced when the foreign source
-/// is below [`TRIVIAL_SOURCE_FLOOR`] bytes, `None` otherwise. A non-blocking
+/// The byte-floor triviality advisory (M44 Inc 5, S2) — surfaced when an **adr** foreign
+/// source is below [`TRIVIAL_SOURCE_FLOOR`] bytes, `None` otherwise. A non-blocking
 /// [`Severity::Advisory`] finding (its own `migrate.trivial-source` code, colliding with
 /// neither error identity) that names the concrete byte count + floor and routes to the
 /// from-knowledge `jigc start --workflow record-decision <intent>` path — the honest
 /// alternative to migrating a placeholder source (`design/auto-migration.md` → The
 /// byte-floor advisory; `surface-contract.md` law 1). The from-knowledge path never
 /// reaches `migrate`, so it is exempt by construction (no source to measure).
+///
+/// **Scoped to `adr` (audit fix).** The rider (fork 4) was built to close the rc.7
+/// *adr* placeholder-source loophole, and both its advice ("author the decision from
+/// knowledge") and route (`record-decision`, whose `allows-create` is `{type: adr}`)
+/// produce an **ADR** — not the doctype under migration. Firing it on a non-adr migration
+/// misdirected the agent to author an adr instead of the intended doctype (law 1: nothing
+/// lies), so the guard is restored to the exact scope of the loophole it addresses;
+/// non-adr trivial migrations get no advisory.
 fn trivial_source_advisory(recorded: &str, doctype: &str, byte_len: usize) -> Option<Finding> {
-    if byte_len >= TRIVIAL_SOURCE_FLOOR {
+    if doctype != "adr" || byte_len >= TRIVIAL_SOURCE_FLOOR {
         return None;
     }
     Some(Finding::graded(
