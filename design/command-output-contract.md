@@ -12,15 +12,17 @@ The load-bearing insight (M41 Fork 1, [DECISIONS.md](../DECISIONS.md) → 2026-0
 
 ## The three surfaces this pins
 
-### 1 · Composed output — `jigc start` / `jigc workflow` `--format json`
+### 1 · Composed output — `jigc start` / `jigc workflow` / `jigc migrate` `--format json`
 
 The composed workflow a work-minting or plain compose call emits. Today `ComposedWorkflow` carries only `text` ([compose.rs](../crates/engine/src/compose.rs) → `ComposedWorkflow`); the minted task id is in hand at compose time but never surfaced structurally, so a driver had to scrape it from prose (the rc.4 trial's `--task (\S+)` backtick-scrape blew up shell substitution).
+
+**Three verbs emit this composed shape** — the id-carrying composed producers: `jigc start`, `jigc workflow`, and `jigc migrate`. All three render through the one `render::composed` json arm ([render.rs](../crates/cli/src/render.rs)), so the pin holds identically across them; `jigc migrate` mints an off-router per-file migration task and composes the `migrate-<doctype>` workflow over the source seam ([auto-migration.md](auto-migration.md)), so its `--format json` carries the minted migration id in `task` exactly as a work-minting `jigc start` does.
 
 ```json
 { "task": "<task-id>" | null, "text": "<composed workflow prose>" }
 ```
 
-- **`task`** — the task id, present in three cases: a work-minting `jigc start` (the freshly minted id), and `jigc workflow --task <id>` (the given id, re-composed); **`null`** only for a non-minting compose (orient, a `creates-task: false` router selection). The id is the handle every subsequent call requires; surfacing it structurally retires the scrape. *(Implementation: the minted id is in hand CLI-side at `start.rs`; whether `task` is threaded onto the engine `ComposedWorkflow` or added by the CLI render wrapper is a build choice — the contract is the `{task, text}` shape either way.)*
+- **`task`** — the task id, present whenever the compose mints or re-composes a work unit: a work-minting `jigc start` (the freshly minted id), `jigc workflow --task <id>` (the given id, re-composed), and `jigc migrate <path> --as <doctype>` (the minted per-file migration task id); **`null`** only for a non-minting compose (orient, a `creates-task: false` router selection). The id is the handle every subsequent call requires; surfacing it structurally retires the scrape. *(Implementation: the minted id is in hand CLI-side at `start.rs`/`migrate.rs`; whether `task` is threaded onto the engine `ComposedWorkflow` or added by the CLI render wrapper is a build choice — the contract is the `{task, text}` shape either way. `jigc migrate`'s id-carrying `task` is asserted through the real binary at `crates/cli/tests/migrate_adr.rs`.)*
 - **`text`** — the composed workflow prose, unchanged (the agent-facing instruction stream).
 
 ### 2 · Write-acks — `jigc doc set-field` / `set-slot` / `add-item` / `remove-item` / `retitle-item` / `create` / `author` / `task bind` / `task discard`

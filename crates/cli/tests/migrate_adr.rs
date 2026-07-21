@@ -1577,3 +1577,62 @@ fn a_non_migration_resume_stays_source_free() {
          minus the `task minted:` header",
     );
 }
+
+// ---------------------------------------------------------------------------
+// M44 Increment 7, T5 — `jigc migrate` is an id-carrying composed producer
+// (command-output-contract.md §1). A migration mints an off-router per-file task
+// and composes over the source seam; its `--format json` rides the identical
+// `render::composed` json arm as `jigc start`/`jigc workflow`, so it emits the
+// pinned `{task, text}` with a NON-NULL `.task` — the minted migration task id.
+// §1 lists migrate as the third composed id-carrying producer; this asserts the
+// emitted bytes carry the id rather than trusting the pin (the driver reads
+// `.task` here exactly as it does off `start`, never scraping the id from prose).
+// ---------------------------------------------------------------------------
+
+/// `jigc migrate <path> --as adr --format json` emits the pinned `{task, text}`
+/// composed contract with a **non-null** `.task` equal to the minted per-file
+/// migration task id — proving migrate an id-carrying producer.
+#[test]
+fn migrate_format_json_carries_the_minted_task_id() {
+    let repo = TempDir::new("json-task");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    let rel = commit_foreign_adr(repo.path(), "0011-json-task", FOREIGN_POSTGRES);
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", &rel, "--as", "adr", "--format", "json"],
+        None,
+    );
+    let stdout = ok_stdout(out, "jigc migrate <adr> --as adr --format json");
+
+    // Drive the EMITTED artifact — parse the composed JSON the driver reads, never
+    // a reconstructed shape.
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("the composed `--format json` emits parseable JSON");
+    let task = json
+        .get("task")
+        .expect("the pinned composed contract carries a `task` key");
+    assert!(
+        task.is_string(),
+        "a work-minting migrate carries a NON-NULL `.task` — the minted id, not \
+         `null` (the composed contract's id-carrying case); got: {task}",
+    );
+    assert_eq!(
+        task.as_str().unwrap(),
+        migration_task("0011-json-task"),
+        "the composed `.task` is the minted per-file migration task id — the handle \
+         every subsequent `--task <id>` call requires, surfaced structurally",
+    );
+    assert!(
+        json.get("text").is_some_and(serde_json::Value::is_string),
+        "the pinned composed contract carries the workflow prose in `.text`:\n{stdout}",
+    );
+}
