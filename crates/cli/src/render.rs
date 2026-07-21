@@ -172,6 +172,42 @@ pub fn composed(format: Format, view: &Composition) -> String {
     }
 }
 
+/// Render a **preview** compose — `jigc workflow <id> --preview` (M44 Inc 3) — the
+/// read surface that composes a `creates-task: true` workflow's step text **without
+/// minting a task** (`design/surface-contract.md` → law 2: nothing hides; the
+/// read-surface spine of `introspection.md` / `doc-read-surface.md`).
+///
+/// The `json` arm is **byte-identical to [`composed`]'s** — the pinned `{task, text}`
+/// contract, with `task: null` (the preview `view.task` is `None`, so nothing is
+/// minted and nothing lies — `surface-contract.md` → law 1). The banner is
+/// presentation and never joins the contract.
+///
+/// The `agent` / `human` arm leads with a **mint-first banner** (law 3 — nothing
+/// ambushes: the reader learns *before* the body that this composed nothing and how to
+/// mint for real), then the identical [`composed`] body. That body already renders no
+/// [`minted_header`] (keyed on `view.minted`, `false` here) and no [`task_state_lines`]
+/// (keyed on `view.task`, `None` here) — so `composed` alone would already tell no lie;
+/// the only thing owed over it is the banner, which frames the body's `--task
+/// your-task-id` identity (the `start`-side preview-slug render) as a placeholder for
+/// the id a real mint assigns.
+pub fn composed_preview(format: Format, view: &Composition, workflow_id: &str) -> String {
+    match format {
+        // The pinned `{task: null, text}` projection — identical to `composed`'s json
+        // arm; the banner is presentation and reaches no tooling consumer.
+        Format::Json => json(&view.view),
+        Format::Agent | Format::Human => {
+            let banner = format!(
+                "preview: workflow `{workflow_id}` — no task minted. This shows what it will ask \
+                 before you commit to running it.\n\
+                 To run it for real: `jigc start --workflow {workflow_id} \"<intent>\"`   — mints \
+                 the task and composes this.\n\
+                 Below, `--task your-task-id` marks where the minted id goes.\n\n"
+            );
+            format!("{banner}{}", composed(format, view))
+        }
+    }
+}
+
 /// The `task minted: <id>` header a **work-minting** compose opens with (M42) — the id
 /// every subsequent call in the loop requires (`jigc doc … --task <id>`, `jigc task
 /// finalize <id>`), stated on its own line.

@@ -25,7 +25,7 @@ use crate::task::TaskCommand;
 use crate::unmanage;
 use crate::upgrade;
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
 
 /// The `jigc` CLI — a context compiler for coding agents.
@@ -97,19 +97,30 @@ pub enum Command {
         slug: Option<String>,
     },
 
-    /// Re-enter a milestone sub-task as a fanned sub-agent — compose the named
-    /// sub-workflow `<W>` for sub-task `<id>`. `<W>` must equal the sub-task's
-    /// recorded mint workflow, else the command is rejected. Distinct from
-    /// `jigc start --task`, which recomposes a top-level task's own workflow.
+    /// Re-enter a milestone sub-task, or preview a work-minting workflow — compose the
+    /// named `<W>`. `--task <id>` re-enters the sub-task `<id>` as a fanned sub-agent
+    /// (`<W>` must equal the sub-task's recorded mint workflow, else rejected —
+    /// distinct from `jigc start --task`, which recomposes a top-level task's own
+    /// workflow). `--preview` composes a `creates-task: true` `<W>` **without minting a
+    /// task**, so an agent can read what it will ask before consenting to mint. Exactly
+    /// one of the two is required.
+    #[command(group(ArgGroup::new("workflow_mode").required(true).args(["task", "preview"])))]
     Workflow {
-        /// The sub-workflow to compose — the fan-out step's `run:` workflow. Must
-        /// equal the sub-task's recorded mint workflow, else rejected.
+        /// The workflow to compose — with `--task`, the fan-out step's `run:`
+        /// workflow (must equal the sub-task's recorded mint workflow); with
+        /// `--preview`, any `creates-task: true` workflow.
         workflow: String,
 
-        /// The milestone sub-task to enter (required — re-entry always names its
-        /// sub-task).
+        /// Re-enter the named milestone sub-task. Mutually exclusive with `--preview`.
         #[arg(long)]
-        task: String,
+        task: Option<String>,
+
+        /// Preview the workflow's composed step text **without minting a task** — the
+        /// read surface for a mutation-cautious agent. The workflow must declare
+        /// `creates-task: true` (a `creates-task: false` workflow mints nothing, so it
+        /// has nothing to preview — run it directly). Mutually exclusive with `--task`.
+        #[arg(long)]
+        preview: bool,
     },
 
     /// Read and write managed docs — the `jigc doc <verb>` surface.
@@ -345,7 +356,21 @@ impl Cli {
                 explain: true,
                 ..
             } => unreachable!("clap rejects `<intent>`/`--explain` together with `--task`"),
-            Command::Workflow { workflow, task } => run_reenter(self.format, &workflow, &task),
+            Command::Workflow {
+                workflow,
+                task: Some(task),
+                preview: false,
+            } => run_reenter(self.format, &workflow, &task),
+            Command::Workflow {
+                workflow,
+                task: None,
+                preview: true,
+            } => run_preview(self.format, &workflow),
+            Command::Workflow { .. } => {
+                unreachable!(
+                    "the `workflow_mode` arg-group requires exactly one of --task/--preview"
+                )
+            }
             Command::Doc { verb } => run_doc(self.format, verb),
             Command::Task { verb } => run_task(self.format, verb),
             Command::Config { verb } => run_config(self.format, verb),
@@ -1163,6 +1188,31 @@ fn run_reenter(format: Format, workflow: &str, task: &str) -> Outcome {
     match start::reenter_in_repo(&cwd, workflow, task) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
+            Outcome::success()
+        }
+        Err(err) => {
+            eprintln!("{}", render::operational_error(format, &err));
+            Outcome::failure()
+        }
+    }
+}
+
+/// Run `jigc workflow <W> --preview` against the current working directory: compose the
+/// `creates-task: true` workflow `<W>`'s step text **without minting a task**, and
+/// render it through the mint-first [`render::composed_preview`] surface. A
+/// `creates-task: false` `<W>` (the router and its kind) mints nothing to begin with,
+/// so [`start::preview_in_repo`] rejects it with the route to run it directly.
+fn run_preview(format: Format, workflow: &str) -> Outcome {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return Outcome::failure();
+        }
+    };
+    match start::preview_in_repo(&cwd, workflow) {
+        Ok(view) => {
+            println!("{}", render::composed_preview(format, &view, workflow));
             Outcome::success()
         }
         Err(err) => {
@@ -2250,23 +2300,54 @@ mod cli_parse {
     }
 
     #[test]
-    fn workflow_parses_the_id_and_required_task() {
+    fn workflow_parses_the_id_and_task() {
         let cli = Cli::try_parse_from(["jigc", "workflow", "single-task", "--task", "move-cache"])
             .expect("`jigc workflow <W> --task <id>` parses");
         assert_eq!(
             cli.command,
             Command::Workflow {
                 workflow: "single-task".to_string(),
-                task: "move-cache".to_string(),
+                task: Some("move-cache".to_string()),
+                preview: false,
             }
         );
     }
 
     #[test]
-    fn workflow_requires_the_task_flag() {
-        let err = Cli::try_parse_from(["jigc", "workflow", "single-task"])
-            .expect_err("`jigc workflow <W>` with no `--task` must be rejected");
-        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    fn workflow_parses_the_id_and_preview() {
+        let cli = Cli::try_parse_from(["jigc", "workflow", "single-task", "--preview"])
+            .expect("`jigc workflow <W> --preview` parses");
+        assert_eq!(
+            cli.command,
+            Command::Workflow {
+                workflow: "single-task".to_string(),
+                task: None,
+                preview: true,
+            }
+        );
+    }
+
+    #[test]
+    fn workflow_requires_exactly_one_mode() {
+        // Neither `--task` nor `--preview` → the required arg-group is unsatisfied.
+        let missing = Cli::try_parse_from(["jigc", "workflow", "single-task"])
+            .expect_err("`jigc workflow <W>` with neither mode must be rejected");
+        assert_eq!(
+            missing.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+
+        // Both at once → mutually exclusive within the group.
+        let both = Cli::try_parse_from([
+            "jigc",
+            "workflow",
+            "single-task",
+            "--task",
+            "move-cache",
+            "--preview",
+        ])
+        .expect_err("`--task` and `--preview` together must be rejected");
+        assert_eq!(both.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]

@@ -763,11 +763,8 @@ pub fn compose_named_no_intent_in_repo(start: &Path, workflow_id: &str) -> Resul
 /// a mint — there is nothing to preview, and it is **rejected** here with that route.
 /// An unknown `<X>` surfaces its routed not-found finding from the cascade read,
 /// before the branch.
-// The `jigc workflow <id> --preview` dispatch (`cli.rs`) that calls this lands in the
-// next increment task (Inc 3 T2, the `--preview` surface + render); T1 ships the
-// compose-path capability + its unit tests. Until that caller exists, the bin build
-// sees no production reference, so the forward-declared public entry is allowed dead.
-#[allow(dead_code)]
+// The `jigc workflow <id> --preview` dispatch (`cli.rs` → `run_preview`) calls this
+// (Inc 3 T2, the `--preview` surface + render).
 pub fn preview_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
