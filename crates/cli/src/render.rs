@@ -2237,9 +2237,11 @@ fn dropped_release_versions(foreign: &str, rewrites: &[(String, String)]) -> Vec
 /// Every maximal dotted-numeric run in `text` (e.g. `1.0.0`, `0.9`) — a deliberately
 /// fuzzy version-token scan: at least one `.` with a digit on each side, no leading or
 /// doubled dot; a trailing dot is **trimmed**, not rejected (the M40 calibration fix:
-/// a sentence-final `since 1.5.` yields `1.5`, no longer an under-report). Dash-separated
-/// dates (`2021-06-01`) carry no `.` and so never match. Heuristic only — see
-/// [`dropped_release_versions`].
+/// a sentence-final `since 1.5.` yields `1.5`, no longer an under-report). A run must
+/// begin at a **word boundary** — a run glued to a preceding ASCII-alphanumeric or `-`
+/// byte is a slug/identifier fragment (`project-alpha-2.0`, `v2.0`), not a version, and is
+/// rejected (the M44 calibration fix). Dash-separated dates (`2021-06-01`) carry no `.`
+/// and so never match. Heuristic only — see [`dropped_release_versions`].
 fn scan_version_tokens(text: &str) -> Vec<String> {
     let bytes = text.as_bytes();
     let mut tokens = Vec::new();
@@ -2250,8 +2252,16 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
             while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
                 i += 1;
             }
+            // Word-boundary guard (the M44 calibration fix, `design/auto-migration.md`
+            // → Hardening #5): a dotted run glued to a preceding ASCII-alphanumeric or
+            // `-` byte is a slug/identifier fragment (`project-alpha-2.0`, `v2.0`), not a
+            // bare version token — reject it, don't cry wolf on the operator's
+            // most-checked advisory surface. A run at start-of-string or after any
+            // other byte (whitespace, punctuation) is a genuine word boundary.
+            let glued =
+                start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'-');
             let token = text[start..i].trim_end_matches('.');
-            if token.contains('.') && !token.starts_with('.') && !token.contains("..") {
+            if !glued && token.contains('.') && !token.starts_with('.') && !token.contains("..") {
                 tokens.push(token.to_string());
             }
         } else {
@@ -4523,5 +4533,33 @@ mod tests {
             summary.trim_end().ends_with(": 1.5"),
             "the dropped 1.5 is reported without the sentence dot; got:\n{summary}",
         );
+    }
+
+    /// The version-scan is word-boundary-guarded (Hardening #5, the M44 calibration
+    /// fix): a dotted-numeric run whose preceding byte is ASCII-alphanumeric or `-` is
+    /// **not** a version token (the `project-alpha-2.0` → `2.0` false alarm), while a run at
+    /// a genuine word boundary — start-of-string, after whitespace, a trailing sentence
+    /// dot — still yields its token.
+    #[test]
+    fn render_scan_version_tokens_word_boundary_guard() {
+        // Glued to `-` (the project-alpha-2.0 false alarm) yields nothing.
+        assert!(
+            scan_version_tokens("project-alpha-2.0").is_empty(),
+            "a dotted run glued to `-` is a slug fragment, not a version",
+        );
+        // Glued to an ASCII-alphanumeric byte likewise yields nothing.
+        assert!(
+            scan_version_tokens("v2.0").is_empty(),
+            "a dotted run glued to a letter is not a bare version token",
+        );
+        // A run at start-of-string is a version.
+        assert_eq!(scan_version_tokens("1.0.0"), vec!["1.0.0".to_string()]);
+        // After whitespace is a boundary.
+        assert_eq!(
+            scan_version_tokens("since 1.0.0"),
+            vec!["1.0.0".to_string()]
+        );
+        // A trailing sentence dot still trims to its token.
+        assert_eq!(scan_version_tokens("since 1.5."), vec!["1.5".to_string()]);
     }
 }
