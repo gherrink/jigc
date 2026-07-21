@@ -162,12 +162,18 @@ fn shipped_spec_schema(pack: &Path) -> engine::schema::Schema {
 /// derivation ([`crate::start::mint_migration_in_repo`]): strip `.md`, fold path
 /// separators to `-`, slugify, prefix `migrate-<doctype>-`.
 fn migration_task(rel: &str) -> String {
+    let hash = &engine::file_state::hash_bytes(rel.as_bytes())[..12];
     let stem = rel.strip_suffix(".md").unwrap_or(rel);
     let folded: String = stem
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    format!("migrate-spec-{}", engine::slug::slugify(&folded))
+    let slug = engine::slug::slugify(&folded);
+    if slug.is_empty() {
+        format!("migrate-spec-{hash}")
+    } else {
+        format!("migrate-spec-{slug}-{hash}")
+    }
 }
 
 /// Write a foreign spec at the off-canonical `specs/<stem>.md` and **commit it**, so

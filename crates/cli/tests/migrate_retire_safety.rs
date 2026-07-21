@@ -152,12 +152,12 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog-changelog";
+const TASK: &str = "migrate-changelog-changelog-b83309faa8b0";
 
 /// The per-file migration task id for a source AT the canonical managed path
 /// (`docs/changelog/changelog.md`) — the path is folded into the slug, so this in-location
 /// squatter mints a distinct id from the root-`CHANGELOG.md` `TASK` above.
-const SQUATTER_TASK: &str = "migrate-changelog-docs-changelog-changelog";
+const SQUATTER_TASK: &str = "migrate-changelog-docs-changelog-changelog-1a8d50969762";
 
 /// A single-release foreign changelog body (the migration input) — the raw Keep-a-Changelog
 /// shape, NON-conformant to the managed `changelog` schema (no `{#…}` anchors, no

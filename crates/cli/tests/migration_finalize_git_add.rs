@@ -129,7 +129,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 }
 
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>`.
-const TASK: &str = "migrate-changelog-history";
+const TASK: &str = "migrate-changelog-history-3268e06b69e1";
 
 /// The foreign Keep-a-Changelog file (committed, so its retire lands a tracked deletion).
 const FOREIGN: &str = "\

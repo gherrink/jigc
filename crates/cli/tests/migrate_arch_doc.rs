@@ -219,17 +219,22 @@ fn shipped_arch_doc_schema(pack: &Path) -> engine::schema::Schema {
 }
 
 /// The per-file migration task id for a repo-relative source `rel` — the production
-/// derivation ([`crate::start::migration_task_id_source`]): strip `.md`, fold path
-/// separators to `-`, slugify, prefix `migrate-arch-doc-`, then re-slugify at the
-/// mint (which applies the word cap, so a long path yields a capped id).
+/// derivation ([`crate::start::migration_task_id`]): `migrate-arch-doc-<slug>-<hash>`,
+/// where `<slug>` is the extension-stripped, separator-folded, slugified path and
+/// `<hash>` is a 12-hex-char prefix of `blake3(rel)` (the M44 fork-1 disambiguator).
 fn migration_task(rel: &str) -> String {
+    let hash = &engine::file_state::hash_bytes(rel.as_bytes())[..12];
     let stem = rel.strip_suffix(".md").unwrap_or(rel);
     let folded: String = stem
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    let source = format!("migrate-arch-doc-{}", engine::slug::slugify(&folded));
-    engine::slug::slugify(&source)
+    let slug = engine::slug::slugify(&folded);
+    if slug.is_empty() {
+        format!("migrate-arch-doc-{hash}")
+    } else {
+        format!("migrate-arch-doc-{slug}-{hash}")
+    }
 }
 
 /// Write a foreign arch-doc at `docs/architecture/<stem>.md` and **commit it**, so the

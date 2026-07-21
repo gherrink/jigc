@@ -241,7 +241,7 @@ sections:
 /// The per-file migration task id `jigc migrate old-vision.md --as vision` mints
 /// (the production derivation: strip `.md`, fold `/` to `-`, slugify, prefix
 /// `migrate-vision-`).
-const TASK: &str = "migrate-vision-old-vision";
+const TASK: &str = "migrate-vision-old-vision-b7ea1b0697bf";
 
 #[test]
 fn migrate_vision_finalize_writes_root_vision_retires_and_adopts() {
@@ -463,7 +463,7 @@ sections:
 /// The per-file migration task id `jigc migrate M3-DONE.md --as completion-record`
 /// mints (the production derivation: strip `.md`, fold `/` to `-`, slugify, prefix
 /// `migrate-completion-record-`).
-const TASK_COMPLETION: &str = "migrate-completion-record-m3-done";
+const TASK_COMPLETION: &str = "migrate-completion-record-m3-done-dc422cd75edf";
 
 /// The increment's second Proves arm: a GSD completion record with NO evidence file
 /// migrates via the artifact ladder's **verbatim-source rung** (the foreign source is
@@ -695,7 +695,7 @@ sections:
 "#;
 
 /// The task id `jigc migrate OLD-DECISIONS.md --as decisions-log` mints.
-const TASK_DECISIONS: &str = "migrate-decisions-log-old-decisions";
+const TASK_DECISIONS: &str = "migrate-decisions-log-old-decisions-b3e221f3098b";
 
 /// Historic dates transcribe-or-omit, PER ENTRY: the dated foreign entry carries
 /// `2024-03-05` verbatim into the committed singleton; the dateless one renders with
@@ -831,7 +831,7 @@ sections:
 "#;
 
 /// The task id `jigc migrate OLD-ROADMAP.md --as roadmap` mints.
-const TASK_ROADMAP: &str = "migrate-roadmap-old-roadmap";
+const TASK_ROADMAP: &str = "migrate-roadmap-old-roadmap-22f49ca94e73";
 
 /// The two-slot item payload: one authored `milestones` item renders BOTH `#### Proves`
 /// and `#### Decomposition` sub-headings in the committed placement singleton.

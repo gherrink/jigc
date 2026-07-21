@@ -693,7 +693,7 @@ fn mint_migration_and_author(repo: &Path, home: &Path) -> String {
         &["migrate", "HISTORY.md", "--as", "changelog"],
         "jigc migrate HISTORY.md --as changelog",
     );
-    let task = "migrate-changelog-history";
+    let task = "migrate-changelog-history-3268e06b69e1";
     let out = jigc(
         repo,
         home,

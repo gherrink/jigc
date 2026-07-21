@@ -162,13 +162,11 @@ fn shipped_adr_schema(pack: &Path) -> engine::schema::Schema {
     schema
 }
 
-/// The per-file migration task id — `migrate-adr-<slug(source-path)>`, path-folded so a
-/// corpus migrates sequentially without serial-colliding on the singleton `migrate-adr`
-/// (T1; `auto-migration.md` → Migration model). For `docs/adr/<stem>.md` the stem folds
-/// path separators to `-`, then the mint re-slugifies (applying the word cap, so a long
-/// stem yields a capped id).
+/// The per-file migration task id for a foreign ADR at `docs/adr/<stem>.md` — the
+/// `docs/adr/` specialization of [`migration_task_for`], the general mirror of the
+/// production derivation ([`crate::start::migration_task_id`]).
 fn migration_task(stem: &str) -> String {
-    engine::slug::slugify(&format!("migrate-adr-docs-adr-{stem}"))
+    migration_task_for(&format!("docs/adr/{stem}.md"))
 }
 
 /// Write a foreign ADR at `docs/adr/<stem>.md` and **commit it**, so the retire surfaces
@@ -965,13 +963,18 @@ fn a_non_migration_doc_create_adr_still_stamps_today() {
 /// specialization; the squatter arm migrates a source under `docs/decisions/`, so it needs the
 /// general form.
 fn migration_task_for(rel: &str) -> String {
+    let hash = &engine::file_state::hash_bytes(rel.as_bytes())[..12];
     let stem = rel.strip_suffix(".md").unwrap_or(rel);
     let folded: String = stem
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    let source = format!("migrate-adr-{}", engine::slug::slugify(&folded));
-    engine::slug::slugify(&source)
+    let slug = engine::slug::slugify(&folded);
+    if slug.is_empty() {
+        format!("migrate-adr-{hash}")
+    } else {
+        format!("migrate-adr-{slug}-{hash}")
+    }
 }
 
 /// `task finalize <task> --approve` raw output (the clobber arm asserts the BLOCK, so it

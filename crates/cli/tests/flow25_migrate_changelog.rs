@@ -156,7 +156,7 @@ fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
 /// so a foreign file there adopts in place — a separate proof; a foreign changelog at any
 /// other path migrates + promotes to the canonical root), so the task lands at
 /// `migrate-changelog-history` (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog-history";
+const TASK: &str = "migrate-changelog-history-3268e06b69e1";
 
 /// `jigc migrate HISTORY.md --as changelog`: write the foreign file, run the verb,
 /// and return the composed view's stdout — asserting it surfaced the foreign content

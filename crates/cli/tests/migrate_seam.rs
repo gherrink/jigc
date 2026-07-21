@@ -174,7 +174,7 @@ fn migrate_mints_off_router_task_and_feeds_the_source_seam() {
     // with `--task changelog` / the `changelog` doctype namespace (`auto-migration.md`
     // → Hardening #9). Its working area + base pin exist, and the bare `changelog`
     // namespace stays free.
-    let task = "migrate-changelog-changelog";
+    let task = "migrate-changelog-changelog-b83309faa8b0";
     let task_dir = repo.path().join(".jigc").join("tasks").join(task);
     assert!(
         task_dir.join("base.json").is_file(),

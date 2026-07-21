@@ -469,7 +469,7 @@ fn migration_review_hold_is_identifiable_in_the_log() {
     enable_log(repo.path(), home.path());
 
     // The off-router migration task id `jigc migrate` mints for HISTORY.md.
-    let task = "migrate-changelog-history";
+    let task = "migrate-changelog-history-3268e06b69e1";
 
     // Assert-success runner returning trimmed stdout (the add-item verbs print the minted
     // address as a bare line).

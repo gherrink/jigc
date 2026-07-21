@@ -158,15 +158,16 @@ pub(crate) fn require_project_config(start: &Path) -> Result<PathBuf> {
 /// `DECISIONS.md` S2). The agent then authors only the canonical doc and never touches
 /// the commit form.
 ///
-/// The task id is **per-file** — `migrate-<doctype>-<slug(source_path)>`, **not** the
-/// singleton `migrate-<doctype>`: a corpus of N foreign docs migrates sequentially
+/// The task id is **per-file** — `migrate-<doctype>-<slug(source_path)>-<hash>`, **not**
+/// the singleton `migrate-<doctype>`: a corpus of N foreign docs migrates sequentially
 /// (each file mints its own task), where the fixed `migrate-<doctype>` would serial-
 /// collide on the second file. It is also **not** the bare `doctype` name: the bare
 /// name collides with both `--task <doctype>` (resuming a `doctype`-slugged task) and
 /// the `doctype` id-space itself, so a migration task named after its doctype would
 /// block an independent task at that name (`auto-migration.md` → Hardening #9). The
-/// [`migration_task_id_source`] is fed as the empty-intent id-source fallback
-/// (`mint_task`'s `type_name` arg), so the mint slugs it to a stable, collision-free id.
+/// [`migration_task_id`] result is fed **verbatim** as `mint_task`'s `slug_override`
+/// (bypassing the mint's re-slugify cap), so its `blake3(source-path)` disambiguator
+/// survives to keep the id stable and collision-free for every path.
 ///
 /// The `jigc migrate` verb owns this mint so composition never double-mints; it stages
 /// the foreign source separately and then composes via [`compose_migrate_in_repo`].
@@ -186,10 +187,14 @@ pub(crate) fn mint_migration_in_repo(
     // into the gitignored working area, never the git index, so the probe sees only
     // genuinely foreign pre-staged changes).
     let staged = crate::task::git_staged_snapshot(repo_root)?;
-    // Empty intent → the id slugs from this per-file `migrate-<doctype>-<slug>` fallback,
-    // keeping the bare `<doctype>` task namespace free and the migration task per-file.
-    let mint_id_source = migration_task_id_source(doctype, source_path);
-    let minted = state::mint_task(&jigc_root, "", &mint_id_source, workflow_id, base, None)
+    // The per-file migration id carries a `blake3(source-path)` disambiguator (fork 1),
+    // so it is passed **verbatim** via the `slug_override` bypass — never re-slugified by
+    // the mint (whose `MAX_WORDS`/`MAX_CHARS` cap would truncate the tail and re-collide
+    // two long paths sharing their first-`MAX_WORDS` slug window). Empty intent still,
+    // so resume re-composes with no stray `{{task.intent}}`; the bare `<doctype>` task
+    // namespace stays free and the migration task stays per-file.
+    let id = migration_task_id(doctype, source_path);
+    let minted = state::mint_task(&jigc_root, "", doctype, workflow_id, base, Some(&id))
         .map_err(finding_to_err)?;
     state::write_staged_snapshot(&minted.dir, &staged)
         .with_context(|| format!("could not write the staged snapshot for `{}`", minted.id))?;
@@ -198,21 +203,41 @@ pub(crate) fn mint_migration_in_repo(
     Ok(minted)
 }
 
-/// Derive the **per-file** migration task id-source from `(doctype, source_path)` — a
-/// pure, path-aware function so a corpus of N foreign docs migrates sequentially (each
-/// file its own task) rather than serial-colliding on a singleton `migrate-<doctype>`.
+/// Derive the **per-file** migration task **id** from `(doctype, source_path)` — a pure,
+/// path-aware function whose result is the minted task id **verbatim** (fed to
+/// [`state::mint_task`] as `slug_override`, never re-slugified).
 ///
-/// The slug folds the **repo-relative source path** (extension stripped, path separators
-/// folded to `-`) into the id, so two same-stem files in different directories
-/// (`a/CHANGELOG.md` vs `b/CHANGELOG.md`) yield distinct ids. It is the deterministic
-/// inverse the (I)-pick settled on (`DECISIONS.md` 2026-06-17 → M25 Inc 1): re-migrating
-/// the *same* file produces the *same* id, so it collides into the existing serial-
-/// collision route (resume/discard) instead of double-minting — `mint_task` hard-rejects
-/// a serial collision, never suffixes. The result is already a clean slug, so the mint's
-/// own `slugify` of the empty-intent fallback is the identity (the id-source is the id).
-fn migration_task_id_source(doctype: &str, source_path: &str) -> String {
-    // Strip the extension and fold path separators to '-' before slugging, so the
-    // directory survives into the slug (slugify would otherwise drop a bare '/').
+/// The id is `migrate-<doctype>-<slug>-<hash>` (or `migrate-<doctype>-<hash>` when the
+/// path slugs away entirely), where:
+///
+/// - `<slug>` folds the **repo-relative source path** (extension stripped, path
+///   separators folded to `-`, then slugified — its `MAX_WORDS`/`MAX_CHARS` cap bounds
+///   the id to a filesystem-safe length) in for **legibility**; and
+/// - `<hash>` is a 12-hex-char prefix of `blake3(repo-relative source path)`, folded in
+///   **unconditionally** (fork 1) for **identity**: it makes the id **deterministic**
+///   (same path → same id, so re-migrating a file collides into the serial-collision
+///   resume/discard route rather than double-minting — `mint_task` hard-rejects a serial
+///   collision, never suffixes) and **collision-free** (distinct paths → distinct ids).
+///
+/// The hash is what disambiguates *every* path, not just the empty-slug case: two long
+/// paths sharing their first-`MAX_WORDS` slug window collapse to one id under the mint's
+/// re-slugify cap, so the legible `<slug>` alone cannot separate them. Passing the built
+/// id verbatim via `slug_override` (bypassing that cap) is what lets the hash survive —
+/// so `mint_migration_in_repo` must feed this as the override, never as the slugged
+/// id-source (`auto-migration.md` → Hardening #9; `design/storage.md` → Identity).
+///
+/// This is an id-**construction** fold upstream of `slugify`, not a change to `slugify`
+/// itself, so it is **not** a `SLUG_RULE_VERSION` change and ships no corpus migration
+/// (`design/storage.md` → Identity — the slug-rule one-way door does not reach this
+/// `start.rs` fold).
+fn migration_task_id(doctype: &str, source_path: &str) -> String {
+    // The disambiguator: a 12-hex-char prefix of blake3(repo-relative source path).
+    // Distinct paths → distinct ids; the same path → the same id.
+    let hash = engine::file_state::hash_bytes(source_path.as_bytes());
+    let disambiguator = &hash[..12];
+    // The legible slug portion: strip the extension and fold path separators to '-' so
+    // the directory survives (slugify would otherwise drop a bare '/'), then slugify —
+    // whose own MAX_WORDS/MAX_CHARS cap bounds the slug portion to a NAME_MAX-safe length.
     let stem = Path::new(source_path).with_extension("");
     let folded: String = stem
         .to_string_lossy()
@@ -221,18 +246,13 @@ fn migration_task_id_source(doctype: &str, source_path: &str) -> String {
         .collect();
     let slug = engine::slug::slugify(&folded);
     if slug.is_empty() {
-        // The whole path slugged away (all non-Latin, e.g. `日本語.md`). Falling back
-        // to the bare `migrate-<doctype>` would re-introduce the singleton serial-
-        // collision the per-file id exists to remove (`auto-migration.md` → Hardening
-        // #9): every empty-slug source would mint the same id. Disambiguate on a
-        // blake3 of the repo-relative path — distinct paths → distinct ids, the same
-        // path → the same id (re-migration still collides into the resume/discard
-        // route, never double-mints). The hex prefix is itself a clean slug, so the
-        // mint's own empty-intent slugify stays the identity.
-        let hash = engine::file_state::hash_bytes(source_path.as_bytes());
-        return format!("migrate-{doctype}-{}", &hash[..12]);
+        // The whole path slugged away (all non-Latin, e.g. `日本語.md`): the id is just
+        // the prefix + disambiguator — distinct empty-slug paths still get distinct ids,
+        // never collapsing to the bare `migrate-<doctype>` singleton.
+        format!("migrate-{doctype}-{disambiguator}")
+    } else {
+        format!("migrate-{doctype}-{slug}-{disambiguator}")
     }
-    format!("migrate-{doctype}-{slug}")
 }
 
 /// Provision the task's workflow-provisioned **commit** doc into the working
@@ -3283,6 +3303,48 @@ mod tests {
         assert!(snapshot.deletions.is_empty());
     }
 
+    /// M44 Inc 1 (fork 1): every migration task id carries a `blake3(repo-relative
+    /// source path)` disambiguator, so two **distinct** source paths whose slug windows
+    /// are identical after the mint's `MAX_WORDS` cap still mint **distinct** tasks —
+    /// measured on the id `mint_task` actually creates (the working dir on disk), not a
+    /// reconstructed equivalent. Today the second such path serial-collides on the shared
+    /// capped id (the committed `milestone-record` `id-from: task-id` item collision at
+    /// the root); after the fix both migrate and the same path re-derives to the same id
+    /// (→ the resume/discard route, never a double-mint).
+    #[test]
+    fn migration_mint_ids_are_collision_free_for_colliding_paths() {
+        let repo = TempDir::new("migrate-collision");
+        init_repo_with_commit(repo.path());
+        // Two distinct paths under one dir whose long stems share the first-MAX_WORDS
+        // slug window — they collapse to one capped id today.
+        let alpha = "docs/adr/one-two-three-four-five-alpha.md";
+        let beta = "docs/adr/one-two-three-four-five-beta.md";
+
+        let a = mint_migration_in_repo(repo.path(), "adr", "migrate-adr", alpha)
+            .expect("first colliding-window path mints");
+        let b = mint_migration_in_repo(repo.path(), "adr", "migrate-adr", beta)
+            .expect("second colliding-window path must mint its OWN task, not serial-collide");
+
+        assert_ne!(
+            a.id, b.id,
+            "distinct source paths must mint distinct task ids"
+        );
+        assert!(
+            a.dir.is_dir() && b.dir.is_dir(),
+            "both migration task dirs exist on disk (the id mint_task actually created)"
+        );
+
+        // Re-migrating the SAME path re-derives the SAME id → serial-collision resume
+        // route, never a double-mint.
+        let err = mint_migration_in_repo(repo.path(), "adr", "migrate-adr", alpha)
+            .expect_err("re-migrating the same path serial-collides into the resume route");
+        assert!(
+            err.to_string().contains(&a.id),
+            "re-migration collides on the same id `{}`; got: {err}",
+            a.id
+        );
+    }
+
     /// A user intent with no sluggable content (empty, whitespace-only, or
     /// punctuation-only) is rejected up front with a clear, actionable message and
     /// mints **nothing** — never silently minted under the `commit` fallback id
@@ -3319,36 +3381,41 @@ mod tests {
         assert_eq!(minted.id, "add-rate-limiter");
     }
 
-    /// The per-file migration task id-source is a pure, path-aware function of
+    /// The per-file migration task id is a pure, path-aware function of
     /// `(doctype, source_path)`: the same path yields the same id (so re-migrating a
     /// file collides into the existing serial-collision route, not a double-mint), two
     /// distinct paths yield distinct ids (so a corpus migrates sequentially without the
     /// singleton blocker), and two same-stem files in different directories yield
-    /// distinct ids (the path is folded in, not just the stem). The changelog root file
-    /// lands at the documented `migrate-changelog-changelog`.
+    /// distinct ids (the path is folded into the disambiguator, not just the stem). The
+    /// changelog root file reads legibly as `migrate-changelog-changelog-<hash>`.
     #[test]
-    fn migration_task_id_source_is_per_file_and_path_aware() {
+    fn migration_task_id_is_per_file_and_path_aware() {
         // Same path -> same id (deterministic; re-migration collides, never double-mints).
         assert_eq!(
-            migration_task_id_source("adr", "decisions/0001-cache.md"),
-            migration_task_id_source("adr", "decisions/0001-cache.md"),
+            migration_task_id("adr", "decisions/0001-cache.md"),
+            migration_task_id("adr", "decisions/0001-cache.md"),
         );
         // Two distinct paths -> distinct ids.
         assert_ne!(
-            migration_task_id_source("adr", "decisions/0001-cache.md"),
-            migration_task_id_source("adr", "decisions/0002-retry.md"),
+            migration_task_id("adr", "decisions/0001-cache.md"),
+            migration_task_id("adr", "decisions/0002-retry.md"),
         );
         // Same stem in different directories -> distinct ids (the path, not just the
-        // stem, is folded into the slug).
+        // stem, drives the disambiguator).
         assert_ne!(
-            migration_task_id_source("adr", "a/CHANGELOG.md"),
-            migration_task_id_source("adr", "b/CHANGELOG.md"),
+            migration_task_id("adr", "a/CHANGELOG.md"),
+            migration_task_id("adr", "b/CHANGELOG.md"),
         );
-        // The result is already a clean slug, so the mint's own slugify is the identity:
-        // the id-source IS the minted task id.
-        assert_eq!(
-            migration_task_id_source("changelog", "CHANGELOG.md"),
-            "migrate-changelog-changelog",
+        // Every id is a well-formed slug (fed verbatim as `slug_override`), keeps the
+        // legible `migrate-<doctype>-<slug>-` head, and carries the 12-hex disambiguator.
+        let id = migration_task_id("changelog", "CHANGELOG.md");
+        assert!(
+            engine::slug::is_slug(&id),
+            "id must be a well-formed slug: {id}"
+        );
+        assert!(
+            id.starts_with("migrate-changelog-changelog-"),
+            "id must read legibly as migrate-changelog-changelog-<hash>: {id}"
         );
     }
 
@@ -3359,23 +3426,28 @@ mod tests {
     /// the SAME path stays stable (so re-migration collides into the resume/discard
     /// route, never double-mints).
     #[test]
-    fn migration_task_id_source_disambiguates_paths_that_slug_to_empty() {
+    fn migration_task_id_disambiguates_paths_that_slug_to_empty() {
         // Two distinct all-non-Latin paths -> distinct ids (no collapse to singleton).
         assert_ne!(
-            migration_task_id_source("adr", "日本語.md"),
-            migration_task_id_source("adr", "中文.md"),
+            migration_task_id("adr", "日本語.md"),
+            migration_task_id("adr", "中文.md"),
         );
         // Same empty-slug path -> same id (deterministic; re-migration collides).
         assert_eq!(
-            migration_task_id_source("adr", "日本語.md"),
-            migration_task_id_source("adr", "日本語.md"),
+            migration_task_id("adr", "日本語.md"),
+            migration_task_id("adr", "日本語.md"),
         );
-        // The fallback id never collapses to the bare `migrate-<doctype>` singleton.
-        assert_ne!(migration_task_id_source("adr", "日本語.md"), "migrate-adr");
-        // The fallback is a clean slug, so the mint's own slugify is the identity.
-        assert_eq!(
-            engine::slug::slugify(&migration_task_id_source("adr", "日本語.md")),
-            migration_task_id_source("adr", "日本語.md"),
+        // The empty-slug id never collapses to the bare `migrate-<doctype>` singleton and
+        // carries no empty slug segment (a well-formed `migrate-<doctype>-<hash>` slug).
+        let id = migration_task_id("adr", "日本語.md");
+        assert_ne!(id, "migrate-adr");
+        assert!(
+            engine::slug::is_slug(&id),
+            "empty-slug id must be a slug: {id}"
+        );
+        assert!(
+            id.starts_with("migrate-adr-") && !id.starts_with("migrate-adr--"),
+            "empty-slug id must be migrate-adr-<hash>, no empty slug segment: {id}"
         );
     }
 

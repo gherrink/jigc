@@ -140,7 +140,7 @@ fn staged_changelog(repo: &Path, task: &str) -> String {
 }
 
 /// The migration task id — `jigc migrate` mints a per-file `migrate-<doctype>-<slug(path)>`.
-const MIGRATE_TASK: &str = "migrate-changelog-history";
+const MIGRATE_TASK: &str = "migrate-changelog-history-3268e06b69e1";
 
 /// A dateless foreign Keep-a-Changelog file — the common case (no `- YYYY-MM-DD`).
 const DATELESS_FOREIGN: &str = "\

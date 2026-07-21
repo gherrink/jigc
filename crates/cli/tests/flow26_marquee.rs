@@ -151,7 +151,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 /// The off-router migration task id — `jigc migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` → Hardening #9).
-const TASK: &str = "migrate-changelog-history";
+const TASK: &str = "migrate-changelog-history-3268e06b69e1";
 
 /// The shipped changelog schema, loaded for the byte-stable round-trip assertion.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
@@ -673,7 +673,7 @@ fn flow26_off_canonical_docs_changelog_source_promotes_root_and_retires() {
     // now off-canonical. The per-file migration id folds the (extension-stripped,
     // separator-folded) source path into the slug, so this source mints a distinct task id
     // from the root-`HISTORY.md` tests above.
-    const SQUATTER_TASK: &str = "migrate-changelog-docs-changelog-changelog";
+    const SQUATTER_TASK: &str = "migrate-changelog-docs-changelog-changelog-1a8d50969762";
     const SQUATTER: &str = "# Whatever\n\nnon-conformant prior content at the old folder home\n";
     setup_and_migrate(
         repo.path(),
@@ -776,7 +776,7 @@ fn flow26_at_canonical_root_changelog_adopts_in_place() {
 
     // The foreign root `CHANGELOG.md` IS the canonical placement destination, so the
     // per-file migration id folds the source stem into `migrate-changelog-changelog`.
-    const AT_CANONICAL_TASK: &str = "migrate-changelog-changelog";
+    const AT_CANONICAL_TASK: &str = "migrate-changelog-changelog-b83309faa8b0";
     const SQUATTER: &str =
         "# Whatever\n\nnon-conformant foreign changelog sitting at the canonical root\n";
     setup_and_migrate(repo.path(), home.path(), &pack, "CHANGELOG.md", SQUATTER);

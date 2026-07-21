@@ -321,7 +321,7 @@ fn pre_staged_git_rm_migration_finalize_lands_one_clean_commit() {
 
     // Author the canonical changelog in one declarative batch (the commit doc is
     // auto-provisioned filled on a migration task).
-    let task = "migrate-changelog-history";
+    let task = "migrate-changelog-history-3268e06b69e1";
     assert_ok(
         &jigc(
             repo.path(),
@@ -746,7 +746,7 @@ fn methodology_migration_lands_the_root_vision() {
         stdout_of(&composed),
     );
 
-    let task = "migrate-vision-old-vision";
+    let task = "migrate-vision-old-vision-b7ea1b0697bf";
     let authored = jigc(
         repo.path(),
         home.path(),

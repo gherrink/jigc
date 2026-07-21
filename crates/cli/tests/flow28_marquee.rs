@@ -250,18 +250,26 @@ fn shipped_schema(pack: &Path, doctype: &str) -> engine::schema::Schema {
     schema
 }
 
-/// The per-file migration task id for a repo-relative source `rel` — the production
-/// derivation: strip `.md`, fold path separators to `-`, slugify, prefix
-/// `migrate-<doctype>-`, then re-slugify at the mint (which applies the word cap,
-/// so a long path yields a capped id).
+/// The per-file migration task id for a repo-relative source `rel` — mirrors the
+/// production derivation ([`crate::start::migration_task_id`]):
+/// `migrate-<doctype>-<slug>-<hash>`, where `<slug>` is the extension-stripped,
+/// separator-folded, slugified path (for legibility) and `<hash>` is a 12-hex-char
+/// prefix of `blake3(rel)` (the M44 fork-1 disambiguator, folded in unconditionally so
+/// distinct paths never collide under the mint's slug cap). The id is fed verbatim as
+/// `slug_override`, so this mirror does not re-slugify.
 fn migration_task(doctype: &str, rel: &str) -> String {
+    let hash = &engine::file_state::hash_bytes(rel.as_bytes())[..12];
     let stem = rel.strip_suffix(".md").unwrap_or(rel);
     let folded: String = stem
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    let source = format!("migrate-{doctype}-{}", engine::slug::slugify(&folded));
-    engine::slug::slugify(&source)
+    let slug = engine::slug::slugify(&folded);
+    if slug.is_empty() {
+        format!("migrate-{doctype}-{hash}")
+    } else {
+        format!("migrate-{doctype}-{slug}-{hash}")
+    }
 }
 
 /// Write a foreign doc at `rel` and **commit it**, so its retirement lands as a tracked

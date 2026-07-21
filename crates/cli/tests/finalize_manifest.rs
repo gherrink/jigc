@@ -419,7 +419,7 @@ fn migration_dry_run_predicts_the_narrowed_set_not_user_wip() {
         &["migrate", "HISTORY.md", "--as", "changelog"],
         "jigc migrate",
     );
-    let task = "migrate-changelog-history";
+    let task = "migrate-changelog-history-3268e06b69e1";
 
     // An unrelated untracked stray — it must NOT enter the narrowed migration prediction.
     fs::write(repo.path().join("scratch.txt"), "private WIP\n").expect("write scratch.txt");

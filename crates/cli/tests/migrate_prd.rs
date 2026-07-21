@@ -161,13 +161,18 @@ fn shipped_prd_schema(pack: &Path) -> engine::schema::Schema {
 /// separators to `-`, slugify, prefix `migrate-<doctype>-`, then re-slugify at the
 /// mint (which applies the word cap, so a long path yields a capped id).
 fn migration_task(rel: &str) -> String {
+    let hash = &engine::file_state::hash_bytes(rel.as_bytes())[..12];
     let stem = rel.strip_suffix(".md").unwrap_or(rel);
     let folded: String = stem
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    let source = format!("migrate-prd-{}", engine::slug::slugify(&folded));
-    engine::slug::slugify(&source)
+    let slug = engine::slug::slugify(&folded);
+    if slug.is_empty() {
+        format!("migrate-prd-{hash}")
+    } else {
+        format!("migrate-prd-{slug}-{hash}")
+    }
 }
 
 /// Write a foreign prd at `docs/<stem>.md` and **commit it**, so the retire surfaces a
