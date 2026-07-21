@@ -171,12 +171,65 @@ const STORE_JSON: &str = r#"{
     {
       "id": "adr:single-node-cache",
       "path": "decisions/single-node-cache.md",
-      "state": "managed"
+      "state": "managed",
+      "item-count": 0
     },
     {
       "id": "changelog:changelog",
       "path": "CHANGELOG.md",
-      "state": "unregistered"
+      "state": "unregistered",
+      "item-count": 0
+    }
+  ]
+}"#;
+
+/// A canonical committed **managed** `prd` — jigc's own doc (stamped `schema-version: 1`),
+/// carrying a `requirements` **repeatable** section with **two** items. Captured verbatim
+/// from the real `doc author prd` write path, so it parses clean against the current `prd`
+/// schema ⇒ the listing counts its two items (`item-count: 2` — the nonzero managed count,
+/// so the new parse-and-count path is genuinely exercised, not masked by all-zero rows).
+const MANAGED_PRD: &str = "\
+---
+schema-version: 1
+---
+
+# Habit tracker
+
+## Vision
+
+A tracker that turns intentions into daily streaks.
+
+## Requirements
+
+### Log a habit in one tap  {#log-a-habit-in-one}
+
+Logging a habit takes a single tap from the home screen.
+
+### Show the current streak  {#show-the-current-streak}
+
+The current streak is shown front and center.
+
+## Context
+
+Built for solo users who abandon heavyweight planners.
+";
+
+/// The pinned listing shape when the store holds a repeatable-less managed adr (`item-count`
+/// 0) beside a two-requirement managed prd (`item-count` 2) — the additive key present on
+/// every row, its value the parsed top-level repeatable-item count.
+const STORE_WITH_ITEMS_JSON: &str = r#"{
+  "docs": [
+    {
+      "id": "adr:single-node-cache",
+      "path": "decisions/single-node-cache.md",
+      "state": "managed",
+      "item-count": 0
+    },
+    {
+      "id": "prd:habit-tracker",
+      "path": "prds/habit-tracker.md",
+      "state": "managed",
+      "item-count": 2
     }
   ]
 }"#;
@@ -288,6 +341,38 @@ fn doc_list_prints_an_empty_set_line_on_an_empty_store() {
         stdout_of(&json).trim_end(),
         "{\n  \"docs\": []\n}",
         "the empty listing keeps the pinned object wrapper",
+    );
+}
+
+/// (M44 inc-7 T3) Each `--format json` row carries the additive **`item-count`** key — the
+/// parsed count of the doc's top-level repeatable items (`design/doc-read-surface.md` → the
+/// item-count additive key). `doc list` did not parse instances before this, so the count is
+/// a new parse: a repeatable-less managed adr counts 0, a two-requirement managed prd counts
+/// 2, and a foreign/unparseable instance degrades to 0 (proven by the archetypal store above).
+#[test]
+fn doc_list_json_carries_the_item_count_of_each_doc() {
+    let repo = TempDir::new("counts");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let decisions = repo.path().join("decisions");
+    fs::create_dir_all(&decisions).expect("mk decisions/");
+    fs::write(decisions.join("single-node-cache.md"), COMMITTED_ADR).expect("write managed adr");
+    let prds = repo.path().join("prds");
+    fs::create_dir_all(&prds).expect("mk prds/");
+    fs::write(prds.join("habit-tracker.md"), MANAGED_PRD).expect("write managed prd");
+    git(repo.path(), &["add", "decisions", "prds"]);
+    git(repo.path(), &["commit", "-q", "-m", "the store"]);
+
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "--format", "json"],
+    );
+    assert_ok(&json, "`jigc doc list --format json`");
+    assert_eq!(
+        stdout_of(&json).trim_end(),
+        STORE_WITH_ITEMS_JSON,
+        "each row carries item-count: the adr 0, the two-requirement prd 2",
     );
 }
 

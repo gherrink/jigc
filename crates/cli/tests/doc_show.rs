@@ -291,6 +291,7 @@ const VISION_JSON: &str = r#"{
   "fields": {
     "schema-version": "1"
   },
+  "item-count": 0,
   "sections": {
     "invariants": "The CLI owns every structural write; the LLM writes only prose.",
     "open-questions": "How far can one methodology pack compose.",
@@ -304,6 +305,7 @@ const PRD_JSON: &str = r#"{
   "fields": {
     "schema-version": "1"
   },
+  "item-count": 2,
   "sections": {
     "context": "Built for solo users who abandon heavyweight planners.",
     "requirements": [

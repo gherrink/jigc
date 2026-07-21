@@ -2164,6 +2164,13 @@ fn run_list(cwd: &Path, doctype: Option<&str>, format: Format) -> Result<(), Doc
             } else {
                 "managed"
             };
+            // Best-effort item count: parse against the current schema and sum top-level
+            // repeatable items; a foreign/unregistered or stale-shape instance that does not
+            // parse counts 0 (never a block — `doc list` is a report, and the row already
+            // carries `state` to tell an agent the file is not adopted).
+            let item_count = engine::parse::parse_sections(schema, &source)
+                .map(|doc| item_count(&doc))
+                .unwrap_or(0);
             docs.push(DocRow {
                 id,
                 path: path
@@ -2172,6 +2179,7 @@ fn run_list(cwd: &Path, doctype: Option<&str>, format: Format) -> Result<(), Doc
                     .to_string_lossy()
                     .into_owned(),
                 state,
+                item_count,
             });
         }
     }
@@ -2223,6 +2231,13 @@ struct DocRow {
     path: String,
     /// `managed` | `unregistered` — [`engine::validate::is_unadopted_foreign`]'s verdict.
     state: &'static str,
+    /// The additive **`item-count`** key (M44 — `design/doc-read-surface.md` → the item-count
+    /// additive key): the parsed count of the doc's top-level repeatable items ([`item_count`]).
+    /// `doc list` did not parse instances before this — the count is a new parse, and it is
+    /// **best-effort**: an instance that does not parse against its current schema (a foreign /
+    /// `unregistered` file, or a stale-shape managed doc) counts **0**.
+    #[serde(rename = "item-count")]
+    item_count: usize,
 }
 
 /// The `jigc doc schema --format json` shape — the **separately-pinned, explicitly
@@ -2666,9 +2681,21 @@ fn whole_doc_json(
     serde_json::json!({
         "type": schema.ty,
         "slug": address.slug.as_str(),
+        "item-count": item_count(doc),
         "fields": serde_json::Value::Object(fields),
         "sections": serde_json::Value::Object(sections),
     })
+}
+
+/// The doc's **top-level repeatable item count** — the total number of items summed across
+/// every repeatable section (a simple section contributes none; a **nested** item is a member
+/// of its enclosing item object and is *not* counted). This is the value of the additive
+/// **`item-count`** key on the whole-doc `--format json` serve (riding **both** the committed
+/// and staged serves, so `staged` stays the sole staged/committed differentiator — absent on
+/// a fragment slice, which is a bare value) and on each `jigc doc list` row
+/// (`design/doc-read-surface.md` → the item-count additive key).
+fn item_count(doc: &engine::parse::Document) -> usize {
+    doc.sections.iter().map(|section| section.items.len()).sum()
 }
 
 /// The json value an addressed `#fragment` slice resolves to (the sub-node of the

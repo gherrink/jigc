@@ -726,8 +726,8 @@ fn an_in_task_write_round_trips_through_the_staged_read() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["fields", "sections", "slug", "staged", "type"],
-        "exactly the pinned keys + the one marker key",
+        ["fields", "item-count", "sections", "slug", "staged", "type"],
+        "exactly the pinned keys + item-count + the one marker key",
     );
 
     // After finalize, the committed serve is UNMARKED — the pin holds byte-shape.
@@ -754,8 +754,8 @@ fn an_in_task_write_round_trips_through_the_staged_read() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["fields", "sections", "slug", "type"],
-        "a committed serve stays byte-shape-identical to the pin — no `staged` key",
+        ["fields", "item-count", "sections", "slug", "type"],
+        "a committed serve differs from the staged serve by exactly the `staged` key",
     );
 }
 

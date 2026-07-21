@@ -317,6 +317,7 @@ const WHOLE_DOC_JSON: &str = r#"{
   "fields": {
     "schema-version": "2"
   },
+  "item-count": 1,
   "sections": {
     "releases": [
       {

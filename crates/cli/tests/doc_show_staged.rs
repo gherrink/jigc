@@ -268,6 +268,12 @@ fn staged_read_serves_plain_json_and_slice() {
     assert_eq!(value["type"], "adr");
     assert_eq!(value["slug"], "cache-strategy");
     assert_eq!(value["sections"]["decision"], "Cache locally.");
+    // The item-count additive key rides the staged serve too, so `staged` stays the SOLE
+    // staged/committed differentiator (an adr has no repeatable section → 0).
+    assert_eq!(
+        value["item-count"], 0,
+        "the staged whole-doc json carries item-count (0 for a repeatable-less adr)"
+    );
     let mut keys: Vec<&str> = value
         .as_object()
         .expect("whole-doc object")
@@ -277,8 +283,8 @@ fn staged_read_serves_plain_json_and_slice() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["fields", "sections", "slug", "staged", "type"],
-        "exactly the pinned keys + the one marker key"
+        ["fields", "item-count", "sections", "slug", "staged", "type"],
+        "exactly the pinned keys + item-count + the one marker key"
     );
 
     // (3) A `#section` slice serves the staged prose — plain and json (a fragment
@@ -368,6 +374,13 @@ fn committed_json_carries_no_marker_and_not_staged_routes_task_less() {
     );
     assert_ok(&json, "`jigc doc show adr:cache-strategy --format json`");
     let value: serde_json::Value = serde_json::from_str(&stdout_of(&json)).expect("valid json");
+    // The committed serve carries item-count too (present on both serves — it is `staged`,
+    // not item-count, that separates the two views), and differs from the staged serve by
+    // EXACTLY the `staged` key.
+    assert_eq!(
+        value["item-count"], 0,
+        "the committed whole-doc json carries item-count (0 for a repeatable-less adr)"
+    );
     let mut keys: Vec<&str> = value
         .as_object()
         .expect("whole-doc object")
@@ -377,8 +390,8 @@ fn committed_json_carries_no_marker_and_not_staged_routes_task_less() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["fields", "sections", "slug", "type"],
-        "a committed serve stays byte-shape-identical to the pin — no `staged` key"
+        ["fields", "item-count", "sections", "slug", "type"],
+        "a committed serve differs from the staged serve by exactly the `staged` key"
     );
 
     // (2) A second task that never touched the adr: `--task` blocks `store.not-staged`
