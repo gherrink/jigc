@@ -17,3 +17,5 @@ Design opens at pickup: lifecycle (does a `fixed` disposition retire the doc or 
 ## Trigger
 
 The post-1.0 **doctype-completeness milestone** (the [self-migration prerequisite](../completions/artifacts/RC-adoption/self-migration-coverage.md)) — ranked there against [reference-doctype](reference-doctype.md) and [postmortem-and-runbook-doctypes](postmortem-and-runbook-doctypes.md).
+
+**2026-07-22 addendum (the M45 discussion — a second tenant for the same shape):** the **verified-fact ledger**. M45 lands verified-facts-become-tests as convention (a hand-verified fact either names its pinning test or says "unpinned" — [milestone-completion-workflow.md](../implementation/milestone-completion-workflow.md) → Re-verify); when this repo self-migrates under jigc, that convention should become *this doctype* — a fact record whose code-anchor points at its pinning test, so a fact whose anchor dangles goes red by the same self-invalidating mechanic the defect record uses. Rank the two tenants together at pickup.
