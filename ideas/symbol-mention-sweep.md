@@ -16,4 +16,6 @@ Also the honest-cost framing from the trial, worth carrying wherever this lands:
 
 ## Trigger
 
-The next validation-family wave, or the first adopter report of prose-drift-after-refactor. Pairs naturally with [derived-doc-staleness](derived-doc-staleness.md) (doc↔doc drift) but is much cheaper — no pinned hashes, no acknowledge model needed for a per-task advisory.
+The next validation-family wave, or the first adopter report of prose-drift-after-refactor.
+
+**Trigger FIRED 2026-07-22** (project-alpha-3.0 trial, session 1 — [RC-alpha3/findings-verification.md](../completions/artifacts/RC-alpha3/findings-verification.md) → §3-C): a single-task inverted an anchored symbol's documented behavior (removed the throw the arch-doc calls "dead by design") with the symbol intact → **zero findings** — the third independent rediscovery of the identity-not-truth bound, and exactly this idea's failure mode ("green validate, lying prose"). The session also asked for this idea's task-scoped half almost verbatim (`jigc doc anchors <path>` / "surface the docs anchoring symbols in your staged diff" — the coupling data already exists in the target-surface enumeration). On the **M45 Settle agenda** (decisions-pending → the rc.9 wave, fork 10): de-park the sweep vs the cheaper anchoring-docs surface vs print-the-bound-only. Pairs naturally with [derived-doc-staleness](derived-doc-staleness.md) (doc↔doc drift) but is much cheaper — no pinned hashes, no acknowledge model needed for a per-task advisory.
