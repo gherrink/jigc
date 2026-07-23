@@ -597,6 +597,85 @@ fn a_task_less_read_of_a_staged_elsewhere_doc_hints_on_stderr() {
     );
 }
 
+/// The read-side **cause** finding, through the real binary (M45 Increment 2 / T3;
+/// `design/validation.md` → The M45 registrations, row 2). A `### Ghost` hand-written
+/// into a staged `spec` criterion's slot prose — the out-of-band arm the write gate
+/// cannot reach — is read as an item boundary, and the staged read must print *why*:
+/// the heading sits at the section's schema-reserved item depth. Before T3 the only
+/// thing printed was "repeatable item `Ghost` has no `{#id}` anchor", which blames a
+/// missing anchor and never the cause.
+#[test]
+fn a_ghost_heading_in_staged_item_prose_names_the_reserved_depth_cause() {
+    let repo = TempDir::new("ghost");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let task = "add-a-spec";
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "plan", "add a spec"],
+            None,
+        ),
+        "`jigc start --workflow plan`",
+    );
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["doc", "create", "spec", "--title", "Widget", "--task", task],
+            None,
+        ),
+        "`jigc doc create spec`",
+    );
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "add-item",
+                "spec:widget#criteria",
+                "--title",
+                "It works",
+                "--task",
+                task,
+            ],
+            None,
+        ),
+        "`jigc doc add-item`",
+    );
+
+    // The out-of-band edit: prose, then a heading at the reserved item depth.
+    let staged = repo
+        .path()
+        .join(".jigc/tasks/add-a-spec/docs/spec:widget.md");
+    let mut source = fs::read_to_string(&staged).expect("read the staged spec");
+    source.push_str("\nSome prose.\n\n### Ghost\n\nmore prose.\n");
+    fs::write(&staged, source).expect("write the staged spec");
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "spec:widget", "--task", task],
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "the unparseable staged copy must block; stdout:\n{}",
+        stdout_of(&out),
+    );
+    let printed = format!("{}{}", stdout_of(&out), stderr_of(&out));
+    assert!(
+        printed.contains("schema-reserved item depth"),
+        "the staged read prints the cause; got:\n{printed}"
+    );
+    assert!(
+        printed.contains("`####`") && printed.contains("jigc doc add-item"),
+        "…with both repairs — demote the heading, or mint the item; got:\n{printed}"
+    );
+}
+
 /// `--task` is a real argument now: a bad task id routes to `jigc task list` (the
 /// shared wrong-id route), and the misleading clap tip — "unexpected argument
 /// '--task'… to pass '--task' as a value, use '-- --task'" — is gone.

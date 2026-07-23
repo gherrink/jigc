@@ -1166,8 +1166,8 @@ mod tests {
         let anchorless = |line| {
             Finding::graded(
                 Severity::Blocking,
-                "conformance.item-anchor-missing",
-                "item has no `{#id}` anchor",
+                "conformance.item-heading-unanchored",
+                "item heading has no `{#id}` anchor",
                 Some(Location::addressed("spec:my-spec#criteria", line, 1)),
                 None,
             )

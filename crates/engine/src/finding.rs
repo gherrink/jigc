@@ -279,8 +279,10 @@ pub fn is_route_exempt(code: &str) -> bool {
 /// non-unique exceptions). Each carries a **non-null** target; what it forgoes is the
 /// sub-discriminator, and each forgoes it for a stated reason — this is its **one home**:
 ///
-/// - `conformance.item-anchor-missing` — an item with no anchor **has no identity**: the key
-///   that would discriminate is precisely the thing the finding reports missing.
+/// - `conformance.item-heading-unanchored` — an item heading with no anchor **has no
+///   identity**: the key that would discriminate is precisely the thing the finding reports
+///   missing. (M45 — the code that carried this row was `item-anchor-missing`; it names the
+///   reserved-depth *cause* now, and the key is unchanged because the reason is.)
 /// - `conformance.item-anchor-malformed` — the same reason, one step along: the item's anchor
 ///   text **is not an identity, it is the defect**, so keying on it (`#<section>/<found>`)
 ///   discriminates the *bad text*, not the item — and two items carrying the same bad anchor
@@ -301,7 +303,7 @@ pub fn is_route_exempt(code: &str) -> bool {
 pub fn is_declared_non_unique(code: &str) -> bool {
     matches!(
         code,
-        "conformance.item-anchor-missing"
+        "conformance.item-heading-unanchored"
             | "conformance.item-anchor-malformed"
             | "conformance.item-slot-delimiter-shadowed"
             | "conformance.slot-setext-heading"

@@ -1,0 +1,21 @@
+---
+source: crates/engine/src/parse.rs
+expression: f
+---
+Finding {
+    severity: Blocking,
+    probe: "conformance",
+    check: "item-heading-unanchored",
+    code: "conformance.item-heading-unanchored",
+    message: "`### A criterion with no anchor` sits at `###`, the schema-reserved item depth here, so the parser reads it as an item boundary — and it carries no `{#id}` anchor; if that line is slot prose, demote it to `####` or deeper; if it is a new item, mint it with `jigc doc add-item` (which writes the anchor)",
+    location: Some(
+        Location {
+            address: Some(
+                "criteria",
+            ),
+            line: 9,
+            col: 1,
+        },
+    ),
+    route: None,
+}

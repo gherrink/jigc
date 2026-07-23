@@ -7196,7 +7196,7 @@ mod roundtrip {
     /// nests at `####` (a release's `Leaf::Repeatable`), so a `####` heading inside its
     /// slot would collide with a *sibling* change-group heading and end the slot
     /// (verified: a `####`-in-notes fixture fails the conformance gate with
-    /// `item-anchor-missing`). H5 is deeper than both the unreleased depth (`###`) and
+    /// `item-heading-unanchored`). H5 is deeper than both the unreleased depth (`###`) and
     /// the nested depth (`####`), so it stays prose at either — the safe deeper-heading
     /// stress for this doctype. The fenced-`##`, `- x:` prose line, and interior-blank
     /// edges (all proven safe at `####`) are kept.

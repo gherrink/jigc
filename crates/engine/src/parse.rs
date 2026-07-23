@@ -853,7 +853,9 @@ fn read_field_block_str(
 /// — its **nested items**, parsed recursively one level deeper within this item's
 /// byte region (each nested item heading is a sub-item boundary inside the parent).
 /// Missing / malformed / duplicate `{#id}` is a located [`Severity::Blocking`]
-/// finding; the duplicate-`seen` set is **scoped to this call** (one parent's
+/// finding — the missing case naming the reserved-depth **cause**
+/// ([`unanchored_heading_message`]), the two readings being byte-identical; the
+/// duplicate-`seen` set is **scoped to this call** (one parent's
 /// items), so the same anchor across two parents is legitimate while two within one
 /// parent block — review finding C1).
 fn parse_items(
@@ -912,16 +914,23 @@ fn parse_items(
         // anchor breaks carry **no item hop** — they are raised *before* an item identity
         // exists — so they are pushed straight to the caller's set, where the section hop
         // (and, under nesting, the parent item's) is prefixed. Each sets what it holds:
-        // the malformed anchor text / the duplicated id, and nothing for the missing
-        // anchor (declared non-unique — the discriminator is the thing that is missing;
-        // `command-output-contract.md` → the parse-conformance sub-table).
+        // the malformed anchor text / the duplicated id, and nothing for the unanchored
+        // heading (declared non-unique — the discriminator is the identity that is
+        // missing; `command-output-contract.md` → the parse-conformance sub-table).
         let id = match extract_anchor(raw) {
             AnchorRead::Missing => {
                 findings.push(Finding::blocking(
-                    "conformance.item-anchor-missing",
-                    format!(
-                        "repeatable item `{}` has no `{{#id}}` anchor",
-                        heading_text(raw, true)
+                    "conformance.item-heading-unanchored",
+                    unanchored_heading_message(
+                        &heading_text(raw, true),
+                        item_level,
+                        // Before any item at this level has parsed, the heading sits in
+                        // the enclosing section's / parent item's region, whose ceiling
+                        // reserves exactly this level; inside a preceding sibling's body
+                        // that sibling's own ceiling binds, one deeper again when its
+                        // template carries sub-labels or a nested repeatable.
+                        !items.is_empty()
+                            && (item_template.is_multi_slot() || item_template.has_nested()),
                     ),
                     Location::at(head_line, 1),
                 ));
@@ -1299,6 +1308,35 @@ fn trim_span(source: &str, start: usize, end: usize) -> Span {
         end: new_end,
         start_line: line_of(source, new_start),
     }
+}
+
+/// The diagnosis for an item heading carrying no `{#id}` anchor
+/// (`conformance.item-heading-unanchored`) — it names the **cause** at the offending
+/// line: the heading sits at a depth the schema reserves for item structure, so the
+/// parser reads it as an item boundary and everything after it is re-attributed
+/// (`design/validation.md` → The M45 registrations, row 2).
+///
+/// The two readings are **byte-identical** — stray slot prose that broke out, or a
+/// genuinely anchor-less new item — so the message carries **both** repairs rather
+/// than picking one. `item_level` is the reserved depth (the item heading level at
+/// this nesting); `prose_reserves_deeper` says the enclosing item's own ceiling sits
+/// one level deeper still (a multi-slot template's `#### <Leaf-Title>` sub-labels, or
+/// a nested repeatable's item headings — [`crate::write::slot_ceiling`]'s
+/// `multi_slot || has_nested` derivation, read from where the enclosing prose lives),
+/// so the demote repair names a depth that is actually free at this address.
+fn unanchored_heading_message(
+    heading: &str,
+    item_level: usize,
+    prose_reserves_deeper: bool,
+) -> String {
+    let depth = "#".repeat(item_level);
+    let allowed = "#".repeat(item_level + if prose_reserves_deeper { 2 } else { 1 });
+    format!(
+        "`{depth} {heading}` sits at `{depth}`, the schema-reserved item depth here, so the \
+         parser reads it as an item boundary — and it carries no `{{#id}}` anchor; if that \
+         line is slot prose, demote it to `{allowed}` or deeper; if it is a new item, mint it \
+         with `jigc doc add-item` (which writes the anchor)"
+    )
 }
 
 /// Whether a heading `level` is a CLI-owned structural depth forbidden inside a slot
@@ -2272,10 +2310,15 @@ Fine.
         );
     }
 
-    /// Conformance golden: a repeatable `###` item with no `{#id}` anchor → a
-    /// located Blocking finding (missing anchor).
+    /// Conformance golden: a repeatable `###` item with no `{#id}` anchor → a located
+    /// Blocking finding that names the **cause** at its source coordinate — the heading
+    /// sits at the section's schema-reserved item depth, so the parser reads it as an
+    /// item boundary and the prose that follows is re-attributed. The two readings are
+    /// byte-identical (stray prose vs. a genuinely anchor-less new item), so the message
+    /// carries **both** repairs (M45 Increment 2 / T3; `design/validation.md` → The M45
+    /// registrations, row 2).
     #[test]
-    fn missing_anchor_yields_located_finding() {
+    fn unanchored_item_heading_names_the_reserved_depth_cause() {
         let src = "\
 ---
 title: Auth flow
@@ -2291,9 +2334,69 @@ Body.
         let findings = parse_sections(&spec_schema(), src).expect_err("missing anchor blocks");
         let f = findings
             .iter()
-            .find(|f| f.code == "conformance.item-anchor-missing")
-            .expect("a missing-anchor finding");
-        insta::assert_debug_snapshot!("missing_anchor", f);
+            .find(|f| f.code == "conformance.item-heading-unanchored")
+            .expect("an item-heading-unanchored finding");
+        assert!(
+            f.message.contains("`###`"),
+            "the cause is the reserved depth, named: {:?}",
+            f.message
+        );
+        assert!(
+            f.message.contains("`####`"),
+            "the demote repair names the depth free at this address: {:?}",
+            f.message
+        );
+        assert!(
+            f.message.contains("jigc doc add-item"),
+            "the mint repair is the second reading's: {:?}",
+            f.message
+        );
+        insta::assert_debug_snapshot!("unanchored_item_heading", f);
+    }
+
+    /// The **single-slot arm** end to end: a `### Ghost` inside a criterion's slot prose
+    /// is the corruption the write gate now refuses — read back out-of-band, the parser
+    /// mints a ghost item, and the diagnosis must name the depth, not the anchor.
+    #[test]
+    fn a_ghost_heading_in_single_slot_item_prose_names_the_depth_not_the_anchor() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### It works  {#it-works}
+
+Some prose.
+
+### Ghost
+
+more prose.
+";
+        let findings = parse_sections(&spec_schema(), src).expect_err("the ghost heading blocks");
+        let f = findings
+            .iter()
+            .find(|f| f.code == "conformance.item-heading-unanchored")
+            .expect("an item-heading-unanchored finding");
+        assert!(
+            f.message.contains("Ghost") && f.message.contains("`###`"),
+            "the offending heading and its reserved depth: {:?}",
+            f.message
+        );
+        assert_eq!(
+            f.location.as_ref().expect("located").line,
+            13,
+            "located at the offending line, not the item's: {f:?}"
+        );
+        assert!(
+            !findings
+                .iter()
+                .any(|f| f.code == "conformance.item-anchor-missing"),
+            "the anchor-blaming diagnosis is replaced, not doubled: {findings:#?}"
+        );
     }
 
     /// Conformance golden: two repeatable items sharing one `{#id}` → a located
@@ -2430,7 +2533,7 @@ Body.
     /// the defect, not an identity. Red before the declaration: two byte-identical
     /// `(conformance.item-anchor-malformed, spec:…#criteria/Bad Id)` keys in one slice — a
     /// degenerate key in release, a panic at the seam in debug — so the code is a **declared
-    /// non-unique exception**, alongside `item-anchor-missing`, and the seam must pass it
+    /// non-unique exception**, alongside `item-heading-unanchored`, and the seam must pass it
     /// (`command-output-contract.md` → The declared non-unique exceptions).
     #[test]
     fn two_items_on_one_malformed_anchor_both_report_and_pass_the_seam() {
@@ -2710,6 +2813,52 @@ sections:
             finding.message.contains("`title`"),
             "the finding names the undeclared key: {}",
             finding.message
+        );
+    }
+
+    /// The **nested arm** (M45 Increment 2 / T3): a `#### Ghost` inside a nested-bearing
+    /// release's region — here in a change-group's `notes` prose — is read as a nested
+    /// item boundary, so the diagnosis must name the depth reserved *at this nesting*
+    /// (`####`) and the depth free there (`#####`), never the shallower section-level
+    /// pair. The empirically-verified case behind the changelog generator's H5 rule
+    /// (`write.rs` → `notes_prose`).
+    #[test]
+    fn a_ghost_heading_in_nested_item_prose_names_the_deeper_reserved_depth() {
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+#### Ghost
+
+more prose.
+";
+        let findings =
+            parse_sections(&changelog_schema(), src).expect_err("the nested ghost heading blocks");
+        let f = findings
+            .iter()
+            .find(|f| f.code == "conformance.item-heading-unanchored")
+            .unwrap_or_else(|| panic!("an item-heading-unanchored finding, got: {findings:#?}"));
+        assert!(
+            f.message.contains("`####`"),
+            "the reserved depth at this nesting: {:?}",
+            f.message
+        );
+        assert!(
+            f.message.contains("`#####`"),
+            "the depth free at this nesting, not the section-level `####`: {:?}",
+            f.message
+        );
+        assert_eq!(
+            f.location.as_ref().expect("located").line,
+            11,
+            "located at the offending line: {f:?}"
         );
     }
 
@@ -3066,8 +3215,8 @@ Fine.
             "a section slot's reserved-depth heading keys at the owning slot: {findings:#?}",
         );
 
-        // `item-anchor-missing` → `#<section>` (declared non-unique: the item has no
-        // identity — that IS the finding).
+        // `item-heading-unanchored` → `#<section>` (declared non-unique: the item has
+        // no identity — that IS the finding).
         let src = "\
 ---
 title: Auth flow
@@ -3082,7 +3231,7 @@ Body.
 ";
         let findings = parse_sections(&spec_schema(), src).expect_err("a missing anchor blocks");
         assert_eq!(
-            fragments(&findings, "conformance.item-anchor-missing"),
+            fragments(&findings, "conformance.item-heading-unanchored"),
             [Some("criteria")],
             "an anchor-less item keys at its section — the discriminator is the thing \
              that is missing: {findings:#?}",
