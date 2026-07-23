@@ -1424,8 +1424,13 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
 /// join outcome paired with the milestone's full **id-sorted** sub-task list — the
 /// set the C3 ack names the doc-less members of.
 fn run_join(cwd: &Path, milestone_id: &str) -> Result<(JoinOutcome, Vec<String>)> {
+    // The engine `join` itself performs no git I/O (the base is the milestone's *stored*
+    // pin), but the CLI around it does: the stale-base guard shells to git, and the
+    // cross-worktree collision read (below) reads each provisioned worktree's staged set.
     // The committed doc-store + `.jigc/` index bind to jigc_home (the main checkout); the
-    // join performs no git I/O (the base is the milestone's *stored* pin) (M31 Inc 2).
+    // fan-out worktrees + their registration bind to the worktree repo_root (M31 Inc 2).
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
@@ -1454,12 +1459,21 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<(JoinOutcome, Vec<String>)
     };
     let committed = load_committed(&jigc_home, &jigc_root, &schemas, &head);
 
-    let outcome =
+    let mut outcome =
         join(&jigc_root, &jigc_home, milestone_id, &schemas, &committed).map_err(finding_to_err)?;
     // The join succeeded, so the milestone area exists — read its full sub-task list
     // (id-sorted) for the ack's doc-less-member line (C3).
     let list = read_task_list(&milestone_dir(&jigc_root, milestone_id))
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+
+    // Cross-worktree code collisions surface HERE, not only at finalize: two sub-tasks
+    // staging the SAME path in their isolated fan-out worktrees is a clash the combine
+    // never text-merges (`design/storage.md` → the join's never-blind-merge discipline).
+    // A never-provisioned (docs-only) milestone yields no worktrees, so the read is inert.
+    let worktrees = provisioned_worktrees(&repo_root, &jigc_home, &list);
+    if let Some(finding) = crate::combine::detect_code_collision(&worktrees)? {
+        outcome.findings.push(finding);
+    }
     Ok((outcome, list.enumerate()))
 }
 
