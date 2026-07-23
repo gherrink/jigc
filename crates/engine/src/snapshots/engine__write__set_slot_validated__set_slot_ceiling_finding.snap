@@ -11,11 +11,11 @@ expression: "serde_json::to_string_pretty(&finding).unwrap()"
     "code": "write.slot-heading-depth",
     "target": "adr:rate-limit-at-the-gateway#decision"
   },
-  "message": "heading at schema-reserved depth `##` in slot prose at line 3; use `####` or rephrase",
+  "message": "heading at schema-reserved depth `##` in slot prose at line 3; `####` is the shallowest depth free at this address — use it or rephrase",
   "location": {
     "address": "adr:rate-limit-at-the-gateway#decision",
     "line": 3,
     "col": 1
   },
-  "route": "demote the heading to `####` depth or rephrase it as plain prose, then re-run the same write"
+  "route": "demote the heading to the depth the message names (or deeper), or rephrase it as plain prose, then re-run the same write"
 }

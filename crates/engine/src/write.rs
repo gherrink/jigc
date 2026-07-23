@@ -1423,7 +1423,12 @@ pub fn set_item_field(
 /// item's slot as [`crate::parse::ParsedItem::slot`], so we read the addressed item's
 /// span directly rather than re-scanning bytes. An absent item, a non-repeatable
 /// section, or an item whose template declares no slot → [`SpliceError::NotPresent`].
-pub fn set_item_slot(
+///
+/// **Private by design (M45).** The raw splice is reachable only through
+/// [`set_slot_validated`]'s item arm, so no caller can write item-slot prose past the
+/// address's heading-depth ceiling or skip [`validate_after`] — the gate is structural,
+/// not a convention a caller has to remember (`parsing.md` → Slot heading-depth ceiling).
+fn set_item_slot(
     schema: &Schema,
     source: &str,
     section_id: &str,
@@ -1666,8 +1671,9 @@ fn nested_parsed_item<'a>(
 /// (so a same-anchor sibling under another parent is out of range), re-renders that item
 /// at its nesting depth via [`render_item_at`], and splices it back with the canonical
 /// inter-block separator — the one item-bytes path, keeping `render(parse(out)) == out`.
-/// An absent item / leaf / non-conformant source → [`SpliceError`].
-pub fn set_nested_item_slot(
+/// An absent item / leaf / non-conformant source → [`SpliceError`]. **Private by
+/// design (M45)** — the same structural gate [`set_item_slot`] carries.
+fn set_nested_item_slot(
     schema: &Schema,
     source: &str,
     section_id: &str,
@@ -5104,13 +5110,17 @@ fn write_route(code: &str) -> Route {
             "nothing was persisted — re-run the write; a recurring escape is a write-path \
              defect to report",
         ),
+        // The freed depth is **per-address** (M45 — a plain item frees `####`, a
+        // multi-slot or nested-bearing one only `#####`), and the message names the
+        // one that applies; a route naming a depth of its own would contradict it at
+        // every address the global constant is wrong for.
         "write.slot-heading-depth" => Route::human(
-            "demote the heading to `####` depth or rephrase it as plain prose, then re-run \
-             the same write",
+            "demote the heading to the depth the message names (or deeper), or rephrase it \
+             as plain prose, then re-run the same write",
         ),
         "write.slot-setext-heading" => Route::human(
-            "rewrite the Setext heading as `####` ATX depth or plain prose, then re-run \
-             the same write",
+            "rewrite the Setext heading as an ATX heading at the depth the message names, or \
+             as plain prose, then re-run the same write",
         ),
         // The item-field value reject deliberately emits finalize's conformance code
         // (`generate_error_finding` → Two check times), so it carries that code's route.
@@ -5694,14 +5704,55 @@ fn reparse_or_reject(schema: &Schema, edited: &str) -> Result<(), Finding> {
     Ok(())
 }
 
+/// **Where a slot write lands** — the address [`set_slot_validated`] gates. The two
+/// arms are the two structural homes a slot has: a section's own slot, or one leaf
+/// slot on a (possibly nested) repeatable item, addressed by its section-qualified id
+/// chain. One address type because there is **one** gated entry point: both the
+/// reserved-depth ceiling and the validate-after confinement target are derived from
+/// the address, so no slot write can reach bytes down a path that skipped them
+/// (`implementation/parsing.md` → Slot heading-depth ceiling, enforcement site 1 —
+/// before M45 the item arms were separate ungated verbs).
+#[derive(Clone, Copy, Debug)]
+pub enum SlotAddress<'a> {
+    /// The section's own slot — `#<section>`.
+    Section { section: &'a str },
+    /// A leaf slot on a repeatable item — `#<section>/<item>[/<nested>/<item>…]/<leaf>`.
+    /// `chain` is the **section-qualified** item chain ([`physical_item_chain`]'s
+    /// input grammar); `leaf` names the slot inside the item's block (the bare `slot`
+    /// for a single-slot item, a named `slots` entry for a multi-slot one).
+    Item {
+        section: &'a str,
+        chain: &'a [&'a str],
+        leaf: &'a str,
+    },
+}
+
+impl<'a> SlotAddress<'a> {
+    /// The `(section_id, item-chain)` pair the ceiling derivation keys on — the
+    /// section arm's chain is empty, which is [`slot_ceiling`]'s section-slot arm.
+    fn ceiling_key(&self) -> (&'a str, &'a [&'a str]) {
+        match *self {
+            SlotAddress::Section { section } => (section, &[]),
+            SlotAddress::Item { section, chain, .. } => (section, chain),
+        }
+    }
+}
+
 /// The gated `set-slot`: the full write-time local adjudication for a slot prose
-/// write — the slot sibling to [`set_field_validated`]. Enforces the **slot
-/// heading-depth ceiling** on `new_prose` *before* touching bytes (a `##`/`###` ATX
-/// heading or any Setext heading is rejected with a located `write.slot-heading-depth`
-/// / `write.slot-setext-heading` finding naming the offending line), then surgically
-/// splices the present section's slot — or **generates** the section's structural home
-/// when the section is absent — and runs [`validate_after`] (re-parse + only the
-/// intended target changed). Returns the new buffer to persist, or a blocking
+/// write — the slot sibling to [`set_field_validated`], and **the one seam every slot
+/// write path passes through** (section slots and item slots, at every nesting depth;
+/// the raw splices are private to this module so they cannot be reached ungated).
+///
+/// Enforces the **slot heading-depth ceiling** on `new_prose` *before* touching bytes,
+/// with the reserved set derived from the address ([`slot_ceiling`]) rather than from
+/// global constants: an ATX heading at or shallower than *this address's* reserved
+/// depth, or any Setext heading, is rejected with a located
+/// `write.slot-heading-depth` / `write.slot-setext-heading` finding naming the
+/// offending line **and the shallowest depth that is free here**. Then it splices —
+/// the present section's slot surgically, the addressed item by re-render
+/// ([`set_item_slot`] / [`set_nested_item_slot`]) — or **generates** the section's
+/// structural home when the section is absent, and runs [`validate_after`] (re-parse +
+/// only the intended target changed). Returns the new buffer to persist, or a blocking
 /// [`Finding`] (and **no** buffer) on any anomaly.
 ///
 /// The ceiling check is the **write-time** enforcement site of the heading-depth
@@ -5712,15 +5763,89 @@ fn reparse_or_reject(schema: &Schema, edited: &str) -> Result<(), Finding> {
 pub fn set_slot_validated(
     schema: &Schema,
     source: &str,
-    section_id: &str,
+    addr: SlotAddress<'_>,
     new_prose: &str,
 ) -> Result<String, Finding> {
-    // The heading-depth ceiling — scanned on the standalone prose so the located line
-    // is relative to the agent's content (the first violation is the surfaced block).
-    if let Some(finding) = slot_ceiling_finding(new_prose) {
+    // The heading-depth ceiling **for this address** — scanned on the standalone prose
+    // so the located line is relative to the agent's content (the first violation is
+    // the surfaced block). An address that does not resolve against the schema derives
+    // no ceiling and reaches no bytes: the splice below rejects it as not-present.
+    if let Some(ceiling) = {
+        let (section_id, chain) = addr.ceiling_key();
+        slot_ceiling(schema, section_id, chain)
+    } && let Some(finding) = slot_ceiling_finding(new_prose, ceiling)
+    {
         return Err(finding);
     }
 
+    match addr {
+        SlotAddress::Section { section } => set_section_slot(schema, source, section, new_prose),
+        SlotAddress::Item {
+            section,
+            chain,
+            leaf,
+        } => set_gated_item_slot(schema, source, section, chain, leaf, new_prose),
+    }
+}
+
+/// The **item-slot** arm of [`set_slot_validated`]: re-render-and-splice the addressed
+/// item, then [`validate_after`] confined to the **item region**.
+///
+/// Clause (b)'s target is the whole located item block — the bytes the item paths
+/// re-render ([`locate_item_path`]) — never the addressed leaf's span: the item paths
+/// deliberately do not splice the bare leaf (that is not byte-stable on a mint-empty
+/// item, `parsing.md` → The write pipeline), so a leaf-narrowed target would trip
+/// `write.target-escape` on every item-slot write — the same shape as the section
+/// arm's section-body-region target (the M13 audit HIGH).
+fn set_gated_item_slot(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    chain: &[&str],
+    leaf_id: &str,
+    new_prose: &str,
+) -> Result<String, Finding> {
+    let edited = match chain {
+        // A single-hop chain is a top-level item; deeper chains alternate item /
+        // nested-section ids and take the depth-aware path.
+        [item] => set_item_slot(schema, source, section_id, item, leaf_id, new_prose),
+        _ => set_nested_item_slot(schema, source, section_id, chain, leaf_id, new_prose),
+    }
+    .map_err(|e| splice_error_finding(&e))?;
+    let target = locate_item_region(schema, source, section_id, chain).ok_or_else(|| {
+        blocking_write(
+            "write.not-present",
+            format!("item {chain:?} in section {section_id:?} is not present"),
+            Location::at(1, 1),
+        )
+    })?;
+    validate_after(schema, source, &edited, target)?;
+    Ok(edited)
+}
+
+/// The **item region** of a section-qualified item chain — the whole located block the
+/// item write paths re-render, and so the validate-after confinement target for an
+/// item-slot write. `None` when the chain does not resolve (schema-side or in bytes).
+fn locate_item_region(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    chain: &[&str],
+) -> Option<Range<usize>> {
+    let physical = physical_item_chain(schema, section_id, chain)?;
+    locate_item_path(schema, source, section_id, &physical)
+}
+
+/// The **section-slot** arm of [`set_slot_validated`] — splice the present section's
+/// slot (validate-after confined to the section body region) or generate the section's
+/// structural home when it is absent (re-parse only; generation is not a single-span
+/// splice).
+fn set_section_slot(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    new_prose: &str,
+) -> Result<String, Finding> {
     // Present section ⇒ surgical splice of the located slot span; absent section ⇒
     // generate the section's structural home at its schema-ordered position.
     match set_slot(schema, source, section_id, new_prose) {
@@ -5862,35 +5987,35 @@ pub fn slot_ceiling_statement() -> String {
     )
 }
 
-/// The first heading-depth-ceiling violation in standalone slot `prose`, if any — a
-/// `##`/`###` ATX heading or a Setext underline, located by its **1-based line within
-/// the prose**. Reuses the same block parse the read-time parser uses (never a line
-/// scanner — a `## …` inside a fenced code block is correctly *not* a heading), so the
-/// write-time and read-time ceiling agree. Emits a `write.*` finding (the write-path
+/// The first heading-depth-ceiling violation in standalone slot `prose` against
+/// `ceiling`, if any — an ATX heading at or shallower than the address's reserved
+/// depth, or a Setext underline, located by its **1-based line within the prose**.
+/// Reuses the same block parse the read-time parser uses (never a line scanner — a
+/// `## …` inside a fenced code block is correctly *not* a heading), so the write-time
+/// and read-time ceiling agree: `parse::is_reserved_depth` tests `level <=
+/// reserved_max`, and so does this. Emits a `write.*` finding (the write-path
 /// envelope), distinct from the parser's `conformance.*` producer.
-fn slot_ceiling_finding(prose: &str) -> Option<Finding> {
+///
+/// The message names the depth that is free **at this address** — derived from the
+/// passed [`SlotCeiling`], never a global `####`, which is true for a plain depth-1
+/// item and false for a multi-slot or nested-bearing one.
+fn slot_ceiling_finding(prose: &str, ceiling: SlotCeiling) -> Option<Finding> {
+    let allowed = "#".repeat(ceiling.first_allowed);
     parse::scan_blocks(prose).into_iter().find_map(|b| match b {
         Block::Heading { is_atx, line, .. } if !is_atx => Some(blocking_write(
             "write.slot-setext-heading",
             format!(
-                "Setext heading in slot prose at line {line}; use `{CEILING_ALLOWED}` ATX \
-                 depth or rephrase"
+                "Setext heading in slot prose at line {line}; use `{allowed}` ATX depth or rephrase"
             ),
             Location::at(line, 1),
         )),
-        Block::Heading { level, line, .. }
-            if matches!(level, HeadingLevel::H2 | HeadingLevel::H3) =>
-        {
-            let depth = if level == HeadingLevel::H2 {
-                CEILING_RESERVED_H2
-            } else {
-                CEILING_RESERVED_H3
-            };
+        Block::Heading { level, line, .. } if level_num_of(level) <= ceiling.reserved_max => {
+            let depth = "#".repeat(level_num_of(level));
             Some(blocking_write(
                 "write.slot-heading-depth",
                 format!(
                     "heading at schema-reserved depth `{depth}` in slot prose at line {line}; \
-                     use `{CEILING_ALLOWED}` or rephrase"
+                     `{allowed}` is the shallowest depth free at this address — use it or rephrase"
                 ),
                 Location::at(line, 1),
             ))
@@ -6403,8 +6528,13 @@ date: 2026-05-23
 ";
         // `context` is a non-terminal slot (Options + Decision + Consequences follow it).
         // The prose deliberately lacks a trailing newline.
-        let out = set_slot_validated(&adr_schema(), empty, "context", "Per-client limits.")
-            .expect("filling an empty non-terminal slot must round-trip, trailing LF or not");
+        let out = set_slot_validated(
+            &adr_schema(),
+            empty,
+            SlotAddress::Section { section: "context" },
+            "Per-client limits.",
+        )
+        .expect("filling an empty non-terminal slot must round-trip, trailing LF or not");
         // The buffer re-parses and the prose landed in `context`, not fused to the next
         // heading.
         let doc = parse::parse_sections(&adr_schema(), &out).expect("result re-parses");
@@ -6650,8 +6780,15 @@ Each service drops its local limiter.
 
         // --- Clean set-slot: surgical on the slot span. ---
         let target = set_slot_span(&schema, CANONICAL_ADR, "decision");
-        let out = set_slot_validated(&schema, CANONICAL_ADR, "decision", "We centralize.")
-            .expect("clean prose passes the gate");
+        let out = set_slot_validated(
+            &schema,
+            CANONICAL_ADR,
+            SlotAddress::Section {
+                section: "decision",
+            },
+            "We centralize.",
+        )
+        .expect("clean prose passes the gate");
         // Re-parses (a).
         parse::parse_sections(&schema, &out).expect("gated result re-parses");
         // Surgical (b): only the slot span's bytes differ — the prefix and suffix
@@ -6667,7 +6804,7 @@ Each service drops its local limiter.
         let finding = set_slot_validated(
             &schema,
             CANONICAL_ADR,
-            "decision",
+            SlotAddress::Section { section: "decision" },
             "Intro.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nMore.",
         )
         .expect_err("a `##` heading in slot prose ⇒ abort");
@@ -6693,14 +6830,28 @@ Each service drops its local limiter.
         );
 
         // --- Ceiling: a `### x` ATX heading (item depth) is rejected. ---
-        let finding = set_slot_validated(&schema, CANONICAL_ADR, "decision", "### Sneaky")
-            .expect_err("a `###` heading in slot prose ⇒ abort");
+        let finding = set_slot_validated(
+            &schema,
+            CANONICAL_ADR,
+            SlotAddress::Section {
+                section: "decision",
+            },
+            "### Sneaky",
+        )
+        .expect_err("a `###` heading in slot prose ⇒ abort");
         assert_eq!(finding.code, "write.slot-heading-depth");
         assert_eq!(finding.location.as_ref().unwrap().line, 1);
 
         // --- Ceiling: a Setext underline heading is rejected at any depth. ---
-        let finding = set_slot_validated(&schema, CANONICAL_ADR, "decision", "A title\n=======")
-            .expect_err("a Setext heading in slot prose ⇒ abort");
+        let finding = set_slot_validated(
+            &schema,
+            CANONICAL_ADR,
+            SlotAddress::Section {
+                section: "decision",
+            },
+            "A title\n=======",
+        )
+        .expect_err("a Setext heading in slot prose ⇒ abort");
         assert_eq!(finding.severity, crate::finding::Severity::Blocking);
         assert_eq!(finding.code, "write.slot-setext-heading");
         assert_eq!(finding.location.as_ref().unwrap().line, 1);
@@ -6722,10 +6873,14 @@ Each service drops its local limiter.
         }
         // The enforcing finding routes to the SAME allowed depth the statement
         // states, and names the reserved depth it rejects.
-        let h2 = slot_ceiling_finding("## nope\n").expect("H2 trips the ceiling");
+        // The section-slot ceiling — the context the (still context-blind) statement
+        // describes; T6 parameterizes the statement from the same derivation.
+        let section_ceiling = SlotCeiling::reserving(3);
+        let h2 = slot_ceiling_finding("## nope\n", section_ceiling).expect("H2 trips the ceiling");
         assert!(h2.message.contains(&format!("`{CEILING_RESERVED_H2}`")));
         assert!(h2.message.contains(&format!("`{CEILING_ALLOWED}`")));
-        let setext = slot_ceiling_finding("A title\n=======\n").expect("Setext trips the ceiling");
+        let setext = slot_ceiling_finding("A title\n=======\n", section_ceiling)
+            .expect("Setext trips the ceiling");
         assert!(setext.message.contains(&format!("`{CEILING_ALLOWED}`")));
     }
 
@@ -11750,5 +11905,398 @@ sections:
         let schema = rollup_schema();
         assert!(slot_ceiling(&schema, "absent", &["x"]).is_none());
         assert!(slot_ceiling(&schema, "groups", &["a-group", "undeclared", "x"]).is_none());
+    }
+}
+
+#[cfg(test)]
+mod item_slot_gate {
+    //! **The item-slot arms of the one gated slot-write seam** (M45 Inc 2 T2;
+    //! `implementation/parsing.md` → Slot heading-depth ceiling, enforcement site 1,
+    //! and Validate-after-write).
+    //!
+    //! Before M45 the item paths were **public, ungated verbs**: prose carrying a
+    //! heading at a CLI-reserved depth was spliced verbatim, so `### Ghost  {#ghost}`
+    //! authored into a `spec` criterion's slot **minted a real repeatable item**
+    //! through jigc's own write verb (reproduced live before this task: the section's
+    //! item-count went 1 → 2, and the prose beneath the ghost heading was reattributed
+    //! to it). They are private now — every slot write, section or item, at every
+    //! nesting depth, enters through [`set_slot_validated`], which derives the reserved
+    //! set from the address ([`slot_ceiling`]), rejects **before** touching bytes, and
+    //! confines [`validate_after`] to the **item region**.
+    //!
+    //! *Nothing is persisted* on a reject is **structural, not asserted**: the gate
+    //! returns a `Finding` and **no buffer**, and `cli::doc::apply_slot_target` — the
+    //! CLI's only slot-write door — persists exactly the `Ok` buffer. The
+    //! through-the-binary staged-bytes proof over the whole axis is the increment's
+    //! acceptance (T7).
+    //!
+    //! Every rejection arm is paired with the **first allowed depth at that address**,
+    //! so what is pinned here is a per-address ceiling, never a global one: `####` is
+    //! free prose in a plain `spec` criterion and reserved structure in a `roadmap`
+    //! milestone and a `changelog` change-group.
+
+    use super::*;
+    use crate::finding::Severity;
+    use crate::schema::Schema;
+
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
+    const ROADMAP_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/roadmap.yaml");
+
+    /// The shipped `spec` — a **plain single-slot** item at depth 1 (`criteria`),
+    /// reserved through `###`. Loads with the dev-pack field types (its `maps-to-test`
+    /// is a `code-anchor`).
+    fn spec_schema() -> Schema {
+        crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("spec.yaml loads")
+    }
+
+    /// The shipped `roadmap` — a **multi-slot** item at depth 1 (`milestones`, the
+    /// `proves`/`decomposition` pair under `#### <Leaf-Title>` sub-labels), so `####`
+    /// is reserved and prose starts at `#####`.
+    fn roadmap_schema() -> Schema {
+        crate::schema::load_schema(ROADMAP_YAML).expect("roadmap.yaml loads")
+    }
+
+    /// The shipped `changelog` — the **nested** pair: a release at depth 1 carrying a
+    /// nested `changes` repeatable, whose change-groups sit at depth 2 (`####`), so a
+    /// change-group's `notes` prose starts at `#####`.
+    fn changelog_schema() -> Schema {
+        crate::schema::load_schema(CHANGELOG_YAML).expect("changelog.yaml loads")
+    }
+
+    const SPEC: &str = "\
+---
+---
+
+# Rate limiting
+
+## Goal
+
+Limit requests.
+
+## Context
+
+Bursts happen.
+
+## Criteria
+
+### Rejects the 101st  {#rejects-the-101st}
+
+The gateway rejects the 101st request.
+";
+
+    const ROADMAP: &str = "\
+# Roadmap
+
+## Milestones
+
+### Alpha  {#alpha}
+
+#### Proves
+
+The loop closes.
+
+#### Decomposition
+
+Inc 1: the seam.
+";
+
+    const CHANGELOG: &str = "\
+# Changelog
+
+## Unreleased Changes
+
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+OAuth device-code flow.
+";
+
+    /// The fixtures are canonical, so a byte-identity assertion over an accepted write
+    /// means what it says (`render(parse(x)) == x` on the untouched fixture).
+    #[test]
+    fn the_fixtures_are_canonical() {
+        for (schema, src) in [
+            (spec_schema(), SPEC),
+            (roadmap_schema(), ROADMAP),
+            (changelog_schema(), CHANGELOG),
+        ] {
+            let instance = instance_from_source(&schema, src)
+                .unwrap_or_else(|f| panic!("fixture parses: {f:?}\n{src}"));
+            assert_eq!(render(&schema, &instance), src, "fixture is canonical");
+        }
+    }
+
+    /// The addressed slot write is **refused**, blocking and located, and yields no
+    /// buffer at all — the shape that makes "nothing is persisted" structural.
+    fn reject(schema: &Schema, source: &str, addr: SlotAddress<'_>, prose: &str) -> Finding {
+        let finding = set_slot_validated(schema, source, addr, prose)
+            .expect_err("reserved-depth prose must be refused");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert!(
+            finding.location.is_some(),
+            "a ceiling reject is located: {finding:?}"
+        );
+        finding
+    }
+
+    /// The addressed slot write is **accepted**, re-parses, and round-trips
+    /// byte-stable — the first-allowed-depth half of each arm.
+    fn accept(schema: &Schema, source: &str, addr: SlotAddress<'_>, prose: &str) -> String {
+        let out = set_slot_validated(schema, source, addr, prose)
+            .expect("prose below the address's ceiling is accepted");
+        let instance = instance_from_source(schema, &out)
+            .unwrap_or_else(|f| panic!("accepted result parses: {f:?}\n{out}"));
+        assert_eq!(render(schema, &instance), out, "render(parse(out)) == out");
+        out
+    }
+
+    /// The number of items the `section_id` repeatable parses to — the ghost-item
+    /// witness (the live defect took this from 1 to 2 through the write verb).
+    fn item_count(schema: &Schema, source: &str, section_id: &str) -> usize {
+        parse::parse_sections(schema, source)
+            .expect("source parses")
+            .sections
+            .iter()
+            .find(|s| s.id == section_id)
+            .map(|s| s.items.len())
+            .expect("the section is present")
+    }
+
+    fn criterion(leaf: &str) -> SlotAddress<'_> {
+        SlotAddress::Item {
+            section: "criteria",
+            chain: &["rejects-the-101st"],
+            leaf,
+        }
+    }
+
+    /// **The headline arm.** `### Ghost  {#ghost}` into a `spec` criterion's slot is
+    /// refused with a located blocking `write.slot-heading-depth` naming `####` — the
+    /// depth free *here* — and no buffer is produced, so the ghost item is never
+    /// minted. The paired write at that first-allowed depth is accepted and leaves the
+    /// item count at 1.
+    #[test]
+    fn a_ghost_item_heading_never_reaches_a_spec_criterion_slot() {
+        let schema = spec_schema();
+        assert_eq!(item_count(&schema, SPEC, "criteria"), 1);
+
+        let finding = reject(
+            &schema,
+            SPEC,
+            criterion("statement"),
+            "The gateway rejects it.\n\n### Ghost  {#ghost}\n\nHijacked prose.",
+        );
+        assert_eq!(finding.code, "write.slot-heading-depth");
+        // Located at the offending line **within the agent's prose** (1-based).
+        assert_eq!(finding.location.as_ref().unwrap().line, 3);
+        assert!(
+            finding.message.contains("`###`") && finding.message.contains("`####`"),
+            "the reject names the reserved depth and the one free here: {}",
+            finding.message
+        );
+
+        // The first ALLOWED depth at this address is accepted — and mints nothing.
+        let out = accept(
+            &schema,
+            SPEC,
+            criterion("statement"),
+            "The gateway rejects it.\n\n#### Detail\n\nWithin the window.",
+        );
+        assert_eq!(item_count(&schema, &out, "criteria"), 1);
+        assert!(out.contains("#### Detail"));
+    }
+
+    /// The **section-hijack** variant on the same address: `## Ghost Section` is
+    /// shallower still — reserved by the section grammar, not just the item one.
+    #[test]
+    fn a_section_heading_never_reaches_an_item_slot() {
+        let schema = spec_schema();
+        let finding = reject(
+            &schema,
+            SPEC,
+            criterion("statement"),
+            "Rejected.\n\n## Ghost Section\n\nDownstream prose.",
+        );
+        assert_eq!(finding.code, "write.slot-heading-depth");
+        assert!(finding.message.contains("`##`"), "{}", finding.message);
+
+        // And the shallowest reserved depth of all — the document's own `#` title.
+        let h1 = reject(&schema, SPEC, criterion("statement"), "# Another doc");
+        assert_eq!(h1.code, "write.slot-heading-depth");
+    }
+
+    /// The **Setext** variant: an underline heading is refused at any depth, on the
+    /// item path exactly as on the section path.
+    #[test]
+    fn a_setext_heading_never_reaches_an_item_slot() {
+        let schema = spec_schema();
+        let finding = reject(
+            &schema,
+            SPEC,
+            criterion("statement"),
+            "Intro.\n\nA title\n=======\n",
+        );
+        assert_eq!(finding.code, "write.slot-setext-heading");
+        assert_eq!(finding.location.as_ref().unwrap().line, 3);
+    }
+
+    /// **The multi-slot arm.** A `roadmap` milestone reserves one level deeper than a
+    /// plain item — `#### Proves` is a sub-label, so writing it into `decomposition`
+    /// would silently reattribute the prose beneath it to the sibling leaf. Refused;
+    /// `#####` is what is free here, and it is accepted.
+    #[test]
+    fn a_sub_label_depth_heading_never_reaches_a_multi_slot_item() {
+        let schema = roadmap_schema();
+        let addr = |leaf| SlotAddress::Item {
+            section: "milestones",
+            chain: &["alpha"],
+            leaf,
+        };
+
+        let finding = reject(
+            &schema,
+            ROADMAP,
+            addr("decomposition"),
+            "Inc 1: the seam.\n\n#### Proves\n\nSmuggled into the sibling leaf.",
+        );
+        assert_eq!(finding.code, "write.slot-heading-depth");
+        assert_eq!(finding.location.as_ref().unwrap().line, 3);
+        assert!(
+            finding.message.contains("`####`") && finding.message.contains("`#####`"),
+            "the reject names `#####` as free here, not the global `####`: {}",
+            finding.message
+        );
+
+        let out = accept(
+            &schema,
+            ROADMAP,
+            addr("decomposition"),
+            "Inc 1: the seam.\n\n##### Tasks\n\nT1 then T2.",
+        );
+        assert!(out.contains("##### Tasks"));
+        // The sibling leaf's prose survives, and the milestone is still one item.
+        assert!(out.contains("The loop closes."));
+        assert_eq!(item_count(&schema, &out, "milestones"), 1);
+    }
+
+    /// **The nested arm.** A `changelog` change-group sits at depth 2, so `####` is
+    /// its own item depth — writing one into its `notes` would mint a sibling
+    /// change-group under the same release. Refused; `#####` is accepted.
+    #[test]
+    fn an_item_depth_heading_never_reaches_a_nested_item_slot() {
+        let schema = changelog_schema();
+        let addr = |leaf| SlotAddress::Item {
+            section: "releases",
+            // The section-qualified chain: release → the nested `changes` section →
+            // the change-group item.
+            chain: &["1-2-0", "changes", "added"],
+            leaf,
+        };
+
+        let finding = reject(
+            &schema,
+            CHANGELOG,
+            addr("notes"),
+            "OAuth device-code flow.\n\n#### Fixed  {#fixed}\n\nA smuggled group.",
+        );
+        assert_eq!(finding.code, "write.slot-heading-depth");
+        assert_eq!(finding.location.as_ref().unwrap().line, 3);
+        assert!(
+            finding.message.contains("`#####`"),
+            "the reject names the depth free at THIS address: {}",
+            finding.message
+        );
+
+        let out = accept(
+            &schema,
+            CHANGELOG,
+            addr("notes"),
+            "OAuth device-code flow.\n\n##### Caveat\n\nDesktop only.",
+        );
+        assert!(out.contains("##### Caveat"));
+        // Still exactly one release, carrying exactly one change-group.
+        let doc = parse::parse_sections(&schema, &out).expect("result parses");
+        let releases = doc
+            .sections
+            .iter()
+            .find(|s| s.id == "releases")
+            .expect("releases present");
+        assert_eq!(releases.items.len(), 1);
+        assert_eq!(releases.items[0].items.len(), 1);
+    }
+
+    /// Validate-after's clause (b) is confined to the **item region**, never the
+    /// addressed leaf's span: the item paths re-render the whole item block, so a
+    /// leaf-narrowed target would trip `write.target-escape` on every accepted
+    /// item-slot write — including one that changes the item's canonical shape (here
+    /// the multi-slot fill of a **mint-empty** leaf, which grows blank lines the leaf
+    /// span never covered).
+    #[test]
+    fn the_confinement_target_is_the_item_region() {
+        let schema = roadmap_schema();
+        let empty = render(
+            &schema,
+            &instance_from_source(&schema, "# Roadmap\n\n## Milestones\n").expect("empty parses"),
+        );
+        let minted = add_item(&schema, &empty, "milestones", "Alpha", None, &[])
+            .expect("the mint-empty skeleton");
+        let filled = accept(
+            &schema,
+            &minted,
+            SlotAddress::Item {
+                section: "milestones",
+                chain: &["alpha"],
+                leaf: "proves",
+            },
+            "The loop closes.",
+        );
+        assert!(filled.contains("The loop closes."));
+    }
+
+    /// An address that resolves against **no** schema shape derives no ceiling — and
+    /// reaches no bytes either: the splice refuses it as not-present rather than
+    /// writing unchecked prose. Same for an item that is simply absent from the
+    /// document.
+    #[test]
+    fn an_unresolvable_item_address_is_refused_not_written() {
+        let schema = spec_schema();
+        // A **non-repeatable** section addressed as an item: `slot_ceiling` derives
+        // nothing, and the reserved-depth prose still never lands.
+        let unresolvable = set_slot_validated(
+            &schema,
+            SPEC,
+            SlotAddress::Item {
+                section: "goal",
+                chain: &["ghost"],
+                leaf: "statement",
+            },
+            "### Ghost  {#ghost}",
+        )
+        .expect_err("a non-repeatable section carries no item slot");
+        assert_eq!(unresolvable.code, "write.not-present");
+        assert_eq!(unresolvable.severity, Severity::Blocking);
+
+        // An absent item under a real repeatable, with clean prose.
+        let absent = set_slot_validated(
+            &schema,
+            SPEC,
+            SlotAddress::Item {
+                section: "criteria",
+                chain: &["ghost"],
+                leaf: "statement",
+            },
+            "Clean prose.",
+        )
+        .expect_err("an absent item is refused");
+        assert_eq!(absent.code, "write.not-present");
     }
 }

@@ -26,8 +26,8 @@ use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::{FieldType, Leaf, Repeatable, Schema, SectionBody};
 use engine::state;
 use engine::write::{
-    set_field_validated, set_item_field_or_insert, set_item_slot, set_nested_item_field_or_insert,
-    set_nested_item_slot, set_slot_validated,
+    SlotAddress, set_field_validated, set_item_field_or_insert, set_nested_item_field_or_insert,
+    set_slot_validated,
 };
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -818,6 +818,12 @@ fn run_set_slot(
 /// Splice resolved slot prose into the in-memory `source`, returning the edited
 /// buffer — the source→source transform shared by the per-leaf `set-slot` verb and
 /// the batch `doc author` apply. No I/O (the [`apply_field_target`] sibling).
+///
+/// **Every arm goes through the one gated engine seam** (`set_slot_validated`, M45):
+/// the CLI resolves the address and the engine derives that address's reserved
+/// heading depth, enforces it before touching bytes, and validate-afters the write —
+/// so an item-slot write can no longer land reserved-depth prose the section-slot
+/// write would have refused (`implementation/parsing.md` → Slot heading-depth ceiling).
 fn apply_slot_target(
     schema: &Schema,
     source: &str,
@@ -825,25 +831,34 @@ fn apply_slot_target(
     uri: &str,
     prose: &str,
 ) -> Result<String, DocFailure> {
-    Ok(match target {
-        SlotTarget::Section(section) => set_slot_validated(schema, source, &section, prose)
-            .map_err(|f| block(&f, "set-slot", uri))?,
+    // The item arms' chains, kept alive for the borrowed `SlotAddress`.
+    let (section, chain, leaf) = match &target {
+        SlotTarget::Section(section) => (section.as_str(), Vec::new(), ""),
         SlotTarget::Item {
             section,
             item,
             leaf,
-        } => set_item_slot(schema, source, &section, &item, &leaf, prose)
-            .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", uri))?,
+        } => (section.as_str(), vec![item.as_str()], leaf.as_str()),
         SlotTarget::NestedItem {
             section,
             items,
             leaf,
-        } => {
-            let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
-            set_nested_item_slot(schema, source, &section, &item_ids, &leaf, prose)
-                .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", uri))?
+        } => (
+            section.as_str(),
+            items.iter().map(String::as_str).collect(),
+            leaf.as_str(),
+        ),
+    };
+    let address = if chain.is_empty() {
+        SlotAddress::Section { section }
+    } else {
+        SlotAddress::Item {
+            section,
+            chain: &chain,
+            leaf,
         }
-    })
+    };
+    set_slot_validated(schema, source, address, prose).map_err(|f| block(&f, "set-slot", uri))
 }
 
 /// `jigc doc add-item <addr>#<section> --title <…>` — mint a repeatable item into a
@@ -3592,9 +3607,10 @@ fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
     }
 }
 
-/// The resolved destination of a `set-slot` address: a **section-level** slot
-/// (spliced via `set_slot_validated`) or an **item-level** per-item slot on a
-/// repeatable item (spliced via `set_item_slot`, addressed through the item id).
+/// The resolved destination of a `set-slot` address: a **section-level** slot or an
+/// **item-level** per-item slot on a (possibly nested) repeatable item, addressed
+/// through its item-id chain. Both lower to one `engine::write::SlotAddress` and one
+/// gated call ([`apply_slot_target`]).
 enum SlotTarget {
     Section(String),
     Item {
@@ -3615,8 +3631,8 @@ enum SlotTarget {
 /// Resolve the destination a `set-slot` address targets — the simple section whose
 /// id is the fragment's leading hop and which declares a `slot`, or the per-item
 /// slot of a repeatable item (`#<section>/<item>/<slot>`). The CLI extracts the
-/// `(section, item)` pair for the item form; the engine `set_item_slot` adjudicates
-/// item/section presence.
+/// `(section, item)` pair for the item form; the engine's gated `set_slot_validated`
+/// adjudicates item/section presence.
 fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
     let section_id = match address.fragment.as_ref()? {
         Fragment::Unit(u) => u.as_str(),
