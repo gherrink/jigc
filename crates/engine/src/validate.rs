@@ -2133,23 +2133,75 @@ fn check_item_field(
 /// check times).
 pub const ID_FROM_ENUM_CODE: &str = "schema-conformance.field-value-conformant";
 
-/// The shared id-from-enum adjudicator — the single owner of the re-slug + membership
+/// The verdict of the shared id-from adjudicator [`id_from_enum_violation`]: a heading
+/// that is malformed **as an id source** (independent of the field's type), or one that
+/// re-slugs **outside** the id-from's declared enum. Both doors (`add-item` write-time
+/// and the task gate) match on it to compose their message; the finding **code** is the
+/// same [`ID_FROM_ENUM_CODE`] for either arm (no new check minted — M45 inc-4).
+#[derive(Debug)]
+pub enum IdFromViolation {
+    /// The heading text cannot serve as a stable id source — empty, whitespace-only,
+    /// an embedded newline, or leading/trailing whitespace. Carries a self-contained
+    /// human clause (`"is empty"` / `"is whitespace-only"` / …). The **universal** rule:
+    /// it fires whatever the id-from field's declared type, and reads the heading RAW.
+    Shape(&'static str),
+    /// The re-slugged heading is not a member of the id-from's declared `enum`. Carries
+    /// the slug-cased id the caller addresses.
+    NotEnumMember(String),
+}
+
+/// The **universal** id-from shape rule (M45 inc-4 / T3; `design/validation.md`;
+/// `implementation/pinning.md` §2) — applied to every id-from's raw heading text, whatever
+/// the field's declared type. A repeatable's `id-from` value *is* the item heading, and the
+/// item id is slugged from it, so a heading that is empty, whitespace-only, carries an
+/// embedded newline, or has surrounding whitespace cannot serve as a stable id source.
+/// Read the heading **RAW**, never the slug: the slug drops exactly the characters this
+/// catches (` Foo ` and `Foo` slug identically, and `BREAKING CHANGE` slugging past a
+/// slug-based enum test is the same blindness), so a slug-based test would be blind to
+/// three of the four cases. Returns the human clause, else `None`.
+fn id_from_shape_violation(title: &str) -> Option<&'static str> {
+    if title.is_empty() {
+        Some("is empty")
+    } else if title.trim().is_empty() {
+        Some("is whitespace-only")
+    } else if title.contains('\n') || title.contains('\r') {
+        Some("contains an embedded newline")
+    } else if title != title.trim() {
+        Some("has leading or trailing whitespace")
+    } else {
+        None
+    }
+}
+
+/// The shared id-from adjudicator — the single owner of the shape + enum-membership
 /// discipline both check times route through (review S3). A repeatable's `id-from` value
-/// lives in the item *heading* (rendered `### <Title>  {#slug}`), so when that id-from
-/// field is an `enum` the heading is itself schema-constrained: re-slug `title` (the same
-/// re-slug the parser's `heading_matches` applies — **not** [`crate::write::check_value`],
-/// whose literal compare would reject `Fixed` for the `fixed` member) and test membership
-/// in the declared enum members. Returns the slug-cased id when it is **not** a member
-/// (the violation the caller addresses), else `None`.
+/// lives in the item *heading* (rendered `### <Title>  {#slug}`), and both rules read that
+/// heading:
 ///
-/// A **non-enum** id-from (every shipped doctype's `title`/`key`/`version`) carries no
-/// such constraint and yields `None` (the exempt path); a malformed enum schema (no `of`)
-/// names no members, so any value is non-conformant — surfaced, not silently passed.
+/// 1. The **universal shape rule** ([`id_from_shape_violation`]) — every id-from heading
+///    must be a stable single-line non-blank string, **whatever** the field's type. This
+///    is checked first and reads the heading RAW.
+/// 2. The **enum-membership rule** — when the id-from field is an `enum` the heading is
+///    additionally schema-constrained: re-slug `title` (the same re-slug the parser's
+///    `heading_matches` applies — **not** [`crate::write::check_value`], whose literal
+///    compare would reject `Fixed` for the `fixed` member) and test membership in the
+///    declared members. A malformed enum schema (no `of`) names no members, so any value
+///    is non-conformant — surfaced, not silently passed.
+///
+/// Returns the [`IdFromViolation`] the caller addresses, else `None`. A **non-enum**
+/// id-from (every shipped doctype's `title`/`key`/`version`/`task-id`/`category`) carries
+/// no membership constraint but is still subject to the shape rule.
 /// (`design/auto-migration.md` → Engine/validation work #1 / Hardening #3.)
 pub fn id_from_enum_violation(
     repeatable: &crate::schema::Repeatable,
     title: &str,
-) -> Option<String> {
+) -> Option<IdFromViolation> {
+    // The universal shape rule runs first and is type-independent — it fires even when the
+    // id-from field is absent from the block (a mis-declared schema), so it is not gated
+    // behind the field lookup below.
+    if let Some(reason) = id_from_shape_violation(title) {
+        return Some(IdFromViolation::Shape(reason));
+    }
     let field = repeatable.block.iter().find_map(|leaf| match leaf {
         crate::schema::Leaf::Field(f) if f.id == repeatable.id_from => Some(f),
         _ => None,
@@ -2162,38 +2214,44 @@ pub fn id_from_enum_violation(
     if members.iter().any(|m| m == &slug) {
         None
     } else {
-        Some(slug)
+        Some(IdFromViolation::NotEnumMember(slug))
     }
 }
 
-/// `field-value-conformant` for a repeatable item's **`id-from` enum** field — the
-/// one case where the heading text (not a bullet in `item.fields`) is itself a
-/// schema-constrained value (`design/auto-migration.md` → Engine/validation work #1).
-/// The id-from heading is exempt from the ordinary bullet-based field check; the shared
-/// [`id_from_enum_violation`] adjudicator owns the re-slug + membership test (a non-enum
-/// id-from yields `None`, staying exempt). `Fixed`→`fixed` / `Added`→`added` pass; a
-/// foreign `Performance`→`performance` ∉ enum blocks. The finding addresses
-/// `item_path/<id-from>` (the slug-cased item id is already in `item_path`).
+/// `field-value-conformant` for a repeatable item's **`id-from`** heading — the one place
+/// the heading text (not a bullet in `item.fields`) is itself a schema-constrained value
+/// (`design/auto-migration.md` → Engine/validation work #1). The id-from heading is exempt
+/// from the ordinary bullet-based field check; the shared [`id_from_enum_violation`]
+/// adjudicator owns both the **universal shape** rule (empty / whitespace-only /
+/// embedded-newline / leading-trailing-whitespace, applied to every id-from) and the
+/// **enum-membership** rule (`Fixed`→`fixed` / `Added`→`added` pass; a foreign
+/// `Performance`→`performance` ∉ enum blocks). The finding addresses `item_path/<id-from>`
+/// (the slug-cased item id is already in `item_path`).
 fn check_id_from_enum(
     item_path: &str,
     repeatable: &crate::schema::Repeatable,
     item: &ParsedItem,
     findings: &mut Vec<Finding>,
 ) {
-    if let Some(slug) = id_from_enum_violation(repeatable, &item.title) {
-        findings.push(blocking_conformance(
-            ID_FROM_ENUM_CODE,
-            format!(
-                "id-from field `{}` in item `{item_path}`: `{}` is not an enum member",
-                repeatable.id_from, slug
-            ),
-            Some(Location::addressed(
-                format!("{item_path}/{}", repeatable.id_from),
-                1,
-                1,
-            )),
-        ));
-    }
+    let Some(violation) = id_from_enum_violation(repeatable, &item.title) else {
+        return;
+    };
+    let detail = match &violation {
+        IdFromViolation::Shape(reason) => format!("the heading {reason}"),
+        IdFromViolation::NotEnumMember(slug) => format!("`{slug}` is not an enum member"),
+    };
+    findings.push(blocking_conformance(
+        ID_FROM_ENUM_CODE,
+        format!(
+            "id-from field `{}` in item `{item_path}`: {detail}",
+            repeatable.id_from
+        ),
+        Some(Location::addressed(
+            format!("{item_path}/{}", repeatable.id_from),
+            1,
+            1,
+        )),
+    ));
 }
 
 /// `required-slot-present`: the section declares a slot, so its prose must be
@@ -3322,6 +3380,142 @@ A perf change.
         assert!(
             findings.is_empty(),
             "a non-enum string id-from must stay exempt, got {findings:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod id_from_shape_guard_tests {
+    //! (M45 inc-4 / T3) The **universal** id-from shape rule. Every id-from's heading
+    //! *is* the id source (the slug is derived from it), so — whatever the field's
+    //! declared type — it must be a stable single-line non-blank string. An empty,
+    //! whitespace-only, embedded-newline, or leading/trailing-whitespace heading is
+    //! rejected at BOTH doors, naming the shared
+    //! `schema-conformance.field-value-conformant`. Unlike the enum-membership rule the
+    //! shape rule applies to a **non-enum** id-from too, and reads the heading **RAW**
+    //! (the slug drops the very characters this must catch — the leading/trailing-ws
+    //! case slugs *identically* to the clean title, so a slug-based test is blind to it).
+    //! A legitimate milestone title passes untouched. See `design/validation.md`;
+    //! `implementation/pinning.md` §2.
+
+    use super::*;
+    use crate::parse::{Document, ParsedItem, ParsedSection};
+
+    /// A string-`id-from` repeatable — the non-enum class every shipped doctype's
+    /// `title`/`key`/`version`/`task-id`/`category` id-from belongs to — whose block
+    /// carries ONLY the id-from field (no required slot), so the ONLY finding a
+    /// malformed heading can raise is the shape one.
+    fn string_repeatable_schema() -> Schema {
+        let yaml = b"\
+type: roadmap
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+";
+        crate::schema::load_schema(yaml).expect("string-id-from schema loads")
+    }
+
+    fn repeatable_of(schema: &Schema) -> &crate::schema::Repeatable {
+        match &schema.sections[0].body {
+            SectionBody::Repeatable { repeatable } => repeatable,
+            _ => unreachable!("fixture section is repeatable"),
+        }
+    }
+
+    /// The shared adjudicator both doors route through rejects EVERY malformed shape
+    /// over a **non-enum** id-from, and reads the heading RAW — the leading/trailing-ws
+    /// title slugs identically to the clean one, so its rejection (contrasted with the
+    /// clean title's pass) proves the guard does not consult the slug — while a
+    /// legitimate milestone title passes untouched (the over-rejection guard).
+    #[test]
+    fn adjudicator_rejects_every_malformed_shape_and_passes_clean() {
+        let schema = string_repeatable_schema();
+        let r = repeatable_of(&schema);
+        for bad in ["", "   ", "line1\nline2", " Milestone 45 — the rc.9 wave "] {
+            assert!(
+                id_from_enum_violation(r, bad).is_some(),
+                "a malformed id-from heading {bad:?} must be rejected over a non-enum id-from",
+            );
+        }
+        assert!(
+            id_from_enum_violation(r, "Milestone 45 — the rc.9 wave").is_none(),
+            "a legitimate milestone title must pass the shape guard untouched",
+        );
+    }
+
+    /// A two-level string-`id-from` schema (a milestone repeatable holding a nested
+    /// task repeatable), so the task-gate test proves the shape guard fires at **every**
+    /// site the conformance seam walks — top level AND nested — not just one.
+    fn nested_string_schema() -> Schema {
+        let yaml = b"\
+type: roadmap
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - id: tasks
+          repeatable:
+            id-from: title
+            block:
+              - { id: title, type: string }
+";
+        crate::schema::load_schema(yaml).expect("nested string-id-from schema loads")
+    }
+
+    /// The task gate (`schema_conformance`) blocks a malformed heading at BOTH a
+    /// top-level and a nested id-from site, each a blocking
+    /// `schema-conformance.field-value-conformant` addressed at that site's id-from
+    /// leaf. The heading text is read raw off `item.title`, so the whitespace-only top
+    /// item and the embedded-newline nested item are both caught.
+    #[test]
+    fn task_gate_blocks_top_and_nested_shape_violations() {
+        let schema = nested_string_schema();
+        // A hand-built parsed document: the parser trims headings, so a shape-broken
+        // title is injected directly (the raw heading text a write door would accept).
+        let doc = Document {
+            sections: vec![ParsedSection {
+                id: "milestones".into(),
+                slot: None,
+                fields: vec![],
+                items: vec![ParsedItem {
+                    id: "top".into(),
+                    title: "   ".into(),
+                    slot: None,
+                    slots: vec![],
+                    fields: vec![],
+                    items: vec![ParsedItem {
+                        id: "child".into(),
+                        title: "line1\nline2".into(),
+                        slot: None,
+                        slots: vec![],
+                        fields: vec![],
+                        items: vec![],
+                    }],
+                }],
+            }],
+        };
+        let findings = schema_conformance(&schema, "", &doc);
+        let addresses: Vec<&str> = findings
+            .iter()
+            .filter(|f| {
+                f.code == "schema-conformance.field-value-conformant"
+                    && f.severity == Severity::Blocking
+            })
+            .filter_map(|f| f.location.as_ref().and_then(|l| l.address.as_deref()))
+            .collect();
+        assert!(
+            addresses.contains(&"milestones/top/title"),
+            "the top-level shape violation must block at its id-from leaf; got {findings:?}",
+        );
+        assert!(
+            addresses.contains(&"milestones/top/tasks/child/title"),
+            "the nested shape violation must block at its section-qualified id-from leaf; \
+             got {findings:?}",
         );
     }
 }

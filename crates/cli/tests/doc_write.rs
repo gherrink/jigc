@@ -832,6 +832,69 @@ fn add_item_into_a_non_repeatable_section_blocks_with_a_routed_finding() {
     );
 }
 
+/// (M45 inc-4 / T3) The universal id-from **shape** guard at the `add-item` write
+/// door: a whitespace-only `--title` cannot serve as an id source, so it is rejected
+/// **before any mint** — naming the shared `schema-conformance.field-value-conformant`
+/// (the enum reject's code, no new check minted) and its shape reason — while a
+/// legitimate milestone-style title (em-dash + version) mints clean (the
+/// over-rejection guard). `criteria` is a `spec` string-`id-from` repeatable, standing
+/// in for every non-enum id-from site.
+#[test]
+fn add_item_blocks_a_blank_title_and_passes_a_clean_one() {
+    let (repo, home) = started_repo_on("plan", "plan the auth flow");
+
+    let created = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "spec", "--title", "Auth flow"],
+        None,
+    );
+    assert!(
+        created.status.success(),
+        "`jigc doc create spec` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    // A whitespace-only title has no stable id source — blocked at the door.
+    let blocked = run_doc(
+        repo.path(),
+        home.path(),
+        &["add-item", "spec:auth-flow#criteria", "--title", "   "],
+        None,
+    );
+    assert!(
+        !blocked.status.success(),
+        "a blank `--title` must exit non-zero"
+    );
+    let stderr = String::from_utf8(blocked.stderr).expect("utf-8 stderr");
+    assert!(
+        stderr.contains("schema-conformance.field-value-conformant"),
+        "the block names the shared conformance code; got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("whitespace-only"),
+        "the block names the shape reason; got:\n{stderr}"
+    );
+
+    // A legitimate milestone-style title (em-dash + version) mints clean.
+    let ok = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "add-item",
+            "spec:auth-flow#criteria",
+            "--title",
+            "Milestone 45 — the rc.9 wave",
+        ],
+        None,
+    );
+    assert!(
+        ok.status.success(),
+        "a legitimate milestone-style title must mint clean; stderr:\n{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+}
+
 /// The shipped `changelog` schema (engine-native types only), so the byte-stable
 /// round-trip asserts against exactly the bytes the pack ships.
 fn changelog_schema() -> engine::schema::Schema {

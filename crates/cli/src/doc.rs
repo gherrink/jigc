@@ -1143,17 +1143,20 @@ fn apply_add_item_target(
     })
 }
 
-/// The write-time id-from-enum reject for an `add-item` mint (`design/auto-migration.md`
-/// → Hardening #3; write-commands.md → Two check times). Resolves the destination
+/// The write-time id-from reject for an `add-item` mint (`design/auto-migration.md` →
+/// Hardening #3; write-commands.md → Two check times). Resolves the destination
 /// repeatable — the section's own for a top-level mint, the named nested one (via the
 /// engine's [`engine::write::nested_repeatable`], the same navigation the mint path uses)
 /// for a nested mint — and runs the shared [`engine::validate::id_from_enum_violation`]
-/// adjudicator over the `--title`. When the id-from is an enum the title re-slugs outside
-/// its members, returns a blocking finding carrying the **shared** code
-/// [`engine::validate::ID_FROM_ENUM_CODE`] (identical to finalize's) addressed at the
-/// slug-cased id-from address, **qualified by the doc head** `doc` (`<type>:<slug>`) into the
-/// URI normal form its stable key targets. A non-enum id-from / a member title yields `None`
-/// — the inert path, mirroring finalize's exemption (so `Fixed`→`fixed` passes).
+/// adjudicator over the `--title`. It returns a blocking finding carrying the **shared**
+/// code [`engine::validate::ID_FROM_ENUM_CODE`] (identical to finalize's) for either arm:
+/// a **shape** violation (the universal rule — every id-from's `--title` must be a stable
+/// single-line non-blank string, so this fires ahead of the engine's slug guard and names
+/// the shape reason) or an **enum-member** miss (the title re-slugs outside the declared
+/// members). Addressed at the slug-cased id-from address, **qualified by the doc head**
+/// `doc` (`<type>:<slug>`) into the URI normal form its stable key targets. A clean title
+/// over a non-enum id-from yields `None` — the inert path, mirroring finalize's exemption
+/// (so `Fixed`→`fixed` passes).
 fn id_from_enum_block(
     schema: &Schema,
     doc: &str,
@@ -1182,25 +1185,44 @@ fn id_from_enum_block(
             )
         }
     };
-    let slug = engine::validate::id_from_enum_violation(&repeatable, title)?;
+    let violation = engine::validate::id_from_enum_violation(&repeatable, title)?;
+    // The route floor (M43): every arm names a followable repair. A **shape** violation's
+    // fix is the `--title` value itself (a human correction jigc cannot execute); an
+    // **enum-member** miss routes the mechanical `doc schema` read for the declared members.
+    let (message, route, slug) = match &violation {
+        engine::validate::IdFromViolation::Shape(reason) => (
+            format!(
+                "add-item rejected: the heading {reason} (id-from field `{}`)",
+                repeatable.id_from
+            ),
+            engine::finding::Route::human(
+                "re-run `add-item` with a non-empty, single-line `--title` \
+                 without leading or trailing whitespace",
+            ),
+            engine::slug::slugify(title),
+        ),
+        engine::validate::IdFromViolation::NotEnumMember(slug) => (
+            format!(
+                "add-item rejected: `{slug}` is not an enum member of id-from field `{}`",
+                repeatable.id_from
+            ),
+            engine::finding::Route::mechanical(
+                ["jigc", "doc", "schema", "<doctype>"],
+                " to see the declared members, then re-run `add-item` with a member title",
+            ),
+            slug.clone(),
+        ),
+    };
     Some(Finding::graded(
         engine::finding::Severity::Blocking,
         engine::validate::ID_FROM_ENUM_CODE,
-        format!(
-            "add-item rejected: `{slug}` is not an enum member of id-from field `{}`",
-            repeatable.id_from
-        ),
+        message,
         Some(Location::addressed(
             format!("{doc}#{prefix}/{slug}/{}", repeatable.id_from),
             1,
             1,
         )),
-        // The route floor (M43): the refused mint's repair is a member title, not the
-        // generic set-field route the finalize-time sibling of this code carries.
-        Some(engine::finding::Route::mechanical(
-            ["jigc", "doc", "schema", "<doctype>"],
-            " to see the declared members, then re-run `add-item` with a member title",
-        )),
+        Some(route),
     ))
 }
 
