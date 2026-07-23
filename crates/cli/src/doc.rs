@@ -1152,7 +1152,9 @@ fn apply_add_item_target(
 /// code [`engine::validate::ID_FROM_ENUM_CODE`] (identical to finalize's) for either arm:
 /// a **shape** violation (the universal rule — every id-from's `--title` must be a stable
 /// single-line non-blank string, so this fires ahead of the engine's slug guard and names
-/// the shape reason) or an **enum-member** miss (the title re-slugs outside the declared
+/// the shape reason), a **trailer-key** violation (the commit-scoped rule — a `commit`
+/// trailer `key` must be a well-shaped git-trailer token, no internal whitespace or colon),
+/// or an **enum-member** miss (the title re-slugs outside the declared
 /// members). Addressed at the slug-cased id-from address, **qualified by the doc head**
 /// `doc` (`<type>:<slug>`) into the URI normal form its stable key targets. A clean title
 /// over a non-enum id-from yields `None` — the inert path, mirroring finalize's exemption
@@ -1185,7 +1187,7 @@ fn id_from_enum_block(
             )
         }
     };
-    let violation = engine::validate::id_from_enum_violation(&repeatable, title)?;
+    let violation = engine::validate::id_from_enum_violation(&repeatable, title, &schema.ty)?;
     // The route floor (M43): every arm names a followable repair. A **shape** violation's
     // fix is the `--title` value itself (a human correction jigc cannot execute); an
     // **enum-member** miss routes the mechanical `doc schema` read for the declared members.
@@ -1198,6 +1200,17 @@ fn id_from_enum_block(
             engine::finding::Route::human(
                 "re-run `add-item` with a non-empty, single-line `--title` \
                  without leading or trailing whitespace",
+            ),
+            engine::slug::slugify(title),
+        ),
+        engine::validate::IdFromViolation::TrailerKeyShape(reason) => (
+            format!(
+                "add-item rejected: the trailer key {reason} (id-from field `{}`)",
+                repeatable.id_from
+            ),
+            engine::finding::Route::human(
+                "re-run `add-item` with a trailer key that is a single git-trailer token \
+                 — no whitespace or colon (e.g. `Co-Authored-By`)",
             ),
             engine::slug::slugify(title),
         ),

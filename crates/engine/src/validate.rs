@@ -1821,7 +1821,14 @@ pub fn schema_conformance(schema: &Schema, source: &str, doc: &Document) -> Vec<
                 }
             }
             SectionBody::Repeatable { repeatable } => {
-                check_repeatable(section, repeatable, parsed, source, &mut findings);
+                check_repeatable(
+                    section,
+                    repeatable,
+                    parsed,
+                    source,
+                    &schema.ty,
+                    &mut findings,
+                );
             }
         }
     }
@@ -1987,13 +1994,14 @@ fn check_repeatable(
     repeatable: &crate::schema::Repeatable,
     parsed: &ParsedSection,
     source: &str,
+    doctype: &str,
     findings: &mut Vec<Finding>,
 ) {
     for item in &parsed.items {
         // The address path up to and including this item: `section/item` at the top
         // level, deepening one segment per nesting level as the recursion descends.
         let item_path = format!("{}/{}", section.id, item.id);
-        check_item_leaves(&item_path, repeatable, item, source, findings);
+        check_item_leaves(&item_path, repeatable, item, source, doctype, findings);
     }
 }
 
@@ -2007,6 +2015,7 @@ fn check_item_leaves(
     repeatable: &crate::schema::Repeatable,
     item: &ParsedItem,
     source: &str,
+    doctype: &str,
     findings: &mut Vec<Finding>,
 ) {
     for leaf in &repeatable.block {
@@ -2031,7 +2040,7 @@ fn check_item_leaves(
                 // id-from carries no such constraint and stays exempt — the shared
                 // [`id_from_enum_violation`] adjudicator yields `None` for it.
                 if field.id == repeatable.id_from {
-                    check_id_from_enum(item_path, repeatable, item, findings);
+                    check_id_from_enum(item_path, repeatable, item, doctype, findings);
                     continue;
                 }
                 check_item_field(item_path, item, field, findings);
@@ -2049,7 +2058,7 @@ fn check_item_leaves(
             } => {
                 for child in &item.items {
                     let child_path = format!("{item_path}/{nested_section}/{}", child.id);
-                    check_item_leaves(&child_path, nested, child, source, findings);
+                    check_item_leaves(&child_path, nested, child, source, doctype, findings);
                 }
             }
         }
@@ -2145,9 +2154,37 @@ pub enum IdFromViolation {
     /// human clause (`"is empty"` / `"is whitespace-only"` / …). The **universal** rule:
     /// it fires whatever the id-from field's declared type, and reads the heading RAW.
     Shape(&'static str),
+    /// The heading is not a well-shaped **git trailer token** — it carries internal
+    /// whitespace (`BREAKING CHANGE`) or a colon, either of which breaks the
+    /// `%(trailers)` block the `commit` doctype renders each `key: value` trailer into
+    /// ([`crate::write`] → `trailer_lines`). Carries a self-contained human clause
+    /// (`"contains whitespace"` / `"contains a colon"`). **Commit-scoped** (M45 inc-4 /
+    /// T4): the doctype whose sink is the git message is a documented special case (the
+    /// `COMMIT_*` well-known-id coupling). Reads the heading RAW — the slug
+    /// `breaking-change` is a well-shaped token, which is why the named enum seam is
+    /// blind to it.
+    TrailerKeyShape(&'static str),
     /// The re-slugged heading is not a member of the id-from's declared `enum`. Carries
     /// the slug-cased id the caller addresses.
     NotEnumMember(String),
+}
+
+/// The **commit-trailer** key-shape rule (M45 inc-4 / T4; `design/validation.md` → the
+/// M45 registrations; `design/finalize.md` → Commit-doc rendering). A `commit` trailer
+/// key renders into a git trailer footer line `key: value`; git recognizes a trailer
+/// only when its token carries no whitespace, and a colon would be read as the
+/// separator — so a key with either **breaks the whole `%(trailers)` block**. Read the
+/// key **RAW**, never the slug (`BREAKING CHANGE` slugs to the well-shaped token
+/// `breaking-change`, so a slug-based test is blind to exactly the input this rejects).
+/// Returns the human clause, else `None`.
+fn commit_trailer_key_violation(title: &str) -> Option<&'static str> {
+    if title.chars().any(char::is_whitespace) {
+        Some("contains whitespace")
+    } else if title.contains(':') {
+        Some("contains a colon")
+    } else {
+        None
+    }
 }
 
 /// The **universal** id-from shape rule (M45 inc-4 / T3; `design/validation.md`;
@@ -2181,7 +2218,12 @@ fn id_from_shape_violation(title: &str) -> Option<&'static str> {
 /// 1. The **universal shape rule** ([`id_from_shape_violation`]) — every id-from heading
 ///    must be a stable single-line non-blank string, **whatever** the field's type. This
 ///    is checked first and reads the heading RAW.
-/// 2. The **enum-membership rule** — when the id-from field is an `enum` the heading is
+/// 2. The **commit-trailer key-shape rule** ([`commit_trailer_key_violation`]) — when
+///    `doctype` is `commit` and the id-from is the trailers `key`, the heading additionally
+///    must be a well-shaped git trailer token (no internal whitespace, no colon), since it
+///    renders into a `key: value` footer line. Commit-scoped (the git-message-sink special
+///    case), reads the heading RAW (the slug hides exactly this).
+/// 3. The **enum-membership rule** — when the id-from field is an `enum` the heading is
 ///    additionally schema-constrained: re-slug `title` (the same re-slug the parser's
 ///    `heading_matches` applies — **not** [`crate::write::check_value`], whose literal
 ///    compare would reject `Fixed` for the `fixed` member) and test membership in the
@@ -2190,17 +2232,33 @@ fn id_from_shape_violation(title: &str) -> Option<&'static str> {
 ///
 /// Returns the [`IdFromViolation`] the caller addresses, else `None`. A **non-enum**
 /// id-from (every shipped doctype's `title`/`key`/`version`/`task-id`/`category`) carries
-/// no membership constraint but is still subject to the shape rule.
-/// (`design/auto-migration.md` → Engine/validation work #1 / Hardening #3.)
+/// no membership constraint but is still subject to the shape rule (and, for `commit`'s
+/// trailer `key`, the trailer-token rule). `doctype` is the doc's `type` — the only signal
+/// that scopes the commit-special-case rule; every other doctype ignores it.
+/// (`design/auto-migration.md` → Engine/validation work #1 / Hardening #3; the M45
+/// commit-trailer registration in `design/validation.md`.)
 pub fn id_from_enum_violation(
     repeatable: &crate::schema::Repeatable,
     title: &str,
+    doctype: &str,
 ) -> Option<IdFromViolation> {
     // The universal shape rule runs first and is type-independent — it fires even when the
     // id-from field is absent from the block (a mis-declared schema), so it is not gated
     // behind the field lookup below.
     if let Some(reason) = id_from_shape_violation(title) {
         return Some(IdFromViolation::Shape(reason));
+    }
+    // The commit-trailer key-shape rule (T4) — commit-scoped (the doctype whose sink is
+    // the git message is a documented special case) over the `trailers` id-from `key`,
+    // whose value renders into a `key: value` git footer line. It runs after the
+    // universal shape rule (so an already-blank/edge-whitespace key is caught there) and
+    // catches the internal-whitespace / colon case the universal rule does not. Non-enum
+    // by schema, so the enum branch below never fires for it.
+    if doctype == "commit"
+        && repeatable.id_from == "key"
+        && let Some(reason) = commit_trailer_key_violation(title)
+    {
+        return Some(IdFromViolation::TrailerKeyShape(reason));
     }
     let field = repeatable.block.iter().find_map(|leaf| match leaf {
         crate::schema::Leaf::Field(f) if f.id == repeatable.id_from => Some(f),
@@ -2231,13 +2289,15 @@ fn check_id_from_enum(
     item_path: &str,
     repeatable: &crate::schema::Repeatable,
     item: &ParsedItem,
+    doctype: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let Some(violation) = id_from_enum_violation(repeatable, &item.title) else {
+    let Some(violation) = id_from_enum_violation(repeatable, &item.title, doctype) else {
         return;
     };
     let detail = match &violation {
         IdFromViolation::Shape(reason) => format!("the heading {reason}"),
+        IdFromViolation::TrailerKeyShape(reason) => format!("the trailer key {reason}"),
         IdFromViolation::NotEnumMember(slug) => format!("`{slug}` is not an enum member"),
     };
     findings.push(blocking_conformance(
@@ -3436,12 +3496,12 @@ sections:
         let r = repeatable_of(&schema);
         for bad in ["", "   ", "line1\nline2", " Milestone 45 — the rc.9 wave "] {
             assert!(
-                id_from_enum_violation(r, bad).is_some(),
+                id_from_enum_violation(r, bad, "roadmap").is_some(),
                 "a malformed id-from heading {bad:?} must be rejected over a non-enum id-from",
             );
         }
         assert!(
-            id_from_enum_violation(r, "Milestone 45 — the rc.9 wave").is_none(),
+            id_from_enum_violation(r, "Milestone 45 — the rc.9 wave", "roadmap").is_none(),
             "a legitimate milestone title must pass the shape guard untouched",
         );
     }
@@ -3516,6 +3576,142 @@ sections:
             addresses.contains(&"milestones/top/tasks/child/title"),
             "the nested shape violation must block at its section-qualified id-from leaf; \
              got {findings:?}",
+        );
+    }
+}
+
+#[cfg(test)]
+mod commit_trailer_key_shape_tests {
+    //! (M45 inc-4 / T4) The **commit-trailer** key-shape rule. The `commit` doctype's
+    //! `trailers` repeatable is `id-from: key`, and each key renders as a `key: value`
+    //! git trailer footer line ([`crate::write`] → `trailer_lines`), so a key that is
+    //! not a well-shaped git trailer token — internal whitespace (`BREAKING CHANGE`) or
+    //! a colon — breaks the `%(trailers)` block. The shared [`id_from_enum_violation`]
+    //! adjudicator rejects it at BOTH doors under the existing
+    //! `schema-conformance.field-value-conformant`, reading `item.title` **RAW** (the
+    //! slug `breaking-change` is a well-shaped token — why the named enum seam was
+    //! blind). The rule is **commit-scoped**: a non-commit id-from with internal
+    //! whitespace passes untouched. See `design/validation.md` → the M45 registrations;
+    //! `DECISIONS.md` → 2026-07-23 Decision 4.
+
+    use super::*;
+    use crate::field_block::{Field, Value};
+    use crate::parse::{Document, ParsedItem, ParsedSection};
+
+    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+
+    fn commit_schema() -> Schema {
+        crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
+    }
+
+    fn trailers_repeatable(schema: &Schema) -> &crate::schema::Repeatable {
+        let section = schema
+            .sections
+            .iter()
+            .find(|s| s.id == "trailers")
+            .expect("commit has a trailers section");
+        match &section.body {
+            SectionBody::Repeatable { repeatable } => repeatable,
+            _ => unreachable!("trailers is repeatable"),
+        }
+    }
+
+    /// A `commit` [`Document`] carrying a single trailer item whose heading (the
+    /// id-from `key`) is `title` and whose `value` field is `value`. Only the
+    /// `trailers` section is materialized — the other schema sections are absent from
+    /// the parsed doc, so [`schema_conformance`] skips them (a `continue` on the
+    /// missing map), isolating the trailer-key adjudication.
+    fn commit_doc_with_trailer(title: &str, value: &str) -> Document {
+        Document {
+            sections: vec![ParsedSection {
+                id: "trailers".into(),
+                slot: None,
+                fields: vec![],
+                items: vec![ParsedItem {
+                    id: "the-trailer".into(),
+                    title: title.into(),
+                    slot: None,
+                    slots: vec![],
+                    fields: vec![Field {
+                        key: "value".into(),
+                        value: Value::Scalar(value.into()),
+                    }],
+                    items: vec![],
+                }],
+            }],
+        }
+    }
+
+    fn conformant_key_findings(doc: &Document) -> Vec<Finding> {
+        let schema = commit_schema();
+        schema_conformance(&schema, "", doc)
+            .into_iter()
+            .filter(|f| {
+                f.code == "schema-conformance.field-value-conformant"
+                    && f.severity == Severity::Blocking
+            })
+            .collect()
+    }
+
+    /// The task gate ([`schema_conformance`], the finalize seam) blocks a commit-trailer
+    /// key bearing internal whitespace, addressed at the id-from leaf
+    /// `trailers/<item>/key`, under the shared `field-value-conformant`.
+    #[test]
+    fn task_gate_blocks_a_whitespace_trailer_key() {
+        let doc = commit_doc_with_trailer("BREAKING CHANGE", "the api changed");
+        let addresses: Vec<String> = conformant_key_findings(&doc)
+            .iter()
+            .filter_map(|f| f.location.as_ref().and_then(|l| l.address.clone()))
+            .collect();
+        assert!(
+            addresses.iter().any(|a| a == "trailers/the-trailer/key"),
+            "a whitespace commit-trailer key must block field-value-conformant at its \
+             id-from leaf; got addresses {addresses:?}",
+        );
+    }
+
+    /// A colon-bearing key would break the `%(trailers)` block at the separator; it is
+    /// rejected the same way.
+    #[test]
+    fn task_gate_blocks_a_colon_bearing_trailer_key() {
+        let doc = commit_doc_with_trailer("Co:lon", "value");
+        assert!(
+            !conformant_key_findings(&doc).is_empty(),
+            "a colon-bearing commit-trailer key must block field-value-conformant",
+        );
+    }
+
+    /// A well-shaped hyphenated trailer key (`Co-Authored-By`) is untouched — the rule
+    /// must not over-reject the realistic multi-word-but-hyphenated key.
+    #[test]
+    fn task_gate_passes_a_well_shaped_trailer_key() {
+        let doc = commit_doc_with_trailer("Co-Authored-By", "Ada <ada@example.com>");
+        assert!(
+            conformant_key_findings(&doc).is_empty(),
+            "a well-shaped hyphenated trailer key must not fire field-value-conformant; \
+             got {:?}",
+            conformant_key_findings(&doc),
+        );
+    }
+
+    /// The rule is **commit-scoped**, proven at the shared adjudicator: the identical
+    /// whitespace-bearing key that yields `TrailerKeyShape` under the `commit` doctype
+    /// passes untouched under a non-commit doctype (a `roadmap`-shaped id-from) — so the
+    /// trailer-token rule cannot leak onto every other doctype's `title`/`key` id-from.
+    #[test]
+    fn the_trailer_rule_is_commit_scoped() {
+        let commit = commit_schema();
+        let trailers = trailers_repeatable(&commit);
+        assert!(
+            matches!(
+                id_from_enum_violation(trailers, "BREAKING CHANGE", "commit"),
+                Some(IdFromViolation::TrailerKeyShape(_))
+            ),
+            "a whitespace key must be a TrailerKeyShape violation under `commit`",
+        );
+        assert!(
+            id_from_enum_violation(trailers, "BREAKING CHANGE", "roadmap").is_none(),
+            "the same key must pass untouched under a non-commit doctype (commit-scoped)",
         );
     }
 }

@@ -259,3 +259,186 @@ fn a_trailer_authored_through_the_verbs_reaches_the_git_message() {
         git(repo.path(), &["log", "-1", "--format=%B"])
     );
 }
+
+/// Add a trailer whose key `title` is passed through `set-field`ing the value; returns
+/// the emitted item address. Asserts `add-item` exits 0.
+fn add_trailer(repo: &Path, home: &Path, task: &str, key: &str, value: &str) {
+    let add = run_doc(
+        repo,
+        home,
+        &[
+            "add-item",
+            &format!("commit:{task}#trailers"),
+            "--title",
+            key,
+        ],
+        None,
+    );
+    assert!(
+        add.status.success(),
+        "`add-item …#trailers --title {key}` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let item_addr = String::from_utf8(add.stdout)
+        .expect("utf-8 stdout")
+        .trim_end_matches('\n')
+        .to_owned();
+    set_field(repo, home, &format!("{item_addr}/value"), value);
+}
+
+/// The **commit-trailer key-shape rule at the add-item write door** (M45 inc-4 / T4):
+/// a trailer key bearing internal whitespace (`BREAKING CHANGE`) would render as
+/// `BREAKING CHANGE: <value>` and break git's `%(trailers)` block, so `add-item`
+/// rejects it at the point of the mistake, naming the shared
+/// `schema-conformance.field-value-conformant` (the named enum seam is blind to it —
+/// the slug `breaking-change` is a well-shaped token). Driven over the real binary.
+#[test]
+fn a_whitespace_trailer_key_is_rejected_at_add_item() {
+    let (repo, home) = started_repo("add a per-client rate limiter");
+    let task = "add-a-per-client-rate";
+
+    let blocked = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "add-item",
+            &format!("commit:{task}#trailers"),
+            "--title",
+            "BREAKING CHANGE",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        !blocked.status.success(),
+        "a whitespace trailer key must block at the add-item verb (non-zero exit); \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&blocked.stdout),
+        String::from_utf8_lossy(&blocked.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&blocked.stderr);
+    let report: serde_json::Value = serde_json::from_str(stderr.trim())
+        .unwrap_or_else(|e| panic!("stderr is JSON: {e}; got:\n{stderr}"));
+    assert_eq!(
+        report["findings"][0]["code"], "schema-conformance.field-value-conformant",
+        "the block carries the shared field-value-conformant code; got:\n{stderr}",
+    );
+}
+
+/// A well-shaped hyphenated trailer key (`Co-Authored-By`) is **accepted** at the
+/// write door and reaches the finalized commit's `%(trailers)` — the rule does not
+/// over-reject the realistic multi-word-but-hyphenated key (T1's round-trip path,
+/// re-proven for the named key in the done-criterion).
+#[test]
+fn a_hyphenated_trailer_key_is_accepted_and_reaches_the_git_message() {
+    let (repo, home) = started_repo("wire the shared cache");
+    let task = "wire-the-shared-cache";
+
+    fs::write(repo.path().join("cache.rs"), "// cache\n").expect("write code change");
+    git(repo.path(), &["add", "cache.rs"]);
+
+    set_field(
+        repo.path(),
+        home.path(),
+        &format!("commit:{task}#type"),
+        "feat",
+    );
+    set_slot(
+        repo.path(),
+        home.path(),
+        &format!("commit:{task}#summary"),
+        b"wire the shared cache\n",
+    );
+    add_trailer(
+        repo.path(),
+        home.path(),
+        task,
+        "Co-Authored-By",
+        "Ada <ada@example.com>",
+    );
+
+    let out = run_task(repo.path(), home.path(), &["finalize", task]);
+    assert!(
+        out.status.success(),
+        "`jigc task finalize` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let trailers = git(repo.path(), &["log", "-1", "--format=%(trailers)"]);
+    assert!(
+        trailers.contains("Co-Authored-By: Ada <ada@example.com>"),
+        "a well-shaped hyphenated trailer key must reach %(trailers); got:\n{trailers}",
+    );
+}
+
+/// The **task gate** blocks a whitespace trailer key too (M45 inc-4 / T4). `add-item`
+/// refuses the malformed key, so it can only reach the staged doc via a direct
+/// (out-of-band) file edit — the honest boundary: an agent can edit the staged
+/// `.jigc/tasks/<id>/docs/commit:<slug>.md` directly. Authored a valid `Refs` trailer,
+/// then rewrite its heading text to `BREAKING CHANGE` (keeping the `{#refs}` anchor, so
+/// `item.title` reads the raw whitespace key), and `task validate` must exit non-zero
+/// naming `schema-conformance.field-value-conformant`.
+#[test]
+fn a_whitespace_trailer_key_is_blocked_at_the_task_gate() {
+    let (repo, home) = started_repo("throttle the ingest path");
+    let task = "throttle-the-ingest-path";
+
+    set_field(
+        repo.path(),
+        home.path(),
+        &format!("commit:{task}#type"),
+        "feat",
+    );
+    set_slot(
+        repo.path(),
+        home.path(),
+        &format!("commit:{task}#summary"),
+        b"throttle the ingest path\n",
+    );
+    add_trailer(repo.path(), home.path(), task, "Refs", "#42");
+
+    // The gate is clean before the out-of-band corruption.
+    let clean = run_task(repo.path(), home.path(), &["validate", task]);
+    assert!(
+        clean.status.success(),
+        "the conformant commit doc must validate clean first; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&clean.stdout),
+        String::from_utf8_lossy(&clean.stderr),
+    );
+
+    // Corrupt the staged doc's trailer heading text to a whitespace key, keeping the
+    // frozen `{#refs}` anchor so `item.title` parses to the raw `BREAKING CHANGE`.
+    let staged = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("commit:{task}.md"));
+    let source = fs::read_to_string(&staged).expect("read staged commit doc");
+    assert!(
+        source.contains("Refs"),
+        "the staged doc carries the Refs heading; got:\n{source}"
+    );
+    let corrupted = source.replacen("Refs", "BREAKING CHANGE", 1);
+    fs::write(&staged, corrupted).expect("write corrupted staged doc");
+
+    let out = run_task(repo.path(), home.path(), &["validate", task]);
+    assert!(
+        !out.status.success(),
+        "a whitespace trailer key must block at the task gate (non-zero exit); \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        rendered.contains("schema-conformance.field-value-conformant"),
+        "the task-gate block must name field-value-conformant; got:\n{rendered}",
+    );
+}
