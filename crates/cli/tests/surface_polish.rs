@@ -15,8 +15,11 @@
 //! - **A3 — the heading-depth ceiling reaches the fresh flows.** The
 //!   seam-generated statement rode only the `{{schema:}}` projection (migrate
 //!   templates); the ordinary fresh-authoring solicits were silent. The steps
-//!   now carry the statement as hand-prose, drift-pinned here against the
-//!   engine's [`engine::write::slot_ceiling_statement`] single source.
+//!   now carry the rule as hand-prose, fenced here. **M45 inc-2 T6** made the
+//!   ceiling address-parameterized, so a step (composed before any address is
+//!   chosen) states the schema-relative *rule* and the fence moved from
+//!   byte-equality to fragment presence — plus a repo-wide census that no
+//!   shipped step still claims `####` is safe unconditionally.
 //! - **A5 — retire mechanics.** "RETIRE the foreign original" now states the
 //!   mechanism (deleted, deletion staged, lands in the approving finalize's own
 //!   commit — what `retire` + `stage_migration` actually do).
@@ -240,12 +243,18 @@ fn dev_task_compose_states_the_summary_no_prefix_rule() {
 // ---------------------------------------------------------------------------
 
 /// The composed fresh flows state the slot heading-depth ceiling above their
-/// set-slot solicits — the statement is hand-prose in the step YAML, so this
-/// drift-pins the emitted bytes against the engine's single source (the same
-/// sentence the write path enforces and the `{{schema:}}` seam generates).
+/// set-slot solicits — the statement is hand-prose in the step YAML.
+///
+/// **Relaxed at M45 inc-2 T6**: a step's prose is composed before any address is
+/// chosen, so it can only state the schema-relative *rule* — byte-equality against
+/// the engine statement is no longer available (that statement now exists only per
+/// address, and pinning the step to a global one is exactly what re-mints the lie).
+/// The fence still bites: the rule's invariant fragments must be present, above the
+/// solicit, in every flow (`design/surface-contract.md` → The stated-at fence, the
+/// M45 census table).
 #[test]
 fn fresh_authoring_composes_state_the_heading_ceiling() {
-    let statement = collapsed(&engine::write::slot_ceiling_statement());
+    let statement = "the reserved heading depths are schema-relative";
     for (workflow, intent, tag) in [
         ("single-task", "add a rate limiter", "ceiling-single"),
         ("dev-task", "add request logging", "ceiling-dev"),
@@ -258,12 +267,16 @@ fn fresh_authoring_composes_state_the_heading_ceiling() {
             &["start", "--workflow", workflow, intent],
         );
         let flat = collapsed(&composed);
-        let ceiling_at = flat.find(&statement).unwrap_or_else(|| {
+        let ceiling_at = flat.find(statement).unwrap_or_else(|| {
             panic!(
-                "the `{workflow}` compose must state the heading-depth ceiling \
-                 verbatim from the engine source (`{statement}`); got:\n{composed}"
+                "the `{workflow}` compose must state the schema-relative ceiling \
+                 rule (`{statement}`); got:\n{composed}"
             )
         });
+        assert!(
+            flat[ceiling_at..].contains("shallowest depth free"),
+            "the rule must name the recovery a rejected write prints; got:\n{composed}"
+        );
         let solicit_at = flat
             .find("set-slot")
             .expect("a fresh flow solicits at least one set-slot");
@@ -333,4 +346,100 @@ fn migrate_compose_states_the_retire_mechanics() {
              `{fragment}`; got:\n{composed}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// M45 inc-2 T6 — the ceiling statement takes its address context as a fence
+// input (`design/surface-contract.md` → The stated-at fence, the M45 revision).
+// ---------------------------------------------------------------------------
+
+/// The retired global sentence — the one that claimed `####` is safe at every
+/// slot address. It is a law-1 lie wherever the solicited slot is a multi-slot
+/// or nested-bearing item, so no shipped surface may still carry it.
+const RETIRED_GLOBAL_CLAIM: &str = "headings must sit at `####` depth or deeper";
+
+/// `roadmap`'s `milestones` items are **multi-slot at nesting depth 1**, so the
+/// CLI owns `####` there (the `#### <Leaf-Title>` sub-labels) — the projection
+/// must reserve it and offer `#####`. This is the live defect: the planning
+/// workflow's own primary write solicited exactly this address under a sentence
+/// that blessed the corrupting depth.
+#[test]
+fn migrate_roadmap_preview_states_the_milestone_slot_reserved_set() {
+    let (repo, home) = setup("ceiling-roadmap");
+    let preview = jigc_ok(
+        repo.path(),
+        home.path(),
+        &["workflow", "--preview", "migrate-roadmap"],
+    );
+    let flat = collapsed(&preview);
+    for fragment in [
+        "headings must sit at `#####` depth or deeper",
+        "`##`/`###`/`####` are schema-reserved",
+    ] {
+        assert!(
+            flat.contains(fragment),
+            "the `roadmap` projection must render the milestone slots' reserved \
+             set (`{fragment}`); got:\n{preview}"
+        );
+    }
+    assert!(
+        !flat.contains(RETIRED_GLOBAL_CLAIM),
+        "the retired global claim must not survive in the `roadmap` compose; \
+         got:\n{preview}"
+    );
+}
+
+/// The omitting context — a **single-slot** item doctype (`decisions-log`'s
+/// `entries` at depth 1) genuinely leaves `####` free, so its projection still
+/// says `####`. The parameterization must reserve more only where the schema
+/// does, never blanket-deepen every doctype.
+#[test]
+fn migrate_decisions_log_preview_keeps_the_shallower_reserved_set() {
+    let (repo, home) = setup("ceiling-log");
+    let preview = jigc_ok(
+        repo.path(),
+        home.path(),
+        &["workflow", "--preview", "migrate-decisions-log"],
+    );
+    let flat = collapsed(&preview);
+    assert!(
+        flat.contains(
+            "headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved"
+        ),
+        "a single-slot item doctype still offers `####`; got:\n{preview}"
+    );
+}
+
+/// The repo-wide census (`surface-contract.md` → the six-consumer table): no
+/// shipped pack step may carry the unconditional claim. A step's prose is
+/// composed before any address is chosen, so it states the schema-relative rule
+/// and defers the depths to the projection.
+#[test]
+fn no_shipped_pack_step_claims_a_fixed_safe_depth() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let step_dirs = [
+        manifest.join("pack/steps"),
+        manifest.join("../../packs/methodology/steps"),
+    ];
+    let mut checked = 0usize;
+    for dir in step_dirs {
+        for entry in fs::read_dir(&dir).expect("read the shipped step dir") {
+            let path = entry.expect("a step dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+                continue;
+            }
+            let body = collapsed(&fs::read_to_string(&path).expect("read the step"));
+            assert!(
+                !body.contains(RETIRED_GLOBAL_CLAIM),
+                "`{}` still claims `####` is safe unconditionally — the depths \
+                 are per-address; state the schema-relative rule instead",
+                path.display()
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 30,
+        "the census must reach every shipped step; saw {checked}"
+    );
 }

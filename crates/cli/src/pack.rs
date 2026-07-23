@@ -1661,9 +1661,11 @@ mod tests {
         required Conventional-Commits type — your editorial call on what this change
         does. The subject renders as `<type>(<scope>): <summary>`, so write the
         summary without a type or scope prefix of its own — the `type` field already
-        carries it. Inside slot prose, headings must sit at `####` depth or deeper —
-        `##`/`###` are schema-reserved, and Setext headings are rejected. Set the
-        type, then stage the summary prose:
+        carries it. Inside slot prose, the reserved heading depths are schema-relative to
+        the address you write — the CLI owns the section, item, and sub-label heading
+        levels there, so your headings sit below them; Setext headings are rejected at
+        every depth, and a rejected write names the shallowest depth free at that
+        address. Set the type, then stage the summary prose:
 
         {{ cli.set-commit-type }}
         {{ cli.set-commit-summary }}

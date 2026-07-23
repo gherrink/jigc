@@ -1069,11 +1069,16 @@ fn render_schema_projection(schema: &crate::schema::Schema, task: Option<&str>) 
     );
     // The stated-at fence, seam-generated tier (`surface-contract.md`, law 3): the
     // heading-depth ceiling is stated with the slot-prose skeleton — above the
-    // heredoc that solicits the prose it gates — verbatim from the write-path
-    // source. A slot-less schema solicits no slot prose, so it stays inert.
+    // heredoc that solicits the prose it gates. **Address-parameterized at M45**:
+    // this is the one consumer that knows the targets, so it renders the reserved
+    // set the write path will enforce at *these* slots, derived from the same
+    // `(Schema, section, item-chain)` source. A slot-less schema solicits no slot
+    // prose, so it stays inert.
     let declares_slot = sections_declare_a_slot(&schema.sections);
     if declares_slot {
-        out.push_str(&crate::write::slot_ceiling_statement());
+        out.push_str(&crate::write::slot_ceiling_statement(
+            &crate::write::schema_slot_ceilings(schema),
+        ));
         out.push(' ');
     }
     out.push_str("An entry marked `# optional` may be omitted entirely.");
@@ -3767,7 +3772,7 @@ sections:
                 - `label`: enum, one of: pro | con — the item's id-source (authored as the item's `title:` payload key)
                 - `text`: prose slot (optional)
 
-        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+        Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, the reserved depths differ by slot — headings must sit at `####` or deeper in `summary`, `details`, at `#####` or deeper in `points.note`, `points.subpoints.text`. Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
 
         <slot-id>: |-
           <<The first line of the prose
@@ -3968,9 +3973,12 @@ sections:
             "the slug statement rides the id-source line; got:\n{emitted}"
         );
 
-        // The ceiling statement: rendered verbatim from the write-path source,
-        // above the heredoc it constrains (stated before it can fail).
-        let ceiling_statement = crate::write::slot_ceiling_statement();
+        // The ceiling statement: rendered from the write-path derivation for
+        // THESE slot addresses, above the heredoc it constrains (stated before
+        // it can fail).
+        let ceiling_statement = crate::write::slot_ceiling_statement(
+            &crate::write::schema_slot_ceilings(&note_schema()),
+        );
         assert!(
             emitted.contains(&ceiling_statement),
             "the ceiling statement rides the skeleton's instruction paragraph; \
@@ -4014,6 +4022,8 @@ sections:
 "#,
         )
         .expect("the handbook fixture schema loads");
+        let handbook_ceiling =
+            crate::write::slot_ceiling_statement(&crate::write::schema_slot_ceilings(&handbook));
         let mut ctx = crate::data_value::ComposeContext::default();
         ctx.schemas.insert("handbook".to_owned(), handbook);
         let emitted = emit_step_body("{{ schema:handbook }}\n", &ctx, &catalog).expect("emits");
@@ -4022,7 +4032,7 @@ sections:
             "a fixed singleton title mints no slug — no slug statement; got:\n{emitted}"
         );
         assert!(
-            emitted.contains(&crate::write::slot_ceiling_statement()),
+            emitted.contains(&handbook_ceiling),
             "a slot-bearing schema still states the ceiling; got:\n{emitted}"
         );
 
@@ -4040,6 +4050,7 @@ sections:
 "#,
         )
         .expect("the ledger fixture schema loads");
+        let ledger_ceilings = crate::write::schema_slot_ceilings(&ledger);
         let mut ctx = crate::data_value::ComposeContext::default();
         ctx.schemas.insert("ledger".to_owned(), ledger);
         let emitted = emit_step_body("{{ schema:ledger }}\n", &ctx, &catalog).expect("emits");
@@ -4048,7 +4059,11 @@ sections:
             "a minted per-instance title states the slug caps; got:\n{emitted}"
         );
         assert!(
-            !emitted.contains(&crate::write::slot_ceiling_statement()),
+            ledger_ceilings.is_empty(),
+            "the ledger fixture declares no slot — the derivation must find none"
+        );
+        assert!(
+            !emitted.contains("Inside slot prose"),
             "a slot-less schema solicits no slot prose — no ceiling statement; \
              got:\n{emitted}"
         );
@@ -6510,9 +6525,11 @@ explain what changes (nothing appears if it supersedes none).
         required Conventional-Commits type — your editorial call on what this change
         does. The subject renders as `<type>(<scope>): <summary>`, so write the
         summary without a type or scope prefix of its own — the `type` field already
-        carries it. Inside slot prose, headings must sit at `####` depth or deeper —
-        `##`/`###` are schema-reserved, and Setext headings are rejected. Set the
-        type, then stage the summary prose:
+        carries it. Inside slot prose, the reserved heading depths are schema-relative to
+        the address you write — the CLI owns the section, item, and sub-label heading
+        levels there, so your headings sit below them; Setext headings are rejected at
+        every depth, and a rejected write names the shallowest depth free at that
+        address. Set the type, then stage the summary prose:
 
         Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
         Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`

@@ -6056,30 +6056,159 @@ pub fn slot_ceiling(schema: &Schema, section_id: &str, item_chain: &[&str]) -> O
     Some(SlotCeiling::reserving(reserved_max))
 }
 
-/// The ceiling's depth vocabulary — the two schema-reserved depths and the first
-/// allowed one — shared by the enforcing check ([`slot_ceiling_finding`]) and the
-/// stated-at statement ([`slot_ceiling_statement`]), so the sentence the projection
-/// renders and the rule the write path enforces cannot drift
-/// (`design/surface-contract.md` → The stated-at fence, seam-generated tier).
-const CEILING_RESERVED_H2: &str = "##";
-const CEILING_RESERVED_H3: &str = "###";
-const CEILING_ALLOWED: &str = "####";
-
-/// The **stated-at statement** of the slot heading-depth ceiling — the sentence
-/// the `{{schema:<doctype>}}` projection renders beside the slot-prose skeleton,
-/// so the ceiling is stated where it binds, before it can fail (law 3). Built
-/// from the same depth constants [`slot_ceiling_finding`] enforces with.
+/// Every slot address `schema` declares, each with the [`SlotCeiling`] the write
+/// path will enforce there — the **fence input** the stated-at statement takes
+/// (`design/surface-contract.md` → The stated-at fence, the M45 revision). The
+/// label is the slot's dotted schema path (`milestones.proves`,
+/// `releases.changes.notes`, or a bare section id for a section slot), in
+/// declaration order.
 ///
-/// `pub` (not `pub(crate)`) since the M43 pre-trial surface polish: the CLI's
-/// hand-prose statement sites — the pack steps' fresh-authoring solicits and
-/// `jigc doc set-slot --help` — carry this sentence as static text, and their
-/// drift tests compare those emitted bytes against this single source.
-pub fn slot_ceiling_statement() -> String {
-    format!(
-        "Inside slot prose, headings must sit at `{CEILING_ALLOWED}` depth or deeper — \
-         `{CEILING_RESERVED_H2}`/`{CEILING_RESERVED_H3}` are schema-reserved, and Setext \
-         headings are rejected."
-    )
+/// The item-id segments are placeholders: [`slot_ceiling`] is a **schema-side**
+/// derivation and never matches an item id against a document, so a synthetic
+/// chain resolves the same ceiling the real address will. A context whose chain
+/// does not resolve is skipped rather than guessed at (unreachable for a loaded
+/// schema — the chain is built from the schema's own declarations).
+pub fn schema_slot_ceilings(schema: &Schema) -> Vec<(String, SlotCeiling)> {
+    /// The stand-in for an item id in a synthetic address chain.
+    const ANY_ITEM: &str = "*";
+
+    fn walk<'a>(
+        schema: &'a Schema,
+        section_id: &str,
+        repeatable: &'a crate::schema::Repeatable,
+        chain: &mut Vec<&'a str>,
+        label: &str,
+        out: &mut Vec<(String, SlotCeiling)>,
+    ) {
+        chain.push(ANY_ITEM);
+        for leaf in &repeatable.block {
+            match leaf {
+                crate::schema::Leaf::Slot { id, .. } => {
+                    if let Some(ceiling) = slot_ceiling(schema, section_id, chain) {
+                        out.push((format!("{label}.{id}"), ceiling));
+                    }
+                }
+                crate::schema::Leaf::Repeatable { id, repeatable } => {
+                    // The nested-section hop: it renders no heading of its own,
+                    // but it IS a chain segment the resolver walks by name.
+                    let nested_label = format!("{label}.{id}");
+                    chain.push(id.as_str());
+                    walk(schema, section_id, repeatable, chain, &nested_label, out);
+                    chain.pop();
+                }
+                crate::schema::Leaf::Field(_) => {}
+            }
+        }
+        chain.pop();
+    }
+
+    let mut out = Vec::new();
+    for section in &schema.sections {
+        match &section.body {
+            SectionBody::Simple { slot: Some(_), .. } => {
+                if let Some(ceiling) = slot_ceiling(schema, &section.id, &[]) {
+                    out.push((section.id.clone(), ceiling));
+                }
+            }
+            SectionBody::Simple { .. } => {}
+            SectionBody::Repeatable { repeatable } => {
+                let mut chain = Vec::new();
+                walk(
+                    schema,
+                    &section.id,
+                    repeatable,
+                    &mut chain,
+                    &section.id,
+                    &mut out,
+                );
+            }
+        }
+    }
+    out
+}
+
+/// The ATX hashes for one depth (`3` → `` `###` ``), and the schema-reserved set
+/// of a ceiling as the statement spells it (`` `##`/`###`/`####` ``) — the depth
+/// vocabulary shared by the enforcing check ([`slot_ceiling_finding`]) and the
+/// stated-at statement ([`slot_ceiling_statement`]), so the sentence a projection
+/// renders and the rule the write path enforces cannot drift.
+fn ceiling_reserved_set(ceiling: SlotCeiling) -> String {
+    (2..=ceiling.reserved_max)
+        .map(|level| format!("`{}`", "#".repeat(level)))
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// The **stated-at statement** of the slot heading-depth ceiling for the slot
+/// addresses `contexts` names — the sentence the `{{schema:<doctype>}}` projection
+/// renders beside the slot-prose skeleton, so the ceiling is stated where it binds,
+/// before it can fail (law 3).
+///
+/// **Parameterized by address at M45** (`design/surface-contract.md` → The stated-at
+/// fence, the M45 revision): the reserved set is a function of the target, so a
+/// statement built from global constants proved *statement == constant* while the
+/// constant was context-blind — and rendered "`####` is safe" into the workflow whose
+/// primary writes are `roadmap` milestone slots, where `####` is the corrupting depth.
+/// Feed [`schema_slot_ceilings`] — the same derivation the write path enforces with.
+///
+/// All contexts sharing one ceiling render the single-depth sentence; a schema that
+/// mixes them (`changelog` — a depth-1 single-slot item beside a depth-2 nested one)
+/// renders each group against the slots it governs. Empty ⇒ empty string: a slot-less
+/// schema solicits no prose, so the statement stays inert.
+pub fn slot_ceiling_statement(contexts: &[(String, SlotCeiling)]) -> String {
+    // Group by ceiling, in first-appearance order — the projection's own
+    // declaration order, so the sentence is deterministic.
+    let mut groups: Vec<(SlotCeiling, Vec<&str>)> = Vec::new();
+    for (label, ceiling) in contexts {
+        match groups.iter_mut().find(|(c, _)| c == ceiling) {
+            Some((_, labels)) => labels.push(label),
+            None => groups.push((*ceiling, vec![label])),
+        }
+    }
+    match groups.as_slice() {
+        [] => String::new(),
+        [(ceiling, _)] => format!(
+            "Inside slot prose, headings must sit at `{}` depth or deeper — {} are \
+             schema-reserved, and Setext headings are rejected.",
+            "#".repeat(ceiling.first_allowed),
+            ceiling_reserved_set(*ceiling),
+        ),
+        many => {
+            let per_group = many
+                .iter()
+                .map(|(ceiling, labels)| {
+                    format!(
+                        "at `{}` or deeper in {}",
+                        "#".repeat(ceiling.first_allowed),
+                        labels
+                            .iter()
+                            .map(|l| format!("`{l}`"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "Inside slot prose, the reserved depths differ by slot — headings must \
+                 sit {per_group}. Setext headings are rejected."
+            )
+        }
+    }
+}
+
+/// The **address-independent** form of the ceiling rule, for the surfaces composed
+/// before any address exists: `jigc doc set-slot --help` (clap renders help with no
+/// target in hand) and the pack steps' hand-prose solicits. It states the rule and
+/// names no depth — naming one would re-mint the very lie parameterization removed
+/// (`design/surface-contract.md` → The stated-at fence, the M45 census table).
+///
+/// `pub` for the CLI's help text, which carries it verbatim.
+pub fn slot_ceiling_rule_statement() -> &'static str {
+    "Inside slot prose, the reserved heading depths are schema-relative to the address \
+     you write — the CLI owns the section, item, and sub-label heading levels there, so \
+     your headings sit below them. Setext headings are rejected at every depth; a \
+     rejected write names the shallowest depth free at that address."
 }
 
 /// The first heading-depth-ceiling violation in standalone slot `prose` against
@@ -6986,31 +7115,174 @@ Each service drops its local limiter.
         assert_eq!(finding.location.as_ref().unwrap().line, 1);
     }
 
-    /// M43 inc-3 T3 — the stated-at statement and the enforcing check share one
-    /// depth vocabulary (`surface-contract.md` → The stated-at fence,
-    /// seam-generated tier): the statement names exactly the reserved depths the
-    /// check rejects and the allowed depth its findings route to, each asserted
-    /// through the shared constant symbols — never a re-typed literal.
+    /// M43 inc-3 T3, **revised at M45 inc-2 T6** — the stated-at statement and the
+    /// enforcing check share one depth vocabulary, and it is now the *derived*
+    /// one: for the same `(Schema, section, item-chain)`, the sentence names
+    /// exactly the depths the check rejects and the depth its findings route to
+    /// (`surface-contract.md` → The stated-at fence, the M45 revision).
     #[test]
-    fn ceiling_statement_and_check_share_the_depth_vocabulary() {
-        let statement = slot_ceiling_statement();
-        for depth in [CEILING_RESERVED_H2, CEILING_RESERVED_H3, CEILING_ALLOWED] {
+    fn ceiling_statement_and_check_share_the_derived_depth_vocabulary() {
+        for (label, ceiling) in [
+            ("a section slot", SlotCeiling::reserving(3)),
+            ("a multi-slot depth-1 item", SlotCeiling::reserving(4)),
+        ] {
+            let statement = slot_ceiling_statement(&[(label.to_owned(), ceiling)]);
+            let allowed = "#".repeat(ceiling.first_allowed);
             assert!(
-                statement.contains(&format!("`{depth}`")),
-                "the statement names `{depth}`; got: {statement}"
+                statement.contains(&format!("`{allowed}` depth or deeper")),
+                "{label}: the statement offers `{allowed}`; got: {statement}"
+            );
+            for level in 2..=ceiling.reserved_max {
+                let reserved = "#".repeat(level);
+                assert!(
+                    statement.contains(&format!("`{reserved}`")),
+                    "{label}: the statement names the reserved `{reserved}`; got: {statement}"
+                );
+            }
+            assert!(
+                !statement.contains(&format!("`{}`", "#".repeat(ceiling.first_allowed + 1))),
+                "{label}: the statement stops at the reserved set; got: {statement}"
+            );
+            // The enforcing finding routes to the SAME allowed depth the statement
+            // states, and names the reserved depth it rejects.
+            let deepest_reserved = "#".repeat(ceiling.reserved_max);
+            let hit = slot_ceiling_finding(&format!("{deepest_reserved} nope\n"), ceiling)
+                .expect("a heading at the deepest reserved depth trips the ceiling");
+            assert!(hit.message.contains(&format!("`{deepest_reserved}`")));
+            assert!(hit.message.contains(&format!("`{allowed}`")));
+            let setext = slot_ceiling_finding("A title\n=======\n", ceiling)
+                .expect("Setext trips the ceiling");
+            assert!(setext.message.contains(&format!("`{allowed}`")));
+        }
+    }
+
+    /// The fence input itself (M45 inc-2 T6): the reserved set the statement
+    /// renders is derived per slot address, so a **multi-slot** item deepens it
+    /// while a plain single-slot item does not — and a schema that mixes contexts
+    /// (`changelog`'s depth-1 staging group beside its depth-2 nested one) renders
+    /// each group against the slots it governs, never one blanket depth.
+    #[test]
+    fn schema_slot_ceilings_derive_the_reserved_set_per_address() {
+        // Multi-slot at depth 1 — the `roadmap` shape: `####` is the sub-label
+        // depth the CLI owns, so the statement must offer `#####`.
+        let roadmap = crate::schema::load_schema(
+            br#"
+type: roadmap
+placement: { file: docs/roadmap.md }
+singleton: true
+id-from: title
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: proves, slot: { hint: "What it proves." } }
+        - { id: decomposition, slot: { hint: "The increments." } }
+"#,
+        )
+        .expect("the roadmap fixture schema loads");
+        let ceilings = schema_slot_ceilings(&roadmap);
+        assert_eq!(
+            ceilings,
+            vec![
+                ("milestones.proves".to_owned(), SlotCeiling::reserving(4)),
+                (
+                    "milestones.decomposition".to_owned(),
+                    SlotCeiling::reserving(4)
+                ),
+            ]
+        );
+        let statement = slot_ceiling_statement(&ceilings);
+        assert_eq!(
+            statement,
+            "Inside slot prose, headings must sit at `#####` depth or deeper — \
+             `##`/`###`/`####` are schema-reserved, and Setext headings are rejected."
+        );
+
+        // The omitting context — single-slot at depth 1 leaves `####` free.
+        let log = crate::schema::load_schema(
+            br#"
+type: log
+placement: { file: docs/log.md }
+singleton: true
+id-from: title
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: why, slot: { hint: "Why." } }
+"#,
+        )
+        .expect("the log fixture schema loads");
+        assert_eq!(
+            schema_slot_ceilings(&log),
+            vec![("entries.why".to_owned(), SlotCeiling::reserving(3))]
+        );
+
+        // Mixed — a section slot, a depth-1 single-slot item, and a depth-2
+        // nested one (the `changelog` shape).
+        let mixed = crate::schema::load_schema(
+            br#"
+type: mixed
+placement: { file: docs/mixed.md }
+singleton: true
+id-from: title
+sections:
+  - id: overview
+    slot: { hint: "The overview." }
+  - id: releases
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - id: changes
+          repeatable:
+            id-from: title
+            block:
+              - { id: title, type: string }
+              - { id: notes, slot: { hint: "The notes." } }
+"#,
+        )
+        .expect("the mixed fixture schema loads");
+        let mixed_ceilings = schema_slot_ceilings(&mixed);
+        assert_eq!(
+            mixed_ceilings,
+            vec![
+                ("overview".to_owned(), SlotCeiling::reserving(3)),
+                (
+                    "releases.changes.notes".to_owned(),
+                    SlotCeiling::reserving(4)
+                ),
+            ]
+        );
+        assert_eq!(
+            slot_ceiling_statement(&mixed_ceilings),
+            "Inside slot prose, the reserved depths differ by slot — headings must sit \
+             at `####` or deeper in `overview`, at `#####` or deeper in \
+             `releases.changes.notes`. Setext headings are rejected."
+        );
+
+        // Slot-less — inert, never boilerplate.
+        assert_eq!(slot_ceiling_statement(&[]), "");
+    }
+
+    /// The address-independent form names no depth (M45 inc-2 T6): the surfaces
+    /// composed before an address exists — `doc set-slot --help`, the pack steps'
+    /// hand-prose solicits — must not bless one, or the parameterization's whole
+    /// point is undone by the sentence beside it.
+    #[test]
+    fn the_address_free_rule_statement_names_no_depth() {
+        let rule = slot_ceiling_rule_statement();
+        assert!(!rule.contains('#'), "the rule names no depth; got: {rule}");
+        for fragment in ["schema-relative", "Setext", "shallowest depth free"] {
+            assert!(
+                rule.contains(fragment),
+                "the rule states `{fragment}`; got: {rule}"
             );
         }
-        // The enforcing finding routes to the SAME allowed depth the statement
-        // states, and names the reserved depth it rejects.
-        // The section-slot ceiling — the context the (still context-blind) statement
-        // describes; T6 parameterizes the statement from the same derivation.
-        let section_ceiling = SlotCeiling::reserving(3);
-        let h2 = slot_ceiling_finding("## nope\n", section_ceiling).expect("H2 trips the ceiling");
-        assert!(h2.message.contains(&format!("`{CEILING_RESERVED_H2}`")));
-        assert!(h2.message.contains(&format!("`{CEILING_ALLOWED}`")));
-        let setext = slot_ceiling_finding("A title\n=======\n", section_ceiling)
-            .expect("Setext trips the ceiling");
-        assert!(setext.message.contains(&format!("`{CEILING_ALLOWED}`")));
     }
 
     /// Locate the `decision` slot's byte span in `source` (the parser's recorded

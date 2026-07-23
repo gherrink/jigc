@@ -200,20 +200,29 @@ fn top_level_doc_line_names_the_read_half() {
     );
 }
 
-/// M43 pre-trial surface polish A3 (help half) — `doc set-slot --help` states
-/// the slot heading-depth ceiling, drift-pinned against the engine's
-/// single-source statement (the same sentence the write path enforces).
+/// M43 pre-trial surface polish A3 (help half), **revised at M45 inc-2 T6** —
+/// `doc set-slot --help` is address-independent: clap renders help before any
+/// address exists, so no target's reserved depth is knowable there. It states
+/// the schema-relative *rule* and names no depth — the one carve-out the M45
+/// stated-at revision takes consciously (`design/surface-contract.md` → The
+/// stated-at fence, the `set-slot --help` carve-out). The assertion therefore
+/// relaxes off byte-equality against the engine statement (which now exists
+/// only per-address) while still fencing presence: the rule's invariant
+/// fragments must be there, and no fixed depth may be blessed as safe.
 #[test]
-fn doc_set_slot_help_states_the_heading_ceiling() {
+fn doc_set_slot_help_states_the_schema_relative_rule_without_a_depth() {
     let help = help_stdout(&["doc", "set-slot", "--help"]);
-    let statement = engine::write::slot_ceiling_statement()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    for fragment in ["schema-relative", "Setext", "shallowest depth free"] {
+        assert!(
+            help.contains(fragment),
+            "`doc set-slot --help` must state the schema-relative ceiling rule \
+             (missing `{fragment}`); got:\n{help}"
+        );
+    }
     assert!(
-        help.contains(&statement),
-        "`doc set-slot --help` must state the heading-depth ceiling verbatim \
-         from the engine source (`{statement}`); got:\n{help}"
+        !help.contains("depth or deeper"),
+        "`doc set-slot --help` knows no address, so it must bless no specific \
+         depth; got:\n{help}"
     );
 }
 

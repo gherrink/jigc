@@ -397,9 +397,11 @@ before finalize — it commits only what you have staged. When done, set the
 required Conventional-Commits type — your editorial call on what this change
 does. The subject renders as `<type>(<scope>): <summary>`, so write the
 summary without a type or scope prefix of its own — the `type` field already
-carries it. Inside slot prose, headings must sit at `####` depth or deeper —
-`##`/`###` are schema-reserved, and Setext headings are rejected. Set the
-type, then stage the summary prose:
+carries it. Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address. Set the type, then stage the summary prose:
 
 Run: `jigc doc set-field commit:add-a-thing#type --value <COMMIT_TYPE> --task add-a-thing`
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
@@ -519,8 +521,10 @@ refuse too (one blocking finding per carried path): unstage it, or pass
 `--carry-staged` to declare the carryover deliberate.
 
 finalize renders the commit doc; it does not fill it, so set its header and prose
-first. Inside slot prose, headings must sit at `####` depth or deeper —
-`##`/`###` are schema-reserved, and Setext headings are rejected.
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
 
 Set the Conventional-Commits type:
 

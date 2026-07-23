@@ -33,6 +33,22 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
+/// `doc set-slot`'s long help: the one-line lead plus the **address-independent**
+/// form of the heading-depth ceiling rule, taken verbatim from the engine so the
+/// help and the enforcing write path state one rule. Help is rendered before any
+/// address exists, so no target's reserved depth is knowable here — it states the
+/// rule and names no depth, and points at the `{{schema:}}` projection, the one
+/// surface that *can* name the set (`design/surface-contract.md` → The stated-at
+/// fence, the `set-slot --help` carve-out).
+fn set_slot_long_about() -> String {
+    format!(
+        "Set a slot leaf's prose (multi-line, via stdin or a file).\n\n{}\n\nThe \
+         `{{{{schema:<doctype>}}}}` projection at an authoring solicit renders the exact \
+         reserved set for the slots it solicits.",
+        engine::write::slot_ceiling_rule_statement(),
+    )
+}
+
 /// The `jigc doc <verb>` subcommand tree. Each verb addresses a managed doc in
 /// the active task's working area.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -136,9 +152,7 @@ pub enum DocCommand {
         task: Option<String>,
     },
     /// Set a slot leaf's prose (multi-line, via stdin or a file).
-    ///
-    /// Inside slot prose, headings must sit at `####` depth or deeper —
-    /// `##`/`###` are schema-reserved, and Setext headings are rejected.
+    #[command(long_about = set_slot_long_about())]
     SetSlot {
         /// The slot address — `<type>:<slug>#<slot>`.
         addr: String,
