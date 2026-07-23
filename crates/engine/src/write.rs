@@ -2487,8 +2487,11 @@ fn commit_field(content: &SectionContent, key: &str) -> Option<String> {
 }
 
 /// The trailer footer lines (`key: value`) of a commit instance, in item order.
-/// Each repeatable `trailers` item carries `key` and `value` fields; an item
-/// missing either contributes nothing.
+/// The `trailers` block is `id-from: key`, so each item's **heading** (`item.title`)
+/// *is* the trailer key — never a `- key:` field bullet (a CLI-authored trailer via
+/// `add-item …#trailers --title <Key>` carries no such bullet). The `value` comes from
+/// the item's `value` field; an item with an empty title or a missing/empty value
+/// contributes nothing.
 fn trailer_lines(instance: &Instance) -> Vec<String> {
     let Some(section) = section_content(instance, COMMIT_SECTION_TRAILERS) else {
         return Vec::new();
@@ -2497,7 +2500,10 @@ fn trailer_lines(instance: &Instance) -> Vec<String> {
         .items
         .iter()
         .filter_map(|item| {
-            let key = item_field(item, "key")?;
+            let key = item.title.trim();
+            if key.is_empty() {
+                return None;
+            }
             let value = item_field(item, "value")?;
             Some(format!("{key}: {value}"))
         })
@@ -10247,7 +10253,7 @@ mod commit_render {
                 title: (*k).to_string(),
                 slot: None,
                 slots: Vec::new(),
-                fields: vec![scalar("key", k), scalar("value", v)],
+                fields: vec![scalar("value", v)],
                 items: Vec::new(),
             })
             .collect();
