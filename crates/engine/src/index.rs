@@ -246,12 +246,14 @@ pub fn load_committed(
 /// `committed` is the [`EdgeIndex`]'s edges (surface a's edge map); `task_edges` are
 /// the forward edges the task's `docs/*.md` contribute (surface b — this task's
 /// pending writes). `task_froms` records each `from` identity the task touched (the
-/// `<type>:<slug>` of each staged instance), so [`ref_resolves`] walks only
-/// **task-touched** edges — a committed-only edge is not this task's to fix.
+/// `<type>:<slug>` of each **parseable** staged instance), so [`ref_resolves`] walks
+/// only **task-touched** edges — a committed-only edge is not this task's to fix — and
+/// [`WorkingOverlay::walk_edge`] shadows a touched identity's committed edges with its
+/// staged set (M45 shadow-by-`from`).
 ///
-/// Forward-ref integrity walks the *overlaid* graph (committed ∪ task); the overlay
-/// is read-side only, derived per call and discarded — only `finalize` writes through
-/// (indirectly, via stamp invalidation → next read rebuilds against the new HEAD).
+/// Forward-ref integrity walks the *overlaid* graph; the overlay is read-side only,
+/// derived per call and discarded — only `finalize` writes through (indirectly, via
+/// stamp invalidation → next read rebuilds against the new HEAD).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkingOverlay {
     /// The committed forward edges (surface a).
@@ -271,8 +273,10 @@ pub struct WorkingOverlay {
 /// type prefix (before the first `:`) resolves to a [`Schema`] in `schemas`; an
 /// unparseable or unknown-type instance contributes no edges (best-effort, mirroring
 /// the committed rebuild — per-doc conformance is the `schema-conformance` gate's
-/// concern, not the overlay's). The task's `from` identities are recorded so
-/// [`ref_resolves`] walks only task-touched edges.
+/// concern, not the overlay's). The task's `from` identities are recorded — **only
+/// after a successful parse** (M45 shadow-by-`from`), so an unparseable staged doc is
+/// never authoritative over its identity — so [`ref_resolves`] walks only task-touched
+/// edges and [`WorkingOverlay::walk_edge`] shadows only where the staged doc is real.
 ///
 /// A working area with no `docs/` dir (nothing staged yet) yields an empty overlay
 /// over the committed edges.
@@ -302,7 +306,6 @@ pub fn overlay_working(
             let Some(schema) = schemas.get(ty) else {
                 continue; // unknown type: no edges (best-effort, mirrors rebuild).
             };
-            task_froms.push(from.to_string());
 
             let Ok(mut source) = std::fs::read_to_string(&path) else {
                 continue;
@@ -311,6 +314,14 @@ pub fn overlay_working(
             let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
                 continue; // unparseable staged file: skip; not the overlay's gate.
             };
+            // Record the `from` only AFTER a successful parse (M45 shadow-by-`from`):
+            // an unparseable staged doc contributes no edges, so it must not claim
+            // authority over its identity — else `walk_edge`'s shadow would hide the
+            // committed edges and a relation slice would render nothing where the
+            // committed graph still resolves (`storage.md` → Edge index lifecycle). The
+            // accepted shadow-to-empty is the migration-squatter blank seed — a
+            // *parseable* blank copy — a distinct, deliberate case, not this one.
+            task_froms.push(from.to_string());
             task_edges.extend(doc_edges(schema, &doc, from));
         }
     }
@@ -329,22 +340,37 @@ pub fn overlay_working(
 
 impl WorkingOverlay {
     /// Walk one `.relation` edge from `from` (a `<type>:<slug>` identity) over the
-    /// **overlaid** graph (this task's working edges layered over the committed
-    /// edges), returning **every** target identity `to` — a `0..*` relation fans out
-    /// to all its bound targets; an empty `Vec` means the relation is **unset** on
-    /// `from` (the context-slice reads that as an absent value → empty text, not an
+    /// **overlaid** graph, returning **every** target identity `to` — a `0..*` relation
+    /// fans out to all its bound targets; an empty `Vec` means the relation is **unset**
+    /// on `from` (the context-slice reads that as an absent value → empty text, not an
     /// error — `workflow-dialect.md` → Empty vs unresolvable).
     ///
-    /// The task's working edges are listed first (an `adr:b` staged in this task with
-    /// a `supersedes` edge surfaces its staged target ahead of any committed one).
-    /// Within each surface the edges are already `(from, relation, to)`-sorted, so the
+    /// **Shadow-by-`from`** (`storage.md` → Edge index lifecycle, the M45 rule): a
+    /// task-touched identity (`from ∈ task_froms`) is authoritative for itself — its
+    /// **staged** edge set *replaces* the committed one, never unions with it. So a
+    /// copied-in doc renders each target **once** (not doubled), and an edge the task's
+    /// staged copy **removed** stops rendering (union would keep leaking it under prose
+    /// promising *all* of a doc's grounding). An untouched identity reads its committed
+    /// edges. The relevant surface is already `(from, relation, to)`-sorted, so the
     /// returned order is deterministic.
+    ///
+    /// `task_froms` records a `from` only after its staged body parsed (see
+    /// [`overlay_working`]), so an unparseable staged doc never shadows the committed
+    /// edges to empty. The **one** accepted shadow-to-empty is the migration-squatter
+    /// blank seed (a *parseable* blank copy replacing a foreign file at the same slug) —
+    /// recorded, deliberate (`storage.md` → Edge index lifecycle).
     ///
     /// Pure over the overlay's in-memory edge sets — no I/O.
     pub fn walk_edge(&self, from: &str, relation: &str) -> Vec<String> {
-        self.task_edges
+        // A touched identity's staged edges shadow (replace) the committed ones; an
+        // untouched identity reads its committed edges.
+        let surface = if self.task_froms.iter().any(|f| f == from) {
+            &self.task_edges
+        } else {
+            &self.committed
+        };
+        surface
             .iter()
-            .chain(self.committed.iter())
             .filter(|e| e.from == from && e.relation == relation)
             .map(|e| e.to.clone())
             .collect()
@@ -1677,6 +1703,134 @@ Slightly higher write latency for resilience.
         );
         // The two keys are genuinely distinct (the collision the fragment prevents).
         assert_ne!(keys[0].target, keys[1].target, "keys must not collide");
+    }
+
+    /// Commit an ADR body at `decisions/<slug>.md` (a committed source doc, from
+    /// identity `adr:<slug>`).
+    fn commit_adr(repo_root: &Path, slug: &str, body: &str) {
+        let dir = repo_root.join("decisions");
+        std::fs::create_dir_all(&dir).expect("mk decisions/");
+        std::fs::write(dir.join(format!("{slug}.md")), body).expect("write committed adr");
+    }
+
+    /// Stage a raw body at `<task_dir>/docs/adr:<slug>.md` (the copied-in / dropped /
+    /// unparseable staged variants the shadow rule must discriminate).
+    fn stage_adr_raw(task_dir: &Path, slug: &str, body: &str) {
+        let docs = task_dir.join(DOCS_DIR);
+        std::fs::create_dir_all(&docs).expect("mk docs/");
+        std::fs::write(docs.join(format!("adr:{slug}.md")), body).expect("stage adr body");
+    }
+
+    /// M45 shadow-by-`from`, clause (a): a relation slice over a **copied-in** `from`
+    /// whose committed doc *and* staged copy both carry the same edge renders each
+    /// target **once** — a task-touched identity's staged edge set *replaces* the
+    /// committed one, so no double-render. Red under the pre-M45 union (the target
+    /// appears twice: staged ++ committed).
+    #[test]
+    fn walk_edge_shadows_a_copied_in_from_renders_each_target_once() {
+        let repo = TempRoot::new("shadow-copyin-repo");
+        let task = TempRoot::new("shadow-copyin-task");
+        // Committed `adr:shared-redis-session-cache` superseding `adr:single-node-cache`.
+        commit_adr(
+            repo.path(),
+            "shared-redis-session-cache",
+            &adr_b_superseding("adr:single-node-cache"),
+        );
+        // The task copies the SAME doc in — its staged body carries the same edge.
+        stage_adr_raw(
+            task.path(),
+            "shared-redis-session-cache",
+            &adr_b_superseding("adr:single-node-cache"),
+        );
+
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        assert_eq!(
+            committed.edges.len(),
+            1,
+            "the committed graph carries the source's edge exactly once"
+        );
+
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+        let targets = overlay.walk_edge("adr:shared-redis-session-cache", "supersedes");
+        assert_eq!(
+            targets,
+            vec!["adr:single-node-cache".to_string()],
+            "a copied-in from renders each target once (shadow, not union): {targets:?}"
+        );
+    }
+
+    /// M45 shadow-by-`from`, clause (b): a committed edge the task's staged copy
+    /// **dropped** stops appearing — the staged edge set (now empty for this relation)
+    /// shadows the committed one. Red under union (the removed edge still renders from
+    /// the committed surface, a lie under prose promising *all* of a doc's grounding).
+    #[test]
+    fn walk_edge_shadow_drops_an_edge_the_staged_copy_removed() {
+        let repo = TempRoot::new("shadow-drop-repo");
+        let task = TempRoot::new("shadow-drop-task");
+        // Committed source carries `supersedes -> adr:single-node-cache`.
+        commit_adr(
+            repo.path(),
+            "shared-redis-session-cache",
+            &adr_b_superseding("adr:single-node-cache"),
+        );
+        // The staged copy DROPPED the `supersedes` field (a valid adr with no edge).
+        stage_adr_raw(task.path(), "shared-redis-session-cache", ADR_A);
+
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        assert_eq!(
+            committed.edges.len(),
+            1,
+            "committed carries the source's edge"
+        );
+
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+        let targets = overlay.walk_edge("adr:shared-redis-session-cache", "supersedes");
+        assert!(
+            targets.is_empty(),
+            "an edge the staged copy removed stops rendering (shadow): {targets:?}"
+        );
+    }
+
+    /// M45 shadow-by-`from`, clause (c): an **unparseable** staged doc does **not**
+    /// shadow the committed edges to empty — it contributes no `task_edges`, so it must
+    /// not claim authority over its identity, and `walk_edge` falls through to the
+    /// committed edges. Red if `task_froms` is populated *before* the parse (the
+    /// unparseable doc would then sit in `task_froms` and shadow the committed edges to
+    /// nothing, rendering an empty slice where the committed graph still resolves).
+    #[test]
+    fn walk_edge_unparseable_staged_doc_does_not_shadow_committed_to_empty() {
+        let repo = TempRoot::new("shadow-unparse-repo");
+        let task = TempRoot::new("shadow-unparse-task");
+        commit_adr(
+            repo.path(),
+            "shared-redis-session-cache",
+            &adr_b_superseding("adr:single-node-cache"),
+        );
+        // A staged body of the same identity that FAILS `parse_sections` (no sections):
+        // known type (`adr`), so it reaches the parse, and the parse errs.
+        stage_adr_raw(
+            task.path(),
+            "shared-redis-session-cache",
+            "This file is not a valid ADR — it has no required sections at all.\n",
+        );
+
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+        // The unparseable doc contributed nothing and is not authoritative over its
+        // identity, so the committed edge survives.
+        assert!(
+            !overlay
+                .task_froms
+                .contains(&"adr:shared-redis-session-cache".to_string()),
+            "an unparseable staged doc is not recorded in task_froms: {:?}",
+            overlay.task_froms
+        );
+        let targets = overlay.walk_edge("adr:shared-redis-session-cache", "supersedes");
+        assert_eq!(
+            targets,
+            vec!["adr:single-node-cache".to_string()],
+            "the committed edge survives an unparseable staged copy: {targets:?}"
+        );
     }
 }
 

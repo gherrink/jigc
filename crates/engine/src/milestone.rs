@@ -1398,6 +1398,33 @@ struct StagedDoc {
 /// **same** staged docs from the **same** areas with no divergent re-walk. **Unknown
 /// provenance** for a staged body → the blocking [`missing_provenance_finding`] (a real
 /// fault, the bit is written beside every body).
+/// The `<type>:<slug>` addresses **physically staged** in a sub-area's `docs/` — every
+/// `.md` body present, regardless of whether its doctype resolves or its bytes parse.
+/// This is the join's materialization basis: a body physically staged in an area is
+/// attributable to it (the same physical-body attribution the isolation check keys on).
+/// It is deliberately **decoupled** from the overlay's `task_froms` — which, since M45
+/// shadow-by-`from`, records a `from` only after a *successful parse* so an unparseable
+/// staged doc cannot shadow the committed edges to empty on the compose path. Keying the
+/// merge on `task_froms` would then silently drop an unparseable-but-staged body from the
+/// commit; keying on the physical body preserves it (the join copies bodies, never parses
+/// them). Sorted + deduped for a deterministic gather (`DECISIONS.md` 2026-07-23 → the
+/// Settle, Decision 3, clause d).
+fn staged_bodies(sub_dir: &Path) -> Vec<String> {
+    let docs = sub_dir.join(crate::state::DOCS_DIR);
+    let mut addrs: Vec<String> = match std::fs::read_dir(&docs) {
+        Ok(entries) => entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+            .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+            .collect(),
+        Err(_) => Vec::new(), // no docs/ yet: nothing staged.
+    };
+    addrs.sort();
+    addrs.dedup();
+    addrs
+}
+
 #[allow(clippy::type_complexity)]
 fn gather_groups(
     jigc_root: &Path,
@@ -1456,18 +1483,24 @@ fn gather_groups(
             }
         }
 
-        for from in &area.task_froms {
+        // Group on the **physical bodies** staged in this area, not the schema-gated,
+        // parse-gated `task_froms` (M45 shadow-by-`from` decoupled them — see
+        // [`staged_bodies`]): a body physically staged here must materialize even if it
+        // failed to parse, else the after-parse `task_froms` move would silently drop it
+        // from the commit. Edges come from `area.task_edges` (empty for an unparseable or
+        // unknown-type body — the join never re-parses, it copies bytes).
+        for from in staged_bodies(&sub_dir) {
             let edges: Vec<crate::index::Edge> = area
                 .task_edges
                 .iter()
-                .filter(|e| &e.from == from)
+                .filter(|e| e.from == from)
                 .cloned()
                 .collect();
             // A staged doc with no recorded provenance is a real fault (the bit is
             // written at stage time beside every body); defaulting to a provenance is
             // wrong, so surface the absence as a blocking finding routed to re-stage.
-            let Some(prov) = provenance.get(from) else {
-                return Err(missing_provenance_finding(milestone_id, sub_id, from));
+            let Some(prov) = provenance.get(&from) else {
+                return Err(missing_provenance_finding(milestone_id, sub_id, &from));
             };
             groups.entry(from.clone()).or_default().push(StagedDoc {
                 address: from.clone(),
@@ -3775,6 +3808,85 @@ Context without any acceptance criteria.
                 "commit:alpha-area.md".to_string(),
             ],
             "exactly the three resolved bodies are materialized"
+        );
+    }
+
+    /// M45 Inc-5 T1 regression guard (`DECISIONS.md` 2026-07-23 → the Settle, Decision 3,
+    /// clause d): moving `task_froms` population to *after* a successful parse (so an
+    /// unparseable staged doc cannot shadow the committed edges to empty on the compose
+    /// path) must NOT silently drop an unparseable-but-staged sub-area body from the
+    /// by-task-id merge. The join keys materialization on the **physical body**
+    /// (mirroring the isolation check at `gather_groups`), never the schema-gated,
+    /// parse-gated `task_froms`. A sub-area that stages an **edge-less** `commit` doc
+    /// *and* an **unparseable** known-type `adr` still materializes BOTH bodies
+    /// byte-unchanged (the join copies bodies, it never parses them). Green at baseline;
+    /// red after the after-parse move alone; green with the physical-body-keyed grouping.
+    #[test]
+    fn materialize_keeps_an_edge_less_and_an_unparseable_staged_body() {
+        let root = TempRoot::new("materialize-unparseable");
+        let repo = TempRoot::new("materialize-unparseable-repo");
+        let base = BasePin::new("cccccccccccccccccccccccccccccccccccccccc", "ccccccc");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        add_task(root.path(), &milestone.id, "Sole area", "single-task").expect("area adds");
+        let area_dir = root.path().join("tasks").join("sole-area");
+
+        // A **parseable, edge-less** `commit` doc (proves normal bodies still land) and
+        // an **unparseable** known-type `adr` (a valid type, so it reaches the parse —
+        // which errs on the missing required sections; proves the physical-body keying),
+        // both staged in the SAME sub-area with recorded provenance.
+        crate::state::provision_doc(&area_dir, &schemas["commit"], "sole-area", "Sole area", &[])
+            .expect("provision the edge-less commit doc");
+        let edge_less = std::fs::read_to_string(crate::state::instance_path(
+            &area_dir,
+            "commit",
+            "sole-area",
+        ))
+        .expect("read the provisioned commit body");
+        let unparseable = "This staged body is not a valid ADR — it has no required sections.\n";
+        stage_doc(
+            &area_dir,
+            "adr",
+            "broken",
+            unparseable,
+            crate::state::Provenance::Created,
+        );
+
+        let outcome = materialize(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("materialize succeeds — the unparseable body is copied, never parsed at join");
+
+        let merged_docs = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged")
+            .join("docs");
+        let commit_body = std::fs::read_to_string(merged_docs.join("commit:sole-area.md"))
+            .expect("the edge-less body materialized");
+        assert_eq!(
+            commit_body, edge_less,
+            "the edge-less body is byte-unchanged"
+        );
+        let adr_body = std::fs::read_to_string(merged_docs.join("adr:broken.md"))
+            .expect("the unparseable body materialized (physical-body keyed, not task_froms)");
+        assert_eq!(
+            adr_body, unparseable,
+            "the unparseable body is byte-unchanged"
+        );
+
+        assert_eq!(
+            outcome.addresses,
+            vec!["adr:broken".to_string(), "commit:sole-area".to_string()],
+            "both staged bodies land in the merge audit trail: {:?}",
+            outcome.addresses
         );
     }
 
