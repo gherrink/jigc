@@ -1224,7 +1224,13 @@ impl ItemTemplate {
     }
 
     /// Whether the template declares a nested repeatable (the M22 multi-level form).
-    fn has_nested(&self) -> bool {
+    ///
+    /// `pub(crate)` since M45: it is the second discriminator of the slot
+    /// heading-depth ceiling ([`crate::write::slot_ceiling`]) — a nested-bearing
+    /// item's leaves are bounded at the first heading deeper than the item
+    /// ([`first_nested_heading`]), so `2+d+1` is reserved there exactly as a
+    /// multi-slot sub-label reserves it.
+    pub(crate) fn has_nested(&self) -> bool {
         !self.nested.is_empty()
     }
 }

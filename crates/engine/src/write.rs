@@ -5765,6 +5765,77 @@ pub fn set_slot_validated(
     }
 }
 
+/// The heading-depth ceiling governing **one slot address**: the deepest ATX level
+/// the CLI reserves for structure there, and the shallowest level the slot's prose
+/// may use. Depths are ATX level numbers (`2` = `##`), never rendered hashes — the
+/// rendering is the statement's concern, not the rule's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SlotCeiling {
+    /// The deepest reserved level: an ATX heading at or shallower than this is a
+    /// CLI-owned structural marker (a section start, an item start, or a
+    /// multi-slot sub-label), never slot prose.
+    pub reserved_max: usize,
+    /// The shallowest heading level slot prose may use — `reserved_max + 1`.
+    pub first_allowed: usize,
+}
+
+impl SlotCeiling {
+    /// The ceiling reserving through `reserved_max`, first-allowed one deeper.
+    fn reserving(reserved_max: usize) -> Self {
+        SlotCeiling {
+            reserved_max,
+            first_allowed: reserved_max + 1,
+        }
+    }
+}
+
+/// **The reserved-depth set, derived from `(Schema, section_id, item-chain)`** — the
+/// single origin of both the enforced ceiling and the rendered statement, replacing
+/// the context-blind global depths (`implementation/parsing.md` → Slot heading-depth
+/// ceiling, the four-row table):
+///
+/// | slot context | reserved through | first allowed |
+/// |---|---|---|
+/// | a **section** slot | `3` (`##` section, `###` item) | `4` |
+/// | a **plain item** (single-slot, no nested repeatable) at nesting depth `d` | `2+d` | `2+d+1` |
+/// | a **multi-slot** item at depth `d` (its `#### <Leaf-Title>` sub-labels) | `2+d+1` | `2+d+2` |
+/// | an item whose block carries a **nested repeatable**, at depth `d` | `2+d+1` | `2+d+2` |
+///
+/// The derivation keys on **`multi_slot || has_nested`**, never multi-slot alone: the
+/// parser bounds a nested-bearing item's leaf region at the first heading deeper than
+/// the item ([`parse::first_nested_heading`]), so a heading at `2+d+1` inside that
+/// item's prose reads as a nested item start exactly as a sub-label would. No shipped
+/// doctype is single-slot-with-nested today — which is precisely why the member is
+/// derived rather than enumerated.
+///
+/// `item_chain` is the **section-qualified** address chain ([`physical_item_chain`]):
+/// it alternates item id / nested-section id, so the item ids only contribute depth
+/// (their values are never matched against a document here — this is a schema-side
+/// derivation). An empty chain is the section-slot arm, whose depths are fixed by the
+/// grammar (sections are `##`, items `###`) and so need no section lookup. `None` when
+/// the chain does not resolve against the schema — the section is absent or not
+/// repeatable, or a nested-section segment names no declared nested repeatable.
+pub fn slot_ceiling(schema: &Schema, section_id: &str, item_chain: &[&str]) -> Option<SlotCeiling> {
+    if item_chain.is_empty() {
+        // The section-slot arm: `##` is the section and `###` its items, both
+        // CLI-owned wherever the section lives.
+        return Some(SlotCeiling::reserving(item_heading_level(1)));
+    }
+    // The physical chain drops the logical nested-section hops (they render no
+    // heading), so its length *is* the addressed item's nesting depth.
+    let depth = physical_item_chain(schema, section_id, item_chain)?.len();
+    let template = parse::ItemTemplate::from(chain_repeatable(schema, section_id, item_chain)?);
+    let item_level = item_heading_level(depth);
+    let reserved_max = if template.is_multi_slot() || template.has_nested() {
+        // One level deeper is structure too — a `#### <Leaf-Title>` sub-label, or a
+        // nested item's own heading.
+        item_level + 1
+    } else {
+        item_level
+    };
+    Some(SlotCeiling::reserving(reserved_max))
+}
+
 /// The ceiling's depth vocabulary — the two schema-reserved depths and the first
 /// allowed one — shared by the enforcing check ([`slot_ceiling_finding`]) and the
 /// stated-at statement ([`slot_ceiling_statement`]), so the sentence the projection
@@ -11597,5 +11668,87 @@ The gateway rejects the 101st request.
             .expect_err("a set-derived field cannot be unset");
         assert_eq!(finding.code, "write.unset-ineligible");
         assert!(finding.route.is_some());
+    }
+}
+
+#[cfg(test)]
+mod slot_ceiling_derivation {
+    //! The reserved-depth set derived from `(Schema, section_id, item-chain)`
+    //! ([`slot_ceiling`]; `implementation/parsing.md` → Slot heading-depth ceiling).
+    //! The shipped doctypes' contexts are swept from the real registry in
+    //! `crates/cli/tests/item_slot_ceiling_axis.rs`; what lives here is the pair no
+    //! registry can supply — the **single-slot-with-nested** row, which no shipped
+    //! doctype expresses — plus the section-slot arm and the unresolvable chain.
+
+    use super::*;
+
+    /// A synthetic doctype hitting the fourth row: one item block with **exactly
+    /// one** slot *and* a nested repeatable. `multi_slot` is false here, so a
+    /// derivation keyed on multi-slot alone would reserve only `###` — while the
+    /// parser bounds this item's leaf region at the first `####` (the nested item's
+    /// own depth), which is precisely what makes `####` reserved.
+    const SINGLE_SLOT_WITH_NESTED: &[u8] = br#"
+type: rollup
+location: rollups/
+id-from: title
+sections:
+  - id: groups
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: summary, slot: { hint: "The group's summary." } }
+        - id: entries
+          repeatable:
+            id-from: title
+            block:
+              - { id: title, type: string }
+              - { id: note, slot: { hint: "The entry." } }
+"#;
+
+    fn rollup_schema() -> Schema {
+        crate::schema::load_schema(SINGLE_SLOT_WITH_NESTED).expect("the synthetic schema loads")
+    }
+
+    #[test]
+    fn a_section_slot_reserves_through_h3() {
+        // Sections are `##` and their items `###`, so a section slot's prose starts
+        // at `####` — grammar-fixed, independent of the doctype.
+        let schema = rollup_schema();
+        let ceiling = slot_ceiling(&schema, "groups", &[]).expect("the section arm derives");
+        assert_eq!(ceiling.reserved_max, 3);
+        assert_eq!(ceiling.first_allowed, 4);
+    }
+
+    #[test]
+    fn a_single_slot_item_carrying_a_nested_repeatable_reserves_the_nested_depth() {
+        // The row no shipped doctype hits: single-slot (so `multi_slot` is false) but
+        // nested-bearing, at depth 1 → reserved through `####`, first allowed `#####`.
+        let schema = rollup_schema();
+        let ceiling = slot_ceiling(&schema, "groups", &["a-group"]).expect("the item arm derives");
+        assert_eq!(
+            (ceiling.reserved_max, ceiling.first_allowed),
+            (4, 5),
+            "`has_nested` reserves `2+d+1` exactly as multi-slot does"
+        );
+    }
+
+    #[test]
+    fn the_nested_level_reserves_its_own_depth() {
+        // The nested item is a plain single-slot item at depth 2 → reserved through
+        // `####` (its own heading level), first allowed `#####`.
+        let schema = rollup_schema();
+        let ceiling = slot_ceiling(&schema, "groups", &["a-group", "entries", "an-entry"])
+            .expect("the nested arm derives");
+        assert_eq!((ceiling.reserved_max, ceiling.first_allowed), (4, 5));
+    }
+
+    #[test]
+    fn an_unresolvable_chain_derives_nothing() {
+        // A chain that does not walk the schema has no ceiling to derive: an absent
+        // section, a non-repeatable one, and an undeclared nested-section segment.
+        let schema = rollup_schema();
+        assert!(slot_ceiling(&schema, "absent", &["x"]).is_none());
+        assert!(slot_ceiling(&schema, "groups", &["a-group", "undeclared", "x"]).is_none());
     }
 }
