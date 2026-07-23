@@ -2,6 +2,14 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-23 — M45 Inc 1 T3: the three managed-corpus states
+
+`committed-singletons` / `migrated` / `refs-post-hoc` land in the fixture builder, each driven end to end through the real binary ([pinning.md](implementation/pinning.md) §4). Three elaborations the design left to the executor:
+
+- **`migrated`'s instance is a foreign `docs/direction.md` → `vision`**, landed by `jigc migrate --as vision` + `finalize --approve`. Picked over the better-precedented `adr` because §4 names the state's blind spot as *the form-vision-class traps · fidelity paths*, and the vision arm exercises a `placement` singleton retiring a source at a **different** path — a relocation, not an in-place rewrite. The foreign source is committed *before* the migration, so the retirement asserts as a real `D` in `git show --name-status HEAD` rather than an untracked-file tidy-up that would pass vacuously.
+- **`refs-post-hoc` extends `committed-singletons`** (plus a committed `research` doc) instead of minting a third managed corpus: the `vision —grounded-in→ research` edge needs committed docs on *both* ends, and every named state is paid for on every sweep (§1 measures ~38 s serial across six). The extension also makes the state's name literal — the edge really is set *post hoc*, on docs a previous task already committed.
+- **Task ids are read from the binary's `task minted:` line, never rebuilt test-side.** The slug rule is versioned pack state (M42) and a migration id carries M44's `blake3(source-path)` disambiguator; a test-side reconstruction of either would be a second implementation that drifts silently. Same principle as the pack-provenance fence in T2: read the emitted artifact, not the inputs.
+
 ## 2026-07-23 — M45 Inc 1 T2: the first shared test module (`tests/support/`)
 
 `crates/cli/tests/support/{mod,trial_corpus}.rs` lands with the `fresh` state ([pinning.md](implementation/pinning.md) §4). Three elaborations worth recording:

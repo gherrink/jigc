@@ -1,5 +1,5 @@
-//! M45 Increment 1 / T2 — the **trial-shaped fixture builder** and its isolation
-//! fence (`implementation/pinning.md` §4).
+//! M45 Increment 1 / T2 + T3 — the **trial-shaped fixture builder**, its isolation
+//! fence, and the three managed-corpus states (`implementation/pinning.md` §4).
 //!
 //! The builder is the shared substrate the compose-golden suite and the contract
 //! property suites run over, so the substrate itself needs a fence: a fixture that
@@ -21,6 +21,23 @@
 //!       composes the embedded `[dev ▸ methodology]` pair. The provenance is read
 //!       from a **real invocation's output** (`jigc start`'s `Pack:` line), never
 //!       from the env the test itself just set.
+//!
+//! Then one arm per managed-corpus state, each asserting the state's **defining
+//! property off real artifacts** — git's index and log, and the task working area
+//! on disk — never off the builder's own bookkeeping:
+//!
+//!   (4) **`committed-singletons`** — vision/roadmap/decisions-log are tracked at
+//!       their resolved `placement` homes and no task is left live (created *and*
+//!       finalized, not merely staged).
+//!
+//!   (5) **`migrated`** — the foreign source was committed *before* the migration
+//!       and the landing commit carries both its deletion and the managed doc's
+//!       addition, so the retirement is a real destructive retire, not a tidy-up of
+//!       an untracked file.
+//!
+//!   (6) **`refs-post-hoc`** — the `edited-from-base` provenance no finalized state
+//!       can carry: a staged copy under `.jigc/tasks/<id>/docs/` holding the edge
+//!       the committed bytes do not.
 
 mod support;
 
@@ -98,4 +115,119 @@ fn a_leaked_pack_dir_never_reaches_a_built_state() {
     );
 
     let _ = std::fs::remove_dir_all(&bogus);
+}
+
+/// (4) `committed-singletons` — the three methodology singletons are **created and
+/// finalized**, so git tracks each at its resolved home and no task is left live.
+/// The homes are the schemas' own: `VISION.md` and `docs/roadmap.md` /
+/// `docs/decisions-log.md` are `placement` files, so they bypass `docs-root`.
+#[test]
+fn committed_singletons_tracks_the_three_singletons_at_their_homes() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let tracked = corpus.git(&["ls-files"]);
+    for home in ["VISION.md", "docs/roadmap.md", "docs/decisions-log.md"] {
+        assert!(
+            tracked.lines().any(|line| line == home),
+            "`committed-singletons` must track `{home}`; git ls-files:\n{tracked}",
+        );
+        let body = support::trial_corpus::read(&corpus.repo(), home);
+        assert!(
+            !body.trim().is_empty(),
+            "the committed `{home}` must carry content",
+        );
+    }
+    assert_eq!(
+        corpus.live_task(),
+        None,
+        "every `committed-singletons` task is finalized — none stays live",
+    );
+    let listed = corpus.jigc_ok(&["task", "list"]);
+    assert!(
+        listed.contains("no active tasks"),
+        "`committed-singletons` must leave no active task; got:\n{listed}",
+    );
+}
+
+/// (5) `migrated` — the managed doc landed through `jigc migrate … --approve` and
+/// the **foreign source is retired in the same commit**. Both halves are read off
+/// git: the source was tracked before (so its deletion is a real retirement), the
+/// finalize commit carries the add *and* the delete, and the path is gone from the
+/// index and the working tree.
+#[test]
+fn migrated_retires_the_committed_foreign_source_in_the_landing_commit() {
+    let corpus = TrialCorpus::build(State::Migrated);
+    let foreign = support::trial_corpus::FOREIGN_VISION_PATH;
+
+    let history = corpus.git(&["log", "--oneline", "--all", "--", foreign]);
+    assert!(
+        !history.trim().is_empty(),
+        "the foreign source must have been committed before the migration, \
+         so its retirement is a real deletion",
+    );
+
+    let landing = corpus.git(&["show", "--name-status", "--format=", "HEAD"]);
+    assert!(
+        landing.lines().any(|line| line == format!("D\t{foreign}")),
+        "the landing commit must retire the foreign source; got:\n{landing}",
+    );
+    assert!(
+        landing.lines().any(|line| line == "A\tVISION.md"),
+        "the landing commit must add the managed doc; got:\n{landing}",
+    );
+
+    let tracked = corpus.git(&["ls-files"]);
+    assert!(
+        !tracked.lines().any(|line| line == foreign),
+        "the retired foreign source must be gone from the index; git ls-files:\n{tracked}",
+    );
+    assert!(
+        !corpus.repo().join(foreign).exists(),
+        "the retired foreign source must be gone from the working tree",
+    );
+}
+
+/// (6) `refs-post-hoc` — an edge set by `doc set-field` on a **committed** doc
+/// inside a **live** task, so the corpus carries the `edited-from-base` provenance
+/// a finalized state cannot: a staged copy under `.jigc/tasks/<id>/docs/` whose
+/// bytes diverge from the committed ones, carrying the edge the committed doc
+/// does not.
+#[test]
+fn refs_post_hoc_carries_an_edited_from_base_staged_copy() {
+    let corpus = TrialCorpus::build(State::RefsPostHoc);
+    let repo = corpus.repo();
+    let task = corpus
+        .live_task()
+        .expect("`refs-post-hoc` leaves its edge-setting task live");
+
+    // The edge's target is committed — the edge points at real, tracked evidence.
+    let tracked = corpus.git(&["ls-files"]);
+    assert!(
+        tracked
+            .lines()
+            .any(|line| line == "docs/research/context-loss.md"),
+        "the grounding research must be committed; git ls-files:\n{tracked}",
+    );
+
+    let provenance =
+        support::trial_corpus::read(&repo, &format!(".jigc/tasks/{task}/docs/provenance.json"));
+    assert!(
+        provenance.contains("\"vision:vision\": \"edited-from-base\""),
+        "the committed vision must be copied in for editing, not created; got:\n{provenance}",
+    );
+
+    let staged =
+        support::trial_corpus::read(&repo, &format!(".jigc/tasks/{task}/docs/vision:vision.md"));
+    let committed = support::trial_corpus::read(&repo, "VISION.md");
+    assert_ne!(
+        staged, committed,
+        "the staged copy must diverge from the committed bytes",
+    );
+    assert!(
+        staged.contains("grounded-in: [research:context-loss]"),
+        "the staged copy must carry the edge `set-field` wrote; got:\n{staged}",
+    );
+    assert!(
+        !committed.contains("grounded-in"),
+        "the committed doc must NOT carry the edge — it is live in the task only; got:\n{committed}",
+    );
 }

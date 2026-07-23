@@ -20,25 +20,66 @@
 //! packs the suites claim to sweep, whatever the developer's shell carries.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+
+/// The repo-relative path of the foreign document [`State::Migrated`] migrates —
+/// unmanaged furniture, written directly and committed **before** the migration so
+/// its retirement is a real deletion rather than an untracked-file removal.
+pub const FOREIGN_VISION_PATH: &str = "docs/direction.md";
+
+/// The foreign document's bytes — deliberately non-conformant (an H1 the schema
+/// does not name, a free-form `## Principles` section), so `jigc migrate` has real
+/// prose to route through the author step.
+const FOREIGN_VISION: &str = "\
+# Product Direction
+
+We build a deterministic context compiler.
+
+## Principles
+
+Structure belongs to the CLI; prose belongs to the model.
+";
 
 /// One named corpus state. Iterate [`State::ALL`] to sweep every state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     /// `jigc setup` only — the baseline.
     Fresh,
+    /// The three methodology singletons — `vision`, `roadmap`, `decisions-log` —
+    /// each created through its own driving workflow and **finalized**, so all
+    /// three are committed at their resolved homes (`VISION.md`,
+    /// `docs/roadmap.md`, `docs/decisions-log.md`). Closes the
+    /// create-over-committed / copy-in blind spot.
+    CommittedSingletons,
+    /// A foreign document landed through `jigc migrate … --approve`: the managed
+    /// doc is committed and the **foreign source is retired** in the same commit.
+    Migrated,
+    /// Edges set by `jigc doc set-field` on **committed** docs inside a task that
+    /// is still **live** — so the corpus carries `edited-from-base` working-area
+    /// provenance and a staged copy diverging from the committed bytes. That
+    /// property is erased at finalize, so no finalized state can carry it.
+    RefsPostHoc,
 }
 
 impl State {
     /// Every named state, in declaration order. A suite that iterates this picks
     /// up a newly added state with no edit.
-    pub const ALL: &'static [State] = &[State::Fresh];
+    pub const ALL: &'static [State] = &[
+        State::Fresh,
+        State::CommittedSingletons,
+        State::Migrated,
+        State::RefsPostHoc,
+    ];
 
     /// The state's name, as the goldens and suite labels spell it.
     pub fn name(self) -> &'static str {
         match self {
             State::Fresh => "fresh",
+            State::CommittedSingletons => "committed-singletons",
+            State::Migrated => "migrated",
+            State::RefsPostHoc => "refs-post-hoc",
         }
     }
 }
@@ -50,6 +91,7 @@ impl State {
 pub struct TrialCorpus {
     root: PathBuf,
     state: State,
+    live_task: Option<String>,
 }
 
 impl TrialCorpus {
@@ -68,15 +110,32 @@ impl TrialCorpus {
         fs::create_dir_all(root.join("repo")).expect("create the corpus repo dir");
         fs::create_dir_all(root.join("home")).expect("create the corpus home dir");
 
-        let corpus = TrialCorpus { root, state };
+        let mut corpus = TrialCorpus {
+            root,
+            state,
+            live_task: None,
+        };
         corpus.git_init();
         // Managed state through the binary: `setup` installs the `.jigc/` workbench,
         // the adapter files, and its own pre-commit hook, and commits them.
         corpus.jigc_ok(&["setup"]);
         match state {
             State::Fresh => {}
+            State::CommittedSingletons => corpus.build_committed_singletons(),
+            State::Migrated => corpus.build_migrated(),
+            State::RefsPostHoc => {
+                let live = corpus.build_refs_post_hoc();
+                corpus.live_task = Some(live);
+            }
         }
         corpus
+    }
+
+    /// The id of this state's **live** (unfinalized) task, when it has one — the
+    /// handle a suite needs to reach the task's working area under
+    /// `.jigc/tasks/<id>/`. Only [`State::RefsPostHoc`] leaves a task live.
+    pub fn live_task(&self) -> Option<&str> {
+        self.live_task.as_deref()
     }
 
     /// The state this corpus was built as.
@@ -124,8 +183,229 @@ impl TrialCorpus {
         String::from_utf8(out.stdout).expect("utf-8 jigc stdout")
     }
 
+    /// Run `jigc <args>` with `stdin` piped, assert it succeeded, return stdout.
+    /// The slot/payload writers all read `--from-file -`.
+    pub fn jigc_stdin_ok(&self, args: &[&str], stdin: &str) -> String {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(args)
+            .current_dir(self.repo())
+            .env("HOME", self.home())
+            .env_remove("JIGC_PACK_DIR")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn jigc");
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(stdin.as_bytes())
+            .expect("write jigc stdin");
+        let out = child.wait_with_output().expect("wait for jigc");
+        assert!(
+            out.status.success(),
+            "jigc {args:?} failed ({}):\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        String::from_utf8(out.stdout).expect("utf-8 jigc stdout")
+    }
+
+    /// Compose a workflow and return the id the binary **printed** it minted — read
+    /// from the real output, never reconstructed from the intent (the slug rule is
+    /// the binary's, and a test-side copy of it would drift silently).
+    fn start_workflow(&self, workflow: &str, intent: &str) -> String {
+        minted_task(&self.jigc_ok(&["start", "--workflow", workflow, intent]))
+    }
+
+    /// Set one prose slot from stdin.
+    fn set_slot(&self, address: &str, task: &str, prose: &str) {
+        self.jigc_stdin_ok(
+            &[
+                "doc",
+                "set-slot",
+                address,
+                "--from-file",
+                "-",
+                "--task",
+                task,
+            ],
+            prose,
+        );
+    }
+
+    /// Author the task's `commit` doc and finalize it. Every fixture commit is a
+    /// `docs` change, so only the scope and summary vary. `approve` passes
+    /// `--approve`, which a migration's destructive retire-and-land needs.
+    fn finalize(&self, task: &str, scope: &str, summary: &str, approve: bool) {
+        self.jigc_ok(&[
+            "doc",
+            "set-field",
+            &format!("commit:{task}#type"),
+            "--value",
+            "docs",
+            "--task",
+            task,
+        ]);
+        self.jigc_ok(&[
+            "doc",
+            "set-field",
+            &format!("commit:{task}#scope"),
+            "--value",
+            scope,
+            "--task",
+            task,
+        ]);
+        self.set_slot(&format!("commit:{task}#summary"), task, summary);
+        self.set_slot(
+            &format!("commit:{task}#body"),
+            task,
+            "Built by the trial-corpus fixture builder.",
+        );
+        let mut args = vec!["task", "finalize", task];
+        if approve {
+            args.push("--approve");
+        }
+        self.jigc_ok(&args);
+    }
+
+    /// [`State::CommittedSingletons`]: the three methodology singletons, each
+    /// created through **its own driving workflow** (`planning` gates the roadmap
+    /// and the decisions log; `form-vision` gates the vision) and finalized, so all
+    /// three land committed at their `placement` homes.
+    fn build_committed_singletons(&self) {
+        let plan = self.start_workflow("planning", "plan the first wave");
+        self.jigc_ok(&[
+            "doc", "create", "roadmap", "--title", "Roadmap", "--task", &plan,
+        ]);
+        self.jigc_ok(&[
+            "doc",
+            "create",
+            "decisions-log",
+            "--title",
+            "Decisions-Log",
+            "--task",
+            &plan,
+        ]);
+        self.finalize(&plan, "planning", "mint the running docs", false);
+
+        let vision = self.start_workflow("form-vision", "form the project vision");
+        self.jigc_ok(&[
+            "doc", "create", "vision", "--title", "Vision", "--task", &vision,
+        ]);
+        self.set_slot(
+            "vision:vision#thesis",
+            &vision,
+            "A deterministic CLI assembles exactly the context a task needs.",
+        );
+        self.set_slot(
+            "vision:vision#invariants",
+            &vision,
+            "Structure belongs to the CLI; prose belongs to the model.",
+        );
+        self.set_slot(
+            "vision:vision#open-questions",
+            &vision,
+            "Which domains earn a pack of their own.",
+        );
+        self.finalize(&vision, "vision", "form the project vision", false);
+    }
+
+    /// [`State::Migrated`]: a foreign document committed as ordinary repo furniture,
+    /// then landed through `jigc migrate … --as vision` + `finalize --approve` —
+    /// the managed doc committed and the foreign source retired in one commit.
+    fn build_migrated(&self) {
+        let foreign = self.repo().join(FOREIGN_VISION_PATH);
+        fs::create_dir_all(foreign.parent().expect("the foreign source has a parent"))
+            .expect("create the foreign source dir");
+        fs::write(&foreign, FOREIGN_VISION).expect("write the foreign source");
+        self.git(&["add", FOREIGN_VISION_PATH]);
+        self.git(&["commit", "-q", "-m", "add the direction doc"]);
+
+        let task = minted_task(&self.jigc_ok(&["migrate", FOREIGN_VISION_PATH, "--as", "vision"]));
+        self.jigc_stdin_ok(
+            &[
+                "doc",
+                "author",
+                "vision",
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            MIGRATED_VISION_PAYLOAD,
+        );
+        self.finalize(
+            &task,
+            "vision",
+            "migrate the direction doc into the managed vision",
+            true,
+        );
+    }
+
+    /// [`State::RefsPostHoc`]: the committed singletons **plus** a committed
+    /// `research` doc, then a task left **live** whose only write is the
+    /// `vision —grounded-in→ research` edge set on the already-committed vision.
+    /// Extending `committed-singletons` rather than minting a third managed corpus
+    /// is deliberate: the edge needs committed docs on both ends, and a state is
+    /// paid for on every sweep.
+    ///
+    /// Returns the live task's id.
+    fn build_refs_post_hoc(&self) -> String {
+        self.build_committed_singletons();
+
+        let research = self.start_workflow("do-research", "how agents lose context");
+        self.jigc_ok(&[
+            "doc",
+            "create",
+            "research",
+            "--title",
+            "Context Loss",
+            "--task",
+            &research,
+        ]);
+        self.set_slot(
+            "research:context-loss#question",
+            &research,
+            "How does a coding agent lose the context it was given?",
+        );
+        self.set_slot(
+            "research:context-loss#findings",
+            &research,
+            "Static rules files go stale and are read once, not just in time.",
+        );
+        self.set_slot(
+            "research:context-loss#sources",
+            &research,
+            "The adoption trial records, 2026.",
+        );
+        self.finalize(
+            &research,
+            "research",
+            "record the context-loss research",
+            false,
+        );
+
+        // The edge, set on the COMMITTED vision from inside a task that stays live:
+        // the write copies the committed body in (`edited-from-base`) and the staged
+        // copy diverges until a finalize that never comes.
+        let task = self.start_workflow("form-vision", "ground the vision in research");
+        self.jigc_ok(&[
+            "doc",
+            "set-field",
+            "vision:vision#meta/grounded-in",
+            "--value",
+            "[research:context-loss]",
+            "--task",
+            &task,
+        ]);
+        task
+    }
+
     /// Run `git <args>` in the repo, assert success, return trimmed stdout.
-    fn git(&self, args: &[&str]) -> String {
+    pub fn git(&self, args: &[&str]) -> String {
         let out = Command::new("git")
             .args(args)
             .current_dir(self.repo())
@@ -159,6 +439,36 @@ impl Drop for TrialCorpus {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
     }
+}
+
+/// The `doc author` batch payload [`State::Migrated`] rewrites the foreign source
+/// into — the shape the `migrate-vision` step's `{{schema:vision}}` skeleton
+/// solicits, with the literal `<<…>>` slot markers it requires.
+const MIGRATED_VISION_PAYLOAD: &str = "\
+title: Vision
+sections:
+  - id: thesis
+    set:
+      thesis: |-
+        <<We build a deterministic context compiler.>>
+  - id: invariants
+    set:
+      invariants: |-
+        <<Structure belongs to the CLI; prose belongs to the model.>>
+  - id: open-questions
+    set:
+      open-questions: |-
+        <<Which domains earn a pack of their own.>>
+";
+
+/// The task id a mint printed, read off the binary's `task minted: <id>` line.
+fn minted_task(stdout: &str) -> String {
+    stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("task minted: "))
+        .unwrap_or_else(|| panic!("a mint must print `task minted: <id>`; got:\n{stdout}"))
+        .trim()
+        .to_string()
 }
 
 /// Read a repo-relative file from a built corpus.
