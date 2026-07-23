@@ -239,10 +239,12 @@ fn start_slug_override_is_inert_when_no_task_is_minted() {
 }
 
 /// (3) `jigc doc create adr --title "<X>" --slug <explicit>` mints `adr:<explicit>`
-/// (id decoupled from the title), and a `--slug` colliding with a staged instance
-/// rejects via the instance-collision route.
+/// (id decoupled from the title), and a second `--slug` over the same-identity staged
+/// instance is the agent-initiated create-gate: it acks `existed` and binds the role
+/// (copied-in for update), never rejects — the repairing action stays open (M45 Inc 5
+/// T2; the gated serial-collision routed the agent away from the only repairing action).
 #[test]
-fn doc_create_slug_override_mints_and_collision_rejects() {
+fn doc_create_slug_override_mints_and_recreate_acks_existed() {
     let (repo, home) = init_repo();
     let started = jigc(
         repo.path(),
@@ -286,7 +288,9 @@ fn doc_create_slug_override_mints_and_collision_rejects() {
         "the adr must be staged under the explicit slug"
     );
 
-    // A second create with the same --slug collides in the working area.
+    // A second create with the same --slug is the agent-initiated create-gate over a
+    // same-identity staged copy: it acks `existed` and binds the role (copied-in for
+    // update), never rejects — the repairing action stays open (M45 Inc 5 T2).
     let dup = jigc(
         repo.path(),
         home.path(),
@@ -303,12 +307,13 @@ fn doc_create_slug_override_mints_and_collision_rejects() {
         ],
     );
     assert!(
-        !dup.status.success(),
-        "a --slug colliding with a staged instance must reject"
+        dup.status.success(),
+        "a --slug re-create over a staged instance acks existed, not reject: {}",
+        stderr(&dup)
     );
-    let err = stderr(&dup);
+    let out = stdout(&dup);
     assert!(
-        err.contains("my-adr"),
-        "the block must name the colliding address: {err}"
+        out.contains("adr:my-adr") && out.contains("already existed"),
+        "the ack names the address and says it already existed: {out}"
     );
 }

@@ -157,8 +157,12 @@ fn set_field(repo: &Path, home: &Path, addr: &str, value: &str) {
 /// Today's date the same way the binary stamps it (system local date), so the
 /// fresh-on-create assertion is exact, not just well-formed.
 fn today() -> String {
+    // The CLI's `set: on-create` date stamp derives from `SystemTime` days-since-epoch
+    // in **UTC** (`doc::today_iso`, `secs / 86_400`). Read the same clock here — a local
+    // `date +%Y-%m-%d` disagrees with the CLI's UTC stamp across the UTC/local midnight
+    // boundary (a machine east of UTC flips a day early), which is a spurious failure.
     let out = Command::new("date")
-        .args(["+%Y-%m-%d"])
+        .args(["-u", "+%Y-%m-%d"])
         .output()
         .expect("run date");
     String::from_utf8(out.stdout)

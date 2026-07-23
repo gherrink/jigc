@@ -655,21 +655,25 @@ fn non_singleton_create_over_an_off_canonical_committed_body_mints_fresh() {
          canonical committed path only); got:\n{staged}",
     );
 
-    // A second create of the same slug now collides on the working-area instance and
-    // rejects (serial-collision) — mint-or-reject, never silently suffixed or copied.
-    let collide = jigc_doc(
+    // A second `doc create` of the same slug is the agent-initiated create-gate over the
+    // same-identity staged copy: it acks `existed` and binds the role (copied-in for
+    // update), never rejects — the repairing action stays open. The gated serial-collision
+    // reject routed the agent away from the only repairing action (M45 Inc 5 T2;
+    // `DECISIONS.md` 2026-07-23 M45 planning → Fork 2). The *ungated* serial-mint reject
+    // (fan-out) is untouched; only this agent-initiated gate acks-existed.
+    let recreate = jigc_doc(
         repo.path(),
         home.path(),
         &["create", "adr", "--title", "Single node cache"],
         None,
     );
-    assert!(
-        !collide.status.success(),
-        "a second non-singleton create of the same slug must reject (serial-collision)",
+    assert_ok(
+        &recreate,
+        "a second gated `doc create adr` acks existed and binds, never rejects",
     );
-    let stderr = String::from_utf8_lossy(&collide.stderr);
+    let stdout = String::from_utf8_lossy(&recreate.stdout);
     assert!(
-        stderr.contains("create.serial-collision") || stderr.contains("already"),
-        "the reject is a serial-collision; got:\n{stderr}",
+        stdout.contains("already existed"),
+        "the re-create acks `already existed` (copied in for update); got:\n{stdout}",
     );
 }
