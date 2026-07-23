@@ -313,9 +313,10 @@ impl TrialCorpus {
         String::from_utf8(out.stdout).expect("utf-8 jigc stdout")
     }
 
-    /// Run `jigc <args>` with `stdin` piped, assert it succeeded, return stdout.
-    /// The slot/payload writers all read `--from-file -`.
-    pub fn jigc_stdin_ok(&self, args: &[&str], stdin: &str) -> String {
+    /// Run `jigc <args>` with `stdin` piped and return its raw [`Output`] — the
+    /// shape a suite needs when the invocation is *expected* to be refused (a
+    /// gated slot write), where [`Self::jigc_stdin_ok`]'s assert would fire first.
+    pub fn jigc_stdin(&self, args: &[&str], stdin: &str) -> Output {
         let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
             .args(args)
             .current_dir(self.repo())
@@ -332,7 +333,13 @@ impl TrialCorpus {
             .expect("stdin piped")
             .write_all(stdin.as_bytes())
             .expect("write jigc stdin");
-        let out = child.wait_with_output().expect("wait for jigc");
+        child.wait_with_output().expect("wait for jigc")
+    }
+
+    /// Run `jigc <args>` with `stdin` piped, assert it succeeded, return stdout.
+    /// The slot/payload writers all read `--from-file -`.
+    pub fn jigc_stdin_ok(&self, args: &[&str], stdin: &str) -> String {
+        let out = self.jigc_stdin(args, stdin);
         assert!(
             out.status.success(),
             "jigc {args:?} failed ({}):\n--- stdout ---\n{}\n--- stderr ---\n{}",
