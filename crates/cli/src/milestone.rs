@@ -1559,6 +1559,47 @@ fn run_milestone_finalize(
     let materialized = materialize(&jigc_root, &jigc_home, milestone_id, &schemas, &committed)
         .map_err(finding_to_err)?;
 
+    // The milestone's id-ordered sub-task list + its still-provisioned fan-out worktrees
+    // (empty for a docs-only milestone) — hoisted above the record flip because the
+    // boundary conformance gate below reads the worktree set, and it must run before any
+    // durable write. Both feed the message, the empty-commit signal, the contribution facts,
+    // and the combine channel below (the M31 sibling-site shape — the gate is
+    // knob-independent, so its inputs sit above the record flip and the `squash` read).
+    let list = read_task_list(&dir)
+        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+    let worktrees = provisioned_worktrees(&repo_root, &jigc_home, &list);
+    let staging_dir = materialized
+        .docs_dir
+        .parent()
+        .expect("the materialized docs dir has a parent staging area")
+        .to_path_buf();
+
+    // The milestone-boundary conformance gate (M45 — `design/finalize.md` → 2. Validate;
+    // `design/validation.md` → The milestone-boundary gate): validate the **merged effective
+    // state** — the by-task-id merged doc set (`materialize`'s output, on disk in
+    // `merged/docs/`) overlaid on the committed store for the `schema-conformance.*` +
+    // `ref-resolves` families, plus the `doc-code` code-anchor re-resolution over the merged
+    // worktree code tree — and BLOCK (exit 3, committing nothing) on any blocking finding.
+    // Positioned after `materialize` (whose output IS the merged doc set — a gate ahead of it
+    // would re-implement the merge), after the base guard (the gate reads `base.sha`, not the
+    // literal `HEAD`), after `provisioned_worktrees`, and BEFORE the record flip + the plan +
+    // the `squash` branch — knob-independent. Nothing durable is written yet (`materialize`
+    // rebuilds its dir every call, and the `RecordFlipGuard` is not yet armed), so a block
+    // here truly commits nothing. A same-path collision (no single merged tree) is NOT the
+    // gate's concern — it falls through to the knob branch's own collision handling below.
+    if let Some(outcome) = milestone_boundary_gate(
+        &repo_root,
+        &jigc_home,
+        &jigc_root,
+        &schemas,
+        &staging_dir,
+        &base,
+        &worktrees,
+        format,
+    )? {
+        return Ok(outcome);
+    }
+
     // The `join` in-place-mutate arm, CLI side (`design/team-ready-state.md` → Engine capability
     // 1 (write), the `join` — in-place mutate arm; The commit model — join folds): under a
     // `[dev ▸ methodology]` project flip the committed record's every `tasks` item + the header
@@ -1574,8 +1615,6 @@ fn run_milestone_finalize(
     let record_pathspec = record_flip.as_ref().map(|f| f.pathspec.clone());
 
     // Step 2 — the CLI-synthesized message (a milestone has no commit doc to render).
-    let list = read_task_list(&dir)
-        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
     let message = synthesized_message(milestone_id, &list);
 
     // The `finalize.fan-out.squash` knob (`design/finalize.md` → `fan-out` finalize) shapes
@@ -1589,11 +1628,6 @@ fn run_milestone_finalize(
     // Read here (before any sub-task commit moves HEAD); the per-sub-task commits are laid
     // down only AFTER the planner's preflight validates base == HEAD below.
     let squash = resolve_squash(&jigc_home)?;
-
-    // The id-ordered still-provisioned fan-out worktrees (empty for a docs-only milestone)
-    // — both the empty-commit signal below and the `squash: true` combine channel below
-    // read this set.
-    let worktrees = provisioned_worktrees(&repo_root, &jigc_home, &list);
 
     // The diff-presence signal the planner's empty-commit guard needs, narrowed to the
     // worktree-isolation model (M31 Inc 4): the materialized docs that will be promoted, OR
@@ -1626,13 +1660,9 @@ fn run_milestone_finalize(
     let record_only_advance =
         base.sha != head && record_only_range(&repo_root, &schemas, &base.sha, &head)?;
 
-    // Step 3 — the thin sibling planner over the materialized staging area (the parent of
-    // `merged/docs/`): shared preflight + empty-commit guard + promote/hash sweep.
-    let staging_dir = materialized
-        .docs_dir
-        .parent()
-        .expect("the materialized docs dir has a parent staging area")
-        .to_path_buf();
+    // Step 3 — the thin sibling planner over the materialized staging area (`staging_dir`,
+    // the parent of `merged/docs/`, hoisted with the gate above): shared preflight +
+    // empty-commit guard + promote/hash sweep.
     let plan = match plan_milestone_finalize(
         milestone_id,
         &staging_dir,
@@ -2033,6 +2063,175 @@ fn resolve_squash(repo_root: &Path) -> Result<bool> {
     // The knob is a declared `bool`; the closed surface guarantees it resolves. Anything
     // other than `true` is the opt-in `false` (the knob's enum-of-bool is `true`/`false`).
     Ok(resolved.scalar_required("finalize.fan-out.squash")? == "true")
+}
+
+/// The **milestone-boundary conformance gate** (M45 — `design/finalize.md` → 2. Validate;
+/// `design/validation.md` → The milestone-boundary gate; `DECISIONS.md` → 2026-07-23 M45
+/// Settle, Decision 2). Validate the **merged effective state** — the by-task-id merged doc
+/// set (`materialize`'s output, on disk at `staging_dir/docs/`) overlaid on the committed
+/// store, plus the `doc-code` re-resolution over the merged worktree code tree — and return
+/// `Some(blocked-outcome)` (exit 3, committing nothing) on any blocking finding, else `None`
+/// (the boundary proceeds). This is the per-task gate's families, unchanged, with *"the
+/// task's working deltas"* read as *"the merged sub-areas"* — deleting the divergence
+/// [finalize.md](../../../design/finalize.md) says cannot exist, not new capability.
+///
+/// The families are `schema-conformance.*` + `ref-resolves` over the merged docs, plus the
+/// `doc-code` code-anchor re-resolution — one validate run, never N per-area. The gate is
+/// **read-only**: the loaded [`FileStateRecord`] is never persisted (the `task validate`
+/// idiom — the record advances only at a landed commit). It runs BEFORE the record flip +
+/// the plan + the `squash` branch, so it is knob-independent, and nothing durable is written
+/// yet, so a block truly commits nothing.
+///
+/// The `doc-code` arm needs the merged tree **on disk** (the probe resolves anchors by
+/// filesystem path while [`combine_worktree_trees`](crate::combine::combine_worktree_trees)
+/// returns only a tree SHA), so the merged tree is checked out into a throwaway detached
+/// worktree the probe's `working_tree_root` points at, **torn down on both exits** (the
+/// `DedicatedWorktree` drop). A same-path collision yields no single merged tree — that is
+/// the join/knob-branch's concern, not the conformance gate's, so it falls through (`None`).
+#[allow(clippy::too_many_arguments)]
+fn milestone_boundary_gate(
+    repo_root: &Path,
+    jigc_home: &Path,
+    jigc_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    staging_dir: &Path,
+    base: &BasePin,
+    worktrees: &[PathBuf],
+    format: Format,
+) -> Result<Option<Outcome>> {
+    // Fold the N worktree-staged code-sets onto the milestone's shared base (`base.sha`, NOT
+    // `HEAD`) into ONE merged tree — off-line (touches neither the live index nor the
+    // worktree), which is what makes it callable from a gate that may block. A same-path
+    // collision builds no tree; leave it to the branch below and proceed.
+    let tree = match crate::combine::combine_worktree_trees(repo_root, &base.sha, worktrees)? {
+        crate::combine::CombineOutcome::Combined(sha) => sha,
+        crate::combine::CombineOutcome::Blocked(_) => return Ok(None),
+    };
+
+    // The merged docs the gate validates are the **persisted** ones — those with a committed
+    // home. A sub-task's transient `commit:<id>` skeleton is materialized into `merged/docs/`
+    // too, but it is NOT part of the committed merged state (it renders into a message,
+    // validated at its own render/finalize path, and is unused under the `squash: true`
+    // synthesized aggregate), so validating it would false-block a clean milestone whose
+    // aggregate never uses it. Copy the persisted subset into a fresh scratch staging area and
+    // gate over that; the promote plan below still reads the full `staging_dir`.
+    let gate_staging = crate::task::ScratchTree::new();
+    let gate_docs = gate_staging.path().join("docs");
+    std::fs::create_dir_all(&gate_docs)
+        .with_context(|| format!("could not open the gate staging area {gate_docs:?}"))?;
+    let src_docs = staging_dir.join("docs");
+    for entry in std::fs::read_dir(&src_docs)
+        .with_context(|| format!("could not read the merged docs dir {src_docs:?}"))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(ty) = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|stem| stem.split(':').next().unwrap_or(stem))
+        else {
+            continue;
+        };
+        // Persisted iff the doctype declares a committed home (`location:` or `placement:`)
+        // — the transient-sink `commit` type declares neither.
+        let persisted = schemas
+            .get(ty)
+            .is_some_and(|s| s.location.is_some() || s.placement.is_some());
+        if persisted {
+            std::fs::copy(&path, gate_docs.join(entry.file_name()))
+                .with_context(|| format!("could not stage {path:?} into the gate area"))?;
+        }
+    }
+
+    // Check the merged tree out into a throwaway detached worktree — the `doc-code` probe's
+    // `working_tree_root`. Torn down on drop (this blocked path AND the clean fall-through).
+    let merged_wt = crate::task::checkout_tree_worktree(repo_root, &base.sha, &tree)?;
+
+    // The merged code change-set (`base.sha`..merged tree) drives the code-anchor blast
+    // radius — a COMMITTED doc's anchor whose target file a worktree changed is re-resolved
+    // here (the cross-worktree class no per-area check can see). `base_tree` is the `base.sha`
+    // version of those files: the "resolved at base" side of the newly-dangled comparison.
+    let changed_code = merged_changed_code(repo_root, &base.sha, &tree)?;
+    let base_tree = crate::task::materialize_treeish_subset(repo_root, &base.sha, &changed_code)?;
+
+    // The read-only determinism-boundary feeds the shared `validate_task` entry needs — the
+    // record is loaded but never persisted, and the severity cascade + tracked-status
+    // predicate + `doc-code` invoker are byte-identical to the per-task gate.
+    let mut record = FileStateRecord::load(jigc_root)
+        .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
+    let pack = make_pack()?;
+    let cascade = crate::start::resolve_severity_cascade(
+        pack.as_ref(),
+        &jigc_home.join(".jigc").join("config"),
+    )?;
+    let untracked: std::collections::HashSet<String> = crate::task::git_untracked_all(repo_root)?
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let tracked = move |path: &str| !untracked.contains(path);
+
+    // ONE validate over the persisted merged docs (the filtered `gate_staging` area) + the
+    // merged code root — the committed edge index is keyed to the shared base (`base.sha`),
+    // the committed-store reads bind to `jigc_home`, the code anchors resolve against the
+    // merged-tree worktree.
+    let report = engine::validate::validate_task(
+        gate_staging.path(),
+        schemas,
+        &mut record,
+        jigc_home,
+        merged_wt.path(),
+        jigc_root,
+        &base.sha,
+        &cascade,
+        &crate::task::doc_code_invoker,
+        &tracked,
+        &changed_code,
+        base_tree.path(),
+    )
+    .with_context(|| format!("validating the merged effective state under {staging_dir:?}"))?;
+
+    if report.has_blocking() {
+        // `blocked()` re-applies the cascade (idempotent) and renders the pinned envelope —
+        // exit 3. `merged_wt` + `base_tree` drop on return (the worktree/scratch teardown).
+        return Ok(Some(blocked(jigc_home, format, report.findings.to_vec())?));
+    }
+    Ok(None)
+}
+
+/// The merged code change-set — the repo-relative paths that differ between the milestone's
+/// shared base (`base_sha`) and the off-line-combined merged `tree`, feeding the boundary
+/// gate's code-anchor blast radius (the [`crate::task::git_staged_paths`] `-z` NUL-parse
+/// idiom, keyed on two tree-ishes rather than the cached index — `--no-renames` so a rename
+/// reports as its delete + add halves, path-stable).
+fn merged_changed_code(
+    repo_root: &Path,
+    base_sha: &str,
+    tree: &str,
+) -> Result<std::collections::BTreeSet<String>> {
+    let out = Command::new("git")
+        .args(["diff", "--name-only", "-z", "--no-renames", base_sha, tree])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git diff --name-only -z {base_sha} {tree}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    // `-z` NUL-terminates each entry (the last too), so the trailing split yields an empty
+    // string — filtered. No `trim()`: a path's own whitespace is significant.
+    Ok(String::from_utf8(out.stdout)
+        .context("`git diff --name-only` produced non-UTF-8 output")?
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .map(str::to_owned)
+        .collect())
 }
 
 /// Build the id-ordered `(staged-patch, rendered-commit-message)` pairs for the

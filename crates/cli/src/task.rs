@@ -2860,13 +2860,32 @@ fn commit_combined_tree_with_hooks(
     Ok((commit, hook_output))
 }
 
+/// Check an off-line-built `tree` out into a **throwaway detached worktree** (added at
+/// `base`, then `read-tree --reset -u`ed to `tree`), returning the worktree handle whose
+/// [`path`](DedicatedWorktree::path) is the tree on disk. The milestone-boundary
+/// conformance gate points the `doc-code` probe's `working_tree_root` at it, because the
+/// probe resolves anchors by **filesystem path** while the combine returns only a tree SHA
+/// (`design/finalize.md` → 2. Validate — How the `doc-code` arm reaches the merged code).
+/// The returned handle tears the worktree down on drop, so a blocked *and* a clean gate exit
+/// both leave `.jigc/worktrees/` clean. Never mutates the live index/worktree — the
+/// dedicated worktree is a separate checkout sharing only the object DB.
+pub(crate) fn checkout_tree_worktree(
+    repo_root: &Path,
+    base: &str,
+    tree: &str,
+) -> Result<DedicatedWorktree> {
+    let dedicated = DedicatedWorktree::add(repo_root, base)?;
+    git_run(dedicated.path(), &["read-tree", "--reset", "-u", tree])?;
+    Ok(dedicated)
+}
+
 /// A throwaway **detached** git worktree for the squash:true hook-running combine commit,
 /// removed on drop (`git worktree remove --force` + `prune`). A linked worktree shares the
 /// main repo's `.git` (object DB + hooks), so a commit made here runs the user's shared
 /// `pre-commit`/`commit-msg` hooks; committing here instead of the main checkout keeps the
 /// combine WIP-safe (the main index/worktree are never the commit site). Lives under the
 /// gitignored `.jigc/worktrees/` parent so a leaked dir never pollutes `git status`.
-struct DedicatedWorktree {
+pub(crate) struct DedicatedWorktree {
     repo_root: PathBuf,
     path: PathBuf,
 }
@@ -2899,7 +2918,7 @@ impl DedicatedWorktree {
         })
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }
@@ -3127,14 +3146,52 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
     }
 }
 
+/// Materialize the versions of `changed` files at an arbitrary `treeish` into a fresh,
+/// self-cleaning scratch tree — the general form of [`Task::materialize_head_subset`], keyed
+/// to any commit/tree rather than `HEAD`. The milestone-boundary conformance gate feeds the
+/// milestone's **shared base** (`base.sha`, not `HEAD`) so the merged code-anchor blast
+/// radius decides *newly*-dangled against the base every sub-task inherited
+/// (`design/finalize.md` → 2. Validate; `design/validation.md` → The milestone-boundary
+/// gate). Only files present as a **blob** at `treeish` are written (a path absent or a
+/// directory there → `git cat-file blob` fails → skipped, so it correctly counts as
+/// not-resolved-at-base). An empty `changed` set yields an empty tree (the blast radius is
+/// then inert). The [`ScratchTree`] removes itself on drop, so a clean *or* blocked gate
+/// leaks nothing.
+pub(crate) fn materialize_treeish_subset(
+    repo_root: &Path,
+    treeish: &str,
+    changed: &BTreeSet<String>,
+) -> Result<ScratchTree> {
+    let tree = ScratchTree::new();
+    std::fs::create_dir_all(tree.path())
+        .with_context(|| format!("could not create the base scratch tree {:?}", tree.path()))?;
+    for path in changed {
+        let out = Command::new("git")
+            .args(["cat-file", "blob", &format!("{treeish}:{path}")])
+            .current_dir(repo_root)
+            .output()
+            .context("could not run `git cat-file` for the base tree")?;
+        if !out.status.success() {
+            continue; // absent / non-blob at treeish → not resolved at base
+        }
+        let dest = tree.path().join(path);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(&dest, &out.stdout)
+            .with_context(|| format!("could not write base blob {dest:?}"))?;
+    }
+    Ok(tree)
+}
+
 /// A process-and-time-unique temp directory that removes itself on drop — the scratch
 /// tree [`Task::materialize_index`] checks the git index out into (the `store_scratch_path`
 /// / `describe::TempDir` idiom). Self-cleaning so a clean *or* blocked validate leaks
 /// nothing.
-struct ScratchTree(PathBuf);
+pub(crate) struct ScratchTree(PathBuf);
 
 impl ScratchTree {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut path = std::env::temp_dir();
         path.push(format!(
             "jigc-index-{}-{}",
@@ -3147,7 +3204,7 @@ impl ScratchTree {
         ScratchTree(path)
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0
     }
 }
