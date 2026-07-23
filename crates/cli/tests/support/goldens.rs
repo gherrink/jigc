@@ -1,0 +1,243 @@
+//! The **compose-golden harness** — capture, normalize, compare
+//! ([pinning.md](../../../../implementation/pinning.md) §1).
+//!
+//! **Claim the goldens pin:** the composed surface — everything `start` /
+//! `workflow --preview` / `describe` / `doc schema` print — changes only when
+//! someone *means* it to, and a pack edit's blast radius is a reviewable diff rather
+//! than an invisible propagation. Composition is deterministic by core invariant
+//! (same resolved cascade in → same workflow out), so the whole surface is
+//! snapshottable.
+//!
+//! **Goldens are for *noticing*, not forbidding.** A red golden means "you changed a
+//! printed surface without looking at what else changed": look, then regenerate. A
+//! golden is never hand-edited — that is the one way to make it lie.
+//!
+//! Three decisions this module implements, each load-bearing:
+//!
+//!   * **A capture is the whole invocation** — stdout, stderr **and** the exit code.
+//!     Not stdout alone: the four `creates-task: false` workflows exit **1** with
+//!     **empty stdout** and carry their entire refusal on stderr, so a stdout-only
+//!     golden would snapshot empty files forever and pin nothing.
+//!   * **`<REPO>` is the only normalization.** Verified empirically at rc.8 across two
+//!     independently created repos: every swept surface was byte-identical *before*
+//!     any normalization, and invariant under TZ, locale, git identity and branch
+//!     name — with one qualifier, that bare `jigc start` embeds the absolute
+//!     project-config path. That is what `<REPO>` is for, and all it is for. Anything
+//!     else that varies (a stamped date reaching a golden through a header-including
+//!     doc-slice, say) is a **finding** — reproducibility of structure is the product
+//!     claim — never something to quietly normalize away.
+//!   * **Regen is refused under CI** ([`update_mode`]) — the insta convention, so a
+//!     regen can never green CI.
+//!
+//! The production suite composes the two halves this module exposes:
+//!
+//! ```ignore
+//! GoldenSuite::new(
+//!     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens"),
+//!     update_mode(
+//!         std::env::var("UPDATE_GOLDENS").ok().as_deref(),
+//!         std::env::var("CI").ok().as_deref(),
+//!     ),
+//! )
+//! ```
+//!
+//! The root is **always passed in**: there is no repo-resolving default, so a suite
+//! that means to write into a tempdir cannot reach the real golden tree by omission.
+
+use std::fmt::Write as _;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Output;
+
+/// The token every absolute repo path normalizes to — the *only* normalization.
+pub const REPO_TOKEN: &str = "<REPO>";
+
+/// The regen route, quoted verbatim in every failure so a red golden always carries
+/// its own remedy (the surface contract's route floor, applied to our own tests).
+const REGEN_ROUTE: &str = "UPDATE_GOLDENS=1 cargo test -p cli --test <suite>";
+
+/// One captured invocation, rendered to the exact bytes a golden holds: the exit
+/// code, then stdout, then stderr, with absolute repo paths normalized to
+/// [`REPO_TOKEN`].
+pub struct Capture {
+    text: String,
+}
+
+impl Capture {
+    /// Capture `out`, normalizing paths under `repo`.
+    ///
+    /// A stream that is non-empty and lacks a trailing newline is marked, so
+    /// `"foo"` and `"foo\n"` cannot render to the same golden — a byte golden that
+    /// folded that difference away would not be pinning bytes.
+    pub fn of(out: &Output, repo: &Path) -> Self {
+        let mut text = String::new();
+        let code = match out.status.code() {
+            Some(code) => code.to_string(),
+            // A signal-killed child has no code; it must not render as any exit
+            // status a golden could also legitimately hold.
+            None => "<signal>".to_string(),
+        };
+        let _ = writeln!(text, "exit: {code}");
+        push_stream(&mut text, "stdout", &String::from_utf8_lossy(&out.stdout));
+        push_stream(&mut text, "stderr", &String::from_utf8_lossy(&out.stderr));
+        Capture {
+            text: normalize(&text, repo),
+        }
+    }
+
+    /// The rendered, normalized bytes.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+fn push_stream(text: &mut String, name: &str, body: &str) {
+    let _ = writeln!(text, "--- {name} ---");
+    text.push_str(body);
+    if !body.is_empty() && !body.ends_with('\n') {
+        let _ = writeln!(text, "\n\\ no trailing newline on {name}");
+    }
+}
+
+/// Replace absolute paths under `repo` with [`REPO_TOKEN`] — both the path as given
+/// and its canonical form, since a tempdir root can be reached through a symlink.
+fn normalize(text: &str, repo: &Path) -> String {
+    let given = repo.display().to_string();
+    let mut out = text.replace(&given, REPO_TOKEN);
+    if let Ok(canonical) = repo.canonicalize() {
+        let canonical = canonical.display().to_string();
+        if canonical != given {
+            out = out.replace(&canonical, REPO_TOKEN);
+        }
+    }
+    out
+}
+
+/// One golden's identity: `<root>/compose/<pack>/<surface>--<member>--<state>.txt`.
+///
+/// Per-member files, so diffs are per-surface and regen writes never contend.
+pub struct GoldenKey<'a> {
+    /// The pack the member comes from (`dev`, `methodology`).
+    pub pack: &'a str,
+    /// The swept surface (`start`, `workflow-preview`, `describe`, `doc-schema`, …).
+    pub surface: &'a str,
+    /// The member within that surface — a workflow id, a doctype, or the surface's
+    /// own name when it has no members.
+    pub member: &'a str,
+    /// The fixture state the capture was taken in
+    /// (`support::trial_corpus::State::name`).
+    pub state: &'a str,
+}
+
+/// A golden set rooted at one directory, in either check or regen mode.
+pub struct GoldenSuite {
+    root: PathBuf,
+    update: bool,
+}
+
+impl GoldenSuite {
+    /// A suite over `root`. `update` regenerates instead of comparing — derive it
+    /// from [`update_mode`], never from a bare env read, or the CI refusal is
+    /// bypassed.
+    pub fn new(root: impl Into<PathBuf>, update: bool) -> Self {
+        GoldenSuite {
+            root: root.into(),
+            update,
+        }
+    }
+
+    /// Where `key`'s golden lives.
+    pub fn path_of(&self, key: &GoldenKey) -> PathBuf {
+        self.root.join("compose").join(key.pack).join(format!(
+            "{}--{}--{}.txt",
+            key.surface, key.member, key.state
+        ))
+    }
+
+    /// Compare `capture` against `key`'s golden — or write it, in regen mode.
+    ///
+    /// Panics on a mismatch **and on a missing golden**: a surface with no golden
+    /// pins nothing, and treating "no file" as "nothing to compare" would green a
+    /// whole sweep while asserting nothing.
+    pub fn check(&self, key: &GoldenKey, capture: &Capture) {
+        let path = self.path_of(key);
+        if self.update {
+            let dir = path.parent().expect("a golden path has a parent");
+            fs::create_dir_all(dir)
+                .unwrap_or_else(|e| panic!("create the golden dir {}: {e}", dir.display()));
+            fs::write(&path, capture.text())
+                .unwrap_or_else(|e| panic!("write the golden {}: {e}", path.display()));
+            return;
+        }
+        let expected = fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "no golden at {}: {e}\n\
+                 A surface with no golden pins nothing — this is a failure, not a pass.\n\
+                 Regenerate with: {REGEN_ROUTE}",
+                path.display(),
+            )
+        });
+        if expected != capture.text() {
+            panic!("{}", mismatch_report(&path, &expected, capture.text()));
+        }
+    }
+}
+
+/// The failure a stale golden prints: what was read, where the two sides part, and
+/// the route back to green.
+fn mismatch_report(path: &Path, expected: &str, actual: &str) -> String {
+    let expected_lines: Vec<&str> = expected.lines().collect();
+    let actual_lines: Vec<&str> = actual.lines().collect();
+    let at = (0..expected_lines.len().max(actual_lines.len()))
+        .find(|i| expected_lines.get(*i) != actual_lines.get(*i))
+        .expect("the two sides differ, so some line differs");
+
+    let mut report = String::new();
+    let _ = writeln!(report, "golden mismatch: {}", path.display());
+    let _ = writeln!(
+        report,
+        "first differing line: {} (golden has {} lines, capture has {})",
+        at + 1,
+        expected_lines.len(),
+        actual_lines.len(),
+    );
+    // `at` is the FIRST differing index, so it is at most `expected_lines.len()`
+    // (equal exactly when the golden is a strict prefix of the capture) — the window
+    // is in range without a clamp.
+    for line in expected_lines[at.saturating_sub(3)..at].iter() {
+        let _ = writeln!(report, "  {line}");
+    }
+    let _ = writeln!(report, "- golden:  {}", show(expected_lines.get(at)));
+    let _ = writeln!(report, "+ capture: {}", show(actual_lines.get(at)));
+    let _ = writeln!(
+        report,
+        "\nA red golden means a printed surface moved. Look at the diff, then \
+         regenerate — never hand-edit a golden.\nRegenerate with: {REGEN_ROUTE}",
+    );
+    report
+}
+
+fn show(line: Option<&&str>) -> String {
+    match line {
+        Some(line) => (*line).to_string(),
+        None => "<end of output>".to_string(),
+    }
+}
+
+/// Whether a run regenerates, from the two environment variables that decide it.
+///
+/// **A regen request under CI panics** rather than quietly checking or quietly
+/// regenerating: a regenerated golden asserts nothing, so a CI run that accepted one
+/// would report green over an unreviewed surface change. Either variable counts as
+/// set when it is present and non-empty.
+pub fn update_mode(update: Option<&str>, ci: Option<&str>) -> bool {
+    let set = |v: Option<&str>| v.is_some_and(|v| !v.is_empty());
+    if set(update) && set(ci) {
+        panic!(
+            "refusing to regenerate goldens under CI: UPDATE_GOLDENS is set and so is \
+             CI. A regenerated golden pins nothing, so a CI run must never write one — \
+             regenerate locally ({REGEN_ROUTE}) and commit the diff for review.",
+        );
+    }
+    set(update)
+}

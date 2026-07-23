@@ -19,6 +19,13 @@
 //! removed from every child environment — the built state composes the *embedded*
 //! packs the suites claim to sweep, whatever the developer's shell carries.
 //!
+//! **A built state is copied, not rebuilt, for a mutating arm** — the golden sweep's
+//! `start` arms mint task dirs, so each state is built once and
+//! [`TrialCorpus::copy_state`]'d per arm, and the copy's bytes carry the source's
+//! real provenance. Copying is **refused** for a worktree-bearing corpus (§4): those
+//! hold absolute paths back into the source, so a copy would read and write the
+//! original.
+//!
 //! **Shape-class coverage extends existing states; it mints none** (pinning.md §4 —
 //! *shape-class coverage is the rule; the doctype list is only today's instance*).
 //! The six charter states covered no dev-pack doctype and left five of the six
@@ -196,16 +203,7 @@ pub struct TrialCorpus {
 impl TrialCorpus {
     /// Build `state` in a fresh throwaway corpus.
     pub fn build(state: State) -> Self {
-        let mut root = std::env::temp_dir();
-        root.push(format!(
-            "jigc-trial-{}-{}-{}",
-            state.name(),
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock after the epoch")
-                .as_nanos(),
-        ));
+        let root = unique_root(state.name());
         fs::create_dir_all(root.join("repo")).expect("create the corpus repo dir");
         fs::create_dir_all(root.join("home")).expect("create the corpus home dir");
 
@@ -230,6 +228,37 @@ impl TrialCorpus {
             State::Vendored => corpus.build_vendored(),
         }
         corpus
+    }
+
+    /// A byte-for-byte copy of this built state in a **fresh** throwaway corpus —
+    /// the primitive a *mutating* sweep arm needs: a state is built once and copied
+    /// per arm, so the copy carries real provenance rather than a rebuild's.
+    ///
+    /// **Copying is refused for a worktree-bearing corpus**
+    /// ([pinning.md](../../../../implementation/pinning.md) §4). A copied
+    /// `.git/worktrees/*/gitdir`, and each linked worktree's `.git` **file**, hold
+    /// **absolute** paths back into the *source* fixture — so the copy would silently
+    /// read and write the original: cross-test contamination, not a clean failure.
+    /// A worktree-bearing state is built fresh per arm, or re-provisioned after the
+    /// copy; it is never copied.
+    pub fn copy_state(&self) -> TrialCorpus {
+        assert!(
+            !self.repo().join(".git/worktrees").exists(),
+            "refusing to copy the `{}` corpus: it has provisioned git worktrees \
+             (`.git/worktrees/`), whose `gitdir` entries hold ABSOLUTE paths back \
+             into the source — the copy would read and write the ORIGINAL. Build a \
+             worktree-bearing state fresh per arm, or re-provision after the copy \
+             (pinning.md §4).",
+            self.state.name(),
+        );
+
+        let root = unique_root(&format!("{}-copy", self.state.name()));
+        copy_tree(&self.root, &root);
+        TrialCorpus {
+            root,
+            state: self.state,
+            live_task: self.live_task.clone(),
+        }
     }
 
     /// The id of this state's **live** (unfinalized) task, when it has one — the
@@ -817,6 +846,59 @@ fn minted_task(stdout: &str) -> String {
         .unwrap_or_else(|| panic!("a mint must print `task minted: <id>`; got:\n{stdout}"))
         .trim()
         .to_string()
+}
+
+/// A unique throwaway corpus root: the state's name plus pid+nanos, so parallel
+/// `#[test]`s in any number of test binaries never collide.
+fn unique_root(label: &str) -> PathBuf {
+    let mut root = std::env::temp_dir();
+    root.push(format!(
+        "jigc-trial-{label}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after the epoch")
+            .as_nanos(),
+    ));
+    root
+}
+
+/// Recursive copy, in-process rather than `cp -a`.
+///
+/// A **file** named `.git` is a linked worktree's pointer — the second half of the
+/// hazard [`TrialCorpus::copy_state`] refuses, and the half its `.git/worktrees/`
+/// check cannot see (a worktree whose registration was pruned, or one belonging to
+/// another repo). It is refused here rather than copied, because copying it would
+/// point the copy's worktree at the source's absolute git dir.
+fn copy_tree(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst)
+        .unwrap_or_else(|e| panic!("create the copy dir {}: {e}", dst.display()));
+    for entry in fs::read_dir(src).unwrap_or_else(|e| panic!("read {}: {e}", src.display())) {
+        let entry = entry.expect("read a source entry");
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        let kind = entry.file_type().expect("stat a source entry");
+        if kind.is_dir() {
+            copy_tree(&from, &to);
+        } else if kind.is_file() {
+            assert!(
+                entry.file_name() != ".git",
+                "refusing to copy {}: a `.git` FILE is a linked git worktree's \
+                 pointer, holding an ABSOLUTE path to the source's git dir — the \
+                 copy would read and write the ORIGINAL (pinning.md §4).",
+                from.display(),
+            );
+            // `fs::copy` preserves the unix mode, so an executable hook stays one.
+            fs::copy(&from, &to).unwrap_or_else(|e| panic!("copy {}: {e}", from.display()));
+        } else {
+            panic!(
+                "refusing to copy {}: the fixture corpora hold only files and \
+                 directories, and silently dropping anything else would make a copied \
+                 state quietly differ from its source.",
+                from.display(),
+            );
+        }
+    }
 }
 
 /// Read a repo-relative file from a built corpus.
