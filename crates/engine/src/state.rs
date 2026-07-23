@@ -782,6 +782,75 @@ pub struct CreatedDoc {
     pub existed: bool,
 }
 
+/// The minted identity of a create — the frozen `slug`, the display `title`, the
+/// `<type>:<slug>` `address`, and the working-area `path`. Factored out of
+/// [`create`] so the slug/title/path derivation has **one** source shared with
+/// [`create_gated`], which probes `path` to ack a **same-identity staged copy for
+/// update** rather than reject it with `create.serial-collision` (M45 Inc 5 T2;
+/// `DECISIONS.md` 2026-07-23 M45 planning → Fork 2). Applies the empty-title guard,
+/// so both callers reject a slugs-to-nothing title identically.
+struct MintedInstance {
+    slug: String,
+    title: String,
+    address: String,
+    path: PathBuf,
+}
+
+/// Derive the [`MintedInstance`] for a create against `task_dir` — the shared
+/// slug/title/address/path computation (`create` step 2). The empty-title guard,
+/// the `singleton` / `slug_override` / `mint_id` slug precedence, and the H1 display
+/// text all live here so [`create`] and [`create_gated`] never diverge.
+fn mint_instance(
+    task_dir: &Path,
+    schema: &Schema,
+    type_name: &str,
+    id_source: &str,
+    slug_override: Option<&str>,
+) -> Result<MintedInstance, Finding> {
+    // A non-singleton create derives its stable id from the title; a title that
+    // slugs to nothing would fall to `mint_id`'s type-name fallback and mint a
+    // degenerate `<ty>:<ty>` (e.g. `adr:adr` from `--title ""`). Reject up front,
+    // routing to a non-empty title — the engine-side mirror of `rename`'s
+    // slug-derivation guard. A `singleton` fixes its slug to the type id (no title
+    // to derive), so it is untouched; a `slug_override` supplies the id explicitly,
+    // so the guard is inert then.
+    if !schema.singleton && slug_override.is_none() && crate::slug::slugify(id_source).is_empty() {
+        return Err(empty_title_finding(type_name));
+    }
+    // Mint the frozen content-slug. A `singleton` doctype fixes the slug to the type
+    // id unconditionally (so a re-create targets the same `<location>/<ty>.md`); a
+    // non-singleton with a `slug_override` takes it **verbatim** (the front door's
+    // `--slug`, validated at the CLI boundary via `is_slug`); otherwise it slugs the
+    // (now guaranteed non-empty-slugging) id-source.
+    let slug = if schema.singleton {
+        schema.ty.clone()
+    } else if let Some(slug) = slug_override {
+        slug.to_string()
+    } else {
+        mint_id(id_source, type_name)
+    };
+    // The `# H1` display text — the **human** id-source verbatim (`Use MySQL`, not the
+    // `use-mysql` slug), so the committed artifact reads as a title, not a filename. A
+    // `singleton` has no free title, so its H1 is the fixed type id (= slug) unless the
+    // schema declares a `display-title:` knob (`vision` → `# Vision`). An id-source that
+    // slugs empty keeps H1 == slug — the type-name fallback fired, so the slug stands in.
+    let title = if schema.singleton {
+        schema.display_title.clone().unwrap_or_else(|| slug.clone())
+    } else if crate::slug::slugify(id_source).is_empty() {
+        slug.clone()
+    } else {
+        id_source.to_string()
+    };
+    let address = format!("{type_name}:{slug}");
+    let path = instance_path(task_dir, type_name, &slug);
+    Ok(MintedInstance {
+        slug,
+        title,
+        address,
+        path,
+    })
+}
+
 /// **The `create`/provisioning verb** against the task working area — the
 /// structural act the CLI always owns (`design/write-commands.md` → Instance
 /// provisioning: "mint the id … and place it at the schema-defined location";
@@ -832,58 +901,19 @@ pub fn create(
         return Err(unknown_doctype_finding(type_name, schemas));
     };
 
-    // 2. A non-singleton create derives its stable id from the title; a title that
-    //    slugs to nothing would fall to `mint_id`'s type-name fallback and mint a
-    //    degenerate `<ty>:<ty>` (e.g. `adr:adr` from `--title ""`). Reject up front,
-    //    routing to a non-empty title — the engine-side mirror of `rename`'s
-    //    slug-derivation guard (`crates/cli/src/rename.rs`). Placed in the shared mint
-    //    so it covers both `doc create` and `doc author` (author → `create_gated` →
-    //    `create`). A `singleton` fixes its slug to the type id (no title to derive),
-    //    so it is untouched. A `slug_override` supplies the id explicitly, so the id
-    //    no longer depends on the title slug — the guard is inert then (the H1 still
-    //    reads the title; an empty-slugging title with an override falls back to the
-    //    override slug as the H1 below).
-    if !schema.singleton && slug_override.is_none() && crate::slug::slugify(id_source).is_empty() {
-        return Err(empty_title_finding(type_name));
-    }
-    // Mint the frozen content-slug. A `singleton` doctype fixes the slug to the type
-    // id unconditionally (so a re-create targets the same `<location>/<ty>.md`, review
-    // B-2); a non-singleton with a `slug_override` takes it **verbatim** (the front
-    // door's `--slug`, validated at the CLI boundary via `is_slug`; `DECISIONS.md`
-    // 2026-07-06 M39 planning → Slug (G6)); otherwise it slugs the (now guaranteed
-    // non-empty-slugging) id-source.
-    let slug = if schema.singleton {
-        schema.ty.clone()
-    } else if let Some(slug) = slug_override {
-        slug.to_string()
-    } else {
-        mint_id(id_source, type_name)
-    };
-    // The `# H1` display text — the **human** id-source verbatim (`Use MySQL`, not the
-    // `use-mysql` slug), so the committed artifact reads as a title, not a filename
-    // (M26 shakedown fix; `design/write-commands.md` → the H1 renders the title, the id
-    // is `slugify(title)`). The stable id stays the `slug` above — `slugify(title)`
-    // re-derives it, so address/filename are untouched. A `singleton` has no free title,
-    // so its H1 is the fixed type id (= slug) **unless** the schema declares a
-    // `display-title:` knob, which overrides the display text only (never the id/slug):
-    // `vision` declares `display-title: Vision`, so its H1 reads `# Vision`, not
-    // `# vision` (M37 inc-1; `design/design-altitude-doctypes.md` → §4). An id-source
-    // that slugs empty keeps H1 == slug — the type-name fallback fired, so there is no
-    // human title to show and the slug stands in, preserving the prior bytes.
-    let title = if schema.singleton {
-        schema.display_title.clone().unwrap_or_else(|| slug.clone())
-    } else if crate::slug::slugify(id_source).is_empty() {
-        slug.clone()
-    } else {
-        id_source.to_string()
-    };
-    let address = format!("{type_name}:{slug}");
-    let path = instance_path(task_dir, type_name, &slug);
+    // 2. Mint the identity (slug/title/address/path) through the shared derivation,
+    //    which applies the empty-title guard (a title that slugs to nothing rejects).
+    let MintedInstance {
+        slug,
+        title,
+        address,
+        path,
+    } = mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
 
     // 3. Serial collision in the working area → reject, never suffixed, nothing
-    //    created. (For a singleton this is the *already-staged* case; a re-create
-    //    after copy-in therefore still rejects, so the prior staged edit survives —
-    //    the same steady-state guard `read_or_copy_in` relies on.)
+    //    created. This is the **ungated** serial-mint reject (fan-out): the agent path
+    //    never reaches here on a same-identity staged copy — [`create_gated`] acks
+    //    `existed` and binds the role before calling `create` (M45 Inc 5 T2).
     if path.exists() {
         return Err(instance_collision_finding(&address));
     }
@@ -943,6 +973,15 @@ pub fn create(
 /// (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding at create). A
 /// **bare-form** entry (an empty `as_role`) grants create permission without
 /// declaring a role and binds nothing.
+///
+/// **Same-identity staged copy → ack `existed` and bind** (M45 Inc 5 T2;
+/// `DECISIONS.md` 2026-07-23 M45 planning → Fork 2). When the minted slug already
+/// has a **staged** file in the working area — an earlier edit verb copy-on-wrote it,
+/// or a prior `create` staged it — the gated path returns [`CreatedDoc`] `existed`
+/// (the ack "already existed — copied in for update") and binds the role, rather than
+/// routing away with `create.serial-collision` from the **only** repairing action.
+/// The **ungated** [`create`] keeps the serial-mint reject untouched (the fan-out
+/// case): only the agent-initiated gate acks-existed.
 #[allow(clippy::too_many_arguments)]
 pub fn create_gated(
     task_dir: &Path,
@@ -955,25 +994,43 @@ pub fn create_gated(
     slug_override: Option<&str>,
 ) -> Result<CreatedDoc, Finding> {
     // Step 3: unknown doctype rejects before the gate is consulted.
-    if !schemas.contains_key(type_name) {
+    let Some(schema) = schemas.get(type_name) else {
         return Err(unknown_doctype_finding(type_name, schemas));
-    }
+    };
     // Step 5: a known-but-disallowed doctype is gate-blocked.
     let Some(entry) = gate.iter().find(|e| e.doc_type == type_name) else {
         return Err(gate_blocked_finding(type_name, gate));
     };
     // Step 4: admitted → mint + provision (or copy-in a committed instance) — the
-    // `slug_override` (the front door's `--slug`) drives the minted id verbatim.
-    let created = create(
-        task_dir,
-        schemas,
-        type_name,
-        id_source,
-        repo_root,
-        on_create,
-        slug_override,
-    )?;
-    // … then bind it to the entry's `as:` role if the entry declares one.
+    // `slug_override` (the front door's `--slug`) drives the minted id verbatim. But
+    // first probe for a same-identity **staged** copy: if the minted slug's working-area
+    // file already exists, `create` would reject it with `create.serial-collision`, which
+    // routes the agent away from the only repairing action. Ack `existed` and fall
+    // through to the role-bind instead (the shared `mint_instance` keeps the slug
+    // derivation identical to `create`'s, so the probe can never diverge from the reject).
+    let minted = mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
+    let created = if minted.path.exists() {
+        CreatedDoc {
+            address: minted.address,
+            path: minted.path,
+            existed: true,
+        }
+    } else {
+        create(
+            task_dir,
+            schemas,
+            type_name,
+            id_source,
+            repo_root,
+            on_create,
+            slug_override,
+        )?
+    };
+    // … then bind it to the entry's `as:` role if the entry declares one. The create-gate
+    // keeps **last-write-wins** (`RolesRecord::bind` overwrites): an explicit `doc create
+    // --as` is an author act that may deliberately re-point a role. (The incidental
+    // copy-on-write binding in the CLI's `read_or_copy_in` is bind-**if-unbound** instead —
+    // it must never clobber an explicit binding; `DECISIONS.md` 2026-07-23 M45 Inc 5 T2.)
     if !entry.as_role.is_empty() {
         let mut roles = RolesRecord::load(task_dir)
             .map_err(|err| io_finding(&created.address, "read the bound roles", &err))?;

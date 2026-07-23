@@ -3483,10 +3483,53 @@ impl ActiveTask {
                 .with_context(|| format!("could not read committed `{addr}`"))?;
             state::copy_in(&self.dir, address.r#type.as_str(), slug, &body)
                 .with_context(|| format!("could not copy in `{addr}` for editing"))?;
+            // The copy-on-write staged the committed doc; bind the workflow's object-form
+            // `allows-create` role for this doctype so the set-field-first / edit-first
+            // revise path resolves `task.<role>` (the `@`-slice and the `<<author:>>`
+            // address) without a prior explicit `doc create` (M45 Inc 5 T2).
+            self.bind_role_on_copy_in(address)?;
             return Ok(read_staged(path, addr)?);
         }
         // Neither staged nor committed → the unchanged absent-instance reject.
         Ok(read_staged(path, addr)?)
+    }
+
+    /// Bind the workflow's object-form `allows-create` role for `address`'s doctype
+    /// **iff it is currently unbound** — the tail of a **copy-on-first-touch** stage
+    /// ([`read_or_copy_in`], M45 Inc 5 T2). So an edit verb that copy-on-writes a
+    /// committed doc (the revise path — set a field or add an item before any
+    /// `doc create`) still binds the role, and a later re-compose resolves
+    /// `task.<role>` to it: `form-vision`'s `{{ @task.vision.grounded-in#findings }}`
+    /// renders its grounding, and `<<author: {{ task.arch-doc#overview }}>>` renders
+    /// the real `<type>:<slug>#slot` address rather than the slug-less pending form.
+    ///
+    /// **Bind-if-unbound, not the create-gate's last-write-wins** (`DECISIONS.md`
+    /// 2026-07-23 M45 planning → Fork 2, the builder sub-decision): a copy-on-write is
+    /// an *incidental* side effect of an edit verb, so it fills a role only when nothing
+    /// has claimed it — it never clobbers an explicit `doc create --as` binding, which
+    /// keeps last-write-wins (`state::create_gated`). A doctype not carried by an
+    /// object-form gate entry (a bare-form or absent entry) binds nothing — inert.
+    fn bind_role_on_copy_in(&self, address: &Address) -> Result<()> {
+        let gate = self.workflow_gate()?;
+        let Some(entry) = gate
+            .allows_create
+            .iter()
+            .find(|e| e.doc_type == address.r#type.as_str() && !e.as_role.is_empty())
+        else {
+            return Ok(());
+        };
+        let mut roles = state::RolesRecord::load(&self.dir)
+            .with_context(|| "could not read the task's bound roles")?;
+        if roles.get(&entry.as_role).is_none() {
+            roles.bind(
+                entry.as_role.clone(),
+                format!("{}:{}", address.r#type.as_str(), address.slug.as_str()),
+            );
+            roles
+                .save(&self.dir)
+                .with_context(|| "could not record the copy-on-write role binding")?;
+        }
+        Ok(())
     }
 
     /// Whether this task is a **migration** task — minted by `jigc migrate`, the only
