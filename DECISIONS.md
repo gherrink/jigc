@@ -2,6 +2,14 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-23 — M45 Inc 1 T2: the first shared test module (`tests/support/`)
+
+`crates/cli/tests/support/{mod,trial_corpus}.rs` lands with the `fresh` state ([pinning.md](implementation/pinning.md) §4). Three elaborations worth recording:
+
+- **`$HOME` is repointed for the `git` children too, not just `jigc`.** §4 names four strictness items (pid+nanos tempdir · per-repo git identity · `$HOME` · `JIGC_PACK_DIR`) and 199/211 existing suites set `$HOME` only on the `jigc` child. That is one leak short for *this* substrate: a developer's global `init.templateDir` / `core.hooksPath` installs hooks into a fresh `git init`, which contaminates precisely the pre-commit assertions `fresh` makes and `chatty-hooks` will make. Per-repo identity alone does not close it, so the corpus's `git` runs under the corpus `$HOME`.
+- **`State::ALL` is the auto-join seam.** §4's growth rule ("a new state auto-joins any suite that iterates all states") is served by one `const ALL`, and this suite's first arm iterates it — so T3–T5's states join the build fence by adding a variant, with no test edit. The enum is the *name* half of "suites take states by name".
+- **The isolation fence reads provenance from a real invocation, never from the env it just set.** The arm poisons the parent's `JIGC_PACK_DIR` with a real-but-empty directory and asserts `jigc start`'s `Pack:` line still names both embedded packs. Verified red first: an inherited poison makes `start` exit 1 on `no pack resource … config/defaults` — a *loud* failure here, but a golden suite pointed at a plausible-but-wrong pack would regenerate wrong bytes silently, which is the failure this fence actually exists for.
+
 ## 2026-07-23 — M45 Inc 1 T1: the enumeration seam is open (`cli` is a real library)
 
 The whole `cli` module tree moved into `lib.rs` as `pub mod`s; `main.rs` keeps `fn main` + the output tee. Two elaborations worth recording:
