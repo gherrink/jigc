@@ -2,6 +2,13 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-23 — M45 Inc 1 T1: the enumeration seam is open (`cli` is a real library)
+
+The whole `cli` module tree moved into `lib.rs` as `pub mod`s; `main.rs` keeps `fn main` + the output tee. Two elaborations worth recording:
+
+- **The doctest activation is paid in help text, not prose.** `doc.rs`'s `Author` payload block is fenced ```` ```yaml ```` — the grammar is unreworded (`help_truth.rs` + the M43 `{{schema:}}` seam read it), so the cost is two literal fence lines now visible in `jigc doc author --help`. Fencing was preferred over de-indenting (which would mangle rustdoc's rendering *and* shift the emitted help by a space per line) and over `doctest = false` (which greens the gate by switching the fence off — the exact dodge this wave exists to stop). The crate has **zero** Rust doctests; that is the honest state, not a suppression.
+- **The test count is unchanged at 2195, and that is arithmetic, not luck.** `combine` compiled into *both* targets before, so its 4 unit tests ran twice; deduping them (−4) exactly offsets `registry_seam.rs` (+4). Recorded so the next re-verify does not read a flat count as "nothing landed".
+
 ## 2026-07-23 — M45 Increment 1 planning: decomposition
 
 Cut [Increment 1](implementation/roadmap.md) (the enumeration seam · the trial-shaped fixture builder · the golden harness) into **6 ordered single-concern tasks**, grounded at HEAD `e7933a2` (tree clean). Design of record: [pinning.md](implementation/pinning.md) §1 (the compose-golden suite) + §4 (the fixture builder) and [module-layout.md](implementation/module-layout.md). Cross-ref [roadmap](implementation/roadmap.md) → Milestone 45 Increment 1.

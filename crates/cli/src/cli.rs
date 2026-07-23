@@ -995,7 +995,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
 /// and the handler routes it to stderr with a non-zero exit (`design/validation.md` →
 /// Distribution bound; review S2).
 fn require_doc_code_probe() -> Result<()> {
-    let program = ::cli::invoke::doc_code_program();
+    let program = crate::invoke::doc_code_program();
     if !program.is_file() {
         anyhow::bail!(
             "`doc-code` probe not found at {program:?} — place the `doc-code` binary beside `jigc` or set `JIGC_DOC_CODE_PROBE` to its path"
@@ -1266,7 +1266,7 @@ fn run_orient(format: Format) -> Outcome {
 /// guessed verb, so the map fires only where the guess actually sat (a global flag
 /// between parent and guess misses the tip — best-effort by design, the clap error
 /// still prints).
-pub(crate) fn unknown_subcommand_tip(err: &clap::Error, argv: &[String]) -> Option<String> {
+pub fn unknown_subcommand_tip(err: &clap::Error, argv: &[String]) -> Option<String> {
     use clap::error::{ContextKind, ContextValue};
     use engine::finding::Route;
 

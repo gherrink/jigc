@@ -75,7 +75,7 @@ fn locate_from(start: &Path, home: &Path) -> Result<RunContext> {
     };
     // jigc_home — the main checkout the `.jigc/` layer + committed doc-store bind to;
     // outside a worktree it is the byte-identical walk-up root (M31 Inc 2 / WF3).
-    let jigc_home = cli::repo::jigc_home(start).unwrap_or_else(|| repo_root.clone());
+    let jigc_home = crate::repo::jigc_home(start).unwrap_or_else(|| repo_root.clone());
 
     let project_dir = jigc_home.join(PROJECT_CONFIG_REL);
     let project_config = project_dir.is_dir().then_some(project_dir);

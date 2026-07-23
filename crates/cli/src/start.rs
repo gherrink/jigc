@@ -136,7 +136,7 @@ pub fn mint_in_repo(
 /// worktree this is the byte-identical walk-up root [`discover_repo_root`] returns (M31
 /// Inc 2 / WF3); inside a linked worktree it redirects to the main checkout.
 pub(crate) fn jigc_home_or_repo(start: &Path) -> Result<PathBuf> {
-    cli::repo::jigc_home(start)
+    crate::repo::jigc_home(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))
 }
 
@@ -1117,7 +1117,7 @@ fn compose_core(
     // is the worktree, so enumerate instances from jigc_home. Outside a worktree the two
     // coincide, so the feed is byte-identical (M31 Inc 2 / WF3); `mint_in_repo` below
     // resolves the same split internally for its `.jigc/` write + worktree HEAD read.
-    let store_root = cli::repo::jigc_home(repo_root).unwrap_or_else(|| repo_root.to_path_buf());
+    let store_root = crate::repo::jigc_home(repo_root).unwrap_or_else(|| repo_root.to_path_buf());
     let store = committed_store(&store_root, &schemas);
     // The empty-research advisory decision — computed before `store` is moved into the
     // context. A vision-forming workflow composed against an empty research store keeps

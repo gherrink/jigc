@@ -1,13 +1,44 @@
-//! `jigc` library surface — currently the subprocess **probe invoker** the CLI owns
-//! ([module-layout.md](../../../implementation/module-layout.md) → Probe boundary). The
-//! invoker is exposed as a library item so it can be driven by an integration test
-//! against real adversarial stub processes (T2), independent of the `jigc` binary's
-//! command dispatch (which wires the invoker into the validate path in T3).
+//! `jigc` — the CLI frontend over the `engine` core, as a **library**.
 //!
-//! The binary (`main.rs`) keeps its own command-dispatch module tree; only the
-//! cross-cutting, separately-testable items live here.
+//! Owns argument parsing, command dispatch, the renderers, adapter generation,
+//! and cascade-layer *location* (CLI locates, engine resolves). See
+//! `implementation/module-layout.md` → The I/O boundary.
+//!
+//! The whole module tree lives here rather than in `main.rs` so `tests/*.rs` can
+//! reach the **enumeration seam** ([pinning.md](../../../implementation/pinning.md)
+//! §1/§2): the pack registry ([`pack`]) for the workflow/doctype sweeps, the clap
+//! tree ([`cli`]) for the `CommandFactory` verb sweep, and the exit-code constants
+//! ([`task`]) the taxonomy suite asserts against. `main.rs` keeps only `fn main`
+//! and the fd-level output tee, reaching everything through `cli::…`.
 
+// `adapter` ships the embedded profiles + the typed profile model/loader and the
+// host-file injectors; `setup` orchestrates them into the `jigc setup` install.
+pub mod adapter;
 pub mod author;
+pub mod cascade_util;
+pub mod cli;
 pub mod combine;
+pub mod config;
+pub mod describe;
+pub mod doc;
+pub mod gitignore;
+pub mod ingest;
+pub mod invocation_log;
 pub mod invoke;
+pub mod locate;
+pub mod migrate;
+pub mod migrate_corpus;
+pub mod milestone;
+pub mod orient;
+pub mod orphan;
+pub mod pack;
+pub mod relocate;
+pub mod rename;
+pub mod render;
 pub mod repo;
+pub mod route_fence;
+pub mod setup;
+pub mod start;
+pub mod task;
+pub mod unmanage;
+pub mod upgrade;

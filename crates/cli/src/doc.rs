@@ -170,6 +170,7 @@ pub enum DocCommand {
     ///
     /// Payload shape (YAML; `--from-file`), mirroring the document's structure:
     ///
+    /// ```yaml
     ///     title: <the create id-source>
     ///     sections:
     ///       - id: <section-id>
@@ -184,6 +185,7 @@ pub enum DocCommand {
     ///             sections:           # nested repeatable level, parented by the item
     ///               - id: <nested-section-id>
     ///                 set: { note: <<inline slot>> }
+    /// ```
     #[command(verbatim_doc_comment)]
     Author {
         /// The doctype to author (e.g. `changelog`) — minted through the create-gate.
@@ -1745,7 +1747,7 @@ fn run_author(
     // (`design/write-commands.md` → Batch authoring). The doctype schema is passed for
     // that cross-check; an unknown doctype (absent here) skips it and is rejected by
     // the create-gate below.
-    let plan = ::cli::author::parse_author_payload(schemas.get(doctype), &payload)?;
+    let plan = crate::author::parse_author_payload(schemas.get(doctype), &payload)?;
     // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
     // (the same clock-side CLI work `run_create` does) so the created instance carries
     // them before the leaves chain over it. The migration discriminator (reused below
@@ -1819,7 +1821,7 @@ fn run_author(
     Ok(())
 }
 
-/// Apply one lowered batch [`Leaf`](::cli::author::Leaf) over the in-memory `source`,
+/// Apply one lowered batch [`Leaf`](crate::author::Leaf) over the in-memory `source`,
 /// returning the edited buffer. The leaf's `fragment` is the address tail relative to
 /// the created instance; prepending `head` (`<doctype>:<slug>`) reconstitutes the full
 /// address the existing per-leaf target resolvers (`field_target` / `slot_target` /
@@ -1829,10 +1831,10 @@ fn apply_leaf(
     schema: &Schema,
     source: &str,
     head: &str,
-    leaf: &::cli::author::Leaf,
+    leaf: &crate::author::Leaf,
     migration: bool,
 ) -> Result<String, DocFailure> {
-    use ::cli::author::Leaf;
+    use crate::author::Leaf;
     match leaf {
         Leaf::AddItem { fragment, title } => {
             let addr = format!("{head}#{fragment}");

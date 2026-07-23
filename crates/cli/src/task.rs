@@ -56,7 +56,7 @@ use std::process::{Command, Stdio};
 /// the exit code alone (`design/measurement.md` → The capture substrate, item 2:
 /// drift-caught and the `validate-blocks` paired count key on it). Setup/ingest/join
 /// blocks and git/hook commit rejections are NOT validation outcomes and stay 1.
-pub(crate) const EXIT_VALIDATION_BLOCKED: u8 = 3;
+pub const EXIT_VALIDATION_BLOCKED: u8 = 3;
 
 /// The exit code a **migration** `finalize` returns when it blocks at the review gate
 /// (`design/auto-migration.md` → The review gate): the human has not yet `--approve`d
@@ -65,7 +65,7 @@ pub(crate) const EXIT_VALIDATION_BLOCKED: u8 = 3;
 /// validation outcome — and from the operational error (1), so a harness-side tally can
 /// discriminate a pending review from a real block by the exit code alone
 /// (`design/measurement.md` → exit-code hygiene).
-pub(crate) const EXIT_REVIEW_PENDING: u8 = 4;
+pub const EXIT_REVIEW_PENDING: u8 = 4;
 
 /// The `jigc task <verb>` subcommand tree. Each verb names a task by its `<id>`.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -432,7 +432,7 @@ fn run_finalize(
 /// [`ProbeRun`] (`design/validation.md` → Architecture — the CLI owns the subprocess
 /// invoker; the engine stays shell-free). The engine enumerated the surface, materialized
 /// the snapshot, and built the request; this serializes it to the child's stdin, enforces
-/// the wall-clock budget via [`::cli::invoke::invoke_probe`], and maps the raw outcome
+/// the wall-clock budget via [`crate::invoke::invoke_probe`], and maps the raw outcome
 /// into the engine type the engine ingests.
 ///
 /// A **spawn failure** (the program is missing / not executable) maps to a `crash`
@@ -444,13 +444,13 @@ fn run_finalize(
 pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeRun> {
     let bytes = serde_json::to_vec(request)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-    let program = ::cli::invoke::doc_code_program();
-    match ::cli::invoke::invoke_probe(&program, &bytes, ::cli::invoke::DOC_CODE_BUDGET) {
+    let program = crate::invoke::doc_code_program();
+    match crate::invoke::invoke_probe(&program, &bytes, crate::invoke::DOC_CODE_BUDGET) {
         Ok(outcome) => Ok(ProbeRun {
             stdout: outcome.stdout,
             status: match outcome.status {
-                ::cli::invoke::ProbeStatus::Exited { code } => ProbeRunStatus::Exited { code },
-                ::cli::invoke::ProbeStatus::TimedOut => ProbeRunStatus::TimedOut,
+                crate::invoke::ProbeStatus::Exited { code } => ProbeRunStatus::Exited { code },
+                crate::invoke::ProbeStatus::TimedOut => ProbeRunStatus::TimedOut,
             },
         }),
         // The program could not be spawned (absent / not executable) — a crash candidate,
@@ -589,7 +589,7 @@ impl TaskArea {
         if anchors.is_empty() {
             return Ok(());
         }
-        let program = ::cli::invoke::doc_code_program();
+        let program = crate::invoke::doc_code_program();
         if !program.is_file() {
             anyhow::bail!(
                 "`doc-code` probe not found at {program:?} — place the `doc-code` binary beside `jigc` or set `JIGC_DOC_CODE_PROBE` to its path"

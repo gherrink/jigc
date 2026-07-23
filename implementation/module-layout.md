@@ -4,10 +4,10 @@ How the locked architecture — engine / CLI / domain pack / assistant adapter �
 
 ## Crate topology
 
-**A two-crate workspace: `engine` (lib) + `cli` (bin), `cli → engine`.**
+**A two-crate workspace: `engine` (lib) + `cli` (lib + `jigc` bin), `cli → engine`.**
 
 - **`engine`** — the neutral, **empty** core library: cascade resolution, the document/schema model, parsing & serialization, the doc registry, workflow composition, the validation engine, task/staging state, the edge index. It depends on no frontend and no domain content, and makes **no LLM calls**. Because it's a standalone library, a later **`mcp` bin** is just a third crate over the same engine — the one boundary that carries architectural weight.
-- **`cli`** — the `jigc` binary frontend: argument parsing, command dispatch, the three renderers, adapter generation, and cascade-layer *location*. Depends on `engine`.
+- **`cli`** — the `jigc` frontend: argument parsing, command dispatch, the three renderers, adapter generation, and cascade-layer *location*. Depends on `engine`. **It is a library with a thin binary on top** (M45): the whole module tree lives in `lib.rs` as `pub mod`s and `main.rs` keeps only `fn main` + the invocation-log output tee. That shape is load-bearing, not cosmetic — it is the **enumeration seam** the pinning suites read their members from ([pinning.md](pinning.md) §1/§2: the pack registry, the clap tree via `CommandFactory`, and the exit-code constants), so a sweep can never degrade into a hand list. Cost paid once: making the tree a library activates rustdoc doctests over it, so an indented block in a doc comment must be fenced.
 
 Rejected: a **single crate** (engine not separately consumable → "MCP later" becomes a refactor, and the frontend boundary blurs); **many micro-crates** (a shared-types crate + version churn + compile-graph overhead, premature for the MVP). Engine internals are **modules**, split into sub-crates only if compile times or reuse later force it — `parse` is the natural first split-out.
 

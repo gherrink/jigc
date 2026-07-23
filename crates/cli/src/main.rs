@@ -1,40 +1,13 @@
-//! `jigc` — the CLI frontend over the `engine` core.
+//! `jigc` — the binary entry point.
 //!
-//! Owns argument parsing, command dispatch, the renderers, adapter generation,
-//! and cascade-layer *location* (CLI locates, engine resolves). See
+//! The command tree, dispatch, renderers and adapter generation all live in the
+//! `cli` **library** (`lib.rs`) so the test suites can enumerate them; this file
+//! keeps only `fn main` and the fd-level output tee the invocation log needs. See
 //! `implementation/module-layout.md` → The I/O boundary.
 
-// `adapter` ships the embedded profiles + the typed profile model/loader and the
-// host-file injectors; `setup` orchestrates them into the `jigc setup` install.
-mod adapter;
-mod cascade_util;
-mod cli;
-mod combine;
-mod config;
-mod describe;
-mod doc;
-mod gitignore;
-mod ingest;
-mod invocation_log;
-mod locate;
-mod migrate;
-mod migrate_corpus;
-mod milestone;
-mod orient;
-mod orphan;
-mod pack;
-mod relocate;
-mod rename;
-mod render;
-mod route_fence;
-mod setup;
-mod start;
-mod task;
-mod unmanage;
-mod upgrade;
-
 use clap::Parser;
-use invocation_log::Outcome;
+use cli::invocation_log::{self, Outcome};
+use cli::{cli as cli_tree, route_fence};
 use std::os::unix::io::RawFd;
 use std::process::ExitCode;
 use std::thread::JoinHandle;
@@ -63,7 +36,7 @@ fn main() -> ExitCode {
     let logs_dir = invocation_log::enabled_logs_dir();
     let tee = logs_dir.as_ref().and_then(|_| OutputTee::install());
 
-    let outcome = match cli::Cli::try_parse() {
+    let outcome = match cli_tree::Cli::try_parse() {
         Ok(cli) => cli.dispatch(),
         Err(err) => {
             // Reproduce clap's own behavior: `--help`/`--version` print to stdout and exit 0
@@ -73,9 +46,9 @@ fn main() -> ExitCode {
             // The M43 law-2 sibling tip: an unknown subcommand an agent plausibly
             // guessed gets an honest tip naming what the real sibling *does* — never
             // a silent alias; clap's own output above and the exit code are untouched
-            // (`cli::unknown_subcommand_tip`; DECISIONS.md 2026-07-16 Settle).
+            // (`cli_tree::unknown_subcommand_tip`; DECISIONS.md 2026-07-16 Settle).
             let argv: Vec<String> = std::env::args().collect();
-            if let Some(tip) = cli::unknown_subcommand_tip(&err, &argv) {
+            if let Some(tip) = cli_tree::unknown_subcommand_tip(&err, &argv) {
                 eprintln!("{tip}");
             }
             Outcome::code(code)
