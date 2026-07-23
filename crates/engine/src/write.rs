@@ -871,8 +871,9 @@ sections:
 // ============================================================================
 
 /// A located surgical-splice failure: the target the caller named is not present in
-/// the source (so the caller must route to the *generation* path), or the source
-/// does not conform to the schema (so no target can be located at all).
+/// the source (so the caller must route to the *generation* path), the source does not
+/// conform to the schema (so no target can be located at all — the failed parse's own
+/// findings ride along), or the schema declares no such section at all.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpliceError {
     /// The named section / field / item is **absent** from the source. A present
@@ -884,7 +885,47 @@ pub enum SpliceError {
     },
     /// The source does not parse against the schema, so no span can be located. The
     /// surgical splice only runs over a conformant buffer.
-    NotConformant,
+    ///
+    /// Carries the **parse findings** the failed parse produced (M45 Inc 2 T4): they
+    /// are what say *where* and *why* the buffer broke, and a reject that drops them
+    /// leaves the agent holding only the class of the failure. Every construction site
+    /// has them in hand at the `map_err` boundary.
+    NotConformant {
+        /// The located conformance diagnostics from the failed parse, in the parser's
+        /// own order — the first is the surfaced break.
+        findings: Vec<Finding>,
+    },
+    /// The **schema** declares no section by this id, so the write addresses a shape
+    /// that does not exist. Distinct from [`SpliceError::NotConformant`]: the buffer is
+    /// not the broken thing and there are no parse findings to name — which is exactly
+    /// why this cannot share the conformance sentence (it would render an empty
+    /// diagnosis). The [`GenerateError::UnknownSection`] sibling on the generation path.
+    UndeclaredSection {
+        /// The section id the caller named.
+        section: String,
+    },
+}
+
+impl std::fmt::Display for SpliceError {
+    /// The reject's sentence, one rendering for every consumer — the write-path
+    /// [`splice_error_finding`] and the milestone record's flip/self-ref findings alike,
+    /// so a carried parse break reads the same wherever it surfaces.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpliceError::NotPresent { what } => write!(f, "{what} is not present"),
+            SpliceError::NotConformant { findings } => match findings.first() {
+                Some(first) => write!(
+                    f,
+                    "the source does not conform to the schema ({})",
+                    first.message
+                ),
+                None => write!(f, "the source does not conform to the schema"),
+            },
+            SpliceError::UndeclaredSection { section } => {
+                write!(f, "no section {section:?} declared in the schema")
+            }
+        }
+    }
 }
 
 /// Replace the bytes of `span` in `source` with `replacement`, copying every other
@@ -910,7 +951,8 @@ pub fn set_slot(
     section_id: &str,
     new_prose: &str,
 ) -> Result<String, SpliceError> {
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
         .sections
         .iter()
@@ -940,7 +982,9 @@ pub fn set_slot(
         .sections
         .iter()
         .find(|s| s.id == section_id)
-        .ok_or(SpliceError::NotConformant)?;
+        .ok_or_else(|| SpliceError::UndeclaredSection {
+            section: section_id.to_string(),
+        })?;
     let content = SectionContent {
         id: section.id.clone(),
         slot: Some(new_prose.to_string()),
@@ -1025,7 +1069,8 @@ pub fn set_field(
 ) -> Result<String, SpliceError> {
     // Re-parse to assert conformance and that the field is present (read path types
     // the value; here we only need to confirm presence before locating bytes).
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
         .sections
         .iter()
@@ -1075,7 +1120,8 @@ pub fn repoint_ref(
         })?;
 
     // Read the field's current value to choose scalar-replace vs whole-list re-emit.
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
         .sections
         .iter()
@@ -1139,7 +1185,8 @@ pub fn remove_item(
     section_id: &str,
     item_id: &str,
 ) -> Result<String, SpliceError> {
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
         .sections
         .iter()
@@ -1152,7 +1199,9 @@ pub fn remove_item(
         .sections
         .iter()
         .find(|s| s.id == section_id)
-        .ok_or(SpliceError::NotConformant)?;
+        .ok_or_else(|| SpliceError::UndeclaredSection {
+            section: section_id.to_string(),
+        })?;
     if !matches!(schema_section.body, SectionBody::Repeatable { .. }) {
         return Err(SpliceError::NotPresent {
             what: format!("repeatable item in non-repeatable section {section_id:?}"),
@@ -1199,7 +1248,8 @@ pub fn unset_field(
     section_id: &str,
     field_key: &str,
 ) -> Result<String, SpliceError> {
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
         .sections
         .iter()
@@ -1216,7 +1266,9 @@ pub fn unset_field(
         .sections
         .iter()
         .find(|s| s.id == section_id)
-        .ok_or(SpliceError::NotConformant)?;
+        .ok_or_else(|| SpliceError::UndeclaredSection {
+            section: section_id.to_string(),
+        })?;
     if schema_section.header {
         // Front-matter: remove the whole `key: value` physical line.
         let content = front_matter_content(source).ok_or_else(|| SpliceError::NotPresent {
@@ -1258,7 +1310,8 @@ pub fn unset_item_field(
     field_key: &str,
 ) -> Result<String, SpliceError> {
     // Re-parse for conformance (the surgical splice only runs over a conformant buffer).
-    parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let blocks = parse::scan_blocks(source);
     let region = locate_item_path(schema, source, section_id, item_ids).ok_or_else(|| {
         SpliceError::NotPresent {
@@ -1375,7 +1428,8 @@ pub fn set_item_field(
     field_key: &str,
     new_value: &str,
 ) -> Result<String, SpliceError> {
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
         .sections
         .iter()
@@ -1436,7 +1490,8 @@ fn set_item_slot(
     leaf_id: &str,
     new_prose: &str,
 ) -> Result<String, SpliceError> {
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
         .sections
         .iter()
@@ -1681,7 +1736,8 @@ fn set_nested_item_slot(
     leaf_id: &str,
     new_prose: &str,
 ) -> Result<String, SpliceError> {
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
         SpliceError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?}"),
@@ -1898,7 +1954,8 @@ pub fn remove_nested_item(
     section_id: &str,
     item_ids: &[&str],
 ) -> Result<String, SpliceError> {
-    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let doc = parse::parse_sections(schema, source)
+        .map_err(|findings| SpliceError::NotConformant { findings })?;
     if nested_parsed_item(schema, &doc, section_id, item_ids).is_none() {
         return Err(SpliceError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?}"),
@@ -3226,9 +3283,16 @@ pub fn set_item_field_or_insert(
             };
             insert_item_field(schema, source, section_id, item_id, &new_field)
         }
-        Err(SpliceError::NotConformant) => Err(GenerateError::WrongShape {
-            what: format!("source does not conform to schema for section {section_id:?}"),
+        // The buffer is broken: carry the parse break's own diagnosis through, so the
+        // shape reject names *what* broke rather than only its class.
+        Err(e @ SpliceError::NotConformant { .. }) => Err(GenerateError::WrongShape {
+            what: format!("{e}, for section {section_id:?}"),
         }),
+        // An undeclared section is a shape miss, not a broken buffer — it lands on the
+        // generation path's own code for exactly that.
+        Err(SpliceError::UndeclaredSection { section }) => {
+            Err(GenerateError::UnknownSection { id: section })
+        }
     }
 }
 
@@ -5886,7 +5950,9 @@ fn set_section_slot(
             }
             Ok(edited)
         }
-        Err(e @ SpliceError::NotConformant) => Err(splice_error_finding(&e)),
+        // Anything else — a broken buffer, an undeclared section — renders through the
+        // one splice→finding mapping, which carries the parse break when there is one.
+        Err(e) => Err(splice_error_finding(&e)),
     }
 }
 
@@ -6108,18 +6174,26 @@ fn item_field_schema<'a>(
 }
 
 /// Render a [`SpliceError`] as the gate's blocking [`Finding`].
+///
+/// The message is the error's own [`Display`](std::fmt::Display) sentence — so a
+/// [`SpliceError::NotConformant`] names the parse break it carries — and a carried
+/// break also **locates** the finding at the offending line, rather than the 1:1
+/// fallback every address-less write reject otherwise takes.
 pub fn splice_error_finding(err: &SpliceError) -> Finding {
-    let (code, message) = match err {
-        SpliceError::NotPresent { what } => (
-            "write.not-present",
-            format!("write rejected: {what} is not present"),
-        ),
-        SpliceError::NotConformant => (
+    let (code, location) = match err {
+        SpliceError::NotPresent { .. } => ("write.not-present", None),
+        SpliceError::NotConformant { findings } => (
             "write.non-reparseable",
-            "write rejected: the source does not conform to the schema".to_string(),
+            findings.first().and_then(|f| f.location.clone()),
         ),
+        SpliceError::UndeclaredSection { .. } => ("write.unknown-section", None),
     };
-    blocking_write(code, message, Location::at(1, 1))
+    let message = format!("write rejected: {err}");
+    blocking_write(
+        code,
+        message,
+        location.unwrap_or_else(|| Location::at(1, 1)),
+    )
 }
 
 #[cfg(test)]
@@ -12298,5 +12372,134 @@ OAuth device-code flow.
         )
         .expect_err("an absent item is refused");
         assert_eq!(absent.code, "write.not-present");
+    }
+}
+
+#[cfg(test)]
+mod splice_error_payload {
+    //! **The rejected write names the break it hit** (M45 Inc 2 T4). A slot write over
+    //! a staged doc that no longer parses used to report one context-free sentence —
+    //! *"write rejected: the source does not conform to the schema"* — while the parse
+    //! findings that say **where** and **why** were discarded at the `map_err` boundary
+    //! of all twelve construction sites. [`SpliceError::NotConformant`] carries them
+    //! now, so the reject is located and names the offending line's diagnosis.
+    //!
+    //! The corollary is [`SpliceError::UndeclaredSection`]: once the variant *means*
+    //! "the buffer is broken, here is the break", a schema-lookup miss — which holds no
+    //! findings at all — can no longer borrow that sentence.
+
+    use super::*;
+    use crate::finding::Severity;
+    use crate::schema::Schema;
+
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+
+    fn spec_schema() -> Schema {
+        crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("spec.yaml loads")
+    }
+
+    /// A staged `spec` carrying the trial's real corruption shape: a second criterion
+    /// heading at the reserved item depth with **no** `{#id}` anchor (line 20), so the
+    /// buffer does not parse and no span can be located in it.
+    const BROKEN_SPEC: &str = "\
+---
+---
+
+# Rate limiting
+
+## Goal
+
+Limit requests.
+
+## Context
+
+Bursts happen.
+
+## Criteria
+
+### Rejects the 101st  {#rejects-the-101st}
+
+The gateway rejects the 101st request.
+
+### Ghost
+
+Smuggled prose.
+";
+
+    /// The line `### Ghost` sits on in [`BROKEN_SPEC`] — the break the reject must point at.
+    const BREAK_LINE: usize = 20;
+
+    /// The **item arm**: a criterion-slot write over the broken buffer is refused with
+    /// the parse break's own diagnosis and located at the offending line, not at 1:1.
+    #[test]
+    fn an_item_slot_write_over_a_broken_source_names_the_parse_break() {
+        let finding = set_slot_validated(
+            &spec_schema(),
+            BROKEN_SPEC,
+            SlotAddress::Item {
+                section: "criteria",
+                chain: &["rejects-the-101st"],
+                leaf: "statement",
+            },
+            "Clean prose.",
+        )
+        .expect_err("a non-conformant source cannot be spliced");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "write.non-reparseable");
+        assert!(
+            finding.message.contains("Ghost"),
+            "the reject must name the break it hit, not just its class: {}",
+            finding.message
+        );
+        assert_eq!(
+            finding.location.as_ref().map(|l| l.line),
+            Some(BREAK_LINE),
+            "the reject must point at the offending line: {finding:?}"
+        );
+    }
+
+    /// The **section arm** carries the same payload — one rendering, both paths.
+    #[test]
+    fn a_section_slot_write_over_a_broken_source_names_the_parse_break() {
+        let finding = set_slot_validated(
+            &spec_schema(),
+            BROKEN_SPEC,
+            SlotAddress::Section { section: "goal" },
+            "Clean prose.",
+        )
+        .expect_err("a non-conformant source cannot be spliced");
+        assert_eq!(finding.code, "write.non-reparseable");
+        assert!(
+            finding.message.contains("Ghost"),
+            "the reject must name the break it hit, not just its class: {}",
+            finding.message
+        );
+        assert_eq!(finding.location.as_ref().map(|l| l.line), Some(BREAK_LINE));
+    }
+
+    /// A **schema-lookup miss** is not a malformed buffer: it reports the undeclared
+    /// section under the shape code its [`GenerateError::UnknownSection`] sibling
+    /// already uses, and never the conformance sentence. (The three sites that mint it
+    /// are defensive — the parser only ever names schema-declared sections
+    /// (`implementation/parsing.md` → Surplus-section tolerance) — which is exactly why
+    /// they must not fall back onto a findings-less `NotConformant`.)
+    #[test]
+    fn an_undeclared_section_reports_the_section_not_a_malformed_buffer() {
+        let finding = splice_error_finding(&SpliceError::UndeclaredSection {
+            section: "nonsuch".to_string(),
+        });
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "write.unknown-section");
+        assert!(
+            finding.message.contains("nonsuch"),
+            "the reject must name the undeclared section: {}",
+            finding.message
+        );
+        assert!(
+            !finding.message.contains("does not conform"),
+            "an undeclared section is not a malformed buffer: {}",
+            finding.message
+        );
     }
 }

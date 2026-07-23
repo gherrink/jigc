@@ -1024,7 +1024,7 @@ fn flip_record_status_to_joined(
     source: &str,
 ) -> Result<String, crate::write::SpliceError> {
     let doc = crate::parse::parse_sections(schema, source)
-        .map_err(|_| crate::write::SpliceError::NotConformant)?;
+        .map_err(|findings| crate::write::SpliceError::NotConformant { findings })?;
     let item_ids: Vec<String> = doc
         .sections
         .iter()
@@ -1107,7 +1107,7 @@ fn flip_record_status_to_discarded(
     source: &str,
 ) -> Result<String, crate::write::SpliceError> {
     let doc = crate::parse::parse_sections(schema, source)
-        .map_err(|_| crate::write::SpliceError::NotConformant)?;
+        .map_err(|findings| crate::write::SpliceError::NotConformant { findings })?;
     let item_ids: Vec<String> = doc
         .sections
         .iter()
@@ -1168,7 +1168,7 @@ fn record_flip_finding(
     Finding::graded(
         Severity::Blocking,
         "milestone.record-flip",
-        format!("could not flip milestone record `{milestone_id}` to {target}: {err:?}"),
+        format!("could not flip milestone record `{milestone_id}` to {target}: {err}"),
         Some(Location::addressed(
             format!("milestone-record:{milestone_id}"),
             1,
@@ -1835,7 +1835,7 @@ fn splice_finding(
         Severity::Blocking,
         "join.self-ref-rewrite",
         format!(
-            "could not rewrite the self-reference `{relation}` of colliding doc `{address}` in milestone `{milestone_id}`: {err:?}"
+            "could not rewrite the self-reference `{relation}` of colliding doc `{address}` in milestone `{milestone_id}`: {err}"
         ),
         Some(Location::addressed(address, 1, 1)),
         Some("re-stage the colliding doc so its self-reference is well-formed".into()),
