@@ -64,7 +64,7 @@ First loop to build end-to-end: **`single task execution`** (discover → compos
 
 Validation is in the MVP: the framework + the **two engine-native probes** (`workflow-refs`, `file-state`) **plus the intrinsic `finalize` integrity gate** — which the ADR + `supersedes` now genuinely exercise: **forward-ref resolution over a real edge index** (the integration advantage), required-slot presence, malformed-value rejection. Pack-provided `doc ↔ code` probes come *after* (they need real code anchors); inverse/minimum-cardinality stays advisory at store scope, never a per-task gate.
 
-Implementation foundations (language/runtime, parsing, module layout) live in [implementation/](implementation/).
+Implementation foundations live in [implementation/](implementation/) — language/runtime, parsing, module layout, plus [doctype-authoring.md](implementation/doctype-authoring.md) (the registration checklist a new or reshaped doctype is walked through) and [pinning.md](implementation/pinning.md) (how a verified fact stays verified: compose goldens · contract property suites · repro blocks · the trial-shaped fixture substrate).
 
 ## Non-goals
 

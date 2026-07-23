@@ -27,7 +27,7 @@ LLM-authored prose on the write path. The CLI guarantees the slot's placement an
 - whether it is **required** (must be non-empty at `finalize`),
 - an optional **authoring hint** (guidance surfaced to the LLM when it fills the slot).
 
-**Addressing.** A section's single unnamed slot is addressed by the unit's address (`#unit`) — there is no named leaf below it in the schema. Multi-slot sections render each slot under a schema-fixed sub-label, and each sub-label is the slot's leaf id (`#unit/sub-label`). The address grammar permits both depths uniformly ([structural-grammar.md](structural-grammar.md#addressing)).
+**Addressing.** A section's single unnamed slot is addressed by the unit's address (`#unit`) — there is no named leaf below it in the schema. Multi-slot **items** render each slot under a schema-fixed sub-label, and each sub-label is the slot's leaf id (`#unit/sub-label`). *(Precision, 2026-07-23: the engine models multi-slot at the **item** level only — `SectionBody::Simple` carries a single `slot`, and the Simple-section multi-slot case stays deferred for want of a driver; see [storage.md](storage.md) → Identity, order, fields, slots, items. The sub-label depth is load-bearing for the slot heading-depth ceiling — [parsing.md](../implementation/parsing.md).)* The address grammar permits both depths uniformly ([structural-grammar.md](structural-grammar.md#addressing)).
 
 The CLI's only checks on a slot are presence and the integrity of any references embedded in its prose (a lighter "mention" check, distinct from `field`-refs — see [In-prose mentions](#in-prose-mentions-settled-m33)).
 
