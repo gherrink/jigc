@@ -6,17 +6,20 @@
 //! 2026-07-10 → M40 Settle #3).
 //!
 //! The load-bearing contract this pins is the **separately-pinned, explicitly
-//! versioned `--format json` shape** — `contract-version: 3` (the M43 rc.7 bump:
-//! every settable entry carries its concrete write-verb address, instance parts
-//! placeheld `<slug>`/`<id>`; 2 was the M41 rc.5 `of`/`section` join),
-//! golden-pinned at ship:
+//! versioned `--format json` shape** — `contract-version: 4` (the M45 bump: the
+//! three settability states — an id-from leaf carries `add-item` [+ `retitle-item`
+//! iff its type is string], a `set: on-create` stamp carries `set-field`, a
+//! machine-maintained absolute carries none; 3 was the M43 rc.7 write-address join,
+//! 2 the M41 rc.5 `of`/`section` join), golden-pinned at ship:
 //! `{ contract-version, type, schema-version-or-null, fields, sections }` with
 //! per-field `{id, type, of?, required, author-required, default?, set?, section?,
-//! set-field?}` (`of` = the enum members, universal across depths; `section` = the
-//! owning simple-section id, top-level fields only; `set-field` = the concrete
-//! `jigc doc set-field` address of a directly settable field — **absent** on a
-//! `set:`-derived CLI-stamped field and on a block's `id-from` leaf, whose write
-//! route is `retitle-item`/remove+add, never `set-field`) and per-section
+//! set-field? | (add-item? + retitle-item?)}` (`of` = the enum members, universal
+//! across depths; `section` = the owning simple-section id, top-level fields only;
+//! `set-field` = the concrete `jigc doc set-field` address of a directly settable
+//! field — **absent** on a machine-maintained absolute [`set: schema-version` /
+//! `on-transition`] and on a block's `id-from` leaf, which instead carries
+//! `add-item` [the block address, always] + `retitle-item` [the item address, iff a
+//! string id-from — an enum id-from carries `add-item` alone]) and per-section
 //! `{id, kind, optional?, set-slot?|add-item?, item: {fields, slots, nested}}` —
 //! a slot section carries its `set-slot` address, a repeatable its `add-item`
 //! address — the `item` object **recursive** for nested repeatables, its slots
@@ -138,7 +141,7 @@ fn stdout_of(out: &std::process::Output) -> String {
 /// (no default, no set, no optional/pack exemption) and each carries its
 /// `set-field` write address (the stamp, `set:`-derived, carries none).
 const DOGFOOD_RECORD_JSON: &str = r#"{
-  "contract-version": 3,
+  "contract-version": 4,
   "type": "dogfood-record",
   "schema-version": 1,
   "fields": [
@@ -283,12 +286,15 @@ const DOGFOOD_RECORD_JSON: &str = r#"{
 
 /// changelog — schema-version 2 (the M38 relocation bump), the loader-injected
 /// stamp field in `fields`, and the RECURSIVE nested `item` (releases → changes).
-/// The address witnesses both omitting arms: an `id-from` leaf (`category`,
-/// `title`) and a `set:`-derived one (`date`) stay address-less, while `link`
-/// carries `set-field`, every item slot `set-slot`, and every repeatable —
-/// nested included — `add-item`.
+/// The address witnesses the three settability states (M45): an **enum** `id-from`
+/// leaf (`category`, top-level and nested) carries `add-item` **alone** (a member
+/// change is an identity change — no `retitle-item`); a **string** `id-from` leaf
+/// (`title`) carries the `add-item` + `retitle-item` pair (the item address, one
+/// hop shallower); a `set: on-create` stamp (`date`) is an author-overridable stamp
+/// and carries `set-field`; the optional `link` carries `set-field`; every item
+/// slot `set-slot`; and every repeatable — nested included — its section `add-item`.
 const CHANGELOG_JSON: &str = r#"{
-  "contract-version": 3,
+  "contract-version": 4,
   "type": "changelog",
   "schema-version": 2,
   "fields": [
@@ -320,7 +326,8 @@ const CHANGELOG_JSON: &str = r#"{
               "security"
             ],
             "required": true,
-            "author-required": true
+            "author-required": true,
+            "add-item": "changelog:<slug>#unreleased-changes"
           }
         ],
         "slots": [
@@ -342,14 +349,17 @@ const CHANGELOG_JSON: &str = r#"{
             "id": "title",
             "type": "string",
             "required": true,
-            "author-required": true
+            "author-required": true,
+            "add-item": "changelog:<slug>#releases",
+            "retitle-item": "changelog:<slug>#releases/<id>"
           },
           {
             "id": "date",
             "type": "date",
             "required": true,
             "author-required": false,
-            "set": "on-create"
+            "set": "on-create",
+            "set-field": "changelog:<slug>#releases/<id>/date"
           },
           {
             "id": "link",
@@ -378,7 +388,8 @@ const CHANGELOG_JSON: &str = r#"{
                     "security"
                   ],
                   "required": true,
-                  "author-required": true
+                  "author-required": true,
+                  "add-item": "changelog:<slug>#releases/<id>/changes"
                 }
               ],
               "slots": [
@@ -397,13 +408,14 @@ const CHANGELOG_JSON: &str = r#"{
 }"#;
 
 /// adr — the field-rendering witness: a `default:` enum (settable — the canonical
-/// `set-field` target), a `set: on-create` date (address-less), an optional `ref`
+/// `set-field` target), a `set: on-create` date (an author-overridable stamp —
+/// directly settable, so it carries `set-field` since M45), an optional `ref`
 /// (required false), a pack-declared `code-anchor` (required false), the injected
-/// stamp, and an `optional:` slot section (its `set-slot` address carried like
-/// its required siblings). Schema-version 2: the M36 `options`-slot migration
-/// bumped adr past v1.
+/// stamp (a machine-maintained absolute — address-less), and an `optional:` slot
+/// section (its `set-slot` address carried like its required siblings).
+/// Schema-version 2: the M36 `options`-slot migration bumped adr past v1.
 const ADR_JSON: &str = r#"{
-  "contract-version": 3,
+  "contract-version": 4,
   "type": "adr",
   "schema-version": 2,
   "fields": [
@@ -427,7 +439,8 @@ const ADR_JSON: &str = r#"{
       "required": true,
       "author-required": false,
       "set": "on-create",
-      "section": "status"
+      "section": "status",
+      "set-field": "adr:<slug>#status/date"
     },
     {
       "id": "supersedes",
@@ -499,7 +512,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     assert_eq!(
         dogfood.trim_end(),
         DOGFOOD_RECORD_JSON,
-        "the dogfood-record schema json is the pinned contract-version-3 shape",
+        "the dogfood-record schema json is the pinned contract-version-4 shape",
     );
 
     // (2) dogfood-record — the Proves line, asserted behaviorally (not just bytes):
@@ -507,7 +520,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     //     fields plus the injected stamp, every meta field author-required.
     let value: serde_json::Value =
         serde_json::from_str(&dogfood).expect("the emitted contract parses as json");
-    assert_eq!(value["contract-version"], 3, "the contract is versioned");
+    assert_eq!(value["contract-version"], 4, "the contract is versioned");
     assert_eq!(
         value["schema-version"], 1,
         "a manifest-frozen methodology doctype reports schema-version 1",
@@ -556,9 +569,10 @@ fn doc_schema_json_is_the_pinned_contract() {
         "the adr schema json is the pinned shape (ref/pack/default/set fields)",
     );
 
-    // (5) the settable write addresses (M43 rc.7, Settle #10), asserted behaviorally
-    //     on top of the byte pin: a settable field names its concrete `set-field`
-    //     address; a `set:`-derived (CLI-stamped) field carries none.
+    // (5) the three settability states (M45 Inc 3), asserted behaviorally on top of
+    //     the byte pin: a plain settable field names its `set-field` address; a
+    //     `set: on-create` stamp is author-overridable, so it ALSO names `set-field`;
+    //     a machine-maintained absolute (`schema-version`) carries none.
     let value: serde_json::Value =
         serde_json::from_str(&adr).expect("the emitted adr contract parses as json");
     let fields = value["fields"].as_array().expect("`fields` is an array");
@@ -573,13 +587,17 @@ fn doc_schema_json_is_the_pinned_contract() {
         "adr:<slug>#status/status",
         "a settable field carries its concrete set-field address",
     );
-    for machine_owned in ["date", "schema-version"] {
-        assert!(
-            field(machine_owned).get("set-field").is_none(),
-            "a `set:`-derived field is CLI-stamped, never addressed for set-field; \
-             `{machine_owned}` breaks that",
-        );
-    }
+    assert_eq!(
+        field("date")["set-field"],
+        "adr:<slug>#status/date",
+        "a `set: on-create` stamp is author-overridable — directly settable, so it \
+         carries a set-field address (the M45 three-state split)",
+    );
+    assert!(
+        field("schema-version").get("set-field").is_none(),
+        "a machine-maintained absolute (the schema-version stamp) is CLI-owned, never \
+         addressed for set-field",
+    );
 }
 
 /// The plain (`--format agent`/`human`) listing mirrors the `of` enum members so
@@ -699,9 +717,10 @@ fn doc_schema_plain_listing_names_each_field_owning_section() {
 /// The plain (`agent`/`human`) listing surfaces the same write-verb addresses the
 /// pinned json carries — non-contractually (only the json shape is the pin): a
 /// settable field line names its `set-field` address, a slot section its
-/// `set-slot`, a repeatable its `add-item`. The omitting arms hold in text too:
-/// a `set:`-derived field and an `id-from` leaf stay address-less — inert, never
-/// an error.
+/// `set-slot`, a repeatable its `add-item`. The three states hold in text too: a
+/// string `id-from` leaf names its `add-item` + `retitle-item` pair, an enum
+/// `id-from` its `add-item` alone, and a machine-maintained absolute (the stamp)
+/// stays address-less — inert, never an error.
 #[test]
 fn doc_schema_plain_listing_surfaces_write_addresses() {
     let repo = TempDir::new("repo");
@@ -745,9 +764,74 @@ fn doc_schema_plain_listing_surfaces_write_addresses() {
         changelog.contains("(add-item: changelog:<slug>#releases/<id>/changes)"),
         "a nested repeatable line names its add-item address; got:\n{changelog}",
     );
+    // The string `id-from` leaf (`title`) names its id-source pair, never `set-field`.
+    let title = field_line(&changelog, "title");
     assert!(
-        !field_line(&changelog, "title").contains("(set-field:"),
-        "an id-from leaf line stays address-less (retitle-item territory); got:\n{changelog}",
+        !title.contains("(set-field:")
+            && title.contains("(add-item: changelog:<slug>#releases)")
+            && title.contains("(retitle-item: changelog:<slug>#releases/<id>)"),
+        "a string id-from leaf names its add-item + retitle-item pair, not set-field; got:\n{title}",
+    );
+    // The enum `id-from` leaf (`category`) names `add-item` alone — no `retitle-item`
+    // (a member change is an identity change).
+    let category = field_line(&changelog, "category");
+    assert!(
+        category.contains("(add-item: changelog:<slug>#unreleased-changes)")
+            && !category.contains("(retitle-item:"),
+        "an enum id-from leaf names add-item alone, never retitle-item; got:\n{category}",
+    );
+    // The `set: on-create` stamp (`date`) is author-overridable — directly settable.
+    assert!(
+        field_line(&changelog, "date").contains("(set-field: changelog:<slug>#releases/<id>/date)"),
+        "a `set: on-create` stamp names its set-field address; got:\n{changelog}",
+    );
+}
+
+/// `milestone-record` is machine-maintained **whole** — `machine_maintained_guard`
+/// refuses every `jigc doc` write to it (`design/team-ready-state.md` → The record is
+/// not writable through the `jigc doc` verbs) — so its projection advertises **no**
+/// write address at all, by a **doctype** exclusion rather than the per-leaf
+/// `set:`-kind rule (M45 Inc 3; `design/doc-read-surface.md` → the settability
+/// states). This closes the live parity gap the planner named: before M45,
+/// `add-item: milestone-record:<slug>#tasks` was advertised though the write path
+/// refuses it whole. The **omitting context** of the three-state rule: every
+/// settable-looking leaf (the `base` `set: on-create` stamp, the `tasks` `task-id`
+/// string id-from) stays address-less here, where on any other doctype it would carry
+/// one — the doctype-level guard wins over the per-leaf states.
+#[test]
+fn doc_schema_milestone_record_advertises_no_write_address() {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "milestone-record", "--format", "json"],
+    );
+    assert_ok(&out, "`jigc doc schema milestone-record --format json`");
+    let json = stdout_of(&out);
+    for verb in ["set-field", "set-slot", "add-item", "retitle-item"] {
+        assert!(
+            !json.contains(&format!("\"{verb}\"")),
+            "a milestone-record is machine-maintained whole — no `{verb}` address may \
+             appear in its projection; got:\n{json}",
+        );
+    }
+    // It still projects — the suppression drops only the write addresses, never the
+    // schema shape: the contract version, and the `tasks` repeatable (address-less).
+    let value: serde_json::Value =
+        serde_json::from_str(&json).expect("the milestone-record contract parses as json");
+    assert_eq!(value["contract-version"], 4, "the contract is versioned");
+    let section_ids: Vec<&str> = value["sections"]
+        .as_array()
+        .expect("`sections` is an array")
+        .iter()
+        .filter_map(|s| s["id"].as_str())
+        .collect();
+    assert!(
+        section_ids.contains(&"tasks"),
+        "the `tasks` repeatable still projects (address-less); got:\n{json}",
     );
 }
 

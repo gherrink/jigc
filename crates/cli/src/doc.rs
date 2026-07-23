@@ -241,7 +241,7 @@ pub enum DocCommand {
     /// Injected stamp field included — the third read surface, next to `describe`
     /// (the non-contractual menu) and `doc show` (the committed-content read).
     /// `--format json` is the separately-pinned, explicitly versioned contract
-    /// (`contract-version: 3` — `design/doc-read-surface.md` → Why json is a contract
+    /// (`contract-version: 4` — `design/doc-read-surface.md` → Why json is a contract
     /// here); plain text is a non-contractual human listing. Task-less — a schema
     /// projection is never task-scoped.
     Schema {
@@ -2384,9 +2384,10 @@ struct DocRow {
 /// as they evolve. Golden-pinned at ship (`crates/cli/tests/doc_schema.rs`).
 #[derive(serde::Serialize)]
 struct SchemaContract<'a> {
-    /// The projection's own version — 3 since M43 rc.7 (the settable write-verb
-    /// addresses joined the projection; 2 was the M41 rc.5 `of`/`section` join;
-    /// bumps on any structural change to these keys).
+    /// The projection's own version — 4 since M45 (the three settability states: an
+    /// id-from leaf's `add-item`/`retitle-item` pair, a `set: on-create` stamp's
+    /// `set-field`; 3 was the M43 rc.7 write-verb address join, 2 the M41 rc.5
+    /// `of`/`section` join; bumps on any structural change to these keys).
     #[serde(rename = "contract-version")]
     contract_version: u32,
     /// The doctype id.
@@ -2404,21 +2405,35 @@ struct SchemaContract<'a> {
 }
 
 /// One field of the pinned projection: `{id, type, of?, required, author-required,
-/// default?, set?, section?, set-field?}`. `required` is presence-in-a-conformant-instance —
-/// the author must supply it OR the CLI stamps it (`default:`/`set:`);
-/// `author-required` is the shared engine predicate
+/// default?, set?, section?, set-field? | (add-item? + retitle-item?)}`. `required` is
+/// presence-in-a-conformant-instance — the author must supply it OR the CLI stamps it
+/// (`default:`/`set:`); `author-required` is the shared engine predicate
 /// ([`engine::validate::is_author_required`]) — the same authority the create
 /// skeleton pre-stamps from, so the mint and this projection can never drift apart
 /// (M40 Settle #4). `of` carries an `enum`'s legal members (universal across
 /// depths, so an agent reads the legal values without a failed-write probe);
 /// `section` names the field's owning simple-section — **top-level only** (an item
 /// field carries its section structurally, under `sections[].item`) (M41 rc.5,
-/// V3+V6+V11 the `doc author` discoverability cluster); `set-field` is the field's
-/// concrete write-verb address (instance parts placeheld: `<slug>`, `<id>`) —
-/// **absent** when the field is not directly settable: a `set:`-derived field is
-/// CLI-stamped (writing it fights the deriver / the freeze gate), and a block's
-/// `id-from` leaf is the item's identity (the heading IS the value — the write-time
-/// guard routes to `retitle-item` / remove+add) (M43 rc.7, Settle #10).
+/// V3+V6+V11 the `doc author` discoverability cluster).
+///
+/// **The write-verb address carries the field's settability state** (M45 Inc 3 — the
+/// three-state split, `design/doc-read-surface.md` → the settability states):
+/// - `set-field` — the field is **directly settable**: a plain author-supplied field,
+///   or a `set: on-create` **author-overridable** stamp (the CLI defaults it at mint
+///   but the changelog-migration historical-date path overwrites it, so it IS
+///   settable). Absent on a **machine-maintained absolute** (`set: schema-version` /
+///   `on-transition`), whose value the CLI owns and the write path refuses.
+/// - `add-item` + `retitle-item` — the field is the block's **`id-from` leaf** (the
+///   item's identity: the heading IS the value). It is supplied at mint by
+///   `add-item --title` (the block address, always) and changed afterward by
+///   `retitle-item` (the **item** address, one hop shallower than the leaf) — **except**
+///   an **enum** id-from, which `retitle-item` refuses unconditionally (a member change
+///   is an identity change), so it carries `add-item` **alone**.
+///
+/// The set-field / (add-item + retitle-item) keys are mutually exclusive by
+/// construction (an id-from leaf is never `set-field`-settable), and **all three are
+/// absent** when the doctype is machine-maintained whole (`milestone-record`) — the
+/// doctype exclusion wins over the per-leaf states.
 #[derive(serde::Serialize)]
 struct ContractField<'a> {
     id: &'a str,
@@ -2437,6 +2452,10 @@ struct ContractField<'a> {
     section: Option<&'a str>,
     #[serde(rename = "set-field", skip_serializing_if = "Option::is_none")]
     set_field: Option<String>,
+    #[serde(rename = "add-item", skip_serializing_if = "Option::is_none")]
+    add_item: Option<String>,
+    #[serde(rename = "retitle-item", skip_serializing_if = "Option::is_none")]
+    retitle_item: Option<String>,
 }
 
 /// One section of the pinned projection: `{id, kind: "slot"|"repeatable",
@@ -2503,6 +2522,16 @@ fn is_false(value: &bool) -> bool {
 /// schema read, never an instance read.
 fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContract<'_> {
     let doc = format!("{}:<slug>", schema.ty);
+    // The whole-doctype write suppression (M45 Inc 3): a `milestone-record` is
+    // machine-maintained in full — [`machine_maintained_guard`] refuses EVERY `jigc
+    // doc` write to it (`design/team-ready-state.md` → The record is not writable) — so
+    // the projection advertises no write address at all, by a **doctype** exclusion
+    // rather than the per-leaf `set:`-kind rule, keeping advertised-set == accepted-set
+    // (`design/doc-read-surface.md` → the settability states; the parity caveat). This
+    // is the same doctype key the write-path guard uses; a milestone-record carries no
+    // prose slot / nested block (every leaf is a CLI-`set:` field), so gating the
+    // Option-valued addresses covers every address the record's shape can produce.
+    let suppress = schema.ty == crate::milestone::MILESTONE_RECORD_TYPE;
     let mut fields = Vec::new();
     let mut sections = Vec::new();
     for section in &schema.sections {
@@ -2515,12 +2544,14 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
                     // A top-level field carries its owning simple-section id; an item
                     // field carries its section structurally (`contract_item` leaves
                     // `section: None`). No doc-level `id-from` exclusion: a doc's id
-                    // source is its H1 title, never a declared header field.
-                    let address = field
-                        .set
-                        .is_none()
-                        .then(|| format!("{doc}#{}/{}", section.id, field.id));
-                    let mut field = contract_field(field, address);
+                    // source is its H1 title, never a declared header field. It is
+                    // directly settable unless the doctype is machine-maintained whole
+                    // or the field is a machine-maintained absolute — a `set: on-create`
+                    // stamp IS settable (author-overridable).
+                    let address = (!suppress
+                        && !engine::schema::is_machine_maintained_absolute(field))
+                    .then(|| format!("{doc}#{}/{}", section.id, field.id));
+                    let mut field = contract_field(field, address, None, None);
                     field.section = Some(&section.id);
                     field
                 }));
@@ -2529,27 +2560,27 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
                         id: &section.id,
                         kind: "slot",
                         optional: slot.optional,
-                        set_slot: Some(format!("{doc}#{}", section.id)),
+                        set_slot: (!suppress).then(|| format!("{doc}#{}", section.id)),
                         add_item: None,
                         item: None,
                     });
                 }
             }
-            SectionBody::Repeatable { repeatable } => sections.push(ContractSection {
-                id: &section.id,
-                kind: "repeatable",
-                optional: false,
-                set_slot: None,
-                add_item: Some(format!("{doc}#{}", section.id)),
-                item: Some(contract_item(
-                    repeatable,
-                    &format!("{doc}#{}/<id>", section.id),
-                )),
-            }),
+            SectionBody::Repeatable { repeatable } => {
+                let block_addr = format!("{doc}#{}", section.id);
+                sections.push(ContractSection {
+                    id: &section.id,
+                    kind: "repeatable",
+                    optional: false,
+                    set_slot: None,
+                    add_item: (!suppress).then(|| block_addr.clone()),
+                    item: Some(contract_item(repeatable, &block_addr, suppress)),
+                });
+            }
         }
     }
     SchemaContract {
-        contract_version: 3,
+        contract_version: 4,
         ty: &schema.ty,
         schema_version,
         fields,
@@ -2557,10 +2588,18 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
     }
 }
 
-/// Project one schema field into its pinned [`ContractField`]. `set_field` is the
-/// caller-computed write address — `None` when the field is not directly settable
-/// (a `set:`-derived field, or the block's `id-from` leaf; see [`ContractField`]).
-fn contract_field(field: &engine::schema::Field, set_field: Option<String>) -> ContractField<'_> {
+/// Project one schema field into its pinned [`ContractField`]. The three write-verb
+/// addresses are **caller-computed** (the caller knows the field's position, which the
+/// settability state keys on; see [`ContractField`]): `set_field` for a directly
+/// settable field, the `add_item` + `retitle_item` pair for a block's `id-from` leaf,
+/// and all three `None` for a machine-maintained absolute or a machine-maintained-whole
+/// doctype.
+fn contract_field(
+    field: &engine::schema::Field,
+    set_field: Option<String>,
+    add_item: Option<String>,
+    retitle_item: Option<String>,
+) -> ContractField<'_> {
     let author_required = engine::validate::is_author_required(field);
     ContractField {
         id: &field.id,
@@ -2573,35 +2612,68 @@ fn contract_field(field: &engine::schema::Field, set_field: Option<String>) -> C
         // Set by `schema_contract` for a top-level field; item fields stay None.
         section: None,
         set_field,
+        add_item,
+        retitle_item,
     }
 }
 
 /// Project a repeatable's item template, recursing into nested repeatables.
-/// `prefix` is the item's placeheld chain address (`<type>:<slug>#<section>/<id>`,
-/// one `/<id>` per depth) — each leaf's write address hangs off it.
-fn contract_item<'a>(repeatable: &'a Repeatable, prefix: &str) -> ContractItem<'a> {
+/// `block_addr` is the block's placeheld `add-item` address
+/// (`<type>:<slug>#<section>`, or the nested section-qualified chain); the item's
+/// leaf-address prefix is `{block_addr}/<id>` (one `/<id>` per depth). `suppress`
+/// propagates the machine-maintained-whole doctype exclusion — when set, no leaf
+/// carries a write address.
+fn contract_item<'a>(
+    repeatable: &'a Repeatable,
+    block_addr: &str,
+    suppress: bool,
+) -> ContractItem<'a> {
+    // The item address (`retitle-item`'s target, and each leaf's set-field parent) —
+    // one `/<id>` deeper than the block's `add-item` address.
+    let prefix = format!("{block_addr}/<id>");
     let mut fields = Vec::new();
     let mut slots = Vec::new();
     let mut nested = Vec::new();
     for leaf in &repeatable.block {
         match leaf {
             Leaf::Field(field) => {
-                // The block's `id-from` leaf is the item's identity — the heading IS
-                // the value, so it is `retitle-item` territory, never `set-field`.
-                let address = (field.set.is_none() && field.id != repeatable.id_from)
-                    .then(|| format!("{prefix}/{}", field.id));
-                fields.push(contract_field(field, address));
+                // The three settability states (M45 Inc 3; `design/doc-read-surface.md`
+                // → the settability states):
+                let (set_field, add_item, retitle_item) = if suppress {
+                    // Machine-maintained whole (milestone-record): no write address.
+                    (None, None, None)
+                } else if field.id == repeatable.id_from {
+                    // The `id-from` leaf — the item's identity (the heading IS the
+                    // value). Supplied at mint via `add-item --title` (the block
+                    // address, always), changed afterward via `retitle-item` (the
+                    // ITEM address, one hop shallower) — EXCEPT an enum id-from, which
+                    // `retitle-item` refuses unconditionally (a member change is an
+                    // identity change), so it carries `add-item` alone.
+                    let retitle = (field.ty != FieldType::Enum).then(|| prefix.clone());
+                    (None, Some(block_addr.to_string()), retitle)
+                } else if engine::schema::is_machine_maintained_absolute(field) {
+                    // A machine-maintained absolute — CLI-owned, unadvertised.
+                    (None, None, None)
+                } else {
+                    // Directly settable, incl. a `set: on-create` author-overridable
+                    // stamp (the changelog-migration historical-date path overwrites it).
+                    (Some(format!("{prefix}/{}", field.id)), None, None)
+                };
+                fields.push(contract_field(field, set_field, add_item, retitle_item));
             }
             Leaf::Slot { id, slot } => slots.push(ContractSlot {
                 id,
                 optional: slot.optional,
                 set_slot: format!("{prefix}/{id}"),
             }),
-            Leaf::Repeatable { id, repeatable } => nested.push(ContractNested {
-                id,
-                add_item: format!("{prefix}/{id}"),
-                item: contract_item(repeatable, &format!("{prefix}/{id}/<id>")),
-            }),
+            Leaf::Repeatable { id, repeatable } => {
+                let nested_block = format!("{prefix}/{id}");
+                nested.push(ContractNested {
+                    id,
+                    add_item: nested_block.clone(),
+                    item: contract_item(repeatable, &nested_block, suppress),
+                });
+            }
         }
     }
     ContractItem {
@@ -2671,10 +2743,18 @@ fn push_field_line(out: &mut String, field: &ContractField<'_>, depth: usize) {
     if let Some(set) = field.set {
         out.push_str(&format!(" (set: {set})"));
     }
-    // The field's write address, mirrored from the pinned json (non-contractual
-    // presentation); a non-settable field's line stays address-less — inert.
+    // The field's write addresses, mirrored from the pinned json (non-contractual
+    // presentation): `set-field` for a directly settable field, else the
+    // `add-item` + `retitle-item` pair of an `id-from` leaf (the id-source state); a
+    // machine-maintained field's line stays address-less — inert.
     if let Some(addr) = &field.set_field {
         out.push_str(&format!(" (set-field: {addr})"));
+    }
+    if let Some(addr) = &field.add_item {
+        out.push_str(&format!(" (add-item: {addr})"));
+    }
+    if let Some(addr) = &field.retitle_item {
+        out.push_str(&format!(" (retitle-item: {addr})"));
     }
     if field.author_required {
         out.push_str(" *");
