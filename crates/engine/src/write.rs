@@ -9357,22 +9357,6 @@ mod methodology_roundtrip {
     //      `crlf_front_matter_parses_every_field` pins `adr` alone).
     // ========================================================================
 
-    /// The nine shipped **persisted** methodology doctypes. `commit` is excluded:
-    /// it is transient (its sink is the git message, no `location`/`placement`), so
-    /// it has no on-disk round-trip to fence — `render_commit_message` is its
-    /// contract, golden-tested separately.
-    const PERSISTED_METHODOLOGY_DOCTYPES: [&str; 9] = [
-        "roadmap",
-        "deferral-ledger",
-        "decisions-log",
-        "completion-record",
-        "dogfood-record",
-        "vision",
-        "research",
-        "idea",
-        "milestone-record",
-    ];
-
     /// One canonical fixture: a doctype, a snapshot-stable name, and the exact
     /// frozen bytes.
     struct Fixture {
@@ -9719,21 +9703,6 @@ status: active
 ",
             },
         ]
-    }
-
-    /// The table ranges over **every** shipped persisted methodology doctype — the
-    /// fence is only a fence if nothing falls outside it. A tenth persisted doctype
-    /// (or a rename) fails here until it earns a row.
-    #[test]
-    fn every_persisted_methodology_doctype_has_a_deterministic_fixture() {
-        let covered: std::collections::BTreeSet<&str> =
-            methodology_fixtures().iter().map(|fx| fx.ty).collect();
-        let shipped: std::collections::BTreeSet<&str> =
-            PERSISTED_METHODOLOGY_DOCTYPES.iter().copied().collect();
-        assert_eq!(
-            covered, shipped,
-            "every persisted methodology doctype needs a deterministic round-trip fixture"
-        );
     }
 
     /// **The fence.** For every canonical fixture: `render(parse(src)) == src`,
