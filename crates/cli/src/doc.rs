@@ -502,6 +502,14 @@ fn apply_field_target(
     if let Some(finding) = id_from_field_guard(schema, &target, uri, value) {
         return Err(DocFailure::block(finding));
     }
+    // The set-field machine-maintained guard (`design/write-commands.md` → The set-field
+    // machine-maintained guard): a `set:`-derived **absolute** (the freeze stamp / a
+    // milestone transition) is CLI-owned and never author-writable — sharing this seam,
+    // both the per-leaf verb and the `doc author` batch refuse the forge. `set: on-create`
+    // is NOT absolute (a mint-time default the author may override), so it passes.
+    if let Some(finding) = machine_maintained_field_guard(schema, &target, uri) {
+        return Err(DocFailure::block(finding));
+    }
     Ok(match target {
         FieldTarget::Section { section, field } => set_field_validated(
             schema,
@@ -777,6 +785,104 @@ fn id_from_field_guard(
         )),
         Some(route.into()),
     ))
+}
+
+/// The set-field machine-maintained guard (`design/write-commands.md` → The set-field
+/// machine-maintained guard; DECISIONS.md 2026-07-23 → M45 Increment 3). A `set:`-derived
+/// **absolute** field — the freeze stamp (`set: schema-version`) or a milestone transition
+/// (`set: on-transition`) — is **CLI-owned**: forging it through `set-field` committed a
+/// value the deriver skips forever (a forged `schema-version: 99 ≥ current` made
+/// `migrate-corpus` byte-untouch the doc and `version_currency_break` never report).
+/// Refused with a blocking finding whose route names the legitimate deriver. `set:
+/// on-create` is **not** absolute ([`engine::schema::is_machine_maintained_absolute`]
+/// returns false) — the CLI merely defaults it at mint and the changelog-migration
+/// historical-date path overwrites it — so it passes (the inert path). A non-`set:`
+/// field, or an unresolvable address, likewise yields `None`.
+///
+/// Shares [`apply_field_target`] with the id-from guard, so the per-leaf `set-field` verb
+/// and the batch `doc author` apply (via [`apply_leaf`]) inherit the reject in one place —
+/// **not** the engine write primitives, which `transform.rs`'s optional-field fill and
+/// `migrate_corpus`'s own stamp bump legitimately write through. `milestone-record` is
+/// refused **whole** by [`machine_maintained_guard`] above this, so its `on-transition`
+/// leaves never reach here; this per-leaf split guards the freeze stamp on every other
+/// frozen doctype.
+fn machine_maintained_field_guard(
+    schema: &Schema,
+    target: &FieldTarget,
+    uri: &str,
+) -> Option<Finding> {
+    let field = declared_field(schema, target)?;
+    if !engine::schema::is_machine_maintained_absolute(&field) {
+        return None;
+    }
+    let route = if field.set.as_deref() == Some(engine::schema::SCHEMA_VERSION_SET) {
+        "the schema-version stamp records which schema version this instance was authored \
+         against — it is set at create and advanced only by `jigc migrate-corpus`, never a \
+         manual write"
+    } else {
+        "the milestone-record's machine-maintained leaves change only through the milestone \
+         verbs (`jigc milestone add-task` / `jigc milestone finalize`), never a manual write"
+    };
+    Some(Finding::graded(
+        Severity::Blocking,
+        "write.machine-maintained-field",
+        format!(
+            "set-field rejected: `{}` is a machine-maintained field — its value is \
+             CLI-derived (`set: {}`) and is never written through a `jigc doc` verb",
+            field.id,
+            field.set.as_deref().unwrap_or_default()
+        ),
+        Some(Location::addressed(uri, 1, 1)),
+        Some(route.into()),
+    ))
+}
+
+/// Resolve the schema [`engine::schema::Field`] a [`FieldTarget`] addresses — the shared
+/// lookup the machine-maintained guard reads the `set:` kind off, keyed on the **field**
+/// (not the target position), so the guard is a fence over the declared field wherever it
+/// lives. Returns an owned clone (the nested arm's repeatable is materialized by
+/// [`engine::write::nested_repeatable`]); `None` for an unresolvable address / a
+/// non-simple-or-repeatable body — the inert path (the engine splice adjudicates presence
+/// as before).
+fn declared_field(schema: &Schema, target: &FieldTarget) -> Option<engine::schema::Field> {
+    let in_block = |repeatable: &Repeatable, field: &str| {
+        repeatable.block.iter().find_map(|leaf| match leaf {
+            Leaf::Field(f) if f.id == field => Some((**f).clone()),
+            _ => None,
+        })
+    };
+    match target {
+        FieldTarget::Section { section, field } => {
+            let SectionBody::Simple { fields, .. } =
+                &schema.sections.iter().find(|s| &s.id == section)?.body
+            else {
+                return None;
+            };
+            fields.iter().find(|f| &f.id == field).cloned()
+        }
+        FieldTarget::Item { section, field, .. } => {
+            let SectionBody::Repeatable { repeatable } =
+                &schema.sections.iter().find(|s| &s.id == section)?.body
+            else {
+                return None;
+            };
+            in_block(repeatable, field)
+        }
+        FieldTarget::NestedItem {
+            section,
+            items,
+            field,
+        } => {
+            // `items` is parents ++ [nested-section, item-id] (the `field_target` Deep
+            // contract, mirrored in `id_from_field_guard`).
+            let (_, rest) = items.split_last()?;
+            let (nested_section, parents) = rest.split_last()?;
+            let parent_ids: Vec<&str> = parents.iter().map(String::as_str).collect();
+            let repeatable =
+                engine::write::nested_repeatable(schema, section, &parent_ids, nested_section)?;
+            in_block(&repeatable, field)
+        }
+    }
 }
 
 /// `jigc doc set-slot <addr> --from-file <path|->` — splice slot prose (stdin/file).

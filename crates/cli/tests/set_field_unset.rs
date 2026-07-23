@@ -13,6 +13,7 @@
 //!   `jigc doc set-field <addr> --unset`.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -280,6 +281,152 @@ fn unset_the_schema_version_stamp_blocks() {
     assert!(
         stderr.contains("write.unset-ineligible"),
         "the stamp block carries the ineligible code; got:\n{stderr}"
+    );
+}
+
+/// Init a repo + project layer and mint a single-task **without** creating a doc — the
+/// fresh canvas the batch `doc author` forge test authors an ADR into. Returns
+/// (repo, home, task-id).
+fn repo_with_task(intent: &str) -> (TempDir, TempDir, String) {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    git(repo.path(), &["init", "-q"]);
+    git(repo.path(), &["config", "user.email", "test@example.com"]);
+    git(repo.path(), &["config", "user.name", "Test"]);
+    fs::write(repo.path().join("README.md"), "hello\n").expect("write file");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial"]);
+    fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("create project layer");
+    let started = run(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", intent],
+    );
+    assert!(
+        started.status.success(),
+        "`jigc start` must provision the task; stderr:\n{}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    (repo, home, intent.replace(' ', "-"))
+}
+
+#[test]
+fn set_field_forging_the_schema_version_stamp_blocks() {
+    let (repo, home, task, slug) = repo_with_created_adr();
+    let staged = staged_adr(repo.path(), task, slug);
+    let before = fs::read_to_string(&staged).expect("read staged adr");
+
+    // Forge the freeze stamp: `set: schema-version` is a machine-maintained absolute — a
+    // forged `99 ≥ current` would make `migrate-corpus` skip the doc forever and
+    // `version_currency_break` never report, so the write is refused.
+    let out = run(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            &format!("adr:{slug}#status/schema-version"),
+            "--value",
+            "99",
+            "--task",
+            task,
+        ],
+    );
+    assert!(
+        !out.status.success(),
+        "forging the schema-version stamp through set-field must block (non-zero exit)"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("write.machine-maintained-field"),
+        "the block carries the machine-maintained-field code; got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("route:"),
+        "the machine-maintained block carries a route; got:\n{stderr}"
+    );
+
+    // The staged stamp is byte-untouched — no forged `99` was committed.
+    let after = fs::read_to_string(&staged).expect("read after blocked forge");
+    assert_eq!(
+        after, before,
+        "a blocked forge must leave the staged stamp byte-untouched"
+    );
+    assert!(
+        !after.contains("schema-version: 99"),
+        "the forged version must not land:\n{after}"
+    );
+}
+
+#[test]
+fn authoring_a_forged_schema_version_stamp_is_refused() {
+    let (repo, home, task) = repo_with_task("forge stamp");
+
+    // The same forge through the batch `doc author` payload — a `set: { schema-version }`
+    // on the header section lowers to a `set-field` leaf, which the shared
+    // `apply_field_target` seam refuses exactly like the per-leaf verb.
+    let payload = "title: Forged decision\n\
+        sections:\n\
+        \x20 - id: status\n\
+        \x20   set:\n\
+        \x20     schema-version: \"99\"\n";
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
+        .args(["doc", "author", "adr", "--from-file", "-", "--task", &task])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("spawn jigc");
+    child
+        .stdin
+        .take()
+        .expect("stdin piped")
+        .write_all(payload.as_bytes())
+        .expect("write payload");
+    let out = child.wait_with_output().expect("wait for jigc");
+    assert!(
+        !out.status.success(),
+        "forging the stamp through `doc author` must block (non-zero exit); stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("write.machine-maintained-field"),
+        "the batch forge is refused at the shared seam; got:\n{stderr}"
+    );
+}
+
+#[test]
+fn set_field_overwriting_the_on_create_date_stays_green() {
+    let (repo, home, task, slug) = repo_with_created_adr();
+
+    // `set: on-create` is a mint-time DEFAULT the author may legitimately override — the
+    // changelog-migration historical-date path (`flow25_migrate_changelog.rs`) depends on
+    // it, so the machine-maintained guard must NOT block it.
+    let out = run(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            &format!("adr:{slug}#status/date"),
+            "--value",
+            "2020-01-01",
+            "--task",
+            task,
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "overwriting an on-create date must stay exit-0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let staged = fs::read_to_string(staged_adr(repo.path(), task, slug)).expect("read staged adr");
+    assert!(
+        staged.contains("date: 2020-01-01"),
+        "the overridden historical date must land:\n{staged}"
     );
 }
 

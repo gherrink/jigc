@@ -619,6 +619,36 @@ pub const SCHEMA_VERSION_FIELD: &str = "schema-version";
 /// CLI-derived (never author-required) just like a `set: on-create` date.
 pub const SCHEMA_VERSION_SET: &str = "schema-version";
 
+/// The `set:` deriver naming a **milestone transition** as a field's value source —
+/// the milestone verbs stamp `base` / `status` / `intent` at create/join
+/// (`crates/engine/src/milestone.rs`; `design/team-ready-state.md`). A field carrying
+/// it is a machine-maintained absolute the author never overwrites, exactly like the
+/// [`SCHEMA_VERSION_SET`] stamp — the second member of the "the CLI is the sole author"
+/// `set:` kind (`design/write-commands.md` → The set-field machine-maintained guard).
+pub const SET_ON_TRANSITION: &str = "on-transition";
+
+/// Whether `field` is a **machine-maintained absolute**: its value is CLI-derived and
+/// the author may **never** overwrite it through a `jigc doc` write — the `set:`-kind
+/// split at the heart of the set-field machine-maintained guard. **True** for the freeze
+/// stamp ([`SCHEMA_VERSION_SET`]) and a milestone transition ([`SET_ON_TRANSITION`]);
+/// **false** for `set: on-create`, which the CLI merely *defaults* at mint and the
+/// changelog-migration historical-date path legitimately overwrites
+/// (`design/auto-migration.md` → no false history), and false for any non-`set:` field.
+///
+/// This is the *single authority* the write-path guard (`crates/cli/src/doc.rs` →
+/// `apply_field_target`) and the `doc schema` settability projection
+/// (`design/doc-read-surface.md` → the settability states) share, so *advertised-set*
+/// and *accepted-set* cannot drift — neither re-implements the walk. It is the strict
+/// **write** counterpart of [`crate::validate::is_author_required`]'s `set:` arm and the
+/// `--unset` eligibility guard: *cannot be unset* (every `set:`-derived field) is a
+/// strictly wider set than *may not be overwritten* (the absolutes only).
+pub fn is_machine_maintained_absolute(field: &Field) -> bool {
+    matches!(
+        field.set.as_deref(),
+        Some(SCHEMA_VERSION_SET | SET_ON_TRANSITION)
+    )
+}
+
 /// The id of the header section [`inject_schema_version_stamp`] creates for a
 /// header-less doctype (`prd`/`changelog`) so the stamp has a front-matter home —
 /// matching the `meta` header the other persisted doctypes already carry.
