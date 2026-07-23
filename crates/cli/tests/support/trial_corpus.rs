@@ -42,6 +42,21 @@ We build a deterministic context compiler.
 Structure belongs to the CLI; prose belongs to the model.
 ";
 
+/// The line [`State::ChattyHooks`]' foreign `pre-commit` hook echoes to **stdout**
+/// on every successful commit. git redirects a hook's stdout onto its own stderr, so
+/// this is the byte a suite looks for when it asks what the merged hook stream does
+/// to a machine-readable surface.
+pub const CHATTY_HOOK_MARKER: &str = "chatty-hook: pre-commit spoke on success";
+
+/// [`State::Vendored`]'s gitignored runtime file — present on disk, invisible to
+/// `git ls-files --cached --others --exclude-standard` (the ingest funnel's
+/// candidate source).
+pub const VENDORED_RUNTIME_FILE: &str = "node_modules/left-pad/index.js";
+
+/// [`State::Vendored`]'s tracked code file — the same walk's *visible* half, so the
+/// invisibility of the runtime dir is a discrimination rather than an empty walk.
+pub const VENDORED_CODE_FILE: &str = "src/pad.ts";
+
 /// One named corpus state. Iterate [`State::ALL`] to sweep every state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
@@ -61,6 +76,27 @@ pub enum State {
     /// provenance and a staged copy diverging from the committed bytes. That
     /// property is erased at finalize, so no finalized state can carry it.
     RefsPostHoc,
+    /// A foreign `pre-commit` hook that prints [`CHATTY_HOOK_MARKER`] to stdout and
+    /// exits `0` — the chatty-but-non-blocking hook a real repo carries (a linter, a
+    /// formatter, a CI shim). Closes the JSON-purity blind spot: git folds a hook's
+    /// stdout into its own stderr, so a machine-readable surface meets that stream
+    /// whether it wants to or not.
+    ///
+    /// **The hook deliberately *replaces* `jigc setup`'s own** rather than wrapping
+    /// it (`implementation/pinning.md` §4 — replace vs append is a stated call). The
+    /// consequence, stated rather than left to be discovered: **every suite running
+    /// this state commits without jigc's warn-only doc↔code backstop and without its
+    /// out-of-band-rename block** — so the only hook output such a suite can observe
+    /// is this fixture's own marker, which is what makes the observation
+    /// unambiguous, and the absence of setup's sentinel is what makes "replaced"
+    /// mechanically true rather than a comment.
+    ChattyHooks,
+    /// A gitignored vendored runtime directory ([`VENDORED_RUNTIME_FILE`]) beside
+    /// tracked source ([`VENDORED_CODE_FILE`]). Closes the worktree-provisioning /
+    /// ingest-funnel blind spot: the candidate walk is
+    /// `git ls-files --cached --others --exclude-standard`, so a vendored tree must
+    /// be *present on disk yet absent from that walk*.
+    Vendored,
 }
 
 impl State {
@@ -71,6 +107,8 @@ impl State {
         State::CommittedSingletons,
         State::Migrated,
         State::RefsPostHoc,
+        State::ChattyHooks,
+        State::Vendored,
     ];
 
     /// The state's name, as the goldens and suite labels spell it.
@@ -80,6 +118,8 @@ impl State {
             State::CommittedSingletons => "committed-singletons",
             State::Migrated => "migrated",
             State::RefsPostHoc => "refs-post-hoc",
+            State::ChattyHooks => "chatty-hooks",
+            State::Vendored => "vendored",
         }
     }
 }
@@ -127,6 +167,8 @@ impl TrialCorpus {
                 let live = corpus.build_refs_post_hoc();
                 corpus.live_task = Some(live);
             }
+            State::ChattyHooks => corpus.build_chatty_hooks(),
+            State::Vendored => corpus.build_vendored(),
         }
         corpus
     }
@@ -216,7 +258,7 @@ impl TrialCorpus {
     /// Compose a workflow and return the id the binary **printed** it minted — read
     /// from the real output, never reconstructed from the intent (the slug rule is
     /// the binary's, and a test-side copy of it would drift silently).
-    fn start_workflow(&self, workflow: &str, intent: &str) -> String {
+    pub fn start_workflow(&self, workflow: &str, intent: &str) -> String {
         minted_task(&self.jigc_ok(&["start", "--workflow", workflow, intent]))
     }
 
@@ -239,7 +281,10 @@ impl TrialCorpus {
     /// Author the task's `commit` doc and finalize it. Every fixture commit is a
     /// `docs` change, so only the scope and summary vary. `approve` passes
     /// `--approve`, which a migration's destructive retire-and-land needs.
-    fn finalize(&self, task: &str, scope: &str, summary: &str, approve: bool) {
+    ///
+    /// Returns the finalize invocation's **stdout**, so a caller can assert on what
+    /// the landed commit printed (the hook relay rides that stream on agent-text).
+    pub fn finalize(&self, task: &str, scope: &str, summary: &str, approve: bool) -> String {
         self.jigc_ok(&[
             "doc",
             "set-field",
@@ -268,7 +313,7 @@ impl TrialCorpus {
         if approve {
             args.push("--approve");
         }
-        self.jigc_ok(&args);
+        self.jigc_ok(&args)
     }
 
     /// [`State::CommittedSingletons`]: the three methodology singletons, each
@@ -402,6 +447,71 @@ impl TrialCorpus {
             &task,
         ]);
         task
+    }
+
+    /// [`State::ChattyHooks`]: overwrite `jigc setup`'s `pre-commit` hook with a
+    /// foreign one that prints [`CHATTY_HOOK_MARKER`] to stdout and exits `0`.
+    ///
+    /// Unmanaged repo furniture, so it is written directly — jigc has no verb that
+    /// authors a foreign hook. **Overwrite, not append:** setup's installer wraps a
+    /// pre-existing foreign hook (bracketing its own block by
+    /// `setup::PRECOMMIT_SENTINEL`), so appending would leave *both* streams in play
+    /// and a suite observing hook output could not tell whose bytes it read. The
+    /// price is stated on [`State::ChattyHooks`]: this state commits without jigc's
+    /// own backstop.
+    fn build_chatty_hooks(&self) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let hook = self.repo().join(".git/hooks/pre-commit");
+        fs::write(
+            &hook,
+            format!(
+                "#!/bin/sh\n\
+                 # A foreign, chatty, NON-blocking pre-commit hook — the trial corpus's\n\
+                 # `chatty-hooks` state. It replaces jigc's own hook outright.\n\
+                 echo '{CHATTY_HOOK_MARKER}'\n\
+                 exit 0\n"
+            ),
+        )
+        .expect("write the chatty pre-commit hook");
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755))
+            .expect("make the chatty hook executable");
+    }
+
+    /// [`State::Vendored`]: a gitignored vendored runtime tree beside tracked source.
+    ///
+    /// All unmanaged furniture, written directly. The `.gitignore` line is
+    /// **appended** (never overwritten) so whatever `setup` left in place survives,
+    /// and the tracked code file is committed — an untracked file would also appear
+    /// in the ingest walk, which would make the contrast prove nothing.
+    fn build_vendored(&self) {
+        let repo = self.repo();
+        let gitignore = repo.join(".gitignore");
+        let mut ignored = fs::read_to_string(&gitignore).unwrap_or_default();
+        if !ignored.is_empty() && !ignored.ends_with('\n') {
+            ignored.push('\n');
+        }
+        ignored.push_str("node_modules/\n");
+        fs::write(&gitignore, ignored).expect("append the vendored ignore rule");
+
+        for (rel, body) in [
+            (
+                VENDORED_RUNTIME_FILE,
+                "module.exports = function pad() { return ''; };\n",
+            ),
+            (
+                VENDORED_CODE_FILE,
+                "export function pad(s: string): string {\n  return s;\n}\n",
+            ),
+        ] {
+            let path = repo.join(rel);
+            fs::create_dir_all(path.parent().expect("a vendored file has a parent"))
+                .expect("create the vendored file's dir");
+            fs::write(&path, body).unwrap_or_else(|e| panic!("write {rel}: {e}"));
+        }
+
+        self.git(&["add", ".gitignore", VENDORED_CODE_FILE]);
+        self.git(&["commit", "-q", "-m", "vendor the runtime, track the source"]);
     }
 
     /// Run `git <args>` in the repo, assert success, return trimmed stdout.

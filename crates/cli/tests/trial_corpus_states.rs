@@ -1,5 +1,6 @@
-//! M45 Increment 1 / T2 + T3 — the **trial-shaped fixture builder**, its isolation
-//! fence, and the three managed-corpus states (`implementation/pinning.md` §4).
+//! M45 Increment 1 / T2–T4 — the **trial-shaped fixture builder**, its isolation
+//! fence, the three managed-corpus states, and the two repo-furniture states
+//! (`implementation/pinning.md` §4).
 //!
 //! The builder is the shared substrate the compose-golden suite and the contract
 //! property suites run over, so the substrate itself needs a fence: a fixture that
@@ -38,6 +39,19 @@
 //!   (6) **`refs-post-hoc`** — the `edited-from-base` provenance no finalized state
 //!       can carry: a staged copy under `.jigc/tasks/<id>/docs/` holding the edge
 //!       the committed bytes do not.
+//!
+//! Then T4's two **repo-furniture** states, both written directly (the narrowed
+//! build rule: jigc has no verb that authors a foreign hook or a vendor dir):
+//!
+//!   (7) **`chatty-hooks`** — the hook speaks on a **successful** commit driven
+//!       through a real jigc write path, and `jigc setup`'s own hook is **gone**, not
+//!       wrapped: the assertion reads the real [`cli::setup::PRECOMMIT_SENTINEL`], so
+//!       "replace, not append" is mechanically true rather than a comment.
+//!
+//!   (8) **`vendored`** — the gitignored runtime tree is on disk yet invisible to
+//!       `git ls-files --cached --others --exclude-standard` (the ingest funnel's
+//!       candidate walk) while the tracked code file is listed — a discrimination,
+//!       not an empty walk.
 
 mod support;
 
@@ -229,5 +243,83 @@ fn refs_post_hoc_carries_an_edited_from_base_staged_copy() {
     assert!(
         !committed.contains("grounded-in"),
         "the committed doc must NOT carry the edge — it is live in the task only; got:\n{committed}",
+    );
+}
+
+/// (7) `chatty-hooks` — the foreign hook speaks on a **successful** commit landed
+/// through a real jigc write path (`start` → `doc create` → `task finalize`), and it
+/// **replaced** setup's own hook rather than wrapping it.
+///
+/// The replacement half is asserted against the binary's own
+/// [`cli::setup::PRECOMMIT_SENTINEL`] — the marker setup's installer keys on — so a
+/// future wrap-instead-of-replace regression reddens here instead of quietly
+/// restoring jigc's backstop underneath every suite that runs this state.
+#[test]
+fn chatty_hooks_speaks_on_a_successful_commit_and_replaced_setups_hook() {
+    let corpus = TrialCorpus::build(State::ChattyHooks);
+    let hook = support::trial_corpus::read(&corpus.repo(), ".git/hooks/pre-commit");
+    assert!(
+        !hook.contains(cli::setup::PRECOMMIT_SENTINEL),
+        "`chatty-hooks` REPLACES setup's hook — its sentinel must be absent:\n{hook}",
+    );
+    assert!(
+        hook.contains(support::trial_corpus::CHATTY_HOOK_MARKER),
+        "the installed hook must be the chatty one:\n{hook}",
+    );
+
+    // A real jigc write path, landing a real commit — the hook fires on success.
+    let task = corpus.start_workflow("planning", "plan the first wave");
+    corpus.jigc_ok(&[
+        "doc", "create", "roadmap", "--title", "Roadmap", "--task", &task,
+    ]);
+    let landed = corpus.finalize(&task, "planning", "mint the roadmap", false);
+
+    assert!(
+        landed.contains(support::trial_corpus::CHATTY_HOOK_MARKER),
+        "the successful commit must relay the chatty hook's stdout; got:\n{landed}",
+    );
+    assert!(
+        landed.contains("--- hook output ---"),
+        "the relay must arrive in its delimited section; got:\n{landed}",
+    );
+    // The commit really landed — a hook that spoke on a *rejected* commit would
+    // prove nothing about the success path.
+    let tracked = corpus.git(&["ls-files"]);
+    assert!(
+        tracked.lines().any(|line| line == "docs/roadmap.md"),
+        "the finalize must have landed its commit; git ls-files:\n{tracked}",
+    );
+}
+
+/// (8) `vendored` — the gitignored runtime tree is **present on disk** and **absent
+/// from** `git ls-files --cached --others --exclude-standard`, the walk the ingest
+/// funnel takes its candidates from, while the tracked code file *is* listed.
+///
+/// Asserting the file exists is what keeps the invisibility claim from being
+/// vacuously true over a directory that was never written.
+#[test]
+fn vendored_hides_its_runtime_tree_from_the_ingest_walk() {
+    let corpus = TrialCorpus::build(State::Vendored);
+    let runtime = support::trial_corpus::VENDORED_RUNTIME_FILE;
+    let code = support::trial_corpus::VENDORED_CODE_FILE;
+
+    assert!(
+        corpus.repo().join(runtime).is_file(),
+        "the vendored runtime file must be on disk — otherwise its invisibility is vacuous",
+    );
+
+    let walked = corpus.git(&["ls-files", "--cached", "--others", "--exclude-standard"]);
+    assert!(
+        !walked.lines().any(|line| line.starts_with("node_modules/")),
+        "the gitignored runtime tree must be invisible to the ingest walk; got:\n{walked}",
+    );
+    assert!(
+        walked.lines().any(|line| line == code),
+        "the tracked code file must be listed by the same walk; got:\n{walked}",
+    );
+    let tracked = corpus.git(&["ls-files"]);
+    assert!(
+        tracked.lines().any(|line| line == code),
+        "the code file must be committed, not merely untracked-and-visible; git ls-files:\n{tracked}",
     );
 }
