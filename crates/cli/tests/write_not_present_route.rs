@@ -21,6 +21,14 @@
 //!       generic `jigc doc schema <doctype>` — the arm split left the genuine
 //!       shape-questions untouched.
 //!
+//! **M45 Increment 2, T5** joins the suite with the *dead-end* half of the same law:
+//!
+//!   (e) a write blocked because the **staged source** no longer parses
+//!       (`write.non-reparseable`) names the escape hatch `jigc task discard <task-id>`,
+//!       not only "re-run the same write" — re-running cannot recover a broken source,
+//!       and the emitted command is followed here (the fence's own declared `<task-id>`
+//!       substitution) and proven to actually retire the task.
+//!
 //! Mirrors `doc_remove_item.rs`: the embedded dev pack copied to a temp dir plus a
 //! two-level-repeatable `changelog` schema (here carrying a top-level `summary` slot on
 //! the release block, so a three-hop `#releases/<item>/summary` set-slot exists) and a
@@ -489,5 +497,101 @@ fn a_genuine_shape_question_still_routes_to_doc_schema() {
     assert!(
         route.contains("jigc doc schema <doctype>"),
         "a genuine shape question still routes `jigc doc schema <doctype>`; route:\n{route}",
+    );
+}
+
+/// (e) M45 Inc 2, T5 — **the dead end names its exit.** A write whose *staged source* no
+/// longer parses blocks with `write.non-reparseable`, and its route previously offered
+/// only "revise the payload … then re-run the same write" — false when the source, not
+/// the payload, is the broken thing (the rc.8 trial's #1-ranked cost: the reporter had to
+/// discover `jigc task discard` themselves). The route now names that escape hatch.
+///
+/// The staged copy is broken **out of band** (the real shape: a doc jigc's own write path
+/// cannot reach a valid state from), then the emitted command is *followed* — the route's
+/// `jigc task discard <task-id>` span with the fence's own declared substitution applied
+/// (`route_fence.rs` → `DUMMY_SUBSTITUTIONS`: a mechanical route's placeholder is filled
+/// by the agent, kept verbatim in the text) — and proven to actually retire the task.
+#[test]
+fn a_broken_staged_source_names_the_discard_escape_hatch() {
+    let fx = provision(&["1-3-0"]);
+    let slug = &fx.slug;
+
+    // Break the staged changelog out of band: the section heading no longer matches the
+    // schema's declared `releases` id, so the source parses against nothing.
+    let staged = fx
+        .repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("log-the-release")
+        .join("docs")
+        .join(format!("changelog:{slug}.md"));
+    let source = fs::read_to_string(&staged).expect("read the staged changelog");
+    assert!(
+        source.contains("## Releases"),
+        "the staged changelog carries the canonical section heading; got:\n{source}",
+    );
+    fs::write(&staged, source.replace("## Releases", "## Releasez")).expect("break the source");
+
+    let out = fx.run(
+        &[
+            "doc",
+            "set-slot",
+            &format!("changelog:{slug}#releases/1-3-0/summary"),
+            "--from-file",
+            "-",
+            "--format",
+            "json",
+        ],
+        Some(b"A summary.\n"),
+    );
+    assert!(
+        !out.status.success(),
+        "a write over a non-parsing staged source must block; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let report: serde_json::Value =
+        serde_json::from_str(stderr.trim()).unwrap_or_else(|e| panic!("stderr is JSON: {e}"));
+    assert_eq!(
+        report["findings"][0]["code"], "write.non-reparseable",
+        "the broken staged source blocks the write; got:\n{stderr}",
+    );
+    let route = report["findings"][0]["route"]
+        .as_str()
+        .expect("the blocking finding carries a route")
+        .to_owned();
+
+    // The escape hatch is named, beyond the re-run direction that cannot work here.
+    let discard = route
+        .split('`')
+        .find(|span| span.starts_with("jigc task discard"))
+        .unwrap_or_else(|| panic!("the route names a `jigc task discard` command; route:\n{route}"))
+        .to_owned();
+    assert_eq!(
+        discard, "jigc task discard <task-id>",
+        "the route's escape hatch is the shipped discard verb with the declared \
+         placeholder; route:\n{route}",
+    );
+
+    // Follow it: the emitted argv, `<task-id>` filled with this task's id, retires the task.
+    let args: Vec<String> = discard
+        .split_whitespace()
+        .skip(1)
+        .map(|arg| arg.replace("<task-id>", "log-the-release"))
+        .collect();
+    let followed = fx.run(
+        &args.iter().map(String::as_str).collect::<Vec<&str>>(),
+        None,
+    );
+    ok_stdout(followed, "the emitted `jigc task discard`");
+    assert!(
+        !fx.repo
+            .path()
+            .join(".jigc")
+            .join("tasks")
+            .join("log-the-release")
+            .exists(),
+        "the followed route actually retired the task's working area",
     );
 }

@@ -5130,7 +5130,9 @@ fn blocking_write(code: &str, message: impl Into<String>, location: Location) ->
 /// sibling). Shape questions route the mechanical `jigc doc schema <doctype>` read
 /// (`<doctype>` is a declared placeholder of the CLI-seam dummy table); payload defects
 /// route the human fix-and-re-run direction — the write persisted nothing, so re-running
-/// the same verb with a corrected payload is always the recovery.
+/// the same verb with a corrected payload is the recovery *for a payload defect*. Where a
+/// **broken staged source** can be the cause instead, re-running is a dead end and the
+/// route names the escape hatch as well ([`discard_span`]).
 fn write_route(code: &str) -> Route {
     match code {
         "write.malformed-value" => Route::mechanical(
@@ -5166,14 +5168,29 @@ fn write_route(code: &str) -> Route {
             "re-run `jigc doc set-field` with the inline-list form shown in the message, \
              carrying every value to keep",
         ),
-        "write.non-reparseable" => Route::human(
+        // The two **dead-end** rejects (M45): "re-run the same write" is the recovery only
+        // when the *payload* is the broken thing — when the **staged source** is, no payload
+        // revision can succeed and the agent is left circling (the rc.8 trial's costliest
+        // finding). Both name the escape hatch too, keeping re-run as the first branch where
+        // it genuinely applies. The exit is the shipped whole-task discard (no per-doc
+        // discard verb exists — the M43 ghost-verb repair), and the engine holds no task id
+        // at this seam, so the span carries the declared `<task-id>` placeholder the agent
+        // fills — the [`crate::file_state`] `reconciliation.conflict-block` shape, and it
+        // rides the checked [`Route::mechanical`] constructor so a verb that does not parse
+        // cannot be taught here (`surface-contract.md` → The route fence).
+        "write.non-reparseable" => Route::human(format!(
             "nothing was persisted — revise the payload so the result still conforms (the \
-             message names the break), then re-run the same write",
-        ),
-        "write.target-escape" => Route::human(
-            "nothing was persisted — re-run the write; a recurring escape is a write-path \
-             defect to report",
-        ),
+             message names the break), then re-run the same write; if the staged source \
+             itself is what no longer parses, {} and start the task over",
+            discard_span(),
+        )),
+        "write.target-escape" => Route::human(format!(
+            "nothing was persisted — re-run the write with a revised payload; the same \
+             payload over the same staged source escapes the same way, so if it recurs, \
+             {} and start the task over (a recurring escape is a write-path defect to \
+             report)",
+            discard_span(),
+        )),
         // The freed depth is **per-address** (M45 — a plain item frees `####`, a
         // multi-slot or nested-bearing one only `#####`), and the message names the
         // one that applies; a route naming a depth of its own would contradict it at
@@ -5194,6 +5211,18 @@ fn write_route(code: &str) -> Route {
              (the route floor, design/surface-contract.md → The route fence)"
         ),
     }
+}
+
+/// The `` `jigc task discard <task-id>` `` span the two dead-end write rejects embed in
+/// their prose. Built through the **checked** [`Route::mechanical`] constructor so the
+/// CLI-seam parse fence adjudicates the argv (`design/surface-contract.md` → The route
+/// fence) — a verb that does not parse cannot be taught here — and rendered to its text
+/// so the route can put the re-run branch first. `<task-id>` is a declared placeholder of
+/// the fence's dummy-substitution table; the agent fills it with the task it is in.
+fn discard_span() -> String {
+    Route::mechanical(["jigc", "task", "discard", "<task-id>"], "")
+        .as_str()
+        .to_owned()
 }
 
 /// Type-check a `set-field`'s new value against its declared schema [`FieldType`] —
@@ -6570,6 +6599,32 @@ Each service drops its local limiter.
             .expect_err("a diff outside the target span ⇒ abort");
         assert_eq!(finding.severity, crate::finding::Severity::Blocking);
         assert_eq!(finding.code, "write.target-escape");
+    }
+
+    /// M45 Inc 2, T5 — **the two dead-end routes name their exit.** `write.non-reparseable`
+    /// and `write.target-escape` are the pair whose stated recovery was "re-run the same
+    /// write": true when the *payload* is the broken thing, false when the **staged source**
+    /// is — and then the agent has nothing left to try. Both now name the shipped whole-task
+    /// discard as well, with the re-run branch kept first where it genuinely applies.
+    ///
+    /// A `target-escape` is unreachable through the real binary without an injected defect
+    /// (that is what the check is *for*), so its route is proven here; the reachable
+    /// `non-reparseable` sibling is proven end-to-end over a broken staged source in
+    /// `crates/cli/tests/write_not_present_route.rs` (arm (e)), where the CLI-installed
+    /// parse fence adjudicates the identical `jigc task discard <task-id>` argv live.
+    #[test]
+    fn the_dead_end_write_routes_name_the_discard_escape_hatch() {
+        for code in ["write.non-reparseable", "write.target-escape"] {
+            let route = write_route(code);
+            assert!(
+                route.as_str().contains("`jigc task discard <task-id>`"),
+                "`{code}` routes the escape hatch beyond re-running; got: {route}",
+            );
+            assert!(
+                route.as_str().contains("re-run"),
+                "`{code}` keeps the re-run branch where it genuinely applies; got: {route}",
+            );
+        }
     }
 
     /// Round-trip: filling a **non-terminal** slot whose body is currently empty (a
