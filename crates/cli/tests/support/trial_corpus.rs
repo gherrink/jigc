@@ -18,6 +18,34 @@
 //! per-repo git identity, `$HOME` repointed into the corpus, and `JIGC_PACK_DIR`
 //! removed from every child environment — the built state composes the *embedded*
 //! packs the suites claim to sweep, whatever the developer's shell carries.
+//!
+//! **Shape-class coverage extends existing states; it mints none** (pinning.md §4 —
+//! *shape-class coverage is the rule; the doctype list is only today's instance*).
+//! The six charter states covered no dev-pack doctype and left five of the six
+//! shape classes unpopulated, so each missing class was placed in the state it
+//! already belonged to rather than in a state of its own — every named state is
+//! paid for on **every** sweep (§1 measures ~38 s of serial subprocess time across
+//! six states), so a seventh state is the expensive answer:
+//!
+//!   * [`State::CommittedSingletons`] gains a **populated roadmap milestone** (the
+//!     only *multi-slot* repeatable either pack ships) and the **`changelog`
+//!     singleton** — simultaneously the only *nested* repeatable, the only
+//!     *`id-from` enum*, and the set's first dev-pack member. Both are singletons at
+//!     `placement` homes authored through their own driving workflows, which is
+//!     exactly what this state already is; the roadmap milestone rides the
+//!     **existing** planning task rather than adding one.
+//!   * [`State::Vendored`] gains a **`spec` + `arch-doc` pair whose code anchors
+//!     resolve**. This is the decisive fit, not a convenience: a *resolving*
+//!     code-anchor needs a **real tracked symbol**, and `vendored` is the only state
+//!     that carries tracked code. Documenting that code is what the two dev-pack
+//!     doctypes are *for*, so the state reads as "a repo with vendored runtime,
+//!     tracked source, and the managed docs describing it" rather than as two
+//!     unrelated halves.
+//!
+//! The coverage assertion itself lives in the consuming suite and is derived from
+//! the engine-loaded schema model on one side and read back through `doc list` /
+//! `doc show` on the other, so **neither** half is a list that can rot: a doctype
+//! that starts expressing an unpopulated class reddens the assertion.
 
 use std::fs;
 use std::io::Write;
@@ -55,18 +83,40 @@ pub const VENDORED_RUNTIME_FILE: &str = "node_modules/left-pad/index.js";
 
 /// [`State::Vendored`]'s tracked code file — the same walk's *visible* half, so the
 /// invisibility of the runtime dir is a discrimination rather than an empty walk.
+/// Also the symbol home the state's `arch-doc` component anchors at
+/// ([`VENDORED_CODE_SYMBOL`]).
 pub const VENDORED_CODE_FILE: &str = "src/pad.ts";
+
+/// The symbol [`VENDORED_CODE_FILE`] declares — the target of the `arch-doc`
+/// component's `implemented-by` code-anchor, resolved by the `doc-code` probe's
+/// TypeScript grammar. Also the component's item title, so the `title-names-symbol`
+/// guard is satisfied by construction.
+pub const VENDORED_CODE_SYMBOL: &str = "pad";
+
+/// [`State::Vendored`]'s tracked **test** file — the target of the `spec`
+/// criterion's `maps-to-test` code-anchor. Rust, because `criterion-maps-to-test`
+/// adjudicates the canonical Rust `#[test]` attribute and is Rust-only by design.
+pub const VENDORED_TEST_FILE: &str = "tests/pad_test.rs";
+
+/// The `#[test]`-attributed function [`VENDORED_TEST_FILE`] declares.
+pub const VENDORED_TEST_SYMBOL: &str = "pads_the_input";
 
 /// One named corpus state. Iterate [`State::ALL`] to sweep every state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     /// `jigc setup` only — the baseline.
     Fresh,
-    /// The three methodology singletons — `vision`, `roadmap`, `decisions-log` —
-    /// each created through its own driving workflow and **finalized**, so all
-    /// three are committed at their resolved homes (`VISION.md`,
-    /// `docs/roadmap.md`, `docs/decisions-log.md`). Closes the
-    /// create-over-committed / copy-in blind spot.
+    /// The committed singleton set — `vision`, `roadmap`, `decisions-log` and the
+    /// dev pack's `changelog` — each created through its own driving workflow and
+    /// **finalized**, so all four are committed at their resolved homes
+    /// (`VISION.md`, `docs/roadmap.md`, `docs/decisions-log.md`, `CHANGELOG.md`).
+    /// Closes the create-over-committed / copy-in blind spot.
+    ///
+    /// Two of them are **populated**, not merely minted (pinning.md §4 —
+    /// shape-class coverage): the roadmap carries a milestone with **both** its
+    /// prose leaves set (the only *multi-slot repeatable* either pack ships), and
+    /// the changelog carries a staged change-group **and** a cut release with a
+    /// nested one (the only *nested repeatable*, the only *`id-from` enum*).
     CommittedSingletons,
     /// A foreign document landed through `jigc migrate … --approve`: the managed
     /// doc is committed and the **foreign source is retired** in the same commit.
@@ -96,6 +146,15 @@ pub enum State {
     /// ingest-funnel blind spot: the candidate walk is
     /// `git ls-files --cached --others --exclude-standard`, so a vendored tree must
     /// be *present on disk yet absent from that walk*.
+    ///
+    /// It is also the **code-anchor** state (pinning.md §4), because a *resolving*
+    /// anchor needs a real tracked symbol and this is the only state that has one:
+    /// a committed `spec` whose criterion `maps-to-test` names the `#[test]` fn in
+    /// [`VENDORED_TEST_FILE`], and a committed `arch-doc` whose component
+    /// `implemented-by` names [`VENDORED_CODE_SYMBOL`] in [`VENDORED_CODE_FILE`].
+    /// Both landed through `task finalize`, where `doc-code.symbol-exists` /
+    /// `doc-code.criterion-maps-to-test` are **blocking** by default — so the state
+    /// building at all is the resolution proof, not a claim about it.
     Vendored,
 }
 
@@ -262,6 +321,28 @@ impl TrialCorpus {
         minted_task(&self.jigc_ok(&["start", "--workflow", workflow, intent]))
     }
 
+    /// Add one repeatable item and return the address the binary **emitted** —
+    /// driven verbatim downstream, never a test-side reconstruction of the slug
+    /// rule (the same discipline [`Self::start_workflow`] applies to task ids).
+    fn add_item(&self, section: &str, title: &str, task: &str) -> String {
+        self.jigc_ok(&["doc", "add-item", section, "--title", title, "--task", task])
+            .trim_end_matches('\n')
+            .to_string()
+    }
+
+    /// Set one typed field.
+    fn set_field(&self, address: &str, task: &str, value: &str) {
+        self.jigc_ok(&[
+            "doc",
+            "set-field",
+            address,
+            "--value",
+            value,
+            "--task",
+            task,
+        ]);
+    }
+
     /// Set one prose slot from stdin.
     fn set_slot(&self, address: &str, task: &str, prose: &str) {
         self.jigc_stdin_ok(
@@ -316,15 +397,35 @@ impl TrialCorpus {
         self.jigc_ok(&args)
     }
 
-    /// [`State::CommittedSingletons`]: the three methodology singletons, each
-    /// created through **its own driving workflow** (`planning` gates the roadmap
-    /// and the decisions log; `form-vision` gates the vision) and finalized, so all
-    /// three land committed at their `placement` homes.
+    /// [`State::CommittedSingletons`]: the committed singleton set, each created
+    /// through **its own driving workflow** (`planning` gates the roadmap and the
+    /// decisions log; `form-vision` gates the vision; `record-change` gates the
+    /// changelog) and finalized, so all four land committed at their `placement`
+    /// homes.
+    ///
+    /// The roadmap's milestone and the changelog's groups are authored here rather
+    /// than in a state of their own — they are the *multi-slot repeatable*, *nested
+    /// repeatable* and *`id-from` enum* shape cells, and both doctypes are
+    /// singletons authored through a driving workflow, which is what this state is.
     fn build_committed_singletons(&self) {
         let plan = self.start_workflow("planning", "plan the first wave");
         self.jigc_ok(&[
             "doc", "create", "roadmap", "--title", "Roadmap", "--task", &plan,
         ]);
+        // A POPULATED milestone: `milestones` is the only multi-slot repeatable
+        // either pack ships, so both prose leaves are set — an item with one leaf
+        // filled would leave the class half-covered.
+        let milestone = self.add_item("roadmap:roadmap#milestones", "M-Alpha", &plan);
+        self.set_slot(
+            &format!("{milestone}/proves"),
+            &plan,
+            "That the composed loop lands one task end to end.",
+        );
+        self.set_slot(
+            &format!("{milestone}/decomposition"),
+            &plan,
+            "Increment 1 — the enumeration seam. Increment 2 — the fixture builder.",
+        );
         self.jigc_ok(&[
             "doc",
             "create",
@@ -356,6 +457,54 @@ impl TrialCorpus {
             "Which domains earn a pack of their own.",
         );
         self.finalize(&vision, "vision", "form the project vision", false);
+
+        self.build_populated_changelog();
+    }
+
+    /// The `changelog` half of [`State::CommittedSingletons`] — the set's first
+    /// dev-pack member, authored through `record-change` and finalized to its
+    /// literal `CHANGELOG.md` home.
+    ///
+    /// Both of the doctype's `id-from: category` repeatables are populated (the
+    /// staging area *and* a cut release's nested groups), so the *nested repeatable*
+    /// and *`id-from` enum* cells are covered at both depths rather than only at the
+    /// shallow one. The optional `link` field is authored too — an optional leaf
+    /// left empty in every state would make its write path unswept.
+    fn build_populated_changelog(&self) {
+        let task = self.start_workflow("record-change", "cut the first release");
+        self.jigc_ok(&[
+            "doc",
+            "create",
+            "changelog",
+            "--title",
+            "Changelog",
+            "--task",
+            &task,
+        ]);
+
+        // The staging area: a change-group whose id comes from the `category` enum.
+        let staged = self.add_item("changelog:changelog#unreleased-changes", "changed", &task);
+        self.set_slot(
+            &format!("{staged}/notes"),
+            &task,
+            "- the fixture builder gained shape-class coverage",
+        );
+
+        // A cut release, carrying a NESTED change-group (the `Leaf::Repeatable`).
+        let release = self.add_item("changelog:changelog#releases", "1.0.0", &task);
+        self.set_field(
+            &format!("{release}/link"),
+            &task,
+            "https://example.com/compare/0.9.0...1.0.0",
+        );
+        let group = self.add_item(&format!("{release}/changes"), "added", &task);
+        self.set_slot(
+            &format!("{group}/notes"),
+            &task,
+            "- the trial-shaped fixture builder",
+        );
+
+        self.finalize(&task, "changelog", "cut the first release", false);
     }
 
     /// [`State::Migrated`]: a foreign document committed as ordinary repo furniture,
@@ -478,12 +627,15 @@ impl TrialCorpus {
             .expect("make the chatty hook executable");
     }
 
-    /// [`State::Vendored`]: a gitignored vendored runtime tree beside tracked source.
+    /// [`State::Vendored`]: a gitignored vendored runtime tree beside tracked
+    /// source, plus the two dev-pack docs that describe that source.
     ///
-    /// All unmanaged furniture, written directly. The `.gitignore` line is
-    /// **appended** (never overwritten) so whatever `setup` left in place survives,
-    /// and the tracked code file is committed — an untracked file would also appear
-    /// in the ingest walk, which would make the contrast prove nothing.
+    /// The repo furniture is written directly (jigc has no verb that authors a
+    /// vendor dir). The `.gitignore` line is **appended** (never overwritten) so
+    /// whatever `setup` left in place survives, and the code + test files are
+    /// committed — an untracked file would also appear in the ingest walk, which
+    /// would make the contrast prove nothing, *and* a code-anchor over an untracked
+    /// file would not be the tracked-symbol case the coverage rule asks for.
     fn build_vendored(&self) {
         let repo = self.repo();
         let gitignore = repo.join(".gitignore");
@@ -503,6 +655,10 @@ impl TrialCorpus {
                 VENDORED_CODE_FILE,
                 "export function pad(s: string): string {\n  return s;\n}\n",
             ),
+            (
+                VENDORED_TEST_FILE,
+                "#[test]\nfn pads_the_input() {\n    assert_eq!(pad(\"x\"), \"x\");\n}\n",
+            ),
         ] {
             let path = repo.join(rel);
             fs::create_dir_all(path.parent().expect("a vendored file has a parent"))
@@ -510,8 +666,90 @@ impl TrialCorpus {
             fs::write(&path, body).unwrap_or_else(|e| panic!("write {rel}: {e}"));
         }
 
-        self.git(&["add", ".gitignore", VENDORED_CODE_FILE]);
+        self.git(&["add", ".gitignore", VENDORED_CODE_FILE, VENDORED_TEST_FILE]);
         self.git(&["commit", "-q", "-m", "vendor the runtime, track the source"]);
+
+        self.build_code_anchored_docs();
+    }
+
+    /// The code-anchored half of [`State::Vendored`] — a `spec` and an `arch-doc`
+    /// documenting the state's own tracked source, each finalized with a code-anchor
+    /// pointed at a **real tracked symbol**.
+    ///
+    /// `symbol-exists` and `criterion-maps-to-test` are **blocking** by default and
+    /// the `doc-code` probe ships beside the built binary, so a finalize that lands
+    /// at all is the resolution proof: a dangling anchor would fail the build here,
+    /// loudly, instead of leaving a green-but-hollow fixture. The two anchors are
+    /// deliberately *different* checks over different grammars — the component's
+    /// `implemented-by` resolves a TypeScript declaration, the criterion's
+    /// `maps-to-test` a Rust `#[test]` fn (the predicate is Rust-only by design).
+    fn build_code_anchored_docs(&self) {
+        let spec = self.start_workflow("plan", "spec the padding helper");
+        let spec_id = self
+            .jigc_ok(&[
+                "doc", "create", "spec", "--title", "Padding", "--task", &spec,
+            ])
+            .trim_end_matches('\n')
+            .to_string();
+        self.set_slot(
+            &format!("{spec_id}#goal"),
+            &spec,
+            "A helper that pads a string to a fixed width.",
+        );
+        self.set_slot(
+            &format!("{spec_id}#context"),
+            &spec,
+            "The vendored runtime shipped its own; the tracked source replaces it.",
+        );
+        let criterion = self.add_item(&format!("{spec_id}#criteria"), "Pads the input", &spec);
+        self.set_slot(
+            &format!("{criterion}/statement"),
+            &spec,
+            "Padding a string returns it unchanged when it is already wide enough.",
+        );
+        self.set_field(
+            &format!("{criterion}/maps-to-test"),
+            &spec,
+            &format!("{VENDORED_TEST_FILE}#{VENDORED_TEST_SYMBOL}"),
+        );
+        self.finalize(&spec, "spec", "spec the padding helper", false);
+
+        let arch = self.start_workflow("architecture-documentation", "document the padding layer");
+        let arch_id = self
+            .jigc_ok(&[
+                "doc",
+                "create",
+                "arch-doc",
+                "--title",
+                "Padding layer",
+                "--task",
+                &arch,
+            ])
+            .trim_end_matches('\n')
+            .to_string();
+        self.set_slot(
+            &format!("{arch_id}#overview"),
+            &arch,
+            "The padding layer owns string-width normalization for the tracked source.",
+        );
+        // The component title IS the symbol, so `title-names-symbol` holds by
+        // construction rather than by a comment.
+        let component = self.add_item(
+            &format!("{arch_id}#components"),
+            VENDORED_CODE_SYMBOL,
+            &arch,
+        );
+        self.set_slot(
+            &format!("{component}/description"),
+            &arch,
+            "Pads a string to the requested width.",
+        );
+        self.set_field(
+            &format!("{component}/implemented-by"),
+            &arch,
+            &format!("{VENDORED_CODE_FILE}#{VENDORED_CODE_SYMBOL}"),
+        );
+        self.finalize(&arch, "arch-doc", "document the padding layer", false);
     }
 
     /// Run `git <args>` in the repo, assert success, return trimmed stdout.

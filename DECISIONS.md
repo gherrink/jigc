@@ -2,6 +2,15 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-23 — M45 Inc 1 T5: shape-class coverage, and where each missing cell homes
+
+The six charter states left **five of the six shape classes unpopulated** ([pinning.md](implementation/pinning.md) §4 — *a class with no populated instance is a missing state, not an accepted gap*). Four elaborations:
+
+- **Every missing class extends an existing state; none mints one.** A named state is paid for on every sweep (§1: ~38 s serial across six), so the roadmap milestone rides the **existing** planning task, the `changelog` joins `committed-singletons` (it *is* a singleton at a `placement` home, authored through its own driving workflow — the state's literal definition, now with its first dev-pack member), and the `spec`/`arch-doc` pair joins **`vendored`**. That last one is a fit, not a convenience: a *resolving* code-anchor needs a real **tracked symbol**, and `vendored` is the only state that has one — documenting its source is what the two dev-pack doctypes are for.
+- **Both sides of the coverage assertion are derived, so neither can rot.** Class→doctype comes from the **engine-loaded** schema model of the composite registry (slot counts per repeatable, `Leaf::Repeatable` nesting, an `id-from` naming an enum field, `placement`, a `FieldType::Pack` leaf); populated-or-not is read back out of each built state through the **real read surfaces** (`doc list --format json` → `doc show --format json`), never off the builder's bookkeeping. A doctype that starts expressing an unpopulated class reddens the assertion instead of rotting a list.
+- **The `code-anchor` cell is fenced where its membership is decided.** The class is defined as *a field of a pack-declared type*, and a sibling arm asserts the declared set is exactly `[code-anchor]` — so a pack declaring a second type reddens there and has to answer the coverage question, rather than silently widening a cell that is already green.
+- **"Resolves" is proven by flipping the lever, not by a clean report.** A clean `doc-code` sweep over a corpus whose probe never ran is byte-identical to a clean sweep over resolving anchors. So the arm reads the sweep clean, then deletes the two anchored symbols from the tracked files and reads it again — `symbol-exists` *and* `criterion-maps-to-test` both fire. The two anchors deliberately sit on different grammars and different checks (a TypeScript declaration; a Rust `#[test]` fn, the predicate being Rust-only by design).
+
 ## 2026-07-23 — M45 Inc 1 T3: the three managed-corpus states
 
 `committed-singletons` / `migrated` / `refs-post-hoc` land in the fixture builder, each driven end to end through the real binary ([pinning.md](implementation/pinning.md) §4). Three elaborations the design left to the executor:
