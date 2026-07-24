@@ -717,7 +717,10 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
 /// out-of-band `git mv` — a structural-identity event this commit introduced, M35
 /// Component B), **or** an `engine::validate::SCHEMA_VERSION_CURRENT_CODE` break (M42 — a
 /// managed committed instance below its manifest version, i.e. an **unmigrated corpus**,
-/// where every other family adjudicated docs against a schema they were never written to)
+/// where every other family adjudicated docs against a schema they were never written to;
+/// paired since 2026-07-24 with its above-current sibling
+/// `engine::validate::SCHEMA_VERSION_AHEAD_CODE` — a future/foreign stamp this build has no
+/// schema for, the same untrustworthy-sweep criterion)
 /// exits **non-zero** (`Outcome::failure()`, *not* the task-gate `EXIT_VALIDATION_BLOCKED`
 /// — this is not a transaction gate). The decision is the shared
 /// [`render::validation_store_exit_flips`] (keyed on the probe id / check id **directly**,
@@ -755,7 +758,10 @@ fn run_validate_store(format: Format) -> Outcome {
             // `schema-conformance.schema-version-current` break (M42) means the corpus is
             // **unmigrated**, so every other family in this very report adjudicated docs
             // against a schema they were never written to — the same untrustworthy-sweep
-            // criterion as (1). Otherwise (content-only or clean) detect-and-report exits 0,
+            // criterion as (1); since 2026-07-24 the exception is a code *pair* with its
+            // above-current sibling `schema-conformance.schema-version-ahead` (a
+            // future/foreign stamp this build has no schema for — same criterion, inverse
+            // direction). Otherwise (content-only or clean) detect-and-report exits 0,
             // even when a content finding blocks. Keyed on the probe id / check id directly,
             // mirrored by [`render::validation_store`]'s `report_only` field + trailer.
             let code = if render::validation_store_exit_flips(&report) {

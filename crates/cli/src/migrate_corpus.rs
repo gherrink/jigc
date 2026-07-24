@@ -59,7 +59,7 @@ use std::path::{Path, PathBuf};
 
 /// One doctype's migration job: its current shape (`to`, stamp-injected) and its current
 /// manifest schema-version (the value the stamp is filled/bumped to + the "already current"
-/// threshold). The **prior** shape (`from`) is resolved **per committed doc by stamp** in
+/// match — a stamp *above* it blocks as a future/foreign stamp, never already-current). The **prior** shape (`from`) is resolved **per committed doc by stamp** in
 /// [`migrate_committed_corpus`] — stamp-absent (v0) docs derive it from the doctype's *earliest*
 /// shipped snapshot ([`v0_prior_shape`]); below-version (v1→v2) docs source it from the snapshot
 /// at their own stamp via [`crate::pack::load_prior_schema`] — so it is not a per-doctype field.
@@ -416,7 +416,10 @@ fn git_stdout(repo_root: &Path, args: &[&str]) -> Result<String> {
 ///
 /// The **prior shape (`from`) is resolved per committed doc by its schema-version stamp**
 /// (`design/corpus-migration.md` → Prior-schema sourcing):
-/// - **at-or-above** the doctype's current version → `already-current`, byte-untouched.
+/// - **at** the doctype's current version → `already-current`, byte-untouched.
+/// - **above** the current version (a future/foreign stamp, 2026-07-24) → **blocked** with a
+///   route — this binary has no schema to migrate the doc *to*, and a silent
+///   `already-current` would hide it from every future run ([`future_stamp_finding`]).
 /// - **stamp absent** (the v0 corpus state) → `from` = the doctype's **earliest shipped
 ///   snapshot**, stamp-stripped ([`v0_prior_shape`]; `strip_stamp(to)` only for a doctype that
 ///   has never bumped, whose earliest shape *is* its current one). The diff is the whole
@@ -499,8 +502,18 @@ pub(crate) fn migrate_committed_corpus(
             };
             let source = String::from_utf8_lossy(&bytes).into_owned();
             match read_stamp_from_source(&source) {
-                // At or above the current version: already current, byte-untouched.
-                Some(s) if s >= dt.version => report.already_current.push(rel_key),
+                // At the current version: already current, byte-untouched.
+                Some(s) if s == dt.version => report.already_current.push(rel_key),
+                // Above the current version (2026-07-24, the sibling-hunt item 1): an
+                // OOB-planted or foreign-future stamp. Blocked with a route — never a
+                // silent `already-current` (the same never-a-silent-skip rule as the
+                // missing-snapshot arm): this binary has no schema to migrate the doc
+                // *to*, so reporting it current would hide it from every future run.
+                Some(s) if s > dt.version => {
+                    report
+                        .blocked
+                        .push(future_stamp_finding(&rel_key, &dt.ty, s, dt.version));
+                }
                 // A below-version stamp (a v1→v2 transition): source the prior shape from
                 // the versioned snapshot store and value-bump the stamp `k → current`. A
                 // missing snapshot blocks the doc — never a silent already-current (the
@@ -1035,6 +1048,29 @@ fn blocked_finding(code: &str, path: &str, message: String, route: String) -> Fi
         message,
         Some(Location::addressed(path, 1, 1)),
         Some(route.into()),
+    )
+}
+
+/// An **above-current** stamped doc (2026-07-24, the confidence-audit sibling-hunt item 1):
+/// an OOB-planted or foreign-future stamp this binary has no schema to migrate the doc *to*,
+/// so it is blocked — never a silent `already-current`, which would hide it from every
+/// future run (the permanent migrate-skip the hunt found). The route mirrors the detector's
+/// `schema-conformance.schema-version-ahead` break and is Human-shaped: no verb fixes a
+/// future stamp (`set-field` refuses the machine-maintained stamp) — upgrade jigc, or
+/// restore the stamp from git history.
+fn future_stamp_finding(rel_key: &str, ty: &str, stamp: u32, current: u32) -> Finding {
+    blocked_finding(
+        "migrate-corpus.schema-version-ahead",
+        rel_key,
+        format!(
+            "`{rel_key}` is stamped schema-version {stamp}, above the current `{ty}` \
+             schema-version {current} — this jigc build has no schema to migrate it to \
+             (a newer jigc wrote it, or the stamp was edited out-of-band)"
+        ),
+        format!(
+            "upgrade jigc to a build whose `{ty}` schema-version is at least {stamp}, or \
+             restore the stamp from git history, then re-run `jigc migrate-corpus`"
+        ),
     )
 }
 

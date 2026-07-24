@@ -703,6 +703,18 @@ fn schema_conformance_store(
                     {
                         doc_findings.push(version_currency_break(stamp, current, &rel_key));
                     }
+                    // The **above-current** sibling (2026-07-24, the confidence-audit
+                    // sibling-hunt item 1): an OOB-planted or foreign-future stamp is a
+                    // *different fact* from a stale one — `jigc migrate-corpus` cannot fix
+                    // it — so it gets its own break ([`version_ahead_break`]) rather than
+                    // riding the below-version code. Without this arm the case was fully
+                    // silent: no finding, exit 0 — the fixed failure through an unfixed door.
+                    if let Some(current) = current
+                        && let Some(s) = stamp
+                        && s > current
+                    {
+                        doc_findings.push(version_ahead_break(s, current, &rel_key));
+                    }
                     attribute_to_doc(&mut doc_findings, &identity, &rel_key);
                     findings.extend(doc_findings);
                 }
@@ -718,10 +730,21 @@ fn schema_conformance_store(
                     // (`design/corpus-migration.md` → Acceptance flows: the adr v1→v2 flow; the
                     // Finding-2 detector/verb agreement extended to the structural parse-failure
                     // case). The stamp is read from the raw front matter (a full parse is
-                    // unavailable here). An at/above-version parse failure is genuine corruption
-                    // — left un-routed, exactly the labeler's `corrupt`-vs-`migrate` split.
+                    // unavailable here). An **at**-version parse failure is genuine corruption
+                    // — left un-routed, exactly the labeler's `corrupt`-vs-`migrate` split. An
+                    // **above**-current stamp (2026-07-24, the sibling-hunt item 1) is a third
+                    // fact: the doc was written to a schema this binary does not know, so the
+                    // ahead break rides this arm too (its parse findings stay un-routed — no
+                    // repair of *this binary's* making exists; the break's own route names the
+                    // human ones).
                     let stamp = schema_version_from_front_matter(&source);
                     let current = versions.get(ty).copied();
+                    if let Some(current) = current
+                        && let Some(s) = stamp
+                        && s > current
+                    {
+                        parse_findings.push(version_ahead_break(s, current, &rel_key));
+                    }
                     if let Some(current) = current
                         && stamp.is_none_or(|s| s < current)
                     {
@@ -1223,12 +1246,73 @@ fn version_currency_break(stamp: Option<u32>, current: u32, rel_key: &str) -> Fi
     )
 }
 
+/// The check id of the **version-ahead** break — a *managed* committed instance whose
+/// schema-version stamp is **above** its doctype's manifest version (2026-07-24, the
+/// confidence-audit sibling-hunt item 1).
+pub const SCHEMA_VERSION_AHEAD_CODE: &str = "schema-conformance.schema-version-ahead";
+
+/// Build the **version-ahead** break for a committed doc of a versioned doctype, classified
+/// **managed**, whose schema-version stamp is **above** its doctype's manifest `current` — an
+/// OOB-planted or foreign-future stamp (the sibling-hunt item 1: before this arm the case was
+/// fully silent — no finding, exit 0, and `jigc migrate-corpus` skipped the doc as
+/// already-current forever).
+///
+/// **Its own check id**, by the M42 retraction's own rationale ([`version_currency_break`]):
+/// a stale stamp and a future stamp are *different facts with different consequences* — a
+/// stale doc is mechanically repaired by `jigc migrate-corpus`, a future-stamped doc
+/// **cannot be** (this binary has no schema to migrate it *to*) — and a machine consumer
+/// keys on the code alone, so folding both into `schema-version-current` would route an
+/// unfixable doc at a verb that blocks it.
+///
+/// The route is **Human-shaped** — no mechanical fix exists (`set-field` refuses the
+/// machine-maintained stamp, the M45 forged-freeze-stamp guard): either a newer jigc wrote
+/// the doc (upgrade jigc) or the stamp was edited out-of-band (restore it from git history).
+/// `Severity::Blocking`, and — like its below sibling — the one **store-scope** consequence
+/// is the exit flip: the doc was written to a schema this binary does not know, so the sweep
+/// could not adjudicate it (the same untrustworthy-sweep criterion; the CLI's exit predicate
+/// keys on this code too, `crates/cli/src/render.rs` → `validation_store_exit_flips`).
+///
+/// Deliberately **not** a `CHECK_INVENTORY` row (no severity knob): the break is the
+/// trustworthiness floor stated for the inverse direction, a severity delta could not change
+/// its consequence (the exit flip keys on the code, never the severity), and an un-keyed code
+/// cannot be demoted at all — a floor stronger than `floor: blocking`.
+fn version_ahead_break(stamp: u32, current: u32, rel_key: &str) -> Finding {
+    let field = crate::schema::SCHEMA_VERSION_FIELD;
+    let message = format!(
+        "field `{field}` is schema-version {stamp}, above the current schema-version {current} \
+         — the doc was written to a schema this jigc build does not know"
+    );
+    let route = ahead_route(stamp, current, rel_key);
+    Finding::graded(
+        Severity::Blocking,
+        SCHEMA_VERSION_AHEAD_CODE,
+        message,
+        None,
+        Some(route.into()),
+    )
+}
+
+/// The **one** route wording for the future/foreign-stamp fact — shared by the ahead break
+/// and [`route_schema_conformance`]'s ahead arm, so the two surfaces cannot tell two stories
+/// about one doc. Human-shaped: no verb fixes a future stamp.
+fn ahead_route(stamp: u32, current: u32, rel_key: &str) -> String {
+    format!(
+        "ahead — `{rel_key}` is stamped schema-version {stamp}, above the current {current} \
+         this jigc build knows; either a newer jigc wrote it (upgrade jigc) or the stamp was \
+         edited out-of-band (restore it from git history) — `jigc migrate-corpus` cannot fix \
+         a future stamp"
+    )
+}
+
 /// Label each `schema-conformance.*` finding over a non-conformant committed doc with its
 /// **version-aware route** (`design/validation.md` → Store-scope schema-conformance →
 /// Version-aware routing): a doc stamped **below** its doctype's `manifest` version — or
 /// carrying **no** stamp (the v0 corpus state) — routes `migrate` (a known-old-version doc
 /// the M34 transform can upgrade); one **at** the current version that still does not
-/// conform routes `corrupt` (human review, not a version bump). The classification leads the
+/// conform routes `corrupt` (human review, not a version bump); one **above** the current
+/// version routes `ahead` (2026-07-24 — the future/foreign-stamp fact, [`ahead_route`]:
+/// upgrade jigc or restore the stamp, never `migrate` and never the at-current `corrupt`
+/// lie). The classification leads the
 /// `route` string so it is both a human-readable repair direction and a stable machine token
 /// the agent reads; the engine never executes it (route is a direction, not a guarantee).
 ///
@@ -1254,6 +1338,11 @@ fn route_schema_conformance(
             "migrate — `{rel_key}` is stamped schema-version {s}, below the current \
              {current}; run the corpus migration to upgrade it"
         ),
+        // Above-current (2026-07-24, the sibling-hunt item 1): labelling these findings
+        // `corrupt — at the current schema-version` would be a lie (the doc is at a
+        // *future* one), and `migrate` would route at a verb that blocks it. Same wording
+        // as the ahead break's own route.
+        Some(s) if s > current => ahead_route(s, current, rel_key),
         Some(_) => format!(
             "corrupt — `{rel_key}` is at the current schema-version {current} but does not \
              conform; review it by hand"
@@ -7460,6 +7549,86 @@ Effects.
         assert!(
             at.is_empty(),
             "an at-version doc must surface NO version break, got {at:?}",
+        );
+    }
+
+    /// (2026-07-24 — the confidence-audit sibling-hunt item 1) **An above-current stamp is a
+    /// surfaced break of its own** — [`SCHEMA_VERSION_AHEAD_CODE`], never the below-version
+    /// code and never silence. Before this arm an OOB-planted `schema-version: 99` produced
+    /// **no finding at all** (`stamp.is_none_or(|s| s < current)` has no `s > current` case) —
+    /// the fixed failure through an unfixed door. Both detector arms are pinned: the
+    /// parse-success arm (an otherwise-conformant doc) and the parse-failure arm (a doc
+    /// written to a future schema this binary cannot parse). The route is Human-shaped, `ahead`
+    /// leading — no verb fixes a future stamp.
+    #[test]
+    fn store_sweep_emits_version_ahead_break_for_above_current_stamp() {
+        let schemas = stamped_schemas();
+        let versions: BTreeMap<String, u32> = [("adr".to_string(), 1u32)].into_iter().collect();
+
+        let findings_of = |tag: &str, body: &str| -> Vec<Finding> {
+            let repo = TempRoot::new(tag);
+            repo.commit("decisions", "doc", body);
+            let mut record = FileStateRecord::new();
+            record.record("decisions/doc.md", hash_bytes(body.as_bytes()));
+            let seen = RefCell::new(Vec::new());
+            validate_store_families(
+                repo.path(),
+                &schemas,
+                &no_delta_resolved(),
+                &dangling_aware_invoker(&seen),
+                &[],
+                &EmptyStepSource,
+                &record,
+                &versions,
+                &BTreeMap::new(),
+            )
+            .expect("store sweep runs")
+            .findings
+            .into_vec()
+        };
+
+        // (i) The parse-success arm: an otherwise-conformant ADR stamped 7 under manifest
+        // version 1 ⇒ exactly one AHEAD break, routed `ahead` at the human repairs — and
+        // no below-version break (the two facts stay distinguishable by code).
+        let above_body = ADR_STAMP_1.replace("schema-version: 1", "schema-version: 7");
+        let above = findings_of("above", &above_body);
+        let ahead: Vec<&Finding> = above
+            .iter()
+            .filter(|f| f.code == SCHEMA_VERSION_AHEAD_CODE)
+            .collect();
+        assert_eq!(
+            ahead.len(),
+            1,
+            "an above-current doc must surface exactly one ahead break, got {above:?}",
+        );
+        assert!(
+            ahead[0]
+                .route
+                .as_deref()
+                .is_some_and(|r| r.starts_with("ahead")
+                    && r.contains("upgrade jigc")
+                    && r.contains("git history")),
+            "the ahead break routes `ahead` at the human repairs, got {:?}",
+            ahead[0].route,
+        );
+        assert!(
+            !above.iter().any(|f| f.code == SCHEMA_VERSION_CURRENT_CODE),
+            "a future stamp must never surface as the below-version break, got {above:?}",
+        );
+
+        // (ii) The parse-failure arm: a doc written to a future schema shape (sections this
+        // binary's schema does not match) still surfaces the ahead break — the stamp is read
+        // from the raw front matter.
+        let broken_above = ADR_STAMP_0_NO_OPTIONS.replace("schema-version: 0", "schema-version: 7");
+        let broken = findings_of("broken-above", &broken_above);
+        assert_eq!(
+            broken
+                .iter()
+                .filter(|f| f.code == SCHEMA_VERSION_AHEAD_CODE)
+                .count(),
+            1,
+            "an above-current doc that fails to parse must still surface the ahead break, \
+             got {broken:?}",
         );
     }
 

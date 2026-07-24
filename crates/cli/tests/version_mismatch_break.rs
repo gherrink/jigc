@@ -255,6 +255,89 @@ fn store_sweep_reports_unstamped_v0_doc_as_migrate_and_exits_nonzero() {
     );
 }
 
+/// (the above-current arm — the confidence-audit sibling-hunt item 1, 2026-07-24) An
+/// otherwise-conformant ADR stamped **above** its doctype's manifest version — an OOB-planted
+/// or foreign-future stamp — is a *different fact* from a stale one (the M42 retraction
+/// rationale: a machine consumer must be able to tell them apart, because a stale stamp is
+/// fixed by `jigc migrate-corpus` and a future stamp **cannot** be), so it surfaces under its
+/// **own** check id `schema-conformance.schema-version-ahead`, with a Human-shaped route (no
+/// mechanical fix exists: `set-field` refuses the machine-maintained stamp — upgrade jigc, or
+/// restore the stamp from git history), and the sweep **exits non-zero** on the same
+/// untrustworthy-sweep criterion as the below-version break (the doc was written to a schema
+/// this binary does not know). Before the fix this case was **silent**: no finding, exit 0 —
+/// the fixed failure through an unfixed door.
+///
+/// And `jigc migrate-corpus` must **never** report it `already-current` (the permanent silent
+/// migrate-skip): it blocks the doc with a route, mirroring the missing-snapshot arm.
+#[test]
+fn store_sweep_reports_above_current_stamp_and_migrate_corpus_blocks_it() {
+    let repo = TempDir::new("ahead");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    // An otherwise-conformant committed ADR stamped far above the current manifest version.
+    commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(99));
+
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // The above-current stamp meets the same exit-flipping criterion as the below-version
+    // break: the doc was written to a schema this binary does not know, so the sweep could
+    // not adjudicate it.
+    assert!(
+        !out.status.success(),
+        "an above-current stamp flips `jigc validate`'s exit non-zero; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    // Exactly one break, under the AHEAD code — never the below-version code (the two facts
+    // must stay distinguishable to a machine consumer keying on the code).
+    assert_eq!(
+        count(&stdout, "schema-conformance.schema-version-ahead"),
+        1,
+        "an above-current ADR must surface exactly one version-ahead break; stdout:\n{stdout}",
+    );
+    assert_eq!(
+        count(&stdout, "schema-conformance.schema-version-current"),
+        0,
+        "a future stamp is not a stale stamp — the below-version code must not fire; \
+         stdout:\n{stdout}",
+    );
+    // The route is honest and Human-shaped: no verb fixes a future stamp, so it names the
+    // two real repairs — upgrade jigc, or restore the stamp from git history.
+    assert!(
+        stdout.contains("upgrade jigc") && stdout.contains("git history"),
+        "the ahead break's route must name the two human repairs (upgrade jigc / restore \
+         from git history); stdout:\n{stdout}",
+    );
+
+    // `jigc migrate-corpus` must not silently skip the doc as already-current: it blocks it
+    // with a route (the missing-snapshot precedent — never a silent skip).
+    let out = jigc(repo.path(), home.path(), &["migrate-corpus", "--dry-run"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "an above-current doc blocks the corpus migration (exit non-zero); \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert_eq!(
+        count(&stdout, "current    docs/decisions/alpha-decision.md"),
+        0,
+        "an above-current doc must NOT report `already current`; stdout:\n{stdout}",
+    );
+    assert_eq!(
+        count(&stdout, "blocked    docs/decisions/alpha-decision.md"),
+        1,
+        "the above-current doc is blocked, with its path named; stdout:\n{stdout}",
+    );
+    assert_eq!(
+        count(&stdout, "migrate-corpus.schema-version-ahead"),
+        1,
+        "the refusal carries its own stable code; stdout:\n{stdout}",
+    );
+}
+
 /// (the false-positive guard) A current-stamped store surfaces **no** version finding, no
 /// route line, and exits 0 — a doc stamped at the manifest version is clean.
 #[test]

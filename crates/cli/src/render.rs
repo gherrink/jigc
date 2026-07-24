@@ -454,8 +454,9 @@ pub fn validation_store(
     // a structural-identity event this commit introduced), and — M42 — a version-currency
     // break (the corpus is below its manifest version, so *every other family* adjudicated
     // docs against a schema they were never written to: the same untrustworthy-sweep
-    // criterion as the crashed probe). Any of the three flips `report_only` false; the
-    // trailer distinguishes the three wordings. The exit decision is the shared
+    // criterion as the crashed probe; since 2026-07-24 the pair with its above-current
+    // sibling — a future/foreign stamp this build has no schema for). Any of these flips
+    // `report_only` false; the trailer distinguishes the wordings. The exit decision is the shared
     // [`validation_store_exit_flips`] both this renderer's `report_only` field and
     // `run_validate_store`'s exit code key on, so all three stay truthful in lockstep.
     let probe_unreliable = report
@@ -470,6 +471,10 @@ pub fn validation_store(
         .findings
         .iter()
         .any(|f| f.code == engine::validate::SCHEMA_VERSION_CURRENT_CODE);
+    let ahead_corpus = report
+        .findings
+        .iter()
+        .any(|f| f.code == engine::validate::SCHEMA_VERSION_AHEAD_CODE);
     match format {
         Format::Json => {
             let mut value = serde_json::to_value(report).expect("validation report serializes");
@@ -491,6 +496,7 @@ pub fn validation_store(
                 probe_unreliable,
                 oob_rename,
                 unmigrated_corpus,
+                ahead_corpus,
                 unbaselined,
             );
             validation_scoped(
@@ -511,7 +517,11 @@ pub fn validation_store(
 /// this commit introduced), or (M42) an [`engine::validate::SCHEMA_VERSION_CURRENT_CODE`]
 /// break — a **managed** committed instance below its doctype's manifest version, i.e. an
 /// **unmigrated corpus**, where every other family adjudicated docs against a schema they
-/// were never written to. All three meet the class's own recorded criterion: *the sweep
+/// were never written to. The third exception spans a **code pair** since 2026-07-24: its
+/// above-current sibling [`engine::validate::SCHEMA_VERSION_AHEAD_CODE`] (a future/foreign
+/// stamp — the doc was written to a schema this binary does not know) flips the exit for the
+/// same reason through the same predicate. All of these meet the class's own recorded
+/// criterion: *the sweep
 /// could not produce a trustworthy result*. The report-only rule for **content** findings is
 /// untouched — an invalid enum, a malformed date, a dangling ref keep their codes and their
 /// exit 0.
@@ -530,6 +540,7 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
         f.probe == "pack-probe-integrity"
             || f.code == "reconciliation.rename"
             || f.code == engine::validate::SCHEMA_VERSION_CURRENT_CODE
+            || f.code == engine::validate::SCHEMA_VERSION_AHEAD_CODE
     })
 }
 
@@ -578,6 +589,10 @@ const GATES_NOWHERE: &[&str] = &[
     "file-state.unregistered-doc",
     "store-version.binary-mismatch",
     engine::validate::SCHEMA_VERSION_CURRENT_CODE,
+    // The above-current sibling (2026-07-24): emitted only by the store sweep's fifth
+    // family, exactly like the below-version break — no task-scope path can mint it, so
+    // the per-finding gate label must never claim a finalize gate for it.
+    engine::validate::SCHEMA_VERSION_AHEAD_CODE,
 ];
 
 /// Whether a **gate exists for this finding** — the criterion the report-only trailer's claim
@@ -653,17 +668,22 @@ fn gates_at_finalize(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool 
 }
 
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
-/// exit-0-with-`blocking`-findings is unambiguous. Four cases, matching the three
-/// exit-flipping exceptions (`validation.md` → Exit semantics): for the
+/// exit-0-with-`blocking`-findings is unambiguous. Five cases, matching the three
+/// exit-flipping exceptions (`validation.md` → Exit semantics; the third is a code *pair*
+/// since 2026-07-24): for the
 /// `pack-probe-integrity.*` exception (`probe_unreliable`) it says the sweep could not
 /// complete and exits non-zero; for a store-scope `reconciliation.rename` (`oob_rename`,
 /// M35) it says an out-of-band rename was detected and the sweep exits non-zero; for a
 /// version-currency break (`unmigrated_corpus`, M42) it says the corpus is unmigrated — so
 /// every other finding in the report was adjudicated against the wrong schema — and names
-/// `jigc migrate-corpus`, the verb that clears it; otherwise the content findings are
-/// **report-only** at store scope (exit 0) and it names where they actually gate.
+/// `jigc migrate-corpus`, the verb that clears it; for its above-current sibling
+/// (`ahead_corpus`, 2026-07-24) it says a doc was written to a schema this build does not
+/// know and names the human repairs (upgrade jigc / restore the stamp — **never**
+/// `jigc migrate-corpus`, which cannot fix a future stamp); otherwise the content findings
+/// are **report-only** at store scope (exit 0) and it names where they actually gate.
 /// Probe-unreliability dominates (it taints the whole result); the unmigrated corpus is next
-/// (it taints every *content* verdict below it). Ends with a newline so the caller appends
+/// (it taints every *content* verdict below it, and clearing it first is right even when an
+/// ahead doc coexists). Ends with a newline so the caller appends
 /// the routing footer on its own line.
 ///
 /// **The report-only branch claims a gate only where one exists (M42).** Its blanket sentence
@@ -680,6 +700,7 @@ fn store_trailer(
     probe_unreliable: bool,
     oob_rename: bool,
     unmigrated_corpus: bool,
+    ahead_corpus: bool,
     unbaselined: &BTreeSet<String>,
 ) -> String {
     if probe_unreliable {
@@ -694,6 +715,13 @@ fn store_trailer(
         "the committed corpus is below its schema-version — every other finding above was \
          adjudicated against a schema those docs were never written to, so the sweep exits \
          non-zero; run `jigc migrate-corpus`, then re-validate.\n"
+            .to_string()
+    } else if ahead_corpus {
+        // The above-current sibling (2026-07-24): honest and Human-shaped — no verb fixes
+        // a future stamp, so the trailer must not name `jigc migrate-corpus` as the repair.
+        "a committed doc is stamped above this build's schema-version — it was written to a \
+         schema this jigc build does not know, so the sweep could not adjudicate it and exits \
+         non-zero; upgrade jigc, or restore the stamp from git history, then re-validate.\n"
             .to_string()
     } else {
         let n = report.findings.len();
