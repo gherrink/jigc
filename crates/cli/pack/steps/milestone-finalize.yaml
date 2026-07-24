@@ -1,5 +1,8 @@
 After a clean join, the parent finalize is the one commit boundary for the whole
 milestone — validate the merged effective state and commit per the
-`finalize.fan-out.squash` knob:
+`finalize.fan-out.squash` knob. Each sub-task reaches this boundary through
+two channels: the docs it wrote through the CLI (an overlay merged by task id)
+and the code it `git add`-staged, folded from that worktree's staged index —
+a sub-task's unstaged code edits never reach the commit:
 
 {{ cli.milestone-finalize }}

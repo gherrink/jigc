@@ -1883,6 +1883,51 @@ fn milestone_execute_spawn_emit_is_byte_identical_across_divergent_add_orders() 
     );
 }
 
+/// M45 Inc 10 (T4): the milestone-execution compose carries the three orchestrator
+/// stated-at notices the project-alpha-3.0 trial found missing at the fan-out surface —
+/// (a) the two-channel docs-overlay/code-index fold statement (milestone-finalize),
+/// (b) the worktrees-lack-runtime-deps note, and (c) the bookkeeping-commits-land-on-
+/// the-working-branch notice (both on provision-worktrees). Asserted on the emitted
+/// composed bytes the agent reads, never a hand-built equivalent.
+#[test]
+fn milestone_execute_states_the_two_channel_runtime_dep_and_bookkeeping_notices() {
+    let repo = TempDir::new("execute-notices");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let stdout = execute_with_add_order(
+        repo.path(),
+        home.path(),
+        "Cache rework",
+        &["Alpha fix", "Zebra fix"],
+    );
+
+    // (a) The finalize fold is two-channel — docs merged as an overlay, code folded
+    // from each worktree's staged index (stated only in the sub-task's own commit
+    // step before this fix; now on the orchestrator surface too).
+    assert!(
+        stdout.contains("two channels")
+            && stdout.contains("overlay")
+            && stdout.contains("staged index"),
+        "the milestone-finalize step must state the two-channel docs-overlay/code-index \
+         fold; got:\n{stdout}",
+    );
+
+    // (b) The detached worktrees carry only tracked files — no installed deps.
+    assert!(
+        stdout.contains("git-tracked")
+            && stdout.contains("node_modules")
+            && stdout.contains("worktree first"),
+        "the provision step must note the worktrees lack runtime dependencies; got:\n{stdout}",
+    );
+
+    // (c) Milestone bookkeeping lands record-only commits on the working branch.
+    assert!(
+        stdout.contains("record-only commits") && stdout.contains("working branch"),
+        "the provision step must note bookkeeping commits land on the working branch; \
+         got:\n{stdout}",
+    );
+}
+
 /// Read the persisted minting-workflow id of a sub-task from its isolated working
 /// area (`.jigc/tasks/<sub>/workflow`) — the `read_workflow_id` companion of the
 /// engine mint, surfaced through the on-disk file the CLI threads `--workflow` into.
