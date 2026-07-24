@@ -1829,6 +1829,13 @@ pub(crate) fn try_execute_finalize_plan(
     // pre-staged blob `A` that jigc's `git add` overwrote with `B`. Empty when the plan
     // records no owner-artifact (the omitting-context inert path — every non-completion task).
     let mut owner_index: Vec<OwnerArtifactIndexEntry> = Vec::new();
+    // The promotions index axis (confidence-audit sibling-hunt item 2): each promotion
+    // destination's PRE-finalize index entry, captured with the same third-axis primitive
+    // before the stage `git add`s the destination — so a rejected finalize restores a blob
+    // the user staged at the destination mid-task (post-mint, outside the carryover
+    // snapshot) instead of resetting the path to HEAD and destroying it. Empty when the
+    // plan promotes nothing.
+    let mut promo_index: Vec<OwnerArtifactIndexEntry> = Vec::new();
     // The FOURTH rollback axis (M45 milestone-audit fix, `design/finalize.md` → Rollback
     // discipline): the pre-finalize index state of jigc's own config-layer stage — the
     // `.jigc/version` stamp and the `.jigc/config/` + `.jigc/.gitignore` layer the stage
@@ -1855,6 +1862,16 @@ pub(crate) fn try_execute_finalize_plan(
         // those index entries, so this is the genuine pre-finalize state. Inert (empty) unless
         // the plan records an owner-artifact.
         owner_index = capture_owner_artifact_index(repo_root, &plan.owner_artifacts)?;
+        // Capture each promotion destination's pre-finalize index entry BEFORE any stage arm
+        // `git add`s it — the promotions index axis, on the same capture/restore primitive as
+        // the third axis. The promote/retire above touched only the worktree, so this reads
+        // the genuine pre-finalize index state.
+        let promo_paths: Vec<String> = plan
+            .promotions
+            .iter()
+            .map(|p| p.destination.clone())
+            .collect();
+        promo_index = capture_owner_artifact_index(repo_root, &promo_paths)?;
         // Capture jigc's config-layer index BEFORE any stage arm refreshes the stamp / (re)stages
         // the config layer — the fourth rollback axis. The index is untouched by the promote /
         // retire / gitignore-ensure above (they touch only the worktree), so this reads the
@@ -1923,13 +1940,16 @@ pub(crate) fn try_execute_finalize_plan(
         Ok(hook_output) => hook_output,
         Err(err) => {
             // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore
-            // HEAD content for the promoted paths and delete the promoted copies, and
-            // restore what the retire/stage themselves touched (review B1; scoped M40 F7)
-            // — so an approved-but-failed commit never leaves the foreign file deleted
-            // with no commit, and never resurrects a user's own pre-staged deletion.
+            // each promotion destination's captured pre-finalize index entry + undo
+            // promote's worktree write, and restore what the retire/stage themselves
+            // touched (review B1; scoped M40 F7) — so an approved-but-failed commit never
+            // leaves the foreign file deleted with no commit, never resurrects a user's
+            // own pre-staged deletion, and never destroys a blob the user staged at a
+            // destination mid-task (the promotions index axis).
             rollback_promotions(
                 repo_root,
                 &plan.promotions,
+                &promo_index,
                 &plan.retirements,
                 &retired,
                 &staged,
@@ -2217,8 +2237,10 @@ impl std::fmt::Display for OwnerArtifactBlock {
 
 impl std::error::Error for OwnerArtifactBlock {}
 
-/// One owner-artifact path's pre-finalize index entry — the third rollback axis's capture
-/// (M45 Inc 8 T2, `design/finalize.md` → Rollback discipline, the owner-artifact row).
+/// One path's pre-finalize index entry — the third rollback axis's capture (M45 Inc 8 T2,
+/// `design/finalize.md` → Rollback discipline, the owner-artifact row), reused by the
+/// promotions index axis for each promotion destination (confidence-audit sibling-hunt
+/// item 2 — one primitive, two staged-path families).
 /// `entry` is `Some((mode, blob-sha))` when the path was in the index before finalize staged
 /// it (e.g. a user's pre-staged blob `A`), `None` when it was absent from the index.
 struct OwnerArtifactIndexEntry {
@@ -2226,8 +2248,9 @@ struct OwnerArtifactIndexEntry {
     entry: Option<(String, String)>,
 }
 
-/// Capture each owner-artifact path's pre-finalize index entry via `git ls-files --stage`
-/// (M45 Inc 8 T2 — the third rollback axis). The output is `<mode> <sha> <stage>\t<path>`
+/// Capture each path's pre-finalize index entry via `git ls-files --stage` (M45 Inc 8 T2 —
+/// the third rollback axis; also fed the promotion destinations for the promotions index
+/// axis). The output is `<mode> <sha> <stage>\t<path>`
 /// when the path is in the index, empty when absent. Called before the stage `git add`
 /// overwrites the entry, so a stage/commit failure can restore *exactly* what was there —
 /// not drop to HEAD, not keep jigc's overwrite. Empty `paths` → empty capture (inert).
@@ -2258,8 +2281,9 @@ fn capture_owner_artifact_index(
     Ok(captured)
 }
 
-/// Restore each owner-artifact path's captured pre-finalize index entry on a stage/commit
-/// failure — the third scoped rollback axis (M45 Inc 8 T2). Best-effort (the commit did not
+/// Restore each captured path's pre-finalize index entry on a stage/commit failure — the
+/// third scoped rollback axis (M45 Inc 8 T2), also the index half of [`rollback_promotions`]
+/// (the promotions index axis). Best-effort (the commit did not
 /// land, so a restore failure is logged, never raised — mirroring [`rollback_promotions`]).
 ///
 /// - **Present** → `git update-index --cacheinfo <mode> <sha> <path>` sets the index back to
@@ -2625,10 +2649,15 @@ fn existing_pathspecs(repo_root: &Path, candidates: &[&str]) -> Vec<String> {
 
 /// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback discipline /
 /// 6. Commit; `design/auto-migration.md` → The transaction mechanism, the scoped
-/// rollback obligation). For each promoted path, restore HEAD's content in the index +
-/// worktree (undoing the stage) and delete the promoted copy. Retirements are restored
-/// **two-axis scoped (M40 F7)** — restore only what jigc's own retire/staging touched,
-/// never what the user deleted:
+/// rollback obligation). Promoted paths are restored **two-axis scoped** (confidence-audit
+/// sibling-hunt item 2): the **index** back to each destination's captured pre-finalize
+/// entry via the shared third-axis primitive ([`rollback_owner_artifact_index`]) — never a
+/// `git restore --staged` reset to HEAD, which destroyed a blob the user staged at the
+/// destination mid-task (post-mint, so outside the carryover snapshot; for a destination
+/// new at HEAD the reset dropped the entry entirely) — and the **worktree** back to what it
+/// held before [`promote`] wrote it (HEAD's bytes for a tracked destination, the promoted
+/// copy removed for a new one). Retirements are restored **two-axis scoped (M40 F7)** —
+/// restore only what jigc's own retire/staging touched, never what the user deleted:
 ///
 /// - **worktree axis, keyed on the retire byte-capture set** (`retired`): a path
 ///   [`retire`] itself deleted has its captured pre-deletion bytes rewritten if still
@@ -2646,19 +2675,33 @@ fn existing_pathspecs(repo_root: &Path, candidates: &[&str]) -> Vec<String> {
 fn rollback_promotions(
     repo_root: &Path,
     promotions: &[Promotion],
+    promo_index: &[OwnerArtifactIndexEntry],
     retirements: &[PathBuf],
     retired: &[(PathBuf, Vec<u8>)],
     staged: &[String],
 ) {
+    // Index axis: restore each destination's captured pre-finalize index entry — a user's
+    // mid-task staged blob comes back byte-exact, and a pre-staged deletion (entry absent
+    // pre-finalize) is NOT resurrected (`--force-remove` drops the stage's overwrite).
+    rollback_owner_artifact_index(repo_root, promo_index);
     for promotion in promotions {
-        let _ = git_run(
-            repo_root,
-            &["restore", "--staged", "--worktree", &promotion.destination],
-        );
-        let dest = repo_root.join(&promotion.destination);
-        // `git restore` recreates the path only if it existed at HEAD; a freshly promoted
-        // (new) doc has no HEAD content, so remove the copy outright.
-        if !path_at_head(repo_root, &promotion.destination) {
+        // Worktree axis: undo [`promote`]'s write. A destination tracked at HEAD gets
+        // HEAD's bytes back (`--source=HEAD --worktree` — index untouched, that axis is
+        // restored above); a freshly promoted (new) doc has no HEAD content, so remove the
+        // copy outright.
+        if path_at_head(repo_root, &promotion.destination) {
+            let _ = git_run(
+                repo_root,
+                &[
+                    "restore",
+                    "--source=HEAD",
+                    "--worktree",
+                    "--",
+                    &promotion.destination,
+                ],
+            );
+        } else {
+            let dest = repo_root.join(&promotion.destination);
             let _ = std::fs::remove_file(&dest);
             // Sweep up any now-empty parent dirs `promote`'s `create_dir_all` opened (e.g.
             // an untracked `docs/decisions/`), up to — but never including — repo_root, so the

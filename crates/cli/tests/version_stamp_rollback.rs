@@ -165,6 +165,12 @@ fn install_rejecting_pre_commit(repo: &Path) {
     fs::set_permissions(&hook, perms).expect("chmod hook");
 }
 
+/// Where the promoted ADR lands on disk: the `adr` schema's `decisions/` nested under the
+/// default `docs-root` knob (`docs/`).
+fn adr_destination(slug: &str) -> String {
+    format!("docs/decisions/{slug}.md")
+}
+
 /// A hook-rejected `jigc task finalize` must leave the index **byte-identical to its
 /// pre-finalize state** — including the jigc-staged config layer. Two members of that axis,
 /// one red assertion each without the fix: the **stale `.jigc/version`** whose staged blob
@@ -257,6 +263,150 @@ fn a_hook_rejected_finalize_restores_the_staged_config_layer() {
 
     // The strong form: the whole index is byte-identical to its pre-finalize state — every
     // path jigc's own staging contributed is rolled back, nothing else touched.
+    assert_eq!(
+        index_after, index_before,
+        "the index must be byte-identical to its pre-finalize state after a rejected finalize",
+    );
+}
+
+/// The **promotions rollback axis** joins the same pre-finalize index capture/restore
+/// discipline (confidence-audit sibling-hunt item 2 — the axis-3 failure shape, one axis
+/// over): a blob the user stages at a promoted destination path **mid-task** (post-mint, so
+/// outside the carryover snapshot; worktree copy removed, so the pre-promotion clobber guard
+/// — which covers the worktree-file shape — does not fire) must survive a hook-rejected
+/// finalize. The old primitive (`git restore --staged --worktree <dest>`) reset the
+/// destination to **HEAD** — for a path new at HEAD that *drops the index entry entirely*,
+/// silently destroying the user's staged blob. After rollback the staged blob must be
+/// byte-identical to the pre-finalize state, the promoted worktree copy gone (the
+/// pre-finalize worktree had no file there), and the whole index byte-identical.
+#[test]
+fn a_hook_rejected_finalize_restores_a_staged_blob_at_a_promotion_destination() {
+    let repo = TempDir::new("promo");
+    let home = TempDir::new("home");
+    let stale_stamp = "0.0.0-fixture-stale-stamp\n";
+    init_repo(repo.path(), stale_stamp);
+
+    let intent = "record the cache decision";
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "single-task", intent],
+        ),
+        "`jigc start`",
+    );
+    let task = "record-the-cache-decision";
+
+    // Create + author an ADR in-task (the create-gate: single-task admits `adr` as
+    // `decision`) — the doc finalize will PROMOTE to `docs/decisions/<slug>.md`.
+    let create = jigc_doc(
+        repo.path(),
+        home.path(),
+        &["create", "adr", "--title", "Cache in one node"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create adr`");
+    let adr = String::from_utf8(create.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string();
+    assert_eq!(adr, "adr:cache-in-one-node", "the created adr address");
+    let dest = adr_destination("cache-in-one-node");
+
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_doc(
+            repo.path(),
+            home.path(),
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    set_slot("adr:cache-in-one-node#context", b"Sessions need a cache.\n");
+    set_slot("adr:cache-in-one-node#decision", b"One in-memory node.\n");
+    set_slot(
+        "adr:cache-in-one-node#consequences",
+        b"No cross-node state.\n",
+    );
+    fill_commit(repo.path(), home.path(), task);
+
+    // MID-TASK (after mint — outside the carryover snapshot), the user stages blob X at the
+    // very destination the finalize will promote to, then removes the worktree copy. The
+    // index now holds X at `docs/decisions/cache-in-one-node.md`; the worktree has no file
+    // there, so the pre-promotion clobber guard (which keys on a worktree file) passes and
+    // the finalize reaches the stage/commit phase — where jigc's `git add <dest>` overwrites
+    // the entry with the promotion blob.
+    let blob_x = "user-staged draft at the destination — pre-finalize blob X\n";
+    fs::create_dir_all(repo.path().join("docs/decisions")).expect("mk destination dir");
+    fs::write(repo.path().join(&dest), blob_x).expect("write blob X");
+    git(repo.path(), &["add", &dest]);
+    fs::remove_file(repo.path().join(&dest)).expect("remove the worktree copy");
+    let staged_before = git(repo.path(), &["show", &format!(":{dest}")]);
+    assert_eq!(
+        staged_before, blob_x,
+        "precondition: the staged blob at the destination is X going in"
+    );
+
+    // This is the exact state the rollback must return the index to.
+    let index_before = index_snapshot(repo.path());
+
+    install_rejecting_pre_commit(repo.path());
+
+    let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .unwrap();
+    let out = jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "a rejecting pre-commit must make finalize exit non-zero; got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("rejected by test hook"),
+        "the finalize must have reached the commit phase (the hook is the rejector), not \
+         blocked earlier; got:\n{rendered}",
+    );
+
+    // No commit landed.
+    let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(before, after, "a hook-rejected finalize creates no commit");
+
+    // The staged blob at the promotion destination is byte-identical to the pre-finalize X —
+    // NOT reset to HEAD (which, the path being new at HEAD, drops the entry and destroys X),
+    // NOT left as jigc's promotion overwrite.
+    let show = Command::new("git")
+        .args(["show", &format!(":{dest}")])
+        .current_dir(repo.path())
+        .output()
+        .expect("run git show");
+    assert!(
+        show.status.success(),
+        "after rollback the destination's index entry must still exist — the old primitive \
+         dropped it to HEAD (i.e. to nothing); stderr:\n{}",
+        String::from_utf8_lossy(&show.stderr),
+    );
+    let staged_after = String::from_utf8(show.stdout).expect("utf-8");
+    assert_eq!(
+        staged_after, blob_x,
+        "after rollback `git show :{dest}` must equal the pre-finalize blob X",
+    );
+
+    // The promoted worktree copy is rolled back (the pre-finalize worktree had no file there).
+    assert!(
+        !repo.path().join(&dest).exists(),
+        "the promoted copy at {dest} must be removed on rollback",
+    );
+
+    // The strong form: the whole index is byte-identical to its pre-finalize state.
+    let index_after = index_snapshot(repo.path());
     assert_eq!(
         index_after, index_before,
         "the index must be byte-identical to its pre-finalize state after a rejected finalize",
