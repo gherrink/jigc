@@ -1821,6 +1821,12 @@ pub(crate) fn try_execute_finalize_plan(
     // untracked foreign original `git restore` cannot recover (review F3). Empty unless a
     // migration retire ran.
     let mut retired: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    // The bytes promote displaced at a pre-existing destination, captured pre-overwrite
+    // (confidence-audit minor item 10 — the retire capture's promote sibling): a
+    // same-path migration of an UNTRACKED foreign plans no retirement, so these are the
+    // only copy of the foreign bytes a rollback can restore. Empty when no destination
+    // file pre-exists.
+    let mut displaced: Vec<(String, Vec<u8>)> = Vec::new();
     // The pathspecs the migration stage actually `git add`ed (M40 F7) — the rollback's
     // index-axis key, so only a deletion jigc itself staged is un-staged on failure.
     // Empty on every non-migration stage arm (those have no retirements to un-stage).
@@ -1848,8 +1854,9 @@ pub(crate) fn try_execute_finalize_plan(
     // the promotions axis) did not cover.
     let mut config_index: Vec<ConfigLayerIndexEntry> = Vec::new();
     let commit_result = (|| -> Result<String> {
-        // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
-        promote(repo_root, &plan.promotions)?;
+        // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`,
+        // capturing any displaced pre-existing destination bytes for the rollback.
+        displaced = promote(repo_root, &plan.promotions)?;
         // Retire each foreign original (`design/auto-migration.md` →
         // Retire-the-foreign-original) — the first byte-destructive write, inside the
         // commit closure so `git add --all` stages the deletion into the same commit as
@@ -1944,6 +1951,7 @@ pub(crate) fn try_execute_finalize_plan(
                 repo_root,
                 &plan.promotions,
                 &promo_index,
+                &displaced,
                 &plan.retirements,
                 &retired,
                 &staged,
@@ -2024,12 +2032,24 @@ pub(crate) fn fold_hook_streams<'a, I: IntoIterator<Item = &'a str>>(streams: I)
 /// doc from its source to its canonical repo path (`<repo_root>/<destination>`) —
 /// **copy, not move**, so rollback is a removal of the copies and the working area stays
 /// intact. Creates the destination's parent directory (e.g. `decisions/`) when absent.
-fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<()> {
+///
+/// **Captures the displaced destination bytes** keyed by repo-relative destination
+/// (confidence-audit minor item 10 — the retire byte-capture discipline, applied to the
+/// promote): a **same-path** migration (`destination == source`, the M43 carve-out)
+/// plans no retirement, so when the foreign original is **untracked** the promotion
+/// destination is the user's only copy of its bytes and `git restore` has nothing to
+/// recover from — the captured bytes are what [`rollback_promotions`] rewrites so a
+/// rejected commit never deletes them. Empty when no destination file pre-exists.
+fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<Vec<(String, Vec<u8>)>> {
+    let mut displaced = Vec::new();
     for promotion in promotions {
         let dest = repo_root.join(&promotion.destination);
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("could not create {parent:?} to promote into"))?;
+        }
+        if let Ok(bytes) = std::fs::read(&dest) {
+            displaced.push((promotion.destination.clone(), bytes));
         }
         std::fs::copy(&promotion.source, &dest).with_context(|| {
             format!(
@@ -2038,7 +2058,7 @@ fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<()> {
             )
         })?;
     }
-    Ok(())
+    Ok(displaced)
 }
 
 /// The retire step (`design/auto-migration.md` → Retire-the-foreign-original) — the
@@ -2665,8 +2685,10 @@ fn existing_pathspecs(repo_root: &Path, candidates: &[&str]) -> Vec<String> {
 /// `git restore --staged` reset to HEAD, which destroyed a blob the user staged at the
 /// destination mid-task (post-mint, so outside the carryover snapshot; for a destination
 /// new at HEAD the reset dropped the entry entirely) — and the **worktree** back to what it
-/// held before [`promote`] wrote it (HEAD's bytes for a tracked destination, the promoted
-/// copy removed for a new one). Retirements are restored **two-axis scoped (M40 F7)** —
+/// held before [`promote`] wrote it (HEAD's bytes for a tracked destination; the captured
+/// **displaced** pre-promote bytes for an untracked destination that pre-existed — the
+/// same-path untracked-foreign cell, confidence-audit minor item 10; the promoted copy
+/// removed for a genuinely new one). Retirements are restored **two-axis scoped (M40 F7)** —
 /// restore only what jigc's own retire/staging touched, never what the user deleted:
 ///
 /// - **worktree axis, keyed on the retire byte-capture set** (`retired`): a path
@@ -2686,6 +2708,7 @@ fn rollback_promotions(
     repo_root: &Path,
     promotions: &[Promotion],
     promo_index: &[OwnerArtifactIndexEntry],
+    displaced: &[(String, Vec<u8>)],
     retirements: &[PathBuf],
     retired: &[(PathBuf, Vec<u8>)],
     staged: &[String],
@@ -2697,8 +2720,10 @@ fn rollback_promotions(
     for promotion in promotions {
         // Worktree axis: undo [`promote`]'s write. A destination tracked at HEAD gets
         // HEAD's bytes back (`--source=HEAD --worktree` — index untouched, that axis is
-        // restored above); a freshly promoted (new) doc has no HEAD content, so remove the
-        // copy outright.
+        // restored above); an untracked destination that PRE-EXISTED gets its captured
+        // displaced bytes rewritten (the same-path untracked foreign — `git restore` has
+        // no committed bytes to recover, exactly the retire capture's rationale); a
+        // genuinely new doc has no pre-promote content, so remove the copy outright.
         if path_at_head(repo_root, &promotion.destination) {
             let _ = git_run(
                 repo_root,
@@ -2710,6 +2735,11 @@ fn rollback_promotions(
                     &promotion.destination,
                 ],
             );
+        } else if let Some((_, bytes)) = displaced
+            .iter()
+            .find(|(path, _)| *path == promotion.destination)
+        {
+            let _ = std::fs::write(repo_root.join(&promotion.destination), bytes);
         } else {
             let dest = repo_root.join(&promotion.destination);
             let _ = std::fs::remove_file(&dest);

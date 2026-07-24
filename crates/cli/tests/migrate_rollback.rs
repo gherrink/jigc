@@ -179,6 +179,14 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
         ),
         "jigc migrate",
     );
+    author_migrated_changelog(repo, home, pack, TASK);
+}
+
+/// Author the migrated changelog (the canonical single-release rewrite of [`FOREIGN`])
+/// plus a conformant commit doc, all into `task`'s working area — the shared authoring
+/// half of every rollback case, parameterized so a differently-sourced migration task
+/// (the same-path case, whose id embeds its own path hash) can reuse it.
+fn author_migrated_changelog(repo: &Path, home: &Path, pack: &Path, task: &str) {
     ok(
         run_jigc(
             repo,
@@ -191,7 +199,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
                 "--title",
                 "Changelog",
                 "--task",
-                TASK,
+                task,
             ],
         ),
         "doc create changelog",
@@ -208,7 +216,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
                 "--title",
                 "0.1.0",
                 "--task",
-                TASK,
+                task,
             ],
         )
         .stdout,
@@ -228,7 +236,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
                 "--value",
                 "2021-03-09",
                 "--task",
-                TASK,
+                task,
             ],
         ),
         "set-field date",
@@ -245,7 +253,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
                 "--title",
                 "Added",
                 "--task",
-                TASK,
+                task,
             ],
         )
         .stdout,
@@ -265,7 +273,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
                 "--from-file",
                 "-",
                 "--task",
-                TASK,
+                task,
             ],
             b"First public release.\n",
         ),
@@ -280,11 +288,11 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
             &[
                 "doc",
                 "set-field",
-                &format!("commit:{TASK}#type"),
+                &format!("commit:{task}#type"),
                 "--value",
                 "feat",
                 "--task",
-                TASK,
+                task,
             ],
         ),
         "set-field commit type",
@@ -297,11 +305,11 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
             &[
                 "doc",
                 "set-field",
-                &format!("commit:{TASK}#scope"),
+                &format!("commit:{task}#scope"),
                 "--value",
                 "changelog",
                 "--task",
-                TASK,
+                task,
             ],
         ),
         "set-field commit scope",
@@ -314,11 +322,11 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
             &[
                 "doc",
                 "set-slot",
-                &format!("commit:{TASK}#summary"),
+                &format!("commit:{task}#summary"),
                 "--from-file",
                 "-",
                 "--task",
-                TASK,
+                task,
             ],
             b"adopt the migrated changelog\n",
         ),
@@ -332,11 +340,11 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
             &[
                 "doc",
                 "set-slot",
-                &format!("commit:{TASK}#body"),
+                &format!("commit:{task}#body"),
                 "--from-file",
                 "-",
                 "--task",
-                TASK,
+                task,
             ],
             b"Migrate the foreign HISTORY.md into managed shape.\n",
         ),
@@ -762,5 +770,88 @@ fn approved_migration_commit_rejection_restores_an_untracked_foreign() {
     assert!(
         !repo.path().join("changelog").join("changelog.md").exists(),
         "the promoted canonical copy must be rolled back on a failed commit",
+    );
+}
+
+/// Confidence-audit minor item 10 — the promotions rollback's **worktree** half has a
+/// same-path sibling: a **same-path** migration (`destination == source`, the M43
+/// carve-out) of an **untracked** foreign plans **no retirement**
+/// (`plan_retirements` skips `source == destination`), so the retire byte-capture that
+/// saves an untracked foreign in the two-path case never runs — and the promotion
+/// destination IS the foreign original. On a hook-rejected `--approve` finalize the
+/// worktree rollback saw an untracked destination and **deleted** it, destroying the
+/// user's only worktree copy of the foreign bytes. The rollback must instead restore
+/// the displaced pre-promote bytes — the same capture discipline as the retire axis.
+#[test]
+fn same_path_untracked_foreign_survives_a_hook_rejection_rollback() {
+    let repo = TempDir::new("same-path");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    // The foreign sits AT the canonical destination (`changelog`'s placement is root
+    // `CHANGELOG.md`) and is never committed — the same-path × untracked cell.
+    fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    ok(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"]),
+        "jigc setup",
+    );
+    let composed = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "CHANGELOG.md", "--as", "changelog"],
+    );
+    assert!(
+        composed.status.success(),
+        "`jigc migrate CHANGELOG.md` must compose; stderr:\n{}",
+        String::from_utf8_lossy(&composed.stderr),
+    );
+    // The task id embeds this source path's own hash — parse it from the mint line.
+    let task = String::from_utf8_lossy(&composed.stdout)
+        .lines()
+        .find_map(|l| l.strip_prefix("task minted: ").map(str::to_owned))
+        .expect("the migrate compose announces the minted task id");
+    author_migrated_changelog(repo.path(), home.path(), &pack, &task);
+
+    // Sanity: the foreign is genuinely untracked (the cell under test).
+    assert!(
+        git(repo.path(), &["status", "--porcelain", "CHANGELOG.md"]).starts_with("??"),
+        "the foreign CHANGELOG.md must be untracked for this case",
+    );
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+
+    seed_rejecting_precommit(repo.path());
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", &task, "--approve"],
+    );
+    assert!(
+        !out.status.success(),
+        "a hook-rejected --approve finalize must exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD must be unchanged — no commit landed",
+    );
+
+    // The contract: the untracked foreign original — displaced in place by the
+    // promotion — is restored BYTE-INTACT, never deleted by the worktree rollback.
+    let restored = repo.path().join("CHANGELOG.md");
+    assert!(
+        restored.exists(),
+        "the same-path untracked foreign must survive a rolled-back commit — the \
+         worktree rollback must restore the displaced bytes, not delete the destination",
+    );
+    assert_eq!(
+        fs::read_to_string(&restored).expect("read restored foreign"),
+        FOREIGN,
+        "the same-path untracked foreign must be restored byte-intact",
     );
 }
