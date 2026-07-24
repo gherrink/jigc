@@ -242,6 +242,21 @@ fn doc_author_help_states_instead_of_never_after() {
     }
 }
 
+/// M45 inc-10 T11 — `doc author --help`'s payload example shows a section's
+/// **own** slot keyed by the section id (`set: {<section-id>: <<…>>}`), the form
+/// the prior example never made visible (it only showed a field/slot named
+/// arbitrarily within a section; findings §72). The canonical confirmed form is
+/// the flow map keyed by the section's own id.
+#[test]
+fn doc_author_help_shows_the_section_own_slot_form() {
+    let help = help_stdout(&["doc", "author", "--help"]);
+    assert!(
+        help.contains("set: {<section-id>: <<…>>}"),
+        "`doc author --help` must show the section-own-slot payload form \
+         `set: {{<section-id>: <<…>>}}`; got:\n{help}"
+    );
+}
+
 /// M43 pre-trial surface polish A7 — `doc create --help` states the slug
 /// mint caps, drift-pinned against the engine's `slug` constants (the same
 /// numbers the mint enforces).

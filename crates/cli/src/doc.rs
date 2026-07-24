@@ -216,6 +216,8 @@ pub enum DocCommand {
     ///             sections:           # nested repeatable level, parented by the item
     ///               - id: <nested-section-id>
     ///                 set: { note: <<inline slot>> }
+    ///       - id: <section-id>        # a section that IS one slot (a simple section):
+    ///         set: {<section-id>: <<…>>}   # its own slot, keyed by the section's own id
     /// ```
     #[command(verbatim_doc_comment)]
     Author {
