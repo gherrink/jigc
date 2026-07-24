@@ -1444,6 +1444,61 @@ fn milestone_finalize_relays_every_fan_out_commit_hook_output() {
     );
 }
 
+/// The `hook_output` **producer axis**, fan-out member (confidence-audit sibling-hunt
+/// item 4; the axis home is `tests/hook_output_axis.rs`): under `--format json` a
+/// `squash: false` finalize lands N+1 hook-capable commits (N per-sub-task code
+/// commits plus the aggregate), and **every** commit's captured non-blocking hook
+/// stream must reach the one landed envelope — `committed.hook_output` folds all N+1
+/// streams, and the stderr relay carries the *same* folded string (one capture, two
+/// channels; `design/command-output-contract.md` → Stream discipline). RED before the
+/// fix: the envelope carried the aggregate's stream only, while the per-sub-task
+/// streams were relayed to stderr and reached no envelope — a JSON driver reading the
+/// document never saw them.
+#[test]
+fn milestone_finalize_json_envelope_folds_every_fan_out_commits_hook_output() {
+    let repo = TempDir::new("relay-json-squash-false");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    install_warning_hook(repo.path());
+
+    setup_squash_false(repo.path(), home.path(), &["Area zed", "Area low"]);
+    let finalized = run_milestone(
+        repo.path(),
+        home.path(),
+        &["finalize", "cache-rework", "--format", "json"],
+    );
+    let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(finalized.stderr).expect("utf-8 stderr");
+    assert!(
+        finalized.status.success(),
+        "a non-blocking hook must not block the json squash:false finalize; got {:?}\nstderr:\n{stderr}",
+        finalized.status,
+    );
+    // Stream discipline: stdout is exactly one JSON document.
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|err| {
+        panic!("stdout must parse as exactly one JSON document ({err}); got:\n{stdout}")
+    });
+    let hook_output = value["committed"]["hook_output"]
+        .as_str()
+        .unwrap_or_else(|| {
+            panic!("committed.hook_output must be a present string; got:\n{stdout}")
+        });
+    // All N+1 = 3 commit streams (2 per-sub-task code commits + the aggregate) fold
+    // into the ONE envelope key — not just the aggregate's.
+    assert_eq!(
+        hook_output.matches(HOOK_WARNING).count(),
+        3,
+        "committed.hook_output must fold every fan-out commit's hook stream (N+1 = 3), \
+         not the aggregate's alone; got:\n{stdout}",
+    );
+    // One capture, two channels: the stderr relay carries the same folded string.
+    assert!(
+        stderr.contains(&format!("--- hook output ---\n{hook_output}")),
+        "the stderr relay must carry the same folded string as committed.hook_output; \
+         stderr:\n{stderr}",
+    );
+}
+
 #[test]
 fn milestone_finalize_removes_every_sub_task_working_area_on_a_landed_commit() {
     // A landed milestone finalize must clean up the per-sub-task working areas

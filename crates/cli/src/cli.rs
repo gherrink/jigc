@@ -693,6 +693,11 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
     match rename::run(&cwd, old_slug, to, slug) {
         Ok(report) => {
             println!("{}", render::rename(format, &report));
+            // The atomic rename commit's captured non-blocking hook stream — the same
+            // string the report's `hook_output` key carries, relayed on the other channel
+            // (stderr under `--format json`, the delimited stdout section on agent-text;
+            // the hook_output producer axis).
+            crate::task::relay_hook_output(format, &report.hook_output);
             Outcome::success()
         }
         Err(err) => {

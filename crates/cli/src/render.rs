@@ -1974,12 +1974,18 @@ pub fn freeze_exempt_relocation(
 /// Render a successful `jigc milestone <verb>` action to the surface `format`
 /// selects: `agent` / `human` emit the action summary line (e.g. `minted
 /// milestone:<id> …`) followed by the routing footer; `json` emits a generic
-/// object carrying the summary text, with no footer (tooling-consumed). The
-/// determinism boundary is unaffected — the engine mints; the CLI only formats the
-/// summary it returns (`design/write-commands.md` → Minting a milestone).
-pub fn milestone(format: Format, summary: &str) -> String {
+/// object carrying the summary text plus the `hook_output` key — the record-only
+/// commit's captured non-blocking hook stream, **present-always** (the empty string
+/// when the verb committed nothing or no hook spoke; the hook_output producer axis,
+/// `design/command-output-contract.md` → Stream discipline), with no footer
+/// (tooling-consumed). The stderr/stdout relay of the same string is the dispatch
+/// site's job ([`crate::task::relay_hook_output`]), so the agent-text arm here stays
+/// the bare summary. The determinism boundary is unaffected — the engine mints; the
+/// CLI only formats the summary it returns (`design/write-commands.md` → Minting a
+/// milestone).
+pub fn milestone(format: Format, summary: &str, hook_output: &str) -> String {
     match format {
-        Format::Json => json(&serde_json::json!({ "text": summary })),
+        Format::Json => json(&serde_json::json!({ "text": summary, "hook_output": hook_output })),
         Format::Agent | Format::Human => {
             let mut out = String::from(summary);
             out.push('\n');
@@ -2108,11 +2114,14 @@ pub struct MilestoneLanded {
     pub manifest: Vec<ManifestEntry>,
     /// Each sub-task's contribution, id-sorted — the no-work one visible.
     pub sub_tasks: Vec<SubTaskContribution>,
-    /// The captured non-blocking hook output the landed boundary commit's hooks emitted
+    /// The captured non-blocking hook output the landed boundary's hooks emitted
     /// (`design/command-output-contract.md` → Stream discipline — the M45 `hook_output`
     /// key). Same shape and contract as [`Landed::hook_output`]: **present-always, the empty
-    /// string when no hook spoke**, the *same* captured string the stderr relay carries, and
-    /// on the join path this is the aggregate/combine boundary commit's hook stream.
+    /// string when no hook spoke**, the *same* captured string the stderr relay carries. On
+    /// the `squash: true` path this is the one combine boundary commit's stream; on
+    /// `squash: false` it is **every** chain commit's stream (the N per-sub-task code
+    /// commits + the aggregate) folded in commit order (the hook_output producer axis —
+    /// the envelope must not carry the aggregate's stream alone).
     pub hook_output: String,
 }
 

@@ -140,6 +140,11 @@ pub struct CorpusMigrationReport {
     /// or a non-git worktree). Named in both surfaces — the operator/driver reads back *where*
     /// the migration landed (`design/corpus-migration.md` → The commit boundary).
     pub commit: Option<String>,
+    /// The self-commit's captured non-blocking hook stream — **present-always**, the
+    /// empty string when nothing was committed or no hook spoke (the hook_output
+    /// producer axis; `design/command-output-contract.md` → Stream discipline). [`run`]
+    /// relays the same string on the other channel.
+    pub hook_output: String,
     /// The repo-relative paths the migration **touched** — every destination written *and*
     /// every relocation source removed. The self-commit's pathspec: the removed source is not
     /// recoverable from `migrated` (which carries only destinations), and staging the add half
@@ -194,6 +199,11 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
     match migrate_in_repo(cwd, options) {
         Ok(report) => {
             println!("{}", render::corpus_migration(format, &report));
+            // The self-commit's captured non-blocking hook stream — the same string the
+            // report's `hook_output` key carries, relayed on the other channel (stderr
+            // under `--format json`, the delimited stdout section on agent-text; the
+            // hook_output producer axis).
+            crate::task::relay_hook_output(format, &report.hook_output);
             if report.blocked.is_empty() {
                 Outcome::success()
             } else {
@@ -274,8 +284,11 @@ fn migrate_in_repo(cwd: &Path, options: Options) -> Result<CorpusMigrationReport
     // predicts, and the operator never has to reach for the raw `git add -A` the adapter
     // contract forbids. `--no-commit` opts out of it (the writes stand, unlanded); `--dry-run`
     // implies it (nothing was written, so there is nothing to stage).
-    if options.commits() {
-        report.commit = commit_migration(&jigc_home, &report.touched)?;
+    if options.commits()
+        && let Some((sha, hook_output)) = commit_migration(&jigc_home, &report.touched)?
+    {
+        report.commit = Some(sha);
+        report.hook_output = hook_output;
     }
     Ok(report)
 }
@@ -286,8 +299,8 @@ const MIGRATION_COMMIT_MESSAGE: &str =
     "chore(jigc): migrate the managed corpus to the current schema versions";
 
 /// **Land the migration** — stage exactly `touched` (every destination written and every
-/// relocation source removed) and commit those paths, returning the short sha (`None` when
-/// nothing was committed).
+/// relocation source removed) and commit those paths, returning the short sha + the
+/// commit's captured non-blocking hook stream (`None` when nothing was committed).
 ///
 /// The **mold is [`crate::setup`]'s install commit** (`setup.rs` → `commit_install`), the one
 /// other verb that commits its own writes: a **pathspec-limited** `git add -- <paths>` —
@@ -307,7 +320,7 @@ const MIGRATION_COMMIT_MESSAGE: &str =
 /// A **non-git worktree** is the one benign skip (the migration's writes still stand; there is
 /// simply nothing to land). Every other git failure — a rejected `add`, a rejected `commit` —
 /// is an `Err`.
-fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<String>> {
+fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<(String, String)>> {
     if touched.is_empty() {
         return Ok(None);
     }
@@ -338,12 +351,21 @@ fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<Strin
         return Ok(None);
     }
 
-    let mut commit: Vec<&str> = vec!["commit", "-m", MIGRATION_COMMIT_MESSAGE, "--"];
-    commit.extend(&paths);
-    git_run(repo_root, &commit)?;
+    // The hook-capable commit runs through the ONE seam that RETURNS the captured
+    // non-blocking hook stream (`crate::task::git_commit_capture`, the hook_output
+    // producer axis) — never the output-discarding `git_run`, which was this producer's
+    // defect. The hook posture is unchanged: never `--no-verify`, a rejection surfaces
+    // git's bytes verbatim and fails the run loudly.
+    let mut commit: Vec<&std::ffi::OsStr> = vec![
+        std::ffi::OsStr::new("-m"),
+        std::ffi::OsStr::new(MIGRATION_COMMIT_MESSAGE),
+        std::ffi::OsStr::new("--"),
+    ];
+    commit.extend(paths.iter().map(std::ffi::OsStr::new));
+    let hook_output = crate::task::git_commit_capture(repo_root, &commit)?;
 
     let sha = git_stdout(repo_root, &["rev-parse", "--short", "HEAD"])?;
-    Ok(Some(sha))
+    Ok(Some((sha, hook_output)))
 }
 
 /// Whether git can stage `path`: it is **tracked** (so a *removed* relocation source stages as
@@ -458,6 +480,7 @@ pub(crate) fn migrate_committed_corpus(
         already_current: Vec::new(),
         blocked: Findings::default(),
         commit: None,
+        hook_output: String::new(),
         touched: Vec::new(),
         dry_run: options.dry_run,
         no_commit: options.no_commit,

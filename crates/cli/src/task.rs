@@ -1756,17 +1756,18 @@ pub(crate) enum StagePolicy {
     /// degrades to a docs-only commit, byte-identical to the M7 single-aggregate form.
     Combine(Vec<PathBuf>, Option<String>),
     /// The `squash: false` fan-out boundary (M31 — WIP-safe rework). The id-ordered
-    /// `(staged-patch, rendered-commit-message)` pairs for the code-carrying sub-tasks, plus
-    /// the output [`Format`] for the per-commit hook relay. [`chain_commit`] builds the whole
-    /// N+1 commit chain (one commit per sub-task carrying THAT sub-task's code with the user's
-    /// hooks running + relayed, then the merged-docs aggregate) in a **dedicated worktree**,
-    /// then fast-forwards main — the live checkout is never the commit site and is never `git
-    /// reset --hard`ed, so an abort (a hook rejection) leaves unrelated main-checkout WIP
-    /// intact (review S2; the squash:true [`Combine`](StagePolicy::Combine) WIP-safety, mirrored
-    /// onto the honest-rework path). An empty list degrades to a docs-only aggregate.
+    /// `(staged-patch, rendered-commit-message)` pairs for the code-carrying sub-tasks.
+    /// [`chain_commit`] builds the whole N+1 commit chain (one commit per sub-task carrying
+    /// THAT sub-task's code with the user's hooks running, then the merged-docs aggregate)
+    /// in a **dedicated worktree**, then fast-forwards main — the live checkout is never the
+    /// commit site and is never `git reset --hard`ed, so an abort (a hook rejection) leaves
+    /// unrelated main-checkout WIP intact (review S2; the squash:true
+    /// [`Combine`](StagePolicy::Combine) WIP-safety, mirrored onto the honest-rework path).
+    /// Every chain commit's captured hook stream folds into the returned `hook_output`
+    /// ([`fold_hook_streams`]), so the caller's one relay + envelope carry all N+1 (the
+    /// hook_output producer axis). An empty list degrades to a docs-only aggregate.
     ChainPerSubtask {
         subtasks: Vec<(Vec<u8>, String)>,
-        format: Format,
         /// The optional repo-relative `milestone-record` pathspec to path-add into the
         /// merged-docs aggregate commit (M39 T4: the `join` status-flip folds into the one
         /// finalize commit; `None` dev-only / no record).
@@ -1777,9 +1778,11 @@ pub(crate) enum StagePolicy {
 /// The **shared** transactional executor — a [`FinalizePlan`]'s commit phases 4–7: promote + stage + commit +
 /// post-commit, returning `Ok(Ok(hook_output))` when the aggregate landed and
 /// `Ok(Err(_))` when the commit was rejected (the promotions already rolled back). The
-/// `hook_output` is the aggregate `git_commit`'s captured non-blocking-hook stream
-/// (empty when no hook spoke) — threaded up so the success-relay sites (per-task T2,
-/// milestone T3) can surface it to the agent (`design/finalize.md` → 6. Commit). The
+/// `hook_output` is the boundary's captured non-blocking-hook stream (empty when no hook
+/// spoke): the single commit's on the per-task/`Combine` arms, and on `ChainPerSubtask`
+/// every chain commit's stream folded in commit order ([`fold_hook_streams`]) — threaded
+/// up so the success-relay sites (per-task T2, milestone T3) can surface it to the agent
+/// (`design/finalize.md` → 6. Commit). The
 /// outer `Result` carries only setup I/O errors (writing the message temp file). The
 /// `squash: false` milestone boundary calls this directly with [`StagePolicy::ChainPerSubtask`]
 /// — [`chain_commit`] builds the whole N+1 chain in a dedicated worktree and fast-forwards main,
@@ -1916,23 +1919,14 @@ pub(crate) fn try_execute_finalize_plan(
             }
             // The `squash: false` honest-rework boundary (M31 — WIP-safe): build the N+1
             // commit chain in a dedicated worktree (one commit per sub-task carrying its own
-            // code with hooks running + relayed, then the merged-docs aggregate) and
-            // fast-forward main — never touching the live checkout, so an abort leaves
-            // unrelated WIP intact (no `git reset --hard`). Returns the aggregate's hook
-            // output (the success-relay site surfaces it; the per-sub-task outputs are relayed
-            // inside).
-            StagePolicy::ChainPerSubtask {
-                subtasks,
-                format,
-                record,
-            } => chain_commit(
-                repo_root,
-                &subtasks,
-                record.as_deref(),
-                plan,
-                &msg_path,
-                format,
-            ),
+            // code with hooks running, then the merged-docs aggregate) and fast-forward main
+            // — never touching the live checkout, so an abort leaves unrelated WIP intact
+            // (no `git reset --hard`). Returns EVERY chain commit's captured hook stream
+            // folded into one string (the hook_output producer axis), so the success-relay
+            // site's one relay + envelope carry all N+1.
+            StagePolicy::ChainPerSubtask { subtasks, record } => {
+                chain_commit(repo_root, &subtasks, record.as_deref(), plan, &msg_path)
+            }
         }
     })();
     let _ = std::fs::remove_file(&msg_path);
@@ -2008,6 +2002,22 @@ pub(crate) fn relay_hook_output(format: Format, hook_output: &str) {
     } else {
         print!("{section}");
     }
+}
+
+/// Fold N captured hook streams — one per landed commit of a multi-commit boundary
+/// (the `squash: false` N+1 chain, `add-from-spec`'s per-sub-task record commits) —
+/// into the ONE string the caller relays and envelopes: trimmed non-empty chunks
+/// joined by a newline, commit order preserved. Folding (rather than relaying each
+/// chunk as it lands) keeps the one-capture-two-channels property
+/// (`design/command-output-contract.md` → Stream discipline): the `hook_output`
+/// envelope key and the stderr relay carry the *same* string.
+pub(crate) fn fold_hook_streams<'a, I: IntoIterator<Item = &'a str>>(streams: I) -> String {
+    streams
+        .into_iter()
+        .map(str::trim)
+        .filter(|chunk| !chunk.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Phase 4 (`design/finalize.md` → 4. Promote managed docs). Copy each staged managed
@@ -3150,24 +3160,43 @@ pub(crate) fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// `git commit -F <message-file>` (`design/finalize.md` → 6. Commit). **Never** passes
-/// `--no-verify`: the user's `pre-commit` / `commit-msg` hooks are policy and the CLI
-/// respects them — a hook rejection surfaces git's stderr verbatim (the correction
-/// signal), and no commit lands.
-///
-/// On a **successful** commit returns the captured hook output so the relay sites can
-/// surface a non-blocking hook's warning to the agent — e.g. the M19 doc↔code backstop,
-/// which warns but exits 0 (`design/finalize.md` → 6. Commit, success-relay). git
-/// redirects a hook's own stdout to stderr and writes only its own commit summary
-/// ("[branch sha] message", file stats) to stdout, so **stderr is the hook stream**:
-/// capturing it is general (any non-blocking hook, not just jigc's backstop) and a
-/// no-hook commit yields empty. The bytes are merely captured here — placement/printing
-/// is the relay sites' job (M19 increment 2, T2/T3).
+/// `git commit -F <message-file>` (`design/finalize.md` → 6. Commit) — the message-file
+/// form of the one hook-capable commit seam [`git_commit_capture`]; see there for the
+/// hook posture + the captured-stream contract.
 pub(crate) fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String> {
+    git_commit_capture(
+        repo_root,
+        &[std::ffi::OsStr::new("-F"), message_file.as_os_str()],
+    )
+}
+
+/// The ONE **hook-capable commit seam**: `git commit <args…>` in `repo_root`. **Never**
+/// passes `--no-verify`: the user's `pre-commit` / `commit-msg` hooks are policy and the
+/// CLI respects them — a hook rejection surfaces git's stdout+stderr verbatim in the
+/// typed [`CommitRejected`] (the correction signal), and no commit lands.
+///
+/// On a **successful** commit returns the captured hook output so the caller can surface
+/// a non-blocking hook's warning — e.g. the M19 doc↔code backstop, which warns but exits
+/// 0 (`design/finalize.md` → 6. Commit, success-relay). git redirects a hook's own stdout
+/// to stderr and writes only its own commit summary ("[branch sha] message", file stats)
+/// to stdout, so **stderr is the hook stream**: capturing it is general (any non-blocking
+/// hook, not just jigc's backstop) and a no-hook commit yields empty. The bytes are
+/// merely captured here — placement (the `hook_output` envelope key + the stderr relay,
+/// `design/command-output-contract.md` → Stream discipline) is the caller's job.
+///
+/// **The producer-axis fence** (confidence-audit sibling-hunt item 4): every production
+/// site that runs a hook-capable `git commit` on the user's behalf funnels through here —
+/// the finalize paths via [`git_commit`], the milestone record-only commits
+/// (`milestone::git_commit_pathspec`), `jigc rename`, and `jigc migrate-corpus`'s
+/// self-commit — so the captured stream is *returned* at every site and dropping it is
+/// visible at the call site, never a silent `git_run` discard. The one exclusion is
+/// `setup`'s install commit, `--no-verify` by recorded design (its hook must not
+/// self-trigger on the commit that installs it). A new commit site joins the axis by
+/// calling this and surfacing the returned stream (`tests/hook_output_axis.rs`).
+pub(crate) fn git_commit_capture(repo_root: &Path, args: &[&std::ffi::OsStr]) -> Result<String> {
     let out = Command::new("git")
         .arg("commit")
-        .arg("-F")
-        .arg(message_file)
+        .args(args)
         .current_dir(repo_root)
         .output()
         .context("could not run `git commit` (is git on PATH?)")?;
@@ -3344,23 +3373,27 @@ fn overlay_docs_commit_and_ff(
 /// worktree** at HEAD (a linked worktree shares `.git`, so the user's hooks fire), apply each
 /// sub-task's staged patch onto the worktree's index + tree and `git commit -F` its rendered
 /// `commit:<sub-id>` doc — so each per-sub-task commit carries THAT sub-task's code (a real
-/// tree, never the retired `--allow-empty` form), the user's hooks run, and each commit's
-/// non-blocking hook output is relayed. The disjoint patches (the caller's up-front collision
-/// block guarantees disjointness) apply cleanly in sequence.
+/// tree, never the retired `--allow-empty` form) and the user's hooks run. The disjoint
+/// patches (the caller's up-front collision block guarantees disjointness) apply cleanly in
+/// sequence.
 ///
 /// Then overlay the merged docs + config onto the last sub-task commit's tree and commit the
 /// aggregate (hooks running) as its child, and fast-forward main onto the whole chain — the
 /// shared [`overlay_docs_commit_and_ff`]. The dedicated worktree is torn down on drop; on ANY
 /// abort (a per-sub-task or the aggregate hook rejection) it returns `Err` having committed
-/// NOTHING to main — HEAD stays at the pre-finalize sha and unrelated WIP is intact. Returns
-/// the aggregate's captured non-blocking hook stream for the caller's success-relay.
+/// NOTHING to main — HEAD stays at the pre-finalize sha and unrelated WIP is intact.
+///
+/// Returns **every** chain commit's captured non-blocking hook stream — the N per-sub-task
+/// streams + the aggregate's, folded in commit order ([`fold_hook_streams`]) — for the
+/// caller's ONE success-relay + envelope (the hook_output producer axis: relaying each chunk
+/// as it landed put the per-sub-task streams on stderr only, so a JSON driver reading the
+/// landed envelope never saw them; `design/command-output-contract.md` → Stream discipline).
 fn chain_commit(
     repo_root: &Path,
     subtasks: &[(Vec<u8>, String)],
     record: Option<&str>,
     plan: &engine::finalize::FinalizePlan,
     msg_path: &Path,
-    format: Format,
 ) -> Result<String> {
     let head = git_head(repo_root)?;
     // The per-sub-task commits accrue in a dedicated worktree at HEAD — never the live
@@ -3368,6 +3401,7 @@ fn chain_commit(
     let dedicated = DedicatedWorktree::add(repo_root, &head)?;
     let wt = dedicated.path();
     let sub_msg = wt.join(".jigc-subtask-message.tmp");
+    let mut streams: Vec<String> = Vec::new();
     for (patch, message) in subtasks {
         git_apply_index(wt, patch)?;
         std::fs::write(&sub_msg, message).with_context(|| {
@@ -3375,21 +3409,22 @@ fn chain_commit(
         })?;
         let commit_result = git_commit(wt, &sub_msg);
         let _ = std::fs::remove_file(&sub_msg);
-        // Relay each per-sub-task commit's non-blocking hook output (M31 Inc 5 — every fan-out
-        // commit runs the user's hooks; `design/finalize.md` → 6. Commit).
-        relay_hook_output(format, &commit_result?);
+        // Every fan-out commit runs the user's hooks (M31 Inc 5; `design/finalize.md` →
+        // 6. Commit); each captured stream folds into the one returned string below.
+        streams.push(commit_result?);
     }
     // The aggregate carries the merged docs (a milestone-level merge artifact, review B1/B2),
     // built off the last sub-task commit's tree and fast-forwarded onto main with the chain.
     let subtask_head = git_head(wt)?;
-    overlay_docs_commit_and_ff(
+    streams.push(overlay_docs_commit_and_ff(
         repo_root,
         &subtask_head,
         &subtask_head,
         record,
         plan,
         msg_path,
-    )
+    )?);
+    Ok(fold_hook_streams(streams.iter().map(String::as_str)))
 }
 
 /// Commit the off-line-built combined `tree` as a child of `parent`, **running the repo's

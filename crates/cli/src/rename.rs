@@ -66,6 +66,11 @@ pub struct RenameReport {
     /// authors no prose). A word-boundary/token match, scoped to `git ls-files`. Never
     /// changes the verb's exit status; empty for a retitle-only (the slug is unchanged).
     pub prose_mentions: Vec<String>,
+    /// The atomic rename commit's captured non-blocking hook stream — **present-always**,
+    /// the empty string when no hook spoke (the hook_output producer axis;
+    /// `design/command-output-contract.md` → Stream discipline). The caller relays the
+    /// same string on the other channel ([`crate::task::relay_hook_output`]).
+    pub hook_output: String,
 }
 
 /// Run `jigc rename <old_addr> --to <title>` (optional `--slug`) against `cwd`: load the
@@ -238,7 +243,8 @@ pub(crate) fn run(
     tracked_restore.extend(referrer_writes.iter().map(|w| w.rel.clone()));
 
     // The transaction proper: any failure rolls the store back byte-and-record identical.
-    let outcome = apply_and_commit(
+    // A landed commit yields its captured non-blocking hook stream for the report.
+    let hook_output = match apply_and_commit(
         &repo_root,
         &jigc_root,
         &schema_map,
@@ -247,17 +253,19 @@ pub(crate) fn run(
         &new_rel,
         &new_source,
         &referrer_writes,
-    );
-    if let Err(err) = outcome {
-        rollback_rename(
-            &repo_root,
-            &tracked_restore,
-            &new_rel,
-            &fs_path,
-            fs_pre.as_deref(),
-        );
-        return Err(err);
-    }
+    ) {
+        Ok(hook_output) => hook_output,
+        Err(err) => {
+            rollback_rename(
+                &repo_root,
+                &tracked_restore,
+                &new_rel,
+                &fs_path,
+                fs_pre.as_deref(),
+            );
+            return Err(err);
+        }
+    };
 
     // Post-commit: invalidate the persisted index so the next read rebuilds against the
     // new HEAD (the finalize post-commit step; best-effort — the stale stamp self-heals).
@@ -284,6 +292,7 @@ pub(crate) fn run(
         title: title.to_string(),
         referrers: referrer_labels,
         prose_mentions,
+        hook_output,
     })
 }
 
@@ -295,9 +304,10 @@ struct ReferrerWrite {
 }
 
 /// Apply the rename mutations on disk, run the pre-commit integrity assertion, re-baseline
-/// file-state, and commit — the inside of the transaction. Returns `Err` on any failure
-/// (a `git mv` error, a dangling-ref integrity violation, or a hook/commit rejection); the
-/// caller rolls back on `Err`.
+/// file-state, and commit — the inside of the transaction. Returns the landed commit's
+/// captured non-blocking hook stream (the hook_output producer axis — dropping it here was
+/// this producer's defect) and `Err` on any failure (a `git mv` error, a dangling-ref
+/// integrity violation, or a hook/commit rejection); the caller rolls back on `Err`.
 #[allow(clippy::too_many_arguments)]
 fn apply_and_commit(
     repo_root: &Path,
@@ -308,7 +318,7 @@ fn apply_and_commit(
     new_rel: &str,
     new_source: &str,
     referrer_writes: &[ReferrerWrite],
-) -> Result<()> {
+) -> Result<String> {
     // 0. Capture the **pre-rename** dangling-edge set off the committed store *before* any
     // mutation (disk == HEAD here). The integrity gate (step 4) refuses only on a dangle the
     // rename itself *introduces* — a pre-existing dangle unrelated to the move must pass
@@ -386,8 +396,9 @@ fn apply_and_commit(
     .context("could not write the rename commit message")?;
     let commit = git_commit(repo_root, &msg_path);
     let _ = std::fs::remove_file(&msg_path);
-    commit?;
-    Ok(())
+    // The landed commit's captured non-blocking hook stream, threaded to the report
+    // (the hook_output producer axis — this was the site that discarded it).
+    commit
 }
 
 /// Roll the store back to its pre-rename state on a pre-commit failure: restore every

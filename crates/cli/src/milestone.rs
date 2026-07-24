@@ -180,6 +180,10 @@ impl MilestoneCommand {
         if let MilestoneCommand::Execute { milestone_id } = self {
             return dispatch_execute(cwd, format, &milestone_id);
         }
+        // Each committing verb returns `(summary, hook_output)` — the record-only
+        // commit's captured non-blocking hook stream (the hook_output producer axis;
+        // `design/command-output-contract.md` → Stream discipline). The read-only verbs
+        // commit nothing, so their stream is the empty string (present-always).
         let result = match self {
             MilestoneCommand::Create { title } => run_create(cwd, &title),
             MilestoneCommand::AddTask {
@@ -192,8 +196,12 @@ impl MilestoneCommand {
                 spec_addr,
                 workflow,
             } => run_add_from_spec(cwd, &milestone_id, &spec_addr, &workflow),
-            MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
-            MilestoneCommand::Provision { milestone_id } => run_provision(cwd, &milestone_id),
+            MilestoneCommand::ListTasks { milestone_id } => {
+                run_list_tasks(cwd, &milestone_id).map(|summary| (summary, String::new()))
+            }
+            MilestoneCommand::Provision { milestone_id } => {
+                run_provision(cwd, &milestone_id).map(|summary| (summary, String::new()))
+            }
             MilestoneCommand::Discard {
                 milestone_id,
                 force,
@@ -203,8 +211,11 @@ impl MilestoneCommand {
             MilestoneCommand::Finalize { .. } => unreachable!("`Finalize` is handled above"),
         };
         match result {
-            Ok(summary) => {
-                println!("{}", render::milestone(format, &summary));
+            Ok((summary, hook_output)) => {
+                println!("{}", render::milestone(format, &summary, &hook_output));
+                // One capture, two channels: the same string rides the envelope above and
+                // the delimited relay (stderr under `--format json`, stdout on agent-text).
+                crate::task::relay_hook_output(format, &hook_output);
                 Outcome::success()
             }
             Err(err) => {
@@ -243,7 +254,7 @@ fn no_such_milestone(milestone_id: &str) -> anyhow::Error {
 /// **overwrite the committed record** of a milestone that was abandoned, or one whose work
 /// landed. So `create` refuses **first** when a record already owns the slug
 /// ([`guard_record_free`]), before HEAD is read or any area is minted.
-fn run_create(cwd: &Path, title: &str) -> Result<String> {
+fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
     // The base pin is the *worktree* HEAD; the `.jigc/` area binds to jigc_home (the main
     // checkout), so all worktrees share one `.jigc/` (M31 Inc 2 / WF3).
     let repo_root = discover_repo_root(cwd)
@@ -282,6 +293,9 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
         )
     })?;
 
+    // The record commit's captured non-blocking hook stream (the hook_output producer
+    // axis) — empty dev-only (no record, no commit, no hook ran).
+    let mut hook_output = String::new();
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         // The record's schema-version stamp value: the doctype's manifest version (the
         // same authority `doc create`'s stamp deriver reads — milestone-record is
@@ -290,12 +304,15 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
             .get(MILESTONE_RECORD_TYPE)
             .copied()
             .unwrap_or(1);
-        materialize_and_commit_record(&jigc_home, schema, &minted, stamp)?;
+        hook_output = materialize_and_commit_record(&jigc_home, schema, &minted, stamp)?;
     }
 
-    Ok(format!(
-        "minted milestone:{} (shared base {})",
-        minted.id, minted.base.short
+    Ok((
+        format!(
+            "minted milestone:{} (shared base {})",
+            minted.id, minted.base.short
+        ),
+        hook_output,
     ))
 }
 
@@ -313,13 +330,13 @@ pub(crate) const MILESTONE_RECORD_TYPE: &str = "milestone-record";
 /// the record's canonical committed home under docs-root (`docs/milestone-records/<id>.md`,
 /// resolved by [`shipped_schemas`]' `apply_docs_root`), then lands a **record-only** commit —
 /// never sweeping the agent's in-flight staged/untracked WIP (the M30/M31 path-scoped
-/// discipline).
+/// discipline). Returns the record commit's captured non-blocking hook stream.
 fn materialize_and_commit_record(
     jigc_home: &Path,
     schema: &Schema,
     minted: &MintedMilestone,
     schema_version: u32,
-) -> Result<()> {
+) -> Result<String> {
     let record_path = engine::store::canonical_path(jigc_home, schema, &minted.id)
         .context("the `milestone-record` doctype declares no committed location")?;
     if let Some(parent) = record_path.parent() {
@@ -331,7 +348,7 @@ fn materialize_and_commit_record(
         .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
 
     // The message temp file lands in the gitignored milestone area (never a tracked path).
-    commit_record_only(
+    let hook_output = commit_record_only(
         jigc_home,
         &record_path,
         &minted.dir,
@@ -348,7 +365,7 @@ fn materialize_and_commit_record(
         &minted.id,
         body.as_bytes(),
     );
-    Ok(())
+    Ok(hook_output)
 }
 
 /// Land a **record-only** commit for a milestone op (`design/team-ready-state.md` → The commit
@@ -359,13 +376,14 @@ fn materialize_and_commit_record(
 /// [`git_commit_pathspec`]. The caller-supplied `message` is a CLI-synthesized structural
 /// line (a record carries no authored prose) and is written into the gitignored `msg_dir`
 /// (the milestone area). Reused by every per-op record commit (`create` opens, `add-task`
-/// appends), each passing its own structural subject.
+/// appends), each passing its own structural subject. Returns the landed commit's captured
+/// non-blocking hook stream (the hook_output producer axis) for the verb's ack.
 fn commit_record_only(
     repo_root: &Path,
     record_path: &Path,
     msg_dir: &Path,
     message: &str,
-) -> Result<()> {
+) -> Result<String> {
     let spec = record_path
         .strip_prefix(repo_root)
         .unwrap_or(record_path)
@@ -383,26 +401,20 @@ fn commit_record_only(
 /// `git commit -F <message_file> -- <pathspec>` in `repo_root` — a **pathspec-restricted**
 /// commit recording ONLY the listed path, leaving any other staged/untracked change untouched
 /// (the WIP-safe milestone-op commit). [`crate::task::git_commit`] commits the whole index, so
-/// the record path needs this narrowed sibling. Bails with git's stdout+stderr on a non-zero
-/// exit (nothing was committed).
-fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) -> Result<()> {
-    let out = Command::new("git")
-        .arg("commit")
-        .arg("-F")
-        .arg(message_file)
-        .arg("--")
-        .arg(pathspec)
-        .current_dir(repo_root)
-        .output()
-        .context("could not run `git commit` (is git on PATH?)")?;
-    if !out.status.success() {
-        bail!(
-            "`git commit` (record-only) was rejected (no commit was made):\n{}{}",
-            String::from_utf8_lossy(&out.stdout).trim(),
-            String::from_utf8_lossy(&out.stderr).trim(),
-        );
-    }
-    Ok(())
+/// the record path needs this narrowed sibling — routed through the same hook-capable commit
+/// seam ([`crate::task::git_commit_capture`], the hook_output producer axis): the user's
+/// hooks run (never `--no-verify`), a rejection surfaces git's stdout+stderr verbatim with
+/// nothing committed, and a success returns the captured non-blocking hook stream.
+fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) -> Result<String> {
+    crate::task::git_commit_capture(
+        repo_root,
+        &[
+            std::ffi::OsStr::new("-F"),
+            message_file.as_os_str(),
+            std::ffi::OsStr::new("--"),
+            std::ffi::OsStr::new(pathspec),
+        ],
+    )
 }
 
 /// The committed record's **file-state key** — the repo-relative `<location><id>.md` path
@@ -635,7 +647,12 @@ fn guard_base_live(repo_root: &Path, milestone_id: &str, base: &BasePin) -> Resu
 /// the milestone's shared base in its own isolated area and append it. Returns the
 /// summary line; an unknown milestone or a within-milestone collision surfaces as
 /// the engine's routed blocking finding.
-fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) -> Result<String> {
+fn run_add_task(
+    cwd: &Path,
+    milestone_id: &str,
+    intent: &str,
+    workflow: &str,
+) -> Result<(String, String)> {
     // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
@@ -669,8 +686,11 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) ->
     // committed record and land a **separate record-only** path-scoped commit (the JSON-cache
     // append above is retained as the demoted cache). Dev-only (no methodology pack) resolves
     // no such schema → degrade to today's no-record, no-extra-commit behavior.
+    // The record commit's captured non-blocking hook stream (the hook_output producer
+    // axis) — empty dev-only (no record, no commit, no hook ran).
+    let mut hook_output = String::new();
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
-        append_and_commit_record(
+        hook_output = append_and_commit_record(
             &jigc_home,
             &jigc_root,
             schema,
@@ -680,9 +700,12 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) ->
         )?;
     }
 
-    Ok(format!(
-        "added task:{} to milestone:{}",
-        added.task.id, added.milestone_id
+    Ok((
+        format!(
+            "added task:{} to milestone:{}",
+            added.task.id, added.milestone_id
+        ),
+        hook_output,
     ))
 }
 
@@ -695,6 +718,7 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) ->
 /// record-only commit through the shared [`commit_record_only`] helper — never sweeping the
 /// agent's in-flight staged/untracked WIP (the M30/M31 path-scoped discipline). A failed
 /// append (a malformed record, a duplicate id) surfaces the engine's routed blocking finding.
+/// Returns the record commit's captured non-blocking hook stream.
 fn append_and_commit_record(
     jigc_home: &Path,
     jigc_root: &Path,
@@ -702,7 +726,7 @@ fn append_and_commit_record(
     milestone_id: &str,
     task_id: &str,
     intent: &str,
-) -> Result<()> {
+) -> Result<String> {
     let record_path = engine::store::canonical_path(jigc_home, schema, milestone_id)
         .context("the `milestone-record` doctype declares no committed location")?;
     let source = std::fs::read_to_string(&record_path)
@@ -715,7 +739,7 @@ fn append_and_commit_record(
 
     // The message temp file lands in the gitignored milestone WIP area (never a tracked path).
     let msg_dir = milestone_dir(jigc_root, milestone_id);
-    commit_record_only(
+    let hook_output = commit_record_only(
         jigc_home,
         &record_path,
         &msg_dir,
@@ -724,7 +748,7 @@ fn append_and_commit_record(
     // Advance the record's `file-state` baseline to the appended bytes, so the next overwrite's
     // reconcile preflight compares against this write, not the pre-append record (T6).
     baseline_record(jigc_root, schema, milestone_id, appended.as_bytes());
-    Ok(())
+    Ok(hook_output)
 }
 
 /// `jigc milestone add-from-spec <milestone-id> <spec-addr>` — seed the milestone's
@@ -741,7 +765,7 @@ fn run_add_from_spec(
     milestone_id: &str,
     spec_addr: &str,
     workflow: &str,
-) -> Result<String> {
+) -> Result<(String, String)> {
     // The committed spec read + the `.jigc/` sub-task mint both bind to jigc_home (the
     // main checkout); no git read here (sub-tasks pin to the milestone's stored base).
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
@@ -779,6 +803,10 @@ fn run_add_from_spec(
     // a fresh clone (the source-of-truth invariant). One separate record-only path-scoped commit
     // per seeded sub-task; the intent is read back from the minted task's working area (the
     // verbatim criterion text `add_from_spec` persisted). Dev-only resolves no schema → no record.
+    // One record-only commit per seeded sub-task — each captured non-blocking hook
+    // stream folds into the one acked string (the hook_output producer axis). Empty
+    // dev-only (no record, no commits, no hook ran).
+    let mut streams: Vec<String> = Vec::new();
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         for a in &added {
             let intent = engine::state::read_intent(&a.task.dir).with_context(|| {
@@ -787,22 +815,25 @@ fn run_add_from_spec(
                     a.task.id
                 )
             })?;
-            append_and_commit_record(
+            streams.push(append_and_commit_record(
                 &jigc_home,
                 &jigc_root,
                 schema,
                 milestone_id,
                 &a.task.id,
                 &intent,
-            )?;
+            )?);
         }
     }
 
     let ids: Vec<&str> = added.iter().map(|a| a.task.id.as_str()).collect();
-    Ok(format!(
-        "seeded {} sub-task(s) into milestone:{milestone_id} from {spec_addr}: {}",
-        ids.len(),
-        ids.join(", ")
+    Ok((
+        format!(
+            "seeded {} sub-task(s) into milestone:{milestone_id} from {spec_addr}: {}",
+            ids.len(),
+            ids.join(", ")
+        ),
+        crate::task::fold_hook_streams(streams.iter().map(String::as_str)),
     ))
 }
 
@@ -1152,7 +1183,7 @@ fn git_worktree(repo_root: &Path, args: &[&str]) -> Result<String> {
 ///
 /// Dev-only (no methodology pack → no `milestone-record` schema) degrades exactly as every other
 /// record arm does: no record to settle, no commit — and the workbench teardown still runs.
-fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
+fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, String)> {
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
@@ -1206,7 +1237,8 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
     }
 
     // (3) Settle the committed record + (4) commit ONLY it. Dev-only resolves no schema → no
-    // record, no commit (the omitting context).
+    // record, no commit (the omitting context — `hook_output` stays empty).
+    let mut hook_output = String::new();
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         let record_path = engine::store::canonical_path(&jigc_home, schema, milestone_id)
             .context("the `milestone-record` doctype declares no committed location")?;
@@ -1214,7 +1246,7 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
             .map_err(finding_to_err)?;
         // The message temp file lands in the (gitignored) milestone area — removed by the
         // teardown below, so it is written before the area goes.
-        commit_record_only(
+        hook_output = commit_record_only(
             &jigc_home,
             &record_path,
             &dir,
@@ -1231,9 +1263,12 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
     remove_worktrees(&repo_root, &jigc_home, &list);
     remove_milestone_area(&dir);
 
-    Ok(format!(
-        "discarded milestone:{milestone_id} ({} sub-task(s); workbench removed)",
-        list.enumerate().len()
+    Ok((
+        format!(
+            "discarded milestone:{milestone_id} ({} sub-task(s); workbench removed)",
+            list.enumerate().len()
+        ),
+        hook_output,
     ))
 }
 
@@ -1774,7 +1809,6 @@ fn run_milestone_finalize(
             None,
             crate::task::StagePolicy::ChainPerSubtask {
                 subtasks,
-                format,
                 record: record_pathspec,
             },
         )? {
@@ -1797,9 +1831,11 @@ fn run_milestone_finalize(
                 if format != Format::Json {
                     println!();
                 }
-                // Relay the aggregate commit's non-blocking hook output (each per-sub-task
-                // commit already relayed its own inside `chain_commit` — every fan-out commit
-                // runs the user's hooks, `design/finalize.md` → 6. Commit).
+                // Relay the whole chain's folded non-blocking hook output — every fan-out
+                // commit (the N per-sub-task code commits + the aggregate) runs the user's
+                // hooks and `chain_commit` folds their captured streams into this one string,
+                // the same string the envelope above carries (one capture, two channels;
+                // `design/finalize.md` → 6. Commit; the hook_output producer axis).
                 crate::task::relay_hook_output(format, &hook_output);
                 // The boundary landed — clean up the per-sub-task working areas too (the
                 // executor only removed the milestone area). On a failure (below) the areas
