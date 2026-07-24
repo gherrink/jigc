@@ -1855,13 +1855,18 @@ pub(crate) fn try_execute_finalize_plan(
     let mut config_index: Vec<ConfigLayerIndexEntry> = Vec::new();
     let commit_result = (|| -> Result<String> {
         // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`,
-        // capturing any displaced pre-existing destination bytes for the rollback.
-        displaced = promote(repo_root, &plan.promotions)?;
+        // capturing any displaced pre-existing destination bytes for the rollback. The
+        // captures accumulate into the outer `displaced` (&mut, not returned-on-`Ok`),
+        // so a MID-promote failure still hands the `Err` arm every capture taken so far
+        // (confidence-audit code-review MEDIUM — the failure-POINT axis).
+        promote(repo_root, &plan.promotions, &mut displaced)?;
         // Retire each foreign original (`design/auto-migration.md` →
         // Retire-the-foreign-original) — the first byte-destructive write, inside the
         // commit closure so `git add --all` stages the deletion into the same commit as
-        // the promoted doc. Empty (inert) on every non-migration finalize.
-        retired = retire(repo_root, &plan.retirements)?;
+        // the promoted doc. Empty (inert) on every non-migration finalize. Same
+        // caller-owned capture discipline: a MID-retire failure keeps the bytes already
+        // captured for the rollback's worktree axis.
+        retire(repo_root, &plan.retirements, &mut retired)?;
         // The transient `.jigc/` subdirs are gitignored via `.jigc/.gitignore` — the
         // working area is never committed (`design/storage.md` → repository layout).
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
@@ -2039,9 +2044,20 @@ pub(crate) fn fold_hook_streams<'a, I: IntoIterator<Item = &'a str>>(streams: I)
 /// plans no retirement, so when the foreign original is **untracked** the promotion
 /// destination is the user's only copy of its bytes and `git restore` has nothing to
 /// recover from — the captured bytes are what [`rollback_promotions`] rewrites so a
-/// rejected commit never deletes them. Empty when no destination file pre-exists.
-fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<Vec<(String, Vec<u8>)>> {
-    let mut displaced = Vec::new();
+/// rejected commit never deletes them. Untouched when no destination file pre-exists.
+///
+/// The captures accumulate into the **caller-owned** `displaced` (confidence-audit
+/// code-review MEDIUM — the failure-POINT axis): a mid-promote failure at promotion *k*
+/// (disk full, permissions, a directory squatting the destination) must not discard the
+/// captures already taken for promotions 1..k — a returned-only-on-`Ok` collection did,
+/// and the shared `Err` arm's rollback then deleted a same-path untracked foreign it had
+/// no bytes to restore. Each capture is pushed **before** its `fs::copy`, so even the
+/// failing promotion's own displaced bytes reach the rollback.
+fn promote(
+    repo_root: &Path,
+    promotions: &[Promotion],
+    displaced: &mut Vec<(String, Vec<u8>)>,
+) -> Result<()> {
     for promotion in promotions {
         let dest = repo_root.join(&promotion.destination);
         if let Some(parent) = dest.parent() {
@@ -2058,7 +2074,7 @@ fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<Vec<(String, Ve
             )
         })?;
     }
-    Ok(displaced)
+    Ok(())
 }
 
 /// The retire step (`design/auto-migration.md` → Retire-the-foreign-original) — the
@@ -2073,8 +2089,17 @@ fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<Vec<(String, Ve
 /// original that was **untracked** at HEAD has no committed bytes for `git restore` to
 /// recover on a rollback, so the captured bytes are what `rollback_promotions` rewrites
 /// to keep an approved-but-failed commit from permanently losing it.
-fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    let mut captured = Vec::new();
+///
+/// The captures accumulate into the **caller-owned** `captured` (confidence-audit
+/// code-review MEDIUM — the same failure-POINT axis as [`promote`]): a mid-retire
+/// failure at retirement *k* must not discard the captures for retirements already
+/// deleted — a returned-only-on-`Ok` collection did, leaving the rollback's worktree
+/// axis nothing to rewrite for an untracked foreign it had just deleted.
+fn retire(
+    repo_root: &Path,
+    retirements: &[PathBuf],
+    captured: &mut Vec<(PathBuf, Vec<u8>)>,
+) -> Result<()> {
     for retirement in retirements {
         let path = repo_root.join(retirement);
         match std::fs::read(&path) {
@@ -2092,7 +2117,7 @@ fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<Vec<(PathBuf, Vec
             }
         }
     }
-    Ok(captured)
+    Ok(())
 }
 
 /// The narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
@@ -2685,9 +2710,11 @@ fn existing_pathspecs(repo_root: &Path, candidates: &[&str]) -> Vec<String> {
 /// `git restore --staged` reset to HEAD, which destroyed a blob the user staged at the
 /// destination mid-task (post-mint, so outside the carryover snapshot; for a destination
 /// new at HEAD the reset dropped the entry entirely) — and the **worktree** back to what it
-/// held before [`promote`] wrote it (HEAD's bytes for a tracked destination; the captured
-/// **displaced** pre-promote bytes for an untracked destination that pre-existed — the
-/// same-path untracked-foreign cell, confidence-audit minor item 10; the promoted copy
+/// held before [`promote`] wrote it (the captured **displaced** pre-promote bytes for any
+/// destination that pre-existed — the same-path untracked-foreign cell, confidence-audit
+/// minor item 10, and for a tracked destination the capture preserves an uncommitted
+/// pre-promote modification `--source=HEAD` would destroy, reviewer LOW-2; HEAD's bytes
+/// for a tracked destination with no capture; the promoted copy
 /// removed for a genuinely new one). Retirements are restored **two-axis scoped (M40 F7)** —
 /// restore only what jigc's own retire/staging touched, never what the user deleted:
 ///
@@ -2718,13 +2745,23 @@ fn rollback_promotions(
     // pre-finalize) is NOT resurrected (`--force-remove` drops the stage's overwrite).
     rollback_owner_artifact_index(repo_root, promo_index);
     for promotion in promotions {
-        // Worktree axis: undo [`promote`]'s write. A destination tracked at HEAD gets
-        // HEAD's bytes back (`--source=HEAD --worktree` — index untouched, that axis is
-        // restored above); an untracked destination that PRE-EXISTED gets its captured
-        // displaced bytes rewritten (the same-path untracked foreign — `git restore` has
-        // no committed bytes to recover, exactly the retire capture's rationale); a
-        // genuinely new doc has no pre-promote content, so remove the copy outright.
-        if path_at_head(repo_root, &promotion.destination) {
+        // Worktree axis: undo [`promote`]'s write. A destination that PRE-EXISTED gets
+        // its captured displaced pre-promote bytes rewritten — checked FIRST (reviewer
+        // LOW-2): for a destination tracked at HEAD the captured worktree bytes are
+        // strictly more faithful than `--source=HEAD`, which destroyed an uncommitted
+        // modification the user held there pre-promote; for an untracked one they are
+        // the only copy (the same-path untracked foreign — `git restore` has no
+        // committed bytes to recover, exactly the retire capture's rationale). A tracked
+        // destination with NO capture (deleted from the worktree pre-promote) falls back
+        // to HEAD's bytes (`--source=HEAD --worktree` — index untouched, that axis is
+        // restored above); a genuinely new doc has no pre-promote content, so remove the
+        // copy outright.
+        if let Some((_, bytes)) = displaced
+            .iter()
+            .find(|(path, _)| *path == promotion.destination)
+        {
+            let _ = std::fs::write(repo_root.join(&promotion.destination), bytes);
+        } else if path_at_head(repo_root, &promotion.destination) {
             let _ = git_run(
                 repo_root,
                 &[
@@ -2735,11 +2772,6 @@ fn rollback_promotions(
                     &promotion.destination,
                 ],
             );
-        } else if let Some((_, bytes)) = displaced
-            .iter()
-            .find(|(path, _)| *path == promotion.destination)
-        {
-            let _ = std::fs::write(repo_root.join(&promotion.destination), bytes);
         } else {
             let dest = repo_root.join(&promotion.destination);
             let _ = std::fs::remove_file(&dest);
@@ -4030,5 +4062,214 @@ mod tests {
             "the present config layer is staged"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The pre-promote bytes of the failure-POINT axis tests below — an untracked
+    /// same-path foreign whose only copy is what the capture-and-restore discipline
+    /// protects.
+    const AXIS_FOREIGN: &str = "# History\n\nthe user's only copy of these bytes\n";
+
+    /// Shared harness for the failure-POINT axis tests: a temp git repo with one seed
+    /// commit (the rollback shells out to git, so HEAD must exist).
+    fn finalize_axis_repo(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("jigc-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mk temp repo");
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git runs");
+            assert!(out.status.success(), "git {args:?} should succeed");
+        };
+        run(&["init", "-q"]);
+        run(&["config", "user.email", "t@example.com"]);
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "commit.gpgsign", "false"]);
+        std::fs::write(dir.join("seed.txt"), "seed\n").expect("write seed");
+        run(&["add", "--all"]);
+        run(&["commit", "-q", "-m", "seed"]);
+        dir
+    }
+
+    /// Drive [`try_execute_finalize_plan`] over a crafted plan and assert the
+    /// transaction was rejected (the inner `Err` — the shared rollback arm ran).
+    fn execute_plan_expect_rejection(repo: &Path, plan: &engine::finalize::FinalizePlan) {
+        let msg_tmp = repo.join("msg-tmp");
+        std::fs::create_dir_all(&msg_tmp).expect("mk msg tmp");
+        let schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        let result = try_execute_finalize_plan(
+            repo,
+            &repo.join(".jigc"),
+            &msg_tmp,
+            plan,
+            &repo.join("cleanup-unused"),
+            &schemas,
+            None,
+            StagePolicy::MigrationFixed,
+        )
+        .expect("no setup I/O error");
+        assert!(
+            result.is_err(),
+            "the seeded mid-transaction failure must reject the finalize"
+        );
+    }
+
+    fn axis_plan(
+        promotions: Vec<Promotion>,
+        retirements: Vec<PathBuf>,
+    ) -> engine::finalize::FinalizePlan {
+        engine::finalize::FinalizePlan {
+            schema_version: engine::result::SCHEMA_VERSION,
+            message: "test: seeded mid-transaction failure".into(),
+            promotions,
+            hash_updates: BTreeMap::new(),
+            retirements,
+            owner_artifacts: Vec::new(),
+        }
+    }
+
+    /// Failure-POINT axis, the **mid-promote** member (confidence-audit code-review
+    /// MEDIUM — the residual of the class minor item 10 fixed): [`promote`] fails at
+    /// promotion *k* (here: the destination is a directory, so `fs::copy` errors) after
+    /// promotion 1 already displaced a same-path **untracked** foreign. Pre-fix the
+    /// displaced capture was returned **only on `Ok`**, so the `?` discarded it; the
+    /// shared `Err` arm's rollback saw an untracked destination with no capture and
+    /// **deleted the user's only copy**. The capture must survive the mid-promote
+    /// failure and the rollback must restore the foreign byte-intact.
+    #[test]
+    fn mid_promote_failure_restores_the_earlier_displaced_untracked_foreign() {
+        let repo = finalize_axis_repo("mid-promote");
+        // Promotion 1's destination: an untracked same-path foreign — its bytes exist
+        // nowhere else (not at HEAD, and a same-path migration plans no retirement).
+        std::fs::write(repo.join("CHANGELOG.md"), AXIS_FOREIGN).expect("write foreign");
+        // The staged sources promote copies from.
+        std::fs::create_dir_all(repo.join("staged")).expect("mk staged");
+        std::fs::write(
+            repo.join("staged").join("one.md"),
+            "# Changelog\n\npromoted\n",
+        )
+        .expect("write source 1");
+        std::fs::write(repo.join("staged").join("two.md"), "# Blocked\n").expect("write source 2");
+        // Promotion 2's destination is a DIRECTORY — `fs::copy` into it fails
+        // deterministically (portable: no permission bits, no disk-full simulation).
+        std::fs::create_dir_all(repo.join("blocked.md")).expect("mk blocking dir");
+        let plan = axis_plan(
+            vec![
+                Promotion {
+                    source: repo.join("staged").join("one.md"),
+                    destination: "CHANGELOG.md".into(),
+                },
+                Promotion {
+                    source: repo.join("staged").join("two.md"),
+                    destination: "blocked.md".into(),
+                },
+            ],
+            Vec::new(),
+        );
+
+        execute_plan_expect_rejection(&repo, &plan);
+
+        let restored = repo.join("CHANGELOG.md");
+        assert!(
+            restored.exists(),
+            "the displaced untracked foreign must survive a MID-PROMOTE failure — the \
+             capture taken at promotion 1 must reach the rollback even though promotion 2 \
+             errored"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&restored).expect("read restored foreign"),
+            AXIS_FOREIGN,
+            "the displaced untracked foreign must be restored byte-intact"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// Failure-POINT axis, the **mid-retire** member (the reviewer-noted same-class
+    /// shape in [`retire`]): retirement *k* fails (here: the path is a directory, so
+    /// `fs::read` errors with a non-`NotFound` kind) after retirement 1 already deleted
+    /// an **untracked** foreign — captured pre-deletion, but pre-fix returned only on
+    /// `Ok`, so the `?` discarded the capture and the rollback's worktree axis had no
+    /// bytes to rewrite: the foreign was lost permanently.
+    #[test]
+    fn mid_retire_failure_restores_the_earlier_retired_untracked_foreign() {
+        let repo = finalize_axis_repo("mid-retire");
+        // Retirement 1: an untracked foreign — no committed bytes for `git restore`.
+        std::fs::write(repo.join("HISTORY.md"), AXIS_FOREIGN).expect("write foreign");
+        // Retirement 2 is a DIRECTORY — `fs::read` errors with `IsADirectory`
+        // (non-`NotFound`, so retire raises rather than skipping).
+        std::fs::create_dir_all(repo.join("blocked-retire")).expect("mk blocking dir");
+        let plan = axis_plan(
+            Vec::new(),
+            vec![PathBuf::from("HISTORY.md"), PathBuf::from("blocked-retire")],
+        );
+
+        execute_plan_expect_rejection(&repo, &plan);
+
+        let restored = repo.join("HISTORY.md");
+        assert!(
+            restored.exists(),
+            "the retired untracked foreign must survive a MID-RETIRE failure — the \
+             capture taken at retirement 1 must reach the rollback even though \
+             retirement 2 errored"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&restored).expect("read restored foreign"),
+            AXIS_FOREIGN,
+            "the retired untracked foreign must be restored byte-intact"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The reviewer's LOW-2, pinned: when captured displaced bytes exist for a
+    /// destination **tracked at HEAD**, the rollback's worktree axis restores the
+    /// captured pre-promote bytes — not `git restore --source=HEAD`, which would
+    /// destroy an uncommitted worktree modification the user held at the destination
+    /// before the promotion overwrote it.
+    #[test]
+    fn rollback_restores_a_tracked_destinations_uncommitted_pre_promote_bytes() {
+        let repo = finalize_axis_repo("tracked-displaced");
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .expect("git runs");
+            assert!(out.status.success(), "git {args:?} should succeed");
+        };
+        // CHANGELOG.md is tracked at HEAD as "committed", then modified (uncommitted)
+        // to "modified" — the pre-promote worktree bytes the capture protects.
+        std::fs::write(repo.join("CHANGELOG.md"), "committed\n").expect("write committed");
+        run(&["add", "CHANGELOG.md"]);
+        run(&["commit", "-q", "-m", "track changelog"]);
+        std::fs::write(repo.join("CHANGELOG.md"), "modified\n").expect("write modified");
+        std::fs::create_dir_all(repo.join("staged")).expect("mk staged");
+        std::fs::write(repo.join("staged").join("one.md"), "promoted\n").expect("write source 1");
+        std::fs::write(repo.join("staged").join("two.md"), "blocked\n").expect("write source 2");
+        std::fs::create_dir_all(repo.join("blocked.md")).expect("mk blocking dir");
+        let plan = axis_plan(
+            vec![
+                Promotion {
+                    source: repo.join("staged").join("one.md"),
+                    destination: "CHANGELOG.md".into(),
+                },
+                Promotion {
+                    source: repo.join("staged").join("two.md"),
+                    destination: "blocked.md".into(),
+                },
+            ],
+            Vec::new(),
+        );
+
+        execute_plan_expect_rejection(&repo, &plan);
+
+        assert_eq!(
+            std::fs::read_to_string(repo.join("CHANGELOG.md")).expect("read restored"),
+            "modified\n",
+            "the rollback must restore the captured pre-promote worktree bytes — \
+             `--source=HEAD` would destroy the user's uncommitted modification"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
     }
 }
