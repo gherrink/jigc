@@ -10,11 +10,13 @@ in a sentence or two. The `date` is CLI-set on create:
 jigc doc add-item decisions-log:decisions-log#entries --title "<the decision>" --task {{task.id}}
 jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task {{task.id}}
 
+<!-- once:batch-author-note -->
 Or make it one call — the batch alternative to the whole sequence above (run it
 INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
 rejects a second create): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every entry in a single
 write. Over an already-committed log it copies the committed doc in and appends —
 existing entries are untouched:
+<!-- /once -->
 
 jigc doc author decisions-log --from-file - --task {{task.id}}

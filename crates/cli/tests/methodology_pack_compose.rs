@@ -459,6 +459,82 @@ fn planning_composes_the_commit_fill_and_finalize_tail() {
     );
 }
 
+/// The byte-identical batch-authoring caveat span shared by author-roadmap /
+/// author-ledger / author-decisions (added 81df14d; `ideas/batch-authoring-
+/// ergonomics.md`). Planning composes all three, so before the compose-altitude
+/// dedupe it appeared verbatim three times.
+const BATCH_CAVEAT_SPAN: &str =
+    "Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every entry in a single";
+
+/// M45 Inc 10 T13 — the compose-altitude render-once dedupe of the batch-authoring
+/// caveat (`RC-alpha3/findings-verification.md` §5; `surface-contract.md` /
+/// `workflow-dialect.md` → Render-once blocks). The three running-doc author steps
+/// each wrap the identical caveat in a `<!-- once:batch-author-note -->` block, so
+/// the planning walk composes it **once** — the noise the trial flagged — while the
+/// per-doctype `jigc doc author <type>` command lines (outside the block) all
+/// survive, and no marker leaks into the agent-facing bytes. Driven on the EMITTED
+/// composed output of the real planning workflow through the binary.
+#[test]
+fn planning_dedupes_the_batch_authoring_caveat() {
+    let repo = TempDir::new("planning-dedupe");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        setup.status,
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "planning", "M99"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow planning \"M99\"` must compose the planning spine and exit 0; \
+         got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // The caveat span composes exactly once across the three-step planning walk.
+    assert_eq!(
+        stdout.matches(BATCH_CAVEAT_SPAN).count(),
+        1,
+        "the batch-authoring caveat must compose exactly once in the planning walk; got:\n{stdout}",
+    );
+
+    // No once-marker leaks into the agent-facing composed output.
+    assert!(
+        !stdout.contains("<!-- once") && !stdout.contains("<!-- /once"),
+        "no once-marker may leak into the composed planning output; got:\n{stdout}",
+    );
+
+    // The per-doctype batch command lines sit OUTSIDE the block, so the collapse
+    // leaves every one intact — the dedupe removes the repeated prose, not the
+    // affordance each step solicits.
+    for needle in [
+        "jigc doc author roadmap --from-file - --task m99",
+        "jigc doc author deferral-ledger --from-file - --task m99",
+        "jigc doc author decisions-log --from-file - --task m99",
+    ] {
+        assert!(
+            stdout.contains(needle),
+            "the batch command line `{needle}` must survive the caveat dedupe; got:\n{stdout}",
+        );
+    }
+}
+
 /// M17 self-hosting dogfood — the methodology `decided-task` workflow composes the
 /// dev-workflow spine PLUS a decision-recording step through the real binary:
 /// `jigc start --workflow decided-task "<intent>"` mints a task and composes

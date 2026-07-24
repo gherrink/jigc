@@ -2733,8 +2733,15 @@ pub fn compose_with_store(
 ) -> Result<ComposedWorkflow, Finding> {
     let composition = expand_includes(def, source)?;
     let mut emitted_steps = Vec::with_capacity(composition.steps.len());
+    // Composition-scoped render-once keys: a `<!-- once:<key> -->` block renders on
+    // its first occurrence across the walk and is dropped on every later one
+    // ([`strip_once_blocks`]; `workflow-dialect.md` → Render-once blocks).
+    let mut once_seen = std::collections::BTreeSet::new();
     for step in &composition.steps {
-        let mut emitted = emit_step_body_with(&step.body, ctx, catalog, store)?;
+        let mut emitted = strip_once_blocks(
+            &emit_step_body_with(&step.body, ctx, catalog, store)?,
+            &mut once_seen,
+        );
         // A `fan-out` step appends its `Spawn:` directives — one per id-sorted
         // sub-task of the resolved `over:` collection — after the step's reasoning
         // prose (`workflow-dialect.md` → Emitted format, rule 4: the 5th class).
@@ -2776,6 +2783,84 @@ pub fn compose_with_store(
     // the CLI producer sets it from its minted / given id (`command-output-contract.md`
     // §1). The order below matches the pinned `{ "task", "text" }` JSON shape.
     Ok(ComposedWorkflow { task: None, text })
+}
+
+/// Compose-altitude **render-once** collapse for a keyed prose block (M45 Inc 10 T13;
+/// `workflow-dialect.md` → Render-once blocks). A step body may wrap a shared prose
+/// span between an `<!-- once:<key> -->` open and a `<!-- /once -->` close marker; the
+/// block renders on its **first** occurrence within a composition (keyed on `<key>` via
+/// `seen`) and is dropped on every later one. That is how the batch-authoring caveat —
+/// byte-authored identically into `author-roadmap`/`-ledger`/`-decisions`, composed
+/// together by `planning` — reaches the agent once, while each step composed **alone**
+/// still carries it (the first occurrence is always kept, so no step is stripped of its
+/// caveat; a step-altitude delete could not do this because `author-decisions` is also
+/// composed alone by `completion`).
+///
+/// The markers are HTML comments — inert to every other body consumer: `emit_step_body`
+/// passes them through as prose, and no placeholder / fill / reserved-marker check
+/// matches them, so this is the **only** site that interprets them, and it strips the
+/// marker lines unconditionally so none reach the composed output. `seen` is the
+/// composition-scoped key set threaded across the step loop by [`compose_with_store`];
+/// a fresh set makes every block a first occurrence.
+///
+/// On a **repeat**, the block and one immediately-preceding blank line are dropped, so
+/// the collapse leaves a single blank between the surviving neighbours rather than two.
+/// Malformed markers — an open with no matching close, or a stray close — are dropped,
+/// never leaked. A pure function of `(emitted, seen)`; the no-marker body is returned
+/// byte-identical (the empty-once path).
+fn strip_once_blocks(emitted: &str, seen: &mut std::collections::BTreeSet<String>) -> String {
+    // Fast path: a body carrying no marker is returned untouched (byte-identical).
+    if !emitted.contains("<!-- once:") && !emitted.contains("<!-- /once -->") {
+        return emitted.to_owned();
+    }
+    let trailing_newline = emitted.ends_with('\n');
+    let lines: Vec<&str> = emitted.lines().collect();
+    let mut out: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        if let Some(key) = parse_once_open(lines[i]) {
+            // Locate the matching close; an unbalanced open drops only its marker line.
+            let Some(close) = (i + 1..lines.len()).find(|&j| is_once_close(lines[j])) else {
+                i += 1;
+                continue;
+            };
+            if seen.insert(key.to_owned()) {
+                // First occurrence: keep the inner content, drop the two marker lines.
+                out.extend_from_slice(&lines[i + 1..close]);
+            } else if out.last() == Some(&"") {
+                // Repeat: drop the block plus one preceding blank, collapsing to one.
+                out.pop();
+            }
+            i = close + 1;
+        } else if is_once_close(lines[i]) {
+            // A stray close (no open) — drop it, never leak it.
+            i += 1;
+        } else {
+            out.push(lines[i]);
+            i += 1;
+        }
+    }
+    let mut s = out.join("\n");
+    if trailing_newline {
+        s.push('\n');
+    }
+    s
+}
+
+/// The `<key>` of an `<!-- once:<key> -->` open-marker line (trimmed), or `None` when
+/// the line is not a well-formed open marker or carries an empty key.
+fn parse_once_open(line: &str) -> Option<&str> {
+    let key = line
+        .trim()
+        .strip_prefix("<!-- once:")?
+        .strip_suffix("-->")?
+        .trim();
+    (!key.is_empty()).then_some(key)
+}
+
+/// Whether `line` (trimmed) is the `<!-- /once -->` close marker.
+fn is_once_close(line: &str) -> bool {
+    line.trim() == "<!-- /once -->"
 }
 
 /// The engine-native `workflow-refs` probe: validate a workflow definition + its
@@ -6588,6 +6673,106 @@ explain what changes (nothing appears if it supersedes none).
 
         Run: `jigc task finalize add-rate-limiter`
         "#);
+    }
+
+    /// M45 Inc 10 T13 (`once_block_renders_once_per_composition`): a keyed
+    /// `<!-- once:<key> -->` / `<!-- /once -->` block renders on its **first**
+    /// occurrence within a composition and is dropped on every later one — the
+    /// compose-altitude render-once collapse the shared batch-authoring caveat rides
+    /// (`workflow-dialect.md` → Render-once blocks). Two properties over the emitted
+    /// bytes: (1) three steps that each wrap the same-keyed span, composed together
+    /// (the `planning`-walk analog), emit the span exactly once while every step's own
+    /// non-wrapped line survives; (2) any single step composed **alone** still carries
+    /// its span (the first occurrence is always kept) — the standalone case a
+    /// step-altitude drop would break.
+    #[test]
+    fn once_block_renders_once_per_composition() {
+        const SPAN: &str = "SHARED CAVEAT LINE ONE\nSHARED CAVEAT LINE TWO";
+        // Each step wraps the identical span under one key, then carries its own
+        // distinct trailing line outside the block (the per-doctype batch command).
+        let step_body = |tail: &str| {
+            format!(
+                "Author the thing.\n\n\
+                 <!-- once:batch-note -->\n\
+                 SHARED CAVEAT LINE ONE\n\
+                 SHARED CAVEAT LINE TWO\n\
+                 <!-- /once -->\n\n\
+                 {tail}\n"
+            )
+        };
+        let source = MapSource::new(&[
+            ("author-a", &step_body("run a")),
+            ("author-b", &step_body("run b")),
+            ("author-c", &step_body("run c")),
+        ]);
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+
+        // (1) The three-step walk: the span composes once, no marker leaks, and each
+        // step's own trailing line survives (the collapse never eats sibling content).
+        let walk = WorkflowDef {
+            when: None,
+            description: None,
+            usage: None,
+            creates_task: true,
+            selectable: true,
+            suppressed: None,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec![
+                "author-a".to_owned(),
+                "author-b".to_owned(),
+                "author-c".to_owned(),
+            ],
+        };
+        let composed = compose(&walk, &source, &catalog, &ctx).expect("composes");
+        assert_eq!(
+            composed.text.matches(SPAN).count(),
+            1,
+            "the once-block span must compose exactly once in the walk; got:\n{}",
+            composed.text,
+        );
+        assert!(
+            !composed.text.contains("<!-- once") && !composed.text.contains("<!-- /once"),
+            "no once-marker may leak into the composed output; got:\n{}",
+            composed.text,
+        );
+        for tail in ["run a", "run b", "run c"] {
+            assert!(
+                composed.text.contains(tail),
+                "each step's own trailing line `{tail}` must survive the collapse; got:\n{}",
+                composed.text,
+            );
+        }
+
+        // (2) Any single step composed alone still carries the span exactly once —
+        // the first occurrence is always kept, so a standalone author-* step is never
+        // stripped of the caveat.
+        for id in ["author-a", "author-b", "author-c"] {
+            let solo = WorkflowDef {
+                when: None,
+                description: None,
+                usage: None,
+                creates_task: true,
+                selectable: true,
+                suppressed: None,
+                allows_create: vec![],
+                reads: vec![],
+                includes: vec![id.to_owned()],
+            };
+            let solo_out = compose(&solo, &source, &catalog, &ctx).expect("composes");
+            assert_eq!(
+                solo_out.text.matches(SPAN).count(),
+                1,
+                "the once-block span must compose once for standalone `{id}`; got:\n{}",
+                solo_out.text,
+            );
+            assert!(
+                !solo_out.text.contains("<!-- once"),
+                "no once-marker may leak for standalone `{id}`; got:\n{}",
+                solo_out.text,
+            );
+        }
     }
 
     /// T3 done-criterion (`catalog_placeholder_emits_option_lines`): a lone

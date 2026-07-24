@@ -13,11 +13,13 @@ jigc doc set-field deferral-ledger:deferral-ledger#entries/<id>/kind --value <De
 jigc doc set-field deferral-ledger:deferral-ledger#entries/<id>/trigger --value <milestone> --task {{task.id}}
 jigc doc set-slot deferral-ledger:deferral-ledger#entries/<id>/body --from-file - --task {{task.id}}
 
+<!-- once:batch-author-note -->
 Or make it one call — the batch alternative to the whole sequence above (run it
 INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
 rejects a second create): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every entry in a single
 write. Over an already-committed ledger it copies the committed doc in and
 appends — existing entries are untouched:
+<!-- /once -->
 
 jigc doc author deferral-ledger --from-file - --task {{task.id}}

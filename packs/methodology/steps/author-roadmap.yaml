@@ -12,11 +12,13 @@ jigc doc add-item roadmap:roadmap#milestones --title "<milestone>" --task {{task
 jigc doc set-slot roadmap:roadmap#milestones/<id>/proves --from-file - --task {{task.id}}
 jigc doc set-slot roadmap:roadmap#milestones/<id>/decomposition --from-file - --task {{task.id}}
 
+<!-- once:batch-author-note -->
 Or make it one call — the batch alternative to the whole sequence above (run it
 INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
 rejects a second create): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every entry in a single
 write. Over an already-committed roadmap it copies the committed doc in and
 appends the new milestone — existing entries are untouched:
+<!-- /once -->
 
 jigc doc author roadmap --from-file - --task {{task.id}}
