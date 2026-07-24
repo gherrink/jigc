@@ -1309,3 +1309,54 @@ fn findings_of(out: &std::process::Output) -> Vec<serde_json::Value> {
         .expect("the report carries a `findings` array")
         .clone()
 }
+
+/// The **non-migratable** arm of the adoption route (2026-07-24 mutation audit, finding
+/// #3): `milestone-record` ships **no** `migrate-milestone-record` workflow in either
+/// pack, so a foreign file squatting at its home must get the **ingest-only** route —
+/// never `jigc migrate <path> --as milestone-record`, a verb that hard-errors ("not
+/// migratable") on it. That is the M40 two-tier rule (never command a verb that
+/// hard-errors) on the arm the migratable-changelog test above cannot reach: a
+/// `migratable` flag inverted to `any(w.id != "migrate-<ty>")` is true whenever ANY
+/// other workflow exists, and only this arm reddens for it.
+#[test]
+fn a_foreign_file_at_a_non_migratable_doctypes_home_routes_ingest_only() {
+    let repo = TempDir::new("non-migratable-foreign");
+    let home = TempDir::new("home");
+    // A foreign markdown file squatting at the `milestone-record` home
+    // (`docs/milestone-records/` under the default docs-root), committed before setup
+    // so the store sweep walks it as a committed instance.
+    let dir = repo.path().join("docs").join("milestone-records");
+    fs::create_dir_all(&dir).expect("mk docs/milestone-records/");
+    fs::write(
+        dir.join("notes.md"),
+        "# Meeting notes\n\nJust some notes nobody handed to jigc.\n",
+    )
+    .expect("write the foreign squatter");
+    setup_repo(repo.path(), home.path());
+
+    let (_, findings) = validate_findings(repo.path(), home.path());
+    let unadopted = by_code(&findings, "schema-conformance.unadopted-instance");
+    assert_eq!(
+        unadopted.len(),
+        1,
+        "exactly one adoption advisory for the squatter; got: {findings:#?}",
+    );
+    let finding = unadopted[0];
+    assert_eq!(
+        finding["location"]["address"].as_str(),
+        Some("docs/milestone-records/notes.md"),
+        "the advisory is addressed at the file path: {finding:#?}",
+    );
+    let route = finding["route"]
+        .as_str()
+        .expect("the advisory carries a route");
+    assert!(
+        route.contains("jigc ingest"),
+        "the route names the adoption front door; got: {route}",
+    );
+    assert!(
+        !route.contains("--as milestone-record") && !route.contains("jigc migrate "),
+        "`milestone-record` is not migratable — the route must NOT command the \
+         hard-erroring `jigc migrate <path> --as milestone-record`; got: {route}",
+    );
+}

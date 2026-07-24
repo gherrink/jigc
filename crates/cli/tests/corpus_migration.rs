@@ -504,6 +504,13 @@ fn migrate_corpus_completes_an_interrupted_relocation() {
     let home = TempDir::new("home");
     setup_repo(repo.path(), home.path());
     commit_v1_changelog(repo.path());
+    // A genuinely-current bystander (an ADR stamped at the current schema-version 2):
+    // its `already-current` report line must SURVIVE the completed-move dedup — the
+    // report-integrity axis the contains-only assertions below were blind to
+    // (2026-07-24 mutation audit, finding #4: a `retain` inverted to `k == target`
+    // keeps only the superseded destination line and silently drops every other
+    // already-current entry).
+    commit_adr(repo.path(), "settled", "Settled decision", Some(2));
 
     // Run 1 — the real relocation: `docs/changelog/changelog.md` → `CHANGELOG.md`.
     let first = jigc(repo.path(), home.path(), &["migrate-corpus"]);
@@ -522,9 +529,27 @@ fn migrate_corpus_completes_an_interrupted_relocation() {
         &second,
         "`jigc migrate-corpus` (completing the interrupted move)",
     );
+    // The exact-set report: the moved doc is reported ONCE, as migrated — its
+    // enumerated `already-current` destination line superseded — while the bystander's
+    // `already-current` line survives. Exact summary counts + per-entry lines, so both
+    // a double-report and a dropped entry redden.
     assert!(
-        out.contains("1 migrated") && out.contains("CHANGELOG.md"),
-        "the completed move is reported once; stdout:\n{out}",
+        out.contains("corpus migration: 1 migrated, 1 already current, 0 blocked"),
+        "the summary counts are exact — one completed move, one surviving bystander, \
+         nothing blocked; stdout:\n{out}",
+    );
+    assert!(
+        out.contains("  migrated   CHANGELOG.md"),
+        "the completed move is reported migrated; stdout:\n{out}",
+    );
+    assert!(
+        !out.contains("  current    CHANGELOG.md"),
+        "the moved doc's superseded `already-current` line must NOT double-report; \
+         stdout:\n{out}",
+    );
+    assert!(
+        out.contains("  current    docs/decisions/settled.md"),
+        "the genuinely-current bystander stays reported; stdout:\n{out}",
     );
     assert!(
         !repo.path().join("docs/changelog/changelog.md").exists(),

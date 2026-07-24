@@ -1625,6 +1625,50 @@ Fine.
         insta::assert_debug_snapshot!("slot_forbidden_heading", ceiling);
     }
 
+    /// The ceiling sweep's **slot-span boundary** (2026-07-24 mutation audit, finding
+    /// #5): a heading can start exactly at `span.end` only in the zero-gap OOB shape —
+    /// no blank line and no content between a section heading and the next structural
+    /// heading (`## Context\n## Options`), where `trim_span` collapses the empty slot to
+    /// `(content_start, content_start)` and the next heading's `range.start` equals it.
+    /// The parser accepts that non-canonical shape, and the next section's own `##` must
+    /// NOT be reported as a ceiling violation *inside* the empty slot — the `<` (not
+    /// `<=`) half-open upper bound. Under `<=` this doc would false-block.
+    #[test]
+    fn zero_gap_empty_slot_does_not_flag_the_next_heading() {
+        let src = "\
+---
+status: proposed
+date: 2026-05-31
+---
+
+# A decision
+
+## Context
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+We decided.
+
+## Consequences
+Fine.
+";
+        // The zero-gap empty slot parses clean: no `conformance.slot-heading-depth`
+        // (or any other) finding against the next section's own `## Options` heading.
+        let doc = parse_sections(&adr_schema(), src)
+            .expect("the zero-gap empty-slot shape parses without ceiling findings");
+        let context = doc
+            .sections
+            .iter()
+            .find(|s| s.id == "context")
+            .expect("context section present");
+        let prose = context.slot.as_ref().map(|s| s.slice(src)).unwrap_or("");
+        assert!(
+            prose.is_empty(),
+            "the zero-gap context slot is empty, not swallowing `## Options`; got {prose:?}",
+        );
+    }
+
     /// A throwaway single-slot doctype whose one body section carries a
     /// **multi-word (hyphenated) section id** — the `## Unreleased Changes`
     /// (`unreleased-changes`) shape the changelog earns. Loaded through the real

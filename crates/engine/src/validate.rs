@@ -7632,6 +7632,83 @@ Effects.
         );
     }
 
+    /// (2026-07-24 mutation audit, findings #12+13) The labeler's **ahead arm** on the
+    /// cell only a future-stamped *and* non-conformant doc reaches: a doc stamped above
+    /// current that parses but breaks conformance (an empty required slot) must carry the
+    /// `ahead — …` label on its **accompanying** `schema-conformance.*` findings — never
+    /// `corrupt — at the current schema-version {current}`, the documented lie (the doc is
+    /// at a *future* version, and no hand-review of "corruption" repairs a version skew).
+    /// The break's own route was already pinned; this pins the labeler's arm
+    /// (`route_schema_conformance`, `Some(s) if s > current`), which is observable only
+    /// on this cell — a clean future-stamped doc has no other findings to label.
+    #[test]
+    fn store_sweep_labels_a_broken_above_current_docs_findings_ahead_not_corrupt() {
+        let schemas = stamped_schemas();
+        let versions: BTreeMap<String, u32> = [("adr".to_string(), 1u32)].into_iter().collect();
+
+        // Future-stamped (7 > 1) AND non-conformant: parse succeeds (structure intact),
+        // but the emptied `## Consequences` slot breaks `required-slot-present`.
+        let body = ADR_STAMP_1
+            .replace("schema-version: 1", "schema-version: 7")
+            .replace("## Consequences\nEffects.\n", "## Consequences\n");
+
+        let repo = TempRoot::new("ahead-label");
+        repo.commit("decisions", "doc", &body);
+        let mut record = FileStateRecord::new();
+        record.record("decisions/doc.md", hash_bytes(body.as_bytes()));
+        let seen = RefCell::new(Vec::new());
+        let findings = validate_store_families(
+            repo.path(),
+            &schemas,
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+            &versions,
+            &BTreeMap::new(),
+        )
+        .expect("store sweep runs")
+        .findings
+        .into_vec();
+
+        // The accompanying conformance findings exist (the cell is non-degenerate) …
+        let accompanying: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| {
+                f.code.starts_with("schema-conformance.") && f.code != SCHEMA_VERSION_AHEAD_CODE
+            })
+            .collect();
+        assert!(
+            !accompanying.is_empty(),
+            "the emptied slot must surface an accompanying conformance finding, \
+             got {findings:?}",
+        );
+        // … and every one carries the ahead label, never the at-current corrupt lie.
+        for f in &accompanying {
+            let route = f.route.as_deref().unwrap_or("");
+            assert!(
+                route.starts_with("ahead"),
+                "an accompanying finding of a future-stamped doc is labeled `ahead — …`, \
+                 got {f:?}",
+            );
+            assert!(
+                !route.starts_with("corrupt"),
+                "the `corrupt — at the current schema-version` label is the documented \
+                 lie for a future-stamped doc, got {f:?}",
+            );
+        }
+        // The ahead break itself still rides alongside (one fact per code).
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|f| f.code == SCHEMA_VERSION_AHEAD_CODE)
+                .count(),
+            1,
+            "the ahead break accompanies the labeled findings, got {findings:?}",
+        );
+    }
+
     /// (Test 4) A store with **no** `code-anchor` leaf never calls the invoker and writes
     /// no snapshot — the report is empty and does not block (the omitting-context inert
     /// path; the invoker panics if it runs). The list-valued / loud-guard half is the

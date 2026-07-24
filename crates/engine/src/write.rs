@@ -6736,6 +6736,64 @@ Each service drops its local limiter.
         assert_eq!(finding.code, "write.target-escape");
     }
 
+    /// (b), the **length-preserving** escape shape (2026-07-24 mutation audit, finding
+    /// #8): the sibling test above tampers with a *shrinking* replacement, so its kill
+    /// rides an accident of fixture arithmetic — a mutant that weakens the confinement
+    /// conjunction to `(prefix && suffix) || len_ok` still rejects it (`len_ok` is
+    /// false). A **same-length** byte flip outside the target span satisfies `len_ok`,
+    /// so only the genuine prefix/suffix conjuncts can catch it. This is the safety net
+    /// the item-slot corruption class rides; the escape must block for every diff shape,
+    /// not only shrinking ones.
+    #[test]
+    fn length_preserving_target_escape_is_blocking_finding() {
+        let span = locate_field_value(CANONICAL_ADR, "status").expect("status located");
+        let original = "Each service drops its local limiter.";
+        let replacement = "Every service keeps its local limiter"; // same byte length
+        assert_eq!(
+            original.len(),
+            replacement.len(),
+            "the tamper must be length-preserving — that is the untested shape"
+        );
+        let spliced = splice(CANONICAL_ADR, span.clone(), "accepted");
+        let tampered = spliced.replace(original, replacement);
+        assert_ne!(
+            tampered, spliced,
+            "the stray edit must actually change bytes"
+        );
+        assert_eq!(
+            tampered.len(),
+            spliced.len(),
+            "the tampered buffer keeps the spliced buffer's exact length"
+        );
+        let finding = validate_after(&adr_schema(), CANONICAL_ADR, &tampered, span)
+            .expect_err("a length-preserving diff outside the target span ⇒ abort");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.code, "write.target-escape");
+    }
+
+    /// The [`reparse_or_reject`] tripwire's own red path (2026-07-24 mutation audit,
+    /// finding #9): the gate shared by the two `--unset` splice-remove arms is
+    /// defense-in-depth — no reachable input through its gated callers is known to
+    /// produce a non-reparseable buffer — but a stub (`Ok(())`) would silently disarm
+    /// it, and the unreachability of the empty-sentinel-after-last-optional-field state
+    /// is unproven. Pin the tripwire directly: a hand-corrupted buffer that no longer
+    /// parses must return the blocking `write.non-reparseable`, and the canonical buffer
+    /// must pass.
+    #[test]
+    fn reparse_or_reject_rejects_a_corrupted_buffer() {
+        // A renamed section heading fails the strict positional parse.
+        let corrupted = CANONICAL_ADR.replace("## Context", "## Bogus");
+        assert_ne!(corrupted, CANONICAL_ADR, "the corruption must change bytes");
+        let finding = reparse_or_reject(&adr_schema(), &corrupted)
+            .expect_err("a non-reparseable buffer trips the gate");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.code, "write.non-reparseable");
+
+        // The green half: the canonical buffer passes untouched.
+        reparse_or_reject(&adr_schema(), CANONICAL_ADR)
+            .expect("the canonical buffer re-parses clean");
+    }
+
     /// M45 Inc 2, T5 — **the two dead-end routes name their exit.** `write.non-reparseable`
     /// and `write.target-escape` are the pair whose stated recovery was "re-run the same
     /// write": true when the *payload* is the broken thing, false when the **staged source**
@@ -11677,9 +11735,19 @@ sections:
         prop::collection::vec(fragment, 1..4).prop_map(|frags| frags.join("\n\n"))
     }
 
-    /// A title that slugs to a non-empty `{#id}` anchor.
+    /// A title that slugs to a non-empty `{#id}` anchor. The regex alone can emit a
+    /// single edge-stopword ("The"), which the M41 edge-stopword drop slugs to the
+    /// empty string — `promote_slot_to_repeatable` then refuses with the typed
+    /// `UnslugableTitle`, and the property's unconditional `.expect` reddens
+    /// nondeterministically (observed 2026-07-24 as a false mutant catch). The filter
+    /// makes the generator match its own contract: promotion-success is the invariant
+    /// under test, and it holds for sluggable titles; the unslugable refusal is pinned
+    /// separately (`add_item_unslugable_title_is_rejected`).
     fn title() -> impl Strategy<Value = String> {
         "[A-Z][a-z]{2,8}( [A-Z][a-z]{2,8}){0,2}"
+            .prop_filter("title must slug to a non-empty {#id} anchor", |t| {
+                !crate::slug::slugify(t).is_empty()
+            })
     }
 
     proptest! {

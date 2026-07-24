@@ -599,3 +599,60 @@ fn create_over_copy_on_written_doc_acks_existed_and_binds() {
          got:\n{recomposed}",
     );
 }
+
+/// The gate-lookup's **wrong-doctype guard** (2026-07-24 mutation audit, finding #2):
+/// a copy-on-write of a committed doc whose doctype is **not** in the workflow's
+/// create-gate must bind **no** role — the inert arm of `bind_role_on_copy_in`.
+/// `single-task`'s gate carries `{adr, as: decision}` + `{changelog, as: change}` and
+/// no `spec` entry, so a `set-slot` copy-on-write of a committed spec under it fills
+/// nothing. A lookup weakened to `doc_type == … || !as_role.is_empty()` would match
+/// the first role-bearing entry for ANY doctype and silently bind
+/// `decision → spec:<slug>` — every later `@task.decision` slice then reads the wrong
+/// doc. The happy-path binding tests above never drive an out-of-gate doctype, so
+/// this omitting-context arm is the one that kills that mutant.
+#[test]
+fn copy_on_write_of_an_out_of_gate_doctype_binds_no_role() {
+    let repo = TempDir::new("out-of-gate-cow");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let spec = commit_spec(repo.path(), home.path(), "Payment retry");
+    assert_eq!(spec, "spec:payment-retry", "the committed spec's address");
+
+    // A task under `single-task` — its gate has no `spec` entry.
+    let task = start(
+        repo.path(),
+        home.path(),
+        "single-task",
+        "tweak the committed spec",
+    );
+
+    // The copy-on-write: an ordinary edit verb on the committed out-of-gate spec.
+    set_slot(
+        repo.path(),
+        home.path(),
+        &format!("{spec}#goal"),
+        &task,
+        b"Revised goal.\n",
+    );
+
+    // The roles record stays empty: nothing may claim `decision` (or any role) for
+    // the out-of-gate spec. An absent roles.json is the same no-binding fact.
+    let roles_path = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(&task)
+        .join("roles.json");
+    if roles_path.exists() {
+        let raw = fs::read_to_string(&roles_path).expect("read roles.json");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("roles.json is JSON");
+        let map = parsed["roles"]
+            .as_object()
+            .expect("roles.json carries a roles map");
+        assert!(
+            map.is_empty(),
+            "a copy-on-write of an out-of-gate doctype must bind NO role; got:\n{raw}",
+        );
+    }
+}

@@ -575,11 +575,21 @@ fn pre_staged_git_rm_survives_a_hook_rejection_rollback() {
         !repo.path().join("HISTORY.md").exists(),
         "the rollback must not resurrect the user's deleted worktree file",
     );
-    let porcelain = git(repo.path(), &["status", "--porcelain", "HISTORY.md"]);
+    // The INDEX axis, through a trim-immune oracle (2026-07-24 mutation audit, finding
+    // #1): the old `porcelain.starts_with("D ")` ran through the `.trim()`ing `git`
+    // helper, and staged `"D  x"` vs un-staged `" D x"` are indistinguishable after
+    // trim — the oracle was a tautology across exactly the axis under test, so a
+    // rollback that ran `git restore --staged HISTORY.md` (resurrecting the deletion on
+    // the index axis) passed unseen. `git diff --cached --name-status` reads the index
+    // directly: the staged deletion must still be there.
+    let staged = git(
+        repo.path(),
+        &["diff", "--cached", "--name-status", "--", "HISTORY.md"],
+    );
     assert!(
-        porcelain.starts_with("D "),
-        "the user's staged deletion must stay staged (porcelain X column D); \
-         porcelain: {porcelain:?}",
+        staged.contains("D\tHISTORY.md"),
+        "the user's pre-staged deletion must stay STAGED after the rollback (index axis); \
+         `git diff --cached --name-status` gave: {staged:?}",
     );
 
     // jigc's own acts ARE rolled back: the promoted canonical copy is gone.
