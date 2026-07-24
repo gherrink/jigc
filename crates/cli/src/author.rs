@@ -62,7 +62,12 @@ pub enum Leaf {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuthorPayload {
-    title: String,
+    /// The create id-source. Optional at the serde layer so a **singleton** payload
+    /// (whose slug is fixed to the type id) may omit it — the required-for-non-singletons
+    /// check moves into [`parse_author_payload`], where the schema tells singleton from
+    /// not, so the reject is an enriched message naming `title:`, not a raw serde error.
+    #[serde(default)]
+    title: Option<String>,
     #[serde(default)]
     sections: Vec<PayloadSection>,
 }
@@ -230,8 +235,11 @@ impl<'a> SchemaCtx<'a> {
 }
 
 /// Parse a declarative batch payload (YAML) into the ordered leaf-write [`AuthorPlan`].
-/// A structurally-malformed payload (bad YAML, a missing required `title`/item-`title`,
-/// or an unknown key) is rejected **whole**, here, before anything could persist.
+/// A structurally-malformed payload (bad YAML, a missing item-`title`, or an unknown
+/// key) is rejected **whole**, here, before anything could persist. A missing top-level
+/// `title:` is rejected too **for a non-singleton** (with an enriched message naming
+/// `title:`), but **defaults to the type id for a singleton** — whose slug is fixed to
+/// the type id, so the id-source is ignored downstream (M45 Inc 10 T10).
 ///
 /// The `schema` is the doctype the payload authors (`None` when the doctype is unknown
 /// — that case is rejected by the create-gate downstream): it is threaded through the
@@ -243,6 +251,21 @@ impl<'a> SchemaCtx<'a> {
 pub fn parse_author_payload(schema: Option<&Schema>, payload: &str) -> Result<AuthorPlan> {
     let parsed: AuthorPayload =
         serde_yaml_ng::from_str(payload).context("malformed `doc author` payload")?;
+    // A singleton's slug is fixed to the type id — `create_gated` ignores the id-source
+    // — so a title-less singleton payload defaults its plan title to the type id and
+    // succeeds. A title-less non-singleton (or unknown-schema) payload is rejected with
+    // an enriched message naming `title:`, never the raw `missing field` serde error
+    // (M45 Inc 10 T10 — findings §95 E).
+    let title = match parsed.title {
+        Some(title) => title,
+        None => match schema {
+            Some(schema) if schema.singleton => schema.ty.clone(),
+            _ => bail!(
+                "doc author payload: missing required `title:` — the create id-source \
+                 (the top-level `title:` line naming the instance)"
+            ),
+        },
+    };
     let mut leaves = Vec::new();
     for section in &parsed.sections {
         let ctx = SchemaCtx::from_section(
@@ -250,10 +273,7 @@ pub fn parse_author_payload(schema: Option<&Schema>, payload: &str) -> Result<Au
         );
         flatten_section(&ctx, section, &[], &mut leaves)?;
     }
-    Ok(AuthorPlan {
-        title: parsed.title,
-        leaves,
-    })
+    Ok(AuthorPlan { title, leaves })
 }
 
 /// Flatten one section (and its items, recursively) onto `leaves`, in document order.
@@ -543,6 +563,51 @@ sections:
         assert!(
             msg.contains("field") && msg.contains("link") && msg.contains("<<"),
             "the field reject names the leaf-kind, the address, and the form: {msg}",
+        );
+    }
+
+    /// A **singleton** doctype's `title:` is optional — its slug is fixed to the type
+    /// id, so the create id-source is ignored (`create_gated` fixes the slug regardless).
+    /// A title-less singleton payload therefore **succeeds**, defaulting the plan title
+    /// to the type id (M45 Inc 10 T10 — findings §95 E: the required-`title` serde error
+    /// on a singleton author). A title-less **non-singleton** (or unknown-schema) payload
+    /// still fails, but with an **enriched** message naming `title:` — never the raw
+    /// `missing field \`title\`` serde error.
+    #[test]
+    fn title_less_singleton_defaults_non_singleton_error_is_enriched() {
+        // `changelog` is a shipped singleton (type id `changelog`): a title-less payload
+        // succeeds, the plan title defaulting to the fixed type-id slug.
+        let singleton_payload = "\
+sections:
+  - id: releases
+    items:
+      - title: 1.0.0
+        sections:
+          - id: changes
+            items:
+              - title: Added
+                set:
+                  notes: \"<<- The first release.>>\"
+";
+        let plan = parse_author_payload(Some(&changelog_schema()), singleton_payload)
+            .expect("a title-less singleton payload succeeds against the fixed slug");
+        assert_eq!(
+            plan.title, "changelog",
+            "the plan title defaults to the singleton's fixed type-id slug",
+        );
+
+        // `commit` is non-singleton: a title-less payload fails with an enriched message
+        // that names `title:` and is NOT the raw serde `missing field` error.
+        let err = parse_author_payload(Some(&commit_schema()), "sections: []\n")
+            .expect_err("a title-less non-singleton payload is rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("title:"),
+            "the enriched reject names the `title:` create id-source: {msg}",
+        );
+        assert!(
+            !msg.contains("missing field"),
+            "the reject is enriched, not the raw serde `missing field` error: {msg}",
         );
     }
 
