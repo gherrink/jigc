@@ -260,6 +260,22 @@ fn doc_create_help_states_the_slug_caps() {
     );
 }
 
+/// M45 T9 — `add-item` mints an item's `{#id}` anchor from `--title` the same
+/// way `create` mints a doc id, so its soliciting surface (the second one, after
+/// the doc-level `{{schema:}}` skeleton) must state the slug mint caps too. The
+/// statement is the **seam-generated** `mint_statement` output, so the numbers
+/// can never drift from what the mint enforces.
+#[test]
+fn doc_add_item_help_states_the_slug_caps() {
+    let help = help_stdout(&["doc", "add-item", "--help"]);
+    let statement = engine::slug::mint_statement("the item `{#id}` anchor");
+    assert!(
+        help.contains(&statement),
+        "`doc add-item --help` must carry the seam-generated slug mint-cap \
+         statement (`{statement}`) at the `--title` it binds to; got:\n{help}"
+    );
+}
+
 #[test]
 fn doc_create_help_names_title_literally_and_drops_the_phantom_form() {
     let help = help_stdout(&["doc", "create", "--help"]);

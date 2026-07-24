@@ -49,6 +49,22 @@ fn set_slot_long_about() -> String {
     )
 }
 
+/// The `add-item` long help. `add-item` mints an item's `{#id}` anchor from
+/// `--title` the same way `create` mints a doc id, so this second soliciting
+/// surface earns the same stated-at fence: the slug mint caps are stated at the
+/// `--title` they bind (`design/surface-contract.md` → The stated-at fence,
+/// seam-generated tier). The cap sentence is `slug::mint_statement` output —
+/// built from the mint-rule constants, so it can never drift from what the mint
+/// enforces (the doc-level `{{schema:}}` skeleton renders the same generator).
+fn add_item_long_about() -> String {
+    format!(
+        "Mint a repeatable item into a section, id-slugged from `--title`.\n\n\
+         The section is addressed `<type>:<slug>#<section>`; the CLI mints the \
+         `{{#id}}` anchor + appends the item block. The `--title` is {}.",
+        engine::slug::mint_statement("the item `{#id}` anchor"),
+    )
+}
+
 /// The `jigc doc <verb>` subcommand tree. Each verb addresses a managed doc in
 /// the active task's working area.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -84,6 +100,7 @@ pub enum DocCommand {
     ///
     /// The section is addressed `<type>:<slug>#<section>`; the CLI mints the
     /// `{#id}` anchor + appends the item block.
+    #[command(long_about = add_item_long_about())]
     AddItem {
         /// The section address — `<type>:<slug>#<section>` (the repeatable section the
         /// item is minted into).

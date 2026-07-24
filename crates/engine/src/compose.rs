@@ -1118,7 +1118,7 @@ fn render_schema_projection(schema: &crate::schema::Schema, task: Option<&str>) 
         out.push_str(&format!(
             "title: {} # {}\n",
             projection_title_value(schema),
-            crate::slug::mint_statement()
+            crate::slug::mint_statement("the doc id")
         ));
     } else {
         out.push_str(&format!("title: {}\n", projection_title_value(schema)));
@@ -3964,7 +3964,7 @@ sections:
             crate::slug::MAX_CHARS
         );
         assert_eq!(
-            crate::slug::mint_statement(),
+            crate::slug::mint_statement("the doc id"),
             slug_statement,
             "the statement source and this test share the cap constants"
         );
@@ -4028,7 +4028,7 @@ sections:
         ctx.schemas.insert("handbook".to_owned(), handbook);
         let emitted = emit_step_body("{{ schema:handbook }}\n", &ctx, &catalog).expect("emits");
         assert!(
-            !emitted.contains(&crate::slug::mint_statement()),
+            !emitted.contains(&crate::slug::mint_statement("the doc id")),
             "a fixed singleton title mints no slug — no slug statement; got:\n{emitted}"
         );
         assert!(
@@ -4055,7 +4055,7 @@ sections:
         ctx.schemas.insert("ledger".to_owned(), ledger);
         let emitted = emit_step_body("{{ schema:ledger }}\n", &ctx, &catalog).expect("emits");
         assert!(
-            emitted.contains(&crate::slug::mint_statement()),
+            emitted.contains(&crate::slug::mint_statement("the doc id")),
             "a minted per-instance title states the slug caps; got:\n{emitted}"
         );
         assert!(

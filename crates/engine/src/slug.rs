@@ -85,15 +85,21 @@ pub const MAX_WORDS: usize = 5;
 /// far below it, so multi-word behaviour is unchanged.
 pub const MAX_CHARS: usize = 50;
 
-/// The **stated-at statement** of the mint-time caps — the sentence the
-/// `{{schema:<doctype>}}` projection renders at the id-source (`title:`) line,
-/// so the slug word-cap is stated where it binds, before it can surprise
-/// (`design/surface-contract.md` → The stated-at fence, seam-generated tier;
-/// law 3). Built from [`MAX_WORDS`]/[`MAX_CHARS`] themselves — statement and
-/// enforcement share one source, so drift between them is unrepresentable.
-pub(crate) fn mint_statement() -> String {
+/// The **stated-at statement** of the mint-time caps — the sentence a
+/// soliciting surface renders at the id-source it slugs, so the slug word-cap is
+/// stated where it binds, before it can surprise (`design/surface-contract.md` →
+/// The stated-at fence, seam-generated tier; law 3). Built from
+/// [`MAX_WORDS`]/[`MAX_CHARS`] themselves — statement and enforcement share one
+/// source, so drift between them is unrepresentable.
+///
+/// `minted_into` names *what* the id-source is slugged into, so each surface
+/// stays honest: the `{{schema:<doctype>}}` projection at the `title:` line
+/// passes `"the doc id"`; `jigc doc add-item --help` — the second soliciting
+/// surface, which mints an item's `{#id}` anchor from `--title` the same way —
+/// passes the item anchor. Only the drift-prone cap clause is shared.
+pub fn mint_statement(minted_into: &str) -> String {
     format!(
-        "the id-source — slugged lowercase-kebab into the doc id, \
+        "the id-source — slugged lowercase-kebab into {minted_into}, \
          capped at the first {MAX_WORDS} words / {MAX_CHARS} chars"
     )
 }
