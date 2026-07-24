@@ -390,7 +390,8 @@ pub fn persist(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 /// Write `bytes` to `path` via the temp-file + `rename` dance (the atomic-on-disk
 /// primitive shared by [`provision_doc`], [`copy_in`], and [`persist`]). The temp file
-/// is a sibling (`<filename>.tmp`) so the `rename` stays on the same filesystem (atomic);
+/// is a process-unique sibling (`<filename>.<pid>.<nanos>.tmp`) so the `rename` stays on
+/// the same filesystem (atomic) and concurrent writers never share one temp;
 /// it is removed on a write failure and consumed by the rename on success — never left
 /// behind. The parent dir is created on demand.
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -409,11 +410,21 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The sibling temp path for an atomic write of `path` — its filename with a `.tmp`
-/// suffix (same directory, so `rename` is intra-filesystem and atomic).
+/// The sibling temp path for an atomic write of `path` — its filename with a
+/// **process-unique** `.<pid>.<nanos>.tmp` suffix (same directory, so `rename` is
+/// intra-filesystem and atomic). The pid+nanos disambiguator is what makes
+/// concurrent writers to a *shared* target (e.g. `.jigc/state/file-state.json`,
+/// which is not task-isolated) each own a distinct temp: without it two writers
+/// would share one `<name>.tmp` and interleave their bytes, so a reader could
+/// observe a file that parses as neither writer's record (M45 Increment 7,
+/// Decision 9).
 fn temp_sibling(path: &Path) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(".tmp");
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    name.push(format!(".{}.{}.tmp", std::process::id(), nanos));
     match path.parent() {
         Some(parent) => parent.join(name),
         None => PathBuf::from(name),

@@ -98,12 +98,16 @@ impl FileStateRecord {
 
     /// Save the record to `<jigc_root>/state/file-state.json`, creating the
     /// `state/` dir if absent.
+    ///
+    /// Routes through [`crate::state::persist`] (temp + `rename`) rather than a
+    /// direct `std::fs::write`: `.jigc/state/*` is **not** task-isolated, so two
+    /// writers can hit this file at once, and a direct write lets a concurrent
+    /// reader observe a truncated file. The atomic temp+rename — with a
+    /// process-unique temp sibling — guarantees every reader sees a complete,
+    /// parseable file (M45 Increment 7, Decision 9). `persist` creates the parent
+    /// dir on demand, so no separate `create_dir_all` is needed here.
     pub fn save(&self, jigc_root: &Path) -> std::io::Result<()> {
-        let path = Self::path_in(jigc_root);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, self.to_bytes())
+        crate::state::persist(&Self::path_in(jigc_root), self.to_bytes().as_bytes())
     }
 
     /// Load the record from `<jigc_root>/state/file-state.json`. A missing file

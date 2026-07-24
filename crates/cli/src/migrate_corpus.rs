@@ -1631,6 +1631,24 @@ sections:
 "
     }
 
+    /// A second `note`-shaped doctype homed at a location that **sorts after** `notes/`
+    /// (`zzz/` > `notes/`), so in the path-sorted write pass its instance is migrated
+    /// *after* a `notes/` instance — the ordering
+    /// [`written_docs_are_baselined_per_doc_even_when_a_later_write_aborts`] relies on to
+    /// abort the run at the *later* doc's write.
+    fn note2_v0_yaml() -> &'static [u8] {
+        b"\
+type: note2
+location: zzz/
+id-from: title
+sections:
+  - id: vision
+    slot: { hint: \"v\" }
+  - id: success
+    slot: { hint: \"s\" }
+"
+    }
+
     /// The header-less add-field case **through the verb core**: migrating a committed v0
     /// `note` introduces the `---` fence carrying `schema-version: 1` byte-stable, preserves
     /// the body slots, and reports it migrated.
@@ -1762,20 +1780,28 @@ sections:
     /// disk — otherwise a subsequent `file-state` detect over the committed store mis-reports
     /// those correctly-migrated docs as out-of-band drift.
     ///
-    /// Two tracked v0 notes: `a` sorts before `b`, so `a` persists first; `b`'s atomic write is
-    /// forced to fail (its temp-sibling `notes/b.md.tmp` is pre-occupied by a directory, so
-    /// [`engine::state::persist`]'s temp write errors), aborting the loop. After the abort `a` is
-    /// on disk migrated, and its on-disk baseline must already equal the hash of those bytes.
+    /// Two tracked v0 docs at distinct homes: `a` (`docs/notes/a.md`) sorts before `b`
+    /// (`docs/zzz/b.md`), so `a` persists first; `b`'s atomic write is forced to fail (its home
+    /// `docs/zzz/` is made read-only, so [`engine::state::persist`]'s temp write errors EACCES),
+    /// aborting the loop. The read-only-home trigger is temp-name-independent — the atomic temp
+    /// sibling is process-unique (M45 Inc 7), so pre-occupying a fixed `<name>.tmp` no longer
+    /// works. After the abort `a` is on disk migrated, and its on-disk baseline must already
+    /// equal the hash of those bytes.
     #[test]
     fn written_docs_are_baselined_per_doc_even_when_a_later_write_aborts() {
         let repo = TempDir::new("partial-abort");
         let jigc_root = repo.path().join(".jigc");
 
-        let to = v1_schema(note_v0_yaml());
-        let v0_schema = load_schema(note_v0_yaml()).expect("v0 note loads");
-        let note = |title: &str| {
+        // Two doctypes at distinct homes: `a` a `note` at `notes/`, `b` a `note2` at `zzz/`.
+        // In the path-sorted write pass `docs/notes/a.md` < `docs/zzz/b.md`, so `a` is written
+        // (and baselined) *first* and `b`'s write is the one that aborts.
+        let note_to = v1_schema(note_v0_yaml());
+        let note2_to = v1_schema(note2_v0_yaml());
+        let note_schema = load_schema(note_v0_yaml()).expect("v0 note loads");
+        let note2_schema = load_schema(note2_v0_yaml()).expect("v0 note2 loads");
+        let render_note = |schema: &Schema, title: &str| {
             render(
-                &v0_schema,
+                schema,
                 &Instance {
                     title: title.to_string(),
                     sections: vec![
@@ -1793,31 +1819,42 @@ sections:
                 },
             )
         };
-        let a0 = note("A Note");
-        let b0 = note("B Note");
+        let a0 = render_note(&note_schema, "A Note");
+        let b0 = render_note(&note2_schema, "B Note");
         write_doc(repo.path(), "docs/notes/a.md", &a0);
-        write_doc(repo.path(), "docs/notes/b.md", &b0);
+        write_doc(repo.path(), "docs/zzz/b.md", &b0);
 
         // Both docs are already tracked in the file-state baseline (the migration re-baselines
         // only docs it already tracks) at their v0 hashes.
         let mut seed = FileStateRecord::new();
         seed.record("docs/notes/a.md".to_string(), hash_bytes(a0.as_bytes()));
-        seed.record("docs/notes/b.md".to_string(), hash_bytes(b0.as_bytes()));
+        seed.record("docs/zzz/b.md".to_string(), hash_bytes(b0.as_bytes()));
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
         seed.save(&jigc_root).expect("seed the baseline");
 
-        // Force `b`'s atomic write to fail: occupy its temp-sibling path with a directory, so
-        // `persist` errors when it writes the temp file — the loop aborts after `a` is written.
-        fs::create_dir_all(repo.path().join("docs/notes/b.md.tmp")).expect("occupy temp sibling");
+        // Force `b`'s atomic write to fail: make its home read-only, so `persist`'s temp write
+        // into `docs/zzz/` errors (EACCES) — the loop aborts after `a` is written. This is
+        // temp-name-independent (the atomic temp sibling is process-unique, M45 Inc 7), unlike
+        // occupying a fixed `<name>.tmp` path.
+        let zzz = repo.path().join("docs/zzz");
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&zzz, fs::Permissions::from_mode(0o555)).expect("chmod zzz ro");
+        }
 
         let pack = crate::pack::EmbeddedPack::new();
         let result = migrate_committed_corpus(
             &pack,
             repo.path(),
             &jigc_root,
-            &[migration(to, 1)],
+            &[migration(note_to, 1), migration(note2_to, 1)],
             Options::default(),
         );
+        // Restore write access so the assertions below and the `TempDir` teardown can proceed.
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&zzz, fs::Permissions::from_mode(0o755)).expect("chmod zzz rw");
+        }
         assert!(
             result.is_err(),
             "the aborted write surfaces as an error: {result:?}"
@@ -2925,10 +2962,13 @@ sections:
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
         seed.save(&jigc_root).expect("seed the baseline");
 
-        // Force the write to the TO home to fail: occupy its atomic temp-sibling
-        // `CHANGELOG.md.tmp` with a directory, so `persist` errors before the rename — the
-        // move aborts AT the write, BEFORE the source removal (write-before-remove).
-        fs::create_dir_all(repo.path().join("CHANGELOG.md.tmp")).expect("occupy temp sibling");
+        // Force the write to the TO home to fail: occupy the destination `CHANGELOG.md`
+        // *itself* with a directory, so `persist`'s temp→final `rename` fails (EISDIR) — the
+        // move aborts AT the write, BEFORE the source removal (write-before-remove). This is
+        // temp-name-independent (the atomic temp sibling is process-unique, M45 Inc 7), unlike
+        // occupying a fixed `CHANGELOG.md.tmp` path. The collision adjudicator reads the
+        // destination as `None` (a directory does not read as a doc), so it routes to the write.
+        fs::create_dir_all(repo.path().join("CHANGELOG.md")).expect("occupy destination");
 
         let result = migrate_committed_corpus(
             &pack,
@@ -2948,10 +2988,11 @@ sections:
             repo.path().join("docs/changelog/changelog.md").exists(),
             "the from copy survives the aborted write (never zero copies)"
         );
-        // The write failed before the rename, so the target home was not created.
+        // The rename failed, so no partial target *file* was written (only the empty
+        // occupying directory remains — the injection artifact, not a partial write).
         assert!(
-            !repo.path().join("CHANGELOG.md").exists(),
-            "the aborted write left no partial target"
+            !repo.path().join("CHANGELOG.md").is_file(),
+            "the aborted write left no partial target file"
         );
         // The move never completed, so the baseline is intact — no premature re-key.
         let record = FileStateRecord::load(&jigc_root).expect("reload baseline");
