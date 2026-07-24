@@ -1,11 +1,10 @@
 ---
 source: crates/cli/tests/describe.rs
-assertion_line: 645
 expression: out
 ---
 jigc describe — a tour of what this project lets you compose and author.
 
-The workflows you can compose here. architecture-documentation is Authors living architecture documentation for one part of the system and commits it. Reach for it when a part of the system needs a durable, code-checked description so a later reader can orient without reverse-engineering it.
+The workflows you can compose here. To read any one's full step text before you commit to running it, run `jigc workflow <id> --preview`, which composes the steps without minting a task. architecture-documentation is Authors living architecture documentation for one part of the system and commits it. Reach for it when a part of the system needs a durable, code-checked description so a later reader can orient without reverse-engineering it.
 
 implement-from-spec is An implementation pass driven by a committed spec — locate against it, implement, optionally record a decision, and commit. Reach for it when a spec already exists and you are turning its agreed criteria into code.
 

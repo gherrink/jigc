@@ -110,6 +110,15 @@ pub fn orientation_clean(
     out.push_str(
         "\nRun: `jigc start \"<intent>\"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it\n",
     );
+    // The preview route — a read of a workflow's step text before minting. Gated on a
+    // non-empty catalog (there is nothing to preview otherwise, so the omitting context
+    // stays inert). Names the M44 `jigc workflow <id> --preview` surface, which shipped
+    // with nothing routing to it (findings §69).
+    if !orientation.workflows.entries().is_empty() {
+        out.push_str(
+            "Preview: `jigc workflow <id> --preview`   — read a workflow's step text without minting a task\n",
+        );
+    }
     // The off-catalog next-step verbs — one route-prose line per verb the pack-set
     // ships (same shape for each), so milestone planning + the existing-project
     // on-ramp are discoverable though they are not in the catalog above.
@@ -2486,7 +2495,9 @@ pub fn describe(format: Format, description: &Description) -> String {
                 .collect();
 
             if !workflows.is_empty() {
-                out.push_str("The workflows you can compose here. ");
+                out.push_str(
+                    "The workflows you can compose here. To read any one's full step text before you commit to running it, run `jigc workflow <id> --preview`, which composes the steps without minting a task. ",
+                );
                 out.push_str(&workflows.join("\n\n"));
                 out.push_str("\n\n");
             }
@@ -2585,6 +2596,80 @@ mod tests {
         );
     }
 
+    /// T12 (M45 Inc 10) — describe names `jigc workflow <id> --preview` as the way to
+    /// read a workflow's step text, gated on the workflows group being present. The
+    /// pull-tier `--preview` (M44) shipped with nothing routing to it (findings §69);
+    /// describe's workflow tour is where it earns its route (`introspection.md` →
+    /// Command surface; `surface-contract.md` → law 2: nothing hides). The omitting
+    /// context — a describe with no workflows — names no preview route (inert).
+    #[test]
+    fn render_describe_routes_to_workflow_preview() {
+        use engine::introspect::{DefinitionKind, DefinitionProse, Description};
+        use engine::result::SCHEMA_VERSION;
+
+        let with_workflow = Description {
+            schema_version: SCHEMA_VERSION,
+            definitions: vec![DefinitionProse {
+                kind: DefinitionKind::Workflow,
+                id: "single-task".to_string(),
+                prose: "single-task is one end-to-end scoped change. Reach for it when the work is small enough to hold in your head.".to_string(),
+            }],
+            commands: vec![],
+        };
+        let out = describe(Format::Agent, &with_workflow);
+        assert!(
+            out.contains("`jigc workflow <id> --preview`"),
+            "describe must name the preview route as the way to read a workflow's step text; got:\n{out}",
+        );
+
+        // Omitting context: a describe with NO workflows (only a doctype) names no
+        // preview route — there is nothing to preview, so the routing stays inert.
+        let no_workflow = Description {
+            schema_version: SCHEMA_VERSION,
+            definitions: vec![DefinitionProse {
+                kind: DefinitionKind::Doctype,
+                id: "adr".to_string(),
+                prose: "adr is a dated architectural decision record. Reach for it when a choice is worth preserving.".to_string(),
+            }],
+            commands: vec![],
+        };
+        let out = describe(Format::Agent, &no_workflow);
+        assert!(
+            !out.contains("--preview"),
+            "a describe with no workflows names no preview route (inert omit-context); got:\n{out}",
+        );
+    }
+
+    /// T12 (M45 Inc 10) — orientation names `jigc workflow <id> --preview` as the way
+    /// to read a workflow's step text before minting, gated on a non-empty catalog. A
+    /// bare-`start` reader — the most common entry — finds the preview surface here
+    /// (findings §69: the pull-tier fix itself not pull-discoverable). The omitting
+    /// context — an empty catalog — names no preview route (inert).
+    #[test]
+    fn render_orientation_clean_routes_to_workflow_preview() {
+        let text = orientation_clean(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            &fixture(),
+            &[],
+        );
+        assert!(
+            text.contains("Preview: `jigc workflow <id> --preview`"),
+            "orientation must route to the preview surface; got:\n{text}",
+        );
+
+        // Omitting context: an empty catalog has no workflow to preview, so no route.
+        let empty = Orientation::new(Catalog::new(vec![]));
+        let text = orientation_clean(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            &empty,
+            &[],
+        );
+        assert!(
+            !text.contains("--preview"),
+            "an empty catalog names no preview route (inert omit-context); got:\n{text}",
+        );
+    }
+
     /// The agent-text rendering lists each workflow with its `when` hint and ends
     /// with the routing footer line.
     #[test]
@@ -2626,6 +2711,7 @@ mod tests {
           - project-setup — Set up the development pack on a fresh repo.
 
         Run: `jigc start "<intent>"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it
+        Preview: `jigc workflow <id> --preview`   — read a workflow's step text without minting a task
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         "#);
 

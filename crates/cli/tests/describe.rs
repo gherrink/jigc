@@ -265,6 +265,23 @@ fn describe_carries_the_authored_strings() {
     );
 }
 
+/// T12 (M45 Inc 10) — the real `jigc describe` binary routes to the preview surface:
+/// it names `jigc workflow <id> --preview` as the way to read a workflow's step text
+/// (findings §69 — the pull-tier `--preview` shipped with nothing routing to it).
+#[test]
+fn describe_routes_to_workflow_preview() {
+    let repo = TempDir::new("preview-route");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = describe_stdout(repo.path(), home.path());
+
+    assert!(
+        out.contains("`jigc workflow <id> --preview`"),
+        "the real describe binary must route to the preview surface; got:\n{out}",
+    );
+}
+
 #[test]
 fn describe_carries_the_arch_doc_doctype_and_workflow() {
     // M13 Increment 4, T3 — the M11 describe surface for the new doctype + workflow.

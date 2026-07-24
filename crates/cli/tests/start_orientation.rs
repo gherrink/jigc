@@ -184,6 +184,32 @@ fn clean_no_task_prints_header_catalog_and_routing_footer() {
     );
 }
 
+/// T12 (M45 Inc 10) — the real bare-`start` orientation routes to the preview
+/// surface: it names `jigc workflow <id> --preview` as the way to read a workflow's
+/// step text before minting (findings §69 — the pull-tier fix itself not
+/// pull-discoverable).
+#[test]
+fn clean_no_task_routes_to_workflow_preview() {
+    let repo = TempDir::new("clean-preview");
+    mark_repo(repo.path());
+    fs::create_dir_all(repo.path().join(".jigc").join("config"))
+        .expect("create .jigc/config project layer");
+    let home = TempDir::new("home");
+
+    let out = run_start(repo.path(), home.path());
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start` must exit 0; got {:?}",
+        out.status
+    );
+    assert!(
+        stdout.contains("`jigc workflow <id> --preview`"),
+        "clean-no-task orientation must route to the preview surface; got:\n{stdout}",
+    );
+}
+
 #[test]
 fn unset_project_prints_run_jigc_setup() {
     let repo = TempDir::new("unset");
