@@ -1,0 +1,135 @@
+exit: 0
+--- stdout ---
+preview: workflow `migrate-decisions-log` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow migrate-decisions-log "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+Migrate the foreign decisions log into the managed `decisions-log` singleton — the
+running log of decisions made. Below is the foreign source the CLI staged for you
+(read-only context — you author the canonical record through the write verbs, you
+never edit this file or place anything yourself):
+
+
+
+The target schema and its batch payload, both generated from the resolved
+`decisions-log` schema, follow — the CLI creates the fixed-slug singleton (the
+`title: Decisions Log` line stays exactly as written; the CLI owns the placement) and
+mints every entry over a single staged buffer:
+
+The `decisions-log` schema — the managed singleton at `docs/decisions-log.md`.
+
+- `meta` (front-matter fields):
+    - `schema-version`: int — CLI-stamped (schema-version) unless authored
+- `entries`: repeatable items, one per `title`:
+    - `title`: string — the item's id-source (authored as the item's `title:` payload key)
+    - `date`: date — CLI-stamped (on-create) unless authored
+    - `why`: prose slot — Why this was decided — the reasoning, in a sentence or two.
+
+Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+<slot-id>: |-
+  <<The first line of the prose
+  and its second line, inside the SAME pair.>>
+
+Pipe the payload on stdin:
+
+jigc doc author decisions-log --from-file - --task your-task-id <<'EOF'
+title: Decisions Log
+sections:
+  - id: entries
+    items:
+      - title: "<the title>"
+        set:
+          why: |-
+            <<Why this was decided — the reasoning, in a sentence or two.>>
+EOF
+
+If a `decisions-log` is ALREADY committed in the store (a re-run, or one adopted
+earlier), the CLI does not mint a fresh one — it copies the committed body in as
+your edit base, so the entries you author below APPEND to those already there and
+any slot you set overwrites. Re-author only what the foreign source adds; an entry
+the committed doc already holds would double. The lone exception is a same-path
+migration — when the foreign file you are migrating IS the canonical
+`docs/decisions-log.md` — where the CLI seeds a blank skeleton and your authoring
+rebuilds the whole doc.
+
+Re-author every DECISION from the foreign log, oldest first, as one item under
+`entries`, titled with the decision itself (strip a leading date from a foreign
+heading — the date belongs in the `date` field, never the title).
+
+Decide the `date` PER ENTRY, mechanically — never once for the whole file:
+
+  - THIS entry carries a date in the foreign source → TRANSCRIBE it: add
+    `date: "<YYYY-MM-DD>"` to that entry's `set:` map, exactly as it appears in the
+    source — an authored date overwrites the CLI's on-create stamp;
+  - THIS entry carries NO date → OMIT the `date` key for that entry. In migration
+    the CLI does NOT stamp today's date, so a dateless entry renders dateless — no
+    false history. Never fill a gap with today, and never copy a neighbouring
+    entry's date.
+
+Fill `why` from the foreign entry's rationale. When the foreign entry records the
+call but preserves no reasoning, transcribe its stated intent and say so ("as
+recorded; the source preserved no rationale") — never invent a reason.
+
+A foreign cross-reference (an ADR number, an issue link) stays plain prose inside the
+`why` slot — the decisions-log schema declares no managed ref, so never invent a
+field for it. Foreign preamble with no entry home is dropped.
+
+Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
+it renders the foreign source against the canonical rewrite and holds (exit 4),
+because the CLI guarantees structure, never content-faithfulness. Review that
+fidelity diff, then re-run the same finalize with `--approve` to write the
+canonical doc, RETIRE the foreign original, and commit — approval is the one
+destructive gate. Retired means removed: the foreign file is deleted from the
+worktree and the deletion staged, so the removal lands in the same commit as
+the canonical doc (a `git rm` in effect). A source already sitting at its
+canonical destination is
+rewritten in place on approval — the committed file is modified, nothing is
+retired. A destination already committed when the doc was authored was copied
+in as the edit base (the create said so), so approval updates that committed
+file in place — review the fidelity diff before approving. Finalize blocks
+(finalize.promote-clobber) only when a file appeared at the destination after
+the doc was created: resolve that collision, or retitle the doc so it slugs
+differently, then finalize again.
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-task-id`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize your-task-id`
+create-gates: decisions-log
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

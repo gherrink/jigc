@@ -1,0 +1,146 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "dogfood-record",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "case",
+      "type": "enum",
+      "of": [
+        "pilot",
+        "existing-docs",
+        "greenfield"
+      ],
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/case"
+    },
+    {
+      "id": "binary-sha",
+      "type": "string",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/binary-sha"
+    },
+    {
+      "id": "adapter-writes",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/adapter-writes"
+    },
+    {
+      "id": "oob-edits",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/oob-edits"
+    },
+    {
+      "id": "drift-caught",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/drift-caught"
+    },
+    {
+      "id": "validate-blocks",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/validate-blocks"
+    },
+    {
+      "id": "halts-expected",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/halts-expected"
+    },
+    {
+      "id": "halts-unplanned",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/halts-unplanned"
+    },
+    {
+      "id": "fix-rounds",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/fix-rounds"
+    },
+    {
+      "id": "audit-findings",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/audit-findings"
+    },
+    {
+      "id": "seeded-oob",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/seeded-oob"
+    },
+    {
+      "id": "seeded-blocks",
+      "type": "int",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/seeded-blocks"
+    },
+    {
+      "id": "verdict",
+      "type": "enum",
+      "of": [
+        "green",
+        "red"
+      ],
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/verdict"
+    },
+    {
+      "id": "owner-artifact",
+      "type": "owned-location",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "dogfood-record:<slug>#meta/owner-artifact"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "judgment",
+      "kind": "slot",
+      "set-slot": "dogfood-record:<slug>#judgment"
+    }
+  ]
+}
+--- stderr ---

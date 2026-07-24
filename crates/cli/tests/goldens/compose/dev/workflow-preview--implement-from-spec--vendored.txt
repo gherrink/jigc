@@ -1,0 +1,121 @@
+exit: 0
+--- stdout ---
+preview: workflow `implement-from-spec` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow implement-from-spec "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+Implement from a committed spec. The intent is:
+
+
+Pick the spec this work implements from the committed specs below and bind it by
+its FULL address exactly as listed — `spec:<slug>`, the `spec:` prefix included
+(a bare slug is rejected as a malformed address) — then re-run to read its
+criteria:
+
+> spec:padding
+
+Run: `jigc task bind spec <SPEC_ADDRESS> your-task-id`
+Run: `jigc start --task your-task-id`
+
+The bound spec's criteria — `spec:<slug>#criteria`, one item per criterion, each
+carrying the `{#id}` anchor that addresses it:
+
+
+
+Wire every criterion you satisfy back to the test that proves it. Once that test
+passes, set `maps-to-test` on the criterion, addressed by the id in its `{#id}`
+anchor above — never a slug you re-derive from the title (`jigc doc show
+spec:<slug> --format json` prints the same ids):
+
+jigc doc set-field spec:<slug>#criteria/<id>/maps-to-test --value <path>#<test-fn> --task your-task-id
+
+The `#<test-fn>` names the test symbol — a named test function. A closure-based test
+framework registers its tests with no named symbol, so there is nothing to name: drop
+the `#<test-fn>` and give the `<path>` alone. A file-only anchor is accepted — it
+resolves on the file's presence, no symbol required.
+
+The anchor path is repo-relative and resolves against the staged index, not the working
+tree: the file — and the `#<test-fn>`, when you name one — must be staged. The blocking
+`doc-code.criterion-maps-to-test` check re-resolves it at finalize, so leave `maps-to-test`
+off a criterion this task did not cover rather than pointing it at a test you have not
+written and staged.
+
+Wire this task's commit to the spec it implements, so the landed record links back
+to what it built. `commit.implements` points at the spec you bound above — set it
+by that spec's full address:
+
+jigc doc set-field commit:your-task-id#implements --value spec:<slug> --task your-task-id
+
+A spec can leave a decision open — a question its prose raises but does not settle.
+When you settle one while implementing, record it before you finalize: this workflow
+grants the `adr` gate, so mint a decision record through the `jigc doc create adr`
+route below and author its slots. A decision that lives only in the code is one the
+next reader cannot find.
+
+Implement the change directly in the working tree. `git add` your code edits
+before finalize — it commits only what you have staged. When done, set the
+required Conventional-Commits type — your editorial call on what this change
+does. The subject renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own — the `type` field already
+carries it. Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address. Set the type, then stage the summary prose:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <COMMIT_TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+<<author: commit:your-task-id#summary>>
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:your-task-id#scope --value <area> --task your-task-id
+jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id
+
+When the work shares authorship — a co-author, or an agent that wrote it — record
+it in a commit trailer. Add one trailer item, then set its value on the address
+`add-item` prints:
+
+jigc doc add-item commit:your-task-id#trailers --title Co-Authored-By --task your-task-id
+jigc doc set-field commit:your-task-id#trailers/<id>/value --value "Name <email>" --task your-task-id
+
+If a decision is warranted, create an ADR and author its slots — a line per slot
+usually suffices; an ADR earns its keep by capturing the *why*, not by running
+long:
+
+Run: `jigc doc create adr --title <TITLE> --task your-task-id`
+
+Author its three required slots on the address `create` prints — `context` (the
+forces at play), `decision` (the call itself), `consequences` (tradeoffs and
+follow-on effects):
+
+jigc doc set-slot adr:<slug>#context --from-file - --task your-task-id
+jigc doc set-slot adr:<slug>#decision --from-file - --task your-task-id
+jigc doc set-slot adr:<slug>#consequences --from-file - --task your-task-id
+
+The `options` slot is optional — fill it only when alternatives were genuinely
+weighed; omit it when the call was obvious:
+
+jigc doc set-slot adr:<slug>#options --from-file - --task your-task-id
+
+Before you finalize, verify the change actually works: build it and run the
+tests, and confirm the behaviour you set out to produce. Finalize commits your
+staged work; it does not check that the work is correct.
+
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages; unstaged edits and untracked files are left out, and with
+nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+this task was minted makes finalize refuse too (one blocking finding per
+carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews the findings finalize will gate on, without committing anything.
+
+Run: `jigc task finalize your-task-id`
+create-gates: adr
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

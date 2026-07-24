@@ -1,0 +1,120 @@
+exit: 0
+--- stdout ---
+preview: workflow `migrate-idea` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow migrate-idea "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+Migrate the foreign parked-idea note into a managed `idea`. Below is the foreign
+source the CLI staged for you (read-only context — you author the canonical record
+through the write verbs, you never edit this file or place anything yourself):
+
+
+
+The target schema and its batch payload, both generated from the resolved `idea`
+schema, follow — the CLI creates the record and places its header fields and
+description slot over a single staged buffer:
+
+The `idea` schema — each instance a managed file at `docs/ideas/<slug>.md`, its `<slug>` minted from `title`.
+
+- `meta` (front-matter fields):
+    - `trigger`: string — author-required
+    - `date`: date — CLI-stamped (on-create) unless authored
+    - `schema-version`: int — CLI-stamped (schema-version) unless authored
+- `description`: prose slot — The shaped direction — what it is and why it might be worth doing.
+
+Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+<slot-id>: |-
+  <<The first line of the prose
+  and its second line, inside the SAME pair.>>
+
+Pipe the payload on stdin:
+
+jigc doc author idea --from-file - --task your-task-id <<'EOF'
+title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id, capped at the first 5 words / 50 chars
+sections:
+  - id: meta
+    set:
+      trigger: "<the trigger>"
+  - id: description
+    set:
+      description: |-
+        <<The shaped direction — what it is and why it might be worth doing.>>
+EOF
+
+The `trigger` field is REQUIRED — the de-park condition that would resurface this idea.
+Map it mechanically:
+
+  - the foreign note names a revisit condition ("once X ships", "when Y stabilizes",
+    "blocked on Z") → transcribe that condition as the `trigger`;
+  - the foreign note names NO condition → derive the trigger from the idea's own subject
+    ("a concrete need for <the idea's subject> shows up") — never leave `trigger` out.
+
+Set the `date` from the foreign source's HISTORICAL date when one is present: add
+`date: "<YYYY-MM-DD>"` to the `meta` section's `set:` map, exactly as it appears in the
+source — an authored date overwrites the CLI's on-create stamp. When the foreign source
+is DATELESS, OMIT the `date` key entirely — in migration the CLI does NOT fabricate
+today's date, so a dateless note stays dateless (no false history).
+
+Everything else in the foreign note — the sketch, the rationale, the caveats — folds
+into the `description` prose. A foreign reference to another document becomes plain
+prose ("see X"); the idea schema is a ref-free leaf, so never invent a field for it.
+
+Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
+it renders the foreign source against the canonical rewrite and holds (exit 4),
+because the CLI guarantees structure, never content-faithfulness. Review that
+fidelity diff, then re-run the same finalize with `--approve` to write the
+canonical doc, RETIRE the foreign original, and commit — approval is the one
+destructive gate. Retired means removed: the foreign file is deleted from the
+worktree and the deletion staged, so the removal lands in the same commit as
+the canonical doc (a `git rm` in effect). A source already sitting at its
+canonical destination is
+rewritten in place on approval — the committed file is modified, nothing is
+retired. A destination already committed when the doc was authored was copied
+in as the edit base (the create said so), so approval updates that committed
+file in place — review the fidelity diff before approving. Finalize blocks
+(finalize.promote-clobber) only when a file appeared at the destination after
+the doc was created: resolve that collision, or retitle the doc so it slugs
+differently, then finalize again.
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-task-id`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize your-task-id`
+create-gates: idea
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

@@ -1,0 +1,43 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "vision",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "grounded-in",
+      "type": "ref",
+      "required": false,
+      "author-required": false,
+      "section": "meta",
+      "set-field": "vision:<slug>#meta/grounded-in"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "thesis",
+      "kind": "slot",
+      "set-slot": "vision:<slug>#thesis"
+    },
+    {
+      "id": "invariants",
+      "kind": "slot",
+      "set-slot": "vision:<slug>#invariants"
+    },
+    {
+      "id": "open-questions",
+      "kind": "slot",
+      "set-slot": "vision:<slug>#open-questions"
+    }
+  ]
+}
+--- stderr ---

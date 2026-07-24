@@ -1,0 +1,40 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+Reason about the change. The intent is:
+sweep the compose surface
+
+The relevant code paths are not yet known. Inspect the codebase to confirm
+scope before implementing.
+
+Implement the change directly in the working tree. `git add` your code edits
+before finalize — it commits only what you have staged. When done, set the
+required Conventional-Commits type — your editorial call on what this change
+does. The subject renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own — the `type` field already
+carries it. Set the type, then stage the summary prose (`scope` and `body`
+are optional):
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <COMMIT_TYPE> --task sweep-the-compose-surface`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
+<<author: commit:sweep-the-compose-surface#summary>>
+
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages; unstaged edits and untracked files are left out, and with
+nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+this task was minted makes finalize refuse too (one blocking finding per
+carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
+
+To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it
+previews the findings finalize will gate on, without committing anything.
+
+Run: `jigc task finalize sweep-the-compose-surface`
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

@@ -1,0 +1,64 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "arch-doc",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "cites",
+      "type": "ref",
+      "required": false,
+      "author-required": false,
+      "section": "meta",
+      "set-field": "arch-doc:<slug>#meta/cites"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "overview",
+      "kind": "slot",
+      "set-slot": "arch-doc:<slug>#overview"
+    },
+    {
+      "id": "components",
+      "kind": "repeatable",
+      "add-item": "arch-doc:<slug>#components",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "arch-doc:<slug>#components",
+            "retitle-item": "arch-doc:<slug>#components/<id>"
+          },
+          {
+            "id": "implemented-by",
+            "type": "code-anchor",
+            "required": false,
+            "author-required": false,
+            "set-field": "arch-doc:<slug>#components/<id>/implemented-by"
+          }
+        ],
+        "slots": [
+          {
+            "id": "description",
+            "set-slot": "arch-doc:<slug>#components/<id>/description"
+          }
+        ],
+        "nested": []
+      }
+    }
+  ]
+}
+--- stderr ---

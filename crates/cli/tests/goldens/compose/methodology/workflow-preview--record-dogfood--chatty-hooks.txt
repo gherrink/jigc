@@ -1,0 +1,108 @@
+exit: 0
+--- stdout ---
+preview: workflow `record-dogfood` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow record-dogfood "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+Record the measured run on the per-run dogfood-record. Create it fresh — the slug
+is minted from the title you give (this run):
+
+Run: `jigc doc create dogfood-record --title <TITLE> --task your-task-id`
+
+Set the run identity — the `case` this run exercises and the sha of the pinned
+binary it ran against:
+
+jigc doc set-field dogfood-record:<slug>#meta/case --value <pilot|existing-docs|greenfield> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/binary-sha --value <sha> --task your-task-id
+
+Transcribe the eight ORGANIC fact counts from the committed capture (the hook
+log + the tally output). The honesty bound is typed-but-transcribed: collection
+is mechanical, the form is engine-validated, the transcription is yours — and it
+is auditable against the committed hook log. Transcribe the tally's numbers
+verbatim; never estimate or round:
+
+jigc doc set-field dogfood-record:<slug>#meta/adapter-writes --value <n> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/oob-edits --value <n> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/drift-caught --value <n> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/validate-blocks --value <n> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/halts-expected --value <n> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/halts-unplanned --value <n> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/fix-rounds --value <n> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/audit-findings --value <n> --task your-task-id
+
+Record the two SEEDED instrument checks separately — seeds validate the
+instrument, never the thesis, and they never enter the organic facts above (each
+must be exactly 1; any other count fails the run, whatever its other numbers
+say):
+
+jigc doc set-field dogfood-record:<slug>#meta/seeded-oob --value <n> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/seeded-blocks --value <n> --task your-task-id
+
+Set the judged `verdict` (green/red) and the `owner-artifact`: the repo-relative
+path to the run's capture — the session transcript, the raw hook log and tally
+output exported unchanged, and a manifest with their content hashes. That path
+MUST live under the owned artifact home `completions/artifacts/<run>/` — write
+the artifact file there, then name it here. finalize promotes that file in the
+same transaction and the presence gate asserts it is durably staged (it never
+reads the artifact's bytes — presence, not content):
+
+jigc doc set-field dogfood-record:<slug>#meta/verdict --value <green|red> --task your-task-id
+jigc doc set-field dogfood-record:<slug>#meta/owner-artifact --value completions/artifacts/<run>/<file> --task your-task-id
+
+Then author the judgment — what the counts mean, where the loop held or
+strained, what the verdict rests on, and what this run did NOT test. The verdict
+is authored judgment over the counts, never computed:
+
+jigc doc set-slot dogfood-record:<slug>#judgment --from-file - --task your-task-id
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-leaf verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every leaf in a single
+write; the payload's `title:` mints the slug exactly like the create above. The
+transcribe-verbatim and seeded-vs-organic bounds above bind unchanged:
+
+jigc doc author dogfood-record --from-file - --task your-task-id
+
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-task-id`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize your-task-id`
+create-gates: dogfood-record
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

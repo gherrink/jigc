@@ -1,0 +1,135 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+Migrate the foreign research/investigation note into a managed `research` doc. Below is
+the foreign source the CLI staged for you (read-only context — you author the canonical
+record through the write verbs, you never edit this file or place anything yourself):
+
+
+
+The target schema and its batch payload, both generated from the resolved `research`
+schema, follow — the CLI creates the record and places every prose slot over a single
+staged buffer:
+
+The `research` schema — each instance a managed file at `docs/research/<slug>.md`, its `<slug>` minted from `title`.
+
+- `meta` (front-matter fields):
+    - `date`: date — CLI-stamped (on-create) unless authored
+    - `schema-version`: int — CLI-stamped (schema-version) unless authored
+- `question`: prose slot — The question this research set out to answer.
+- `findings`: prose slot — What was found — the evidence and what it shows.
+- `sources`: prose slot — Where the evidence came from — links, references, prior art.
+
+Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+<slot-id>: |-
+  <<The first line of the prose
+  and its second line, inside the SAME pair.>>
+
+Pipe the payload on stdin:
+
+jigc doc author research --from-file - --task sweep-the-compose-surface <<'EOF'
+title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id, capped at the first 5 words / 50 chars
+sections:
+  - id: question
+    set:
+      question: |-
+        <<The question this research set out to answer.>>
+  - id: findings
+    set:
+      findings: |-
+        <<What was found — the evidence and what it shows.>>
+  - id: sources
+    set:
+      sources: |-
+        <<Where the evidence came from — links, references, prior art.>>
+EOF
+
+Map the foreign note's content onto the schema above — mechanically:
+
+  - the foreign Question / Problem / "what we wanted to know" framing maps to the
+    `question` slot; when the foreign note states no question, derive it from what the
+    findings answer ("What does <the note's subject> look like in practice?");
+  - the foreign Findings / Results / Notes / observations body maps to the `findings`
+    slot (keep the evidence, one bullet or paragraph per finding);
+  - the foreign links, citations, "see also" pointers, and named prior art map to the
+    `sources` slot; when the foreign note names no source, record where the evidence
+    came from in a phrase ("first-hand notes from <context>").
+
+Set the `date` from the foreign source's HISTORICAL date when one is present — an
+authored date overwrites the CLI's on-create stamp. The generated payload above omits
+the `meta` entry (its `date` is CLI-stamped by default), so TRANSCRIBING a historical
+date means adding the entry, exactly as the date appears in the source:
+
+  - id: meta
+    set:
+      date: "<YYYY-MM-DD>"
+
+When the foreign source is DATELESS, add no `meta` entry — in migration the CLI does
+NOT fabricate today's date, so a dateless note stays dateless (no false history).
+
+The research schema is a ref-free leaf — it declares no structural ref, so a foreign
+cross-reference stays plain prose in the slot it belongs to; never invent a field for it.
+
+Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
+it renders the foreign source against the canonical rewrite and holds (exit 4),
+because the CLI guarantees structure, never content-faithfulness. Review that
+fidelity diff, then re-run the same finalize with `--approve` to write the
+canonical doc, RETIRE the foreign original, and commit — approval is the one
+destructive gate. Retired means removed: the foreign file is deleted from the
+worktree and the deletion staged, so the removal lands in the same commit as
+the canonical doc (a `git rm` in effect). A source already sitting at its
+canonical destination is
+rewritten in place on approval — the committed file is modified, nothing is
+retired. A destination already committed when the doc was authored was copied
+in as the edit base (the create said so), so approval updates that committed
+file in place — review the fidelity diff before approving. Finalize blocks
+(finalize.promote-clobber) only when a file appeared at the destination after
+the doc was created: resolve that collision, or retitle the doc so it slugs
+differently, then finalize again.
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <TYPE> --task sweep-the-compose-surface`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#scope --value <SCOPE> --task sweep-the-compose-surface`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#body --from-file - --task sweep-the-compose-surface`
+
+To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize sweep-the-compose-surface`
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+create-gates: research
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

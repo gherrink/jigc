@@ -642,25 +642,14 @@ thing is for, and when you would reach for it in real work.\n\n";
     assert!(err.contains("tabular"), "wrong rejection reason: {err}");
 }
 
-#[test]
-fn describe_byte_snapshot_is_necessary_but_insufficient() {
-    // A byte-snapshot of the real output — kept *additionally* to pin the emitted
-    // bytes, but NECESSARY-BUT-INSUFFICIENT on its own: a snapshot of a bulleted
-    // list would pass a byte-snapshot happily while *failing* the non-contractual
-    // format predicate above (worked-examples.md → flow 14, bar #2). The predicate
-    // is the load-bearing assertion; the snapshot only guards against silent drift.
-    // So this test pins the snapshot AND re-runs the predicate over the snapshotted
-    // bytes, making the insufficiency explicit rather than implied.
-    let repo = TempDir::new("snapshot");
-    set_up_repo(repo.path());
-    let home = TempDir::new("home");
-
-    let out = describe_stdout(repo.path(), home.path());
-
-    assert_non_contractual_prose(&out)
-        .expect("the snapshotted bytes are held to the predicate too");
-    insta::assert_snapshot!(out);
-}
+// `describe`'s byte snapshot folded into the compose-golden sweep (M45 Inc 11 /
+// pinning.md §1 — *`describe` is double-pinned today, and the golden wins*): the
+// `insta` snapshot that lived here pinned `describe`'s stdout, but the sweep pins
+// `describe` × every fixture state regardless, so two regen paths over the same
+// bytes were the one-file-one-purpose violation the doc calls out. The
+// **non-contractual-prose format predicate stays here** — it asserts a *property*,
+// not bytes, and nothing in the sweep replaces it (`describe_real_output_is_...`
+// above already re-runs it over the emitted bytes).
 
 #[test]
 fn predicate_passes_on_legitimate_colon_bearing_prose() {

@@ -1,0 +1,14 @@
+exit: 0
+--- stdout ---
+doctype: commit (schema-version 1)
+fields (* = author-required):
+  - type: enum [feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert] (section: header) (set-field: commit:<slug>#header/type) *
+  - scope: string (section: header) (set-field: commit:<slug>#header/scope)
+  - implements: ref (section: header) (set-field: commit:<slug>#header/implements)
+sections:
+  - summary: slot (set-slot: commit:<slug>#summary)
+  - body: slot (optional) (set-slot: commit:<slug>#body)
+  - trailers: repeatable (add-item: commit:<slug>#trailers)
+    - key: string (add-item: commit:<slug>#trailers) (retitle-item: commit:<slug>#trailers/<id>) *
+    - value: string (set-field: commit:<slug>#trailers/<id>/value) *
+--- stderr ---

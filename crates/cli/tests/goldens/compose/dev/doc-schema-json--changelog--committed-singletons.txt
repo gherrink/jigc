@@ -1,0 +1,116 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "changelog",
+  "schema-version": 2,
+  "fields": [
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "unreleased-changes",
+      "kind": "repeatable",
+      "add-item": "changelog:<slug>#unreleased-changes",
+      "item": {
+        "fields": [
+          {
+            "id": "category",
+            "type": "enum",
+            "of": [
+              "added",
+              "changed",
+              "deprecated",
+              "removed",
+              "fixed",
+              "security"
+            ],
+            "required": true,
+            "author-required": true,
+            "add-item": "changelog:<slug>#unreleased-changes"
+          }
+        ],
+        "slots": [
+          {
+            "id": "notes",
+            "set-slot": "changelog:<slug>#unreleased-changes/<id>/notes"
+          }
+        ],
+        "nested": []
+      }
+    },
+    {
+      "id": "releases",
+      "kind": "repeatable",
+      "add-item": "changelog:<slug>#releases",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "changelog:<slug>#releases",
+            "retitle-item": "changelog:<slug>#releases/<id>"
+          },
+          {
+            "id": "date",
+            "type": "date",
+            "required": true,
+            "author-required": false,
+            "set": "on-create",
+            "set-field": "changelog:<slug>#releases/<id>/date"
+          },
+          {
+            "id": "link",
+            "type": "string",
+            "required": false,
+            "author-required": false,
+            "set-field": "changelog:<slug>#releases/<id>/link"
+          }
+        ],
+        "slots": [],
+        "nested": [
+          {
+            "id": "changes",
+            "add-item": "changelog:<slug>#releases/<id>/changes",
+            "item": {
+              "fields": [
+                {
+                  "id": "category",
+                  "type": "enum",
+                  "of": [
+                    "added",
+                    "changed",
+                    "deprecated",
+                    "removed",
+                    "fixed",
+                    "security"
+                  ],
+                  "required": true,
+                  "author-required": true,
+                  "add-item": "changelog:<slug>#releases/<id>/changes"
+                }
+              ],
+              "slots": [
+                {
+                  "id": "notes",
+                  "set-slot": "changelog:<slug>#releases/<id>/changes/<id>/notes"
+                }
+              ],
+              "nested": []
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+--- stderr ---

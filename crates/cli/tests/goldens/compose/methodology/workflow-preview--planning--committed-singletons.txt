@@ -1,0 +1,163 @@
+exit: 0
+--- stdout ---
+preview: workflow `planning` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow planning "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+Scope the milestone:
+
+
+Restate, from the full-product roadmap, what this milestone proves and its
+risk-first place in the sequence — the runnable slice it must deliver and the
+worked-example flow(s) that will demonstrate it. That done-picture is the bar
+everything below is measured against.
+
+Verify the baseline it builds on, don't trust the roadmap's "shipped" prose:
+exercise the real binary to map what is genuinely built versus stubbed, deferred,
+or latent. A "design-locked / planning-light" framing must RAISE that audit
+intensity, never relax it. Pull this milestone's deferred topics from the
+deferral ledger first, and fold them into the done-picture and the gap list.
+
+These phases are a walk, not a liturgy. If you have already scouted this terrain —
+baseline verified against the running binary, gaps already mapped — then work them
+as a checklist: confirm each phase and spend your effort on what is genuinely still
+open, rather than re-performing orientation you have done. Covered means verified,
+never assumed. The Settle gate still binds either way: the human owns it, and no
+amount of prior scouting self-serves it.
+
+Detect the gaps — a forward-looking, adversarial pass over the milestone's
+done-picture against the assembled product: what is missing or unfit to build it
+cleanly. Look across decisions still open, design docs that don't exist or have
+drifted, doctype schemas no workflow has yet driven, and engine/CLI surface the
+milestone assumes.
+
+Reuse is a claim, not a fact: "this already exists, the milestone just reuses it"
+is the most dangerous miss — spike the new shape against the real binary before
+trusting it, including its cold-start (empty, freshly-created) state. This is
+judgment work, not a checklist to tick: produce a ranked gap list, each gap
+concrete enough to act on.
+
+Checkpoint: settle
+Settle the gaps — the human-in-the-loop gate. For each blocking gap, resolve it
+through the right loop and record it: decisions via the design workflow, docs and
+doctype schemas elaborated where this milestone's workflows now drive them. Surface
+the genuine scope and judgment calls — must-settle-now versus defer-to-a-later
+milestone, and whether a gap warrants building machinery at all — rather than
+silently deciding them. The human owns this gate.
+
+A gap consciously deferred is logged on the deferral ledger, keyed to the
+milestone that will own it. The design Settle writes is itself a claim: pin the
+scope of every check it introduces, and spike every acceptance flow — its
+invocation commands included — against the real engine before locking it.
+
+Review what Settle produced — an independent pass. A reader who did NOT author the
+decisions, docs, or doctype schemas reads them adversarially for coherence, gaps
+the first pass missed, over- or under-design, and conflicts with the locked
+invariants. Findings are baked back into the docs before anything is decomposed —
+a settled doc that survives an adversarial read is a sound basis for increments;
+an unreviewed one propagates its flaws into every increment cut from it. The human
+owns accepting or rejecting each finding.
+
+Decompose the milestone into ordered, risk-first increments — straight from the
+now-reviewed scoped done-picture. Each increment carries its Deliverable, Grouped
+scope, and Proves, and names the design docs it builds against — the form the
+increment workflow consumes. Keep the cut minimal: the smallest sequence that
+delivers the milestone, no creep into a later one. The spine stays linear — each
+increment builds on the last.
+
+Record the milestone you decomposed on the running roadmap. Create-or-update the
+roadmap singleton — safe whether or not it already exists (an existing committed
+roadmap is copied in for append):
+
+Run: `jigc doc create roadmap --title Roadmap --task your-task-id`
+
+Then mint this milestone's entry and author it — its `proves` and the prose
+`decomposition` of its increments (one level: each increment's deliverable and the
+tasks that build it, as prose). The item id is minted from the title you give:
+
+jigc doc add-item roadmap:roadmap#milestones --title "<milestone>" --task your-task-id
+jigc doc set-slot roadmap:roadmap#milestones/<id>/proves --from-file - --task your-task-id
+jigc doc set-slot roadmap:roadmap#milestones/<id>/decomposition --from-file - --task your-task-id
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every entry in a single
+write. Over an already-committed roadmap it copies the committed doc in and
+appends the new milestone — existing entries are untouched:
+
+jigc doc author roadmap --from-file - --task your-task-id
+
+Log each gap Settle consciously deferred on the running deferral ledger.
+Create-or-update the ledger singleton — safe whether or not it already exists (an
+existing committed ledger is copied in for append):
+
+Run: `jigc doc create deferral-ledger --title Deferral-Ledger --task your-task-id`
+
+Then, for each deferral, mint an entry and author it: its `kind` (Decision for a
+deferred decision, Idea for a parked idea), the `trigger` milestone that resurfaces
+it, and the `body` prose for what is owed and why. The `date` is CLI-set on create:
+
+jigc doc add-item deferral-ledger:deferral-ledger#entries --title "<what is owed>" --task your-task-id
+jigc doc set-field deferral-ledger:deferral-ledger#entries/<id>/kind --value <Decision|Idea> --task your-task-id
+jigc doc set-field deferral-ledger:deferral-ledger#entries/<id>/trigger --value <milestone> --task your-task-id
+jigc doc set-slot deferral-ledger:deferral-ledger#entries/<id>/body --from-file - --task your-task-id
+
+jigc doc author deferral-ledger --from-file - --task your-task-id
+
+Record each decision Settle made on the running decisions log. Create-or-update the
+log singleton — safe whether or not it already exists (an existing committed log is
+copied in for append):
+
+Run: `jigc doc create decisions-log --title Decisions-Log --task your-task-id`
+
+Then, for each decision made, mint an entry and author its `why` — the reasoning,
+in a sentence or two. The `date` is CLI-set on create:
+
+jigc doc add-item decisions-log:decisions-log#entries --title "<the decision>" --task your-task-id
+jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task your-task-id
+
+jigc doc author decisions-log --from-file - --task your-task-id
+
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-task-id`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize your-task-id`
+create-gates: roadmap, deferral-ledger, decisions-log
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

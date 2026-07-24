@@ -1,0 +1,70 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "deferral-ledger",
+  "schema-version": 2,
+  "fields": [
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "entries",
+      "kind": "repeatable",
+      "add-item": "deferral-ledger:<slug>#entries",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "deferral-ledger:<slug>#entries",
+            "retitle-item": "deferral-ledger:<slug>#entries/<id>"
+          },
+          {
+            "id": "kind",
+            "type": "enum",
+            "of": [
+              "Decision",
+              "Idea"
+            ],
+            "required": true,
+            "author-required": true,
+            "set-field": "deferral-ledger:<slug>#entries/<id>/kind"
+          },
+          {
+            "id": "trigger",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "set-field": "deferral-ledger:<slug>#entries/<id>/trigger"
+          },
+          {
+            "id": "date",
+            "type": "date",
+            "required": true,
+            "author-required": false,
+            "set": "on-create",
+            "set-field": "deferral-ledger:<slug>#entries/<id>/date"
+          }
+        ],
+        "slots": [
+          {
+            "id": "body",
+            "set-slot": "deferral-ledger:<slug>#entries/<id>/body"
+          }
+        ],
+        "nested": []
+      }
+    }
+  ]
+}
+--- stderr ---

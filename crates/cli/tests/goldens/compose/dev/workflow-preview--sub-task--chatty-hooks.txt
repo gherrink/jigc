@@ -1,0 +1,81 @@
+exit: 0
+--- stdout ---
+preview: workflow `sub-task` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow sub-task "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+Reason about the change. The intent is:
+
+
+The relevant code paths are not yet known. Inspect the codebase to confirm
+scope before implementing.
+
+Implement the change directly in the working tree. `git add` your code edits
+before finalize — it commits only what you have staged. When done, set the
+required Conventional-Commits type — your editorial call on what this change
+does. The subject renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own — the `type` field already
+carries it. Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address. Set the type, then stage the summary prose:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <COMMIT_TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+<<author: commit:your-task-id#summary>>
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:your-task-id#scope --value <area> --task your-task-id
+jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id
+
+When the work shares authorship — a co-author, or an agent that wrote it — record
+it in a commit trailer. Add one trailer item, then set its value on the address
+`add-item` prints:
+
+jigc doc add-item commit:your-task-id#trailers --title Co-Authored-By --task your-task-id
+jigc doc set-field commit:your-task-id#trailers/<id>/value --value "Name <email>" --task your-task-id
+
+If a decision is warranted, create an ADR and author its slots — a line per slot
+usually suffices; an ADR earns its keep by capturing the *why*, not by running
+long:
+
+Run: `jigc doc create adr --title <TITLE> --task your-task-id`
+
+Author its three required slots on the address `create` prints — `context` (the
+forces at play), `decision` (the call itself), `consequences` (tradeoffs and
+follow-on effects):
+
+jigc doc set-slot adr:<slug>#context --from-file - --task your-task-id
+jigc doc set-slot adr:<slug>#decision --from-file - --task your-task-id
+jigc doc set-slot adr:<slug>#consequences --from-file - --task your-task-id
+
+The `options` slot is optional — fill it only when alternatives were genuinely
+weighed; omit it when the call was obvious:
+
+jigc doc set-slot adr:<slug>#options --from-file - --task your-task-id
+
+Before you finalize, verify the change actually works: build it and run the
+tests, and confirm the behaviour you set out to produce. Finalize commits your
+staged work; it does not check that the work is correct.
+
+Author this sub-task's own commit prose. The parent milestone's finalize is
+the only commit boundary: `git add` your code edits so the milestone can fold
+this worktree's staged index, but never `git commit` and never `jigc task finalize`
+here — either lands a commit on this worktree's detached HEAD and strands the
+sub-task's work outside the milestone boundary. Set the required
+Conventional-Commits type — your editorial call on what this change does. The
+subject renders as `<type>(<scope>): <summary>`, so write the summary without
+a type or scope prefix of its own — the `type` field already carries it. Set
+the type, then stage the summary (`scope` and `body` are optional):
+
+Run: `jigc doc set-field commit:your-task-id#type --value <COMMIT_TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+<<author: commit:your-task-id#summary>>
+create-gates: adr
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

@@ -1,0 +1,17 @@
+exit: 0
+--- stdout ---
+doctype: changelog (schema-version 2)
+fields (* = author-required):
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - unreleased-changes: repeatable (add-item: changelog:<slug>#unreleased-changes)
+    - category: enum [added|changed|deprecated|removed|fixed|security] (add-item: changelog:<slug>#unreleased-changes) *
+    - notes: slot (set-slot: changelog:<slug>#unreleased-changes/<id>/notes)
+  - releases: repeatable (add-item: changelog:<slug>#releases)
+    - title: string (add-item: changelog:<slug>#releases) (retitle-item: changelog:<slug>#releases/<id>) *
+    - date: date (set: on-create) (set-field: changelog:<slug>#releases/<id>/date)
+    - link: string (set-field: changelog:<slug>#releases/<id>/link)
+    - changes: repeatable (add-item: changelog:<slug>#releases/<id>/changes)
+      - category: enum [added|changed|deprecated|removed|fixed|security] (add-item: changelog:<slug>#releases/<id>/changes) *
+      - notes: slot (set-slot: changelog:<slug>#releases/<id>/changes/<id>/notes)
+--- stderr ---

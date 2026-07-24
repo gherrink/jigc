@@ -1,0 +1,52 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "decisions-log",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "entries",
+      "kind": "repeatable",
+      "add-item": "decisions-log:<slug>#entries",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "decisions-log:<slug>#entries",
+            "retitle-item": "decisions-log:<slug>#entries/<id>"
+          },
+          {
+            "id": "date",
+            "type": "date",
+            "required": true,
+            "author-required": false,
+            "set": "on-create",
+            "set-field": "decisions-log:<slug>#entries/<id>/date"
+          }
+        ],
+        "slots": [
+          {
+            "id": "why",
+            "set-slot": "decisions-log:<slug>#entries/<id>/why"
+          }
+        ],
+        "nested": []
+      }
+    }
+  ]
+}
+--- stderr ---

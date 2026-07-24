@@ -1,0 +1,59 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+Develop the idea into a product direction. The idea is:
+sweep the compose surface
+
+Reason about the vision, the requirements it implies, and the context that
+shapes it — audience, constraints, and what is out of scope — before authoring
+the prd below.
+
+Author every managed document through `jigc` — it owns placement, structure, and
+cross-references. Files you write straight to disk are unmanaged: outside `jigc`'s
+tracking, validation, and commit — this is a convention, not a sandbox, so a
+hand-placed doc is simply invisible to the project.
+
+Create the prd, then author its `vision` and `context` slots on the address
+`create` prints — the created doc is a `prd`, so the write address is
+`prd:<slug>#<slot>`:
+
+Run: `jigc doc create prd --title <TITLE> --task sweep-the-compose-surface`
+<<author: brief#vision>>
+<<author: brief#context>>
+
+jigc doc set-slot prd:<slug>#vision --from-file - --task sweep-the-compose-surface
+jigc doc set-slot prd:<slug>#context --from-file - --task sweep-the-compose-surface
+
+Then add one requirement per thing the product must do. For each, mint the item
+and write its requirement in prose:
+
+jigc doc add-item prd:<slug>#requirements --title "<requirement>" --task sweep-the-compose-surface
+jigc doc set-slot prd:<slug>#requirements/<id>/statement --from-file - --task sweep-the-compose-surface
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-leaf verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every leaf in a single
+write; the payload's `title:` mints the slug exactly like the create above:
+
+jigc doc author prd --from-file - --task sweep-the-compose-surface
+
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages; unstaged edits and untracked files are left out, and with
+nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+this task was minted makes finalize refuse too (one blocking finding per
+carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
+
+To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it
+previews the findings finalize will gate on, without committing anything.
+
+Run: `jigc task finalize sweep-the-compose-surface`
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+create-gates: prd
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

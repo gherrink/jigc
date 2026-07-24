@@ -1,0 +1,86 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "commit",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "type",
+      "type": "enum",
+      "of": [
+        "feat",
+        "fix",
+        "docs",
+        "style",
+        "refactor",
+        "perf",
+        "test",
+        "build",
+        "ci",
+        "chore",
+        "revert"
+      ],
+      "required": true,
+      "author-required": true,
+      "section": "header",
+      "set-field": "commit:<slug>#header/type"
+    },
+    {
+      "id": "scope",
+      "type": "string",
+      "required": false,
+      "author-required": false,
+      "section": "header",
+      "set-field": "commit:<slug>#header/scope"
+    },
+    {
+      "id": "implements",
+      "type": "ref",
+      "required": false,
+      "author-required": false,
+      "section": "header",
+      "set-field": "commit:<slug>#header/implements"
+    }
+  ],
+  "sections": [
+    {
+      "id": "summary",
+      "kind": "slot",
+      "set-slot": "commit:<slug>#summary"
+    },
+    {
+      "id": "body",
+      "kind": "slot",
+      "optional": true,
+      "set-slot": "commit:<slug>#body"
+    },
+    {
+      "id": "trailers",
+      "kind": "repeatable",
+      "add-item": "commit:<slug>#trailers",
+      "item": {
+        "fields": [
+          {
+            "id": "key",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "commit:<slug>#trailers",
+            "retitle-item": "commit:<slug>#trailers/<id>"
+          },
+          {
+            "id": "value",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "set-field": "commit:<slug>#trailers/<id>/value"
+          }
+        ],
+        "slots": [],
+        "nested": []
+      }
+    }
+  ]
+}
+--- stderr ---

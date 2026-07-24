@@ -1,0 +1,89 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "completion-record",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "verdict",
+      "type": "enum",
+      "of": [
+        "green",
+        "red"
+      ],
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "completion-record:<slug>#meta/verdict"
+    },
+    {
+      "id": "owner-artifact",
+      "type": "owned-location",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "completion-record:<slug>#meta/owner-artifact"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "findings",
+      "kind": "repeatable",
+      "add-item": "completion-record:<slug>#findings",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "completion-record:<slug>#findings",
+            "retitle-item": "completion-record:<slug>#findings/<id>"
+          },
+          {
+            "id": "severity",
+            "type": "enum",
+            "of": [
+              "blocking",
+              "advisory"
+            ],
+            "required": true,
+            "author-required": true,
+            "set-field": "completion-record:<slug>#findings/<id>/severity"
+          },
+          {
+            "id": "disposition",
+            "type": "enum",
+            "of": [
+              "fixed",
+              "deferred",
+              "contested"
+            ],
+            "required": true,
+            "author-required": true,
+            "set-field": "completion-record:<slug>#findings/<id>/disposition"
+          },
+          {
+            "id": "evidence",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "set-field": "completion-record:<slug>#findings/<id>/evidence"
+          }
+        ],
+        "slots": [],
+        "nested": []
+      }
+    }
+  ]
+}
+--- stderr ---

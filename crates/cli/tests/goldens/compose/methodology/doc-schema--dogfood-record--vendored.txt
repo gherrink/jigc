@@ -1,0 +1,22 @@
+exit: 0
+--- stdout ---
+doctype: dogfood-record (schema-version 1)
+fields (* = author-required):
+  - case: enum [pilot|existing-docs|greenfield] (section: meta) (set-field: dogfood-record:<slug>#meta/case) *
+  - binary-sha: string (section: meta) (set-field: dogfood-record:<slug>#meta/binary-sha) *
+  - adapter-writes: int (section: meta) (set-field: dogfood-record:<slug>#meta/adapter-writes) *
+  - oob-edits: int (section: meta) (set-field: dogfood-record:<slug>#meta/oob-edits) *
+  - drift-caught: int (section: meta) (set-field: dogfood-record:<slug>#meta/drift-caught) *
+  - validate-blocks: int (section: meta) (set-field: dogfood-record:<slug>#meta/validate-blocks) *
+  - halts-expected: int (section: meta) (set-field: dogfood-record:<slug>#meta/halts-expected) *
+  - halts-unplanned: int (section: meta) (set-field: dogfood-record:<slug>#meta/halts-unplanned) *
+  - fix-rounds: int (section: meta) (set-field: dogfood-record:<slug>#meta/fix-rounds) *
+  - audit-findings: int (section: meta) (set-field: dogfood-record:<slug>#meta/audit-findings) *
+  - seeded-oob: int (section: meta) (set-field: dogfood-record:<slug>#meta/seeded-oob) *
+  - seeded-blocks: int (section: meta) (set-field: dogfood-record:<slug>#meta/seeded-blocks) *
+  - verdict: enum [green|red] (section: meta) (set-field: dogfood-record:<slug>#meta/verdict) *
+  - owner-artifact: owned-location (section: meta) (set-field: dogfood-record:<slug>#meta/owner-artifact) *
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - judgment: slot (set-slot: dogfood-record:<slug>#judgment)
+--- stderr ---

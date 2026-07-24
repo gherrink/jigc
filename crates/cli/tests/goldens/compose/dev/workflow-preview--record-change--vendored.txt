@@ -1,0 +1,60 @@
+exit: 0
+--- stdout ---
+preview: workflow `record-change` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow record-change "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+Record the change on the project changelog. Create-or-update the changelog
+singleton — safe whether or not it already exists (an existing committed changelog
+is copied in for append):
+
+Run: `jigc doc create changelog --title Changelog --task your-task-id`
+
+Then author the change. To cut a release, mint a release item (its id is minted
+from the version title you give — e.g. `1.0.0` mints `100` — and its `date` is
+stamped on create). `add-item` PRINTS the new item's address; use that printed
+address verbatim for every follow-up verb — never re-spell the version string:
+
+jigc doc add-item changelog:changelog#releases --title "<version>" --task your-task-id
+#   → prints e.g. changelog:changelog#releases/100  (call this <release-addr>)
+jigc doc set-field <release-addr>/link --value "<diff-url>" --task your-task-id
+
+Under that release, add one nested change-group per category and author its notes
+(one bullet per change). The category is the group's id (added / changed /
+deprecated / removed / fixed / security). Again, drive the printed address verbatim:
+
+jigc doc add-item <release-addr>/changes --title "<category>" --task your-task-id
+#   → prints e.g. changelog:changelog#releases/100/changes/added  (call this <group-addr>)
+jigc doc set-slot <group-addr>/notes --from-file - --task your-task-id
+
+For a change that is not yet cut into a release, add the change-group under the
+staged section instead:
+
+jigc doc add-item changelog:changelog#unreleased-changes --title "<category>" --task your-task-id
+#   → prints e.g. changelog:changelog#unreleased-changes/added  (call this <group-addr>)
+jigc doc set-slot <group-addr>/notes --from-file - --task your-task-id
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every entry in a single
+write, no printed-address dance. Over an already-committed changelog it copies
+the committed doc in and appends — existing releases are untouched:
+
+jigc doc author changelog --from-file - --task your-task-id
+
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages; unstaged edits and untracked files are left out, and with
+nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+this task was minted makes finalize refuse too (one blocking finding per
+carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews the findings finalize will gate on, without committing anything.
+
+Run: `jigc task finalize your-task-id`
+create-gates: changelog
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

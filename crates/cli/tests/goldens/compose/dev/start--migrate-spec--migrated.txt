@@ -1,0 +1,112 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+Migrate the foreign spec into a managed `spec`. Below is the foreign source the CLI
+staged for you (read-only context — you author the canonical record through the write
+verbs, you never edit this file or place anything yourself):
+
+
+
+The target schema and its batch payload, both generated from the resolved `spec`
+schema, follow — the CLI creates the record and places every field and prose slot
+over a single staged buffer:
+
+The `spec` schema — each instance a managed file at `docs/specs/<slug>.md`, its `<slug>` minted from `title`.
+
+- `meta` (front-matter fields):
+    - `derived-from`: ref -> prd (0..1) — optional
+    - `schema-version`: int — CLI-stamped (schema-version) unless authored
+- `goal`: prose slot — What this spec delivers — the outcome, in a sentence or two.
+- `context`: prose slot — Why it is needed and the constraints that shape it.
+- `criteria`: repeatable items, one per `title`:
+    - `title`: string — the item's id-source (authored as the item's `title:` payload key)
+    - `statement`: prose slot — The criterion, testably phrased.
+    - `maps-to-test`: code-anchor — optional; adjudicated at finalize
+
+Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+<slot-id>: |-
+  <<The first line of the prose
+  and its second line, inside the SAME pair.>>
+
+Pipe the payload on stdin:
+
+jigc doc author spec --from-file - --task sweep-the-compose-surface <<'EOF'
+title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id, capped at the first 5 words / 50 chars
+sections:
+  - id: goal
+    set:
+      goal: |-
+        <<What this spec delivers — the outcome, in a sentence or two.>>
+  - id: context
+    set:
+      context: |-
+        <<Why it is needed and the constraints that shape it.>>
+  - id: criteria
+    items:
+      - title: "<the title>"
+        set:
+          statement: |-
+            <<The criterion, testably phrased.>>
+EOF
+
+Map the foreign spec's headings onto the schema above:
+
+  - the foreign Goal / Overview / Summary / Objective heading maps to the `goal` slot;
+  - the foreign Context / Background / Motivation / Constraints heading maps to the
+    `context` slot;
+  - the foreign Acceptance Criteria / Requirements / Done-when list maps to the repeatable
+    `criteria` — author ONE item per criterion, each a short `title` plus a testably-phrased
+    `statement`. A bullet list, a numbered list, or a table of criteria all fold to one item
+    each; keep them one statement apiece, never lumped into a single block.
+
+The `derived-from` edge is IN-STORE-ONLY. Author it (under the `meta` section's `set:`
+block, as `derived-from: "prd:<slug>"`) only when the PRD it names is already in the
+committed store or migrating in this same pass — a dangling ref blocks finalize forever.
+A foreign "from the X PRD" reference with no in-store target folds into the `context`
+prose instead.
+
+The `maps-to-test` field carries a real test anchor. A foreign spec that names no test
+does NOT get a fabricated anchor — leave `maps-to-test` off the item entirely; a migrated
+spec with no test anchors finalizes clean. Wire `maps-to-test` (in the criterion item's
+`set:` block, as `maps-to-test: "<path>#<test-fn>"`) only when the foreign criterion
+already cites a concrete test symbol you can carry over verbatim.
+
+A foreign "decided by ADR-X" / "see the auth ADR" reference has no structural edge in the
+spec schema (there is no `decided-by` relation) — fold it into the `context` prose instead;
+never invent a field for it.
+
+Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
+it renders the foreign source against the canonical rewrite and holds (exit 4),
+because the CLI guarantees structure, never content-faithfulness. Review that
+fidelity diff, then re-run the same finalize with `--approve` to write the
+canonical doc, RETIRE the foreign original, and commit — approval is the one
+destructive gate. Retired means removed: the foreign file is deleted from the
+worktree and the deletion staged, so the removal lands in the same commit as
+the canonical doc (a `git rm` in effect). A source already sitting at its canonical destination is
+rewritten in place on approval — the committed file is modified, nothing is
+retired. A destination already committed when the doc was authored was copied
+in as the edit base (the create said so), so approval updates that committed
+file in place — review the fidelity diff before approving. Finalize blocks
+(finalize.promote-clobber) only when a file appeared at the destination after
+the doc was created: resolve that collision, or retitle the doc so it slugs
+differently, then finalize again.
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages; unstaged edits and untracked files are left out, and with
+nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+this task was minted makes finalize refuse too (one blocking finding per
+carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
+
+To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it
+previews the findings finalize will gate on, without committing anything.
+
+Run: `jigc task finalize sweep-the-compose-surface`
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+create-gates: spec
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

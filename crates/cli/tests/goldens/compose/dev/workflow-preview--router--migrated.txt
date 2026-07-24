@@ -1,0 +1,4 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+workflow 'router' mints no task, so there is nothing to preview — run it directly: jigc start --workflow router

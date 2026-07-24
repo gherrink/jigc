@@ -1,0 +1,44 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "research",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "date",
+      "type": "date",
+      "required": true,
+      "author-required": false,
+      "set": "on-create",
+      "section": "meta",
+      "set-field": "research:<slug>#meta/date"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "question",
+      "kind": "slot",
+      "set-slot": "research:<slug>#question"
+    },
+    {
+      "id": "findings",
+      "kind": "slot",
+      "set-slot": "research:<slug>#findings"
+    },
+    {
+      "id": "sources",
+      "kind": "slot",
+      "set-slot": "research:<slug>#sources"
+    }
+  ]
+}
+--- stderr ---

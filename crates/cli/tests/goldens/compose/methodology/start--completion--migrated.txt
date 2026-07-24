@@ -1,0 +1,149 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+Audit the assembled milestone — a fresh, adversarial pass over the finished whole,
+not a re-run of the per-increment validate. The milestone you are closing:
+sweep the compose surface
+
+Two independent passes: a read-only code review of the whole milestone diff for
+correctness, invariant violations, and scope honesty (inert/dead features,
+stubs-as-done, tautological tests, creep); and an end-to-end run of the milestone's
+worked-example flows over the real binary in throwaway repos — not trusting the
+builders' own tests. Produce ranked findings with file:line evidence and a
+green/red verdict on whether the deliverable genuinely holds.
+
+This is judgment work, not a checklist to tick. The verdict and the gap-detection
+stay pure agent prose — a step that emits a count threshold or a checklist the agent
+must satisfy has hollowed the judgment. The genuine, independent audit passes are an
+orchestration-level responsibility above this single-agent spine; the spine records
+their verdict and findings, it does not certify them.
+
+Checkpoint: triage-gate
+Triage each finding — verify it is real (reproduce it as a red test or a source
+trace, because an audit is a hypothesis generator, not an oracle) and severity-rank
+it. The default is fix-now: a confirmed, bounded finding is repaired immediately,
+not parked behind a permission ask.
+
+The human gate fires for exactly two cases, never every finding: a fix too big for
+the completion-fix lane (recorded as its own task/increment, keyed to the milestone
+that will own it) and a contested finding (the "fix" would revise a settled decision
+or change intended behavior). Surface those two; everything else is a tested commit
+the human reviews after. The human owns this gate.
+
+Checkpoint: fix-rounds-exhausted
+For each blocking finding, run a dev-workflow fix task — a red that fails because
+of the defect, a minimal green, the gate, one commit — then re-validate. This is
+bounded to three rounds. If blocking findings remain after the fix-round cap,
+stop and surface it: thrash is a signal for a human, not for another round.
+Advisories are surfaced, not gated.
+
+Re-verify — the project's full gate green (its own format, lint, test, and build
+gate, whatever toolchain it uses; do not assume a particular one) AND re-run the
+affected audit slice to confirm each closed finding is actually closed. Loop to
+clean: fixes regress and audits miss, so repeat the audit-relevant checks until
+both the slice and the gate are green.
+
+The milestone is done when every confirmed finding is closed (or consciously
+tracked), the gate is green, and the deliverable holds under the re-run end-to-end
+flows.
+
+Record the completion audit on the per-milestone completion-record. Create it fresh
+— the slug is minted from the title you give (this milestone):
+
+Run: `jigc doc create completion-record --title <TITLE> --task sweep-the-compose-surface`
+
+Set the meta header — the audit `verdict` (green/red) and the `owner-artifact`: the
+repo-relative path to the genuine-audit artifact the orchestrator recorded. That
+path MUST live under the owned artifact home `completions/artifacts/<milestone>/` —
+write the artifact file there, then name it here. finalize promotes that file in the
+same transaction and the presence gate asserts it is durably staged (it never reads
+the artifact's bytes — presence, not content):
+
+jigc doc set-field completion-record:<slug>#verdict --value <green|red> --task sweep-the-compose-surface
+jigc doc set-field completion-record:<slug>#owner-artifact --value completions/artifacts/<milestone>/<file> --task sweep-the-compose-surface
+
+Then, for each triaged finding, mint an entry and author it — its `severity`
+(blocking/advisory), its `disposition` (fixed/deferred/contested), and the `evidence`
+(a string: the file:line, repro, or trace — not a managed ref). The item id is minted
+from the title you give:
+
+jigc doc add-item completion-record:<slug>#findings --title "<the finding>" --task sweep-the-compose-surface
+jigc doc set-field completion-record:<slug>#findings/<id>/severity --value <blocking|advisory> --task sweep-the-compose-surface
+jigc doc set-field completion-record:<slug>#findings/<id>/disposition --value <fixed|deferred|contested> --task sweep-the-compose-surface
+jigc doc set-field completion-record:<slug>#findings/<id>/evidence --value "<the file:line, repro, or trace>" --task sweep-the-compose-surface
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-leaf verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every leaf in a single
+write; the payload's `title:` mints the slug exactly like the create above:
+
+jigc doc author completion-record --from-file - --task sweep-the-compose-surface
+
+Record each decision Settle made on the running decisions log. Create-or-update the
+log singleton — safe whether or not it already exists (an existing committed log is
+copied in for append):
+
+Run: `jigc doc create decisions-log --title Decisions-Log --task sweep-the-compose-surface`
+
+Then, for each decision made, mint an entry and author its `why` — the reasoning,
+in a sentence or two. The `date` is CLI-set on create:
+
+jigc doc add-item decisions-log:decisions-log#entries --title "<the decision>" --task sweep-the-compose-surface
+jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task sweep-the-compose-surface
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
+rejects a second create): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every entry in a single
+write. Over an already-committed log it copies the committed doc in and appends —
+existing entries are untouched:
+
+jigc doc author decisions-log --from-file - --task sweep-the-compose-surface
+
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <TYPE> --task sweep-the-compose-surface`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#scope --value <SCOPE> --task sweep-the-compose-surface`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#body --from-file - --task sweep-the-compose-surface`
+
+To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize sweep-the-compose-surface`
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+create-gates: completion-record, decisions-log
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

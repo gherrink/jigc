@@ -1,0 +1,12 @@
+exit: 0
+--- stdout ---
+doctype: prd (schema-version 1)
+fields (* = author-required):
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - vision: slot (set-slot: prd:<slug>#vision)
+  - requirements: repeatable (add-item: prd:<slug>#requirements)
+    - title: string (add-item: prd:<slug>#requirements) (retitle-item: prd:<slug>#requirements/<id>) *
+    - statement: slot (set-slot: prd:<slug>#requirements/<id>/statement)
+  - context: slot (set-slot: prd:<slug>#context)
+--- stderr ---

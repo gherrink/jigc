@@ -1,0 +1,11 @@
+exit: 0
+--- stdout ---
+doctype: roadmap (schema-version 1)
+fields (* = author-required):
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - milestones: repeatable (add-item: roadmap:<slug>#milestones)
+    - title: string (add-item: roadmap:<slug>#milestones) (retitle-item: roadmap:<slug>#milestones/<id>) *
+    - proves: slot (set-slot: roadmap:<slug>#milestones/<id>/proves)
+    - decomposition: slot (set-slot: roadmap:<slug>#milestones/<id>/decomposition)
+--- stderr ---

@@ -1,0 +1,15 @@
+exit: 0
+--- stdout ---
+doctype: adr (schema-version 2)
+fields (* = author-required):
+  - status: enum [proposed|accepted|superseded] (section: status) (default: proposed) (set-field: adr:<slug>#status/status)
+  - date: date (section: status) (set: on-create) (set-field: adr:<slug>#status/date)
+  - supersedes: ref (section: status) (set-field: adr:<slug>#status/supersedes)
+  - cites-code: code-anchor (section: status) (set-field: adr:<slug>#status/cites-code)
+  - schema-version: int (section: status) (set: schema-version)
+sections:
+  - context: slot (set-slot: adr:<slug>#context)
+  - options: slot (optional) (set-slot: adr:<slug>#options)
+  - decision: slot (set-slot: adr:<slug>#decision)
+  - consequences: slot (set-slot: adr:<slug>#consequences)
+--- stderr ---

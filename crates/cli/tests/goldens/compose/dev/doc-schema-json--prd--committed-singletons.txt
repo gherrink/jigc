@@ -1,0 +1,54 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "prd",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "vision",
+      "kind": "slot",
+      "set-slot": "prd:<slug>#vision"
+    },
+    {
+      "id": "requirements",
+      "kind": "repeatable",
+      "add-item": "prd:<slug>#requirements",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "prd:<slug>#requirements",
+            "retitle-item": "prd:<slug>#requirements/<id>"
+          }
+        ],
+        "slots": [
+          {
+            "id": "statement",
+            "set-slot": "prd:<slug>#requirements/<id>/statement"
+          }
+        ],
+        "nested": []
+      }
+    },
+    {
+      "id": "context",
+      "kind": "slot",
+      "set-slot": "prd:<slug>#context"
+    }
+  ]
+}
+--- stderr ---

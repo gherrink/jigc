@@ -1,0 +1,11 @@
+exit: 0
+--- stdout ---
+doctype: research (schema-version 1)
+fields (* = author-required):
+  - date: date (section: meta) (set: on-create) (set-field: research:<slug>#meta/date)
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - question: slot (set-slot: research:<slug>#question)
+  - findings: slot (set-slot: research:<slug>#findings)
+  - sources: slot (set-slot: research:<slug>#sources)
+--- stderr ---

@@ -1,0 +1,13 @@
+exit: 0
+--- stdout ---
+doctype: arch-doc (schema-version 1)
+fields (* = author-required):
+  - cites: ref (section: meta) (set-field: arch-doc:<slug>#meta/cites)
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - overview: slot (set-slot: arch-doc:<slug>#overview)
+  - components: repeatable (add-item: arch-doc:<slug>#components)
+    - title: string (add-item: arch-doc:<slug>#components) (retitle-item: arch-doc:<slug>#components/<id>) *
+    - implemented-by: code-anchor (set-field: arch-doc:<slug>#components/<id>/implemented-by)
+    - description: slot (set-slot: arch-doc:<slug>#components/<id>/description)
+--- stderr ---

@@ -1,0 +1,69 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "spec",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "derived-from",
+      "type": "ref",
+      "required": false,
+      "author-required": false,
+      "section": "meta",
+      "set-field": "spec:<slug>#meta/derived-from"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "goal",
+      "kind": "slot",
+      "set-slot": "spec:<slug>#goal"
+    },
+    {
+      "id": "context",
+      "kind": "slot",
+      "set-slot": "spec:<slug>#context"
+    },
+    {
+      "id": "criteria",
+      "kind": "repeatable",
+      "add-item": "spec:<slug>#criteria",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "spec:<slug>#criteria",
+            "retitle-item": "spec:<slug>#criteria/<id>"
+          },
+          {
+            "id": "maps-to-test",
+            "type": "code-anchor",
+            "required": false,
+            "author-required": false,
+            "set-field": "spec:<slug>#criteria/<id>/maps-to-test"
+          }
+        ],
+        "slots": [
+          {
+            "id": "statement",
+            "set-slot": "spec:<slug>#criteria/<id>/statement"
+          }
+        ],
+        "nested": []
+      }
+    }
+  ]
+}
+--- stderr ---

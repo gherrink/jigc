@@ -1,0 +1,11 @@
+exit: 0
+--- stdout ---
+doctype: decisions-log (schema-version 1)
+fields (* = author-required):
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - entries: repeatable (add-item: decisions-log:<slug>#entries)
+    - title: string (add-item: decisions-log:<slug>#entries) (retitle-item: decisions-log:<slug>#entries/<id>) *
+    - date: date (set: on-create) (set-field: decisions-log:<slug>#entries/<id>/date)
+    - why: slot (set-slot: decisions-log:<slug>#entries/<id>/why)
+--- stderr ---

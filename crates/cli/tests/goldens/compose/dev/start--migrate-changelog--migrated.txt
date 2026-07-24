@@ -1,0 +1,135 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+Migrate the foreign changelog into the managed `changelog` singleton. Below is the
+foreign source the CLI staged for you (read-only context — you author the canonical
+doc through the write verbs, you never edit this file or place anything yourself):
+
+
+
+The target schema and its batch payload, both generated from the resolved `changelog`
+schema, follow — the CLI creates-or-updates the fixed-slug singleton (the
+`title: Changelog` line stays exactly as written; the CLI owns the placement) and
+places every release, change-group and notes slot over a single staged buffer, so
+migrating dozens of releases is one call, not hundreds:
+
+The `changelog` schema — the managed singleton at `CHANGELOG.md`.
+
+- `meta` (front-matter fields):
+    - `schema-version`: int — CLI-stamped (schema-version) unless authored
+- `unreleased-changes`: repeatable items, one per `category`:
+    - `category`: enum, one of: added | changed | deprecated | removed | fixed | security — the item's id-source (authored as the item's `title:` payload key)
+    - `notes`: prose slot — One bullet per change in this category.
+- `releases`: repeatable items, one per `title`:
+    - `title`: string — the item's id-source (authored as the item's `title:` payload key)
+    - `date`: date — CLI-stamped (on-create) unless authored
+    - `link`: string — optional
+    - `changes`: repeatable items, one per `category`:
+        - `category`: enum, one of: added | changed | deprecated | removed | fixed | security — the item's id-source (authored as the item's `title:` payload key)
+        - `notes`: prose slot — One bullet per change in this category.
+
+Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, the reserved depths differ by slot — headings must sit at `####` or deeper in `unreleased-changes.notes`, at `#####` or deeper in `releases.changes.notes`. Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+<slot-id>: |-
+  <<The first line of the prose
+  and its second line, inside the SAME pair.>>
+
+Pipe the payload on stdin:
+
+jigc doc author changelog --from-file - --task sweep-the-compose-surface <<'EOF'
+title: Changelog
+sections:
+  - id: unreleased-changes
+    items:
+      - title: "<added | changed | deprecated | removed | fixed | security>"
+        set:
+          notes: |-
+            <<One bullet per change in this category.>>
+  - id: releases
+    items:
+      - title: "<the title>"
+        set:
+          link: "<the link>" # optional — omit if unused
+        sections:
+          - id: changes
+            items:
+              - title: "<added | changed | deprecated | removed | fixed | security>"
+                set:
+                  notes: |-
+                    <<One bullet per change in this category.>>
+EOF
+
+If a `changelog` is ALREADY committed in the store (a re-run, or one adopted
+earlier), the CLI does not mint a fresh one — it copies the committed body in as
+your edit base, so the releases and change-groups you author below APPEND to those
+already there and any slot you set overwrites. Re-author only what the foreign
+source adds; a release the committed doc already holds would double. The lone
+exception is a same-path migration — when the foreign file you are migrating IS the
+canonical `CHANGELOG.md` — where the CLI seeds a blank skeleton and your authoring
+rebuilds the whole doc.
+
+Re-author every RELEASE from the foreign file, oldest to newest, as an item under
+`releases`. The item `title` is the version string (its id is minted from it — e.g.
+`1.2.0` mints `120`).
+
+The change-group `title` is the CATEGORY — one of the enum members the schema above
+lists. Map each foreign category heading onto exactly one member, and MERGE many-to-one
+where two foreign headings land on the same member (e.g. "Improvements" +
+"Enhancements" → `changed`): the category is the group's id, so two foreign categories
+collapsing onto one member share its SINGLE group — emit one `changes` item for that
+member and merge both sets of bullets into its `notes`. A category outside the enum is
+rejected at the write.
+
+When a foreign file carries NO category headings at all, infer the member from each
+change's commit prefix: a `feat:` change is `added`, a `fix:` change is `fixed`
+(fall back to `changed` for anything else).
+
+Set each release's `date` from the foreign file's HISTORICAL date when one is present:
+add `date: "<YYYY-MM-DD>"` to the release item's `set:` block, exactly as it appears in
+the source — an authored date overwrites the CLI's on-create stamp. When the foreign
+source is DATELESS, OMIT the `date` key entirely — no date is stamped, so no history is
+fabricated.
+
+If the foreign release carries a compare/diff URL, map it to the optional `link`
+field; otherwise omit it (there is no other home for it, and the rest of the foreign
+preamble is dropped).
+
+Any foreign change NOT yet cut into a release (an `[Unreleased]` section) is authored
+as change-groups under the `unreleased-changes` section — same category map+merge
+rule, the staging area rather than a release. When the foreign file has no unreleased
+changes, omit the `unreleased-changes` entry entirely.
+
+Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
+it renders the foreign source against the canonical rewrite and holds (exit 4),
+because the CLI guarantees structure, never content-faithfulness. Review that
+fidelity diff, then re-run the same finalize with `--approve` to write the
+canonical doc, RETIRE the foreign original, and commit — approval is the one
+destructive gate. Retired means removed: the foreign file is deleted from the
+worktree and the deletion staged, so the removal lands in the same commit as
+the canonical doc (a `git rm` in effect). A source already sitting at its canonical destination is
+rewritten in place on approval — the committed file is modified, nothing is
+retired. A destination already committed when the doc was authored was copied
+in as the edit base (the create said so), so approval updates that committed
+file in place — review the fidelity diff before approving. Finalize blocks
+(finalize.promote-clobber) only when a file appeared at the destination after
+the doc was created: resolve that collision, or retitle the doc so it slugs
+differently, then finalize again.
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages; unstaged edits and untracked files are left out, and with
+nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
+this task was minted makes finalize refuse too (one blocking finding per
+carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
+
+To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it
+previews the findings finalize will gate on, without committing anything.
+
+Run: `jigc task finalize sweep-the-compose-surface`
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+create-gates: changelog
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

@@ -1,0 +1,76 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+Scope the task before touching code. The intent is:
+
+sweep the compose surface
+
+Restate that intent in your own words, then name the single observable
+done-criterion — a test, a command that exits cleanly, or a behaviour you can
+point at. If your restatement reveals a different problem than the intent
+asked for, stop and check with the human before proceeding: a clarifying
+question costs less than solving the wrong problem.
+
+Implement the change test-first. Write the failing test first and confirm it
+fails for the right reason — the assertion you care about, not an incidental
+compile error standing in for it. Only then write the minimal implementation
+that makes it pass. Refactor while green, touching only what this task needs.
+
+`git add` your code edits as you work — test and implementation both. finalize
+commits only what you have staged, so anything you leave unstaged is silently
+left out of the commit.
+
+This ordering is yours to police: nothing here enforces that the test was
+observed failing before the implementation. Hold the discipline yourself.
+
+Run your project's own test, lint, and build gate — the commands this project
+already uses to prove a change is sound — and confirm every one passes before
+you finalize. Use whatever the project's configured gate is; do not assume a
+particular toolchain. A green gate is what separates a finished change from one
+that merely compiles in your head.
+
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <TYPE> --task sweep-the-compose-surface`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#scope --value <SCOPE> --task sweep-the-compose-surface`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#body --from-file - --task sweep-the-compose-surface`
+
+To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize sweep-the-compose-surface`
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews the findings finalize will gate on
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

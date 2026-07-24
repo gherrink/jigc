@@ -1,0 +1,48 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 4,
+  "type": "roadmap",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "milestones",
+      "kind": "repeatable",
+      "add-item": "roadmap:<slug>#milestones",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "roadmap:<slug>#milestones",
+            "retitle-item": "roadmap:<slug>#milestones/<id>"
+          }
+        ],
+        "slots": [
+          {
+            "id": "proves",
+            "set-slot": "roadmap:<slug>#milestones/<id>/proves"
+          },
+          {
+            "id": "decomposition",
+            "set-slot": "roadmap:<slug>#milestones/<id>/decomposition"
+          }
+        ],
+        "nested": []
+      }
+    }
+  ]
+}
+--- stderr ---

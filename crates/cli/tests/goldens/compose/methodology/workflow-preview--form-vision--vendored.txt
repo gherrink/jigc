@@ -1,0 +1,79 @@
+exit: 0
+--- stdout ---
+preview: workflow `form-vision` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow form-vision "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+No committed research exists yet — a vision grounds in the research it cites, so consider running `do-research` first to gather it. (Advisory, not required: a vision may ground in experience, and grounding can take several research rounds.)
+Form the project vision on the `vision` singleton. Create it — this is
+safe whether or not it already exists (an existing committed vision is copied in
+for revise). The slug is fixed (`vision`), and its H1 reads `# Vision` regardless
+of the title:
+
+Run: `jigc doc create vision --title Vision --task your-task-id`
+
+Ground the vision in the committed research it rests on. Set `grounded-in` to the
+research this vision is formed from — pass ALL of it in ONE call as an inline list
+(the multi-value path). Every element is recorded and resolved at finalize:
+
+jigc doc set-field vision:vision#meta/grounded-in --value "[research:<slug>, …]" --task your-task-id
+
+Now RE-COMPOSE so the grounding research comes into view — the findings below
+resolve only after `grounded-in` is set:
+
+jigc start --task your-task-id
+
+The findings of ALL grounding research appear here for reference (nothing appears
+until you set `grounded-in` and re-compose; with multiple grounding sources each
+one renders under its own labelled `> **type:slug**` blockquote):
+
+
+Author the three prose slots — the core claim, the invariants it holds, and the
+questions it leaves open:
+
+jigc doc set-slot vision:vision#thesis --from-file - --task your-task-id
+jigc doc set-slot vision:vision#invariants --from-file - --task your-task-id
+jigc doc set-slot vision:vision#open-questions --from-file - --task your-task-id
+
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-task-id`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize your-task-id`
+create-gates: vision
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

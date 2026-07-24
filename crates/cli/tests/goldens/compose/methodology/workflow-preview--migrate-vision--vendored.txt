@@ -1,0 +1,136 @@
+exit: 0
+--- stdout ---
+preview: workflow `migrate-vision` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow migrate-vision "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+Migrate the foreign vision document into the managed `vision` singleton — the project's
+charter. Below is the foreign source the CLI staged for you (read-only context — you
+author the canonical record through the write verbs, you never edit this file or place
+anything yourself):
+
+
+
+The target schema and its batch payload, both generated from the resolved `vision`
+schema, follow — the CLI creates the fixed-slug singleton (the `title: Vision` line
+stays exactly as written; the CLI owns the placement) and places every prose slot over
+a single staged buffer:
+
+The `vision` schema — the managed singleton at `VISION.md`.
+
+- `meta` (front-matter fields):
+    - `grounded-in`: ref -> research (0..*) — optional
+    - `schema-version`: int — CLI-stamped (schema-version) unless authored
+- `thesis`: prose slot — The core claim — what this project is and the one idea it descends from.
+- `invariants`: prose slot — What must stay true — the boundaries and commitments no change may violate.
+- `open-questions`: prose slot — What is deliberately unsettled — the directions still open.
+
+Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+<slot-id>: |-
+  <<The first line of the prose
+  and its second line, inside the SAME pair.>>
+
+Pipe the payload on stdin:
+
+jigc doc author vision --from-file - --task your-task-id <<'EOF'
+title: Vision
+sections:
+  - id: thesis
+    set:
+      thesis: |-
+        <<The core claim — what this project is and the one idea it descends from.>>
+  - id: invariants
+    set:
+      invariants: |-
+        <<What must stay true — the boundaries and commitments no change may violate.>>
+  - id: open-questions
+    set:
+      open-questions: |-
+        <<What is deliberately unsettled — the directions still open.>>
+EOF
+
+If a `vision` is ALREADY committed in the store (a re-run, or one adopted earlier),
+the CLI does not mint a fresh one — it copies the committed body in as your edit
+base, so each slot you set below OVERWRITES the committed prose rather than starting
+blank. Author against what is already there; you are editing the committed doc, not
+replacing it wholesale. The lone exception is a same-path migration — when the
+foreign file you are migrating IS the canonical `VISION.md` — where the CLI seeds a
+blank skeleton and your authoring rebuilds the whole doc.
+
+Map the foreign document's headings onto the schema above:
+
+  - the foreign Thesis / Mission / Purpose / What-this-is prose maps to the `thesis` slot;
+  - the foreign Principles / Invariants / Non-negotiables / Constraints heading maps to
+    the `invariants` slot (keep it one bullet per invariant);
+  - the foreign Open questions / Unknowns / Someday / Future-directions heading maps to
+    the `open-questions` slot.
+
+OMIT `grounded-in` — always, in migration. The optional `grounded-in` ref points at
+managed `research` docs, but a foreign vision has no managed research in the store, so
+any authored ref would dangle and block finalize forever. Omitting it is legal (the ref
+is `0..*`); when the foreign text cites its evidence or research, fold that citation
+into the `open-questions` prose instead — never author it as a structural ref.
+
+Surplus foreign content with NO slot home is usually a live open question worth keeping:
+fold it into the `open-questions` slot as one bullet. Drop it ONLY when it is pure
+boilerplate (a badge block, a table of contents, a license footer).
+
+Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
+it renders the foreign source against the canonical rewrite and holds (exit 4),
+because the CLI guarantees structure, never content-faithfulness. Review that
+fidelity diff, then re-run the same finalize with `--approve` to write the
+canonical doc, RETIRE the foreign original, and commit — approval is the one
+destructive gate. Retired means removed: the foreign file is deleted from the
+worktree and the deletion staged, so the removal lands in the same commit as
+the canonical doc (a `git rm` in effect). A source already sitting at its
+canonical destination is
+rewritten in place on approval — the committed file is modified, nothing is
+retired. A destination already committed when the doc was authored was copied
+in as the edit base (the create said so), so approval updates that committed
+file in place — review the fidelity diff before approving. Finalize blocks
+(finalize.promote-clobber) only when a file appeared at the destination after
+the doc was created: resolve that collision, or retitle the doc so it slugs
+differently, then finalize again.
+Land the change as exactly one logical commit. finalize commits the git index —
+`git add` your code edits before you finalize, because it commits only what you
+have staged, plus the docs it manages. Unstaged edits and untracked files are
+left out of the commit; with nothing staged over a dirty tree, finalize
+refuses. Anything still staged from BEFORE this task was minted makes finalize
+refuse too (one blocking finding per carried path): unstage it, or pass
+`--carry-staged` to declare the carryover deliberate.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-task-id`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews the findings finalize will gate on, without committing anything.
+
+Then validate and commit:
+
+Run: `jigc task finalize your-task-id`
+create-gates: vision
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

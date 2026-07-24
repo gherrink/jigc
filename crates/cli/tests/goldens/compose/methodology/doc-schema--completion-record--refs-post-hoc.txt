@@ -1,0 +1,14 @@
+exit: 0
+--- stdout ---
+doctype: completion-record (schema-version 1)
+fields (* = author-required):
+  - verdict: enum [green|red] (section: meta) (set-field: completion-record:<slug>#meta/verdict) *
+  - owner-artifact: owned-location (section: meta) (set-field: completion-record:<slug>#meta/owner-artifact) *
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - findings: repeatable (add-item: completion-record:<slug>#findings)
+    - title: string (add-item: completion-record:<slug>#findings) (retitle-item: completion-record:<slug>#findings/<id>) *
+    - severity: enum [blocking|advisory] (set-field: completion-record:<slug>#findings/<id>/severity) *
+    - disposition: enum [fixed|deferred|contested] (set-field: completion-record:<slug>#findings/<id>/disposition) *
+    - evidence: string (set-field: completion-record:<slug>#findings/<id>/evidence) *
+--- stderr ---
