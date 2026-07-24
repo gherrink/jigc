@@ -1040,3 +1040,39 @@ fn store_scope_stays_blocking_where_task_scope_is_advisory() {
         "a store-scope rename finding flips the exit; stdout:\n{stdout}",
     );
 }
+
+/// The **conservative default is provoked, not just written** (confidence-audit minor
+/// item 8): when `git log HEAD -1 -- <path>` itself FAILS — here a real unborn HEAD,
+/// reached by `git checkout --orphan` after the baseline landed — the history
+/// predicate's `unwrap_or(true)` treats the path as history-present, so the dangling
+/// baseline keeps the **blocking** weak-deletion shape rather than silently
+/// downgrading a possible deletion to the advisory. Flipping the default to `false`
+/// (advisory) reddens this test.
+#[test]
+fn unborn_head_keeps_the_conservative_weak_deletion_block() {
+    let repo = TempDir::new("unborn");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    commit_prior_adr(repo.path(), home.path());
+
+    // An orphan checkout leaves HEAD pointing at an unborn ref: worktree and index
+    // survive, but `git log HEAD -1 -- <path>` now fails outright ("unknown
+    // revision") — the exact failure the conservative default guards.
+    git(repo.path(), &["checkout", "-q", "--orphan", "orphaned"]);
+    fs::remove_file(repo.path().join(ADR_PATH)).expect("remove the ADR worktree copy");
+    assert!(
+        !Command::new("git")
+            .args(["log", "HEAD", "-1", "--", ADR_PATH])
+            .current_dir(repo.path())
+            .output()
+            .expect("run git")
+            .status
+            .success(),
+        "`git log HEAD` must fail under the unborn HEAD (the provoked arm)",
+    );
+
+    let task = "warm-the-read-cache";
+    stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
+    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "unborn-head");
+    assert_weak_deletion_block(&out, &findings, ADR_PATH, "unborn-head");
+}
