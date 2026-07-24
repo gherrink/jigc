@@ -306,6 +306,62 @@ fn compose_demands_maps_to_test_and_the_adr_route_and_never_lies_about_the_slice
     );
 }
 
+/// The `maps-to-test` truth surface (M45 Inc 10, T5; fork 9 prose rider + the lifecycle
+/// stated-at). The composed step prose must (a) stop implying a *named* `<test-fn>` is
+/// mandatory — a closure-based test framework registers tests with no named symbol, so a
+/// file-only `<path>` anchor is accepted (it resolves on the file's presence, the
+/// `let symbol = symbol?` short-circuit in the `doc-code` probe) — and (b) state the
+/// resolution/lifecycle: the anchor is repo-relative, resolves against the **staged index**,
+/// and is re-resolved at finalize by the blocking `doc-code.criterion-maps-to-test` check.
+/// Driven through the REAL binary on BOTH compositions (unbound + bound), since the prose is
+/// unconditional step text and must be true — and present — in either state.
+#[test]
+fn compose_states_the_maps_to_test_file_only_fallback_and_lifecycle() {
+    let repo = TempDir::new("mtt");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    commit_spec_with_criterion(repo.path(), home.path());
+
+    let task = "enforce-the-rate-limit";
+    let unbound = mint_implement_from_spec(repo.path(), home.path(), "enforce the rate limit");
+
+    let bind = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "bind", "spec", &format!("spec:{SPEC_SLUG}"), task],
+    );
+    assert_ok(&bind, "`jigc task bind spec`");
+    let resume = jigc(repo.path(), home.path(), &["start", "--task", task]);
+    assert_ok(&resume, "`jigc start --task <id>` re-compose");
+    let bound = String::from_utf8(resume.stdout).expect("utf-8");
+
+    for (state, composed) in [("unbound", &unbound), ("bound", &bound)] {
+        // (a) The hint no longer implies a named `<test-fn>` is mandatory: the closure-based
+        //     framework case is named, and the file-only fallback (`<path>` alone) is stated.
+        assert!(
+            composed.to_lowercase().contains("closure"),
+            "the {state} compose must name the closure-based framework case; got:\n{composed}",
+        );
+        assert!(
+            composed.contains("file-only"),
+            "the {state} compose must name the file-only anchor fallback; got:\n{composed}",
+        );
+
+        // (b) The resolution/lifecycle: staged-index gating + the named blocking check at
+        //     finalize.
+        assert!(
+            composed.contains("staged index"),
+            "the {state} compose must state the anchor resolves against the staged index; \
+             got:\n{composed}",
+        );
+        assert!(
+            composed.contains("doc-code.criterion-maps-to-test"),
+            "the {state} compose must name the blocking check that re-resolves the anchor at \
+             finalize; got:\n{composed}",
+        );
+    }
+}
+
 /// The whole arm, driving the EMITTED bytes: the composed `set-field …/maps-to-test` line
 /// is extracted from the composed body, its agent-fill `<…>` placeholders filled exactly
 /// as an agent fills them (the slug it bound, the id the `{#id}` anchor printed, the test

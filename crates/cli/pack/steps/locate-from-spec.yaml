@@ -23,9 +23,16 @@ spec:<slug> --format json` prints the same ids):
 
 jigc doc set-field spec:<slug>#criteria/<id>/maps-to-test --value <path>#<test-fn> --task {{task.id}}
 
-The anchor is `<repo-relative-path>#<symbol>`, it must resolve to a real test, and
-it is checked at finalize — so leave it off a criterion this task did not cover
-rather than pointing it at a test you have not written.
+The `#<test-fn>` names the test symbol — a named test function. A closure-based test
+framework registers its tests with no named symbol, so there is nothing to name: drop
+the `#<test-fn>` and give the `<path>` alone. A file-only anchor is accepted — it
+resolves on the file's presence, no symbol required.
+
+The anchor path is repo-relative and resolves against the staged index, not the working
+tree: the file — and the `#<test-fn>`, when you name one — must be staged. The blocking
+`doc-code.criterion-maps-to-test` check re-resolves it at finalize, so leave `maps-to-test`
+off a criterion this task did not cover rather than pointing it at a test you have not
+written and staged.
 
 Wire this task's commit to the spec it implements, so the landed record links back
 to what it built. `commit.implements` points at the spec you bound above — set it
