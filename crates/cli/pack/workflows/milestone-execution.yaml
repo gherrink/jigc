@@ -3,6 +3,9 @@ when: execute a planned milestone's sub-tasks in parallel, then commit as one bo
 description: A parallel execution of a planned milestone's sub-tasks, joined and committed as one boundary.
 usage: a milestone is decomposed into independent sub-tasks you want run together and landed as a single commit.
 creates-task: false
+suppressed:
+  reason: "composes a degenerate walk — zero `Spawn:` lines and an unresolved `<MILESTONE_ID>` off-verb, so a router pick could never land"
+  expires: a front-door milestone on-ramp verb ships
 ---
 {{ include: step:provision-worktrees }}
 {{ include: step:implement-tasks }}

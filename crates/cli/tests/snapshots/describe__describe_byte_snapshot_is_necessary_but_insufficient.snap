@@ -1,5 +1,6 @@
 ---
 source: crates/cli/tests/describe.rs
+assertion_line: 645
 expression: out
 ---
 jigc describe — a tour of what this project lets you compose and author.
@@ -20,7 +21,7 @@ migrate-prd is Migrate a foreign product requirements document into a managed `p
 
 migrate-spec is Migrate a foreign specification into a managed `spec` at `specs/` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes. Reach for it when an existing project carries a non-conformant spec (a free-form requirements or acceptance-criteria file under `docs/specs/` or similar) and `jigc migrate <path> --as spec` is rewriting it into a managed `spec`. Off-router — only reached through the migrate verb. It is hidden from the router catalog: verb-routed — reached only through `jigc migrate <path> --as spec`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source.
 
-milestone-execution is A parallel execution of a planned milestone's sub-tasks, joined and committed as one boundary. Reach for it when a milestone is decomposed into independent sub-tasks you want run together and landed as a single commit.
+milestone-execution is A parallel execution of a planned milestone's sub-tasks, joined and committed as one boundary. Reach for it when a milestone is decomposed into independent sub-tasks you want run together and landed as a single commit. It is hidden from the router catalog: composes a degenerate walk — zero `Spawn:` lines and an unresolved `<MILESTONE_ID>` off-verb, so a router pick could never land.
 
 plan is A planning pass that authors the specification for upcoming work and commits it. Reach for it when the work needs its goal and acceptance criteria agreed up front, before any code is written.
 

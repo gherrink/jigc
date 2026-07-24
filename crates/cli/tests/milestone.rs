@@ -2987,3 +2987,76 @@ fn git_capture_in(dir: &Path, args: &[&str]) -> String {
         .trim()
         .to_string()
 }
+
+/// M45 Increment 9, T4 (Fork 4) — `milestone-execution` declares
+/// `suppressed: {reason, expires}`, so the M43 law-2 narration
+/// (`introspect.rs weave_workflow`, fires on `.suppressed.is_some()`) makes its
+/// degenerate off-verb walk machine-visible: reached by a router pick it composes
+/// zero `Spawn:` lines with an unresolved `<MILESTONE_ID>` and could never land
+/// (`design/surface-contract.md` → law 2, the suppressed narration; DECISIONS
+/// 2026-07-23 Settle → Fork 4). Driven over the EMITTED bytes of the real `jigc
+/// describe` binary (the unfiltered menu narrates `creates-task: false` workflows
+/// too), asserted **both** in the `--format json` projection and the prose surface.
+#[test]
+fn describe_narrates_milestone_execution_hidden_from_the_router_catalog() {
+    let repo = TempDir::new("suppressed-narration");
+    fs::create_dir_all(repo.path().join(".git")).expect("create .git marker");
+    fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("create project layer");
+    let home = TempDir::new("suppressed-narration-home");
+
+    // The authored reason — the verbatim degenerate-walk statement the pack ships.
+    let reason = "composes a degenerate walk — zero `Spawn:` lines and an unresolved \
+                  `<MILESTONE_ID>` off-verb, so a router pick could never land";
+
+    // The JSON projection: milestone-execution's own narration carries the clause +
+    // the declared reason.
+    let json_out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["describe", "--format", "json"])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        json_out.status.success(),
+        "`jigc describe --format json` must exit 0; got {:?}\nstderr:\n{}",
+        json_out.status,
+        String::from_utf8_lossy(&json_out.stderr),
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&json_out.stdout).expect("describe --format json emits valid JSON");
+    let prose = json["definitions"]
+        .as_array()
+        .expect("the projection carries a definitions array")
+        .iter()
+        .find(|d| d["id"].as_str() == Some("milestone-execution"))
+        .expect("milestone-execution is narrated by describe")["prose"]
+        .as_str()
+        .expect("a definition prose");
+    assert!(
+        prose.contains("hidden from the router catalog"),
+        "milestone-execution's entry must say it is hidden from the router catalog; got: {prose:?}",
+    );
+    assert!(
+        prose.contains(reason),
+        "milestone-execution's entry must carry its declared suppression reason; got: {prose:?}",
+    );
+
+    // The emitted prose surface (the bytes an agent reads) carries the same reason.
+    let text_out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("describe")
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        text_out.status.success(),
+        "`jigc describe` must exit 0; got {:?}\nstderr:\n{}",
+        text_out.status,
+        String::from_utf8_lossy(&text_out.stderr),
+    );
+    let text = String::from_utf8(text_out.stdout).expect("utf-8 stdout");
+    assert!(
+        text.contains(reason),
+        "the emitted prose must carry milestone-execution's suppression reason; got:\n{text}",
+    );
+}
