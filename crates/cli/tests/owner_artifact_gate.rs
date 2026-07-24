@@ -296,6 +296,10 @@ fn finalize_blocks_on_an_absent_owner_artifact() {
         .trim()
         .parse()
         .unwrap();
+    // The gate blocks AFTER the stage phase, so the shared rollback must run — snapshot
+    // the pre-finalize index it must return to (confidence-audit minor item 4: the
+    // post-stage gate-block failure point was block-asserted but never rollback-asserted).
+    let index_before = git(repo.path(), &["ls-files", "--stage"]);
     let out = jigc(repo.path(), home.path(), &["task", "finalize", task]);
     let rendered = format!(
         "{}{}",
@@ -315,6 +319,16 @@ fn finalize_blocks_on_an_absent_owner_artifact() {
         .parse()
         .unwrap();
     assert_eq!(before, after, "a blocked finalize creates no commit");
+    // The rollback assertion: the index is byte-identical to its pre-finalize state —
+    // the post-stage gate block runs the same shared rollback as a hook rejection, so
+    // nothing jigc's own stage contributed (promotion, config layer, version stamp) may
+    // stay staged.
+    assert_eq!(
+        git(repo.path(), &["ls-files", "--stage"]),
+        index_before,
+        "a post-stage gate block must leave the index byte-identical to its \
+         pre-finalize state",
+    );
 }
 
 /// (LANDS — the stage arm) A completion-record naming an owner-artifact that is **present on

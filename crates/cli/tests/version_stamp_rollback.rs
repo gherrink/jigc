@@ -267,6 +267,27 @@ fn a_hook_rejected_finalize_restores_the_staged_config_layer() {
         index_after, index_before,
         "the index must be byte-identical to its pre-finalize state after a rejected finalize",
     );
+
+    // The DECLARED worktree residue (confidence-audit minor item 3): the fourth axis is
+    // **index-only by design** (`rollback_config_layer_index`'s doc: restore "without
+    // touching the worktree", the same index-only discipline the owner-artifact axis
+    // holds) — so the on-disk `.jigc/version` keeps the refreshed bytes and the
+    // `ensure`d `.jigc/.gitignore` stays on disk. Both are jigc-owned maintenance files
+    // the next store-writing op rewrites identically, so cleaning them would buy nothing
+    // and touch the worktree the discipline forbids. Pinned so a future "fix" that
+    // starts scrubbing the worktree meets this declaration, not silence.
+    let worktree_stamp =
+        fs::read_to_string(repo.path().join(".jigc").join("version")).expect("read the stamp");
+    assert_ne!(
+        worktree_stamp, stale_stamp,
+        "the worktree `.jigc/version` keeps the refreshed bytes — the rollback is \
+         index-only, by declaration",
+    );
+    assert!(
+        repo.path().join(".jigc").join(".gitignore").exists(),
+        "the ensured `.jigc/.gitignore` stays in the worktree — the rollback is \
+         index-only, by declaration",
+    );
 }
 
 /// The **promotions rollback axis** joins the same pre-finalize index capture/restore
