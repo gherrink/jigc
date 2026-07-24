@@ -750,9 +750,10 @@ fn css_selector_resolves_present_blocks_vanished() {
 }
 
 /// The non-Rust `criterion-maps-to-test` truth table through the binary: a non-Rust
-/// `maps-to-test` anchor with the symbol PRESENT → one `unsupported-language` advisory (no
-/// block); with the symbol ABSENT → one blocking `doc-code.criterion-maps-to-test` (no
-/// advisory). Never both.
+/// `maps-to-test` anchor with the symbol PRESENT → one `is-a-test-unverifiable` advisory (the
+/// grammar resolved the symbol, so NOT the `unsupported-language` no-grammar fork; no block);
+/// with the symbol ABSENT → one blocking `doc-code.criterion-maps-to-test` (no advisory). Never
+/// both.
 #[test]
 fn non_rust_maps_to_test_truth_table_through_binary() {
     const PY_TEST: &str = "def test_rate_limit():\n    assert True\n";
@@ -770,7 +771,12 @@ fn non_rust_maps_to_test_truth_table_through_binary() {
         "present: exactly one finding: {present:?}"
     );
     assert_eq!(present[0].severity, Severity::Advisory);
-    assert_eq!(present[0].code, "doc-code.unsupported-language");
+    assert_eq!(present[0].code, "doc-code.is-a-test-unverifiable");
+    assert!(
+        !present[0].message.contains("no grammar"),
+        "the resolved-symbol advisory must not lie 'no grammar': {}",
+        present[0].message,
+    );
 
     // ABSENT → one block, no advisory.
     let absent = run_lang_fixture("test_limit.py", PY_TEST, vec![maps("vanished")]);

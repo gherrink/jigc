@@ -272,6 +272,39 @@ impl Finding {
         }
     }
 
+    /// One **advisory** `doc-code.is-a-test-unverifiable` finding for a `criterion-maps-to-test`
+    /// anchor whose `#symbol` **resolved** under a non-Rust grammar — the symbol exists, but the
+    /// is-a-test predicate is verifiable only for Rust (`#[test]` has no portable cross-language
+    /// signature), so the test half could not be checked (HD3, `ideas/multi-language-doc-code.md`
+    /// → is-a-test confidence tiers). Distinct from [`Finding::unsupported_language`]: that one is
+    /// the genuine *no-grammar* fork (nothing resolved); this one must **not** claim "no grammar",
+    /// because the grammar resolved the symbol — the message + route say so. Advisory,
+    /// un-keyed/informational (no inventory row), carrying the informational "no action needed"
+    /// route the floor mandates for an uncheckable-by-design outcome.
+    fn is_a_test_unverifiable(anchor: &TargetAnchor, file: &str, symbol: &str) -> Self {
+        Self {
+            severity: Severity::Advisory,
+            probe: "doc-code".to_string(),
+            check: "is-a-test-unverifiable".to_string(),
+            code: "doc-code.is-a-test-unverifiable".to_string(),
+            message: format!(
+                "anchor `{}` — `{symbol}` resolves in `{file}`, but is-a-test is unverifiable \
+                 for this language (only Rust `#[test]` is checkable)",
+                anchor.anchor_value,
+            ),
+            location: Some(Location {
+                address: anchor.address.clone(),
+                line: 1,
+                col: 1,
+            }),
+            route: Some(
+                "no action needed — the symbol resolves; the is-a-test predicate is uncheckable \
+                 by design for this language (only Rust `#[test]` is verifiable)"
+                    .to_string(),
+            ),
+        }
+    }
+
     /// The common blocking-finding shape: `doc-code.<check_id>` keyed on the target.
     ///
     /// Carries the **actionable repair route** for a dangling code citation (the
@@ -389,16 +422,19 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
             // predicate is **Rust-only** (`#[test]` has no portable cross-language
             // signature). On a Rust file the predicate runs; on a **non-Rust** file the
             // is-a-test half is unverifiable, so a resolved `criterion-maps-to-test` symbol
-            // emits one `unsupported-language` advisory (the symbol passed, the test-half
+            // emits one `is-a-test-unverifiable` advisory (the symbol passed, the test-half
             // could not be checked — fork F4 truth table), never a wrong `not_a_test` block.
-            // `symbol-exists` is unaffected — its predicate is symbol existence, already met.
+            // This is a **distinct** advisory from `unsupported-language`: the grammar resolved
+            // the symbol, so claiming "no grammar" here is a law-1 lie (fork 9); the advisory
+            // names the real reason instead. `symbol-exists` is unaffected — its predicate is
+            // symbol existence, already met.
             if anchor.check_id == "criterion-maps-to-test" {
                 if grammar == resolve::Grammar::Rust {
                     if !resolve::test_fn_exists_in_rust(&src, symbol) {
                         return Some(Finding::not_a_test(anchor, root, file, symbol));
                     }
                 } else {
-                    return Some(Finding::unsupported_language(anchor, file));
+                    return Some(Finding::is_a_test_unverifiable(anchor, file, symbol));
                 }
             }
             None
@@ -704,9 +740,47 @@ def test_rate_limit():
 ";
 
     #[test]
+    fn non_rust_maps_to_test_present_symbol_names_is_a_test_unverifiable_not_no_grammar() {
+        // fork 9 / law-1: on a `criterion-maps-to-test` anchor whose `#symbol` RESOLVES under a
+        // non-Rust grammar, is-a-test is unverifiable — but the grammar EXISTS and resolved the
+        // symbol, so the advisory must NOT lie "no grammar for <file>"; it must name the real
+        // reason (is-a-test is Rust-only) and state that the symbol resolved. The message here is
+        // the distinct is-a-test-unverifiable advisory, never the `unsupported-language`
+        // no-grammar text (which is the genuine :366 fork, untouched).
+        let findings = check_one_with_check(
+            "limit.test.ts",
+            TS_TEST,
+            "rateLimitTest",
+            "criterion-maps-to-test",
+        );
+        assert_eq!(findings.len(), 1, "exactly one finding, got {findings:?}");
+        assert_eq!(findings[0].severity, Severity::Advisory);
+        let msg = &findings[0].message;
+        assert!(
+            !msg.contains("no grammar"),
+            "the advisory must not claim no grammar — the grammar resolved the symbol: {msg}"
+        );
+        assert!(
+            msg.contains("is-a-test") && msg.contains("resolves"),
+            "the advisory must name the is-a-test-unverifiable reason and that the symbol \
+             resolved: {msg}"
+        );
+        assert!(
+            !findings[0]
+                .route
+                .as_deref()
+                .unwrap_or_default()
+                .contains("no shipped grammar"),
+            "the route must not claim no shipped grammar either: {:?}",
+            findings[0].route
+        );
+    }
+
+    #[test]
     fn non_rust_maps_to_test_present_symbol_advises_never_blocks() {
-        // symbol PRESENT under a non-Rust grammar: exactly one `unsupported-language` advisory
-        // (the is-a-test half is Rust-only — unverified), NO `criterion-maps-to-test` block.
+        // symbol PRESENT under a non-Rust grammar: exactly one `is-a-test-unverifiable` advisory
+        // (the is-a-test half is Rust-only — the symbol resolved, so NOT the `unsupported-language`
+        // no-grammar fork), NO `criterion-maps-to-test` block.
         for (file, src, symbol) in [
             ("limit.test.ts", TS_TEST, "rateLimitTest"),
             ("test_limit.py", PY_TEST, "test_rate_limit"),
@@ -714,8 +788,11 @@ def test_rate_limit():
             let findings = check_one_with_check(file, src, symbol, "criterion-maps-to-test");
             assert_eq!(findings.len(), 1, "{file}: exactly one finding");
             assert_eq!(findings[0].severity, Severity::Advisory, "{file}: advisory");
-            assert_eq!(findings[0].check, "unsupported-language", "{file}");
-            assert_eq!(findings[0].code, "doc-code.unsupported-language", "{file}");
+            assert_eq!(findings[0].check, "is-a-test-unverifiable", "{file}");
+            assert_eq!(
+                findings[0].code, "doc-code.is-a-test-unverifiable",
+                "{file}"
+            );
         }
     }
 
