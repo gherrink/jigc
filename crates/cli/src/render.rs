@@ -237,7 +237,10 @@ fn minted_header(view: &Composition) -> String {
 /// - `task scope:` — the B3 statement: `jigc doc` writes default to the **single**
 ///   active task, and the explicit `--task <id>` is the override that wins when
 ///   several are active (`crate::doc`'s task-resolution contract, stated where the
-///   state is produced instead of learned from the more-than-one rejection).
+///   state is produced instead of learned from the more-than-one rejection). It also
+///   names the deliberate-parallelize affordance (findings §71): several open tasks
+///   are **legal**, each addressed by its own `--task` — the single-active default is
+///   a convenience, not a one-task cap.
 ///
 /// Unlike [`minted_header`] — which states an **invocation fact** (this run minted)
 /// and so stays off a resume — these state **standing affordances of the active-task
@@ -252,7 +255,7 @@ fn task_state_lines(view: &Composition) -> String {
     format!(
         "resume: `jigc start --task {id}`   — re-composes this workflow if context is lost\n\
          what's-left: `jigc task validate {id}`   — previews the findings finalize will gate on\n\
-         task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active\n"
+         task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel\n"
     )
 }
 
@@ -2859,12 +2862,20 @@ mod tests {
             "the B3 statement: single-active-task default, explicit `--task` wins; \
              got:\n{scope}",
         );
+        // The parallelize affordance (findings §71): several open tasks are legal,
+        // each addressed by its own `--task` — the default is not a one-task limit.
+        assert!(
+            scope.contains("several open tasks are legal") && scope.contains("parallel"),
+            "the B3 statement also names the deliberate-parallelize affordance; \
+             got:\n{scope}",
+        );
         // Stack order: text, then the task-state lines, then gates, then footer.
         assert!(
             agent.contains(
                 "task scope: `jigc doc` writes default to the single active task; \
                  `--task add-rate-limiter` is the explicit override and wins when \
-                 several are active\ncreate-gates: adr\n— jigc"
+                 several are active — several open tasks are legal, each addressed by \
+                 its own `--task`, so you can run them in parallel\ncreate-gates: adr\n— jigc"
             ),
             "the task-state lines sit above the gates line + footer; got:\n{agent}",
         );
