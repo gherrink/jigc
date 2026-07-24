@@ -2934,3 +2934,58 @@ $ jigc task finalize <task>                           # exit 4 — the review re
 5. **A from-knowledge adr lands with a fresh on-create date via plain finalize.** `record-decision` mints, its composed step names **no** foreign source (none of the `author-migration-adr` transcribe/supersedes prose), and authoring the three slots then **plain** `jigc task finalize` (no `--approve`, no review-hold) commits one adr at `docs/decisions/adopt-blake3.md` carrying today's on-create stamp — never a transcribed foreign date. Red on rc.7: the flagship doctype's sole-channel hole — an adr was authorable only inside a code task or a foreign migration.
 6. **A singleton-authoring step lacking the copy-in statement reddens pack-load.** A dev-pack copy whose `author-migration` step (soliciting the `changelog` singleton via `{{schema:changelog}}`) withdrew its `states-constraints: [create.singleton-copy-in]` declaration makes the composing `jigc start` exit non-zero, naming the offending step and the undeclared `create.singleton-copy-in` code. The path-local copy-in guidance is caught by construction from the enumerable `{{schema:<singleton>}}` signal the step already renders, not by author diligence.
 7. **`project-alpha-2.0` is not flagged by the fidelity scan.** A migration whose foreign Context mentions `project-alpha-2.0` and whose rewrite omits it renders the review-gate fidelity summary's bare-token line as `(none)` — the `2.0` glued to `dashboard-` is a slug/identifier fragment, not a droppable version token. Red on rc.7: the scan cried wolf on `2.0`, false-alarming the operator's most-checked advisory surface on a slug.
+
+## 46. The M45 rc.9 wave, end-to-end — a fix is complete over its class's axis (M45)
+
+The M45 rc.9 wave answers the project-alpha-3.0 verification trial's dominant finding: **~19 of ~44 findings were the same defect returning through an axis the original fix never swept** ([completions/artifacts/RC-alpha3/findings-verification.md](../completions/artifacts/RC-alpha3/findings-verification.md) → §4). Increments 1–10 shipped each fix as an instance *and* the axis-iterating machinery that guards it; this flow is the **composite acceptance** tying them into five done-picture arms over the real binary (`crates/cli/tests/flow46_acceptance.rs`). **The claim it proves is one claim: a fix is complete over its class's axis, not its reported repro — and completeness is checkable by machinery, not diligence** ([dev-workflow.md](../implementation/dev-workflow.md) → *a fix is complete over its class's axis, never its repro*). The distinguishing property of every arm below is that it **iterates its class axis** — enumerated from the composed `[dev ▸ methodology]` registry, or from the class's defining case-set — rather than pinning the single instance the trial reported, so a member added to the class *after* this flow is written is covered **by construction**, not by a future author remembering to extend a hand-list. The substrate the arms run on (registry enumeration, the trial-shaped fixture states, the compose goldens, the contract property suites) is [pinning.md](../implementation/pinning.md); the per-fix designs of record live in their own part-docs and are not restated here. Notation illustrative.
+
+### The walk — five arms, one wave
+
+```text
+# ── Arm 1 · a reserved-depth heading is rejected in EVERY doctype's item slot. ──
+#     (the axis: every item-slot context the composite registry ships — 7 doctypes today)
+$ for each doctype with a prose item slot:  jigc migrate → doc create → doc add-item
+$ jigc doc set-slot <item>/<slot> --task <t>   # prose carrying `### Ghost  {#ghost}`
+> blocking · write.slot-heading-depth
+>   route: demote the heading to the depth the message names
+# the staged bytes are byte-identical across the reject; a heading-free write then lands
+
+# ── Arm 2 · a forged freeze stamp is refused in EVERY stamp-bearing doctype. ──
+#     (the axis: every doctype the injected schema-version stamp lands on — 12 today)
+$ jigc doc set-field <doc>#<hdr>/schema-version --value 99 --task <t>
+> blocking · write.machine-maintained-field                 # the forge never reaches disk
+$ jigc doc set-field adr:<slug>#status/date --value 2019-02-12 --task <t>
+> ok                                                        # an on-create default stays writable
+
+# ── Arm 3 · a copy-on-write binds the role in EVERY object-form create-gate pair. ──
+#     (the axis: every {type, as:} gate the composite registry ships — 31 pairs today)
+$ jigc doc create <doctype> --task <t>   (twice, same identity)
+> already existed — copied in for update                    # not create.serial-collision
+# and the headline render, concretely:
+$ jigc doc set-field vision:vision#meta/grounded-in [research:…] --task <t>   # set-field FIRST
+$ jigc start --task <t>
+> … A single node caps throughput under contention …        # the @-slice renders its grounding
+
+# ── Arm 4 · the natural pre-staged authoring order LANDS for the owned-location class. ──
+$ git add completions/artifacts/M45/audit.md                # stage the artifact BEFORE minting
+$ jigc start --workflow complete "…"  →  doc create completion-record  →  set owner-artifact
+$ jigc task finalize record-the-completion
+> ok                                                        # no finalize.carried-staged, no owner-artifact.present
+# HEAD carries the artifact AND the promoted completions/m45-completion.md, one commit
+
+# ── Arm 5 · the dangling baseline is history-gated across the corpus-state axis. ──
+$ git reset --hard <root>   (past the ADR's creating commit; HEAD has no history for the path)
+$ jigc task validate <next> --format json
+> advisory · reconciliation.rename · route: jigc unmanage docs/decisions/single-node-cache.md   # exit 0
+$ git rm docs/decisions/single-node-cache.md && git commit   (HEAD now HAS history for the path)
+$ jigc task validate <next> --format json
+> blocking · reconciliation.rename                          # exit 3 — a genuine deletion still blocks
+```
+
+### What it asserts (the M45-wave acceptance bar — flow46_acceptance.rs)
+
+1. **A reserved-depth heading is rejected in every doctype's item slot.** The item-slot corruption class, **swept over the registry's item-slot contexts** (the engine-loaded schemas' repeatable sections carrying a prose slot, intersected with the registry's `migrate-*` create-gate doors — 7 doctypes today, spanning both packs). `###` is a reserved depth for *every* item-slot context (a depth-1 item's own heading sits at H3), so one universal poison sweeps the whole axis: for each doctype, a `###`-bearing slot write is refused (`write.slot-heading-depth`, a followable route), the staged bytes stay byte-identical across the reject, and a heading-free write then lands. Nothing is hand-listed, so a new doctype with an item slot joins the sweep the day it lands. Red on rc.8: a reserved-depth heading in an item slot minted a ghost item / reattributed a sibling leaf / hijacked a downstream section, all at exit 0 with a clean `task validate`.
+2. **A forged freeze stamp is refused in every stamp-bearing doctype, while an on-create default stays writable.** The machine-maintained-absolute class, **swept over the stamp-bearing set** (every doctype the engine-injected `schema-version` stamp lands on, with a create-gate door — 12 today): forging `#…/schema-version` through `jigc doc set-field` is refused with `write.machine-maintained-field` and the forged value never reaches the staged bytes, while an author-overridable `on-create` default — an ADR's `date` — stays writable on the same task. These are the two poles of the parity the `doc schema` projection advertises. Red on rc.8: `--value 99` on `#…/schema-version` committed a forged freeze stamp that `migrate-corpus` then skipped forever.
+3. **A copy-on-write binds the role in every object-form create-gate pair, and the grounding renders.** The copy-on-write create-gate class, **swept over the registry's object-form `{type, as:}` pairs** (31 today, spanning both symptom shapes — the silent-empty `@`-slice and the slug-less `<<author:>>` address): for *every* pair, a second `doc create` over the already-staged same-identity copy acks `existed` rather than routing away with `create.serial-collision`. The headline symptom is then cured concretely — `form-vision` on the set-field-first (revise) path binds `task.vision`, so its `{{ @task.vision.grounded-in#findings }}` slice renders the grounding research's findings. Red on rc.8: a copy-on-write left the role unbound (the slice resolved empty) and the re-create rejected.
+4. **The natural pre-staged authoring order lands for the owned-location class.** The `owner-artifact` presence gate's members are registry-derived (every doctype declaring an `owned-location` field). The natural order an orchestrator follows — produce the audit artifact, `git add` it *before* minting the recording task, author the completion-record naming it, `finalize` — lands at exit 0: the pre-staged artifact is exempt from the M43 carryover gate (no `finalize.carried-staged`), the presence gate is satisfied (no `owner-artifact.present` finding), and the artifact + the promoted record commit together. Red on rc.8: the pre-mint `git add` tripped `finalize.carried-staged`, whose route said to un-stage, which then tripped the presence gate — a closed route cycle that never named `git add`.
+5. **The dangling baseline is history-gated across the corpus-state axis.** The dangling-baseline severity, **swept over the two poles of the corpus-state axis** distinguished purely by whether HEAD carries history for the path: a `git reset --hard` past a doc's creating commit (history-absent) downgrades to an **advisory** with a `jigc unmanage` prune route and does **not** block (`task validate` exit 0), while a `git rm` + commit (history-present) keeps the same finding **blocking** (exit 3) — a genuine deletion detected and routed, never silently downgraded. One fix, re-derived across the whole axis rather than the single reset-hard repro. Red on rc.8: a history-less dangling baseline blocked every subsequent task, wedging the corpus.
