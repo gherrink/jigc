@@ -115,6 +115,7 @@ fn embedded_packs() -> Vec<(&'static str, EmbeddedPack)> {
 /// every shipped schema), so the id is the `doc schema <type>` argument directly.
 fn composite_doctypes() -> Vec<Member> {
     let mut seen = BTreeSet::new();
+    let mut collisions = BTreeSet::new();
     let mut out = Vec::new();
     for (pack_name, pack) in embedded_packs() {
         for id in pack.list(PackResourceKind::Schemas) {
@@ -124,9 +125,23 @@ fn composite_doctypes() -> Vec<Member> {
                     pack: pack_name,
                     id,
                 });
+            } else {
+                collisions.insert(id);
             }
         }
     }
+    // The dedup-site collision fence (confidence-audit minor item 9): first-wins is
+    // only honest while every collision it resolves is DECLARED here. `commit` is the
+    // one known cross-pack doctype collision (both packs ship it; dev wins, and the
+    // two schemas differ in bytes — pinning.md §1 records the fact); any other
+    // collision means a member's golden would silently record only the winner.
+    let declared: BTreeSet<String> = [String::from("commit")].into();
+    assert_eq!(
+        collisions, declared,
+        "the cross-pack doctype collision set drifted from the declared set — a new \
+         collision is being resolved first-wins silently; declare it here (with which \
+         pack wins) or rename the doctype",
+    );
     out
 }
 
@@ -135,16 +150,22 @@ fn composite_doctypes() -> Vec<Member> {
 /// narrow it, because a code-structure skip bypasses [`EXCLUSIONS`] and leaves a
 /// surface pinned by nothing while looking swept (the sibling-hunt's finding 5).
 /// Deduped first-wins across the precedence order; the two packs' workflow sets do
-/// not overlap, so every id resolves to exactly one pack.
+/// not overlap — and that premise is FENCED at the dedup site (confidence-audit minor
+/// item 9): a workflow id shipped by both packs would be swept under its winner only,
+/// with the loser's surface silently unpinned, so a collision panics loudly instead of
+/// resolving first-wins (unlike doctypes, no workflow collision is declared today).
 fn composite_workflows() -> Vec<Member> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
     for (pack_name, pack) in embedded_packs() {
         for id in pack.list(PackResourceKind::Workflows) {
             let id_str = id.as_str().to_string();
-            if !seen.insert(id_str.clone()) {
-                continue;
-            }
+            assert!(
+                seen.insert(id_str.clone()),
+                "workflow id `{id_str}` ships in more than one embedded pack — a \
+                 first-wins dedup would pin only the winner's surface; either rename \
+                 the workflow or declare the collision here with which pack wins",
+            );
             out.push(Member {
                 pack: pack_name,
                 id: id_str,
@@ -177,6 +198,30 @@ fn check(
     out: &std::process::Output,
 ) {
     let capture = Capture::of(out, repo);
+    suite.check(
+        &GoldenKey {
+            pack,
+            surface,
+            member,
+            state: state.name(),
+        },
+        &capture,
+    );
+}
+
+/// [`check`] for a `--format json` invocation: the capture goes through the harness's
+/// parse gate ([`Capture::of_json`] — confidence-audit minor item 5), so polluted
+/// stdout bytes fail loudly at capture/regen time instead of becoming a golden.
+fn check_json(
+    suite: &GoldenSuite,
+    pack: &str,
+    surface: &str,
+    member: &str,
+    state: State,
+    repo: &std::path::Path,
+    out: &std::process::Output,
+) {
+    let capture = Capture::of_json(out, repo);
     suite.check(
         &GoldenKey {
             pack,
@@ -246,7 +291,13 @@ fn sweep(state: State) {
             continue;
         }
         let out = corpus.jigc(args);
-        check(
+        // The `-json` variants take the parse-gated capture (minor item 5).
+        let check_fn = if surface.ends_with("-json") {
+            check_json
+        } else {
+            check
+        };
+        check_fn(
             &suite,
             COMPOSITE,
             surface,
@@ -292,7 +343,7 @@ fn sweep(state: State) {
     for dt in &doctypes {
         if !is_excluded("doc-schema-json", &dt.id, state) {
             let out = corpus.jigc(&["doc", "schema", &dt.id, "--format", "json"]);
-            check(
+            check_json(
                 &suite,
                 dt.pack,
                 "doc-schema-json",

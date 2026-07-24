@@ -85,6 +85,24 @@ impl Capture {
         }
     }
 
+    /// Capture a `--format json` invocation: [`Capture::of`] plus the **parse gate**
+    /// (confidence-audit minor item 5) — stdout must parse as exactly **one** JSON
+    /// document, checked at capture time so it holds in check *and* regen mode alike.
+    /// A byte golden alone notices drift but forbids nothing: a regen would silently
+    /// accept polluted bytes (hook chatter, a stray diagnostic) as the new expected
+    /// output, so the purity claim the goldens ride on is asserted before any golden
+    /// is read or written.
+    pub fn of_json(out: &Output, repo: &Path) -> Self {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        if let Err(err) = serde_json::from_str::<serde_json::Value>(&stdout) {
+            panic!(
+                "a `--format json` capture's stdout must parse as exactly one JSON \
+                 document ({err}) — polluted bytes must never become a golden; got:\n{stdout}",
+            );
+        }
+        Capture::of(out, repo)
+    }
+
     /// Capture a **rendered file** (the AGENT.md bootstrap render), normalizing
     /// paths under `repo` — the same single normalization as [`Capture::of`].
     ///

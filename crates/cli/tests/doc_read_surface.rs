@@ -797,6 +797,38 @@ fn projection_leaf_keys(proj: &Value) -> BTreeSet<String> {
     keys
 }
 
+/// The walk lists above are hand consts, split per pack so the two walks run in
+/// parallel — and a hand list is exactly what lets a NEW doctype ship un-walked
+/// (confidence-audit minor item 2, the VERDICT-declared residue). This union-equality
+/// fence closes them against the registry: the two walk lists plus the one declared
+/// exclusion (`milestone-record`, machine-maintained whole — its own test above)
+/// together equal **exactly** the doctype set the shipped composite enumerates, so a
+/// doctype added to (or renamed in) either pack reddens here until it joins a walk or
+/// earns its own declared exclusion.
+#[test]
+fn the_walk_lists_union_equals_the_composite_registry() {
+    let pack = composite();
+    let registry: BTreeSet<String> = pack
+        .list(PackResourceKind::Schemas)
+        .iter()
+        .map(|id| id.as_str().to_string())
+        .collect();
+    let mut walked: BTreeSet<String> = DEV_DOCTYPES
+        .iter()
+        .chain(METHODOLOGY_DOCTYPES)
+        .map(|s| s.to_string())
+        .collect();
+    // The one declared exclusion: machine-maintained whole, walked by
+    // `milestone_record_is_machine_maintained_whole` instead of the per-leaf parity.
+    walked.insert("milestone-record".to_string());
+    assert_eq!(
+        walked, registry,
+        "the parity walk's hand lists (DEV_DOCTYPES ∪ METHODOLOGY_DOCTYPES ∪ the \
+         milestone-record exclusion) drifted from the composite registry — a doctype \
+         shipped without joining a settability walk, or a walked doctype left the packs",
+    );
+}
+
 /// For **every** doctype both packs ship, the projection's leaf set equals the
 /// engine-loaded schema's leaf set — so the parity above is genuinely *over the
 /// engine-loaded schema model*: a leaf the projection dropped entirely would redden
