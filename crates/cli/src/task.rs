@@ -1829,6 +1829,14 @@ pub(crate) fn try_execute_finalize_plan(
     // pre-staged blob `A` that jigc's `git add` overwrote with `B`. Empty when the plan
     // records no owner-artifact (the omitting-context inert path — every non-completion task).
     let mut owner_index: Vec<OwnerArtifactIndexEntry> = Vec::new();
+    // The FOURTH rollback axis (M45 milestone-audit fix, `design/finalize.md` → Rollback
+    // discipline): the pre-finalize index state of jigc's own config-layer stage — the
+    // `.jigc/version` stamp and the `.jigc/config/` + `.jigc/.gitignore` layer the stage
+    // functions `git add` (and `refresh_version_stamp` rewrites). Captured before the stage,
+    // restored on a stage/commit failure, so a rejected finalize leaves the index byte-identical
+    // to its pre-finalize state — never a stray-staged stamp/config the owner-artifact axis (and
+    // the promotions axis) did not cover.
+    let mut config_index: Vec<ConfigLayerIndexEntry> = Vec::new();
     let commit_result = (|| -> Result<String> {
         // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
         promote(repo_root, &plan.promotions)?;
@@ -1847,6 +1855,13 @@ pub(crate) fn try_execute_finalize_plan(
         // those index entries, so this is the genuine pre-finalize state. Inert (empty) unless
         // the plan records an owner-artifact.
         owner_index = capture_owner_artifact_index(repo_root, &plan.owner_artifacts)?;
+        // Capture jigc's config-layer index BEFORE any stage arm refreshes the stamp / (re)stages
+        // the config layer — the fourth rollback axis. The index is untouched by the promote /
+        // retire / gitignore-ensure above (they touch only the worktree), so this reads the
+        // genuine pre-finalize state. Covers every arm: the two per-task stages add these paths to
+        // the live index, and the fan-out `overlay_docs_commit_and_ff` stages the config layer into
+        // the live index before its `--ff-only` (where a collision aborts to this same rollback).
+        config_index = capture_config_layer_index(repo_root)?;
         match stage {
             // Narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
             // `DECISIONS.md` B2): a migration touches no code, so stage ONLY its own
@@ -1923,6 +1938,10 @@ pub(crate) fn try_execute_finalize_plan(
             // captured pre-finalize index entry, so a failed finalize leaves the index
             // byte-identical to its pre-finalize state — including a user's pre-staged blob.
             rollback_owner_artifact_index(repo_root, &owner_index);
+            // The fourth scoped axis (M45 milestone-audit fix): restore jigc's own config-layer
+            // stage — the `.jigc/version` stamp `refresh_version_stamp` rewrote and the config
+            // layer the stage (re)added — so the stamp/config entries are never left staged.
+            rollback_config_layer_index(repo_root, &config_index);
             return Ok(Err(err));
         }
     };
@@ -2074,11 +2093,7 @@ fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> R
     refresh_version_stamp(repo_root)?;
     pathspecs.extend(existing_pathspecs(
         repo_root,
-        &[
-            ".jigc/config",
-            ".jigc/.gitignore",
-            crate::setup::VERSION_STAMP_PATH,
-        ],
+        &jigc_config_layer_pathspecs(),
     ));
     // M45 Inc 8 T2 — stage each recorded owner-artifact too (existence + non-ignore guarded;
     // see [`stage_index_honoring`]). These join the returned set — which
@@ -2271,6 +2286,114 @@ fn rollback_owner_artifact_index(repo_root: &Path, captured: &[OwnerArtifactInde
     }
 }
 
+/// The **single source of truth** for the jigc-owned config-layer pathspecs every
+/// non-migration/migration stage `git add`s into the index: the git-tracked config layer
+/// (`.jigc/config/` + `.jigc/.gitignore`, which `setup` writes but never commits, so the
+/// first finalize lands them) and the `.jigc/version` binary-provenance stamp (which
+/// [`refresh_version_stamp`] rewrites to the running build before staging). Defined once so
+/// the rollback (the **fourth axis** — [`capture_config_layer_index`] /
+/// [`rollback_config_layer_index`]) provably restores *exactly* the set the two stage
+/// functions ([`stage_migration`] / [`stage_index_honoring`]) contribute; growing the staged
+/// set here grows what the rollback covers (the set-fence discipline — `implementation/
+/// dev-workflow.md` → *a defect at a distance*).
+fn jigc_config_layer_pathspecs() -> [&'static str; 3] {
+    [
+        ".jigc/config",
+        ".jigc/.gitignore",
+        crate::setup::VERSION_STAMP_PATH,
+    ]
+}
+
+/// One config-layer index entry's pre-finalize state — the fourth rollback axis's capture
+/// (M45 milestone-audit fix, `design/finalize.md` → Rollback discipline). `path` is a real
+/// file under [`jigc_config_layer_pathspecs`] (the directory `.jigc/config` expands to its
+/// files); `(mode, blob-sha)` is what the index held before the stage overwrote/added it.
+struct ConfigLayerIndexEntry {
+    path: String,
+    mode: String,
+    sha: String,
+}
+
+/// Capture the pre-finalize index entries for the jigc config-layer pathspecs
+/// ([`jigc_config_layer_pathspecs`]) via `git ls-files --stage` — the fourth rollback axis's
+/// pre-image (M45 milestone-audit fix; the sibling the owner-artifact axis
+/// ([`capture_owner_artifact_index`]) left un-swept). Every real file under the pathspecs records
+/// its `(mode, sha)`. Called **before** the stage's `git add` refreshes `.jigc/version` /
+/// (re)stages the config layer, so a stage/commit failure restores *exactly* what was there — not
+/// jigc's refreshed overwrite, not a first-finalize's newly-added entry. The captured path set
+/// also serves as the "present pre-finalize" witness the rollback diffs against to drop
+/// newly-added entries. Absent files (e.g. an untracked `.jigc/.gitignore`, or a stamp not yet
+/// committed) simply don't appear — the rollback force-removes any such entry the stage adds.
+fn capture_config_layer_index(repo_root: &Path) -> Result<Vec<ConfigLayerIndexEntry>> {
+    let specs = jigc_config_layer_pathspecs();
+    let mut args: Vec<&str> = vec!["ls-files", "--stage", "--"];
+    args.extend(specs.iter().copied());
+    let out = git_capture(repo_root, &args)?;
+    let mut captured = Vec::new();
+    for line in out.lines() {
+        // `<mode> <sha> <stage>\t<path>` — the path follows a TAB, the metadata is
+        // whitespace-separated before it.
+        let Some((meta, path)) = line.split_once('\t') else {
+            continue;
+        };
+        let fields: Vec<&str> = meta.split_whitespace().collect();
+        if fields.len() >= 2 {
+            captured.push(ConfigLayerIndexEntry {
+                path: path.to_owned(),
+                mode: fields[0].to_owned(),
+                sha: fields[1].to_owned(),
+            });
+        }
+    }
+    Ok(captured)
+}
+
+/// Restore the jigc config-layer index to its captured pre-finalize state on a stage/commit
+/// failure — the fourth scoped rollback axis (M45 milestone-audit fix). Best-effort (the commit
+/// did not land, so a restore failure is logged, never raised — mirroring
+/// [`rollback_owner_artifact_index`] / [`rollback_promotions`]). Two moves, together returning the
+/// index (restricted to the config-layer pathspecs) to exactly its pre-finalize state:
+///
+/// - **Restore** each captured entry to its pre-finalize `(mode, sha)` via `git update-index
+///   --cacheinfo` — **without touching the worktree**, so a `.jigc/version` [`refresh_version_stamp`]
+///   rewrote on disk survives while `git show :.jigc/version` == the pre-finalize blob (the same
+///   index-only discipline the owner-artifact axis holds). A same-build refresh captured the same
+///   sha, so this is a no-op; a differing build's refreshed stage is undone.
+/// - **Drop** any entry now under the pathspecs that was **absent** pre-finalize (a first-finalize
+///   `git add` of a not-yet-tracked `.jigc/.gitignore` / stamp / config file) via `git update-index
+///   --force-remove`, returning the index to its pre-finalize "not staged" state (the worktree file
+///   stays). A user who *pre-staged* `.jigc/version` themselves captured a present entry, so it is
+///   restored, never dropped — the "restore only what jigc's stage changed, never clobber a user's
+///   pre-staged blob" discipline the third axis established.
+fn rollback_config_layer_index(repo_root: &Path, captured: &[ConfigLayerIndexEntry]) {
+    for item in captured {
+        let _ = git_run(
+            repo_root,
+            &[
+                "update-index",
+                "--cacheinfo",
+                &item.mode,
+                &item.sha,
+                &item.path,
+            ],
+        );
+    }
+    let present_before: std::collections::HashSet<&str> =
+        captured.iter().map(|item| item.path.as_str()).collect();
+    let specs = jigc_config_layer_pathspecs();
+    let mut args: Vec<&str> = vec!["ls-files", "--stage", "--"];
+    args.extend(specs.iter().copied());
+    if let Ok(out) = git_capture(repo_root, &args) {
+        for line in out.lines() {
+            if let Some((_, path)) = line.split_once('\t')
+                && !present_before.contains(path)
+            {
+                let _ = git_run(repo_root, &["update-index", "--force-remove", path]);
+            }
+        }
+    }
+}
+
 /// Refresh the committed binary-provenance stamp (`.jigc/version`) to the running build —
 /// a store-writing op keeps the stamp current (`design/storage.md` → Store provenance:
 /// setup writes it, store-writing ops refresh it). A same-build refresh writes identical
@@ -2300,11 +2423,7 @@ fn stage_index_honoring(repo_root: &Path, plan: &engine::finalize::FinalizePlan)
     refresh_version_stamp(repo_root)?;
     pathspecs.extend(existing_pathspecs(
         repo_root,
-        &[
-            ".jigc/config",
-            ".jigc/.gitignore",
-            crate::setup::VERSION_STAMP_PATH,
-        ],
+        &jigc_config_layer_pathspecs(),
     ));
     // M45 Inc 8 T2 — stage each recorded owner-artifact so the artifact lands in the SAME
     // commit as the completion-record naming it (`design/finalize.md` → 5. Stage: finalize
