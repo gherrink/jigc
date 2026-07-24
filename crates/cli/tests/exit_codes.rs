@@ -431,6 +431,231 @@ fn migration_finalize_without_approve_exits_review_hold() {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 1 — the one-way door: **a rejected write exits 1, never 3** (the exit-code
+//     table's rejected-write clause — `design/command-output-contract.md` → The
+//     exit-code taxonomy, code 3: "never a rejected write"; Decision 6 of the M45
+//     Settle). This is a PIN, not a behavior fix: every prior assert over a
+//     rejected write checked `!success` (or `≠0, ≠2`), which a silent flip from
+//     1 to 3 would satisfy. The arms below assert the **literal 1** — not
+//     `exit_code_for`, so a flip of `EXIT_ERROR` itself is caught too — and the
+//     axis is the whole `doc` write-verb family, derived from the clap tree so a
+//     new write verb reddens the sweep instead of dodging it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The `jigc doc` read verbs — the family members with no write to reject,
+/// excluded-with-reason from the rejected-write sweep (`doc show`/`schema`/`list`
+/// are the contract-pinned read surfaces; nothing they do is a write).
+const DOC_READ_VERBS: &[&str] = &["show", "schema", "list"];
+
+/// The `doc` write-verb family, derived from the built clap tree: every `jigc doc`
+/// leaf minus the declared read set. Registry-derived, never a hand list — a new
+/// `doc` verb added later must join either the reject cases or the read set.
+fn doc_write_verbs() -> Vec<String> {
+    use clap::CommandFactory;
+    let mut root = <cli::cli::Cli as CommandFactory>::command();
+    root.build();
+    let doc = root
+        .get_subcommands()
+        .find(|s| s.get_name() == "doc")
+        .expect("the clap tree carries the `doc` subtree");
+    doc.get_subcommands()
+        .filter(|s| s.get_name() != "help")
+        .map(|s| s.get_name().to_string())
+        .filter(|name| !DOC_READ_VERBS.contains(&name.as_str()))
+        .collect()
+}
+
+/// One rejected-write case: the verb it exercises, the argv of a write the binary
+/// must refuse, optional stdin, and the finding code the refusal carries (asserted
+/// so an arm cannot rot into an accidental operational error and still pass).
+struct RejectedWrite {
+    verb: &'static str,
+    args: &'static [&'static str],
+    stdin: Option<&'static [u8]>,
+    finding: &'static str,
+}
+
+/// The adr `doc author` payload whose slot prose carries a schema-reserved-depth
+/// heading — parses as a payload, then refuses on the write path.
+const AUTHOR_DEPTH_PAYLOAD: &[u8] = b"\
+title: Rejected adr
+sections:
+  - id: context
+    set:
+      context: |
+        <<## a heading at reserved depth>>
+";
+
+/// One genuinely refused write per `doc` write verb, over one minted `single-task`
+/// task (`add-a-widget`): the gated create, the four `write.*` reject classes, and
+/// the batch verb refusing through the same write path.
+const REJECTED_WRITES: &[RejectedWrite] = &[
+    RejectedWrite {
+        verb: "create",
+        args: &[
+            "doc",
+            "create",
+            "spec",
+            "--title",
+            "A spec",
+            "--task",
+            "add-a-widget",
+        ],
+        stdin: None,
+        finding: "create.gate-blocked",
+    },
+    RejectedWrite {
+        verb: "add-item",
+        args: &[
+            "doc",
+            "add-item",
+            "commit:add-a-widget#summary",
+            "--title",
+            "Nope",
+            "--task",
+            "add-a-widget",
+        ],
+        stdin: None,
+        finding: "write.wrong-shape",
+    },
+    RejectedWrite {
+        verb: "remove-item",
+        args: &[
+            "doc",
+            "remove-item",
+            "commit:add-a-widget#summary/nope",
+            "--task",
+            "add-a-widget",
+        ],
+        stdin: None,
+        finding: "write.not-present",
+    },
+    RejectedWrite {
+        verb: "retitle-item",
+        args: &[
+            "doc",
+            "retitle-item",
+            "commit:add-a-widget#summary/nope",
+            "--title",
+            "New",
+            "--task",
+            "add-a-widget",
+        ],
+        stdin: None,
+        finding: "write.wrong-shape",
+    },
+    RejectedWrite {
+        verb: "set-field",
+        args: &[
+            "doc",
+            "set-field",
+            "commit:add-a-widget#type",
+            "--value",
+            "not-a-type",
+            "--task",
+            "add-a-widget",
+        ],
+        stdin: None,
+        finding: "write.malformed-value",
+    },
+    RejectedWrite {
+        verb: "set-slot",
+        args: &[
+            "doc",
+            "set-slot",
+            "commit:add-a-widget#summary",
+            "--from-file",
+            "-",
+            "--task",
+            "add-a-widget",
+        ],
+        stdin: Some(b"## a heading at reserved depth\n"),
+        finding: "write.slot-heading-depth",
+    },
+    RejectedWrite {
+        verb: "author",
+        args: &[
+            "doc",
+            "author",
+            "adr",
+            "--from-file",
+            "-",
+            "--task",
+            "add-a-widget",
+        ],
+        stdin: Some(AUTHOR_DEPTH_PAYLOAD),
+        finding: "write.slot-heading-depth",
+    },
+];
+
+#[test]
+fn rejected_writes_exit_error_exactly_never_task_gate() {
+    // The pin's anchor: the one-way door is the number 1 itself, so the table
+    // constant is asserted as the **literal** — a flip of `EXIT_ERROR` (and with
+    // it every disciplined `Outcome { code: EXIT_ERROR }` site) to 3 fails here.
+    assert_eq!(
+        cli::task::EXIT_ERROR,
+        1,
+        "the one-way door: a rejected write exits 1, never 3 — `EXIT_ERROR` is \
+         pinned to the literal (design/command-output-contract.md → The exit-code \
+         taxonomy)",
+    );
+    assert_eq!(
+        exit_code_for(ExitClass::Error),
+        1,
+        "the table row for ExitClass::Error is the same literal (statement == constant)",
+    );
+
+    // The axis fence: the case list covers exactly the clap-derived write family.
+    let mut family = doc_write_verbs();
+    family.sort_unstable();
+    let mut swept: Vec<String> = REJECTED_WRITES.iter().map(|c| c.verb.to_string()).collect();
+    swept.sort_unstable();
+    assert_eq!(
+        swept, family,
+        "the rejected-write sweep covers exactly the `doc` write-verb family \
+         (clap tree minus the declared read verbs {DOC_READ_VERBS:?}) — a new \
+         write verb must join the sweep or the read set",
+    );
+
+    // One repo, one minted task; every arm refuses against the same working area.
+    let repo = TempDir::new("reject");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "single-task", "add a widget"],
+            None,
+        ),
+        "jigc start",
+    );
+
+    for case in REJECTED_WRITES {
+        let out = jigc(repo.path(), home.path(), case.args, case.stdin);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        // The right reason: each arm is a genuine refused write (the named
+        // finding), never an accidental operational error that also exits 1.
+        assert!(
+            stderr.contains(case.finding),
+            "`doc {}` must refuse as `{}`; stderr:\n{stderr}",
+            case.verb,
+            case.finding,
+        );
+        // The one-way door, asserted as the literal — `assert_refused`-style
+        // `!success` (or `≠0, ≠2`) would accept a silent flip to 3; this cannot.
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "a rejected `doc {}` write must exit 1 exactly — never 3, the \
+             task-gate code (the exit-code table's one-way door); stderr:\n{stderr}",
+            case.verb,
+        );
+    }
+}
+
 /// Fill every author-required field/slot of `task`'s provisioned commit doc so a
 /// finalize over it validates clean (the review gate sits behind the validation gate).
 fn make_commit_conformant(repo: &Path, home: &Path, task: &str) {

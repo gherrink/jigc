@@ -1405,8 +1405,10 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
             }
             finding_codes.push(finding.code.clone());
         }
+        // A blocked join is a reject that is not a task-scope gate — the taxonomy
+        // constant, never a bare literal (the exit-code table's one origin).
         Outcome {
-            code: 1,
+            code: crate::task::EXIT_ERROR,
             finding_codes,
             error_code: None,
         }
