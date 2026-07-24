@@ -426,13 +426,24 @@ fn assert_item_field(
                     &format!("set-field to the string id-from leaf `{id}`"),
                 );
                 // Exercise the advertised retitle-item address: it resolves, and the
-                // item stays addressable at its frozen id.
+                // item stays addressable at its frozen id. The probe title is
+                // multi-word for every string id-from — except the commit trailers
+                // `key`, whose write doors enforce the git-trailer token shape (no
+                // internal whitespace or colon; the confidence-audit wave —
+                // sibling-hunt finding 6), so its probe is a well-shaped hyphenated
+                // key. The discriminator mirrors the rule's own
+                // (`doctype == "commit" && id-from == "key"`).
+                let new_title = if item_addr.starts_with("commit:") && id == "key" {
+                    "Retitled-Round-Trip"
+                } else {
+                    "Retitled Round Trip"
+                };
                 corpus.jigc_ok(&[
                     "doc",
                     "retitle-item",
                     item_addr,
                     "--title",
-                    "Retitled Round Trip",
+                    new_title,
                     "--task",
                     task,
                 ]);

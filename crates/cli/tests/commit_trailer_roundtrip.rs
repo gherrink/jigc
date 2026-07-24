@@ -17,6 +17,31 @@
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
 //! repo is a real `git init`, and a self-cleaning `TempDir` keeps the test off the repo.
+//!
+//! **The title-write door axis** (the confidence-audit wave — sibling-hunt finding 6):
+//! the trailer key-shape rule is scoped `doctype == "commit" && id-from == "key"`, and
+//! `commit` is the only trailer-carrying doctype, so the axis is the write doors that
+//! can set an item title on a `commit` trailers item. Each member's disposition:
+//!
+//! - `jigc doc add-item` — **covered**: wired via `id_from_enum_block`
+//!   (`doc.rs`), tested here (`a_whitespace_trailer_key_is_rejected_at_add_item`).
+//! - `jigc doc author` — **covered by the same door**: its lowered `add-item` leaves
+//!   run through `apply_leaf`, which calls the same `id_from_enum_block`.
+//! - `jigc doc retitle-item` — **covered**: the sibling-hunt's finding-6 door,
+//!   unguarded as shipped by M45 inc-4; guarded + tested here
+//!   (`a_malformed_trailer_key_is_rejected_at_retitle_item`).
+//! - `jigc doc set-field <item>/key` — **already-safe**: the set-field id-from guard
+//!   refuses every id-from leaf write and routes a string id-from to `retitle-item`
+//!   — which is exactly why the retitle door carrying the rule is load-bearing.
+//! - `jigc doc set-slot` — **excluded**: slots are prose, an item heading is not
+//!   slot-addressable, and the item-region validate-after rejects reserved-depth
+//!   headings smuggled into slot prose (the M45 item-slot ceiling sweep).
+//! - migration transforms / `migrate-corpus` — **excluded**: `commit` is transient
+//!   (its sink is the git message, never a persisted corpus file), so no corpus
+//!   migration path writes a trailer heading.
+//! - out-of-band file edit — **excluded by design** (the honest boundary): caught
+//!   origin-independently at the task gate, tested here
+//!   (`a_whitespace_trailer_key_is_blocked_at_the_task_gate`).
 
 use std::fs;
 use std::io::Write;
@@ -440,5 +465,94 @@ fn a_whitespace_trailer_key_is_blocked_at_the_task_gate() {
     assert!(
         rendered.contains("schema-conformance.field-value-conformant"),
         "the task-gate block must name field-value-conformant; got:\n{rendered}",
+    );
+}
+
+/// The **commit-trailer key-shape rule at the retitle-item write door** (the
+/// confidence-audit wave — sibling-hunt finding 6): as shipped by M45 inc-4 the rule
+/// guarded `add-item` and the task gate but not `jigc doc retitle-item`, so a
+/// well-shaped trailer could be retitled to `BREAKING CHANGE` at write time and the
+/// user only found out later at the gate (bounded — no silent corruption, worse
+/// route). The retitle door must refuse both trailer-token violations (internal
+/// whitespace · colon) with the same shared
+/// `schema-conformance.field-value-conformant` code the add-item door emits, while a
+/// well-shaped retitle still passes (no over-rejection). Driven over the real binary.
+#[test]
+fn a_malformed_trailer_key_is_rejected_at_retitle_item() {
+    let (repo, home) = started_repo("guard the retitle door");
+    let task = "guard-the-retitle-door";
+
+    // Mint a well-shaped trailer through the wired door; the emitted item address is
+    // captured and fed verbatim (the emitted bytes are the contract).
+    let add = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "add-item",
+            &format!("commit:{task}#trailers"),
+            "--title",
+            "Refs",
+        ],
+        None,
+    );
+    assert!(
+        add.status.success(),
+        "`add-item …#trailers --title Refs` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let item_addr = String::from_utf8(add.stdout)
+        .expect("utf-8 stdout")
+        .trim_end_matches('\n')
+        .to_owned();
+    assert!(
+        item_addr.starts_with(&format!("commit:{task}#trailers/")),
+        "`add-item` emits the minted trailer item address; got {item_addr:?}"
+    );
+
+    // Both trailer-token violation arms, refused at the retitle door with the shared
+    // finding code — the same refusal shape the add-item door carries.
+    for bad in ["BREAKING CHANGE", "Co:lon"] {
+        let blocked = run_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "retitle-item",
+                &item_addr,
+                "--title",
+                bad,
+                "--format",
+                "json",
+            ],
+            None,
+        );
+        assert!(
+            !blocked.status.success(),
+            "retitling a commit trailer to {bad:?} must block at the retitle-item verb \
+             (non-zero exit); stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&blocked.stdout),
+            String::from_utf8_lossy(&blocked.stderr),
+        );
+        let stderr = String::from_utf8_lossy(&blocked.stderr);
+        let report: serde_json::Value = serde_json::from_str(stderr.trim())
+            .unwrap_or_else(|e| panic!("stderr is JSON: {e}; got:\n{stderr}"));
+        assert_eq!(
+            report["findings"][0]["code"], "schema-conformance.field-value-conformant",
+            "the retitle block carries the shared field-value-conformant code (the \
+             wired door's code, no new check minted); got:\n{stderr}",
+        );
+    }
+
+    // A well-shaped retitle still passes — the rule does not over-reject at the new
+    // door (the anchor stays frozen; only the heading text changes).
+    let ok = run_doc(
+        repo.path(),
+        home.path(),
+        &["retitle-item", &item_addr, "--title", "Fixes"],
+        None,
+    );
+    assert!(
+        ok.status.success(),
+        "retitling a commit trailer to the well-shaped `Fixes` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&ok.stderr)
     );
 }

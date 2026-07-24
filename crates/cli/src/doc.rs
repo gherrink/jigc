@@ -1222,17 +1222,18 @@ fn id_from_enum_block(
             ),
             engine::slug::slugify(title),
         ),
-        engine::validate::IdFromViolation::TrailerKeyShape(reason) => (
-            format!(
-                "add-item rejected: the trailer key {reason} (id-from field `{}`)",
-                repeatable.id_from
-            ),
-            engine::finding::Route::human(
-                "re-run `add-item` with a trailer key that is a single git-trailer token \
-                 — no whitespace or colon (e.g. `Co-Authored-By`)",
-            ),
-            engine::slug::slugify(title),
-        ),
+        engine::validate::IdFromViolation::TrailerKeyShape(reason) => {
+            return Some(trailer_key_refusal(
+                "add-item",
+                reason,
+                &repeatable.id_from,
+                format!(
+                    "{doc}#{prefix}/{}/{}",
+                    engine::slug::slugify(title),
+                    repeatable.id_from
+                ),
+            ));
+        }
         engine::validate::IdFromViolation::NotEnumMember(slug) => (
             format!(
                 "add-item rejected: `{slug}` is not an enum member of id-from field `{}`",
@@ -1256,6 +1257,29 @@ fn id_from_enum_block(
         )),
         Some(route),
     ))
+}
+
+/// The commit-trailer key-shape refusal both title-writing doors compose — `add-item`
+/// ([`id_from_enum_block`]) and `retitle-item` ([`retitle_id_from_refusal`]) — from the
+/// shared adjudicator's [`engine::validate::IdFromViolation::TrailerKeyShape`] arm. One
+/// verb-parameterized constructor (message + route + the shared
+/// [`engine::validate::ID_FROM_ENUM_CODE`]) so the two doors' refusal shape cannot
+/// drift (the confidence-audit wave — sibling-hunt finding 6: the retitle door shipped
+/// without the rule, so a well-shaped trailer key could be retitled to `BREAKING
+/// CHANGE` at write time and only blocked later at the task gate). `address` is the
+/// full-URI id-from leaf address the door targets — the mint-time slug form at
+/// add-item, the frozen item path at retitle.
+fn trailer_key_refusal(verb: &str, reason: &str, id_from: &str, address: String) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        engine::validate::ID_FROM_ENUM_CODE,
+        format!("{verb} rejected: the trailer key {reason} (id-from field `{id_from}`)"),
+        Some(Location::addressed(address, 1, 1)),
+        Some(engine::finding::Route::human(format!(
+            "re-run `{verb}` with a trailer key that is a single git-trailer token \
+             — no whitespace or colon (e.g. `Co-Authored-By`)"
+        ))),
+    )
 }
 
 /// The resolved destination of an `add-item` address: a **top-level** section
@@ -1428,11 +1452,14 @@ fn remove_item_target(address: &Address) -> Option<RemoveItemTarget> {
 /// [`remove_item_target`] resolves — and hands the section-qualified chain to the
 /// engine [`engine::write::retitle_item`] heading-line splice.
 ///
-/// The **unconditional enum-id-from refusal** runs first ([`retitle_enum_refusal`]):
-/// an item whose id derives from an enum field has its heading AS the enum member and
-/// its anchor EQUAL to it, so any member change is an identity change, not a retitle
-/// — refused with a blocking finding routing to `remove-item` + `add-item` under the
-/// target category (the Settle-decided route), before any bytes are read or moved.
+/// The **id-from refusals** run first ([`retitle_id_from_refusal`]): an item whose id
+/// derives from an enum field has its heading AS the enum member and its anchor EQUAL
+/// to it, so any member change is an identity change, not a retitle — refused with a
+/// blocking finding routing to `remove-item` + `add-item` under the target category
+/// (the Settle-decided route); and a `commit` trailer item's new title must be a
+/// well-shaped git-trailer token (the same shared adjudicator the `add-item` door
+/// runs — the confidence-audit wave, sibling-hunt finding 6). Both fire before any
+/// bytes are read or moved.
 fn run_retitle_item(
     cwd: &Path,
     addr: &str,
@@ -1480,7 +1507,7 @@ fn run_retitle_item(
         )));
     }
 
-    if let Some(finding) = retitle_enum_refusal(&schema, &address, &target, addr, title) {
+    if let Some(finding) = retitle_id_from_refusal(&schema, &address, &target, addr, title) {
         return Err(DocFailure::block(finding));
     }
 
@@ -1528,18 +1555,30 @@ fn run_retitle_item(
     Ok(())
 }
 
-/// The unconditional enum-id-from refusal for `retitle-item` (`design/write-commands.md`
-/// → `jigc doc retitle-item`; DECISIONS.md 2026-07-10 → the REFUSE + remove/add settled
-/// fork). Resolves the repeatable the addressed item lives in — the section's own for a
-/// top-level item, the named nested one (via the engine's
+/// The id-from refusals for `retitle-item`, two arms over one resolved repeatable
+/// (`design/write-commands.md` → `jigc doc retitle-item`; DECISIONS.md 2026-07-10 →
+/// the REFUSE + remove/add settled fork; the confidence-audit wave — sibling-hunt
+/// finding 6). Resolves the repeatable the addressed item lives in — the section's own
+/// for a top-level item, the named nested one (via the engine's
 /// [`engine::write::nested_repeatable`], the [`id_from_enum_block`] navigation) for a
-/// chain — and refuses when its `id-from` field is an **enum**, *regardless of the new
-/// title* (unlike `add-item`'s membership test): the heading IS the member and the
-/// anchor equals it, so a member-to-member change is an identity change, not a retitle.
-/// The route names `doc remove-item` on the item + `doc add-item` under the target
-/// category, moving the prose in the same motion. A non-enum id-from (arch-doc's
-/// `title`, changelog's release `title`) yields `None` — the inert path.
-fn retitle_enum_refusal(
+/// chain — then:
+///
+/// 1. The **unconditional enum-id-from refusal**: when the `id-from` field is an
+///    **enum**, refuse *regardless of the new title* (unlike `add-item`'s membership
+///    test) — the heading IS the member and the anchor equals it, so a
+///    member-to-member change is an identity change, not a retitle. The route names
+///    `doc remove-item` on the item + `doc add-item` under the target category,
+///    moving the prose in the same motion.
+/// 2. The **commit-trailer key-shape refusal** (non-enum arm): the same shared
+///    [`engine::validate::id_from_enum_violation`] adjudicator the `add-item` door
+///    runs, over the engine-trimmed title — a `commit` trailer key bearing internal
+///    whitespace or a colon would break the `%(trailers)` block, so it is refused at
+///    the point of the mistake with the wired door's refusal shape
+///    ([`trailer_key_refusal`]), not deferred to the task gate.
+///
+/// A non-enum, non-trailer-violating id-from (arch-doc's `title`, changelog's release
+/// `title`) yields `None` — the inert path.
+fn retitle_id_from_refusal(
     schema: &Schema,
     address: &Address,
     target: &RemoveItemTarget,
@@ -1581,8 +1620,27 @@ fn retitle_enum_refusal(
     let field = repeatable.block.iter().find_map(|leaf| match leaf {
         engine::schema::Leaf::Field(f) if f.id == repeatable.id_from => Some(f),
         _ => None,
-    })?;
-    if field.ty != FieldType::Enum {
+    });
+    if !field.is_some_and(|f| f.ty == FieldType::Enum) {
+        // The non-enum arm — the commit-trailer key-shape refusal (sibling-hunt
+        // finding 6): run the SAME shared adjudicator the add-item door runs
+        // ([`id_from_enum_block`]), over the engine-trimmed title (the engine
+        // [`engine::write::retitle_item`] trims before splicing, so edge whitespace
+        // never lands — but internal whitespace/colon would, and its `check_value`
+        // on a plain string key passes them). Only the trailer arm blocks here:
+        // `Shape` on a trimmed title (empty / embedded control char) is the engine's
+        // own reject contract, and `NotEnumMember` is unreachable (an enum id-from
+        // is refused below, title-independent).
+        if let Some(engine::validate::IdFromViolation::TrailerKeyShape(reason)) =
+            engine::validate::id_from_enum_violation(&repeatable, title.trim(), &schema.ty)
+        {
+            return Some(trailer_key_refusal(
+                "retitle-item",
+                reason,
+                &repeatable.id_from,
+                format!("{doc}#{item_path}/{}", repeatable.id_from),
+            ));
+        }
         return None;
     }
     Some(Finding::graded(
