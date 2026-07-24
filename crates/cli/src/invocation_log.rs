@@ -74,7 +74,7 @@ impl Outcome {
     /// A clean run — exit 0, no findings.
     pub fn success() -> Self {
         Self {
-            code: 0,
+            code: crate::task::EXIT_SUCCESS,
             finding_codes: Vec::new(),
             error_code: None,
         }
@@ -84,7 +84,7 @@ impl Outcome {
     /// `anyhow` bail: "no such task", a locator error, …).
     pub fn failure() -> Self {
         Self {
-            code: 1,
+            code: crate::task::EXIT_ERROR,
             finding_codes: Vec::new(),
             error_code: None,
         }
@@ -100,7 +100,7 @@ impl Outcome {
              so the collision test covers it)",
         );
         Self {
-            code: 1,
+            code: crate::task::EXIT_ERROR,
             finding_codes: Vec::new(),
             error_code: Some(error_code),
         }

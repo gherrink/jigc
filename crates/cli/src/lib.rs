@@ -7,9 +7,9 @@
 //! The whole module tree lives here rather than in `main.rs` so `tests/*.rs` can
 //! reach the **enumeration seam** ([pinning.md](../../../implementation/pinning.md)
 //! §1/§2): the pack registry ([`pack`]) for the workflow/doctype sweeps, the clap
-//! tree ([`cli`]) for the `CommandFactory` verb sweep, and the exit-code constants
-//! ([`task`]) the taxonomy suite asserts against. `main.rs` keeps only `fn main`
-//! and the fd-level output tee, reaching everything through `cli::…`.
+//! tree ([`cli`]) for the `CommandFactory` verb sweep, and the exit-code taxonomy
+//! table ([`task::EXIT_CODES`]) the taxonomy suite asserts against. `main.rs` keeps
+//! only `fn main` and the fd-level output tee, reaching everything through `cli::…`.
 
 // `adapter` ships the embedded profiles + the typed profile model/loader and the
 // host-file injectors; `setup` orchestrates them into the `jigc setup` install.

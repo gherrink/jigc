@@ -41,7 +41,12 @@ fn main() -> ExitCode {
         Err(err) => {
             // Reproduce clap's own behavior: `--help`/`--version` print to stdout and exit 0
             // (`use_stderr()` is false); a genuine usage error prints to stderr and exits 2.
-            let code = if err.use_stderr() { 2 } else { 0 };
+            // The codes read from the taxonomy table, not hand literals (T1).
+            let code = if err.use_stderr() {
+                cli::task::EXIT_USAGE
+            } else {
+                cli::task::EXIT_SUCCESS
+            };
             let _ = err.print();
             // The M43 law-2 sibling tip: an unknown subcommand an agent plausibly
             // guessed gets an honest tip naming what the real sibling *does* — never

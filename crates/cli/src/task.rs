@@ -50,6 +50,57 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+/// The five outcome classes of the exit-code taxonomy
+/// (`design/command-output-contract.md` → The exit-code taxonomy). The stable identity
+/// of each [`EXIT_CODES`] row, so a consumer selects a code by *what it means* — never a
+/// hand literal (the AGENT.md one-liner render below; the exit-code suite in `tests/`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitClass {
+    /// The run did what was asked. A store-scope `jigc validate` carrying content
+    /// findings (report-only) and clap's `--help`/`--version` also land here.
+    Success,
+    /// Operational error, and every reject that is not a task-scope gate: an absent
+    /// task id, a git/IO failure, a blocked write (`write.*`), a hook-rejected finalize,
+    /// and the three store-scope exit flips.
+    Error,
+    /// Usage error — clap's own convention, emitted before jigc reads `--format`.
+    Usage,
+    /// Blocking findings at a task-scope gate: `jigc task validate` / `task finalize` /
+    /// `milestone finalize` only — never the store sweep, never a rejected write.
+    TaskGateBlocked,
+    /// Migration review hold — a migration `finalize` without `--approve`.
+    MigrationReview,
+}
+
+/// One row of the exit-code taxonomy — the single code-side origin of the `0/1/2/3/4`
+/// vocabulary the AGENT.md one-liner and the exit-code suite both assert against
+/// (statement == constant). Homed in `task.rs` because it is the crate's exit-code home
+/// (the two named codes 3/4 live here) and it is reachable from `tests/*.rs`
+/// (`implementation/pinning.md` → §2, the exit-code taxonomy suite).
+pub struct ExitCode {
+    /// The outcome class this row identifies.
+    pub class: ExitClass,
+    /// The numeric process exit code.
+    pub code: u8,
+    /// What the code means — the outcome class in words.
+    pub meaning: &'static str,
+    /// The task-scope-vs-store-scope qualifier that disambiguates it.
+    pub scope: &'static str,
+    /// The short label the AGENT.md bootstrap one-liner names this code by, or `None`
+    /// for a code that line does not enumerate (0 — success is not an exit caution).
+    pub bootstrap_label: Option<&'static str>,
+}
+
+/// Exit 0 — a clean run.
+pub const EXIT_SUCCESS: u8 = 0;
+
+/// Exit 1 — an operational error, and every reject that is not a task-scope gate.
+pub const EXIT_ERROR: u8 = 1;
+
+/// Exit 2 — a clap usage error (clap's own convention, emitted before jigc reads
+/// `--format`).
+pub const EXIT_USAGE: u8 = 2;
+
 /// The validation-blocked exit code: a blocking-`ValidationReport` /
 /// `plan_finalize`-findings outcome — distinct from an operational error (1) and
 /// clap's usage error (2), so a harness-side tally can discriminate outcomes from
@@ -66,6 +117,79 @@ pub const EXIT_VALIDATION_BLOCKED: u8 = 3;
 /// discriminate a pending review from a real block by the exit code alone
 /// (`design/measurement.md` → exit-code hygiene).
 pub const EXIT_REVIEW_PENDING: u8 = 4;
+
+/// The exit-code taxonomy table — one row per outcome class, the design of record
+/// (`design/command-output-contract.md` → The exit-code taxonomy) rendered as a
+/// code-side constant. It folds in the two named codes above (3/4) and the three
+/// bare-literal codes (0/1/2) the dispatch sites used to hand-write, giving the
+/// vocabulary a single origin.
+pub const EXIT_CODES: &[ExitCode] = &[
+    ExitCode {
+        class: ExitClass::Success,
+        code: EXIT_SUCCESS,
+        meaning: "the run did what was asked",
+        scope: "includes a store-scope `jigc validate` carrying content findings \
+                (report-only) and clap's `--help`/`--version`",
+        bootstrap_label: None,
+    },
+    ExitCode {
+        class: ExitClass::Error,
+        code: EXIT_ERROR,
+        meaning: "operational error, and every reject that is not a task-scope gate",
+        scope: "an absent task id, a git/IO failure, a blocked write, a hook-rejected \
+                finalize, and the three store-scope exit flips",
+        bootstrap_label: Some("error"),
+    },
+    ExitCode {
+        class: ExitClass::Usage,
+        code: EXIT_USAGE,
+        meaning: "usage error",
+        scope: "clap's own convention, emitted before jigc reads `--format`",
+        bootstrap_label: Some("usage"),
+    },
+    ExitCode {
+        class: ExitClass::TaskGateBlocked,
+        code: EXIT_VALIDATION_BLOCKED,
+        meaning: "blocking findings at a task-scope gate",
+        scope: "the transaction gates only — `task validate`/`task finalize`/`milestone \
+                finalize`; never the store sweep, never a rejected write",
+        bootstrap_label: Some("blocking findings at a task-scope gate"),
+    },
+    ExitCode {
+        class: ExitClass::MigrationReview,
+        code: EXIT_REVIEW_PENDING,
+        meaning: "migration review hold",
+        scope: "a migration `finalize` without `--approve`: the fidelity diff rendered, \
+                nothing committed",
+        bootstrap_label: Some("migration review hold"),
+    },
+];
+
+/// The exit code for an outcome `class`, read from [`EXIT_CODES`] — never a hand
+/// literal. The exit-code suite and any consumer assert against this, not a `Some(3)`.
+pub fn exit_code_for(class: ExitClass) -> u8 {
+    EXIT_CODES
+        .iter()
+        .find(|row| row.class == class)
+        .expect("every ExitClass has a taxonomy row")
+        .code
+}
+
+/// Render the exit-code taxonomy as the AGENT.md bootstrap one-liner — each code the
+/// line names, `<code> <label>`, joined by ` · ` — seam-generated from [`EXIT_CODES`]
+/// so the stated line cannot drift from the table (statement == constant, the M43
+/// corollary; the `bootstrap` context selects which rows the line names, so code 0 is
+/// omitted). Asserted against `BOOTSTRAP_OUTPUT_CONTRACT` in `adapter.rs`.
+pub fn bootstrap_taxonomy_line() -> String {
+    EXIT_CODES
+        .iter()
+        .filter_map(|row| {
+            row.bootstrap_label
+                .map(|label| format!("{} {label}", row.code))
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
 
 /// The `jigc task <verb>` subcommand tree. Each verb names a task by its `<id>`.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]

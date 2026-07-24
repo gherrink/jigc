@@ -1060,18 +1060,26 @@ const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the 
 /// The output contract stated beneath the framing (M36, narrowed 2026-07-06 —
 /// RC greenfield trial A4): the behavioral core — stop on non-zero, follow the
 /// output, never retry blindly — plus, since the 2026-07-17
-/// surface-comprehension review (B4), the **one-line exit-code taxonomy**:
-/// 1 error · 2 usage · 3 blocking findings
+/// surface-comprehension review (B4), the **one-line exit-code taxonomy**,
+/// amended 2026-07-23 (M45 Settle, Decision 6):
+/// 1 error · 2 usage · 3 blocking findings at a task-scope gate
 /// ([`crate::task::EXIT_VALIDATION_BLOCKED`]) · 4 migration review hold
-/// ([`crate::task::EXIT_REVIEW_PENDING`]). The 2026-07-06 narrowing retired the
-/// per-code *meanings enumeration* (each outcome's meaning rides in the
+/// ([`crate::task::EXIT_REVIEW_PENDING`]). The added qualifier *at a task-scope
+/// gate* — plus the store-scope-blind clause that follows it — repairs a claim
+/// that was true of the gate that minted exit 3 and false as a general one: a
+/// store-scope `jigc validate` reports blocking content findings at **exit 0**,
+/// and a rejected write blocks at **exit 1**. The 2026-07-06 narrowing retired
+/// the per-code *meanings enumeration* (each outcome's meaning rides in the
 /// command's own output — blocking findings carry `route:` lines, route-less
 /// advisories say "no action needed" — a meanings table here was content that
-/// rots), and that stands; what the review reinstated is the stable numeric
-/// key alone, which both independent readers otherwise had to reverse-engineer
-/// from observed behavior. The four numbers are frozen CLI constants, so the
-/// line cannot rot the way the meanings table could.
-const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings · 4 migration review hold.";
+/// rots), and that stands; what the review reinstated is the stable numeric key
+/// alone, which both independent readers otherwise had to reverse-engineer from
+/// observed behavior. The taxonomy portion is **seam-generated** — asserted ==
+/// [`crate::task::bootstrap_taxonomy_line`] by [`bootstrap_line_is_the_table`],
+/// so the line cannot drift from the [`crate::task::EXIT_CODES`] table
+/// (statement == constant, replacing the earlier "frozen CLI constants" claim
+/// that was aspirational when only 3/4 were named).
+const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings.";
 
 /// The machine-output contract stated as the fifth paragraph (M44 Inc 4,
 /// change 1 — RC rc.7 discoverability rerun, 2026-07-20): the preload tier now
@@ -1430,7 +1438,7 @@ mod tests {
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
-        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings · 4 migration review hold.
+        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings.
 
         Every verb speaks `--format json` on a successful or validation outcome: pass it and parse the structured result — do not scrape the human-readable lines (a usage error rejected before parsing still prints plain text, not JSON). The composed producers — `jigc start`, `jigc workflow`, `jigc migrate` — return the minted task id at `.task`; read it there, never from the human line.
         "###);
@@ -1459,8 +1467,17 @@ mod tests {
             "the bootstrap body must carry the what-jigc-is framing; got:\n{body}",
         );
         assert!(
-            body.contains("1 error · 2 usage · 3 blocking findings · 4 migration review hold"),
-            "the bootstrap body states the one-line exit-code taxonomy (B4); got:\n{body}",
+            body.contains(
+                "1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold"
+            ),
+            "the bootstrap body states the one-line exit-code taxonomy, amended with the \
+             task-scope qualifier (M45 Decision 6); got:\n{body}",
+        );
+        assert!(
+            body.contains("store-scope `jigc validate` is report-only")
+                && body.contains("exits 0 even when it surfaces findings"),
+            "the bootstrap body carries the store-scope-blind clause the qualifier rests \
+             on (M45 Decision 6); got:\n{body}",
         );
         // (M44 Inc 4, change 1) The machine-output paragraph: every verb speaks
         // `--format json` on a successful/validation outcome (the clap-error
@@ -1484,6 +1501,28 @@ mod tests {
         assert!(
             body.contains("never") && body.contains("human line"),
             "the machine-output paragraph forbids scraping the human line; got:\n{body}",
+        );
+    }
+
+    /// Statement == constant (M45 Decision 6, the M43 corollary): the exit-code
+    /// taxonomy stated in the managed bootstrap body is the **rendering of the
+    /// [`crate::task::EXIT_CODES`] table**, context-parameterized for the
+    /// bootstrap surface — so a code, a label, or the whole line cannot drift
+    /// from the table a driver actually sees. Driven on the emitted body itself
+    /// (the bytes `setup` writes into `.jigc/AGENT.md`), not the raw const.
+    #[test]
+    fn bootstrap_line_is_the_table() {
+        let body = bootstrap_file();
+        let line = crate::task::bootstrap_taxonomy_line();
+        assert_eq!(
+            line,
+            "1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold",
+            "the table renders the amended taxonomy line (M45 Decision 6)",
+        );
+        assert!(
+            body.contains(&line),
+            "the bootstrap body's exit-code line must be the EXIT_CODES rendering \
+             (statement == constant); rendered:\n{line}\nbody:\n{body}",
         );
     }
 
