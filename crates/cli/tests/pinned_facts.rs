@@ -95,6 +95,14 @@
 //!   the Settle) against the trial artifact — charter decisions, not facts a repro
 //!   block can hold.
 
+//! ### Back-sweep additions (the confidence-audit wave, 2026-07-24)
+//!
+//! The M39–M44 back-sweep triage (its item c2) added [`finding_emission_order`] —
+//! provenance the **M41** completion audit's cross-order determinism witness, not
+//! this ledger's RC-alpha3 rows; its sibling cross-order repro blocks live
+//! beside their suites (`corpus_migration.rs` — the M40 seed-order witness;
+//! `carryover_gate.rs` — the M43 staging-order witness), each citing its audit run.
+
 mod support;
 
 #[path = "pinned_facts/address_grammar.rs"]
@@ -103,5 +111,7 @@ mod address_grammar;
 mod file_state_transactional;
 #[path = "pinned_facts/finalize_json.rs"]
 mod finalize_json;
+#[path = "pinned_facts/finding_emission_order.rs"]
+mod finding_emission_order;
 #[path = "pinned_facts/form_vision_grounding.rs"]
 mod form_vision_grounding;

@@ -1206,3 +1206,117 @@ fn migrate_corpus_is_a_no_op_on_an_already_current_corpus() {
         "an already-current ADR is left byte-identical by the migration",
     );
 }
+
+// ─────────────── the cross-order repro block (the confidence-audit back-sweep) ───────────────
+
+/// **Repro block (pinning.md §3) — the M40 e2e seed-order witness, made standing**
+/// (the confidence-audit back-sweep, triage item c2). The M40 completion audit drove
+/// this one-off: `completions/artifacts/M40/VERDICT.md` → *Milestone e2e*: "the v0
+/// corpus stamp migration byte-identical across seed orders". Standing coverage
+/// asserted the migration in a **single** seed order only; nothing re-drove it under
+/// two, so a refactor swapping the sorted store walk (`committed_slugs` /
+/// `PreparedDoc` path-sort / the sorted report) for raw `read_dir` iteration would
+/// ship driver-visible nondeterminism with every existing test green.
+///
+/// ```yaml
+/// claim: "the v0 stamp migration lands byte-identical trees across divergent seed orders"
+/// verdict: CONFIRMED (M40 e2e audit — one-off; standing as of this test)
+/// setup:
+///   - two fresh repos; the SAME three unstamped v0 ADRs committed one-per-commit,
+///     in divergent seed orders (alpha,beta,gamma vs gamma,alpha,beta)
+/// repro:
+///   - ["jigc", "migrate-corpus"]
+/// expect:
+///   tree: HEAD^{tree} byte-identical across the two repos
+///   message: the landed commit message byte-identical
+///   report: stdout byte-identical modulo the commit hash (parent histories differ)
+/// pinned-by: corpus_migration::stamp_migration_is_byte_identical_across_divergent_seed_orders
+/// ```
+///
+/// Verified catchable: locally muting the enumeration/report sorts
+/// (`committed_slugs`' `slugs.sort()` + the `prepared`/`report.migrated` sorts) lets
+/// tmpfs creation order through and reddens the masked-report assertion
+/// (mutate → catch → restore; never committed).
+#[test]
+fn stamp_migration_is_byte_identical_across_divergent_seed_orders() {
+    /// Seed the same v0 corpus in `order`, migrate it, and return
+    /// `(tree-hash, commit-message, masked stdout report)`.
+    fn seed_and_migrate(order: &[(&str, &str)]) -> (String, String, String) {
+        let repo = TempDir::new("seed-order");
+        let home = TempDir::new("home");
+        setup_repo(repo.path(), home.path());
+        for (slug, title) in order {
+            commit_adr(repo.path(), slug, title, None);
+        }
+
+        let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+        assert_ok(&migrate, "`jigc migrate-corpus` (seed-order arm)");
+        let report = String::from_utf8(migrate.stdout).expect("utf-8 report");
+
+        // Non-vacuity: all three docs were genuinely migrated and stamped on disk.
+        assert_eq!(
+            count(&report, "migrated   docs/decisions/"),
+            3,
+            "the report names all three migrated ADRs; got:\n{report}",
+        );
+        for (slug, _) in order {
+            let body = fs::read_to_string(adr_path(repo.path(), slug)).expect("read adr");
+            assert!(
+                body.contains("schema-version:"),
+                "the migrated `{slug}` carries the stamp; got:\n{body}",
+            );
+        }
+
+        let tree = git(repo.path(), &["rev-parse", "HEAD^{tree}"])
+            .trim()
+            .to_string();
+        let message = git(repo.path(), &["log", "-1", "--format=%B"]);
+        (tree, message, mask_commit_hash(&report))
+    }
+
+    /// Mask the commit hash in the `committed <hash> — …` report line — the one
+    /// legitimately repo-specific byte range (the two repos' seed histories differ,
+    /// so the landed commit's parents — and hence its hash — differ by design).
+    fn mask_commit_hash(report: &str) -> String {
+        report
+            .lines()
+            .map(|line| match line.strip_prefix("committed ") {
+                Some(rest) => match rest.split_once(' ') {
+                    Some((_hash, tail)) => format!("committed <hash> {tail}"),
+                    None => line.to_string(),
+                },
+                None => line.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    let order_a = [
+        ("alpha-decision", "Alpha decision"),
+        ("beta-decision", "Beta decision"),
+        ("gamma-decision", "Gamma decision"),
+    ];
+    let order_b = [
+        ("gamma-decision", "Gamma decision"),
+        ("alpha-decision", "Alpha decision"),
+        ("beta-decision", "Beta decision"),
+    ];
+    assert_ne!(order_a, order_b, "the seed orders must diverge");
+
+    let (tree_a, message_a, report_a) = seed_and_migrate(&order_a);
+    let (tree_b, message_b, report_b) = seed_and_migrate(&order_b);
+
+    assert_eq!(
+        tree_a, tree_b,
+        "the migrated tree must be byte-identical across divergent seed orders",
+    );
+    assert_eq!(
+        message_a, message_b,
+        "the landed commit message must be byte-identical across divergent seed orders",
+    );
+    assert_eq!(
+        report_a, report_b,
+        "the migration report (commit hash masked) must be byte-identical across \
+         divergent seed orders",
+    );
+}

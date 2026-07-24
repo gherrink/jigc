@@ -1028,3 +1028,147 @@ fn milestone_missing_snapshot_fails_open() {
         "the foreign entry is still staged after the fail-open land; staged:\n{staged}"
     );
 }
+
+// ─────────────── the cross-order repro block (the confidence-audit back-sweep) ───────────────
+
+/// **Repro block (pinning.md §3) — the M43 e2e staging-order witness, made standing**
+/// (the confidence-audit back-sweep, triage item c2). The M43 completion audit drove
+/// this one-off: `completions/artifacts/M43/VERDICT.md` → the e2e paragraph: "the
+/// carryover gate refuses pre-mint staged adds *and deletions* at every minting door,
+/// `--carry-staged` lands them labeled, **byte-identical across divergent staging
+/// orders**". Standing coverage asserted the findings/labels in a **single** staging
+/// order only (`a_pre_mint_staged_add_blocks_with_one_routed_finding_per_path`,
+/// `the_landed_json_labels_carried_over_and_forecast_landed_stay_identical`); nothing
+/// re-drove the gate under two orders, so a re-plumbing that let the recording order
+/// reach the emitted findings or the manifest would ship driver-visible
+/// nondeterminism with every existing test green.
+///
+/// ```yaml
+/// claim: "carryover findings + manifest labels are byte-identical across staging orders"
+/// verdict: CONFIRMED (M43 e2e audit — one-off; standing as of this test)
+/// setup:
+///   - two fresh repos; the SAME two foreign files written + `git add`-ed pre-mint,
+///     in divergent staging orders (a-then-b vs b-then-a); the same task minted + worked
+/// repro:
+///   - ["jigc", "task", "finalize", "<task>", "--format", "json"]            # blocks (3)
+///   - ["jigc", "task", "finalize", "<task>", "--carry-staged", "--format", "json"]
+/// expect:
+///   blocked: the findings envelope byte-identical across the two repos
+///   landed: the envelope byte-identical modulo `committed.hash` (histories differ);
+///           both foreign paths labeled `carried-over`, the task's own edit `added`
+/// pinned-by: carryover_gate::carryover_findings_and_manifest_are_byte_identical_across_staging_orders
+/// ```
+///
+/// Verified catchable: locally re-keying the carried fold (`engine::finalize`'s
+/// `carried` `BTreeMap`) on worktree mtime — a staging-order proxy, since the fixture
+/// diverges the write+add order — reorders the emitted findings and reddens the
+/// blocked byte-compare (mutate → catch → restore; never committed).
+#[test]
+fn carryover_findings_and_manifest_are_byte_identical_across_staging_orders() {
+    /// Build the fixture with the foreign files written + staged in `order`, then
+    /// return `(blocked stdout bytes, landed envelope with `committed.hash` masked)`.
+    fn stage_and_finalize(order: [(&str, &str); 2]) -> (String, serde_json::Value) {
+        let repo = TempDir::new("stage-order");
+        let home = TempDir::new("home");
+        init_repo(repo.path());
+        ok(repo.path(), home.path(), &["setup"], "jigc setup");
+
+        // The divergent axis: the SAME two foreign files, written and staged
+        // one-at-a-time in the arm's order (staging = the write + `git add` pair).
+        for (path, body) in order {
+            fs::write(repo.path().join(path), body).expect("write foreign file");
+            git(repo.path(), &["add", path]);
+        }
+
+        let task = "gate-the-carryover";
+        mint_and_work(
+            repo.path(),
+            home.path(),
+            "gate the carryover",
+            task,
+            "feature.rs",
+        );
+
+        let blocked = jigc(
+            repo.path(),
+            home.path(),
+            &["task", "finalize", task, "--format", "json"],
+            None,
+        );
+        let findings = blocked_findings(&blocked, "jigc task finalize (staging-order arm)");
+        // Non-vacuity: both foreign paths carried, each with its own keyed finding.
+        assert_eq!(
+            carried_staged(&findings).len(),
+            2,
+            "both staged foreign paths are carried; got:\n{findings:#?}",
+        );
+        let blocked_stdout = String::from_utf8(blocked.stdout).expect("utf-8 envelope");
+
+        let landed = jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "task",
+                "finalize",
+                task,
+                "--carry-staged",
+                "--format",
+                "json",
+            ],
+            None,
+        );
+        assert!(
+            landed.status.success(),
+            "`--carry-staged --format json` lands; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&landed.stdout),
+            String::from_utf8_lossy(&landed.stderr),
+        );
+        let mut envelope: serde_json::Value =
+            serde_json::from_str(&String::from_utf8_lossy(&landed.stdout))
+                .expect("the landed JSON parses");
+        // Non-vacuity: the labels are the M43 witness's — both foreign paths
+        // `carried-over`, the task's own edit `added`.
+        assert_eq!(
+            kind_of(&envelope["committed"]["manifest"], "foreign-a.txt"),
+            "carried-over"
+        );
+        assert_eq!(
+            kind_of(&envelope["committed"]["manifest"], "foreign-b.txt"),
+            "carried-over"
+        );
+        assert_eq!(
+            kind_of(&envelope["committed"]["manifest"], "feature.rs"),
+            "added"
+        );
+        // Mask the one legitimately repo-specific byte range: the landed commit's
+        // hash (the two repos' index histories differ, so the hashes differ by
+        // design — everything else must match to the byte).
+        envelope["committed"]["hash"] = serde_json::Value::Null;
+        (blocked_stdout, envelope)
+    }
+
+    let order_a = [
+        ("foreign-a.txt", "not this task's work\n"),
+        ("foreign-b.txt", "also not\n"),
+    ];
+    let order_b = [
+        ("foreign-b.txt", "also not\n"),
+        ("foreign-a.txt", "not this task's work\n"),
+    ];
+    assert_ne!(order_a, order_b, "the staging orders must diverge");
+
+    let (blocked_a, landed_a) = stage_and_finalize(order_a);
+    let (blocked_b, landed_b) = stage_and_finalize(order_b);
+
+    assert_eq!(
+        blocked_a, blocked_b,
+        "the blocked findings envelope must be byte-identical across divergent \
+         staging orders",
+    );
+    assert_eq!(
+        serde_json::to_string_pretty(&landed_a).expect("serialize"),
+        serde_json::to_string_pretty(&landed_b).expect("serialize"),
+        "the landed envelope (commit hash masked) must be byte-identical across \
+         divergent staging orders",
+    );
+}
