@@ -33,6 +33,27 @@
 - The Settle's "both doors already wired" (id-from guard) overstates the retitle door for the trailer rule.
 - The planning card's "6 role pairs" and the Settle's "9 of 15" — both already resolved in the safe direction by review or tests; noted for the record only.
 
+## Appendix — the blind-derived orphaning-op table (Codex, test-writing substrate for finding 7)
+
+Derived from production code only (`file_state.rs:820+`, `task.rs:830/3022`), no test files read. Classification key: the shipped oracle is (file absent) × (`git log HEAD -1 -- <path>` empty?) × strong-hash candidate; store scope forces history-present (blocking). Condensed to the distinct rows the op-axis tests should iterate:
+
+| op | after-state | `git log HEAD -1 -- <path>` | shipped classification |
+|---|---|---|---|
+| `reset --hard` past creation | file absent, creating commit unreachable | empty | dangling → advisory |
+| `reset --hard` to after a committed delete | file absent, deletion reachable | non-empty | weak deletion → block |
+| branch switch / detached checkout to pre-creation point | file absent | empty | advisory |
+| branch switch to a branch where the doc was deleted | file absent | non-empty | block |
+| rebase dropping the creating commit | file absent | empty | advisory |
+| `commit --amend` removing the file from its only creating commit | file absent, no reachable touch | empty | advisory |
+| `commit --amend` turning the tip into a deletion | file absent | non-empty | block |
+| `gc` after reset/rewrite | no tree change | unchanged | no independent change (object existence never consulted — the corrected oracle) |
+| committed `git mv`, content unchanged | old absent, same-hash candidate present | (not consulted) | strong rename → block |
+| `stash -u` sweeping an untracked rename candidate | candidate gone; old absent | old history decides | non-empty → block; empty → advisory |
+| branch delete orphaning the sole ref, current branch lacks path | file absent | empty | advisory |
+| history rewrite (`filter-repo`) dropping / renaming / leaving a deletion | absent / candidate / absent | empty / (n.c.) / non-empty | advisory / strong block / block |
+| **sparse-checkout excluding the path** | **file absent from worktree, tracked in HEAD** | **non-empty** | **weak deletion → block — a false-deletion shape (finding 7's nuance): untested, undeclared** |
+| submodule replacing a former tracked path | absent in superproject tree | history-dependent | block or advisory by superproject history |
+
 ## What this means for the pre-1.0 sequence
 
 The confidence-audit session's fix-list is the ranked table above (items 1–2 are integrity-tier; 3–8 are fence/record-tier; the minor residue is fix-or-declare). The **mutation-testing half** (cargo-mutants over the fixed seams) and the **M39–M44 back-sweep triage** remain that session's other two thirds, per the recorded sequencing (DECISIONS → 2026-07-24 the road to 1.0). Every finding here is agent-derived and unverified until its red test reproduces it — the session applies verify-real per the completion workflow's triage discipline, and each fix's acceptance iterates its axis per the complete-fix contract.
