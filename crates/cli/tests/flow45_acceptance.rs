@@ -628,9 +628,12 @@ fn a_from_knowledge_adr_lands_with_a_fresh_on_create_date_via_plain_finalize() {
     );
     assert_ok(&composed, "`jigc start --workflow record-decision`");
     let body = stdout_of(&composed);
-    // The from-knowledge door names no foreign-migration prose.
+    // The from-knowledge door names no foreign-migration prose. (`supersedes` is NOT a
+    // migration word — it is a legitimate adr ref-edge the from-knowledge door names via
+    // the non-migration `superseded-context` step, M45 T3; only `foreign`/`transcribe`
+    // discriminate migration vocabulary.)
     let lower = body.to_lowercase();
-    for banned in ["foreign", "transcribe", "supersedes"] {
+    for banned in ["foreign", "transcribe"] {
         assert!(
             !lower.contains(banned),
             "the from-knowledge step must not carry the migration word {banned:?}; got:\n{body}",

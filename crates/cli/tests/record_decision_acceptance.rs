@@ -220,9 +220,12 @@ fn record_decision_authors_an_adr_from_knowledge_with_a_fresh_date() {
     );
 
     // The from-knowledge step names NO foreign source — none of the migration
-    // prose (`author-migration-adr`) may survive into this door.
+    // prose (`author-migration-adr`) may survive into this door. (`supersedes` is
+    // NOT migration prose — it is a legitimate adr ref-edge named via the
+    // non-migration `superseded-context` step, M45 T3; the words below discriminate
+    // migration vocabulary.)
     let lower = stdout.to_lowercase();
-    for banned in ["foreign", "transcribe", "staged for you", "supersedes"] {
+    for banned in ["foreign", "transcribe", "staged for you"] {
         assert!(
             !lower.contains(banned),
             "the from-knowledge step must not carry the migration prose word {banned:?}; got:\n{stdout}",

@@ -6,4 +6,5 @@ creates-task: true
 allows-create: [{type: adr, as: decision}]
 ---
 {{ include: step:author-adr }}
+{{ include: step:superseded-context }}
 {{ include: step:finalize }}

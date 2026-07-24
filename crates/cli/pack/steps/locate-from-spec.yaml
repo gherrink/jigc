@@ -27,6 +27,12 @@ The anchor is `<repo-relative-path>#<symbol>`, it must resolve to a real test, a
 it is checked at finalize — so leave it off a criterion this task did not cover
 rather than pointing it at a test you have not written.
 
+Wire this task's commit to the spec it implements, so the landed record links back
+to what it built. `commit.implements` points at the spec you bound above — set it
+by that spec's full address:
+
+jigc doc set-field commit:{{task.id}}#implements --value spec:<slug> --task {{task.id}}
+
 A spec can leave a decision open — a question its prose raises but does not settle.
 When you settle one while implementing, record it before you finalize: this workflow
 grants the `adr` gate, so mint a decision record through the `jigc doc create adr`
