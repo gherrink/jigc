@@ -1273,6 +1273,58 @@ fn form_d_architecture_documentation_mints_and_emits_the_create_gate_author_slot
 }
 
 #[test]
+fn arch_doc_component_anchor_prose_names_the_staged_index_and_repo_relative_base() {
+    // M45 Inc 10 / T1 (law 1 — nothing lies; `validation.md` → the `doc-code` probe
+    // reads the materialized STAGED INDEX at task/finalize scope, not the working
+    // tree — §279/§281). author-arch-doc.yaml:24 previously told agents the
+    // `path#symbol` anchor is "re-checked against the working tree", the exact false
+    // mental model M42 caught in the finding message (a symbol written but not
+    // `git add`ed is ABSENT from the index, so the citation dangles and finalize
+    // blocks — the working tree is irrelevant to the adjudication). The composed
+    // components-anchor prose must name the staged index the probe actually
+    // adjudicates AND state the anchor base is repo-relative (the sibling
+    // locate-from-spec step already does). Asserted on the emitted step bytes.
+    let repo = TempDir::new("arch-doc-anchor-truth");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &[
+            "--workflow",
+            "architecture-documentation",
+            "document the compose pipeline",
+        ],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "the arch-doc compose must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The false claim is gone: finalize does NOT re-check the anchor against the
+    // working tree. (finalize.yaml carries no "working tree" mention, so the arch-doc
+    // composed view names it nowhere once this step is fixed.)
+    assert!(
+        !stdout.contains("working tree"),
+        "the components-anchor prose must not claim finalize re-checks against the working tree; got:\n{stdout}",
+    );
+    // It names the staged index — the root the probe adjudicates at finalize scope.
+    assert!(
+        stdout.contains("staged index"),
+        "the components-anchor prose must name the staged index the probe adjudicates; got:\n{stdout}",
+    );
+    // And it states the anchor base is repo-relative (matching locate-from-spec).
+    assert!(
+        stdout.contains("repo-relative"),
+        "the components-anchor prose must state the `path#symbol` anchor is repo-relative; got:\n{stdout}",
+    );
+}
+
+#[test]
 fn bare_intent_router_lists_architecture_documentation_with_its_when() {
     // M13 Increment 4 / T2. The new `creates-task: true` work-workflow auto-lists in
     // the router's selectable catalog (`selectable_workflows`, zero code) — bare
