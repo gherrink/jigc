@@ -1043,8 +1043,12 @@ const BOOTSTRAP_SENTENCE: &str = "`jigc` is your interface to this project — y
 /// (`--help`/`describe`/`doc schema`), never a checked-out jigc or pack source
 /// tree — which need not match the binary in use. It closes the stale-source
 /// reach the flat "read source freely" clause otherwise licensed, without
-/// contradicting it (the freedom is scoped to *project* source).
-const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; an `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely. That freedom is for *project* source; to learn how `jigc` itself behaves, ask the installed binary (`jigc --help`, `jigc describe`, `jigc doc schema`), never a checked-out jigc or pack source tree — it need not match the binary you run.";
+/// contradicting it (the freedom is scoped to *project* source). The
+/// staged-read clause gains its **inverse** at M45 Inc 10 (RC alpha3
+/// findings §70): the staged read is stated one direction only — dropping
+/// `--task` reads the committed copy — so the agent that read the staged
+/// working copy knows how to reach the landed one.
+const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; drop --task to read the committed copy. An `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely. That freedom is for *project* source; to learn how `jigc` itself behaves, ask the installed binary (`jigc --help`, `jigc describe`, `jigc doc schema`), never a checked-out jigc or pack source tree — it need not match the binary you run.";
 
 /// The context-compiler framing stated beneath the read rule (RC greenfield
 /// trial A4, 2026-07-06): one stable line on what `jigc` *is* and the
@@ -1434,7 +1438,7 @@ mod tests {
         insta::assert_snapshot!(bootstrap_file(), @r###"
         `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
 
-        Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; an `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely. That freedom is for *project* source; to learn how `jigc` itself behaves, ask the installed binary (`jigc --help`, `jigc describe`, `jigc doc schema`), never a checked-out jigc or pack source tree — it need not match the binary you run.
+        Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; drop --task to read the committed copy. An `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely. That freedom is for *project* source; to learn how `jigc` itself behaves, ask the installed binary (`jigc --help`, `jigc describe`, `jigc doc schema`), never a checked-out jigc or pack source tree — it need not match the binary you run.
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
@@ -1582,6 +1586,14 @@ mod tests {
         assert!(
             body.contains("--task <id>"),
             "the read rule names the staged read for a doc in the open task; got:\n{body}",
+        );
+        // (M45 Inc 10, findings §70) The staged-read clause's inverse: dropping
+        // `--task` reads the committed copy — the direction an agent that read the
+        // staged working copy needs to reach the landed one.
+        assert!(
+            body.contains("drop --task to read the committed copy"),
+            "the read rule states the staged-read inverse (drop --task → committed copy); \
+             got:\n{body}",
         );
         assert!(
             body.contains("`unregistered` row"),

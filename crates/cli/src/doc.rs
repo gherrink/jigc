@@ -4286,6 +4286,47 @@ mod tests {
         );
     }
 
+    /// The **read surface** picks one canonical form for the aliased commit header
+    /// addresses (RC alpha3 findings §43 — the "printed `#type`/`#scope` errors"
+    /// claim, REFUTED then pinned). Both the single-hop `#type` and the
+    /// section-qualified `#header/type` resolve identically at the write boundary
+    /// (proven by [`implements_resolves_section_qualified_and_flat_alias`]) — but no
+    /// read surface *stated* the alias, so the two forms could drift apart across
+    /// printed surfaces. `doc schema`'s projection — the read surface an agent learns
+    /// write addresses from — advertises the **section-qualified** form alone, never
+    /// the bare single-hop, so the surface states the canonical form exactly once.
+    /// Driven on the emitted [`schema_contract`] projection itself.
+    #[test]
+    fn schema_read_surface_picks_the_qualified_commit_address() {
+        let schema = load_schema(COMMIT_YAML).expect("commit.yaml loads");
+        let contract = schema_contract(&schema, None);
+
+        for id in ["type", "scope"] {
+            let field = contract
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("commit projects a `{id}` field"));
+            let expected = format!("commit:<slug>#header/{id}");
+            assert_eq!(
+                field.set_field.as_deref(),
+                Some(expected.as_str()),
+                "the read surface advertises the section-qualified write address for `{id}`",
+            );
+        }
+
+        // The bare single-hop alias is advertised nowhere — the canonical form is
+        // stated exactly once, so no two printed surfaces can disagree on the wire.
+        for field in &contract.fields {
+            if let Some(addr) = field.set_field.as_deref() {
+                assert!(
+                    !addr.ends_with("#type") && !addr.ends_with("#scope"),
+                    "no field advertises the bare single-hop alias; got `{addr}`",
+                );
+            }
+        }
+    }
+
     /// The destination-containment predicate the barrier is built on
     /// (`design/write-commands.md` → The write-time `--task`-scoped barrier): an
     /// in-area staged destination is accepted; a slug that path-escapes the area
