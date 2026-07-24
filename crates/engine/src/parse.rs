@@ -1124,6 +1124,17 @@ fn parse_item_slots(
             .map(|(s, _, _)| *s)
             .unwrap_or(body_end);
         let span = trim_span(source, content_start, slot_end);
+        // Heading-depth ceiling inside this leaf's slot prose. A multi-slot item's
+        // `#### <Leaf-Title>` sub-labels sit one level deeper than the item, so its
+        // slot prose reserves through `item_level + 1` — the same context-derived
+        // ceiling the write side computes (`write::slot_ceiling`, the `multi_slot`
+        // arm). This catches an OOB reserved-depth or Setext heading a jigc-authored
+        // write would have rejected (the read/parse-side sibling of the single-slot
+        // scan). A `#### ` line-start is the delimiter itself (never inside a span);
+        // the shadow guard below handles a stray one.
+        let mut ceiling = ceiling_violations(blocks, span.start, span.end, item_level + 1);
+        prefix_hop(&mut ceiling, leaf_id);
+        findings.append(&mut ceiling);
         slots.push((leaf_id.clone(), span));
     }
 
@@ -1371,11 +1382,17 @@ fn ceiling_violations(
                 ..
             } if range.start >= start && range.start < end => {
                 if !is_atx {
+                    // Name the depth that is free **at this address** — `reserved_max +
+                    // 1`, the same context-derived first-allowed the write twin renders
+                    // (`write::slot_ceiling_finding`), never a global `####`: at a
+                    // nested change-group leaf `####` is itself the reserved (corrupting)
+                    // depth, so the read-side repair must name `#####` there.
+                    let allowed = "#".repeat(reserved_max + 1);
                     Some(Finding::blocking(
                         "conformance.slot-setext-heading",
                         format!(
                             "Setext heading in slot prose at line {line}; \
-                             use `####` ATX depth or rephrase"
+                             use `{allowed}` ATX depth or rephrase"
                         ),
                         Location::at(*line, 1),
                     ))
@@ -2190,6 +2207,73 @@ Closing prose.
         assert!(
             notes.contains("#### A stray heading stays opaque"),
             "single-slot `####` is opaque whole-body prose: {notes:?}",
+        );
+    }
+
+    /// (M45 read-side item-slot ceiling, Face A) The Setext-ceiling message in a
+    /// **single-slot** leaf must name the **context-derived** first-allowed depth, not
+    /// a hard-coded `####`. A nested change-group `notes` leaf sits at depth 2
+    /// (`####` item), so its slot reserves through `####` and the shallowest free depth
+    /// is `#####` — the message must say `#####`, because `####` is itself the
+    /// corrupting (reserved) depth here (the write twin already parameterizes this).
+    #[test]
+    fn setext_ceiling_message_names_context_depth_in_nested_leaf() {
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+Broke out
+=========
+";
+        let findings = parse_sections(&changelog_schema(), src)
+            .expect_err("a setext heading in a nested change-group leaf blocks");
+        let f = findings
+            .iter()
+            .find(|f| f.code == "conformance.slot-setext-heading")
+            .expect("a slot-setext-heading finding");
+        assert!(
+            f.message.contains("`#####`"),
+            "the nested leaf reserves through `####`, so the message must name `#####` \
+             (the shallowest free depth), never the corrupting `####`: {:?}",
+            f.message,
+        );
+    }
+
+    /// (M45 read-side item-slot ceiling, Face B) A Setext heading OOB-introduced into a
+    /// **multi-slot** item leaf (`roadmap.milestones`' `proves`/`decomposition`) must be
+    /// flagged at parse time — the multi-slot branch runs no ceiling scan today, so an
+    /// out-of-band reserved-depth/Setext heading slips through the read path (the write
+    /// path is closed by validate-after). The finding keys at the owning `(item, leaf)`.
+    #[test]
+    fn setext_ceiling_flagged_in_multi_slot_leaf() {
+        let src = "\
+# Roadmap
+
+## Milestones
+
+### M16 self-hosting  {#m16-self-hosting}
+
+#### Proves
+
+Broke out
+=========
+
+#### Decomposition
+
+Inc 1, Inc 2, Inc 3.
+";
+        let findings = parse_sections(&two_slot_schema(), src)
+            .expect_err("a setext heading in a multi-slot leaf blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.slot-setext-heading"),
+            [Some("milestones/m16-self-hosting/proves")],
+            "a multi-slot leaf's setext heading keys at the owning `(item, leaf)`: \
+             {findings:#?}",
         );
     }
 
