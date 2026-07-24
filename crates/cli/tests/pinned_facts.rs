@@ -72,6 +72,28 @@
 //! | compose determinism (two-repo byte-identical; TZ/locale/git-identity/branch-invariant) | `golden_harness.rs` | carried |
 //! | ids never serial-suffix — a slug collision hard-rejects with a resume route | `start_compose::serial_re_run_of_the_same_intent_blocks` | carried |
 //! | debug and release output are byte-identical | — | **UNPINNED: not test-pinnable in-suite** — the harness runs only the `CARGO_BIN_EXE_jigc` **debug** build; asserting release-parity would need a second build the test cannot produce. Recorded, not pinned. |
+//!
+//! ### §3 full classification + §5 candidate scope — disposition (by pointer)
+//!
+//! (Confidence-audit minor item 6: the ledger stopped at §2, leaving §3's dispositions
+//! findable only in the trial artifact.) §3's rows are **scope routings, not
+//! test-pinnable facts** — each names a class and where it goes, so its disposition
+//! lives where it was routed rather than as a repro block here:
+//!
+//! - **§3-B (incomplete-fix siblings):** every B row chartered into M45 is pinned by
+//!   its fix increment's axis-iterating red tests (the §1 table above carries the
+//!   headline overlap); the rest rode the §5 tier-2 law batch (M45 Inc 10).
+//! - **§3-C (deferrals with fired/trigger-adjacent triggers):** routed at the M45
+//!   Settle — the fired capability tiers are owed at the **M46 capability wave**
+//!   ([decisions-pending.md](../../../implementation/decisions-pending.md) → the
+//!   capability wave); a deferral there carries its trigger, which is its pin.
+//! - **§3-D (declared bounds re-reported):** each bound stays declared at its owning
+//!   doc/oracle; the one testable nuance is pinned at
+//!   `file_state_history_gate::sparse_checkout_absence_classifies_as_weak_deletion_block`.
+//! - **§3-E (new findings) and the §5 not-chartered remainder:** dispositioned in the
+//!   Settle record ([DECISIONS.md](../../../DECISIONS.md) → 2026-07-23 M45 planning:
+//!   the Settle) against the trial artifact — charter decisions, not facts a repro
+//!   block can hold.
 
 mod support;
 
