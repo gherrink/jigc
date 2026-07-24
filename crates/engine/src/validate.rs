@@ -104,6 +104,22 @@ const OWNED_ARTIFACT_HOME: &str = "completions/artifacts/";
 /// the determinism boundary).
 pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 
+/// The CLI-supplied git **history** predicate the engine threads through [`validate_task`]
+/// into [`crate::file_state::reconcile_committed_store`] → [`crate::file_state::detect_rename`]
+/// — a `Fn(&str) -> bool` taking a **repo-relative** path and answering whether HEAD carries
+/// any history for it (`git log HEAD -1 -- <path>` is non-empty). Built on the same shell-free
+/// seam as [`TrackedPredicate`]: the CLI owns the `git log` shell-out, the engine only consults
+/// the boolean.
+///
+/// It gates the file-state weak-signal severity (M45, Decision 7; `design/storage.md` →
+/// Derived caches): the file↔state hashes carry no stamp and no rebuild path, so a checkout
+/// that moves underneath the gitignored cache (`git reset --hard` / branch switch / rebase
+/// past a doc's creating commit) leaves a recorded baseline pointing at a path that no longer
+/// exists. When HEAD has **no** history for the path, nothing was deleted — the dangling
+/// baseline downgrades to advisory; when it **has** history, the path was genuinely deleted
+/// and keeps blocking.
+pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
+
 /// Validate one task working area — the single engine both `task validate` and
 /// `finalize` phase 2 call (`validation.md` → How it gates `finalize`: one engine,
 /// two entry points, so what `validate` reports and what `finalize` blocks on can
@@ -153,6 +169,14 @@ pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// is present (its own filesystem effect) and asks `tracked` whether git tracks it — the
 /// engine never shells out for tracked-status. A task with no `owned-location` field never
 /// consults it (the omitting-context inert path).
+///
+/// `history` is the CLI-supplied git history predicate ([`HistoryPredicate`]) the committed-
+/// store rename detector consults to grade a **dangling baseline** — a recorded managed-doc
+/// path now absent on disk with no content-matching suspect (M45, Decision 7). It is queried
+/// only inside that already-cold path (a recorded-but-missing doc), so a healthy task never
+/// shells out for it: history present (the path was genuinely deleted) keeps the blocking
+/// weak-signal finding; history empty (the checkout moved underneath the gitignored cache)
+/// downgrades to advisory with a `jigc unmanage` prune route.
 ///
 /// `repo_root` is the committed-store root, `jigc_root` is the `.jigc/` home (where the
 /// edge index caches), and `head` is the opaque HEAD stamp the committed index is
@@ -218,6 +242,7 @@ pub fn validate_task(
     resolved: &crate::cascade::Resolved,
     invoke_doc_code: &ProbeInvoker<'_>,
     tracked: &TrackedPredicate<'_>,
+    history: &HistoryPredicate<'_>,
     changed_code: &BTreeSet<String>,
     base_code_tree_root: &Path,
 ) -> std::io::Result<ValidationReport> {
@@ -271,6 +296,7 @@ pub fn validate_task(
         schemas,
         repo_root,
         dir,
+        history,
     ));
 
     // `schema-conformance.ref-resolves` — the cross-doc forward-ref / edge-index
@@ -4465,6 +4491,7 @@ kind: memo
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
         )
@@ -4502,6 +4529,7 @@ kind: memo
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             clean.dir(),
         )
@@ -4609,6 +4637,7 @@ Bursty-but-honest clients see occasional 429s.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
         )
@@ -4711,6 +4740,7 @@ Bursty-but-honest clients see occasional 429s.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
         )
@@ -4759,6 +4789,7 @@ Bursty-but-honest clients see occasional 429s.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
         )
@@ -4809,6 +4840,7 @@ Bursty-but-honest clients see occasional 429s.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
         )
@@ -4865,6 +4897,7 @@ Bursty-but-honest clients see occasional 429s.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
         )
@@ -4922,6 +4955,7 @@ sections:
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
         )
@@ -5152,6 +5186,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
         )
@@ -5208,6 +5243,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
         )
@@ -5260,6 +5296,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
         )
@@ -5310,6 +5347,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
         )
@@ -5662,6 +5700,7 @@ The audit landed green.
             &no_delta_resolved(),
             &unused_invoker(),
             &|_p| true, // tracked is irrelevant — the file is absent.
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
         )
@@ -5721,6 +5760,7 @@ The audit landed green.
             &no_delta_resolved(),
             &unused_invoker(),
             &|_p| true, // the artifact is tracked.
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
         )
@@ -7574,6 +7614,7 @@ Effects.
                 &no_delta_resolved(),
                 &content_aware_invoker(&seen),
                 &no_op_tracked,
+                &|_| true,
                 changed,
                 base,
             )
@@ -7641,6 +7682,7 @@ Effects.
             &no_delta_resolved(),
             &content_aware_invoker(&seen),
             &|_: &str| false,
+            &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
         )
@@ -7709,6 +7751,7 @@ Effects.
             &no_delta_resolved(),
             &invoker,
             &|_: &str| false,
+            &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
         )
@@ -7776,6 +7819,7 @@ Effects.
             &no_delta_resolved(),
             &invoker,
             &|_: &str| false,
+            &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
         )

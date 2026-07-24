@@ -638,6 +638,7 @@ impl TaskArea {
             )
         })?;
         let tracked = self.tracked_predicate()?;
+        let history = self.history_predicate();
         // Materialize the current git index into a self-cleaning temp tree and resolve
         // cited code anchors against it (M30 Inc 3, G4): the `doc-code` probe validates
         // what *commits*, not the ambient working tree, so a symbol present on disk but
@@ -670,6 +671,7 @@ impl TaskArea {
             &self.severity_cascade()?,
             &doc_code_invoker,
             &tracked,
+            &history,
             &changed_code,
             base_tree.path(),
         )
@@ -699,6 +701,24 @@ impl TaskArea {
             .map(str::to_owned)
             .collect();
         Ok(move |path: &str| !untracked.contains(path))
+    }
+
+    /// Build the git **history** predicate the engine's committed-store rename detector
+    /// consults to grade a dangling baseline ([`engine::validate::HistoryPredicate`]; M45,
+    /// Decision 7). The CLI owns the shell-out, the engine stays shell-free.
+    ///
+    /// A repo-relative path **has history** iff `git log HEAD -1 -- <path>` produces a line
+    /// (some HEAD-reachable commit touched it). So a genuine deletion (the path was committed
+    /// then removed) reads history-present → the weak finding keeps blocking; a checkout that
+    /// moved underneath the gitignored file-state cache (`git reset --hard` / branch switch /
+    /// rebase past the creating commit) leaves the path history-less → the baseline downgrades
+    /// to advisory. The query runs only inside the already-cold recorded-but-missing arm, so a
+    /// healthy task never shells out for it. A `git log` failure (a broken/unborn HEAD) is
+    /// treated as **history-present** — the conservative default that keeps blocking rather
+    /// than silently downgrading a possible deletion.
+    fn history_predicate(&self) -> impl Fn(&str) -> bool {
+        let repo_root = self.repo_root.clone();
+        move |path: &str| git_path_has_history(&repo_root, path).unwrap_or(true)
     }
 
     /// Materialize the current git **index** into a fresh, self-cleaning temp tree — the
@@ -2517,6 +2537,27 @@ pub(crate) fn git_untracked_all(repo_root: &Path) -> Result<String> {
         );
     }
     String::from_utf8(out.stdout).context("`git ls-files` produced non-UTF-8 output")
+}
+
+/// Whether HEAD carries any history for `path` — `git log HEAD -1 -- <path>` prints at
+/// least one line. The M45 file-state history gate ([`engine::validate::HistoryPredicate`],
+/// Decision 7) consults this to distinguish a genuine deletion (path has history, still gone
+/// → block) from a dangling baseline the checkout moved out from under the gitignored
+/// file-state cache (no history → advisory + `jigc unmanage` prune route). `-1` bounds the
+/// walk to the first touching commit (presence is all the gate needs).
+pub(crate) fn git_path_has_history(repo_root: &Path, path: &str) -> Result<bool> {
+    let out = Command::new("git")
+        .args(["log", "HEAD", "-1", "--format=%H", "--", path])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git log HEAD -1 -- {path}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
 }
 
 /// The canonical git empty-tree SHA — the sentinel base a **zero-commit** (unborn

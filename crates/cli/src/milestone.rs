@@ -2188,6 +2188,14 @@ fn milestone_boundary_gate(
         .map(str::to_owned)
         .collect();
     let tracked = move |path: &str| !untracked.contains(path);
+    // The file-state history gate (M45, Decision 7): a dangling baseline with no HEAD history
+    // is graded advisory, a genuine deletion keeps blocking. Built from `repo_root` via the
+    // same shell-free-seam `git log` helper the per-task gate uses; a `git` failure defaults
+    // history-present (conservative — keep blocking).
+    let repo_root_for_history = repo_root.to_path_buf();
+    let history = move |path: &str| {
+        crate::task::git_path_has_history(&repo_root_for_history, path).unwrap_or(true)
+    };
 
     // ONE validate over the persisted merged docs (the filtered `gate_staging` area) + the
     // merged code root — the committed edge index is keyed to the shared base (`base.sha`),
@@ -2204,6 +2212,7 @@ fn milestone_boundary_gate(
         &cascade,
         &crate::task::doc_code_invoker,
         &tracked,
+        &history,
         &changed_code,
         base_tree.path(),
     )

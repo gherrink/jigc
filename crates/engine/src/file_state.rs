@@ -312,7 +312,9 @@ pub fn committed_path_recordable(
 ///   mutates `record` + `index` in place; a block leaves both pinned.
 /// - **recorded but now absent on disk** → [`detect_rename`] over the untracked
 ///   candidates (the on-disk `.md` files of that type with no recorded hash), routing
-///   a suspected `git mv` (strong signal) or a restore (weak signal).
+///   a suspected `git mv` (strong signal) or a restore (weak signal). `history` grades
+///   the weak signal (M45, Decision 7): a path with no HEAD history is a dangling
+///   baseline (advisory + prune route), a path with history is a genuine deletion (block).
 ///
 /// Mutating: `record` (baseline-adopt / absorb) and `index` (absorb) advance in place;
 /// the caller persists them. Findings aggregate in a stable order: persisted schemas
@@ -325,6 +327,7 @@ pub fn reconcile_committed_store(
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     repo_root: &Path,
     task_dir: &Path,
+    history: &crate::validate::HistoryPredicate<'_>,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     // Snapshot the recorded committed paths *before* the reconcile loop mutates the
@@ -443,7 +446,13 @@ pub fn reconcile_committed_store(
                 continue;
             }
             let from = identity_of(&path, schemas).unwrap_or_else(|| path.clone());
-            findings.extend(detect_rename(&path, &from, &recorded_hash, &untracked_refs));
+            findings.extend(detect_rename(
+                &path,
+                &from,
+                &recorded_hash,
+                &untracked_refs,
+                history,
+            ));
         }
     }
 
@@ -625,7 +634,11 @@ pub fn detect_committed_store_renames(
             continue;
         }
         let from = identity_of(&path, schemas).unwrap_or_else(|| path.clone());
-        let detected = detect_rename(&path, &from, &recorded_hash, &untracked_refs);
+        // The read-only store twin passes an always-history-present predicate: `jigc validate`
+        // store scope stays byte-identical to today (it keeps reporting the blocking weak
+        // finding). The M45 advisory downgrade is scoped to the task/finalize gate — a
+        // deliberate boundary (`DECISIONS.md` → 2026-07-23 M45 Settle, Decision 7).
+        let detected = detect_rename(&path, &from, &recorded_hash, &untracked_refs, &|_| true);
         if !detected.is_empty() {
             renamed.insert(from);
             findings.extend(detected);
@@ -817,23 +830,41 @@ fn rename_landing_present(
 ///   (`jigc rename <from> --to "<New Title>"`, which re-points every referrer
 ///   atomically), revert (`git mv <suspect> <tracked>`) second. The first hash-matching
 ///   candidate in `untracked` order is named.
-/// - **Weak signal** — no untracked path matches: the file is simply gone. The
-///   finding names the missing path and routes to **restore** it (or confirm the
-///   deletion by dropping it from the index via `jigc unmanage`).
+/// - **Weak signal** — no untracked path matches: the file is simply gone. `history`
+///   grades it (M45, Decision 7): a path that **has** HEAD history was genuinely deleted
+///   — the finding **blocks** and routes to restore (or confirm the deletion via `jigc
+///   unmanage`). A path with **no** history is a **dangling baseline** — the recorded
+///   baseline pointing at a path the checkout moved out from under the gitignored
+///   file↔state cache (`git reset --hard` / branch switch / rebase past the creating
+///   commit) — which downgrades to an **advisory** with a `jigc unmanage` prune route, so
+///   a moved checkout no longer wedges every subsequent task.
 ///
 /// **No auto-rewrite.** A path rename is an identity change; the MVP blocks and routes
 /// to revert, and **never** rewrites referrer refs or mutates the edge index
-/// (`reconciliation.md` → No silent rename). This function is pure of I/O and of any
-/// edge/referrer mutation by construction — it reads its inputs and returns findings.
+/// (`reconciliation.md` → No silent rename). The prune is likewise **never** automatic:
+/// silently forgetting a genuinely deleted managed doc would regress *"detected and
+/// routed, never silently absorbed."* This function is pure of I/O and of any
+/// edge/referrer mutation by construction — it reads its inputs (including the
+/// CLI-supplied `history` predicate) and returns findings.
 pub fn detect_rename(
     path: &str,
     from: &str,
     recorded_hash: &str,
     untracked: &[(&str, String)],
+    history: &crate::validate::HistoryPredicate<'_>,
 ) -> Vec<Finding> {
     match untracked.iter().find(|(_, hash)| hash == recorded_hash) {
         Some((suspect, _)) => vec![rename_strong_finding(path, from, suspect)],
-        None => vec![rename_weak_finding(path, from)],
+        // History-gate the weak signal (M45, Decision 7). `history(path)` is `git log HEAD
+        // -1 -- <path>` non-empty: present → a genuine deletion keeps blocking; empty → a
+        // dangling baseline the checkout moved underneath the cache, downgraded to advisory.
+        //
+        // Accepted bound (`design/storage.md` → Derived caches): a working copy truncated to
+        // a shallow clone can false-prune — at a shallow depth the deleting commit reads as a
+        // root and its deletion diff never materializes, so the path reads history-less and
+        // this arm downgrades a genuine deletion. It under-blocks, never over-blocks.
+        None if history(path) => vec![rename_weak_finding(path, from)],
+        None => vec![rename_dangling_baseline_finding(path, from)],
     }
 }
 
@@ -868,6 +899,28 @@ fn rename_weak_finding(path: &str, from: &str) -> Finding {
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
             "restore {path}, or confirm the deletion by dropping it from the index: `jigc unmanage {path}`"
+        ).into()),
+    )
+}
+
+/// The **advisory** dangling-baseline finding (M45, Decision 7; `design/storage.md` →
+/// Derived caches): the recorded baseline points at a path with **no HEAD history**, so
+/// nothing was deleted — the baseline is an artifact of the checkout moving underneath the
+/// gitignored file↔state cache (a `git reset --hard` / branch switch / rebase past the
+/// creating commit). Reuses the `reconciliation.rename` check id at [`Severity::Advisory`]
+/// (the established no-new-id advisory pattern in this file, cf.
+/// [`conformance_advisory_finding`]) and routes **prune-first** to `jigc unmanage {path}`, so
+/// a moved checkout no longer wedges every subsequent task.
+fn rename_dangling_baseline_finding(path: &str, from: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "reconciliation.rename",
+        format!(
+            "tracked managed doc {from} ({path}) is missing, but the path has no history — the checkout moved underneath the file-state cache, not a deletion"
+        ),
+        Some(Location::addressed(path, 1, 1)),
+        Some(format!(
+            "prune the stale baseline: `jigc unmanage {path}`; or restore {path} if it should still exist"
         ).into()),
     )
 }
@@ -1408,7 +1461,7 @@ Referrers must point at the new decision.
         // so its raw-byte hash matches the recorded baseline (a suspected `git mv`).
         let untracked: Vec<(&str, String)> = vec![(MOVED, hash_bytes(ADR_B_BASE.as_bytes()))];
 
-        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked);
+        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked, &|_| true);
 
         assert_eq!(findings.len(), 1, "strong signal emits exactly one finding");
         let f = &findings[0];
@@ -1449,7 +1502,7 @@ Referrers must point at the new decision.
         let untracked: Vec<(&str, String)> =
             vec![("decisions/unrelated.md", hash_bytes(b"some other body\n"))];
 
-        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked);
+        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked, &|_| true);
 
         assert_eq!(findings.len(), 1, "weak signal emits exactly one finding");
         let f = &findings[0];
@@ -1470,6 +1523,46 @@ Referrers must point at the new decision.
         assert!(
             route.contains("jigc unmanage") && !route.contains("jigc delete"),
             "the weak-signal route names the shipped top-level `jigc unmanage` op (not the nonexistent `jigc delete`): {route:?}"
+        );
+    }
+
+    /// **Weak signal, history-less** — the same missing tracked path with **no** content-
+    /// matching suspect, but the `history` predicate reports no HEAD history for it: a
+    /// dangling baseline the checkout moved out from under the gitignored cache (M45,
+    /// Decision 7). The detector downgrades to an **advisory** `reconciliation.rename` that
+    /// routes prune-first to `jigc unmanage`, never the blocking weak finding — so a moved
+    /// checkout no longer wedges the gate.
+    #[test]
+    fn rename_weak_signal_history_less_downgrades_to_advisory() {
+        const TRACKED: &str = "decisions/rate-limit.md";
+        const FROM: &str = "adr:rate-limit";
+
+        let recorded = hash_bytes(ADR_B_BASE.as_bytes());
+        let untracked: Vec<(&str, String)> =
+            vec![("decisions/unrelated.md", hash_bytes(b"some other body\n"))];
+
+        // `history` empty for the path: nothing was deleted, the baseline is stale.
+        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked, &|_| false);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "history-less weak signal emits one finding"
+        );
+        let f = &findings[0];
+        assert_eq!(f.code, "reconciliation.rename");
+        assert_eq!(
+            f.severity,
+            Severity::Advisory,
+            "a history-less dangling baseline downgrades to advisory: {f:?}"
+        );
+        let route = f
+            .route
+            .as_deref()
+            .expect("the advisory carries a prune route");
+        assert!(
+            route.contains(&format!("jigc unmanage {TRACKED}")),
+            "the advisory routes prune-first to `jigc unmanage`: {route:?}"
         );
     }
 
@@ -1512,8 +1605,14 @@ Referrers must point at the new decision.
         // No active task touches either doc (a separate empty task dir).
         let task = TempRoot::new("sweep-task");
 
-        let findings =
-            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+        );
 
         // The clean ADR absorbed (advisory) and its baseline advanced + edge folded in.
         assert!(
@@ -1581,8 +1680,14 @@ Referrers must point at the new decision.
         let mut index = EdgeIndex::default();
         let task = TempRoot::new("rename-task");
 
-        let findings =
-            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+        );
 
         let rename = findings
             .iter()
@@ -1627,8 +1732,14 @@ Referrers must point at the new decision.
         let task = TempRoot::new("outside-walk-task");
 
         // Present on disk but never walked → NOT missing: zero rename, hash untouched.
-        let findings =
-            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+        );
         assert!(
             findings.iter().all(|f| f.code != "reconciliation.rename"),
             "a baselined path present on disk outside the walk is not missing: {findings:?}"
@@ -1641,8 +1752,14 @@ Referrers must point at the new decision.
 
         // Genuinely deleted from disk → the weak-signal blocking rename fires.
         std::fs::remove_file(&artifact_abs).expect("delete the owner-artifact");
-        let findings =
-            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+        );
         let rename = findings
             .iter()
             .find(|f| f.code == "reconciliation.rename")
@@ -1715,8 +1832,14 @@ Referrers must point at the new decision.
         let mut index = EdgeIndex::default();
         let task = TempRoot::new("rename-crash-task");
 
-        let findings =
-            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+        );
 
         // (i) NO rename finding — neither the weak-signal restore nor a strong block.
         assert!(
@@ -1738,8 +1861,14 @@ Referrers must point at the new decision.
 
         // (iii) idempotent: a second sweep is a clean no-op (no rename, record stable).
         let record_after_first = record.clone();
-        let again =
-            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let again = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+        );
         assert!(
             again.iter().all(|f| f.code != "reconciliation.rename"),
             "the self-heal is idempotent — a second sweep emits no rename finding: {again:?}"
@@ -2166,8 +2295,14 @@ sections: []
         let mut index = EdgeIndex::default();
         let task = TempRoot::new("placement-drift-task");
 
-        let findings =
-            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+        );
 
         // (a) the OOB edit to the managed placement file is detected + routed.
         let block = findings
@@ -2212,8 +2347,14 @@ sections: []
         let mut index = EdgeIndex::default();
         let task = TempRoot::new("placement-missing-task");
 
-        let findings =
-            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+        );
 
         let rename = findings
             .iter()
