@@ -641,7 +641,10 @@ pub fn detect_committed_store_renames(
         // The read-only store twin passes an always-history-present predicate: `jigc validate`
         // store scope stays byte-identical to today (it keeps reporting the blocking weak
         // finding). The M45 advisory downgrade is scoped to the task/finalize gate — a
-        // deliberate boundary (`DECISIONS.md` → 2026-07-23 M45 Settle, Decision 7).
+        // deliberate boundary, decided at `DECISIONS.md` → 2026-07-24 M45 Increment 7
+        // planning (the "only the task path is decided" verified base; Decision 7's own text
+        // does not state the split). Pinned by
+        // `file_state_history_gate::store_scope_stays_blocking_where_task_scope_is_advisory`.
         let detected = detect_rename(&path, &from, &recorded_hash, &untracked_refs, &|_| true);
         if !detected.is_empty() {
             renamed.insert(from);
@@ -850,6 +853,31 @@ fn rename_landing_present(
 /// routed, never silently absorbed."* This function is pure of I/O and of any
 /// edge/referrer mutation by construction — it reads its inputs (including the
 /// CLI-supplied `history` predicate) and returns findings.
+///
+/// **The op-axis collapse argument** (the 2026-07-24 confidence audit, sibling-hunt
+/// finding 7). This oracle consults exactly three observables — the path is absent from
+/// disk (the caller's precondition), an untracked candidate carries the recorded hash,
+/// and `history(path)` — and nothing else: no git object existence (a `gc` changes
+/// nothing), no other-ref reachability (a branch delete changes nothing), no reflog, no
+/// sparse state. So every orphaning git *operation* projects onto one row of the
+/// (candidate × history) table, and testing the observables covers the ops — **for this
+/// oracle**. The collapse does NOT survive an oracle change: the ops are exactly where
+/// oracle *choice* diverges (e.g. `git log --all` re-blocks the branch-switch row Decision
+/// 7 chose HEAD-scoping to downgrade), which is why
+/// `crates/cli/tests/file_state_history_gate.rs` iterates the distinct **ops as real git
+/// operations** (its module doc carries the row table and the per-row collapse notes).
+/// Changing what this oracle consults requires re-deriving that table — the op suite will
+/// redden on any divergence.
+///
+/// **Declared conservative bound — sparse-checkout (a false-deletion shape).** A
+/// sparse-checkout that excludes a baselined doc's path reads (absent from the worktree ×
+/// history present) and classifies as the blocking weak deletion, though nothing was
+/// deleted — the file is merely unmaterialized. Pinned as-is
+/// (`file_state_history_gate::sparse_checkout_absence_classifies_as_weak_deletion_block`):
+/// blocking is the safe direction (it over-blocks, never false-prunes), and in-oracle
+/// sparse detection is deliberately not built — re-weigh only if a sparse-checkout user
+/// exists (`DECISIONS.md` → 2026-07-23 M45 Settle, Decision 7, the bracketed 2026-07-24
+/// note).
 pub fn detect_rename(
     path: &str,
     from: &str,
