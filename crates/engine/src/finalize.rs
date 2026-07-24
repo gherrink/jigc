@@ -118,16 +118,29 @@ pub struct FinalizePlan {
     /// `source-path` ([`crate::state::read_source_path`]); **empty** on every
     /// non-migration task (the milestone sibling never sets it).
     pub retirements: Vec<PathBuf>,
+    /// The **recorded owner-artifact paths** (`design/finalize.md` → 5. Stage; M45 Inc 8):
+    /// every staged instance's `owned-location` field value, in staged-file then
+    /// document order. An **in-process** field (this struct is never serialized to disk
+    /// or the wire — the `--format json` contract is [`ValidationReport`], not
+    /// `FinalizePlan`), so it carries no wire-contract weight. The CLI reads it to
+    /// **exempt** these paths from the carryover gate (an agent stages the audit artifact
+    /// before minting the recording task — the natural authoring order — so the recorded
+    /// path is the task's own subject, never a foreign carry-over), and (T2) to **stage**
+    /// them in-transaction. Empty when no staged instance carries an `owned-location`
+    /// field (the omitting-context inert path).
+    pub owner_artifacts: Vec<String>,
 }
 
 impl FinalizePlan {
     /// Build a plan over a rendered message, a promote set, a post-commit hash-update
-    /// set, and a retire set, stamping the current [`SCHEMA_VERSION`].
+    /// set, a retire set, and the recorded owner-artifact set, stamping the current
+    /// [`SCHEMA_VERSION`].
     fn new(
         message: String,
         promotions: Vec<Promotion>,
         hash_updates: BTreeMap<String, String>,
         retirements: Vec<PathBuf>,
+        owner_artifacts: Vec<String>,
     ) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
@@ -135,6 +148,7 @@ impl FinalizePlan {
             promotions,
             hash_updates,
             retirements,
+            owner_artifacts,
         }
     }
 }
@@ -239,12 +253,86 @@ pub fn plan_finalize(
     // squatter the managed write rewrites in place is not a distinct original to retire.
     let retirements = plan_retirements(unit, task_dir, &promote.promotions)?;
 
+    // The recorded owner-artifact set (M45 Inc 8): a second walk over the staged
+    // instances' `owned-location` fields, mirroring the #5 presence gate's field walk but
+    // *collecting* the recorded paths rather than adjudicating them — the CLI exempts them
+    // from the carryover gate and (T2) stages them in-transaction. Best-effort: an
+    // unparseable / typeless staged doc yields nothing, the gate's own skip-and-continue.
+    let owner_artifacts = plan_owner_artifacts(task_dir, schemas);
+
     Ok(FinalizePlan::new(
         message,
         promote.promotions,
         promote.hash_updates,
         retirements,
+        owner_artifacts,
     ))
+}
+
+/// Collect every staged instance's `owned-location` field value — the recorded
+/// owner-artifact paths ([`FinalizePlan::owner_artifacts`]). Mirrors
+/// [`crate::validate::owner_artifact_present`]'s section/field walk, but *collects* the
+/// recorded path rather than adjudicating presence/safety: the carryover gate exempts
+/// these paths and (M45 Inc 8 T2) finalize stages them in-transaction. A **best-effort**
+/// read — an unparseable / typeless / location-less instance yields nothing, mirroring the
+/// gate's skip-and-continue (an instance's own conformance is `conformance_for`'s concern,
+/// surfaced through phase 2's report before the plan is produced). Repo-relative, trimmed,
+/// non-empty values, in staged-file then document order.
+fn plan_owner_artifacts(task_dir: &Path, schemas: &BTreeMap<String, Schema>) -> Vec<String> {
+    use crate::schema::{FieldType, SectionBody};
+
+    let docs_dir = task_dir.join(DOCS_DIR);
+    let Ok(entries) = std::fs::read_dir(&docs_dir) else {
+        return Vec::new(); // no `docs/` dir means nothing was staged.
+    };
+    let mut staged: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+        .collect();
+    staged.sort();
+
+    let mut paths = Vec::new();
+    for source_path in staged {
+        let Some(stem) = source_path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some((ty, _slug)) = stem.split_once(':') else {
+            continue; // not a `<type>:<slug>` instance.
+        };
+        let Some(schema) = schemas.get(ty) else {
+            continue;
+        };
+        let Ok(source) = std::fs::read_to_string(&source_path) else {
+            continue;
+        };
+        let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
+            continue; // an unparseable instance is phase 2's concern, not this walk's.
+        };
+        for section in &schema.sections {
+            let SectionBody::Simple { fields, .. } = &section.body else {
+                continue; // owned-location lives on the meta header / a simple section.
+            };
+            let Some(parsed) = doc.sections.iter().find(|s| s.id == section.id) else {
+                continue;
+            };
+            for declared in fields {
+                if declared.ty != FieldType::OwnedLocation {
+                    continue;
+                }
+                let Some(present) = parsed.fields.iter().find(|f| f.key == declared.id) else {
+                    continue; // omitted: nothing recorded (the inert path).
+                };
+                if let crate::field_block::Value::Scalar(path) = &present.value {
+                    let trimmed = path.trim();
+                    if !trimmed.is_empty() {
+                        paths.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+    paths
 }
 
 /// Read the migration task's recorded foreign source path
@@ -569,9 +657,14 @@ pub enum CarryoverBoundary {
 /// comparison is structurally blind to a pre-task `git rm` — the trial's A7 case).
 /// `retire_exempt` is a migration task's recorded retire pathspec
 /// ([`crate::state::read_source_path`]) — that deletion is the task's own, never a
-/// carryover. A **`None` snapshot yields no findings** — the declared fail-open bound
-/// (a task minted pre-M43 finalizes as today). `boundary` selects the honest wording
-/// for the refusing verb ([`CarryoverBoundary`]).
+/// carryover. `owner_exempt` is the task's recorded owner-artifact paths
+/// ([`FinalizePlan::owner_artifacts`]; M45 Inc 8): an agent stages the audit artifact
+/// **before** minting the recording task (the natural authoring order), so the recorded
+/// path is the task's own subject, never a foreign carry-over — it is exempt **only at the
+/// [`CarryoverBoundary::Task`] boundary** (the milestone-boundary owner-artifact exemption
+/// is a separate, deferred concern). A **`None` snapshot yields no findings** — the declared
+/// fail-open bound (a task minted pre-M43 finalizes as today). `boundary` selects the honest
+/// wording for the refusing verb ([`CarryoverBoundary`]).
 ///
 /// Findings come out **sorted by path** across both halves (one union `BTreeSet`) —
 /// byte-identical whatever order the sets were built in (Validation hardening #7).
@@ -582,6 +675,7 @@ pub fn decide_carryover(
     snapshot: Option<&StagedSnapshot>,
     current: &StagedSnapshot,
     retire_exempt: Option<&str>,
+    owner_exempt: &[String],
     boundary: CarryoverBoundary,
 ) -> Vec<Finding> {
     // Missing snapshot ⇒ fail-open: a task minted before the gate existed finalizes
@@ -589,10 +683,21 @@ pub fn decide_carryover(
     let Some(snapshot) = snapshot else {
         return Vec::new();
     };
-    // The recorded retire path is stored prose (may carry `./`); the git-fact paths
-    // are already repo-relative canonical — normalize the exempt side only (the
-    // `plan_clobber_guard` source-path precedent).
-    let exempt = retire_exempt.map(|p| crate::store::lexical_normalize(Path::new(p)));
+    // The exempt paths are stored prose (a retire path may carry `./`; an owner-artifact
+    // path is the recorded field value); the git-fact paths are already repo-relative
+    // canonical — normalize the exempt side only (the `plan_clobber_guard` source-path
+    // precedent). The retire path is a migration task's own deletion; the owner-artifact
+    // paths are the task's recorded subject, exempt only at the TASK boundary (the
+    // milestone owner-artifact exemption is a separate, deferred concern).
+    let mut exempt: BTreeSet<PathBuf> = BTreeSet::new();
+    if let Some(path) = retire_exempt {
+        exempt.insert(crate::store::lexical_normalize(Path::new(path)));
+    }
+    if matches!(boundary, CarryoverBoundary::Task) {
+        for path in owner_exempt {
+            exempt.insert(crate::store::lexical_normalize(Path::new(path)));
+        }
+    }
 
     // The carried union, path-sorted by construction: entries whose (path, blob)
     // still match, plus snapshot deletions still staged. A `bool` discriminates the
@@ -610,7 +715,7 @@ pub fn decide_carryover(
     }
     carried
         .into_iter()
-        .filter(|(path, _)| exempt.as_deref() != Some(Path::new(path)))
+        .filter(|(path, _)| !exempt.contains(Path::new(path)))
         .map(|(path, is_deletion)| carried_staged_finding(path, is_deletion, boundary))
         .collect()
 }
@@ -739,11 +844,14 @@ pub fn plan_milestone_finalize(
     // No commit-doc render — the synthesized message is substituted for phase 3. Phase 4
     // promote + phase 7 hashes are the SHARED sweep over the materialized `docs/`.
     let promote = plan_promotions(staging_dir, schemas)?;
-    // A milestone boundary retires nothing — retire is migration-only (a per-task verb).
+    // A milestone boundary retires nothing — retire is migration-only (a per-task verb) —
+    // and carries no owner-artifact set: the owner-artifact exemption/stage is a per-task
+    // concern, the milestone-boundary case a separate, deferred one (M45 Inc 8).
     Ok(FinalizePlan::new(
         message,
         promote.promotions,
         promote.hash_updates,
+        Vec::new(),
         Vec::new(),
     ))
 }
@@ -1301,6 +1409,57 @@ sections:
 
     fn base() -> BasePin {
         BasePin::new("0123456789abcdef0123456789abcdef01234567", "0123456")
+    }
+
+    /// A throwaway `completion-record` doctype carrying an engine-native `owned-location`
+    /// `owner-artifact` field on its `meta` header (the #5 gate target) plus a body slot,
+    /// persisted to `completions/` — the substrate for the `owner_artifacts` collection
+    /// walk. A FIXTURE, never pack content.
+    fn completion_record_schema() -> Schema {
+        let yaml = b"\
+type: completion-record
+location: completions/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: owner-artifact, type: owned-location }
+  - id: body
+    slot: { hint: \"The record body.\" }
+";
+        crate::schema::load_schema(yaml).expect("completion-record fixture loads")
+    }
+
+    /// Stage a filled `completion-record:<slug>` doc naming `owner_artifact` on its meta
+    /// header at `<task_dir>/docs/completion-record:<slug>.md` (a body slot filled so the
+    /// instance parses cleanly). The engine-native owned-location value is what
+    /// [`plan_owner_artifacts`] collects.
+    fn stage_filled_completion_record(task_dir: &Path, schema: &Schema, slug: &str, owner: &str) {
+        use crate::field_block::{Field, Value};
+        use crate::write::SectionContent;
+
+        let instance = write::Instance {
+            title: slug.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: vec![Field {
+                        key: "owner-artifact".to_string(),
+                        value: Value::Scalar(owner.to_string()),
+                    }],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "body".to_string(),
+                    slot: Some("The audit landed green.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        let bytes = write::render(schema, &instance);
+        let path = state::instance_path(task_dir, &schema.ty, slug);
+        state::persist(&path, bytes.as_bytes()).expect("persist staged completion-record");
     }
 
     /// Stage a filled `commit:<slug>` doc in `task_dir` (a `feat` type + a summary)
@@ -2296,6 +2455,48 @@ sections:
         );
     }
 
+    /// (M45 Inc 8 T1) `plan_finalize` populates [`FinalizePlan::owner_artifacts`] with each
+    /// staged instance's recorded `owned-location` value — the second walk mirroring the #5
+    /// presence gate's field walk. A clean report + a diff signal drive the planner past
+    /// phase 2, and the plan carries the recorded owner-artifact path the CLI exempts from
+    /// the carryover gate (and, T2, stages in-transaction). A staged doc with **no**
+    /// owned-location field contributes nothing (the omitting-context inert path).
+    #[test]
+    fn plan_finalize_collects_owner_artifacts_from_a_staged_owned_location_record() {
+        let root = TempRoot::new("owner-artifacts");
+        let task_dir = root.path().join("tasks").join("record-completion");
+
+        // A transient commit doc (no owned-location — contributes nothing) + a
+        // completion-record naming an owner-artifact under the owned home.
+        stage_filled_commit(&task_dir, "record-completion");
+        let cr = completion_record_schema();
+        stage_filled_completion_record(&task_dir, &cr, "m45", "completions/artifacts/M45/audit.md");
+
+        let mut schemas = schemas();
+        schemas.insert(cr.ty.clone(), cr.clone());
+
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+        let plan = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &commit_schema(),
+            "record-completion",
+            &schemas,
+        )
+        .expect("a clean report + diff drive the planner past phase 2");
+
+        assert_eq!(
+            plan.owner_artifacts,
+            vec!["completions/artifacts/M45/audit.md".to_string()],
+            "the plan collects exactly the recorded owned-location path — the carryover \
+             exemption + (T2) stage set; the commit doc's no-owned-location contributes none",
+        );
+    }
+
     /// (M38 inc-1 T2) A **placement** doctype rides the milestone-join promote path —
     /// the shared `plan_promotions` inherits the literal-file branch, so the join
     /// produces a plan promoting the instance to its literal `placement.file`.
@@ -2854,7 +3055,13 @@ sections:
             &[("src/foreign.rs", "aaaa1111"), ("src/mine.rs", "bbbb2222")],
             &[],
         );
-        let findings = decide_carryover(Some(&snapshot), &current, None, CarryoverBoundary::Task);
+        let findings = decide_carryover(
+            Some(&snapshot),
+            &current,
+            None,
+            &[],
+            CarryoverBoundary::Task,
+        );
         assert_eq!(findings.len(), 1, "one finding per carried path — only one");
         let finding = &findings[0];
         assert_eq!(finding.code, "finalize.carried-staged");
@@ -2895,7 +3102,13 @@ sections:
         // a.rs restaged to new content; b.rs unstaged; gone.md's deletion restored.
         let current = staged(&[("src/a.rs", "dddd4444")], &[]);
         assert_eq!(
-            decide_carryover(Some(&snapshot), &current, None, CarryoverBoundary::Task),
+            decide_carryover(
+                Some(&snapshot),
+                &current,
+                None,
+                &[],
+                CarryoverBoundary::Task
+            ),
             Vec::new(),
             "a restaged / cleared / restored path is not a carryover",
         );
@@ -2907,7 +3120,13 @@ sections:
     fn carryover_snapshot_deletion_still_staged_is_carried() {
         let snapshot = staged(&[], &["legacy/OLD.md"]);
         let current = staged(&[], &["legacy/OLD.md"]);
-        let findings = decide_carryover(Some(&snapshot), &current, None, CarryoverBoundary::Task);
+        let findings = decide_carryover(
+            Some(&snapshot),
+            &current,
+            None,
+            &[],
+            CarryoverBoundary::Task,
+        );
         assert_eq!(findings.len(), 1, "the staged deletion is carried");
         assert_eq!(findings[0].code, "finalize.carried-staged");
         assert_eq!(findings[0].key().target.as_deref(), Some("legacy/OLD.md"));
@@ -2929,6 +3148,7 @@ sections:
             Some(&snapshot),
             &current,
             Some("./legacy/CHANGES.md"),
+            &[],
             CarryoverBoundary::Task,
         );
         assert_eq!(
@@ -2939,6 +3159,58 @@ sections:
         assert_eq!(findings[0].key().target.as_deref(), Some("notes.md"));
     }
 
+    /// The task's **recorded owner-artifact paths are exempt at the [`CarryoverBoundary::Task`]
+    /// boundary** (M45 Inc 8 T1, Decision 5): an agent stages the audit artifact before
+    /// minting the recording task (the natural authoring order), so the pre-task staged entry
+    /// is the task's own subject, never a foreign carry-over — while every *other* carried
+    /// path still blocks. The exempt path is compared lexically normalized (the recorded
+    /// `owned-location` field value may carry `./`). **Context-scoped guard:** the same set
+    /// at the **milestone** boundary is **not** exempt (the milestone-boundary owner-artifact
+    /// exemption is a separate, deferred concern) — a green over the composing (Task) context
+    /// must not hide the omitting (Milestone) context.
+    #[test]
+    fn carryover_owner_artifact_paths_exempt_at_task_boundary_only() {
+        let snapshot = staged(
+            &[
+                ("completions/artifacts/M45/audit.md", "aaaa1111"),
+                ("src/mine.rs", "bbbb2222"),
+            ],
+            &[],
+        );
+        let current = snapshot.clone();
+        let owner_exempt = vec!["./completions/artifacts/M45/audit.md".to_string()];
+
+        // Task boundary: the owner-artifact is exempt; the foreign entry still blocks.
+        let task = decide_carryover(
+            Some(&snapshot),
+            &current,
+            None,
+            &owner_exempt,
+            CarryoverBoundary::Task,
+        );
+        assert_eq!(
+            task.len(),
+            1,
+            "the owner-artifact is exempt at the task boundary; the foreign entry is not: {task:?}"
+        );
+        assert_eq!(task[0].key().target.as_deref(), Some("src/mine.rs"));
+
+        // Milestone boundary: the SAME set is not exempt — both entries carry (the
+        // omitting-context guard).
+        let milestone = decide_carryover(
+            Some(&snapshot),
+            &current,
+            None,
+            &owner_exempt,
+            CarryoverBoundary::Milestone,
+        );
+        assert_eq!(
+            milestone.len(),
+            2,
+            "no owner-artifact exemption at the milestone boundary — both carry: {milestone:?}"
+        );
+    }
+
     /// **Missing snapshot ⇒ fail-open** (the declared bound: a task minted pre-M43
     /// finalizes as today) — and, distinctly, an **empty** snapshot carries nothing
     /// (everything staged since mint is the task's own).
@@ -2946,7 +3218,7 @@ sections:
     fn carryover_missing_snapshot_fails_open_empty_snapshot_carries_nothing() {
         let current = staged(&[("src/foreign.rs", "aaaa1111")], &["legacy/OLD.md"]);
         assert_eq!(
-            decide_carryover(None, &current, None, CarryoverBoundary::Task),
+            decide_carryover(None, &current, None, &[], CarryoverBoundary::Task),
             Vec::new(),
             "no snapshot (pre-M43 mint) ⇒ fail-open, no findings",
         );
@@ -2955,6 +3227,7 @@ sections:
                 Some(&StagedSnapshot::default()),
                 &current,
                 None,
+                &[],
                 CarryoverBoundary::Task
             ),
             Vec::new(),
@@ -2972,7 +3245,13 @@ sections:
         let deletions = ["a.md", "c.md"];
         let snapshot = staged(&entries, &deletions);
         let current = staged(&entries, &deletions);
-        let findings = decide_carryover(Some(&snapshot), &current, None, CarryoverBoundary::Task);
+        let findings = decide_carryover(
+            Some(&snapshot),
+            &current,
+            None,
+            &[],
+            CarryoverBoundary::Task,
+        );
         let targets: Vec<Option<String>> = findings.iter().map(|f| f.key().target).collect();
         assert_eq!(
             targets,
@@ -2994,6 +3273,7 @@ sections:
                 Some(&snapshot_rev),
                 &current_rev,
                 None,
+                &[],
                 CarryoverBoundary::Task
             ),
             "the decision is a function of the sets — identical across build orders",
@@ -3014,6 +3294,7 @@ sections:
             Some(&snapshot),
             &current,
             None,
+            &[],
             CarryoverBoundary::Milestone,
         );
         assert_eq!(findings.len(), 2, "both halves still carry — same decision");

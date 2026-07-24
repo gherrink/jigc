@@ -1736,40 +1736,86 @@ fn owner_artifact_present(
             let crate::field_block::Value::Scalar(path) = &present.value else {
                 continue; // a list value is not an owned-location shape.
             };
-            if let Some(why) = owned_location_violation(path, repo_root, tracked) {
-                findings.push(blocking_conformance(
-                    "owner-artifact.present",
-                    format!(
-                        "owner-artifact `{}` in section `{}` of `{display}`: {why}",
-                        declared.id, section.id
-                    ),
-                    Some(Location::addressed(
-                        format!("{identity}#{}/{}", section.id, declared.id),
-                        1,
-                        1,
-                    )),
+            if let Some(violation) = owned_location_violation(path, repo_root, tracked) {
+                let message = format!(
+                    "owner-artifact `{}` in section `{}` of `{display}`: {}",
+                    declared.id, section.id, violation.reason
+                );
+                let location = Some(Location::addressed(
+                    format!("{identity}#{}/{}", section.id, declared.id),
+                    1,
+                    1,
                 ));
+                // Cause-aware route (M45 Inc 8 T1, Decision 5): the **untracked** cause is
+                // the natural pre-staged authoring order's single missing step — the
+                // artifact is present, safe, and at the recorded path, just not staged — so
+                // the route names `git add <path>`. A `Route::mechanical` argv must lead
+                // with `jigc` (`crates/cli/src/route_fence.rs`), so this is a `Route::human`
+                // naming the command verbatim — the `finalize.carried-staged` precedent,
+                // which names `git restore --staged` exactly that way. Every other cause
+                // (absent / misplaced / unsafe) is a place-or-correct human judgment (the
+                // default `conformance_route` for the code).
+                findings.push(if violation.untracked {
+                    Finding::graded(
+                        Severity::Blocking,
+                        "owner-artifact.present",
+                        message,
+                        location,
+                        Some(Route::human(format!(
+                            "the artifact is present but not staged — stage it with \
+                             `git add {}` so it is durably committed with this task",
+                            path.trim()
+                        ))),
+                    )
+                } else {
+                    blocking_conformance("owner-artifact.present", message, location)
+                });
             }
         }
     }
     findings
 }
 
+/// The adjudication of one `owned-location` path: the human-readable `reason` the finding
+/// carries, plus whether the cause is the **untracked** one (the artifact is safe + present
+/// at the recorded path but not staged). The emit site reads `untracked` to pick a
+/// cause-aware route — `git add <path>` for the untracked cause (the natural pre-staged
+/// order's single missing step), the default place-or-correct route otherwise.
+struct OwnedLocationViolation {
+    reason: String,
+    untracked: bool,
+}
+
+impl OwnedLocationViolation {
+    /// A non-untracked violation (absent / misplaced / unsafe) — the default route.
+    fn misplaced(reason: String) -> Self {
+        Self {
+            reason,
+            untracked: false,
+        }
+    }
+}
+
 /// Adjudicate one `owned-location` path: `None` when the artifact is safe + durably
-/// present + tracked, else `Some(reason)` (the human-readable cause the finding carries).
-/// Reads only the path string, the file's presence under `repo_root`, and the `tracked`
-/// flag — never the artifact's bytes (the determinism boundary).
+/// present + tracked, else `Some(violation)` carrying the human-readable cause and the
+/// untracked-cause flag ([`OwnedLocationViolation`]). Reads only the path string, the
+/// file's presence under `repo_root`, and the `tracked` flag — never the artifact's bytes
+/// (the determinism boundary).
 fn owned_location_violation(
     path: &str,
     repo_root: &Path,
     tracked: &TrackedPredicate<'_>,
-) -> Option<String> {
+) -> Option<OwnedLocationViolation> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Some("the path is empty".to_string());
+        return Some(OwnedLocationViolation::misplaced(
+            "the path is empty".to_string(),
+        ));
     }
     if Path::new(trimmed).is_absolute() || trimmed.starts_with('/') {
-        return Some(format!("`{trimmed}` is absolute, not a repo-relative path"));
+        return Some(OwnedLocationViolation::misplaced(format!(
+            "`{trimmed}` is absolute, not a repo-relative path"
+        )));
     }
     // A `..` component would let the path climb out of the owned home (and out of the
     // repo). Reject on the *textual* component, before any filesystem resolution.
@@ -1777,18 +1823,22 @@ fn owned_location_violation(
         .components()
         .any(|c| matches!(c, std::path::Component::ParentDir))
     {
-        return Some(format!("`{trimmed}` contains a `..` component"));
+        return Some(OwnedLocationViolation::misplaced(format!(
+            "`{trimmed}` contains a `..` component"
+        )));
     }
     if !trimmed.starts_with(OWNED_ARTIFACT_HOME) || trimmed.len() == OWNED_ARTIFACT_HOME.len() {
-        return Some(format!(
+        return Some(OwnedLocationViolation::misplaced(format!(
             "`{trimmed}` is not under the owned artifact home `{OWNED_ARTIFACT_HOME}<milestone>/`"
-        ));
+        )));
     }
     // Presence under the repo root. The path is repo-relative + `..`-free, so the join
     // stays within the tree textually; a symlink could still escape, caught next.
     let full = repo_root.join(trimmed);
     if !full.exists() {
-        return Some(format!("`{trimmed}` names no file under the repository"));
+        return Some(OwnedLocationViolation::misplaced(format!(
+            "`{trimmed}` names no file under the repository"
+        )));
     }
     // Symlink-escape: the resolved real path must stay under the owned home. Canonicalize
     // both the home and the target (the home must resolve too — `..`-free + present).
@@ -1796,15 +1846,20 @@ fn owned_location_violation(
     match (full.canonicalize().ok(), home_real) {
         (Some(real), Some(home)) if real.starts_with(&home) => {}
         _ => {
-            return Some(format!(
+            return Some(OwnedLocationViolation::misplaced(format!(
                 "`{trimmed}` resolves outside the owned artifact home (symlink escape)"
-            ));
+            )));
         }
     }
     if !tracked(trimmed) {
-        return Some(format!(
-            "`{trimmed}` is present but untracked — stage it so it is durably committed"
-        ));
+        // The untracked cause — safe + present, just not staged. The emit site routes it
+        // to `git add <path>` (M45 Inc 8 T1).
+        return Some(OwnedLocationViolation {
+            reason: format!(
+                "`{trimmed}` is present but untracked — stage it so it is durably committed"
+            ),
+            untracked: true,
+        });
     }
     None
 }
@@ -5572,6 +5627,58 @@ The audit landed green.
                  forms: a node inside a managed doc takes the URI)",
             );
         }
+    }
+
+    /// (M45 Inc 8 T1) The **untracked cause is cause-aware routed**: an owner-artifact
+    /// safe + present at the recorded path but not staged routes to `git add <path>` as a
+    /// [`RouteKind::Human`] direction (a mechanical route's argv must lead with `jigc`, so
+    /// the command is named in human text — the `finalize.carried-staged` precedent). Every
+    /// **other** cause (here: absent) keeps the default place-or-correct route, never naming
+    /// `git add` — so the cause-awareness is proven at both poles, not just the new arm.
+    #[test]
+    fn gate_routes_the_untracked_cause_to_git_add() {
+        use crate::finding::RouteKind;
+        let repo = TempRepo::new("route");
+        repo.write("completions/artifacts/M16/audit.md", b"audit transcript\n");
+
+        // The untracked cause: present + safe, tracked-predicate says false.
+        let untracked: Box<TrackedPredicate> = Box::new(|_p: &str| false);
+        let source = record_with_owner_artifact("completions/artifacts/M16/audit.md");
+        let findings = gate(repo.path(), &source, untracked.as_ref());
+        assert_eq!(
+            findings.len(),
+            1,
+            "the untracked case fires once, got {findings:?}"
+        );
+        let route = findings[0].route.as_ref().expect("blocking ⇒ routed");
+        assert!(
+            matches!(route.kind(), RouteKind::Human),
+            "the untracked route is a human direction (git add cannot be a mechanical route \
+             — its argv does not lead with `jigc`), got {:?}",
+            route.kind()
+        );
+        assert!(
+            route
+                .as_str()
+                .contains("git add completions/artifacts/M16/audit.md"),
+            "the untracked route names `git add <path>`, got: {}",
+            route.as_str()
+        );
+
+        // The absent cause keeps the default place-or-correct route (never `git add`).
+        let absent_source = record_with_owner_artifact("completions/artifacts/M16/missing.md");
+        let absent = gate(repo.path(), &absent_source, &always_tracked());
+        assert_eq!(
+            absent.len(),
+            1,
+            "the absent case fires once, got {absent:?}"
+        );
+        let absent_route = absent[0].route.as_ref().expect("blocking ⇒ routed");
+        assert!(
+            !absent_route.as_str().contains("git add"),
+            "a non-untracked cause keeps the place/correct route, never `git add`: {}",
+            absent_route.as_str()
+        );
     }
 
     /// (GREEN — passes) A path durably staged under `completions/artifacts/<milestone>/`

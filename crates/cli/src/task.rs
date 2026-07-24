@@ -1002,6 +1002,11 @@ impl TaskArea {
                 snapshot.as_ref(),
                 &git_staged_snapshot(&self.repo_root)?,
                 retire_exempt.as_deref(),
+                // The recorded owner-artifact paths are exempt: an agent stages the audit
+                // artifact before minting this recording task (the natural authoring
+                // order), so the pre-task staged entry is the task's own subject, never a
+                // foreign carry-over (M45 Inc 8; `design/finalize.md` → 5. Stage).
+                &plan.owner_artifacts,
                 CarryoverBoundary::Task,
             )
         };

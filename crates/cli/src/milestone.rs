@@ -1715,6 +1715,10 @@ fn run_milestone_finalize(
             snapshot.as_ref(),
             &crate::task::git_staged_snapshot(&repo_root)?,
             None,
+            // No owner-artifact exemption at the milestone boundary — it applies only at
+            // `CarryoverBoundary::Task` (M45 Inc 8; the milestone owner-artifact exemption
+            // is a separate, deferred concern).
+            &[],
             engine::finalize::CarryoverBoundary::Milestone,
         );
         if !carried.is_empty() {
