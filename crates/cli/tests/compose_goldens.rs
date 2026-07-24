@@ -18,12 +18,22 @@
 //! **Surfaces swept per member** (pinning.md §1):
 //!   * `jigc workflow <id> --preview` for **every** workflow — the mint-free compose
 //!     (M44), so it is read-only and runs against the built corpus directly;
-//!   * `jigc start --workflow <id> <intent>` for the **`creates-task`** set, where
-//!     minting is part of the surface — each arm mutates its corpus (mints a task
-//!     dir), so a fresh copy is taken per arm;
+//!   * `jigc start --workflow <id> <intent>` for **every** workflow — a
+//!     `creates-task: true` member mints (part of its surface), so each arm takes a
+//!     fresh corpus copy; a `creates-task: false` member (the router and its kind)
+//!     composes with **no mint**, and that composed output — the model-free
+//!     selection path, the exact surface the preview refusal routes to — is swept
+//!     the same way (the sibling-hunt's finding 5: filtering these by code
+//!     structure bypassed [`EXCLUSIONS`] and left them pinned by nothing);
+//!   * the **front-door composite surfaces** — bare `jigc start` (orientation),
+//!     `jigc start "<intent>"` (the cascade-default router selection), and their
+//!     `--format json` variants — all read-only (the router mints nothing);
 //!   * `jigc describe` — the whole composite catalog, a memberless surface;
 //!   * `jigc doc schema <type> --format json` **and** the human form for **every**
-//!     doctype.
+//!     doctype;
+//!   * the **AGENT.md render** — the adapter bootstrap file `jigc setup` writes
+//!     (`.jigc/AGENT.md`, regenerated whole each run), goldened as the rendered
+//!     file bytes rather than an invocation.
 //!
 //! **Each surface × every fixture state** ([`State::ALL`]) by default — an exclusion
 //! is an entry in [`EXCLUSIONS`] with a stated reason (executable metadata), never a
@@ -42,8 +52,7 @@ mod support;
 use std::collections::BTreeSet;
 
 use cli::pack::EmbeddedPack;
-use engine::compose::load_workflow_def;
-use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+use engine::packsource::{PackResourceKind, PackSource};
 
 use support::goldens::{Capture, GoldenKey, GoldenSuite, update_mode};
 use support::trial_corpus::{State, TrialCorpus};
@@ -90,13 +99,6 @@ struct Member {
     id: String,
 }
 
-/// A swept workflow — a [`Member`] plus whether `start` mints from it (the
-/// `creates-task` filter that decides the `start` arm).
-struct WorkflowMember {
-    member: Member,
-    creates_task: bool,
-}
-
 /// The two embedded packs, in precedence order (dev wins) — built the CWD-free way
 /// ([`EmbeddedPack::new`] / [`EmbeddedPack::methodology`] read no ambient state),
 /// never `make_pack()`, which resolves against the process CWD.
@@ -128,11 +130,13 @@ fn composite_doctypes() -> Vec<Member> {
     out
 }
 
-/// Every workflow the composite exposes, tagged with its origin pack and its
-/// `creates-task` flag (read from the workflow definition, never a hand list).
+/// Every workflow the composite exposes, tagged with its origin pack — **the whole
+/// set, undivided**: no `creates-task` (or any other definition-shape) filter may
+/// narrow it, because a code-structure skip bypasses [`EXCLUSIONS`] and leaves a
+/// surface pinned by nothing while looking swept (the sibling-hunt's finding 5).
 /// Deduped first-wins across the precedence order; the two packs' workflow sets do
 /// not overlap, so every id resolves to exactly one pack.
-fn composite_workflows() -> Vec<WorkflowMember> {
+fn composite_workflows() -> Vec<Member> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
     for (pack_name, pack) in embedded_packs() {
@@ -141,28 +145,13 @@ fn composite_workflows() -> Vec<WorkflowMember> {
             if !seen.insert(id_str.clone()) {
                 continue;
             }
-            let creates_task = workflow_creates_task(&pack, &id);
-            out.push(WorkflowMember {
-                member: Member {
-                    pack: pack_name,
-                    id: id_str,
-                },
-                creates_task,
+            out.push(Member {
+                pack: pack_name,
+                id: id_str,
             });
         }
     }
     out
-}
-
-/// Whether a workflow mints a task, read from its own definition through the
-/// production loader — the same `creates_task` the binary composes on.
-fn workflow_creates_task(pack: &EmbeddedPack, id: &ResourceId) -> bool {
-    let bytes = pack
-        .read(PackResourceKind::Workflows, id)
-        .unwrap_or_else(|e| panic!("read workflow `{}`: {e}", id.as_str()));
-    load_workflow_def(&bytes)
-        .unwrap_or_else(|f| panic!("load workflow `{}`: {f:?}", id.as_str()))
-        .creates_task
 }
 
 /// The production golden suite, rooted at this crate's `tests/goldens`, with regen
@@ -213,40 +202,79 @@ fn sweep(state: State) {
 
     // 1. `jigc workflow <id> --preview` — mint-free, read-only, every workflow.
     for wf in &workflows {
-        if is_excluded("workflow-preview", &wf.member.id, state) {
+        if is_excluded("workflow-preview", &wf.id, state) {
             continue;
         }
-        let out = corpus.jigc(&["workflow", &wf.member.id, "--preview"]);
+        let out = corpus.jigc(&["workflow", &wf.id, "--preview"]);
         check(
             &suite,
-            wf.member.pack,
+            wf.pack,
             "workflow-preview",
-            &wf.member.id,
+            &wf.id,
             state,
             &corpus.repo(),
             &out,
         );
     }
 
-    // 2. `jigc start --workflow <id>` — the `creates-task` set, a fresh copy per arm.
-    for wf in workflows.iter().filter(|w| w.creates_task) {
-        if is_excluded("start", &wf.member.id, state) {
+    // 2. `jigc start --workflow <id>` — every workflow, a fresh copy per arm. A
+    //    `creates-task: true` member mints (the mutation the copy isolates); a
+    //    `creates-task: false` member composes with no mint — the surface the
+    //    preview refusal routes to, swept here rather than filtered out.
+    for wf in &workflows {
+        if is_excluded("start", &wf.id, state) {
             continue;
         }
         let arm = corpus.copy_state();
-        let out = arm.jigc(&["start", "--workflow", &wf.member.id, INTENT]);
+        let out = arm.jigc(&["start", "--workflow", &wf.id, INTENT]);
+        check(&suite, wf.pack, "start", &wf.id, state, &arm.repo(), &out);
+    }
+
+    // 3. The front-door composite surfaces — bare orientation, the cascade-default
+    //    router selection, and their `--format json` variants. All read-only: the
+    //    orientation composes nothing and the default workflow (the router) mints
+    //    nothing, so they run against the built corpus directly. Memberless per
+    //    form, so each files under its own surface name, like `describe`.
+    let front_door: &[(&str, &[&str])] = &[
+        ("start-orient", &["start"]),
+        ("start-orient-json", &["start", "--format", "json"]),
+        ("start-intent", &["start", INTENT]),
+        ("start-intent-json", &["start", INTENT, "--format", "json"]),
+    ];
+    for (surface, args) in front_door {
+        if is_excluded(surface, surface, state) {
+            continue;
+        }
+        let out = corpus.jigc(args);
         check(
             &suite,
-            wf.member.pack,
-            "start",
-            &wf.member.id,
+            COMPOSITE,
+            surface,
+            surface,
             state,
-            &arm.repo(),
+            &corpus.repo(),
             &out,
         );
     }
 
-    // 3. `jigc describe` — the whole composite catalog, a memberless surface.
+    // 4. The AGENT.md render — the adapter bootstrap file `jigc setup` writes whole
+    //    (`.jigc/AGENT.md`); the golden is the rendered file bytes, not an
+    //    invocation, so it takes the file-render capture.
+    if !is_excluded("agent-md", "agent-md", state) {
+        let body = support::trial_corpus::read(&corpus.repo(), ".jigc/AGENT.md");
+        let capture = Capture::of_file(&body, &corpus.repo());
+        suite.check(
+            &GoldenKey {
+                pack: COMPOSITE,
+                surface: "agent-md",
+                member: "agent-md",
+                state: state.name(),
+            },
+            &capture,
+        );
+    }
+
+    // 5. `jigc describe` — the whole composite catalog, a memberless surface.
     if !is_excluded("describe", "describe", state) {
         let out = corpus.jigc(&["describe"]);
         check(
@@ -260,7 +288,7 @@ fn sweep(state: State) {
         );
     }
 
-    // 4. `jigc doc schema <type>` — json + human, every doctype.
+    // 6. `jigc doc schema <type>` — json + human, every doctype.
     for dt in &doctypes {
         if !is_excluded("doc-schema-json", &dt.id, state) {
             let out = corpus.jigc(&["doc", "schema", &dt.id, "--format", "json"]);

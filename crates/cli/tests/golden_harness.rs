@@ -301,6 +301,42 @@ fn each_captured_channel_is_pinned_independently() {
     }
 }
 
+/// (5b) A **file-render** capture ([`Capture::of_file`], the AGENT.md arm) is the
+/// file's bytes alone — no invocation framing — under the same single repo-path
+/// normalization, and a mutated byte reddens exactly like an invocation capture.
+#[test]
+fn a_file_render_capture_is_the_normalized_bytes_alone() {
+    let root = GoldenRoot::new();
+    let repo = Path::new("/nowhere/that/appears");
+    let key = GoldenKey {
+        pack: "composite",
+        surface: "agent-md",
+        member: "agent-md",
+        state: "fresh",
+    };
+
+    let body = format!("bootstrap prose citing {}/x.md\n", repo.display());
+    let baseline = Capture::of_file(&body, repo);
+    root.regenerating().check(&key, &baseline);
+    root.checking().check(&key, &baseline);
+
+    let written =
+        std::fs::read_to_string(root.checking().path_of(&key)).expect("the regen wrote the golden");
+    assert_eq!(
+        written,
+        format!("bootstrap prose citing {REPO_TOKEN}/x.md\n"),
+        "a file-render golden is the file's bytes with the repo path normalized — \
+         no `exit:` line, no stream framing",
+    );
+
+    let mutated = Capture::of_file("bootstrap prose, mutated\n", repo);
+    let message = panic_message(|| root.checking().check(&key, &mutated));
+    assert!(
+        message.contains("mismatch"),
+        "a changed file render must redden the golden; got:\n{message}",
+    );
+}
+
 /// (6) `CI` refuses a regen request, over all four combinations — a regen can never
 /// green CI, and no other combination is disturbed.
 #[test]

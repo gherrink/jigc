@@ -85,6 +85,17 @@ impl Capture {
         }
     }
 
+    /// Capture a **rendered file** (the AGENT.md bootstrap render), normalizing
+    /// paths under `repo` — the same single normalization as [`Capture::of`].
+    ///
+    /// A file render has no exit code and no streams, so the golden is the file's
+    /// bytes alone; the invocation framing would be a fiction here, not a capture.
+    pub fn of_file(body: &str, repo: &Path) -> Self {
+        Capture {
+            text: normalize(body, repo),
+        }
+    }
+
     /// The rendered, normalized bytes.
     pub fn text(&self) -> &str {
         &self.text

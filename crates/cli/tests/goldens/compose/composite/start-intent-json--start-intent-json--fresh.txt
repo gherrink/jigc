@@ -1,0 +1,7 @@
+exit: 0
+--- stdout ---
+{
+  "task": null,
+  "text": "These are the selectable work-workflows, each with the situation it fits:\n\n- architecture-documentation — document the architecture of a part of the system, tying its components to the code that implements them\n- decided-task — implement one scoped change test-first, recording its design decision on the running decisions log\n- dev-task — implement one scoped change test-first, recording no decision and touching no documented code\n- do-research — you need to investigate or gather evidence before forming a vision or making a decision\n- form-vision — you're forming or revising the project's vision from research\n- implement-from-spec — a committed spec already covers the intent, with acceptance criteria to build against\n- park-idea — a shaped-but-unscheduled idea occurs mid-work and is worth keeping\n- plan — draft the specification for upcoming work before writing any code\n- project-setup — bootstrap a brand-new project by developing the idea into its first product requirements\n- quick-fix — apply a small commit-only fix that touches no documented code and records no decision\n- record-decision — capture a choice you have settled, preserving its rationale with no code to write\n- single-task — implement one scoped change end-to-end, recording its decisions as ADRs\n\nPick the workflow whose situation best fits the intent, then re-run with that\nchoice and the original intent:\n\njigc start --workflow <chosen> \"<intent>\"\n"
+}
+--- stderr ---

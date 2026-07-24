@@ -1,0 +1,33 @@
+exit: 0
+--- stdout ---
+Provision one isolated worktree per sub-task at the milestone's base pin — each
+fanned sub-agent runs against its own detached checkout, keyed by task id. Each
+worktree is a detached `git worktree add` checkout carrying only git-tracked
+files, so build outputs and installed dependencies (`node_modules`, `vendor/`,
+`target/`, virtualenvs) are absent — a sub-task whose build or tests need them
+installs them inside its own worktree first. The worktrees stay pinned to that
+base; meanwhile the milestone's own bookkeeping — `create`, `add-task`, and each
+record update — lands record-only commits on your current working branch:
+
+Run: `jigc milestone provision <MILESTONE_ID>`
+
+Spawn a sub-agent per sub-task (one per `Spawn:` line below) and implement it.
+Each runs in its own isolated working area keyed by task id. Wait for every
+spawned sub-task to report complete before moving on — nothing is merged yet.
+
+Once every spawned sub-task reports complete, run the join: it merges the
+sub-tasks' staged docs by task-id order and reports the merged state — it
+commits nothing:
+
+Run: `jigc milestone join <MILESTONE_ID>`
+
+After a clean join, the parent finalize is the one commit boundary for the whole
+milestone — validate the merged effective state and commit per the
+`finalize.fan-out.squash` knob. Each sub-task reaches this boundary through
+two channels: the docs it wrote through the CLI (an overlay merged by task id)
+and the code it `git add`-staged, folded from that worktree's staged index —
+a sub-task's unstaged code edits never reach the commit:
+
+Run: `jigc milestone finalize <MILESTONE_ID>`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

@@ -1,0 +1,68 @@
+exit: 0
+--- stdout ---
+{
+  "state": "clean",
+  "schema_version": 2,
+  "header": "Pack: dev/1.0.0-rc.8 | methodology/1.0.0-rc.8 · Project config: <REPO>/.jigc/config",
+  "workflows": [
+    {
+      "id": "architecture-documentation",
+      "when": "document the architecture of a part of the system, tying its components to the code that implements them"
+    },
+    {
+      "id": "decided-task",
+      "when": "implement one scoped change test-first, recording its design decision on the running decisions log"
+    },
+    {
+      "id": "dev-task",
+      "when": "implement one scoped change test-first, recording no decision and touching no documented code"
+    },
+    {
+      "id": "do-research",
+      "when": "you need to investigate or gather evidence before forming a vision or making a decision"
+    },
+    {
+      "id": "form-vision",
+      "when": "you're forming or revising the project's vision from research"
+    },
+    {
+      "id": "implement-from-spec",
+      "when": "a committed spec already covers the intent, with acceptance criteria to build against"
+    },
+    {
+      "id": "park-idea",
+      "when": "a shaped-but-unscheduled idea occurs mid-work and is worth keeping"
+    },
+    {
+      "id": "plan",
+      "when": "draft the specification for upcoming work before writing any code"
+    },
+    {
+      "id": "project-setup",
+      "when": "bootstrap a brand-new project by developing the idea into its first product requirements"
+    },
+    {
+      "id": "quick-fix",
+      "when": "apply a small commit-only fix that touches no documented code and records no decision"
+    },
+    {
+      "id": "record-decision",
+      "when": "capture a choice you have settled, preserving its rationale with no code to write"
+    },
+    {
+      "id": "single-task",
+      "when": "implement one scoped change end-to-end, recording its decisions as ADRs"
+    }
+  ],
+  "next_steps": [
+    {
+      "id": "planning",
+      "gist": "plan a milestone — decompose it into increments and tasks"
+    },
+    {
+      "id": "ingest-existing",
+      "gist": "bring an existing repo's docs under management"
+    }
+  ]
+}
+--- stderr ---
