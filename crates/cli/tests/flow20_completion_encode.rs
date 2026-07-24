@@ -391,24 +391,27 @@ fn flow20_the_completion_spine_composes_with_the_halts_as_checkpoint_directives(
     );
 }
 
-/// (b) The #5 gate BLOCKS on a NON-PRESENT / unsafe / present-but-untracked owner-artifact
-/// — driven through the REAL completion workflow. Each case exits finalize non-zero,
-/// surfaces `owner-artifact.present`, and lands NO commit. The present-but-untracked case
-/// is the gate's teeth (the M3 lesson): a file on disk that is not git-tracked before
-/// validate is NOT a durable recording, so the gate must still fire — proving the PASS
-/// path's `git add` is load-bearing, not incidental.
+/// (b) The #5 gate BLOCKS on a NON-PRESENT / unsafe / **gitignored** owner-artifact — driven
+/// through the REAL completion workflow. Each case exits finalize non-zero, surfaces
+/// `owner-artifact.present`, and lands NO commit. Since M45 Inc 8 T2 a present-but-**merely-
+/// untracked** artifact no longer blocks — finalize *stages* the recorded path
+/// in-transaction, so the produced-but-unstaged case now LANDS (proven in
+/// `owner_artifact_gate.rs`). The anti-vacuity teeth shift to the **gitignored** case: a file
+/// on disk that git *cannot* durably stage is still not a durable recording, so the gate must
+/// still fire — proving the stage path is load-bearing, not incidental.
 #[test]
 fn flow20_the_owner_artifact_gate_blocks_when_the_artifact_is_not_durably_staged() {
     // Three sub-cases of "not durably staged", each its own fresh repo.
-    for (tag, milestone, owner_value, stage_untracked) in [
+    for (tag, milestone, owner_value, gitignored) in [
         // Absent: a well-shaped owned-home path whose file is never created.
         ("absent", "M16", "completions/artifacts/M16/audit.md", false),
         // Unsafe: an absolute path the gate must reject outright.
         ("unsafe", "M16", "/etc/passwd", false),
-        // Present-but-untracked: the file exists on disk under the owned home but is NOT
-        // `git add`ed — the gate's anti-vacuity teeth (presence on disk ≠ durably recorded).
+        // Gitignored: the file exists on disk under the owned home but a `.gitignore` covers
+        // it, so finalize's stage cannot `git add` it — the gate's anti-vacuity teeth under
+        // T2 (presence on disk ≠ durably committable).
         (
-            "untracked",
+            "gitignored",
             "M16",
             "completions/artifacts/M16/audit.md",
             true,
@@ -422,8 +425,10 @@ fn flow20_the_owner_artifact_gate_blocks_when_the_artifact_is_not_durably_staged
         start_completion(repo.path(), home.path(), milestone);
         let addr = create_completion_record(repo.path(), home.path(), milestone);
 
-        if stage_untracked {
-            // Present on disk but deliberately NOT `git add`ed.
+        if gitignored {
+            // Present on disk under the owned home, but covered by `.gitignore` — so it is
+            // neither tracked nor stageable (finalize's `git add` skips it), defeating the
+            // durable-presence gate even though it exists.
             let parent = repo
                 .path()
                 .join(owner_value)
@@ -431,8 +436,13 @@ fn flow20_the_owner_artifact_gate_blocks_when_the_artifact_is_not_durably_staged
                 .expect("parent")
                 .to_path_buf();
             fs::create_dir_all(&parent).expect("mk owned home");
-            fs::write(repo.path().join(owner_value), "untracked transcript\n")
-                .expect("write untracked artifact");
+            fs::write(repo.path().join(owner_value), "gitignored transcript\n")
+                .expect("write gitignored artifact");
+            fs::write(
+                repo.path().join(".gitignore"),
+                "completions/artifacts/M16/\n",
+            )
+            .expect("write .gitignore covering the owned home");
         }
 
         author_meta(repo.path(), home.path(), &addr, "green", owner_value);

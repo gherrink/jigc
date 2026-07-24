@@ -163,12 +163,11 @@ pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// invoke step (which shells out) is the CLI's, keeping the engine shell-free. A task
 /// with no `code-anchor` leaf never calls it (the omitting-context inert path).
 ///
-/// `tracked` is the CLI-supplied git tracked-status predicate ([`TrackedPredicate`]) the
-/// #5 owner-artifact gate consults: for each staged instance's `owned-location` leaf, the
-/// engine validates the path is repo-relative + under the owned artifact home + the file
-/// is present (its own filesystem effect) and asks `tracked` whether git tracks it — the
-/// engine never shells out for tracked-status. A task with no `owned-location` field never
-/// consults it (the omitting-context inert path).
+/// `_tracked` is the CLI-supplied git tracked-status predicate ([`TrackedPredicate`]) —
+/// **retained on the signature but no longer consulted here** (M45 Inc 8 T2): the #5
+/// owner-artifact gate it fed moved out of this shared phase-2 entry to a post-stage site
+/// ([`owner_artifacts_gate`], driven by the CLI finalize transaction), so `validate_task`
+/// keeps the parameter for the shared two-entry-point signature while the gate relocates.
 ///
 /// `history` is the CLI-supplied git history predicate ([`HistoryPredicate`]) the committed-
 /// store rename detector consults to grade a **dangling baseline** — a recorded managed-doc
@@ -241,7 +240,7 @@ pub fn validate_task(
     head: &str,
     resolved: &crate::cascade::Resolved,
     invoke_doc_code: &ProbeInvoker<'_>,
-    tracked: &TrackedPredicate<'_>,
+    _tracked: &TrackedPredicate<'_>,
     history: &HistoryPredicate<'_>,
     changed_code: &BTreeSet<String>,
     base_code_tree_root: &Path,
@@ -274,14 +273,14 @@ pub fn validate_task(
         let source = String::from_utf8_lossy(&bytes);
         findings.extend(conformance_for(&filename, schemas, &display, &source));
 
-        // The #5 owner-artifact presence gate over this instance's `owned-location`
-        // leaves: each named path must be a repo-relative path under the owned artifact
-        // home and the artifact durably present + tracked (`design/methodology-docs.md`
-        // → The engine work, item 3). An instance with no `owned-location` field yields
-        // nothing — the omitting-context inert path (mirroring the doc-code surface).
-        findings.extend(owner_artifact_present(
-            &filename, schemas, &display, &source, repo_root, tracked,
-        ));
+        // The #5 owner-artifact presence gate is deliberately NOT run here (M45 Inc 8 T2,
+        // `DECISIONS.md` → Decision 6). It asserts the named artifact is durably **tracked**
+        // — a state phase-5 staging can satisfy, but only *after* the stage — so it moved out
+        // of `validate_task` (the phase-2 site both `task validate` and finalize share) to a
+        // dedicated post-stage site the CLI finalize transaction re-invokes over the
+        // just-staged index ([`owner_artifacts_gate`]; `design/finalize.md` → 5. Stage). The
+        // recorded behavior change: `jigc task validate` no longer reports the gate (exit 0 on
+        // the same state finalize blocks at exit 3 — the validate-0 / finalize-3 split).
     }
 
     // Committed-store OOB reconciliation — sweep the committed managed docs and route
@@ -1697,6 +1696,41 @@ fn attribute_to_doc(findings: &mut [Finding], identity: &str, display: &str) {
 /// yields nothing — the omitting-context inert path. A type with no schema / an
 /// unparseable instance is `conformance_for`'s concern, not this gate's, so it is skipped
 /// here (best-effort, mirroring the target-surface enumeration).
+/// The **#5 owner-artifact presence gate** over a task's staged instances — the
+/// finalize-time check that each staged completion-record's recorded `owned-location`
+/// artifact is present, safe, and durably **tracked** (`design/methodology-docs.md` →
+/// The engine work, item 3; `design/finalize.md` → 5. Stage). Since M45 Inc 8 T2 this is
+/// the gate's home: it is **no longer run inside [`validate_task`]** (the shared phase-2
+/// entry) but re-invoked by the CLI finalize transaction **after phase-5 staging**, with a
+/// `tracked` predicate built over the just-staged index — so a finalize that stages the
+/// recorded artifact in-transaction satisfies the gate in the same commit (the natural
+/// pre-staged authoring order lands, `DECISIONS.md` → 2026-07-23 Decision 5). `task
+/// validate` no longer reports it (Decision 6 — the validate-0 / finalize-3 split).
+///
+/// Walks each staged `<type>:<slug>.md` instance's `owned-location` leaves via
+/// [`owner_artifact_present`]; an instance carrying no such field yields nothing (the
+/// omitting-context inert path). The `tracked` predicate is the engine's only
+/// tracked-status channel (the engine never shells out — the determinism boundary).
+pub fn owner_artifacts_gate(
+    dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    repo_root: &Path,
+    tracked: &TrackedPredicate<'_>,
+) -> std::io::Result<Vec<Finding>> {
+    let mut findings = Vec::new();
+    for filename in staged_instances(dir)? {
+        let bytes = std::fs::read(dir.join(DOCS_DIR).join(&filename))?;
+        // The per-instance display identity (M43 A14): a persisted instance displays at its
+        // repo-real committed destination — the same identity the phase-2 sweep used.
+        let display = staged_display(&filename, schemas);
+        let source = String::from_utf8_lossy(&bytes);
+        findings.extend(owner_artifact_present(
+            &filename, schemas, &display, &source, repo_root, tracked,
+        ));
+    }
+    Ok(findings)
+}
+
 fn owner_artifact_present(
     filename: &str,
     schemas: &BTreeMap<String, Schema>,
@@ -5778,18 +5812,18 @@ The audit landed green.
         std::fs::write(docs.join("completion-record:m16.md"), source).expect("stage record");
     }
 
-    /// (Integration — one engine, two entry points) The gate's finding flows through
-    /// `validate_task` into `plan_finalize` phase 2: a completion-record naming an
-    /// **absent** owner-artifact makes `validate_task` report a blocker, so `plan_finalize`
-    /// BLOCKS; the same task with the artifact durably staged + tracked yields no blocker,
-    /// so `plan_finalize` proceeds past phase 2 (it LANDS — the gate does not stop it).
+    /// (M45 Inc 8 T2 — the validate-0 / finalize-3 split, Decision 6) The owner-artifact
+    /// gate is **no longer** an entry in `validate_task`'s report — a completion-record
+    /// naming an **absent** owner-artifact makes `validate_task` report **no**
+    /// `owner-artifact.present` finding and **does not block** (so `jigc task validate`
+    /// exits 0 on this state) — while the relocated [`owner_artifacts_gate`], the post-stage
+    /// site the CLI finalize transaction re-invokes, **does** fire the blocker. The two poles
+    /// prove the split: the same absent state is validate-0 and gate-blocking. The staged +
+    /// tracked case keeps the gate silent (it lands).
     #[test]
-    fn finalize_blocks_on_absent_owner_artifact_and_lands_on_staged() {
-        use crate::finalize::plan_finalize;
-        use crate::state::BasePin;
-
-        // --- The absent case: validate_task reports the owner-artifact blocker.
-        let repo = TempRepo::new("finalize-absent");
+    fn owner_artifact_gate_relocated_off_validate_task_to_post_stage() {
+        // --- The absent case: validate_task is SILENT (Decision 6), the gate FIRES.
+        let repo = TempRepo::new("relocated-absent");
         let task_dir = repo.path().join(".jigc").join("tasks").join("complete-m16");
         stage_record(
             &task_dir,
@@ -5806,67 +5840,7 @@ The audit landed green.
             "HEAD",
             &no_delta_resolved(),
             &unused_invoker(),
-            &|_p| true, // tracked is irrelevant — the file is absent.
-            &|_| true,
-            &BTreeSet::new(),
-            repo.path(),
-        )
-        .expect("validate runs");
-        assert!(
-            report
-                .findings
-                .iter()
-                .any(|f| f.code == "owner-artifact.present" && f.severity == Severity::Blocking),
-            "the absent owner-artifact must surface a blocking finding, got {:?}",
-            report.findings
-        );
-        assert!(report.has_blocking(), "the absent case must block validate");
-
-        // plan_finalize phase 2 aborts on the report's blocking findings (it needs no
-        // commit doc — phase 2 precedes the render). Base == HEAD so the preflight passes.
-        let base = BasePin::new("HEAD", "HEAD");
-        let plan = plan_finalize(
-            &task_dir,
-            repo.path(),
-            &base,
-            "HEAD",
-            &report,
-            true,
-            schemas().get("completion-record").unwrap(),
-            "m16",
-            &schemas(),
-        );
-        let Err(findings) = plan else {
-            panic!("finalize must BLOCK on the absent owner-artifact, got a plan");
-        };
-        assert!(
-            findings.iter().any(|f| f.code == "owner-artifact.present"),
-            "the finalize block surfaces the owner-artifact finding, got {findings:?}"
-        );
-
-        // --- The staged case: the artifact is present + tracked → no owner-artifact blocker.
-        let repo = TempRepo::new("finalize-staged");
-        let task_dir = repo.path().join(".jigc").join("tasks").join("complete-m16");
-        repo.write(
-            "completions/artifacts/M16/audit.md",
-            b"the genuine audit transcript\n",
-        );
-        stage_record(
-            &task_dir,
-            &record_with_owner_artifact("completions/artifacts/M16/audit.md"),
-        );
-        let mut record = FileStateRecord::new();
-        let report = validate_task(
-            &task_dir,
-            &schemas(),
-            &mut record,
-            repo.path(),
-            repo.path(),
-            &repo.path().join(".jigc"),
-            "HEAD",
-            &no_delta_resolved(),
-            &unused_invoker(),
-            &|_p| true, // the artifact is tracked.
+            &|_p| true, // the _tracked param is no longer consulted here.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
@@ -5877,13 +5851,42 @@ The audit landed green.
                 .findings
                 .iter()
                 .any(|f| f.code == "owner-artifact.present"),
-            "a staged + tracked owner-artifact yields no owner-artifact finding, got {:?}",
+            "validate_task must NOT report the owner-artifact gate any more (Decision 6 — \
+             the gate relocated post-stage), got {:?}",
             report.findings
         );
         assert!(
             !report.has_blocking(),
-            "the staged case must not block validate, got {:?}",
+            "the absent-artifact state is validate-0 (blocks only at finalize), got {:?}",
             report.findings
+        );
+
+        // The relocated post-stage gate DOES fire the blocker over the same task working area.
+        let gate_findings = owner_artifacts_gate(&task_dir, &schemas(), repo.path(), &|_p| true)
+            .expect("gate runs");
+        assert!(
+            gate_findings
+                .iter()
+                .any(|f| f.code == "owner-artifact.present" && f.severity == Severity::Blocking),
+            "the post-stage gate blocks on the absent owner-artifact, got {gate_findings:?}"
+        );
+
+        // --- The staged + tracked case: the post-stage gate is silent (it lands).
+        let repo = TempRepo::new("relocated-staged");
+        let task_dir = repo.path().join(".jigc").join("tasks").join("complete-m16");
+        repo.write(
+            "completions/artifacts/M16/audit.md",
+            b"the genuine audit transcript\n",
+        );
+        stage_record(
+            &task_dir,
+            &record_with_owner_artifact("completions/artifacts/M16/audit.md"),
+        );
+        let gate_findings = owner_artifacts_gate(&task_dir, &schemas(), repo.path(), &|_p| true)
+            .expect("gate runs");
+        assert!(
+            gate_findings.is_empty(),
+            "a staged + tracked owner-artifact yields no gate finding, got {gate_findings:?}"
         );
     }
 }

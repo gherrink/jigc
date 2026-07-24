@@ -44,7 +44,7 @@ use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
 use engine::schema::Schema;
 use engine::state::{self, BasePin, RolesRecord};
 use engine::store::canonical_path;
-use engine::validate::validate_task;
+use engine::validate::{owner_artifacts_gate, validate_task};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -1177,6 +1177,16 @@ impl TaskArea {
                 Ok(Outcome::with_findings(0, &report.findings))
             }
             Err(err) => {
+                // M45 Inc 8 T2 — the relocated #5 owner-artifact gate blocked AFTER the
+                // stage (a recorded artifact absent / unsafe / present-but-untracked). It is
+                // a validation block (exit 3, a real `ValidationReport`), distinct from a
+                // stage-git failure or a hook rejection; the rollback (promotions + the third
+                // index axis) already ran in the executor. Checked first — it owns its own
+                // typed marker (`design/finalize.md` → 5. Stage; the validate-0/finalize-3
+                // split).
+                if let Some(block) = err.downcast_ref::<OwnerArtifactBlock>() {
+                    return self.blocked(block.0.clone(), format);
+                }
                 // M40 F7 item 2 — a failure in jigc's OWN stage phase (the marked
                 // `git add` in `stage_migration`/`stage_index_honoring`) surfaces as a
                 // routed blocking finding through the findings envelope, the git
@@ -1683,6 +1693,13 @@ pub(crate) fn try_execute_finalize_plan(
     // index-axis key, so only a deletion jigc itself staged is un-staged on failure.
     // Empty on every non-migration stage arm (those have no retirements to un-stage).
     let mut staged: Vec<String> = Vec::new();
+    // The third rollback axis (M45 Inc 8 T2, `design/finalize.md` → Rollback discipline, the
+    // owner-artifact row): each recorded owner-artifact path's PRE-finalize index entry,
+    // captured before the stage `git add` overwrites it. On a stage/commit failure the axis
+    // restores exactly this — never "un-stage what jigc staged", which loses a user's
+    // pre-staged blob `A` that jigc's `git add` overwrote with `B`. Empty when the plan
+    // records no owner-artifact (the omitting-context inert path — every non-completion task).
+    let mut owner_index: Vec<OwnerArtifactIndexEntry> = Vec::new();
     let commit_result = (|| -> Result<String> {
         // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
         promote(repo_root, &plan.promotions)?;
@@ -1696,6 +1713,11 @@ pub(crate) fn try_execute_finalize_plan(
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
         // docs + the code changes.
         crate::gitignore::ensure(jigc_root)?;
+        // Capture each owner-artifact path's pre-finalize index entry BEFORE the stage below
+        // stages (and possibly overwrites) it — the third rollback axis. Nothing above touches
+        // those index entries, so this is the genuine pre-finalize state. Inert (empty) unless
+        // the plan records an owner-artifact.
+        owner_index = capture_owner_artifact_index(repo_root, &plan.owner_artifacts)?;
         match stage {
             // Narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
             // `DECISIONS.md` B2): a migration touches no code, so stage ONLY its own
@@ -1707,6 +1729,7 @@ pub(crate) fn try_execute_finalize_plan(
             // non-promoted artifact (the `owner-artifact`) still rides the commit (G6).
             StagePolicy::MigrationFixed => {
                 staged = stage_migration(repo_root, plan)?;
+                gate_owner_artifacts_post_stage(repo_root, cleanup_dir, schemas, plan)?;
                 git_commit(repo_root, &msg_path)
             }
             // Per-task IndexHonoring (M30 G6): honor the agent's existing index and add
@@ -1714,6 +1737,12 @@ pub(crate) fn try_execute_finalize_plan(
             // ambient dirty tree. The whole-index `git_commit` lands the lot.
             StagePolicy::IndexHonoring => {
                 stage_index_honoring(repo_root, plan)?;
+                // M45 Inc 8 T2 — the #5 owner-artifact gate runs HERE, after the stage
+                // (`design/finalize.md` → 5. Stage: the gate moves after the stage, not
+                // relaxes its `tracked` clause). A block returns `OwnerArtifactBlock`, so the
+                // shared `Err` arm below rolls back (promotions + the third index axis) and
+                // the per-task surface routes it through `self.blocked()` at exit 3.
+                gate_owner_artifacts_post_stage(repo_root, cleanup_dir, schemas, plan)?;
                 git_commit(repo_root, &msg_path)
             }
             // The `squash: true` fan-out boundary (M31 Inc 4 / Inc 5): fold the N
@@ -1761,6 +1790,10 @@ pub(crate) fn try_execute_finalize_plan(
                 &retired,
                 &staged,
             );
+            // The third scoped axis (M45 Inc 8 T2): restore each owner-artifact path's
+            // captured pre-finalize index entry, so a failed finalize leaves the index
+            // byte-identical to its pre-finalize state — including a user's pre-staged blob.
+            rollback_owner_artifact_index(repo_root, &owner_index);
             return Ok(Err(err));
         }
     };
@@ -1918,10 +1951,195 @@ fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> R
             crate::setup::VERSION_STAMP_PATH,
         ],
     ));
+    // M45 Inc 8 T2 — stage each recorded owner-artifact too (existence + non-ignore guarded;
+    // see [`stage_index_honoring`]). These join the returned set — which
+    // [`rollback_promotions`] consults only for *retirement* paths, so an owner-artifact in it
+    // is never un-staged by the retire index axis; its own rollback is the executor's third
+    // axis (the pre-finalize index capture/restore).
+    pathspecs.extend(owner_artifact_stage_specs(repo_root, plan));
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(pathspecs.iter().map(String::as_str));
     git_run(repo_root, &args).map_err(mark_stage_failure)?;
     Ok(pathspecs)
+}
+
+/// The recorded owner-artifact paths ([`engine::finalize::FinalizePlan::owner_artifacts`])
+/// that are safe to `git add` — a **stageable shape** (repo-relative, `..`-free — see
+/// [`owner_artifact_is_stageable_shape`]), present on disk, **and not gitignored** (M45 Inc 8
+/// T2). Each skipped shape stays unstaged and the post-stage [`owner_artifacts_gate`] blocks
+/// on it (absolute / `..` → misplaced; absent → names-no-file; gitignored → untracked), so the
+/// gate — not this stage — is the authority on path safety. Skipping the unsafe shapes is also
+/// what keeps `git add` from fataling on an out-of-repo pathspec. Duplicate paths are harmless
+/// to `git add`, so no dedup.
+fn owner_artifact_stage_specs(
+    repo_root: &Path,
+    plan: &engine::finalize::FinalizePlan,
+) -> Vec<String> {
+    plan.owner_artifacts
+        .iter()
+        .filter(|path| {
+            owner_artifact_is_stageable_shape(path)
+                && repo_root.join(path).exists()
+                && !path_is_ignored(repo_root, path)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Whether an owner-artifact path is shaped for a safe `git add` / index probe — **repo-
+/// relative** (not absolute) and free of `..` components. finalize's stage + third-axis
+/// capture skip any other shape: an absolute or climbing path is outside the index and would
+/// make `git add` / `git ls-files` **fatal** (`git ls-files -- /etc/passwd` → "outside
+/// repository"), erroring the transaction before the gate can speak. The post-stage
+/// [`owner_artifacts_gate`] is the authority that BLOCKS such a path
+/// (`owned_location_violation` → misplaced), so this guard only keeps the plumbing from
+/// crashing ahead of that verdict — it never *replaces* the gate's safety adjudication.
+fn owner_artifact_is_stageable_shape(path: &str) -> bool {
+    let p = Path::new(path);
+    !p.is_absolute()
+        && !path.starts_with('/')
+        && !p
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+}
+
+/// Whether `path` (repo-relative) is ignored by a `.gitignore` rule — `git check-ignore -q`
+/// exits 0 when ignored, 1 when not. On any other outcome (git error) default **not
+/// ignored**: the subsequent `git add` then decides, keeping today's behavior. Used to keep
+/// the owner-artifact stage from feeding `git add` a gitignored path (fatal without `-f`).
+fn path_is_ignored(repo_root: &Path, path: &str) -> bool {
+    Command::new("git")
+        .args(["check-ignore", "-q", "--", path])
+        .current_dir(repo_root)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+/// Run the engine's #5 owner-artifact presence gate
+/// ([`engine::validate::owner_artifacts_gate`]) over the task's just-staged working area,
+/// with a fresh `tracked` predicate built over the **post-stage** index (M45 Inc 8 T2). This
+/// is the gate's relocated home — after phase-5 staging, so a finalize that stages the
+/// recorded artifact satisfies it in the same transaction (`design/finalize.md` → 5. Stage).
+/// A blocking result becomes an [`OwnerArtifactBlock`] error, so the shared executor rolls
+/// back (promotions + the third index axis) and the per-task surface routes it through
+/// `self.blocked()` (exit 3, the validate-0 / finalize-3 split). Inert (a no-op, no git
+/// shell-out) when the plan records no owner-artifact — every non-completion task.
+fn gate_owner_artifacts_post_stage(
+    repo_root: &Path,
+    task_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    plan: &engine::finalize::FinalizePlan,
+) -> Result<()> {
+    if plan.owner_artifacts.is_empty() {
+        return Ok(());
+    }
+    // The post-stage tracked-status predicate: the inverse of `git ls-files --others` (all
+    // untracked, ignored included — a gitignored path reads untracked, so the gate blocks).
+    // Read AFTER the stage, so a just-staged owner-artifact reads tracked and the gate passes
+    // (mirrors `Task::tracked_predicate`, rebuilt here because the executor is a free fn).
+    let untracked: std::collections::HashSet<String> = git_untracked_all(repo_root)?
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let tracked = move |path: &str| !untracked.contains(path);
+    let findings = owner_artifacts_gate(task_dir, schemas, repo_root, &tracked)?;
+    if findings.iter().any(|f| f.severity == Severity::Blocking) {
+        return Err(anyhow::Error::new(OwnerArtifactBlock(findings)));
+    }
+    Ok(())
+}
+
+/// Typed marker for a **post-stage owner-artifact block** (M45 Inc 8 T2) — the relocated #5
+/// gate found a recorded artifact absent / unsafe / present-but-untracked *after* the stage.
+/// Carried through [`try_execute_finalize_plan`]'s error channel so the executor's shared
+/// `Err` arm runs the rollback (promotions + the third index axis) and the per-task surface
+/// (which holds the task id) can route it through `self.blocked()` at exit 3 — a **validation**
+/// block, distinct from a [`StageGitFailure`] (git error) or a [`CommitRejected`] (hook).
+#[derive(Debug)]
+struct OwnerArtifactBlock(Vec<Finding>);
+
+impl std::fmt::Display for OwnerArtifactBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} owner-artifact finding(s) blocked the finalize after staging",
+            self.0.len()
+        )
+    }
+}
+
+impl std::error::Error for OwnerArtifactBlock {}
+
+/// One owner-artifact path's pre-finalize index entry — the third rollback axis's capture
+/// (M45 Inc 8 T2, `design/finalize.md` → Rollback discipline, the owner-artifact row).
+/// `entry` is `Some((mode, blob-sha))` when the path was in the index before finalize staged
+/// it (e.g. a user's pre-staged blob `A`), `None` when it was absent from the index.
+struct OwnerArtifactIndexEntry {
+    path: String,
+    entry: Option<(String, String)>,
+}
+
+/// Capture each owner-artifact path's pre-finalize index entry via `git ls-files --stage`
+/// (M45 Inc 8 T2 — the third rollback axis). The output is `<mode> <sha> <stage>\t<path>`
+/// when the path is in the index, empty when absent. Called before the stage `git add`
+/// overwrites the entry, so a stage/commit failure can restore *exactly* what was there —
+/// not drop to HEAD, not keep jigc's overwrite. Empty `paths` → empty capture (inert).
+fn capture_owner_artifact_index(
+    repo_root: &Path,
+    paths: &[String],
+) -> Result<Vec<OwnerArtifactIndexEntry>> {
+    let mut captured = Vec::with_capacity(paths.len());
+    for path in paths {
+        // An unsafe shape (absolute / `..`) is never in the index and would make `git
+        // ls-files -- <path>` fatal ("outside repository"); it is never staged either, so
+        // there is nothing to capture or restore — skip it (the gate blocks it as misplaced).
+        if !owner_artifact_is_stageable_shape(path) {
+            continue;
+        }
+        let line = git_capture(repo_root, &["ls-files", "--stage", "--", path])?;
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let entry = if fields.len() >= 2 {
+            Some((fields[0].to_owned(), fields[1].to_owned()))
+        } else {
+            None // absent from the index pre-finalize.
+        };
+        captured.push(OwnerArtifactIndexEntry {
+            path: path.clone(),
+            entry,
+        });
+    }
+    Ok(captured)
+}
+
+/// Restore each owner-artifact path's captured pre-finalize index entry on a stage/commit
+/// failure — the third scoped rollback axis (M45 Inc 8 T2). Best-effort (the commit did not
+/// land, so a restore failure is logged, never raised — mirroring [`rollback_promotions`]).
+///
+/// - **Present** → `git update-index --cacheinfo <mode> <sha> <path>` sets the index back to
+///   the captured blob **without touching the worktree** — so a user's on-disk edit `B`
+///   survives while `git show :<path>` == the pre-staged blob `A` (the exact case the
+///   carryover exemption exists for; a plain `git restore --staged` would drop to HEAD and
+///   lose `A`).
+/// - **Absent** → `git update-index --force-remove <path>` drops the entry jigc's stage
+///   added, returning the index to its pre-finalize "not staged" state (the worktree file
+///   stays).
+fn rollback_owner_artifact_index(repo_root: &Path, captured: &[OwnerArtifactIndexEntry]) {
+    for item in captured {
+        match &item.entry {
+            Some((mode, sha)) => {
+                let _ = git_run(
+                    repo_root,
+                    &["update-index", "--cacheinfo", mode, sha, &item.path],
+                );
+            }
+            None => {
+                let _ = git_run(repo_root, &["update-index", "--force-remove", &item.path]);
+            }
+        }
+    }
 }
 
 /// Refresh the committed binary-provenance stamp (`.jigc/version`) to the running build —
@@ -1959,6 +2177,15 @@ fn stage_index_honoring(repo_root: &Path, plan: &engine::finalize::FinalizePlan)
             crate::setup::VERSION_STAMP_PATH,
         ],
     ));
+    // M45 Inc 8 T2 — stage each recorded owner-artifact so the artifact lands in the SAME
+    // commit as the completion-record naming it (`design/finalize.md` → 5. Stage: finalize
+    // stages the recorded paths, and the gate moves after the stage). Existence + non-ignore
+    // guarded: an absent or gitignored path stays unstaged (an explicit `git add` of an
+    // ignored path is fatal — exit 128 — and would abort the whole stage), so the post-stage
+    // gate then blocks on it (absent / present-but-untracked). The pre-finalize index entry of
+    // each path is captured by the executor before this add, so a stage/commit failure
+    // restores it (the third rollback axis).
+    pathspecs.extend(owner_artifact_stage_specs(repo_root, plan));
     // Nothing jigc-owned to add — the agent's existing index stands alone (a `git add --`
     // with no pathspec is an error, so guard it).
     if pathspecs.is_empty() {

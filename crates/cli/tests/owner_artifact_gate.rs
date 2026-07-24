@@ -279,6 +279,19 @@ fn finalize_blocks_on_an_absent_owner_artifact() {
         "completions/artifacts/M16/audit.md",
     );
 
+    // (M45 Inc 8 T2 — the validate-0 / finalize-3 split, Decision 6) The gate moved out of
+    // `validate_task` to a post-stage site, so `jigc task validate` over the SAME
+    // absent-artifact state now exits 0 (it no longer reports the gate) — the block is a
+    // finalize-time-only check.
+    let validate = jigc(repo.path(), home.path(), &["task", "validate", task]);
+    assert!(
+        validate.status.success(),
+        "`task validate` over the absent-artifact state exits 0 (the gate is finalize-only \
+         now); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&validate.stdout),
+        String::from_utf8_lossy(&validate.stderr),
+    );
+
     let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .trim()
         .parse()
@@ -302,6 +315,70 @@ fn finalize_blocks_on_an_absent_owner_artifact() {
         .parse()
         .unwrap();
     assert_eq!(before, after, "a blocked finalize creates no commit");
+}
+
+/// (LANDS — the stage arm) A completion-record naming an owner-artifact that is **present on
+/// disk but never `git add`ed** by the agent (produced, not staged) finalizes clean: phase-5
+/// **stages** the recorded path in-transaction, so the post-stage gate passes and the commit
+/// carries the artifact + the promoted completion-record together (`design/finalize.md` → 5.
+/// Stage: finalize stages the recorded paths). Red before T2: the pre-stage gate blocked on
+/// the untracked artifact (nothing staged it).
+#[test]
+fn finalize_stages_a_produced_but_unstaged_owner_artifact_and_lands() {
+    let repo = TempDir::new("produced");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let pack = TempDir::new("pack");
+    seed_fixture_pack(pack.path());
+    list_fixture_pack(repo.path(), pack.path());
+
+    let artifact = "completions/artifacts/M16/audit.md";
+    let task = "record-the-completion";
+    author_completion(
+        repo.path(),
+        home.path(),
+        "record the completion",
+        task,
+        artifact,
+    );
+
+    // The agent PRODUCES the artifact on disk but never `git add`s it — the case finalize's
+    // in-transaction staging exists to close. Written after the mint (its own work).
+    fs::create_dir_all(repo.path().join("completions/artifacts/M16")).expect("mk owned home");
+    fs::write(repo.path().join(artifact), "the genuine audit transcript\n")
+        .expect("write owner-artifact");
+    // Sanity: it is genuinely untracked (never staged) going in.
+    let others = git(repo.path(), &["ls-files", "--others", "--", artifact]);
+    assert!(
+        others.contains("audit.md"),
+        "the artifact must be untracked before finalize (the produced-but-unstaged case); got:\n{others}",
+    );
+
+    let out = jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_ok(
+        &out,
+        &format!("finalize must STAGE the produced artifact and land; got:\n{rendered}"),
+    );
+    assert!(
+        !rendered.contains("owner-artifact.present"),
+        "the staged-in-transaction artifact must surface no owner-artifact finding; got:\n{rendered}",
+    );
+
+    // The artifact and the promoted completion-record are committed together.
+    let committed = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        committed.contains(artifact),
+        "the produced owner-artifact lands in the commit (finalize staged it); got:\n{committed}",
+    );
+    assert!(
+        committed.contains("completions/m16-completion.md"),
+        "the completion-record is promoted in the same commit; got:\n{committed}",
+    );
 }
 
 /// (BLOCKS) A completion-record naming an owner-artifact that is **present but
