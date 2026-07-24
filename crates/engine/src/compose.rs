@@ -1993,6 +1993,29 @@ pub fn load_workflow_def(bytes: &[u8]) -> Result<WorkflowDef, Finding> {
 
     let suppressed = meta.suppressed.map(validate_suppressed).transpose()?;
 
+    // The bind-map type-uniqueness fence: the create-gate (`state::create_gated`)
+    // and the copy-on-write role binding (cli `bind_role_on_copy_in`) resolve an
+    // `allows-create` entry **by doctype, first match** — so a list declaring one
+    // type twice would silently dead-letter every entry after the first. The set
+    // is defined here, at parse, so the assumption is fenced here (the
+    // dev-workflow's *fence the assumption where the set is defined* rule),
+    // blocking at every load door.
+    let mut seen_types = std::collections::BTreeSet::new();
+    for entry in &meta.allows_create {
+        if !seen_types.insert(entry.doc_type.as_str()) {
+            return Err(blocking_workflow_refs(
+                "workflow-refs.allows-create-duplicate-type",
+                format!(
+                    "workflow front-matter `allows-create:` declares doctype `{}` more than \
+                     once — the create-gate and role binding resolve an entry by type, so \
+                     each doctype may appear at most once",
+                    entry.doc_type
+                ),
+                Location::at(1, 1),
+            ));
+        }
+    }
+
     Ok(WorkflowDef {
         when: meta.when.filter(|w| !w.trim().is_empty()),
         description: meta.description,
@@ -5487,6 +5510,37 @@ allows-create: [{type: adr, as: decision}]
         .expect_err("non-map suppressed rejected");
         assert_eq!(err.code, "workflow-refs.malformed-front-matter");
         assert_eq!(err.severity, Severity::Blocking);
+    }
+
+    /// The bind-map type-uniqueness fence: an `allows-create:` list declaring one
+    /// doctype twice is a blocking load finding naming the type — the create-gate
+    /// and the copy-on-write role binding resolve an entry by type (first match),
+    /// so a duplicate would silently dead-letter every entry after the first. The
+    /// set is defined at parse, so the assumption is fenced at parse.
+    #[test]
+    fn duplicate_allows_create_type_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nallows-create: [{type: adr, as: decision}, {type: adr, as: second}]\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("a duplicate allows-create doctype is rejected at load");
+        assert_eq!(err.code, "workflow-refs.allows-create-duplicate-type");
+        assert_eq!(err.severity, Severity::Blocking);
+        assert!(
+            err.message.contains("adr"),
+            "the finding names the duplicated doctype; got: {}",
+            err.message
+        );
+    }
+
+    /// The omitting context stays inert: a multi-entry list of **distinct** types
+    /// (the shipped `single-task` shape) loads clean through the same fence.
+    #[test]
+    fn distinct_allows_create_types_load_clean() {
+        let def = load_workflow_def(
+            b"---\nwhen: x\nallows-create: [{type: adr, as: decision}, {type: changelog, as: change}]\n---\n{{ include: step:locate }}\n",
+        )
+        .expect("distinct doctypes load");
+        assert_eq!(def.allows_create.len(), 2);
     }
 
     /// `creates-task` defaults to `true` when the front-matter omits the key
