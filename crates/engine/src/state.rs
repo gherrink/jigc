@@ -411,20 +411,29 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// The sibling temp path for an atomic write of `path` — its filename with a
-/// **process-unique** `.<pid>.<nanos>.tmp` suffix (same directory, so `rename` is
-/// intra-filesystem and atomic). The pid+nanos disambiguator is what makes
+/// **globally-unique** `.<pid>.<nanos>.<seq>.tmp` suffix (same directory, so
+/// `rename` is intra-filesystem and atomic). The disambiguator is what makes
 /// concurrent writers to a *shared* target (e.g. `.jigc/state/file-state.json`,
 /// which is not task-isolated) each own a distinct temp: without it two writers
 /// would share one `<name>.tmp` and interleave their bytes, so a reader could
 /// observe a file that parses as neither writer's record (M45 Increment 7,
 /// Decision 9).
+///
+/// `pid + nanos` alone is **not** sufficient: two threads of one process can read
+/// the same clock value (the OS clock resolution is coarser than a nanosecond, and
+/// two calls can race), so they would mint the *same* temp path — writer A's
+/// `rename` consumes it and writer B's then fails `NotFound`. The process-global
+/// monotonic `seq` counter makes every temp path distinct even within one
+/// nanosecond, closing that intra-process collision.
 fn temp_sibling(path: &Path) -> PathBuf {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    name.push(format!(".{}.{}.tmp", std::process::id(), nanos));
+    name.push(format!(".{}.{}.{}.tmp", std::process::id(), nanos, seq));
     match path.parent() {
         Some(parent) => parent.join(name),
         None => PathBuf::from(name),
