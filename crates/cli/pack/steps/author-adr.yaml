@@ -2,8 +2,9 @@ Record a decision you have already made as an ADR — from what you know, with n
 code to write. The decision is:
 {{ task.intent }}
 
-Create the ADR, then author its slots — a line per slot usually suffices; an ADR
-earns its keep by capturing the *why*, not by running long:
+Create the ADR — safe whether or not it already exists (an existing committed ADR
+of the same slug is copied in for revise) — then author its slots: a line per slot
+usually suffices; an ADR earns its keep by capturing the *why*, not by running long:
 
 {{ cli.create-adr }}
 

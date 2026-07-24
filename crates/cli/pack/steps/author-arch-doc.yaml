@@ -1,7 +1,8 @@
 Document this part of the system as living architecture. The intent is:
 {{ task.intent }}
 
-Create the arch-doc, then author its overview:
+Create the arch-doc — safe whether or not it already exists (an existing committed
+arch-doc of the same slug is copied in for revise) — then author its overview:
 
 {{ cli.create-arch-doc }}
 <<author: {{ task.arch-doc#overview }}>>
