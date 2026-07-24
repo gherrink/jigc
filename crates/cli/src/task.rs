@@ -1288,6 +1288,11 @@ impl TaskArea {
                     files: manifest.len(),
                     manifest,
                     left_out,
+                    // M45 — the SAME captured hook string the stderr relay carries below
+                    // (one capture, two channels; `design/command-output-contract.md` →
+                    // Stream discipline). Cloned here for the JSON `committed.hook_output`
+                    // key; `relay_hook_output` still trims the same source for stderr.
+                    hook_output: hook_output.clone(),
                 };
                 print!("{}", render::finalize_landed(format, &report, &landed));
                 if format != Format::Json {

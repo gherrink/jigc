@@ -1199,8 +1199,11 @@ fn install_warning_hook(repo: &Path) {
 ///
 /// - **agent-text:** the hook warning appears in a delimited section **after** the
 ///   `render::validation` routing footer; the commit lands (exit 0).
-/// - **`--format json`:** stdout still parses as the un-corrupted report envelope, AND
-///   the hook warning rides **stderr** (never the stdout envelope).
+/// - **`--format json`:** stdout still parses as **exactly one** report envelope — the
+///   raw `--- hook output ---` **relay** never touches it — while the M45 additive
+///   `committed.hook_output` key carries the *same* captured text (a declared, escaped
+///   value in the document, not a side channel), and the verbatim relay rides **stderr**
+///   (`design/command-output-contract.md` → Stream discipline, the `hook_output` key).
 /// - **no hook output:** a finalize with no hook speaking emits **no** delimiter.
 #[test]
 fn finalize_relays_hook_output_on_success() {
@@ -1260,19 +1263,30 @@ fn finalize_relays_hook_output_on_success() {
     );
     assert_eq!(code_of(&out, "relay finalize (json)"), 0);
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    // Stdout parses as exactly one report envelope (from_str rejects trailing content),
+    // so the raw relay never corrupted it.
+    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
+        panic!("relay finalize (json): stdout must parse as one envelope ({err}); got:\n{stdout}")
+    });
     let findings = parse_envelope(&stdout, "relay finalize (json)");
     assert!(
         findings.is_empty(),
         "the clean json envelope stays un-corrupted by the relay; got:\n{stdout}",
     );
+    // The raw relay delimiter never rides stdout — the envelope carries the hook text only
+    // through the declared, escaped `committed.hook_output` value (M45), not a side channel.
     assert!(
-        !stdout.contains(HOOK_WARNING),
-        "under --format json the relay never touches the stdout envelope; got:\n{stdout}",
+        !stdout.contains("--- hook output ---"),
+        "under --format json the raw relay section never touches stdout; got:\n{stdout}",
+    );
+    assert_eq!(
+        value["committed"]["hook_output"], HOOK_WARNING,
+        "the M45 additive key carries the same captured hook text inside the envelope; got:\n{stdout}",
     );
     let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
     assert!(
         stderr.contains(HOOK_WARNING),
-        "under --format json the hook relay rides stderr; got stderr:\n{stderr}",
+        "under --format json the verbatim hook relay rides stderr; got stderr:\n{stderr}",
     );
 
     // ── no hook output: no delimiter is emitted ──────────────────────────────────

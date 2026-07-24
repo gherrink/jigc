@@ -1784,7 +1784,13 @@ fn run_milestone_finalize(
                 // `finalized <sha> — <subject>` + the whole boundary's landed-file set
                 // (`git diff <pre-boundary-HEAD>..HEAD`, so the N+1 chain reads as one
                 // set) + the per-sub-task contribution line.
-                let landed = milestone_landed_summary(&repo_root, &head, &plan, contributions)?;
+                let landed = milestone_landed_summary(
+                    &repo_root,
+                    &head,
+                    &plan,
+                    contributions,
+                    &hook_output,
+                )?;
                 print!("{}", render::milestone_finalized(format, &landed));
                 if format != Format::Json {
                     println!();
@@ -1844,7 +1850,13 @@ fn run_milestone_finalize(
                 disarm_record_flip(&mut record_flip);
                 // C2 — the landing manifest (the per-task landed-summary mold): the
                 // highest-stakes commit boundary must not succeed with empty stdout.
-                let landed = milestone_landed_summary(&repo_root, &head, &plan, contributions)?;
+                let landed = milestone_landed_summary(
+                    &repo_root,
+                    &head,
+                    &plan,
+                    contributions,
+                    &hook_output,
+                )?;
                 print!("{}", render::milestone_finalized(format, &landed));
                 if format != Format::Json {
                     println!();
@@ -2410,6 +2422,7 @@ fn milestone_landed_summary(
     pre_boundary_head: &str,
     plan: &engine::finalize::FinalizePlan,
     sub_tasks: Vec<render::SubTaskContribution>,
+    hook_output: &str,
 ) -> Result<render::MilestoneLanded> {
     let hash = crate::task::git_capture(repo_root, &["rev-parse", "--short", "HEAD"])?;
     let subject = crate::task::git_capture(repo_root, &["log", "-1", "--pretty=format:%s"])?;
@@ -2451,6 +2464,10 @@ fn milestone_landed_summary(
         files: manifest.len(),
         manifest,
         sub_tasks,
+        // M45 — the SAME captured boundary-commit hook string the stderr relay carries at
+        // the call site (one capture, two channels; `design/command-output-contract.md` →
+        // Stream discipline). The join path folds into this same envelope.
+        hook_output: hook_output.to_owned(),
     })
 }
 

@@ -776,6 +776,15 @@ pub struct Landed {
     /// (`MM`) path lands its staged side in `manifest` and its worktree residual here, so it
     /// appears in **both**.
     pub left_out: Vec<ManifestEntry>,
+    /// The captured non-blocking hook output the landed commit's hooks emitted
+    /// (`design/command-output-contract.md` → Stream discipline — the M45 `hook_output`
+    /// key). **Present-always, the empty string when no hook spoke**, and the *same*
+    /// captured string the stderr `--- hook output ---` relay carries (one capture, two
+    /// channels — the relay trims it for its delimited section, this key carries the seam's
+    /// string unchanged). It rides the JSON `committed` object so a driver that merged git's
+    /// two fds reads the hook text from the one document it already parses, never off a
+    /// stderr stream it may have folded into stdout.
+    pub hook_output: String,
 }
 
 /// How a path entered the finalize commit set in the pre-commit manifest (B1 dirty-tree
@@ -2059,6 +2068,12 @@ pub struct MilestoneLanded {
     pub manifest: Vec<ManifestEntry>,
     /// Each sub-task's contribution, id-sorted — the no-work one visible.
     pub sub_tasks: Vec<SubTaskContribution>,
+    /// The captured non-blocking hook output the landed boundary commit's hooks emitted
+    /// (`design/command-output-contract.md` → Stream discipline — the M45 `hook_output`
+    /// key). Same shape and contract as [`Landed::hook_output`]: **present-always, the empty
+    /// string when no hook spoke**, the *same* captured string the stderr relay carries, and
+    /// on the join path this is the aggregate/combine boundary commit's hook stream.
+    pub hook_output: String,
 }
 
 /// Render a **landed** `jigc milestone finalize` to the surface `format` selects
@@ -3454,6 +3469,7 @@ mod tests {
                     code_files: 0,
                 },
             ],
+            hook_output: "hook: fmt clean".to_string(),
         };
 
         let agent = milestone_finalized(Format::Agent, &landed);
@@ -3480,6 +3496,10 @@ mod tests {
             "wire-cache-metrics-into"
         );
         assert_eq!(value["committed"]["sub_tasks"][1]["docs"], 0);
+        // M45 — the additive `hook_output` key rides the `committed` object, carrying the
+        // captured boundary-commit hook string (`design/command-output-contract.md` →
+        // Stream discipline); the agent-text arm relays it separately and omits it here.
+        assert_eq!(value["committed"]["hook_output"], "hook: fmt clean");
     }
 
     /// The `jigc ingest` triage report renders in sorted candidate order: one row
@@ -4663,6 +4683,7 @@ mod tests {
                 path: "scratch.txt".to_string(),
                 kind: ManifestKind::Untracked,
             }],
+            hook_output: "hook: doc-code backstop clean".to_string(),
         };
 
         let agent = finalize_landed(Format::Agent, &report, &landed);
@@ -4694,6 +4715,11 @@ mod tests {
         let left_out = committed["left_out"].as_array().expect("left_out array");
         assert_eq!(left_out[0]["path"], "scratch.txt");
         assert_eq!(left_out[0]["kind"], "untracked");
+        // M45 — the additive `hook_output` key rides the `committed` object, carrying the
+        // captured commit-hook string the stderr relay mirrors (`design/command-output-
+        // contract.md` → Stream discipline). The agent-text arm relays it to a delimited
+        // section instead, so the summary above does not name it.
+        assert_eq!(committed["hook_output"], "hook: doc-code backstop clean");
     }
 
     /// The fidelity kept-set scans the **whole rewrite text**, not only `### ` headings
