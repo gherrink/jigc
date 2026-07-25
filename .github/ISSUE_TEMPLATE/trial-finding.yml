@@ -1,0 +1,39 @@
+name: Trial finding
+description: A finding from an adoption/verification trial run — claim, verification status, and the trial-record pointer.
+title: "[trial]: "
+labels: ["trial-finding"]
+body:
+  - type: input
+    id: trial
+    attributes:
+      label: Trial / corpus
+      description: Which trial run and corpus the finding came from.
+      placeholder: e.g. project-alpha-3.0 verification trial, rc.8
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: Finding
+      description: The claim, stated so it can be verified or refuted — what jigc did, under what conditions, and why it's wrong (or missing).
+    validations:
+      required: true
+  - type: dropdown
+    id: verification
+    attributes:
+      label: Verification status
+      description: Trial findings are adversarially verified before they charter work — where is this one?
+      options:
+        - verified (live repro exists)
+        - refuted
+        - unverified (raw claim)
+    validations:
+      required: true
+  - type: input
+    id: record
+    attributes:
+      label: Trial-record pointer
+      description: Path or link to the trial record / findings-verification artifact carrying this finding.
+      placeholder: completions/artifacts/RC-…/trial-record.md
+    validations:
+      required: false

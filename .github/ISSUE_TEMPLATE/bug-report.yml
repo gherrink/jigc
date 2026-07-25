@@ -1,0 +1,55 @@
+name: Bug report
+description: Something jigc did wrong — a wrong write, a false green, a dead-end route, a crash.
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: jigc version
+      description: Output of `jigc --version`.
+      placeholder: jigc 1.0.0
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        The exact `jigc` invocations that hit the bug, in order, from a state you
+        can describe. If it needs a corpus state to reproduce, describe how to get
+        there (or attach a minimal repo).
+      placeholder: |
+        jigc start "add retry to the fetch layer"
+        jigc doc author commit-<task> --payload '…'
+        jigc task finalize <task>
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected vs actual
+      description: What should have happened, and what happened instead. Paste output verbatim where you can.
+    validations:
+      required: true
+  - type: textarea
+    id: corpus-context
+    attributes:
+      label: Corpus context
+      description: >
+        The doctype(s) involved, whether the doc was managed or foreign/unregistered,
+        and its schema-version if you know it (`jigc doc show <addr> --format json`
+        carries it). Skip what doesn't apply.
+    validations:
+      required: false
+  - type: textarea
+    id: invocation-log
+    attributes:
+      label: Invocation-log excerpt
+      description: >
+        If the invocation log was on, the records around the failure help a lot.
+        Note: log records can contain your project's content — redact before pasting.
+      render: json
+    validations:
+      required: false
