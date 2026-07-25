@@ -51,6 +51,10 @@ cd ~/ideas/project-alpha-4.0 && claude
 
 Between probes: P2's staging commands are the operator's (`git add` / `git rm` in the corpus before the worker starts). Everything else happens inside worker sessions.
 
+## Per-session feedback (after every worker run)
+
+At the end of each worker session — inside that session, while fresh — collect verbatim feedback with the standard prompt: *"What confused you, what did the tool tell you that turned out wrong, what did you look for and not find, and what did you work around without being told to?"* Save it to this directory (`feedback-<session>.md`), **never into the corpus**, and never feed it into a later worker's prompt — feedback is retrospective record for the post-trial triage only (the discoverability-lens findings of the last three trials came from these reports, not the log).
+
 ## After the trial
 
 Trial record + invocation-log analysis land here (`completions/artifacts/RC-alpha4/`); every claim adversarially verified with live repros — **CONFIRMED and REFUTED alike ship repro blocks** (milestone-completion-workflow → delivery format); the record carries the **unseeded-honesty statement** (what, if anything, leaked); triage through the known-hole vs discoverability lenses; counts as RC input. Then the 1.0.0 call — the human's.
