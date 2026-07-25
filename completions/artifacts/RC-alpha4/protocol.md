@@ -53,7 +53,7 @@ Between probes: P2's staging commands are the operator's (`git add` / `git rm` i
 
 ## Per-session feedback (after every worker run)
 
-At the end of each worker session — inside that session, while fresh — collect verbatim feedback with the standard prompt: *"What confused you, what did the tool tell you that turned out wrong, what did you look for and not find, and what did you work around without being told to?"* Save it to this directory (`feedback-<session>.md`), **never into the corpus**, and never feed it into a later worker's prompt — feedback is retrospective record for the post-trial triage only (the discoverability-lens findings of the last three trials came from these reports, not the log).
+At the end of each worker session — inside that session, while fresh — collect verbatim feedback with the standard prompt: *"About the `jigc` CLI specifically: (1) what confused you; (2) what did jigc tell you that turned out to be wrong or misleading; (3) what did you look for — a command, a flag, a way to read or write something — and not find; (4) what did you do around jigc rather than through it (any direct file read/edit, raw git command, or other workaround touching managed docs), and why?"* Save it to this directory (`feedback-<session>.md`), **never into the corpus**, and never feed it into a later worker's prompt — feedback is retrospective record for the post-trial triage only (the discoverability-lens findings of the last three trials came from these reports, not the log).
 
 ## After the trial
 
