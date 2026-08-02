@@ -3894,7 +3894,11 @@ mod tests {
     /// register, so an untracked-only task is not falsely treated as empty.
     #[test]
     fn git_untracked_reports_new_files_and_nothing_when_clean() {
-        let dir = std::env::temp_dir().join(format!("jigc-untracked-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "jigc-untracked-{}-{}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mk temp repo");
         let run = |args: &[&str]| {
@@ -3926,7 +3930,11 @@ mod tests {
     /// `bail!`s with its stderr (the correction signal, no commit lands).
     #[test]
     fn git_commit_returns_hook_output_on_success_and_bails_on_rejection() {
-        let dir = std::env::temp_dir().join(format!("jigc-commit-hook-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "jigc-commit-hook-{}-{}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mk temp repo");
         let run = |args: &[&str]| {
@@ -4006,7 +4014,11 @@ mod tests {
     /// drops the absent member so the present one still stages cleanly.
     #[test]
     fn existing_pathspecs_drops_absent_so_git_add_never_aborts() {
-        let dir = std::env::temp_dir().join(format!("jigc-pathspec-guard-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "jigc-pathspec-guard-{}-{}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mk temp repo");
         let run = |args: &[&str]| {
@@ -4072,7 +4084,11 @@ mod tests {
     /// Shared harness for the failure-POINT axis tests: a temp git repo with one seed
     /// commit (the rollback shells out to git, so HEAD must exist).
     fn finalize_axis_repo(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("jigc-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "jigc-{tag}-{}-{}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mk temp repo");
         let run = |args: &[&str]| {

@@ -999,10 +999,7 @@ mod tests {
             let unique = format!(
                 "jigc-index-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             );
             path.push(unique);
             std::fs::create_dir_all(&path).expect("create temp root");
@@ -1411,10 +1408,7 @@ mod overlay_tests {
             path.push(format!(
                 "jigc-overlay-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(&path).expect("create temp root");
             TempRoot(path)
@@ -1857,10 +1851,7 @@ mod commit_overlay_tests {
             path.push(format!(
                 "jigc-commit-overlay-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(&path).expect("create temp root");
             TempRoot(path)
@@ -2253,10 +2244,7 @@ mod prop_tests {
             let unique = format!(
                 "jigc-index-prop-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             );
             path.push(unique);
             std::fs::create_dir_all(&path).expect("create temp root");

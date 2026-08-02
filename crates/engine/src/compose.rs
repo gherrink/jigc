@@ -4310,10 +4310,7 @@ plain prose, {single} braces, no tokens
             path.push(format!(
                 "jigc-compose-slice-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(&path).expect("create temp root");
             TempRoot(path)

@@ -67,7 +67,60 @@
 
 mod support;
 
-use support::trial_corpus::{State, TrialCorpus};
+use support::trial_corpus::{State, TrialCorpus, unique_root};
+
+/// (0) The isolation fence's own precondition: **two corpora never share a root**.
+///
+/// The builder's isolation claim ("a tempdir per corpus") is only as strong as the
+/// mint that names it. A wall-clock-only disambiguator is not a mint: macOS truncates
+/// `SystemTime::now()` to **microsecond** granularity, so a burst of calls inside one
+/// process returns the same instant many times over — and two `#[test]` threads of one
+/// binary then build *into the same directory*, where the second `git init` dies on
+/// `File exists`.
+///
+/// So the property is asserted over the mint directly, in the two shapes that produce
+/// it: a **sequential burst** (the coarse clock repeating on its own) and **concurrent
+/// threads** (the parallel-`#[test]` shape the harness actually runs). Distinctness must
+/// hold by construction, not by winning a race.
+#[test]
+fn a_minted_root_is_unique_under_burst_and_across_threads() {
+    use std::collections::BTreeSet;
+
+    const BURST: usize = 1_000;
+    const THREADS: usize = 8;
+    const PER_THREAD: usize = 500;
+
+    let burst: BTreeSet<_> = (0..BURST).map(|_| unique_root("burst")).collect();
+    assert_eq!(
+        burst.len(),
+        BURST,
+        "a sequential burst of {BURST} mints must yield {BURST} distinct roots; \
+         got {} — the disambiguator is coarser than the call rate",
+        burst.len(),
+    );
+
+    let handles: Vec<_> = (0..THREADS)
+        .map(|_| {
+            std::thread::spawn(|| {
+                (0..PER_THREAD)
+                    .map(|_| unique_root("parallel"))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    let concurrent: BTreeSet<_> = handles
+        .into_iter()
+        .flat_map(|h| h.join().expect("mint thread must not panic"))
+        .collect();
+    assert_eq!(
+        concurrent.len(),
+        THREADS * PER_THREAD,
+        "{THREADS} threads minting {PER_THREAD} roots each must yield {} distinct roots; \
+         got {} — two parallel `#[test]`s would build into one directory",
+        THREADS * PER_THREAD,
+        concurrent.len(),
+    );
+}
 
 /// (1) Every named state in the builder constructs a real git repo.
 #[test]
@@ -114,10 +167,7 @@ fn a_leaked_pack_dir_never_reaches_a_built_state() {
     bogus.push(format!(
         "jigc-bogus-pack-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock after the epoch")
-            .as_nanos(),
+        engine::tempname::unique_nanos(),
     ));
     std::fs::create_dir_all(&bogus).expect("create the bogus pack dir");
 

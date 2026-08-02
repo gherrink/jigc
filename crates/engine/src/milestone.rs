@@ -2002,10 +2002,7 @@ mod tests {
             let unique = format!(
                 "jigc-milestone-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             );
             path.push(unique);
             std::fs::create_dir_all(&path).expect("create temp root");

@@ -4533,10 +4533,7 @@ mod validate_task_tests {
             path.push(format!(
                 "jigc-validate-task-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(path.join(DOCS_DIR)).expect("create docs dir");
             TempArea(path)
@@ -5179,10 +5176,7 @@ mod ref_resolves_in_sweep_tests {
             path.push(format!(
                 "jigc-validate-refresolves-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(&path).expect("create temp root");
             TempRoot(path)
@@ -5585,10 +5579,7 @@ mod owner_artifact_gate_tests {
             path.push(format!(
                 "jigc-owner-artifact-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(&path).expect("create temp repo");
             TempRepo(path)
@@ -6040,10 +6031,7 @@ mod validate_store_tests {
             path.push(format!(
                 "jigc-validate-store-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(&path).expect("create temp root");
             TempRoot(path)
@@ -8408,10 +8396,7 @@ title: {title}
         let root = std::env::temp_dir().join(format!(
             "jigc-attribution-{}-{:?}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
+            crate::tempname::unique_nanos(),
         ));
         let notes = root.join("notes");
         std::fs::create_dir_all(&notes).expect("mk notes/");

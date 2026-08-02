@@ -2447,10 +2447,7 @@ mod tests {
                 path.push(format!(
                     "jigc-packlist-unit-{}-{:?}",
                     std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos(),
+                    engine::tempname::unique_nanos(),
                 ));
                 std::fs::create_dir_all(&path).expect("create temp dir");
                 TempDir(path)
@@ -2578,10 +2575,7 @@ mod tests {
                 path.push(format!(
                     "jigc-marker-unit-{}-{:?}",
                     std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos(),
+                    engine::tempname::unique_nanos(),
                 ));
                 std::fs::create_dir_all(&path).expect("create temp dir");
                 TempDir(path)
@@ -2694,10 +2688,7 @@ mod tests {
                 path.push(format!(
                     "jigc-factory-unit-{}-{:?}",
                     std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos(),
+                    engine::tempname::unique_nanos(),
                 ));
                 std::fs::create_dir_all(&path).expect("create temp dir");
                 TempDir(path)
@@ -3139,10 +3130,7 @@ mod tests {
                 let unique = format!(
                     "jigc-fspack-unit-{}-{:?}",
                     std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos(),
+                    engine::tempname::unique_nanos(),
                 );
                 path.push(unique);
                 std::fs::create_dir_all(&path).expect("create temp dir");
@@ -3741,10 +3729,7 @@ sections:
                 path.push(format!(
                     "jigc-prov-unit-{tag}-{}-{:?}",
                     std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos(),
+                    engine::tempname::unique_nanos(),
                 ));
                 std::fs::create_dir_all(&path).expect("create temp dir");
                 TempDir(path)

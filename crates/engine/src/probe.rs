@@ -667,10 +667,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "jigc-snapshot-probe-{}-{:?}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
+            crate::tempname::unique_nanos(),
         ));
         std::fs::create_dir_all(root.join("crates/engine/src")).expect("mk tree");
         std::fs::write(

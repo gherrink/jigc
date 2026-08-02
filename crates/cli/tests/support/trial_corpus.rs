@@ -14,7 +14,7 @@
 //! has no verb that authors a foreign hook or a vendor dir, so the unqualified
 //! "everything through the binary" form would be unsatisfiable.
 //!
-//! **Isolation is strict and non-optional:** a pid+nanos tempdir per corpus, a
+//! **Isolation is strict and non-optional:** a process-unique tempdir per corpus, a
 //! per-repo git identity, `$HOME` repointed into the corpus, and `JIGC_PACK_DIR`
 //! removed from every child environment — the built state composes the *embedded*
 //! packs the suites claim to sweep, whatever the developer's shell carries.
@@ -855,17 +855,22 @@ fn minted_task(stdout: &str) -> String {
         .to_string()
 }
 
-/// A unique throwaway corpus root: the state's name plus pid+nanos, so parallel
-/// `#[test]`s in any number of test binaries never collide.
-fn unique_root(label: &str) -> PathBuf {
+/// A unique throwaway corpus root: the state's name plus pid and
+/// [`engine::tempname::unique_nanos`], so parallel `#[test]`s in any number of test
+/// binaries never collide.
+///
+/// The mint must be unique *by construction*, not by winning a race. A raw
+/// `SystemTime::now()` is not: macOS truncates it to microsecond granularity, so two
+/// of a binary's `#[test]` threads reaching here in the same microsecond would take the
+/// *same* root and build into one directory — where the second [`TrialCorpus::git_init`]
+/// dies on `fatal: cannot copy … File exists`. `unique_nanos` is strictly increasing
+/// within the process and `pid` separates processes, so the pair cannot repeat.
+pub fn unique_root(label: &str) -> PathBuf {
     let mut root = std::env::temp_dir();
     root.push(format!(
         "jigc-trial-{label}-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock after the epoch")
-            .as_nanos(),
+        engine::tempname::unique_nanos(),
     ));
     root
 }

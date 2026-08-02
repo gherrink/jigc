@@ -646,10 +646,7 @@ mod tests {
             path.push(format!(
                 "jigc-target-surface-{tag}-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                crate::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(&path).expect("create temp root");
             TempRoot(path)

@@ -256,10 +256,7 @@ mod tests {
             path.push(format!(
                 "jigc-orphan-unit-{}-{:?}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
+                engine::tempname::unique_nanos(),
             ));
             std::fs::create_dir_all(&path).expect("create temp repo");
             let repo = TempRepo(path);

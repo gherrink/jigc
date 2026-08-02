@@ -62,10 +62,7 @@ impl GoldenRoot {
         root.push(format!(
             "jigc-golden-root-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock after the epoch")
-                .as_nanos(),
+            engine::tempname::unique_nanos(),
         ));
         std::fs::create_dir_all(&root).expect("create the throwaway golden root");
         GoldenRoot(root)

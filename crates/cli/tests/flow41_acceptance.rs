@@ -56,10 +56,7 @@ impl TempDir {
         path.push(format!(
             "jigc-flow41-{tag}-{}-{:?}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
+            engine::tempname::unique_nanos(),
         ));
         fs::create_dir_all(&path).expect("create temp dir");
         TempDir(path)

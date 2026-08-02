@@ -86,10 +86,7 @@ impl BareDir {
         root.push(format!(
             "jigc-machine-output-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock after the epoch")
-                .as_nanos(),
+            engine::tempname::unique_nanos(),
         ));
         fs::create_dir_all(root.join("home")).expect("create the bare corpus home");
         BareDir { root }
