@@ -19,6 +19,24 @@
 # is engine::manifest::schema_hash of its definition. Regenerate a hash only
 # alongside a deliberate, versioned schema change — never to silence this gate.
 #
+# THE HASH IS A PRESENTATION PROJECTION (M47). schema_hash digests the schema with
+# three AUTHORED-PROSE keys erased — `description:`, `usage:`, and every slot `hint:`
+# (both loci, nested repeatables included) — so rewording one of them needs NO bump
+# and NO re-pin here. Everything else stays in, the six SEMANTICS keys included
+# (`default` / `set` / `inverse` / `inverse-card` / `check` / `title-names-symbol`):
+# they change what the tool WRITES and ADJUDICATES, so they remain declared contract
+# changes. While prose sat inside the hash the freeze was unfenceable — a hint reword
+# and an enum widening were the same keystroke, guarded only by the line above
+# (design/corpus-migration.md → The freeze).
+#
+# THE SUCCESSOR RULE, stated forward from M47 Increment 1: a SCHEMA-SHAPE change moves
+# a doctype's `schema-hash` only together with its `schema-version`, and a SLUG-RULE
+# change moves `slug-rule.hash` only together with `slug-rule.version`. It is stated,
+# not fenced (no implementable mechanism today; deferred to M46). M47 Increment 1 is
+# the declared genesis exemption and the ONLY one: the narrowing re-pinned all 16
+# doctype hashes at unchanged schema-versions BY CONSTRUCTION — no schema's shape
+# moved, only what the hash is computed over.
+#
 # `slug-rule` (M42) declares the IDENTITY-MINT rule the ids inside every doctype
 # above are derived by — `engine::slug::slugify`, which sits in no schema-hash, so
 # this gate was blind to a change in the one function that names every id in every
@@ -37,19 +55,19 @@ slug-rule:
 doctypes:
   - type: commit
     schema-version: 1
-    schema-hash: 4d5a657475ddb4338d99d152ed3fe546374b0db18cb7164131ed5060245f3071
+    schema-hash: b8ea1041e2cf998bcfb3e57fbd1c84f975a4240a4df388aa0c876c2042ee0eb8
   - type: adr
     schema-version: 2
-    schema-hash: 18e0bd54954849dbe446c9441316c819faccb85b321d5ca909e56d15bea31405
+    schema-hash: 2d86024048d5b791e3df9da79761612b6c3ef2e2f08ed6f1ae5132a4680f34cb
   - type: spec
     schema-version: 1
-    schema-hash: 48d3a0c0df8d8d8bea894ca7792f8b198236548bca7ab65004a0a67c31d7cb51
+    schema-hash: a6840c4efe33e7ab8be71dccb4701fd8a26f2bd3f64200b17c163ed9274a61e3
   - type: prd
     schema-version: 1
-    schema-hash: 239d309f4a859995af21315b9b9072e22177014690ff2c0441a6bccf2ba102c9
+    schema-hash: 292b1ee6a976859738c57b9481bf8099a5f523ba2e248e2ca79a332cec4b3245
   - type: arch-doc
     schema-version: 1
-    schema-hash: b26689b227d0ad24b14d2cc796608e639c5648f5b59b1ef38685190bef9dc227
+    schema-hash: 22053cb17de3beefdfecbec67c97a290a2e4e5c2772e2e281a12b1dadcab7b5a
   - type: changelog
     schema-version: 2
-    schema-hash: 0204772fa1ceb0d1d70294acb1937a5aa851f1f79d2a2a493dcaec97dfdbb4c8
+    schema-hash: 9e1130dfe3b357d4e02371455033e7f30147f8a43b0c94e46b0f8558f0e2ee20

@@ -28,6 +28,24 @@
 # only alongside a deliberate, versioned schema change — never to silence this
 # gate.
 #
+# THE HASH IS A PRESENTATION PROJECTION (M47). schema_hash digests the schema with
+# three AUTHORED-PROSE keys erased — `description:`, `usage:`, and every slot `hint:`
+# (both loci, nested repeatables included) — so rewording one of them needs NO bump
+# and NO re-pin here. Everything else stays in, the six SEMANTICS keys included
+# (`default` / `set` / `inverse` / `inverse-card` / `check` / `title-names-symbol`):
+# they change what the tool WRITES and ADJUDICATES, so they remain declared contract
+# changes. While prose sat inside the hash the freeze was unfenceable — a hint reword
+# and an enum widening were the same keystroke, guarded only by the line above
+# (design/corpus-migration.md → The freeze).
+#
+# THE SUCCESSOR RULE, stated forward from M47 Increment 1: a SCHEMA-SHAPE change moves
+# a doctype's `schema-hash` only together with its `schema-version`, and a SLUG-RULE
+# change moves `slug-rule.hash` only together with `slug-rule.version`. It is stated,
+# not fenced (no implementable mechanism today; deferred to M46). M47 Increment 1 is
+# the declared genesis exemption and the ONLY one: the narrowing re-pinned all 16
+# doctype hashes at unchanged schema-versions BY CONSTRUCTION — no schema's shape
+# moved, only what the hash is computed over.
+#
 # `slug-rule` (M42) declares the IDENTITY-MINT rule — engine::slug::slugify — the ids
 # inside every doctype above are derived by. It is the SAME rule for every pack (it
 # lives in the engine), so both shipped manifests pin the same version + hash and a
@@ -40,31 +58,31 @@ slug-rule:
 doctypes:
   - type: commit
     schema-version: 1
-    schema-hash: 188e7f1b3b148f1fa6b0d65c28dd01a31535370021fe62588d7f82363b723ffc
+    schema-hash: 8832981bd6063e374c1e20705ceb0358be0d266d16d9a7350550225c4eef25fe
   - type: completion-record
     schema-version: 1
-    schema-hash: 8cd10292cbfe8880a4d66d6187d6c5e7600e30ad1ba3425192deb4b3ff1a2547
+    schema-hash: bffb7c686200e4d76862f9ebd7f120a5754d97a6635e64a2a065f3409f1eee1a
   - type: decisions-log
     schema-version: 1
-    schema-hash: 8845359c1d4f62bc02cbaa092bd2c6b834f39900f86373176e1aa7c266a0b068
+    schema-hash: c12bd61561a520e2d884abb3d0bbfc73b0eba1a89a721eda4cf4e5ed3ac039df
   - type: deferral-ledger
     schema-version: 2
-    schema-hash: bce2e38368129d078ae9d3b7fd8b6b8dfa61456996e489b62d9a9fda023b10f5
+    schema-hash: 92257ba61e0cc876eb6afc4f6a0567bc62866ca11fe28c138bbdee1cf804cfe5
   - type: dogfood-record
     schema-version: 1
-    schema-hash: e7980a7e5308270993ee923c8b56a8150b6f0577165960ab413558a679c8f768
+    schema-hash: d5bb5ce31644eff915ddb43a507b808ce86b7e2421dec972fb1203e50a988a76
   - type: idea
     schema-version: 1
-    schema-hash: b26be85495e7b2c7282dee62a43dc232a096f7cb680660334448bdaf0883c0b8
+    schema-hash: 5068e29981c15944a1b9c97989d3d776d249d1c3d4c21b1f17b3b185541faca1
   - type: milestone-record
     schema-version: 2
-    schema-hash: bf4a6f128be398f4049dfe0960ca5b3e55ab41e89ddb75376423cfe52e477eff
+    schema-hash: 4c725b85a03d70b90b7bbfeeb488c055aedd643b431e1f403d2fc119275d18d0
   - type: research
     schema-version: 1
-    schema-hash: 2801874c3c4969e06088f4e1f82ed1acb88278acd93b53c2f5ecb1f4759fbe9d
+    schema-hash: d1dcdf569f941af077bd0e234d6f4955a85518b8b202a14c6ed056a276e04fe5
   - type: roadmap
     schema-version: 1
-    schema-hash: f440faa700967c004a8e00c3101010b574d540c78e9fcb4279e23c0d59bd8cf0
+    schema-hash: f02a981724de9a432658ed85b0dab0fe333ed3d0694b00ebcf793bc9058c7d95
   - type: vision
     schema-version: 1
-    schema-hash: c54616e9d284012a2d97b84bcb139002eff6ab231c0a13e25be8874e515eb102
+    schema-hash: d4a3c3f33a59da942cbd3d4844825e7b0e18722c971504f873349b4edfcb82f2

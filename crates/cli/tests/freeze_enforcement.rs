@@ -184,19 +184,47 @@ fn methodology_pack_copy(tag: &str) -> TempDir {
     dir
 }
 
-/// Mutate the copied `research` schema's **shape** (a slot hint) — a hash-affecting
+/// Mutate the copied `research` schema's **shape** (its `location:`) — a hash-affecting
 /// change that bumps no `schema-version`. The methodology manifest is deliberately
-/// left unbumped.
+/// left unbumped. Mirrors the dev-pack sibling [`drift_adr_schema`] exactly.
+///
+/// **This used to reword a slot `hint:`** — the conflation M47's presentation projection
+/// ends: it called a prose reword "a schema-shape change" while the dev arm it was
+/// modelled on drifted `location:`, and once prose left the hash it stopped drifting
+/// anything at all. The prose side now has its own arm
+/// ([`a_reworded_methodology_hint_composes_clean_with_no_bump`]).
 fn drift_research_schema(pack: &Path) {
     let schema = pack.join("schemas").join("research.yaml");
     let body = fs::read_to_string(&schema).expect("read the copied research.yaml");
+    // Anchored on the line-start key: `research.yaml` *mentions* `location: research/`
+    // inside its header comment first, and an unanchored `replacen` rewrote the comment
+    // and left the schema untouched — a drift function that drifts nothing (caught by
+    // the gate, which is what the gate is for).
     let drifted = body.replacen(
-        "The question this research set out to answer.",
-        "A drifted question hint.",
+        "\nlocation: research/\n",
+        "\nlocation: investigations/\n",
         1,
     );
-    assert_ne!(body, drifted, "research.yaml must carry the question hint");
+    assert_ne!(
+        body, drifted,
+        "research.yaml must declare `location: research/` as a top-level key"
+    );
     fs::write(&schema, drifted).expect("write the drifted research.yaml");
+}
+
+/// Reword the copied `research` schema's `question` slot **hint** — authored prose, and
+/// since M47 **outside** the frozen `schema-hash` ([`engine::manifest::schema_hash`] hashes
+/// the presentation projection). No bump, no re-pin, and the gate must stay silent.
+fn reword_research_hint(pack: &Path) {
+    let schema = pack.join("schemas").join("research.yaml");
+    let body = fs::read_to_string(&schema).expect("read the copied research.yaml");
+    let reworded = body.replacen(
+        "The question this research set out to answer.",
+        "The question this research set out to resolve.",
+        1,
+    );
+    assert_ne!(body, reworded, "research.yaml must carry the question hint");
+    fs::write(&schema, reworded).expect("write the reworded research.yaml");
 }
 
 /// Compose `[dev ▸ methodology-copy]` via the listed-pack mechanism: `packs.yaml`
@@ -255,6 +283,34 @@ fn methodology_schema_shape_drift_without_manifest_bump_is_blocked() {
     assert!(
         stderr.contains("research"),
         "stderr must name the drifted `research` doctype; got:\n{stderr}",
+    );
+}
+
+/// The **invariance arm beside it** (M47 Decision 3), through the real binary: the very
+/// mutation [`drift_research_schema`] used to make — a slot-`hint` reword — now composes
+/// **clean** against an unbumped, un-re-pinned methodology manifest. While prose sat
+/// inside the `schema-hash` the freeze was **unfenceable**: a hint reword and a real
+/// structural change were the same keystroke (re-pin, green), guarded only by a comment.
+/// The two arms together are the discrimination the projection buys.
+#[test]
+fn a_reworded_methodology_hint_composes_clean_with_no_bump() {
+    let repo = TempDir::new("m-prose-repo");
+    let home = TempDir::new("m-prose-home");
+    let pack = methodology_pack_copy("m-prose");
+    init_repo(repo.path());
+    list_pack(repo.path(), pack.path());
+    reword_research_hint(pack.path());
+
+    let out = run_listed(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "freeze-gate probe"],
+    );
+    assert!(
+        out.status.success(),
+        "a reworded authoring hint must need no bump and no re-pin; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
     );
 }
 

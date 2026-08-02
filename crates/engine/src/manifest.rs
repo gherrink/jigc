@@ -27,22 +27,100 @@
 //! the mechanism that assertion calls; wiring it at pack-load is a sibling task.
 
 use crate::file_state::hash_bytes;
-use crate::schema::Schema;
+use crate::schema::{Leaf, Schema, SectionBody};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 /// The deterministic **schema-hash** of a doctype definition: the lowercase-hex
-/// `blake3` digest of the schema's canonical JSON serialization.
+/// `blake3` digest of the canonical JSON of its **presentation projection**
+/// ([`erase_presentation`]).
 ///
 /// [`Schema`] (and its whole transitive model) carries only ordered `Vec`s — no
 /// maps — so `serde_json::to_vec` emits the same bytes every run, making the hash
 /// a stable fingerprint of the schema's *shape*. Serialization of the schema
 /// model is infallible (no `Serialize` impl in the model can error), so the
 /// (unreachable) error is surfaced as a panic rather than silently swallowed.
+///
+/// **The hash is taken over the projection, not the whole struct (M47).** Three
+/// authored-prose keys — `Schema.description`, `Schema.usage`, `Slot.hint` — are
+/// erased first, so a typo fix in an authoring hint is not a frozen-schema event.
+/// Everything else stays in, the six *semantics* keys (`default` / `set` /
+/// `inverse` / `inverse-card` / `check` / `title-names-symbol`) included: they
+/// change what the tool **writes and adjudicates**, which is a declared contract
+/// change even though no committed doc's bytes can violate it.
 pub fn schema_hash(schema: &Schema) -> String {
-    let bytes = serde_json::to_vec(schema).expect("Schema serializes to JSON infallibly");
+    let projected = erase_presentation(schema);
+    let bytes = serde_json::to_vec(&projected).expect("Schema serializes to JSON infallibly");
     hash_bytes(&bytes)
+}
+
+/// The schema's **presentation projection** — a clone with the three authored-prose
+/// keys erased: `Schema.description`, `Schema.usage`, and every `Slot.hint` (at both
+/// loci — a simple section's slot **and** a slot leaf inside a repeatable item block,
+/// recursing into nested repeatables).
+///
+/// **An erase-list, deliberately — and deliberately *not* a call into
+/// [`crate::schema_diff`]'s `erase_out_of_projection`.** The two functions answer two
+/// different questions: *can a committed doc's bytes violate this?* (the migration
+/// classifier, whose erase set is designed to **grow**) versus *is this a declared
+/// change to the contract?* (this one). Reusing the classifier's set would stop the
+/// hash moving on `default:` / `set:` — keys that change what the tool writes into new
+/// documents — and would silently narrow the freeze every time that set grew.
+///
+/// The `Schema` destructure below is **exhaustive on purpose**: a field added to the
+/// model breaks this build rather than silently falling out of the hash — the safe
+/// direction (a compile error the author sees) instead of a silent freeze narrowing
+/// nobody sees (`DECISIONS.md` → 2026-07-26 the Settle, Decision 3 + the pre-decompose
+/// review; `design/corpus-migration.md` → The freeze).
+fn erase_presentation(schema: &Schema) -> Schema {
+    // Exhaustive: every `Schema` field is named here, so adding one is a build error.
+    let Schema {
+        ty,
+        location,
+        id_from,
+        description: _,
+        usage: _,
+        display_title,
+        placement,
+        singleton,
+        sections,
+    } = schema;
+    let mut out = Schema {
+        ty: ty.clone(),
+        location: location.clone(),
+        id_from: id_from.clone(),
+        description: None,
+        usage: None,
+        display_title: display_title.clone(),
+        placement: placement.clone(),
+        singleton: *singleton,
+        sections: sections.clone(),
+    };
+    for section in &mut out.sections {
+        match &mut section.body {
+            SectionBody::Simple { slot, .. } => {
+                if let Some(slot) = slot {
+                    slot.hint = None;
+                }
+            }
+            SectionBody::Repeatable { repeatable } => erase_block_hints(&mut repeatable.block),
+        }
+    }
+    out
+}
+
+/// Erase the slot hints of a repeatable item block's leaves — the **second locus**
+/// (the item block is where the work-doc family's prose lives), recursing into a
+/// nested repeatable so no slot escapes the projection at any depth.
+fn erase_block_hints(block: &mut [Leaf]) {
+    for leaf in block {
+        match leaf {
+            Leaf::Slot { slot, .. } => slot.hint = None,
+            Leaf::Repeatable { repeatable, .. } => erase_block_hints(&mut repeatable.block),
+            Leaf::Field(_) => {}
+        }
+    }
 }
 
 /// One manifest entry: a doctype's declared schema-version + frozen schema-hash.
@@ -317,7 +395,7 @@ fn check_slug_rule(declared: Option<&SlugRule>) -> Result<(), ManifestError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::load_schema;
+    use crate::schema::{Field, Placement, Slot, load_schema};
 
     const WIDGET_YAML: &str = "\
 type: widget
@@ -331,6 +409,48 @@ sections:
       - { id: status, type: enum, of: [open, closed], default: open }
   - id: body
     slot: { hint: \"What the widget does.\" }
+";
+
+    /// A fixture carrying **every prose locus** the hash projection erases — the
+    /// doctype-level `description:` / `usage:`, a simple section's slot `hint:`, an
+    /// item-block slot `hint:`, and a **nested** item-block slot `hint:` — alongside
+    /// the semantics keys the projection keeps (`of` / `default` / `set` / `card` /
+    /// `inverse` / `inverse-card` / `optional`).
+    const PROSE_YAML: &str = "\
+type: prosey
+location: prosey/
+id-from: title
+description: A prosey doctype.
+usage: Reach for it sometimes.
+sections:
+  - id: header
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: status, type: enum, of: [open, closed], default: open }
+      - { id: stamped, type: date, set: on-create }
+      - id: supersedes
+        type: ref
+        to: prosey
+        card: \"0..1\"
+        inverse: superseded-by
+        inverse-card: \"0..1\"
+  - id: body
+    slot: { hint: \"What the prosey doc says.\" }
+  - id: parts
+    repeatable:
+      id-from: name
+      block:
+        - { id: name, type: string }
+        - id: notes
+          slot: { hint: \"Notes on the part.\" }
+        - id: subparts
+          repeatable:
+            id-from: label
+            block:
+              - { id: label, type: string }
+              - id: detail
+                slot: { hint: \"Detail of the subpart.\" }
 ";
 
     const GADGET_YAML: &str = "\
@@ -396,20 +516,29 @@ sections:
         assert_eq!(check(&manifest, &schema_map(schemas)), Ok(()));
     }
 
+    /// A real **shape** drift with no version bump blocks.
+    ///
+    /// The mutation is a widened `enum` — a genuine structural change a committed doc
+    /// can be adjudicated against. **It used to be a slot-`hint` reword**, which is
+    /// exactly the conflation M47's presentation projection ends: this test claimed to
+    /// witness "a schema-shape change" while its dev-pack sibling eight lines up drifted
+    /// `location:`, and once prose left the hash the old mutation stopped moving it at
+    /// all. The invariance half is its own arm ([`a_prose_reword_passes_the_freeze_check`]).
     #[test]
     fn shape_mutated_without_bump_is_hash_mismatch() {
         let manifest = manifest_for(&[widget(), gadget()]);
         let expected = schema_hash(&widget());
 
-        // Mutate the widget's *shape* (its body slot) without bumping its version.
+        // Mutate the widget's *shape* (widen its `status` enum) without bumping its version.
         let mut mutated = widget();
-        if let crate::schema::SectionBody::Simple { slot, .. } = &mut mutated.sections[1].body {
-            *slot = Some(crate::schema::Slot {
-                hint: Some("a different hint".into()),
-                optional: false,
-            });
+        if let crate::schema::SectionBody::Simple { fields, .. } = &mut mutated.sections[0].body {
+            let status = fields
+                .iter_mut()
+                .find(|f| f.id == "status")
+                .expect("the fixture header declares `status`");
+            status.of = Some(vec!["open".into(), "closed".into(), "parked".into()]);
         } else {
-            panic!("fixture body section is simple");
+            panic!("fixture header section is simple");
         }
         let actual = schema_hash(&mutated);
         assert_ne!(actual, expected, "the mutation must change the hash");
@@ -422,6 +551,36 @@ sections:
                 expected,
                 actual,
             }
+        );
+    }
+
+    /// The **invariance arm beside it**: the very mutation
+    /// [`shape_mutated_without_bump_is_hash_mismatch`] used to make — a slot-`hint`
+    /// reword — now passes the freeze check against an **unbumped, un-re-pinned**
+    /// manifest. That is the M47 deliverable at the gate: a typo fix in an authoring
+    /// hint is no longer a frozen-schema event, so the freeze becomes fenceable (the
+    /// two changes stop being the same keystroke).
+    #[test]
+    fn a_prose_reword_passes_the_freeze_check() {
+        let manifest = manifest_for(&[widget(), gadget()]);
+
+        let mut reworded = widget();
+        if let crate::schema::SectionBody::Simple { slot, .. } = &mut reworded.sections[1].body {
+            slot.as_mut().expect("the fixture body has a slot").hint =
+                Some("a different hint".into());
+        } else {
+            panic!("fixture body section is simple");
+        }
+        assert_ne!(
+            reworded,
+            widget(),
+            "the reword must really change the schema"
+        );
+
+        assert_eq!(
+            check(&manifest, &schema_map([reworded, gadget()])),
+            Ok(()),
+            "a prose reword must pass the freeze check with no bump and no re-pin",
         );
     }
 
@@ -610,6 +769,183 @@ doctypes: []
         );
     }
 
+    /// A named schema mutation: a label plus the edit it applies in place. Used by the
+    /// two projection tests below as `(what, apply)` tables.
+    type Mutation = (&'static str, fn(&mut Schema));
+
+    fn prosey() -> Schema {
+        load_schema(PROSE_YAML.as_bytes()).expect("prosey fixture loads")
+    }
+
+    /// The fixture's header field `id` — the locus every semantics-key mutation below
+    /// reaches for.
+    fn header_field<'a>(schema: &'a mut Schema, id: &str) -> &'a mut Field {
+        match &mut schema.sections[0].body {
+            SectionBody::Simple { fields, .. } => fields
+                .iter_mut()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("the fixture header declares `{id}`")),
+            SectionBody::Repeatable { .. } => panic!("the fixture header is a simple section"),
+        }
+    }
+
+    /// The **first** slot-hint locus: a simple body section's slot.
+    fn body_slot(schema: &mut Schema) -> &mut Slot {
+        match &mut schema.sections[1].body {
+            SectionBody::Simple { slot, .. } => slot.as_mut().expect("the fixture body has a slot"),
+            SectionBody::Repeatable { .. } => panic!("the fixture body is a simple section"),
+        }
+    }
+
+    /// The **second** slot-hint locus: a slot leaf inside a repeatable item block.
+    fn item_slot(schema: &mut Schema) -> &mut Slot {
+        match &mut schema.sections[2].body {
+            SectionBody::Repeatable { repeatable } => match &mut repeatable.block[1] {
+                Leaf::Slot { slot, .. } => slot,
+                _ => panic!("the fixture item block's second leaf is a slot"),
+            },
+            SectionBody::Simple { .. } => panic!("the fixture `parts` section is repeatable"),
+        }
+    }
+
+    /// The second locus **at depth**: a slot leaf inside a *nested* repeatable's block.
+    fn nested_item_slot(schema: &mut Schema) -> &mut Slot {
+        match &mut schema.sections[2].body {
+            SectionBody::Repeatable { repeatable } => match &mut repeatable.block[2] {
+                Leaf::Repeatable { repeatable, .. } => match &mut repeatable.block[1] {
+                    Leaf::Slot { slot, .. } => slot,
+                    _ => panic!("the nested block's second leaf is a slot"),
+                },
+                _ => panic!("the fixture item block's third leaf is a nested repeatable"),
+            },
+            SectionBody::Simple { .. } => panic!("the fixture `parts` section is repeatable"),
+        }
+    }
+
+    /// The M47 Decision 3 headline — **the hash is a presentation projection**: a
+    /// reword of authored *prose* leaves [`schema_hash`] byte-identical, so a typo fix
+    /// in a `description:` / `usage:` / slot `hint:` is no longer a frozen-schema
+    /// event. While prose sat inside the hash the freeze was **unfenceable**: a hint
+    /// reword and an enum widening were the same keystroke — re-pin, green — guarded
+    /// only by a comment (`DECISIONS.md` → 2026-07-26 the Settle, Decision 3).
+    ///
+    /// Every prose locus is swept, not the one being thought about: both doctype-level
+    /// keys, a simple section's slot, an item-block slot, and a **nested** item-block
+    /// slot.
+    #[test]
+    fn a_prose_reword_leaves_the_schema_hash_invariant() {
+        let base = prosey();
+        let baseline = schema_hash(&base);
+
+        let rewords: [Mutation; 5] = [
+            ("description", |s| {
+                s.description = Some("A prosier doctype.".into())
+            }),
+            ("usage", |s| s.usage = Some("Reach for it often.".into())),
+            ("body slot hint", |s| {
+                body_slot(s).hint = Some("What the prosey doc states.".into())
+            }),
+            ("item-block slot hint", |s| {
+                item_slot(s).hint = Some("Notes about the part.".into())
+            }),
+            ("nested item-block slot hint", |s| {
+                nested_item_slot(s).hint = Some("Details of the subpart.".into())
+            }),
+        ];
+
+        for (what, reword) in &rewords {
+            let mut reworded = base.clone();
+            reword(&mut reworded);
+            assert_ne!(
+                reworded, base,
+                "the {what} reword must really change the schema (else the arm is vacuous)"
+            );
+            assert_eq!(
+                schema_hash(&reworded),
+                baseline,
+                "rewording the {what} must leave the schema-hash invariant"
+            );
+        }
+
+        // …and all five at once, so the invariance is not an artifact of one-at-a-time.
+        let mut all = base.clone();
+        for (_, reword) in &rewords {
+            reword(&mut all);
+        }
+        assert_ne!(all, base);
+        assert_eq!(
+            schema_hash(&all),
+            baseline,
+            "rewording every prose locus at once must leave the schema-hash invariant"
+        );
+    }
+
+    /// The projection's **other side**, swept key by key: three keys left the hash and
+    /// **nothing else did**. The six semantics keys stay in deliberately — `default:` /
+    /// `set:` change what the tool writes into new documents, and `inverse:` /
+    /// `inverse-card:` / `check:` / `title-names-symbol:` change what it adjudicates —
+    /// so they are declared contract changes even though no committed doc's bytes can
+    /// violate them (the argument that kept `erase_presentation` a separate function
+    /// from `schema_diff::erase_out_of_projection`, whose erase set is designed to grow).
+    #[test]
+    fn every_semantics_key_still_moves_the_schema_hash() {
+        let base = prosey();
+        let baseline = schema_hash(&base);
+
+        let mutations: [Mutation; 14] = [
+            ("default", |s| {
+                header_field(s, "status").default = Some("closed".into())
+            }),
+            ("set", |s| {
+                header_field(s, "stamped").set = Some("on-transition".into())
+            }),
+            ("inverse", |s| {
+                header_field(s, "supersedes").inverse = Some("replaced-by".into())
+            }),
+            ("inverse-card", |s| {
+                header_field(s, "supersedes").inverse_card = Some("0..*".into())
+            }),
+            ("check", |s| {
+                header_field(s, "title").check = Some("symbol-exists".into())
+            }),
+            ("title-names-symbol", |s| {
+                header_field(s, "title").title_names_symbol = true
+            }),
+            ("of", |s| {
+                header_field(s, "status").of =
+                    Some(vec!["open".into(), "closed".into(), "parked".into()])
+            }),
+            ("card", |s| {
+                header_field(s, "supersedes").card = Some("0..*".into())
+            }),
+            ("optional (header field)", |s| {
+                header_field(s, "status").optional = true
+            }),
+            ("optional (body slot)", |s| body_slot(s).optional = true),
+            ("optional (item-block slot)", |s| {
+                item_slot(s).optional = true
+            }),
+            ("location", |s| s.location = Some("prosier/".into())),
+            ("placement", |s| {
+                s.location = None;
+                s.placement = Some(Placement {
+                    file: "PROSEY.md".into(),
+                });
+            }),
+            ("display-title", |s| s.display_title = Some("Prosey".into())),
+        ];
+
+        for (what, mutate) in mutations {
+            let mut mutated = base.clone();
+            mutate(&mut mutated);
+            assert_ne!(
+                schema_hash(&mutated),
+                baseline,
+                "a `{what}` change must still move the schema-hash"
+            );
+        }
+    }
+
     #[test]
     fn schema_hash_stable_across_load_serialize_reload() {
         let schema = widget();
@@ -634,8 +970,12 @@ doctypes: []
         // BTreeMap normalizes key order, so insertion order cannot perturb it.
         let manifest = manifest_for(&[widget()]); // declares only widget
 
+        // A real *shape* drift, not a `description` reword: since M47 prose is outside
+        // the hash, so the old mutation would leave `widget`'s hash intact and this test
+        // would silently stop testing the tie-break its comment claims (it asserts
+        // `ExtraEntry`, so it would have stayed green either way).
         let mut drifted = widget();
-        drifted.description = Some("a shape change".into());
+        drifted.location = Some("drifted-widgets/".into());
 
         let from_widget_first = check(&manifest, &schema_map([drifted.clone(), gadget()]));
         let from_gadget_first = check(&manifest, &schema_map([gadget(), drifted]));
