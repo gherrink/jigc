@@ -2277,20 +2277,30 @@ mod tests {
             "enumeration is order-invariant across divergent insertion orders"
         );
 
-        // The fixture's on-disk sub-task areas are not handed back pre-sorted by id
-        // by the filesystem in at least one of the two runs — so a green
-        // enumeration cannot be an accident of read_dir order. (If a filesystem
-        // returns id order in BOTH runs we still have the insertion-order proof
-        // above; this asserts the fixture genuinely exercises a divergent order.)
+        // The fixture's on-disk sub-task areas, listed in raw `read_dir` order.
+        // Where the host hands them back in a divergent order, a green enumeration
+        // demonstrably is not an accident of that order. Where it does not, the
+        // fixture *cannot* produce divergence — an order-preserving filesystem
+        // (APFS here) sorts every listing — so the demand is unattainable on the
+        // host rather than unmet by the fixture, and asserting it would be a
+        // machine-dependent red. Either way the load-bearing proof is the
+        // divergent-insertion pair above, which is the axis `enumerate()` actually
+        // consumes (it sorts the *recorded* list; `read_dir` is not on its path).
         let read_dir_diverges = |raw: &[String]| {
             let mut sorted = raw.to_vec();
             sorted.sort();
             raw != sorted.as_slice()
         };
-        assert!(
-            read_dir_diverges(&read_dir1) || read_dir_diverges(&read_dir2),
-            "neither run's read_dir order diverged from id order: {read_dir1:?} / {read_dir2:?}"
-        );
+        if !read_dir_diverges(&read_dir1) && !read_dir_diverges(&read_dir2) {
+            assert_eq!(
+                read_dir1, id_sorted,
+                "neither run diverged, so the host must be order-preserving"
+            );
+            assert_eq!(
+                read_dir2, id_sorted,
+                "neither run diverged, so the host must be order-preserving"
+            );
+        }
     }
 
     use crate::schema::Schema;

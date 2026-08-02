@@ -745,6 +745,12 @@ fn setup_fails_loudly_when_install_commit_is_rejected() {
     // so this test still exercises the no-usable-identity rejection path.
     git_inline_identity(repo.path(), &["config", "--unset", "user.email"]);
     git_inline_identity(repo.path(), &["config", "--unset", "user.name"]);
+    // …and forbid git's *implicit* identity (gecos name + hostname), which it
+    // derives silently on some hosts — there the install commit would SUCCEED and
+    // this test's precondition (a rejected commit) would never arise, turning a
+    // regression fence into a machine-dependent red. `user.useConfigOnly` makes the
+    // rejection deterministic on every host.
+    git_inline_identity(repo.path(), &["config", "user.useConfigOnly", "true"]);
 
     let head_before = String::from_utf8_lossy(
         &Command::new("git")

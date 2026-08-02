@@ -32,8 +32,8 @@
 # packs/methodology/config/schema-manifest.yaml, together, in one commit
 # (design/storage.md → Identity → The slug rule is itself a versioned rule).
 slug-rule:
-  version: 2
-  hash: de51355900e8f0b268030c1da591f3b1c9a49ce63a9b818b71e1c97a14a40a83
+  version: 3
+  hash: 1291873dcac22ad132c3cfdb1cd507a83e09fa1af552d35af4d5ae2a6f8e8e35
 doctypes:
   - type: commit
     schema-version: 1

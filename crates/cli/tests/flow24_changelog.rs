@@ -8,9 +8,10 @@
 //! against the rebuilt binary at build (M16 exercise-don't-infer). The spike confirmed
 //! a load-bearing fact the design's illustrative notation glossed: the version-title
 //! slugger DROPPED dots, so `add-item --title "1.0.0"` minted id `100` — colliding with
-//! a release literally titled `100`. **That is the M42 fork**: at slug-rule-version 2 a
+//! a release literally titled `100`. **That is the M42 fork**: since slug-rule-version 2 a
 //! dot is a SEPARATOR, so the id is `1-0-0` (`design/storage.md` → Identity → The slug
-//! rule is itself a versioned rule). Every downstream address here is still driven from
+//! rule is itself a versioned rule; the shipped rule is generation 3, which forked the
+//! edge-stopword drop and left the separator map alone). Every downstream address here is still driven from
 //! the EMITTED `add-item` address verbatim — never a reconstructed form — so the test
 //! asserts the bytes an agent would actually run (the masking-test guard), and the fork
 //! showed up here as the emitted address moving, not as a test rewritten to agree.
@@ -521,7 +522,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         "the singleton cold-mints at the fixed slug = the type id",
     );
 
-    // The version-title slugger MAPS dots (slug-rule-version 2) → id `1-0-0`; drive the
+    // The version-title slugger MAPS dots (since slug-rule-version 2) → id `1-0-0`; drive the
     // EMITTED address verbatim regardless.
     let rel1 = ok_stdout(
         run_jigc(

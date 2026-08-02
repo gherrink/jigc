@@ -22,21 +22,27 @@
 //! 5. collapse runs of `-` and trim leading/trailing `-`,
 //! 6. cap at the first ~5 words (dash-separated), dropping the rest, then drop
 //!    any leading/trailing stopwords (`the`/`a`/`of`…) the cap leaves at an
-//!    edge — a medial stopword is untouched,
+//!    edge — a medial stopword is untouched, and so is a stopword that is only a
+//!    **component of a hyphenated compound** (`On-call` keeps its `on`; the
+//!    [rule-version-3 fork](#the-rule-is-itself-versioned-m42)),
 //! 7. (the word cap always cuts on a `-` boundary, so no trailing `-` is
 //!    exposed and no re-trim is needed),
 //! 8. apply a char-length backstop — on a mid-word cut, retreat to the last
 //!    complete word (via the final `-`); a single long word with no `-` still
 //!    hard-truncates to a filesystem-safe length (the `NAME_MAX` backstop),
-//! 9. re-drop any leading/trailing stopword the char cap of step 8 *exposes* —
-//!    the retreat to a complete word can uncover an edge stopword step 6 never
-//!    saw — so mint output never ends (or starts) on filler.
+//! 9. re-drop any leading/trailing *droppable* stopword the char cap of step 8
+//!    *exposes* — the retreat to a complete word can uncover an edge stopword step
+//!    6 never saw — so mint output never ends (or starts) on standalone filler.
 //!
 //! The output always matches `^[a-z0-9-]*$` with no leading, trailing, or
 //! doubled `-`, and the function is **idempotent by construction**:
 //! `slugify(slugify(x)) == slugify(x)`. Step 9 is what secures this — without a
 //! post-cap edge-stopword drop, the step-8 char cap could leave a fresh trailing
-//! stopword that a second pass would strip.
+//! stopword that a second pass would strip. It stays secured under the
+//! generation-3 word-awareness because a second pass's boundaries are *all* `-`
+//! join chars, so nothing at an edge is separator-delimited — and the one shape
+//! that could escape that, a slug reduced to a lone stopword, is always droppable
+//! and so was already dropped on the first pass.
 //!
 //! # The rule is itself versioned (M42)
 //!
@@ -60,6 +66,20 @@
 //! **permanent**: ids minted under generation 1 keep their bytes (they are frozen
 //! anchors and frozen paths), and there is no migration — so the corpus, not the
 //! rule, carries the history.
+//!
+//! **Version 3 (M47) is the second fork**: the edge-stopword drop (steps 6 and 9)
+//! becomes **word-aware**. Generation 2 tokenized a hyphenated compound *before*
+//! dropping edge stopwords, so a compound's first or last component was eaten:
+//! `"On-call handoff artifact"` minted `call-handoff-artifact` and
+//! `"Telemetry consent opt-in"` minted `telemetry-consent-opt`. Under generation 3
+//! an edge token is droppable only when the boundary joining it to the rest of the
+//! slug came from a **separator** (space, `_`, `/`, `.`) or the string edge — i.e.
+//! only when it is a whole separator-delimited word of the id-source. `-` is the
+//! join char, so `on_call handoff artifact` still drops its `on`. The provenance is
+//! carried **positionally** (each word knows what its own left boundary was), not as
+//! a set of "words that appeared whole", so `"on On-call"` drops the first `on` and
+//! keeps the compound's. Only [`slugify`] forks: [`renormalize`] is byte-unchanged,
+//! so all four recognition sites read committed bytes exactly as before.
 
 use crate::file_state::hash_bytes;
 
@@ -108,9 +128,11 @@ pub fn mint_statement(minted_into: &str) -> String {
 /// prepositions — dropped when the word cap leaves one at the leading or
 /// trailing edge of a minted slug (`DECISIONS.md` 2026-07-11 → Fork 5: drop
 /// leading/trailing `the`/`a`/`of`…). A *medial* stopword is untouched (it
-/// carries meaning between two content words, e.g. `add-a-rate-limiter`). The
-/// set is deliberately small: the slug is a legibility aid, so we trim only the
-/// filler that reads as noise at an edge, never content.
+/// carries meaning between two content words, e.g. `add-a-rate-limiter`), and so
+/// is one that is merely a **component of a hyphenated compound** (`on-call` keeps
+/// its `on` — the generation-3 fork; see [`drop_edge_stopwords`]). The set is
+/// deliberately small: the slug is a legibility aid, so we trim only the filler
+/// that reads as noise at an edge, never content.
 const EDGE_STOPWORDS: &[&str] = &["a", "an", "the", "of", "to", "in", "on", "at", "by", "for"];
 
 /// Apply the **deterministic collision suffix** to a base slug: `1` keeps the bare
@@ -132,8 +154,11 @@ pub fn suffixed(slug: &str, nth: usize) -> String {
 /// grammar a minted or authored slug must match — and the *recognizer* paired
 /// with [`slugify`]'s *normalization*: every non-empty `slugify(x)` satisfies
 /// `is_slug`. The converse does **not** hold: a valid slug need not be a
-/// `slugify` fixed point — the mint-time word cap and the F5 edge-stopword drop
-/// mean `is_slug("a-0")` yet `slugify("a-0") == "0"`. So a *recognition* site
+/// `slugify` fixed point — the mint-time word cap means `is_slug("a-b-c-d-e-f")`
+/// yet `slugify("a-b-c-d-e-f") == "a-b-c-d-e"`, and the edge-stopword drop means
+/// `is_slug("the")` yet `slugify("the") == ""`. (The generation-3 fork narrowed the
+/// second class but did not close it: `slugify("a-0") == "a-0"` now, because a
+/// hyphen-glued edge stopword survives.) So a *recognition* site
 /// (an authored anchor, a ref body, a frozen id read back from disk) must use
 /// `is_slug`, never `slugify(x) == x`, which would reject valid frozen ids. The
 /// length/word caps are *not* enforced here (they are mint-time concerns; a ref
@@ -201,22 +226,130 @@ pub fn renormalize(text: &str) -> String {
 /// Mint only. To *recognize* an id already minted (a heading read back off disk, an
 /// authored anchor), use [`renormalize`] / [`is_slug`] — never `slugify`.
 pub fn slugify(id_source: &str) -> String {
-    // 1–5: the one separator map.
-    let collapsed = renormalize(id_source);
+    // 1–5: the one separator map, in the **word view** — each word carries the
+    // provenance of the boundary on its left, which steps 6/9 need and the joined
+    // string cannot express.
+    let mut words = tokenize(id_source);
 
-    // 6–7: cap at the first MAX_WORDS words (always a '-' boundary).
-    let capped = cap_words(&collapsed);
+    // 6–7: cap at the first MAX_WORDS words (always a '-' boundary), then drop
+    // the edge stopwords the cap leaves (so a leading stopword frees a word slot).
+    words.truncate(MAX_WORDS);
+    drop_edge_stopwords(&mut words);
 
     // 8: char-length backstop — bound a single long word (which the word cap
     // leaves untouched) to a filesystem-safe length.
-    let bounded = cap_chars(&capped);
+    cap_chars(&mut words);
 
     // 9: the char cap can truncate at a word boundary that leaves a *fresh*
     // trailing (or, after a doc-level cut, leading) edge stopword step 6 never
     // saw, so re-drop edge stopwords here. This makes `slugify` idempotent by
-    // construction: mint output carries no edge stopword and is always a fixed
-    // point of a second pass.
-    drop_edge_stopwords(&bounded)
+    // construction: mint output carries no *droppable* edge stopword, and a second
+    // pass — whose every boundary is a `-` join char — finds none to drop.
+    drop_edge_stopwords(&mut words);
+
+    words
+        .iter()
+        .map(|word| word.text.as_str())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+/// One word of a tokenized id-source, carrying the **provenance of the boundary on
+/// its left**: `glue_before` is `true` only when the dash preceding it came from a
+/// literal `-` in the id-source — the join char of a hyphenated compound — rather
+/// than from a *separator* (space, `_`, `/`, `.`) or the string edge.
+///
+/// That one bit is the whole generation-3 fork: it is what tells `On-call`'s `on`
+/// (glued) from `the guide`'s `the` (separator-delimited), and it is carried
+/// **positionally** so `"on On-call"` drops the first `on` and keeps the compound's
+/// — a value-set test ("is `on` a word that appeared whole anywhere?") would eat
+/// both.
+struct Word {
+    text: String,
+    glue_before: bool,
+}
+
+/// Tokenize an id-source into [`Word`]s — steps 1–5 in the word view.
+///
+/// `tokenize(x).join("-") == renormalize(x)` **by construction**: this performs the
+/// identical classification (case-fold, transliterate, separator-map, strip) and
+/// the identical collapse/trim, and only additionally records where each surviving
+/// dash *came from*. The agreement is pinned by
+/// [`tests::tokenize_agrees_with_renormalize`], so the mint rule can never drift
+/// from the one separator map the recognition sites read.
+///
+/// A run of dash-producing chars collapses to one boundary, and that boundary is
+/// glue only when **every** char in the run was a literal `-` (so `a - b` is
+/// separator-delimited, not glued). A leading or trailing run is trimmed away
+/// entirely, leaving the string edge — which is never glue.
+fn tokenize(id_source: &str) -> Vec<Word> {
+    let mut words: Vec<Word> = Vec::new();
+    let mut current = String::new();
+    // The boundary on the left of the word being accumulated. Word 0's is the
+    // string start.
+    let mut current_glue = false;
+    // The pending dash run between the last content char and the next one.
+    let mut dash_open = false;
+    let mut dash_literal_only = true;
+
+    for ch in id_source.chars() {
+        // 3: the separators map to `-` and mark the run as *not* glue.
+        if matches!(ch, ' ' | '_' | '/' | '.') {
+            dash_open = true;
+            dash_literal_only = false;
+            continue;
+        }
+        // The join char: a dash whose provenance is the compound itself.
+        if ch == '-' {
+            dash_open = true;
+            continue;
+        }
+        // 1–2, 4: case-fold / transliterate / strip.
+        let ascii = match ch {
+            'a'..='z' | '0'..='9' => Some(ch),
+            'A'..='Z' => Some(ch.to_ascii_lowercase()),
+            _ => None,
+        };
+        let folded = if ascii.is_some() {
+            None
+        } else {
+            transliterate(ch)
+        };
+        if ascii.is_none() && folded.is_none() {
+            // Stripped entirely — and a stripped char neither opens nor closes a
+            // dash run (`the-, guide` is one boundary, carrying the space).
+            continue;
+        }
+
+        // 5: this content char closes any pending dash run, which becomes the next
+        // word's left boundary. A run before the first content char is the trim.
+        if dash_open {
+            if !current.is_empty() {
+                words.push(Word {
+                    text: std::mem::take(&mut current),
+                    glue_before: current_glue,
+                });
+                current_glue = dash_literal_only;
+            }
+            dash_open = false;
+            dash_literal_only = true;
+        }
+        if let Some(ch) = ascii {
+            current.push(ch);
+        } else if let Some(folded) = folded {
+            current.push_str(folded);
+        }
+    }
+
+    // A trailing dash run is trimmed: the last word's right boundary is the string
+    // edge, so nothing is recorded for it.
+    if !current.is_empty() {
+        words.push(Word {
+            text: current,
+            glue_before: current_glue,
+        });
+    }
+    words
 }
 
 /// The transliteration table: each non-ASCII char that folds to an ASCII
@@ -326,75 +459,77 @@ fn collapse_dashes(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// Cap a collapsed, trimmed slug at the first [`MAX_WORDS`] dash-separated
-/// words, then drop any leading/trailing [`EDGE_STOPWORDS`] the cap exposes (via
-/// [`drop_edge_stopwords`]).
+/// Drop any leading/trailing [`EDGE_STOPWORDS`] from a tokenized slug, greedily at
+/// each edge, leaving medial stopwords untouched.
 ///
-/// The input is already collapsed and edge-trimmed, so splitting on `-` yields
-/// clean, non-empty words; joining back with `-` always lands on a word
-/// boundary and can never leave a leading, trailing, or doubled `-`. The
-/// stopword drop is greedy at each edge (so `the guide of` → `guide`) and never
-/// touches a medial stopword (`add a rate-limiter` → `add-a-rate-limiter`); an
-/// all-stopword input strips to `""` (the caller supplies the type-name
-/// fallback). A slug already within the cap with content at both edges is
-/// returned unchanged.
-fn cap_words(s: &str) -> String {
-    drop_edge_stopwords(&s.split('-').take(MAX_WORDS).collect::<Vec<_>>().join("-"))
-}
-
-/// Drop any leading/trailing [`EDGE_STOPWORDS`] from a collapsed, trimmed slug,
-/// greedily at each edge, leaving medial stopwords untouched.
+/// **Word-aware since generation 3**: an edge word is droppable only when the
+/// boundary joining it to the rest of the slug is *not* [glue][`Word`] — that is,
+/// only when it is a whole separator-delimited word of the id-source rather than a
+/// component of a hyphenated compound it is still attached to. A *lone* word has no
+/// such boundary and is always droppable, which is what keeps `slugify` idempotent
+/// when the char cap strands a compound's first component (see the module docs).
 ///
-/// Run twice on the [`slugify`] path: once inside [`cap_words`] (so a leading
-/// stopword frees a word slot before the cap counts words), and once as the
-/// final step after [`cap_chars`] (so an edge stopword the char cap *exposes* at
-/// the truncation boundary is dropped too). The second pass is what makes
-/// `slugify` idempotent: its output never carries an edge stopword, so a re-run
-/// is a no-op. Input is already collapsed/edge-trimmed, so splitting on `-`
-/// yields clean non-empty words and joining back can never leave a leading,
-/// trailing, or doubled `-`; an all-stopword input strips to `""`.
-fn drop_edge_stopwords(s: &str) -> String {
-    let mut words: Vec<&str> = s.split('-').collect();
-    while words.first().is_some_and(|w| EDGE_STOPWORDS.contains(w)) {
+/// Run twice on the [`slugify`] path: once after the word cap (so a leading
+/// stopword frees a word slot before the cap counts words), and once as the final
+/// step after [`cap_chars`] (so an edge stopword the char cap *exposes* at the
+/// truncation boundary is dropped too). The second pass is what makes `slugify`
+/// idempotent: its output never carries a *droppable* edge stopword, and a re-run
+/// sees only `-` join chars, so every surviving edge stopword is glued. An
+/// all-stopword input strips to `""` (the caller supplies the type-name fallback).
+fn drop_edge_stopwords(words: &mut Vec<Word>) {
+    // Leading: the boundary is the one on the word's RIGHT — i.e. the next word's
+    // `glue_before`. A lone word (no next) has none.
+    while words
+        .first()
+        .is_some_and(|word| EDGE_STOPWORDS.contains(&word.text.as_str()))
+        && words.get(1).is_none_or(|next| !next.glue_before)
+    {
         words.remove(0);
     }
-    while words.last().is_some_and(|w| EDGE_STOPWORDS.contains(w)) {
+    // Trailing: the boundary is the word's OWN `glue_before` (its right side is the
+    // string edge). A lone word's is `false` by construction — the string start.
+    while words
+        .last()
+        .is_some_and(|word| EDGE_STOPWORDS.contains(&word.text.as_str()) && !word.glue_before)
+    {
         words.pop();
     }
-    words.join("-")
 }
 
 /// Char-length backstop: bound a slug to at most [`MAX_CHARS`] characters,
 /// retreating to the last **complete** word when the cut lands mid-word.
 ///
-/// Applied after [`cap_words`], this is the final ceiling that bounds a slug
-/// whose words (or single word) overrun the filesystem-safe length. When the
-/// `MAX_CHARS` cut falls mid-word, we retreat to the previous `-` boundary so
-/// the slug ends on a whole word (`…-outputs-contract` → `…-outputs`, never the
-/// mid-word lop `…-contrac`). A *single* long word has no `-` to retreat to, so
-/// it hard-truncates at `MAX_CHARS` — the `NAME_MAX` backstop that keeps a
-/// pathological single-word intent from overrunning `<slug>.md`. The prior
-/// steps guarantee pure ASCII (`[a-z0-9-]`), so the `MAX_CHARS`-th char boundary
-/// is also a byte boundary — but we cut on `char_indices` regardless so the
-/// truncation can never split a multibyte char. A slug already within the cap
-/// is returned unchanged.
-fn cap_chars(s: &str) -> String {
-    match s.char_indices().nth(MAX_CHARS) {
-        None => s.to_string(),
-        Some((byte_idx, _)) => {
-            let truncated = &s[..byte_idx];
-            if s[byte_idx..].starts_with('-') || truncated.ends_with('-') {
-                // The cut lands on a word boundary: the last kept word is whole.
-                truncated.trim_end_matches('-').to_string()
-            } else if let Some(dash) = truncated.rfind('-') {
-                // Mid-word cut: retreat to the last complete word.
-                truncated[..dash].to_string()
-            } else {
-                // A single long word with no `-`: hard-truncate (NAME_MAX floor).
-                truncated.to_string()
-            }
+/// Applied after the word cap, this is the final ceiling that bounds a slug whose
+/// words (or single word) overrun the filesystem-safe length: keep the longest
+/// **whole-word prefix** that fits, so the slug ends on a complete word
+/// (`…-outputs-contract` → `…-outputs`, never the mid-word lop `…-contrac`). When
+/// not even the *first* word fits there is no `-` to retreat to, so it
+/// hard-truncates at `MAX_CHARS` — the `NAME_MAX` backstop that keeps a
+/// pathological single-word intent from overrunning `<slug>.md`. The prior steps
+/// guarantee pure ASCII (`[a-z0-9-]`), so the `MAX_CHARS`-th char boundary is also
+/// a byte boundary — but we cut on `char_indices` regardless so the truncation can
+/// never split a multibyte char. A slug already within the cap is left unchanged.
+fn cap_chars(words: &mut Vec<Word>) {
+    let mut used = 0usize;
+    let mut keep = words.len();
+    for (i, word) in words.iter().enumerate() {
+        // Every word but the first carries the `-` that joins it.
+        let len = word.text.chars().count() + usize::from(i > 0);
+        if used + len > MAX_CHARS {
+            keep = i;
+            break;
         }
+        used += len;
     }
+    if keep == 0 && !words.is_empty() {
+        // A first word that alone overruns: hard-truncate it (NAME_MAX floor).
+        let first = &mut words[0];
+        if let Some((byte_idx, _)) = first.text.char_indices().nth(MAX_CHARS) {
+            first.text.truncate(byte_idx);
+        }
+        keep = 1;
+    }
+    words.truncate(keep);
 }
 
 /// The **declared version of the slug rule** — the identity-derivation rule
@@ -406,10 +541,12 @@ fn cap_chars(s: &str) -> String {
 /// migration to reconcile them. The version is what makes that split a
 /// *declared* event rather than a discovered one.
 ///
-/// **2** (M42): `/` and `.` map to `-` instead of being stripped — see the [module
+/// **3** (M47): the edge-stopword drop is word-aware — a compound's edge component
+/// (`On-call`'s `on`) survives, where generation 2 ate it. **2** (M42): `/` and `.`
+/// map to `-` instead of being stripped. Both forks are in the [module
 /// docs](self#the-rule-is-itself-versioned-m42). **1** was the M39 word-capped rule
-/// as first shipped; a corpus older than this bump carries generation-1 ids forever.
-pub const SLUG_RULE_VERSION: u32 = 2;
+/// as first shipped; a corpus older than a bump carries its ids' generation forever.
+pub const SLUG_RULE_VERSION: u32 = 3;
 
 /// The **fingerprint of the slug rule**: the lowercase-hex `blake3` digest of
 /// `slugify`'s behaviour over a *generated* input vector — the identity-mint
@@ -429,7 +566,11 @@ pub const SLUG_RULE_VERSION: u32 = 2;
 /// - every [`TRANSLITERATE`] entry, in both frames — so adding, removing, or
 ///   re-pointing a fold moves the hash;
 /// - every [`EDGE_STOPWORDS`] word at each of the three positions (leading,
-///   medial, trailing) — so widening or narrowing the set moves the hash;
+///   medial, trailing), **and hyphen-glued at each edge** — so widening or
+///   narrowing the set moves the hash, and so does a change to *which* edge tokens
+///   are droppable (the generation-3 fork: without the glued frames the whole
+///   word-awareness class moved exactly one input in the whole vector — family 1's
+///   framed `-` — so the fence would have caught it only by luck);
 /// - inputs that **cross both caps** ([`MAX_WORDS`] and [`MAX_CHARS`], including
 ///   a mid-word cut and a cut that exposes a fresh edge stopword) — so a cap
 ///   change, or a change to the retreat/re-drop steps, moves the hash.
@@ -466,11 +607,15 @@ fn fingerprint_inputs() -> Vec<String> {
         inputs.push(format!("a{ch}b"));
     }
 
-    // 3. Every edge stopword at each of the three positions.
+    // 3. Every edge stopword at each of the three positions, plus hyphen-glued at
+    //    each edge (the generation-3 axis: glued components are NOT droppable,
+    //    while the same word separator-delimited is).
     for word in EDGE_STOPWORDS {
         inputs.push(format!("{word} alpha beta"));
         inputs.push(format!("alpha {word} beta"));
         inputs.push(format!("alpha beta {word}"));
+        inputs.push(format!("{word}-alpha beta"));
+        inputs.push(format!("alpha beta-{word}"));
     }
 
     // 4. Inputs crossing both caps: more words than MAX_WORDS; a single word
@@ -549,6 +694,15 @@ mod tests {
             ("dotted-version-keeps-its-dots", "1.0"),
             ("dot-free-former-collision-partner", "10"),
             ("path-like-id-source", "src/main.rs"),
+            // M47 Inc 1 — the word-aware fork, at slug-rule-version 3: an edge
+            // stopword that is only a COMPONENT of a hyphenated compound survives
+            // (generation 2 minted `call-handoff-artifact` / `telemetry-consent-opt`),
+            // while the same word separator-delimited still drops. These four lines
+            // are that reviewable diff.
+            ("glued-leading-stopword-kept", "On-call handoff artifact"),
+            ("glued-trailing-stopword-kept", "Telemetry consent opt-in"),
+            ("underscore-delimited-stopword-dropped", "on_call handoff"),
+            ("glue-provenance-is-positional", "on On-call"),
         ];
         let table: Vec<String> = cases
             .iter()
@@ -592,7 +746,69 @@ mod tests {
         dotted-version-keeps-its-dots: "1.0" -> "1-0"
         dot-free-former-collision-partner: "10" -> "10"
         path-like-id-source: "src/main.rs" -> "src-main-rs"
+        glued-leading-stopword-kept: "On-call handoff artifact" -> "on-call-handoff-artifact"
+        glued-trailing-stopword-kept: "Telemetry consent opt-in" -> "telemetry-consent-opt-in"
+        underscore-delimited-stopword-dropped: "on_call handoff" -> "call-handoff"
+        glue-provenance-is-positional: "on On-call" -> "on-call"
         "#);
+    }
+
+    /// The mint rule composes over the **one** separator map: `tokenize` performs
+    /// the identical steps 1–5 as [`renormalize`] and only additionally records each
+    /// dash's provenance, so its words rejoin to exactly `renormalize`'s output.
+    ///
+    /// This is the load-bearing invariant of the generation-3 fork: `renormalize` is
+    /// **byte-unchanged**, so the four production *recognition* sites
+    /// (`parse::heading_matches`, `write::present_body_sections`,
+    /// `validate::surplus_sections_absent`, `migrate_corpus::has_section_heading`)
+    /// read committed bytes exactly as before — and the fork cannot smuggle a
+    /// separator-map change in through the tokenizer's back door.
+    #[test]
+    fn tokenize_agrees_with_renormalize() {
+        for source in [
+            "",
+            "!!!___---",
+            "  -hello-  ",
+            "x---b__ c",
+            "On-call handoff artifact",
+            "on On-call",
+            "auth/session",
+            "1.0.0",
+            "src/main.rs",
+            "Æsop & œuvre",
+            "Straße",
+            "café",
+            "日本語 test",
+            "the-, guide",
+            "a - b",
+            "trailing-",
+            "-leading",
+        ] {
+            let joined = tokenize(source)
+                .iter()
+                .map(|word| word.text.as_str())
+                .collect::<Vec<_>>()
+                .join("-");
+            assert_eq!(
+                joined,
+                renormalize(source),
+                "tokenize drifted from the one separator map on {source:?}"
+            );
+        }
+    }
+
+    proptest! {
+        /// The same agreement, sampled — the finder beside the deterministic fence
+        /// above.
+        #[test]
+        fn tokenize_agrees_with_renormalize_over_arbitrary_text(s in ".{0,400}") {
+            let joined = tokenize(&s)
+                .iter()
+                .map(|word| word.text.as_str())
+                .collect::<Vec<_>>()
+                .join("-");
+            prop_assert_eq!(joined, renormalize(&s));
+        }
     }
 
     // A few explicit point assertions for the load-bearing done-criterion
@@ -636,11 +852,10 @@ mod tests {
         // The one map: recognition forks with the mint (no cap, no stopword drop).
         assert_eq!(renormalize("auth/session"), "auth-session");
         assert_eq!(renormalize("1.0.0"), "1-0-0");
-
-        // The declared version says so — the rule change and the version bump are
-        // one event, and the pack-load fence checks this integer against every
-        // shipped manifest.
-        assert_eq!(SLUG_RULE_VERSION, 2);
+        // (The declared version this fork shipped at is 2; the *current* version and
+        // its fingerprint are pinned by `the_declared_generation_pins_the_shipped_fingerprint`,
+        // which is the one place the shipped integer is asserted — so a later fork
+        // does not have to edit its predecessors' tests.)
     }
 
     /// The char backstop: a single long-word id-source (no `-` for the word cap
@@ -694,6 +909,171 @@ mod tests {
         assert_eq!(slugify("the guide of"), "guide");
         // a medial article is preserved.
         assert_eq!(slugify("Add a rate-limiter!"), "add-a-rate-limiter");
+    }
+
+    /// **The M47 fork (slug-rule-version 3).** The edge-stopword drop is
+    /// **word-aware**: a token at an edge is droppable only when the boundary
+    /// joining it to the rest of the slug came from a *separator* (space, `_`,
+    /// `/`, `.`) or the string edge — i.e. it is a whole separator-delimited word
+    /// of the id-source, never a component of a hyphenated compound it is still
+    /// attached to. Under generation 2 the tokenizer split the compound first, so
+    /// `"On-call handoff artifact"` minted `call-handoff-artifact` and
+    /// `"Telemetry consent opt-in"` minted `telemetry-consent-opt` — and no shipped
+    /// command could reach the correct identity (`add-item` has no `--slug`,
+    /// `retitle-item` freezes the anchor).
+    ///
+    /// Iterates the axis {leading · trailing · char-cap-exposed} × {whole source
+    /// word ⇒ dropped, hyphen-glued component ⇒ kept}, so the fix is proven over
+    /// its class rather than its reported repro.
+    #[test]
+    fn edge_stopword_drop_is_word_aware_at_rule_version_3() {
+        // 43 `a`s + a hyphen-glued `opt-in` + 20 `z`s: the 50-char cap lands on the
+        // `-` after `in`, so the compound's trailing `in` is *exposed* at the edge
+        // by the char cap (step 9) — the case step 6 never sees. At generation 2
+        // this minted `…-opt`.
+        let capped_glued = format!("{} opt-in {}", "a".repeat(43), "z".repeat(20));
+        let capped_glued_expected = format!("{}-opt-in", "a".repeat(43));
+
+        let cases: [(&str, &str, &str, &str); 6] = [
+            // (edge, provenance, id-source, minted id)
+            ("leading", "whole source word", "the guide of", "guide"),
+            (
+                "leading",
+                "hyphen-glued component",
+                "On-call handoff artifact",
+                "on-call-handoff-artifact",
+            ),
+            (
+                "trailing",
+                "whole source word",
+                "handoff artifact for",
+                "handoff-artifact",
+            ),
+            (
+                "trailing",
+                "hyphen-glued component",
+                "Telemetry consent opt-in",
+                "telemetry-consent-opt-in",
+            ),
+            (
+                "char-cap-exposed",
+                "whole source word",
+                "reticulate splines to abcdefghijklmnopqrstuvwxyzabcd",
+                "reticulate-splines",
+            ),
+            (
+                "char-cap-exposed",
+                "hyphen-glued component",
+                &capped_glued,
+                &capped_glued_expected,
+            ),
+        ];
+        for (edge, provenance, source, expected) in cases {
+            assert_eq!(
+                slugify(source),
+                expected,
+                "{edge} / {provenance}: slugify({source:?})"
+            );
+        }
+
+        // The decided `_` cell: "separator-delimited" resolves against the rule's
+        // OWN separator map (space, `_`, `/`, `.`), and `-` is the join char — so
+        // `on_call` is two whole words and its leading `on` still drops. Decided,
+        // not accidental (`DECISIONS.md` → 2026-07-26 M47 planning → Decision 2).
+        assert_eq!(slugify("on_call handoff artifact"), "call-handoff-artifact");
+
+        // The provenance is carried POSITIONALLY, not as a value-set membership
+        // test: the first `on` is a whole source word and drops; the second is the
+        // compound's first component and survives.
+        assert_eq!(slugify("on On-call"), "on-call");
+
+        // The declared version says so — the rule change and the version bump are
+        // one event, and the pack-load fence checks this integer against every
+        // shipped manifest.
+        assert_eq!(SLUG_RULE_VERSION, 3);
+    }
+
+    /// The **generation table**: every shipped `slug-rule.version` paired with the
+    /// fingerprint the engine computed under it. Generation 1 predates
+    /// [`rule_fingerprint`], so the table starts at 2.
+    ///
+    /// This is what makes the version bump a **tested obligation**: the
+    /// [`crate::manifest`] version arm compares the *manifest* against
+    /// [`SLUG_RULE_VERSION`], and one author edits both sides — so a rule change
+    /// re-pinned into both manifests without bumping the integer passes every
+    /// existing fence. Here the fingerprint must equal the entry recorded *for the
+    /// declared version*, and all entries must be distinct: change the rule without
+    /// bumping and the current version's pinned digest no longer matches; bump
+    /// without changing and the new entry collides with its predecessor.
+    const GENERATIONS: &[(u32, &str)] = &[
+        (
+            2,
+            "de51355900e8f0b268030c1da591f3b1c9a49ce63a9b818b71e1c97a14a40a83",
+        ),
+        (
+            3,
+            "1291873dcac22ad132c3cfdb1cd507a83e09fa1af552d35af4d5ae2a6f8e8e35",
+        ),
+    ];
+
+    /// The bump is an obligation, not an option — see [`GENERATIONS`].
+    #[test]
+    fn the_declared_generation_pins_the_shipped_fingerprint() {
+        let pinned = GENERATIONS
+            .iter()
+            .find(|(version, _)| *version == SLUG_RULE_VERSION)
+            .unwrap_or_else(|| {
+                panic!("slug-rule version {SLUG_RULE_VERSION} has no GENERATIONS entry")
+            });
+        assert_eq!(
+            rule_fingerprint(),
+            pinned.1,
+            "the shipped fingerprint is not the one recorded for slug-rule version \
+             {SLUG_RULE_VERSION} — a rule change owes its declared version bump + a new \
+             GENERATIONS entry, in the same commit that re-pins every manifest",
+        );
+
+        // Every generation is a distinct rule: a bump that changes nothing, or a
+        // rule change that reuses a recorded digest, is a lie.
+        for (i, (version, hash)) in GENERATIONS.iter().enumerate() {
+            for (other_version, other_hash) in &GENERATIONS[i + 1..] {
+                assert_ne!(
+                    hash, other_hash,
+                    "generations {version} and {other_version} pin the same fingerprint"
+                );
+            }
+        }
+        assert!(
+            GENERATIONS.iter().any(|(v, _)| *v == SLUG_RULE_VERSION),
+            "the shipped version is recorded"
+        );
+    }
+
+    /// Idempotence at the generation-3 fork, deterministically (the proptest beside
+    /// it is a finder, not a fence — `implementation/dev-workflow.md` → *a proptest
+    /// is not a gate*). A surviving hyphen-glued edge stopword must still be a fixed
+    /// point: a second pass sees only `-` join chars, so no edge word is a whole
+    /// separator-delimited word — and a *lone* stopword is always droppable, which is
+    /// what keeps the char-cap retreat idempotent when it strands one.
+    #[test]
+    fn idempotent_when_a_hyphen_glued_edge_stopword_survives() {
+        for source in [
+            "On-call handoff artifact",
+            "Telemetry consent opt-in",
+            "on On-call",
+            // The char cap keeps the leading prefix, stranding the compound's first
+            // component alone: a LONE edge stopword is always droppable, so the
+            // output is never the non-fixed-point `on`.
+            &format!("on-{}", "z".repeat(60)),
+        ] {
+            let once = slugify(source);
+            assert_eq!(slugify(&once), once, "{source:?} not idempotent: {once:?}");
+        }
+        // …and the strand normalizes away entirely — the sanctioned escape of the
+        // total function, exactly as a bare `slugify("on")` does; the mint site
+        // supplies the type-name fallback.
+        assert_eq!(slugify(&format!("on-{}", "z".repeat(60))), "");
+        assert_eq!(slugify("on"), "");
     }
 
     /// The deterministic collision suffix: the first instance (`nth == 1`) keeps the
@@ -762,7 +1142,8 @@ mod tests {
                 "transliterate entry {ch:?} missing (framed)"
             );
         }
-        // Every edge stopword at each of the three positions.
+        // Every edge stopword at each of the three positions, and hyphen-glued at
+        // each edge — the generation-3 axis.
         for word in EDGE_STOPWORDS {
             assert!(
                 has(&format!("{word} alpha beta")),
@@ -772,6 +1153,14 @@ mod tests {
             assert!(
                 has(&format!("alpha beta {word}")),
                 "{word}: trailing missing"
+            );
+            assert!(
+                has(&format!("{word}-alpha beta")),
+                "{word}: glued-leading missing"
+            );
+            assert!(
+                has(&format!("alpha beta-{word}")),
+                "{word}: glued-trailing missing"
             );
         }
         // Both caps are genuinely crossed by some input.
@@ -790,15 +1179,14 @@ mod tests {
     }
 
     /// The fingerprint is a stable 64-hex digest that **moves when the rule moves**
-    /// — the property the pack-load gate rests on. Proven against the *generation-1*
-    /// rule (`/` and `.` **stripped**, the shape this rule shipped as until the M42
-    /// fork): re-running the generated vector under that rule yields a different
-    /// digest, so the fence could not — and did not — sleep through the fork.
-    ///
-    /// The variant reconstructs generation 1 by pre-stripping the two chars the
-    /// fork added to the separator map: with them gone from the input, generation
-    /// 2's map has nothing to map, so `slugify` reproduces generation-1 output
-    /// exactly.
+    /// — the property the pack-load gate rests on. Proven against the *separator
+    /// map* of generation 1 (`/` and `.` **stripped**, the shape this rule shipped
+    /// as until the M42 fork): re-running the generated vector with those two chars
+    /// pre-stripped from every input — so the current map has nothing to map — yields
+    /// a different digest, so the fence could not, and did not, sleep through that
+    /// fork. The *other* half of the moves-when-it-moves property, across the
+    /// generation 2 → 3 edge-stopword fork, is pinned by the distinct entries of
+    /// [`GENERATIONS`].
     #[test]
     fn fingerprint_moves_when_the_rule_changes() {
         let today = rule_fingerprint();

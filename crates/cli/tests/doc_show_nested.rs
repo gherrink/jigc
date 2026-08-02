@@ -520,7 +520,7 @@ fn doc_show_json_serves_nested_changelog_content_under_the_pinned_shape() {
     // (6) The item `id` closes the contract under its own address grammar (M42): the
     //     EMITTED add-item address carries the minted id, and the item object read back
     //     at that address carries the SAME id under `id`. A driver must READ the id, never
-    //     re-derive it: the mint rule is versioned (slug-rule-version 2 maps the dots →
+    //     re-derive it: the mint rule is versioned (generations 2 and 3 map the dots →
     //     `1-0-0`; generation 1 stripped them → `100`, and those frozen ids stay), so a
     //     driver slugifying the title guesses at whichever generation minted the corpus.
     assert_eq!(

@@ -130,14 +130,24 @@ fn push_stream(text: &mut String, name: &str, body: &str) {
 
 /// Replace absolute paths under `repo` with [`REPO_TOKEN`] — both the path as given
 /// and its canonical form, since a tempdir root can be reached through a symlink.
+///
+/// **Longest form first.** On macOS the canonical form of a `$TMPDIR` root is the
+/// *given* one prefixed with `/private`, so replacing the given form first would
+/// eat its tail out of the canonical one and leave `/private<REPO>` behind — a
+/// machine-dependent golden diff that has nothing to do with the surface.
 fn normalize(text: &str, repo: &Path) -> String {
     let given = repo.display().to_string();
-    let mut out = text.replace(&given, REPO_TOKEN);
+    let mut forms = vec![given.clone()];
     if let Ok(canonical) = repo.canonicalize() {
         let canonical = canonical.display().to_string();
         if canonical != given {
-            out = out.replace(&canonical, REPO_TOKEN);
+            forms.push(canonical);
         }
+    }
+    forms.sort_by_key(|form| std::cmp::Reverse(form.len()));
+    let mut out = text.to_string();
+    for form in forms {
+        out = out.replace(&form, REPO_TOKEN);
     }
     out
 }
