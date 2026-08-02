@@ -2298,18 +2298,20 @@ impl std::error::Error for OwnerArtifactBlock {}
 /// item 2 — one primitive, two staged-path families).
 /// `entry` is `Some((mode, blob-sha))` when the path was in the index before finalize staged
 /// it (e.g. a user's pre-staged blob `A`), `None` when it was absent from the index.
-struct OwnerArtifactIndexEntry {
+pub(crate) struct OwnerArtifactIndexEntry {
     path: String,
     entry: Option<(String, String)>,
 }
 
 /// Capture each path's pre-finalize index entry via `git ls-files --stage` (M45 Inc 8 T2 —
 /// the third rollback axis; also fed the promotion destinations for the promotions index
-/// axis). The output is `<mode> <sha> <stage>\t<path>`
+/// axis, and — since M47 Inc 2 T1 — the **fifth** staged-path family, the milestone
+/// record-only doors ([`crate::milestone`]'s record pre-image), which is why this is
+/// `pub(crate)` rather than a parallel primitive). The output is `<mode> <sha> <stage>\t<path>`
 /// when the path is in the index, empty when absent. Called before the stage `git add`
 /// overwrites the entry, so a stage/commit failure can restore *exactly* what was there —
 /// not drop to HEAD, not keep jigc's overwrite. Empty `paths` → empty capture (inert).
-fn capture_owner_artifact_index(
+pub(crate) fn capture_owner_artifact_index(
     repo_root: &Path,
     paths: &[String],
 ) -> Result<Vec<OwnerArtifactIndexEntry>> {
@@ -2349,7 +2351,10 @@ fn capture_owner_artifact_index(
 /// - **Absent** → `git update-index --force-remove <path>` drops the entry jigc's stage
 ///   added, returning the index to its pre-finalize "not staged" state (the worktree file
 ///   stays).
-fn rollback_owner_artifact_index(repo_root: &Path, captured: &[OwnerArtifactIndexEntry]) {
+pub(crate) fn rollback_owner_artifact_index(
+    repo_root: &Path,
+    captured: &[OwnerArtifactIndexEntry],
+) {
     for item in captured {
         match &item.entry {
             Some((mode, sha)) => {

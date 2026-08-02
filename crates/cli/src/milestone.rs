@@ -343,12 +343,16 @@ fn materialize_and_commit_record(
         std::fs::create_dir_all(parent)
             .with_context(|| format!("could not create the record home {parent:?}"))?;
     }
+    // The pre-image, captured BEFORE the write — for `create` it is the absent record
+    // (`bytes: absent, index: absent`), so a rejected commit **deletes** the write back out
+    // ([`RecordPreImage`]).
+    let pre = capture_record_pre_image(jigc_home, &record_path)?;
     let body = render_fresh_record(schema, &minted.id, &minted.base, schema_version);
     std::fs::write(&record_path, &body)
         .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
 
     // The message temp file lands in the gitignored milestone area (never a tracked path).
-    let hook_output = commit_record_only(
+    let hook_output = commit_record_transaction(
         jigc_home,
         &record_path,
         &minted.dir,
@@ -356,6 +360,7 @@ fn materialize_and_commit_record(
             "chore(milestone): open record for milestone:{}\n",
             minted.id
         ),
+        &pre,
     )?;
     // Seed the record's `file-state` baseline to what `create` just wrote, so the first
     // `add-task`'s reconcile preflight compares against the CLI's own write (T6).
@@ -384,18 +389,116 @@ fn commit_record_only(
     msg_dir: &Path,
     message: &str,
 ) -> Result<String> {
-    let spec = record_path
-        .strip_prefix(repo_root)
-        .unwrap_or(record_path)
-        .to_str()
-        .with_context(|| format!("record path {record_path:?} is not valid UTF-8"))?;
+    let spec = record_pathspec(repo_root, record_path)?;
     // Stage ONLY the record (a `git add -- <path>` never sweeps the ambient dirty tree).
-    crate::task::git_run(repo_root, &["add", "--", spec])?;
+    crate::task::git_run(repo_root, &["add", "--", &spec])?;
 
     let msg_path = msg_dir.join("record-commit-msg.txt");
     std::fs::write(&msg_path, message)
         .with_context(|| format!("could not write the record commit message {msg_path:?}"))?;
-    git_commit_pathspec(repo_root, &msg_path, spec)
+    git_commit_pathspec(repo_root, &msg_path, &spec)
+}
+
+/// The record's **repo-relative pathspec** — the one string the stage, the commit, and the
+/// index pre-image capture all key on, defined once so the rollback provably covers exactly
+/// the path the commit stages (the set-fence discipline).
+fn record_pathspec(repo_root: &Path, record_path: &Path) -> Result<String> {
+    record_path
+        .strip_prefix(repo_root)
+        .unwrap_or(record_path)
+        .to_str()
+        .map(str::to_owned)
+        .with_context(|| format!("record path {record_path:?} is not valid UTF-8"))
+}
+
+/// One record path's **pre-write image** — the fifth staged-path family's capture (M47 Inc 2
+/// T1, `design/finalize.md` → Rollback discipline, the record-only-door row; `DECISIONS.md`
+/// 2026-07-26 → the M47 Settle, Decision 4).
+///
+/// The record-only doors write the record, `git add` it, and commit it, so a rejected commit
+/// left the write **and** the index entry behind: the milestone bricked (every later door
+/// conflict-blocked against a baseline the rejected write never advanced) and the staged
+/// residue tripped the next unrelated task's carryover gate. The pre-image carries **both**
+/// axes so the restore can put back exactly what was there:
+///
+/// - `bytes` — the worktree file's content **or `None`** when the record did not exist. This
+///   third axis is what the promotions / owner-artifact / config-layer families never needed:
+///   `create` writes a record where none existed, so its pre-image is
+///   `(bytes: absent, index: absent)` and the restore is a **delete**. A capture that models
+///   only "present" silently leaves `create`'s record behind.
+/// - `index` — the pre-write index entry, captured through the shared index primitive
+///   ([`crate::task::capture_owner_artifact_index`], which already models "absent"), so this
+///   family reuses the third axis's `(mode, blob-sha)` discipline rather than minting a
+///   parallel one.
+struct RecordPreImage {
+    /// The record's absolute on-disk path (the worktree axis's restore target).
+    path: PathBuf,
+    /// The record's pre-write bytes, `None` when the record did not exist.
+    bytes: Option<Vec<u8>>,
+    /// The record path's pre-write index entry (0 or 1 entries — the shared primitive's shape).
+    index: Vec<crate::task::OwnerArtifactIndexEntry>,
+}
+
+/// Capture the record's pre-write image — called **before** the door writes the record, so a
+/// rejected commit can restore exactly what was there ([`RecordPreImage`]).
+///
+/// **"Absent" means absent**, never "unreadable": only `NotFound` yields `bytes: None`, because
+/// that value is what makes the rollback *delete* the file — swallowing a permission/IO error
+/// into it would turn a rejected commit into a deletion of a record that still exists.
+fn capture_record_pre_image(repo_root: &Path, record_path: &Path) -> Result<RecordPreImage> {
+    let spec = record_pathspec(repo_root, record_path)?;
+    let bytes = match std::fs::read(record_path) {
+        Ok(bytes) => Some(bytes),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("could not read the milestone record {record_path:?}"));
+        }
+    };
+    Ok(RecordPreImage {
+        path: record_path.to_path_buf(),
+        bytes,
+        index: crate::task::capture_owner_artifact_index(repo_root, std::slice::from_ref(&spec))?,
+    })
+}
+
+/// Restore a captured [`RecordPreImage`] — the worktree bytes first (rewritten, or the file
+/// **deleted** when the pre-image was absent), then the index entry through the shared
+/// primitive (`update-index --cacheinfo` for a present entry, `--force-remove` for an absent
+/// one — the worktree is never reset to HEAD). Best-effort, exactly like every sibling axis:
+/// the commit did **not** land, so a restore failure is swallowed rather than replacing the
+/// door's real error (the hook's stderr stays the correction signal).
+///
+/// The `file-state` baseline is deliberately **not** touched: nothing landed, so nothing
+/// re-baselines and `design/reconciliation.md` → Hash re-baselining stands untouched — the
+/// restored bytes match the baseline the last *landed* write recorded.
+fn rollback_record_pre_image(repo_root: &Path, pre: &RecordPreImage) {
+    match &pre.bytes {
+        Some(bytes) => {
+            let _ = std::fs::write(&pre.path, bytes);
+        }
+        None => {
+            let _ = std::fs::remove_file(&pre.path);
+        }
+    }
+    crate::task::rollback_owner_artifact_index(repo_root, &pre.index);
+}
+
+/// [`commit_record_only`] as a **transaction**: on any failure of the stage/commit (a
+/// rejecting hook or a git error) restore the captured pre-image and propagate the error
+/// **unchanged** — the hook's stderr stays verbatim (`design/finalize.md` → the M40
+/// refinement 3). Every record-only door commits through this, so the family's rollback
+/// coverage is a property of the seam rather than of each caller remembering.
+fn commit_record_transaction(
+    repo_root: &Path,
+    record_path: &Path,
+    msg_dir: &Path,
+    message: &str,
+    pre: &RecordPreImage,
+) -> Result<String> {
+    commit_record_only(repo_root, record_path, msg_dir, message).inspect_err(|_| {
+        rollback_record_pre_image(repo_root, pre);
+    })
 }
 
 /// `git commit -F <message_file> -- <pathspec>` in `repo_root` — a **pathspec-restricted**
@@ -734,16 +837,22 @@ fn append_and_commit_record(
 
     let appended = engine::milestone::append_task_item(schema, &source, task_id, intent)
         .map_err(|err| finding_to_err(engine::write::generate_error_finding(&err)))?;
+    // The pre-image, captured BEFORE the append lands on disk — a rejected commit restores
+    // the pre-append bytes AND the pre-append index entry ([`RecordPreImage`]). Under
+    // `add-from-spec` this runs once per seeded sub-task, so the k-th rejection unwinds
+    // exactly the k-th append.
+    let pre = capture_record_pre_image(jigc_home, &record_path)?;
     std::fs::write(&record_path, &appended)
         .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
 
     // The message temp file lands in the gitignored milestone WIP area (never a tracked path).
     let msg_dir = milestone_dir(jigc_root, milestone_id);
-    let hook_output = commit_record_only(
+    let hook_output = commit_record_transaction(
         jigc_home,
         &record_path,
         &msg_dir,
         &format!("chore(milestone): record task:{task_id} on milestone:{milestone_id}\n"),
+        &pre,
     )?;
     // Advance the record's `file-state` baseline to the appended bytes, so the next overwrite's
     // reconcile preflight compares against this write, not the pre-append record (T6).
@@ -1242,15 +1351,20 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         let record_path = engine::store::canonical_path(&jigc_home, schema, milestone_id)
             .context("the `milestone-record` doctype declares no committed location")?;
+        // The pre-image, captured BEFORE the settle overwrites the record — a rejected commit
+        // restores the pre-settle bytes AND the index entry, so the abandon is re-runnable
+        // once the hook's complaint is fixed ([`RecordPreImage`]).
+        let pre = capture_record_pre_image(&jigc_home, &record_path)?;
         let settled = engine::milestone::discard_record(&record_path, schema, milestone_id)
             .map_err(finding_to_err)?;
         // The message temp file lands in the (gitignored) milestone area — removed by the
         // teardown below, so it is written before the area goes.
-        hook_output = commit_record_only(
+        hook_output = commit_record_transaction(
             &jigc_home,
             &record_path,
             &dir,
             &format!("chore(milestone): discard record for milestone:{milestone_id}\n"),
+            &pre,
         )?;
         // Advance the record's file-state baseline to the settled bytes (the [`baseline_record`]
         // discipline every record write follows), so a later store sweep sees no drift.

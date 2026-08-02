@@ -135,11 +135,12 @@ Probing is cheap (one hash per doc); the classifier and the parse only run when 
 
 ## Hash re-baselining
 
-The recorded `file-state` hash updates at exactly three sites — keyed to "last-known-good committed state":
+The recorded `file-state` hash updates at exactly **four** sites — keyed to "last-known-good committed state":
 
 - **Baseline adoption** — first encounter (`UNKNOWN`). Hash = current on-disk content's hash.
 - **Absorb** — clean external edit accepted. Hash = new on-disk content's hash.
 - **Commit** — `finalize` phase 7 ([finalize.md](finalize.md)). Hash = just-committed content's hash for every managed doc the commit touched.
+- **A landed milestone record-op commit** — the record-only doors (`create` · `add-task` · `add-from-spec` · `discard`; [team-ready-state.md](team-ready-state.md) → The commit model). Hash = the just-committed record's hash. *This site was live since M39 and this list said "exactly three" until M47 — a doc that under-counts its own re-baselining sites makes the next commit door undiscoverable, so it is enumerated here rather than left to the code.* The **binding condition is "landed"**: the door captures the record's pre-image and, on a rejected commit, restores it and re-baselines **nothing** — nothing landed, so the rule above is honoured untouched and the restored bytes still match the hash the last landed write recorded ([finalize.md](finalize.md) → Rollback discipline, the record-only-door row).
 
 Task writes do **not** update the committed-state hash. The working area is separate; the hash tracks "what the committed file looked like the last time we agreed with it." Until `finalize`, the task's writes live in the working area and the committed-state hash stays pinned.
 
@@ -163,7 +164,7 @@ The rule: **the conformance error names exactly what's missing; the human fixes 
 - Clean-absorb path (parse + schema-validate → re-hash + edge-index update).
 - Conformance-block with precise error surfacing.
 - File-level conflict-block with explicit-discard resolution.
-- Hash re-baselining at the three named sites.
+- Hash re-baselining at the four named sites.
 - **Rename detection** — strong signal (path missing + content-hash match) and weak signal (path missing alone), at task scope (blocking) and **store scope** (M35: blocking, firing before `ref-resolves`), routed to "adopt as `jigc rename`" / revert per [Rename detection](#rename-detection).
 
 **Post-MVP (deferred):**
