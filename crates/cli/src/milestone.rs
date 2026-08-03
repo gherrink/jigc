@@ -2050,16 +2050,19 @@ fn run_milestone_finalize(
     let head = git_head(&repo_root)?;
     // `record_changed` folds the milestone record's `join` status-flip into the diff signal
     // (M39 T4 — "has_diff gated on the record change"): a docs-only milestone whose only change
-    // is the record flip is NOT an empty commit.
-    let has_diff = !materialized.addresses.is_empty()
-        || worktrees_have_staged_code(&worktrees)?
-        || record_changed;
+    // is the record flip is NOT an empty commit. This stays the *planner's* empty-commit input;
+    // whether the boundary lands any actual WORK is the separate, stricter zero-contribution
+    // question asked below, after the plan resolves what would be promoted.
+    let contributed_code = worktrees_have_staged_code(&worktrees)?;
+    let has_diff = !materialized.addresses.is_empty() || contributed_code || record_changed;
 
     // C2 — the landing manifest's per-sub-task contribution facts, computed PRE-commit
     // while the fan-out worktrees are still provisioned (a landed boundary tears them
-    // down): each sub-task's merged-doc count (the materialize's address→source map)
-    // and its worktree's staged-code file count. The no-work sub-task reads
-    // `docs: 0, code_files: 0` and renders visibly as `nothing staged`.
+    // down): each sub-task's merged-doc count (the materialize's address→source map),
+    // its worktree's staged-code file count, and whether it HAS a provisioned worktree
+    // at all. The no-work sub-task reads `docs: 0, code_files: 0` and renders visibly as
+    // `nothing staged`; a sub-task with no worktree is named too, since it could not have
+    // contributed code even in principle (M47 Inc 3, call (b)(ii)).
     let contributions = subtask_contributions(&list, &materialized.sources, &worktrees)?;
 
     // The finalize base-guard refinement (`design/team-ready-state.md` → The commit model: the
@@ -2089,6 +2092,41 @@ fn run_milestone_finalize(
         Ok(plan) => plan,
         Err(findings) => return blocked(&jigc_home, format, findings),
     };
+
+    // The **zero-contribution** refusal (M47 Inc 3; `DECISIONS.md` → 2026-07-26 M47 Increment 3
+    // halt resolution, call (b)(i)): refuse a boundary that would land **no work at all** — no
+    // doc in the plan's promote set, no staged code in any sub-task worktree — leaving only
+    // jigc's own bookkeeping (the record's `active → joined` flip + the config layer) to commit.
+    // The motivating case is the fresh clone, reproduced live: a clone carries the committed
+    // record but none of the gitignored workbench, so `finalize` landed at exit 0 having landed
+    // zero work and flipped the record to the TERMINAL `joined`, after which the milestone could
+    // never be finalized again. It replaces the settled "refuse when a milestone recorded as
+    // provisioned has no live worktrees", withdrawn as unbuildable (no such record exists, and a
+    // `.jigc`-local marker fails open by construction on exactly that fresh-clone case).
+    //
+    // **The predicate is the plan's promote set, not `materialized.addresses`** (M47 Inc 3 T2,
+    // recorded elaboration): `has_diff`'s doc term counts every materialized address, and a
+    // **transient** doc — the sub-task's `commit:<sub-id>` — is materialized but never promoted
+    // (`plan_promotions`: a doctype with neither `location` nor `placement` is transient). So a
+    // milestone whose sub-agents authored their commit docs and staged no code passed the
+    // `has_diff`-only reading and landed the identical zero-work commit, verified live. Keying
+    // on what would actually land closes the whole contribution-channel axis at one seam
+    // instead of the one repro. It cannot false-fire on a genuine docs-only milestone: that one
+    // promotes its merged docs.
+    //
+    // Placed immediately AFTER the planner (whose promote set it reads), beside the
+    // empty-commit guard it refines: the planner's staging / base-mismatch / empty-commit
+    // blocks keep precedence (the carryover gate's precedent below), so a drifted base still
+    // reports the base mismatch, and an all-empty dev-only milestone still reports the plain
+    // empty-commit block. Blocking here drops the `RecordFlipGuard`, restoring the record to
+    // `active` — the milestone stays finalizable, which is the whole point.
+    if plan.promotions.is_empty() && !contributed_code {
+        return blocked(
+            &jigc_home,
+            format,
+            vec![zero_contribution_finding(milestone_id, record_changed)],
+        );
+    }
 
     // M43 — the carryover gate's milestone arm (`design/surface-contract.md` → The
     // carryover gate): `milestone create` was the shared checkout's aggregate-index
@@ -2464,6 +2502,50 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
 /// the transient type whose sink is the git message.
 const COMMIT_TYPE: &str = "commit";
 
+/// The **zero-contribution** refusal (M47 Inc 3; `DECISIONS.md` → 2026-07-26 M47 Increment 3
+/// halt resolution, call (b)(i)): a blocking, route-bearing finding for a `finalize` that would
+/// land no work — nothing to promote, nothing staged in any sub-task worktree. The route names
+/// **both** honest exits: give the sub-tasks a working area and do the work (the mechanical
+/// span — the step a fresh clone is missing), or settle the record as abandoned via `jigc
+/// milestone discard`. Keyed at `milestone:<id>`, the milestone target form
+/// ([`crate::milestone`]'s sibling producers; `design/command-output-contract.md` → the
+/// declared target forms).
+///
+/// `record_flip` is the **context the message needs to stay true**: only a `[dev ▸ methodology]`
+/// project has a committed record to flip, so the "burns the terminal `joined`" clause — the
+/// sharpest half of the harm — is stated exactly where it holds and omitted where it does not
+/// (a context-independent statement here would render the same lie on every dev-only boundary).
+fn zero_contribution_finding(milestone_id: &str, record_flip: bool) -> Finding {
+    let consequence = if record_flip {
+        " — the boundary would commit only jigc's own bookkeeping and flip the milestone record \
+         to the terminal `joined`, after which the milestone could never be finalized again"
+    } else {
+        " — the boundary would commit only jigc's own bookkeeping"
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.zero-contribution",
+        format!(
+            "milestone:{milestone_id} would land no work: no sub-task's docs promote to the \
+             store, and no sub-task worktree holds staged code{consequence}"
+        ),
+        Some(Location::addressed(
+            format!("milestone:{milestone_id}"),
+            1,
+            1,
+        )),
+        Some(engine::finding::Route::mechanical(
+            ["jigc", "milestone", "provision", milestone_id],
+            format!(
+                " gives every sub-task a working area (a fresh clone has none; an existing one \
+                 is reused); execute the sub-tasks, `git add` their work inside their worktrees, \
+                 then re-run `jigc milestone finalize {milestone_id}` — or settle the milestone \
+                 as abandoned with `jigc milestone discard {milestone_id}`"
+            ),
+        )),
+    )
+}
+
 /// Surface a **blocked** milestone `finalize` — the funnel the per-task planner block already
 /// rides ([`crate::task`]'s `blocked`): `--format json` prints the pinned findings envelope on
 /// stdout (keys and all), the agent/human view keeps its message + route lines on stderr, and
@@ -2791,10 +2873,16 @@ fn worktree_staged_patch(worktree: &Path) -> Result<Vec<u8>> {
 
 /// Each sub-task's landing-manifest contribution (C2), id-sorted over the milestone's
 /// full task `list`: its merged-doc count from the materialize's address→source map
-/// (`sources`), and its staged-code file count from its still-provisioned fan-out
-/// worktree's index (`git diff --cached --name-only`); a never-provisioned sub-task
-/// counts 0 code files. Computed **pre-commit** — a landed boundary tears the
+/// (`sources`), its staged-code file count from its still-provisioned fan-out
+/// worktree's index (`git diff --cached --name-only`), and **whether it has a
+/// provisioned worktree at all**. Computed **pre-commit** — a landed boundary tears the
 /// worktrees down.
+///
+/// A never-provisioned sub-task counts 0 code files **by construction**, not by
+/// measurement: since M31 Inc 4/5 the isolated worktree is the sole place a sub-agent's
+/// code can live, so no worktree means no code was possible. That degrade used to be
+/// indistinguishable from "the sub-agent staged nothing," which is why `provisioned`
+/// rides the manifest (M47 Inc 3, call (b)(ii)).
 fn subtask_contributions(
     list: &engine::milestone::TaskList,
     sources: &std::collections::BTreeMap<String, String>,
@@ -2814,6 +2902,7 @@ fn subtask_contributions(
             id,
             docs,
             code_files,
+            provisioned: worktree.is_some(),
         });
     }
     Ok(out)

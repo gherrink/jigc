@@ -224,6 +224,27 @@ fn head_count(repo: &Path) -> u32 {
         .unwrap()
 }
 
+/// Stage a persisted doc + its provenance bit into a sub-task's `tasks/<sub>/docs/` area — the
+/// managed doc a fanned-out sub-agent authors, i.e. the milestone's real contribution (a
+/// boundary that would land nothing is refused, M47 Inc 3).
+fn stage_subtask_doc(repo: &Path, sub: &str, address: &str, body: &str) {
+    let docs = repo.join(".jigc").join("tasks").join(sub).join("docs");
+    fs::create_dir_all(&docs).expect("mk docs/");
+    fs::write(docs.join(format!("{address}.md")), body).expect("write staged body");
+
+    let manifest = docs.join("provenance.json");
+    let mut record: serde_json::Value = match fs::read_to_string(&manifest) {
+        Ok(s) => serde_json::from_str(&s).expect("provenance manifest parses"),
+        Err(_) => serde_json::json!({ "docs": {} }),
+    };
+    record["docs"][address] = serde_json::Value::String("created".to_string());
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&record).expect("serialize manifest"),
+    )
+    .expect("write provenance manifest");
+}
+
 /// Commit one grounding `research` doc through the REAL `do-research` workflow, so it is a
 /// reachable `grounded-in` target with a genuinely-committed home. `intent` derives the task
 /// id; `title` mints `research:<slug>`. Returns the committed `research:<slug>`.
@@ -438,6 +459,18 @@ fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
     assert_ok(
         &milestone(&["add-task", "cache-rework", "Evict cold entries"]),
         "add-task #2",
+    );
+
+    // One sub-task authors a persisted ADR — the milestone's actual work. Without it the
+    // boundary would land nothing but its own record flip, which `finalize` refuses since M47
+    // Inc 3 (`design/finalize.md` → The zero-contribution refusal); a milestone that lands work
+    // is also what this arc is *about*, so the fixture states it rather than leaning on the
+    // flip.
+    stage_subtask_doc(
+        repo.path(),
+        "warm-the-read-cache",
+        "adr:warm-policy",
+        "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Warm policy\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n",
     );
 
     let record_rel = "docs/milestone-records/cache-rework.md";

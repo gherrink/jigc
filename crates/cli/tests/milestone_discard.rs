@@ -668,6 +668,14 @@ fn a_joined_milestone_refuses_every_verb() {
     write_compose_marker(repo.path());
     setup_live_milestone(repo.path(), home.path());
 
+    // One sub-agent stages real code in its worktree — the work that makes this a genuine join.
+    // Without it the boundary would land nothing but its own record flip, which `finalize`
+    // refuses (M47 Inc 3; `design/finalize.md` → The zero-contribution refusal), and the
+    // `joined` terminal this arm needs would never be reached.
+    let wt = worktree_dir(repo.path(), ACTIVE_SUB);
+    fs::write(wt.join("landed.rs"), "pub fn landed() {}\n").expect("write worktree code");
+    git(&wt, &["add", "landed.rs"]);
+
     assert_ok(
         &run_milestone(repo.path(), home.path(), &["finalize", MILESTONE]),
         "`jigc milestone finalize` (the sub-tasks genuinely join)",

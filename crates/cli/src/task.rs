@@ -1761,7 +1761,11 @@ pub(crate) enum StagePolicy {
     /// code-set onto the base tree **off-line**, overlays the promoted docs + config + the
     /// record, and commits the combined tree with the user's hooks running from a dedicated
     /// worktree (M31 Inc 5). An empty list (a docs-only / never-provisioned milestone)
-    /// degrades to a docs-only commit, byte-identical to the M7 single-aggregate form.
+    /// degrades to a docs-only commit, byte-identical to the M7 single-aggregate form —
+    /// and since M47 Inc 3 that degrade **has a floor**: the caller refuses a boundary
+    /// whose sole change is the milestone record's own `joined` flip
+    /// (`milestone.zero-contribution`; `design/finalize.md` → The zero-contribution
+    /// refusal), so an empty list reaching here always has merged docs to commit.
     Combine(Vec<PathBuf>, Option<String>),
     /// The `squash: false` fan-out boundary (M31 — WIP-safe rework). The id-ordered
     /// `(staged-patch, rendered-commit-message)` pairs for the code-carrying sub-tasks.
@@ -1773,7 +1777,9 @@ pub(crate) enum StagePolicy {
     /// [`Combine`](StagePolicy::Combine) WIP-safety, mirrored onto the honest-rework path).
     /// Every chain commit's captured hook stream folds into the returned `hook_output`
     /// ([`fold_hook_streams`]), so the caller's one relay + envelope carry all N+1 (the
-    /// hook_output producer axis). An empty list degrades to a docs-only aggregate.
+    /// hook_output producer axis). An empty list degrades to a docs-only aggregate — with
+    /// the same M47 Inc 3 floor as [`Combine`](StagePolicy::Combine): the caller has
+    /// already refused a boundary carrying neither merged docs nor staged code.
     ChainPerSubtask {
         subtasks: Vec<(Vec<u8>, String)>,
         /// The optional repo-relative `milestone-record` pathspec to path-add into the

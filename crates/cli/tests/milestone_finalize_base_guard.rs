@@ -140,6 +140,33 @@ fn assert_ok(out: &std::process::Output, what: &str) {
     );
 }
 
+/// Stage a persisted doc + its provenance bit into a sub-task's `tasks/<sub>/docs/` area — the
+/// milestone's real work. A boundary that would land **nothing** is refused since M47 Inc 3
+/// (`design/finalize.md` → The zero-contribution refusal), and that refusal exits 3 exactly like
+/// a base mismatch, so every arm here that must *land* stages one doc: the witness stays "the
+/// base advanced", never "some other block happened not to fire".
+fn stage_subtask_doc(repo: &Path, sub: &str, address: &str) {
+    let docs = repo.join(".jigc").join("tasks").join(sub).join("docs");
+    fs::create_dir_all(&docs).expect("mk docs/");
+    fs::write(
+        docs.join(format!("{address}.md")),
+        "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Warm policy\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n",
+    )
+    .expect("write staged body");
+
+    let manifest = docs.join("provenance.json");
+    let mut record: serde_json::Value = match fs::read_to_string(&manifest) {
+        Ok(s) => serde_json::from_str(&s).expect("provenance manifest parses"),
+        Err(_) => serde_json::json!({ "docs": {} }),
+    };
+    record["docs"][address] = serde_json::Value::String("created".to_string());
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&record).expect("serialize manifest"),
+    )
+    .expect("write provenance manifest");
+}
+
 /// create → add-task ×2 on a `[dev ▸ methodology]` repo — the shared setup that lands the
 /// milestone's own record-only commits (create opens, each add-task appends) in `base..HEAD`.
 fn setup_milestone(repo: &Path, home: &Path) {
@@ -273,11 +300,23 @@ fn landed_code_base_mismatch_routes_the_milestone_with_real_options() {
 }
 
 /// (RED — M42 T2) Two milestones created and grown **interleaved** — the shape any real session
-/// lands in — must BOTH finalize: every commit in either one's `base..HEAD` is a milestone-record
-/// path (its own, or the other's), and another milestone's record is not code, so nothing the
-/// worktree-combine cares about moved. Before the widening this is a symmetric deadlock: each
-/// milestone's range carries the *other*'s record-only bookkeeping as a foreign path, so both exit
-/// 3 with `finalize.base-mismatch` — over commits that touched no code at all.
+/// lands in — must finalize over the *other*'s record-only bookkeeping: every commit in either
+/// one's `base..HEAD` is a milestone-record path (its own, or the other's), and another
+/// milestone's record is not code, so nothing the worktree-combine cares about moved. Before the
+/// widening this is a symmetric deadlock: each milestone's range carries the *other*'s
+/// record-only bookkeeping as a foreign path, so both exit 3 with `finalize.base-mismatch` — over
+/// commits that touched no code at all.
+///
+/// **The second finalize's assertion is corrected on a changed basis (M47 Inc 3 T2).** This arm
+/// asserted BOTH milestones land, and could only do so because neither carried any work: with
+/// nothing to promote, A's finalize wrote only record bytes, so B's range stayed record-only. A
+/// boundary that lands nothing is now refused outright (`design/finalize.md` → The
+/// zero-contribution refusal), so each milestone here carries a real authored doc — and once A
+/// lands **its doc**, B's range genuinely holds a non-record commit and the base-guard blocks it,
+/// **correctly**: B's worktrees were cut before that doc existed. The predicate under test is
+/// unchanged and is proven by A, whose range holds only B's bookkeeping; B's block is asserted to
+/// be the honest one (the divergence names a real landed change), not the record-bookkeeping
+/// wedge this arm exists to forbid.
 #[test]
 fn interleaved_milestone_record_bookkeeping_wedges_neither_finalize() {
     let repo = TempDir::new("interleaved");
@@ -321,21 +360,44 @@ fn interleaved_milestone_record_bookkeeping_wedges_neither_finalize() {
         "milestone B add-task",
     );
 
-    for milestone in ["cache-rework", "index-rebuild"] {
-        let out = run_milestone(repo.path(), home.path(), &["finalize", milestone]);
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(
-            !stderr.contains("HEAD is now"),
-            "`{milestone}`: another milestone's record-only bookkeeping is NOT code — it must not \
-             wedge the base-guard; stderr:\n{stderr}",
-        );
-        assert!(
-            out.status.success(),
-            "`{milestone}`: the guard advanced over the all-record range and the finalize landed; \
-             exit {:?}, stderr:\n{stderr}",
-            out.status.code(),
-        );
-    }
+    // Each milestone gets real work — otherwise both boundaries land nothing and the
+    // zero-contribution refusal (also exit 3) would stand in for the base-mismatch under test.
+    stage_subtask_doc(repo.path(), "warm-the-read-cache", "adr:warm-policy");
+    stage_subtask_doc(repo.path(), "rebuild-the-index", "adr:index-policy");
+
+    // A's `base..HEAD` holds **only** B's record-only bookkeeping — the predicate under test.
+    let a = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    let a_stderr = String::from_utf8_lossy(&a.stderr);
+    assert!(
+        !a_stderr.contains("HEAD is now"),
+        "`cache-rework`: another milestone's record-only bookkeeping is NOT code — it must not \
+         wedge the base-guard; stderr:\n{a_stderr}",
+    );
+    assert!(
+        a.status.success(),
+        "`cache-rework`: the guard advanced over the all-record range and the finalize landed; \
+         exit {:?}, stderr:\n{a_stderr}",
+        a.status.code(),
+    );
+
+    // B's range now holds A's landed **doc** — a real non-record change its worktrees were cut
+    // before — so the base-guard blocks, and that is the guarantee that must not regress
+    // (`foreign_commit_in_range_still_blocks_finalize_with_base_mismatch`, one shape over). The
+    // point is *which* block: the honest divergence over landed content, never a wedge over
+    // another milestone's bookkeeping.
+    let b = run_milestone(repo.path(), home.path(), &["finalize", "index-rebuild"]);
+    let b_stderr = String::from_utf8_lossy(&b.stderr);
+    assert_eq!(
+        b.status.code(),
+        Some(3),
+        "`index-rebuild`: a genuinely landed doc in its range still blocks; stderr:\n{b_stderr}",
+    );
+    assert!(
+        b_stderr.contains("HEAD is now")
+            && b_stderr.contains("more than milestone-record bookkeeping"),
+        "`index-rebuild`: the block must be the base-guard naming the real divergence; \
+         stderr:\n{b_stderr}",
+    );
 }
 
 /// (GREEN — the refinement) With ONLY the milestone's own record commits in `base..HEAD`,
@@ -351,6 +413,7 @@ fn record_only_range_advances_base_past_the_guard() {
     init_repo(repo.path());
     write_compose_marker(repo.path());
     setup_milestone(repo.path(), home.path());
+    stage_subtask_doc(repo.path(), "warm-the-read-cache", "adr:warm-policy");
 
     let out = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
     let stderr = String::from_utf8_lossy(&out.stderr);

@@ -2090,6 +2090,12 @@ pub struct SubTaskContribution {
     /// Staged code files in this sub-task's fan-out worktree (`git diff --cached
     /// --name-only`); 0 for a never-provisioned or code-less sub-task.
     pub code_files: usize,
+    /// Whether this sub-task **had a provisioned fan-out worktree** at the boundary
+    /// (M47 Inc 3, call (b)(ii)). `false` makes the degrade visible rather than
+    /// silent: the worktree is the sole place a sub-agent's code can live, so a
+    /// sub-task without one contributed no code **by construction** — a fact
+    /// `code_files: 0` alone cannot distinguish from "staged nothing."
+    pub provisioned: bool,
 }
 
 /// The landed-boundary facts a successful `jigc milestone finalize` confirms back
@@ -2129,7 +2135,8 @@ pub struct MilestoneLanded {
 /// (surfacing, never blocking — the M42 print posture): `agent` / `human` emit
 /// `finalized <hash> — <subject>`, one [`manifest_line`] per landed path, the
 /// `  <n> file(s) committed` tally, and the `  sub-tasks:` contribution line
-/// (`<id>: 1 doc, 1 code file · <id>: nothing staged`), followed by the routing
+/// (`<id>: 1 doc, 1 code file · <id>: nothing staged, no worktree provisioned`),
+/// followed by the routing
 /// footer; `json` emits `{"committed": {…}}` — the same [`MilestoneLanded`]
 /// projection, no footer (tooling-consumed).
 pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
@@ -2155,10 +2162,11 @@ pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
 
 /// One sub-task's agent-text contribution label: `<id>: 1 doc, 2 code files`,
 /// either half omitted at zero, and the fully-empty case named `nothing staged`.
+/// A sub-task with **no provisioned worktree** carries the `no worktree provisioned`
+/// clause (M47 Inc 3, call (b)(ii)) — on every such sub-task, contributing or not,
+/// because the fact it states is about the *code* channel being absent, not about
+/// what was staged.
 fn contribution_label(contribution: &SubTaskContribution) -> String {
-    if contribution.docs == 0 && contribution.code_files == 0 {
-        return format!("{}: nothing staged", contribution.id);
-    }
     let mut parts = Vec::new();
     if contribution.docs > 0 {
         let noun = if contribution.docs == 1 {
@@ -2175,6 +2183,12 @@ fn contribution_label(contribution: &SubTaskContribution) -> String {
             "code files"
         };
         parts.push(format!("{} {noun}", contribution.code_files));
+    }
+    if parts.is_empty() {
+        parts.push("nothing staged".to_owned());
+    }
+    if !contribution.provisioned {
+        parts.push("no worktree provisioned".to_owned());
     }
     format!("{}: {}", contribution.id, parts.join(", "))
 }
@@ -3596,11 +3610,15 @@ mod tests {
                     id: "implement-lru-eviction".to_string(),
                     docs: 1,
                     code_files: 1,
+                    provisioned: true,
                 },
+                // The never-provisioned sub-task: no worktree ever existed, so its
+                // `code_files: 0` is structural, and the label says so (M47 Inc 3 (b)(ii)).
                 SubTaskContribution {
                     id: "wire-cache-metrics-into".to_string(),
                     docs: 0,
                     code_files: 0,
+                    provisioned: false,
                 },
             ],
             hook_output: "hook: fmt clean".to_string(),
@@ -3613,7 +3631,7 @@ mod tests {
           promoted docs/decisions/eviction-policy.md
           added lru.py
           3 files committed
-          sub-tasks: implement-lru-eviction: 1 doc, 1 code file · wire-cache-metrics-into: nothing staged
+          sub-tasks: implement-lru-eviction: 1 doc, 1 code file · wire-cache-metrics-into: nothing staged, no worktree provisioned
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -3630,6 +3648,9 @@ mod tests {
             "wire-cache-metrics-into"
         );
         assert_eq!(value["committed"]["sub_tasks"][1]["docs"], 0);
+        // M47 Inc 3 (b)(ii) — the degrade is data on the machine surface too, not only prose.
+        assert_eq!(value["committed"]["sub_tasks"][0]["provisioned"], true);
+        assert_eq!(value["committed"]["sub_tasks"][1]["provisioned"], false);
         // M45 — the additive `hook_output` key rides the `committed` object, carrying the
         // captured boundary-commit hook string (`design/command-output-contract.md` →
         // Stream discipline); the agent-text arm relays it separately and omits it here.

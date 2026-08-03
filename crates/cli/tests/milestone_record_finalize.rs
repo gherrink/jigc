@@ -8,11 +8,19 @@
 //!
 //! One proof, driving the REAL binary against a throwaway `[dev ▸ methodology]` git repo:
 //!
-//!   (RED-iii) create → add-task ×2 → finalize. The committed record is `joined` on every item
-//!             + the header, **byte-identical modulo exactly the flipped `status` values** (the
-//!             byte-stability obligation of the in-place flip when folded into the commit),
-//!             landed in the SINGLE finalize commit; the `.jigc/milestones/<id>/` WIP area is
-//!             gone and the record survives on disk.
+//!   (RED-iii) create → add-task ×2 → **a sub-task merges a doc** → finalize. The committed
+//!             record is `joined` on every item + the header, **byte-identical modulo exactly
+//!             the flipped `status` values** (the byte-stability obligation of the in-place
+//!             flip when folded into the commit), landed in the SINGLE finalize commit; the
+//!             `.jigc/milestones/<id>/` WIP area is gone and the record survives on disk.
+//!
+//! **The merged doc is load-bearing, not decoration (M47 Inc 3 T2).** The fixture used to
+//! finalize an *empty* milestone — no docs, no provisioned worktrees — because that was the
+//! cheapest way to reach the flip. That is exactly the **zero-contribution** shape now refused
+//! (`design/finalize.md` → The zero-contribution refusal): a boundary whose only change is the
+//! record's own `joined` flip lands no work and burns the milestone's terminal status. So the
+//! fixture stages one real sub-task doc; the flip it proves is the same flip, folded into the
+//! same single commit, and every byte-stability assertion below is untouched.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -127,6 +135,34 @@ fn record_rel() -> &'static str {
     "docs/milestone-records/cache-rework.md"
 }
 
+/// Stage a doc body + its provenance bit into a sub-task's `tasks/<sub>/docs/` area — the
+/// managed doc a fanned-out sub-agent authors, and the boundary's real contribution (without
+/// one the finalize is the refused zero-contribution shape, M47 Inc 3 T2).
+fn stage_doc(repo: &Path, sub: &str, address: &str, body: &str) {
+    let docs = repo.join(".jigc").join("tasks").join(sub).join("docs");
+    fs::create_dir_all(&docs).expect("mk docs/");
+    fs::write(docs.join(format!("{address}.md")), body).expect("write staged body");
+
+    let manifest = docs.join("provenance.json");
+    let mut record: serde_json::Value = match fs::read_to_string(&manifest) {
+        Ok(s) => serde_json::from_str(&s).expect("provenance manifest parses"),
+        Err(_) => serde_json::json!({ "docs": {} }),
+    };
+    record["docs"][address] = serde_json::Value::String("created".to_string());
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&record).expect("serialize manifest"),
+    )
+    .expect("write provenance manifest");
+}
+
+/// A plain, ref-free ADR body.
+fn adr_plain(title: &str) -> String {
+    format!(
+        "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+    )
+}
+
 /// create → add-task ×2 on a `[dev ▸ methodology]` repo — lands the milestone's own record-only
 /// commits (create opens, each add-task appends), leaving every recorded status `active`.
 fn setup_milestone(repo: &Path, home: &Path) {
@@ -152,9 +188,10 @@ fn setup_milestone(repo: &Path, home: &Path) {
     );
 }
 
-/// (RED-iii) create → add-task ×2 → finalize — the committed record flips to `joined` on every
-/// item + the header, byte-identical modulo exactly the flipped `status` values, folded into the
-/// SINGLE finalize commit; the `.jigc/` WIP area is removed and the record survives.
+/// (RED-iii) create → add-task ×2 → a merged sub-task doc → finalize — the committed record
+/// flips to `joined` on every item + the header, byte-identical modulo exactly the flipped
+/// `status` values, folded into the SINGLE finalize commit; the `.jigc/` WIP area is removed
+/// and the record survives.
 #[test]
 fn finalize_folds_the_join_status_flip_into_the_single_commit_byte_stable() {
     let repo = TempDir::new("fold");
@@ -162,6 +199,13 @@ fn finalize_folds_the_join_status_flip_into_the_single_commit_byte_stable() {
     init_repo(repo.path());
     write_compose_marker(repo.path());
     setup_milestone(repo.path(), home.path());
+    // Real work for the boundary to land (M47 Inc 3 T2 — a record flip alone is refused).
+    stage_doc(
+        repo.path(),
+        "warm-the-read-cache",
+        "adr:warm-policy",
+        &adr_plain("Warm policy"),
+    );
 
     let record_abs = repo.path().join(record_rel());
     // The committed record after add-task ×2 — the base pin + both sub-tasks, every status
@@ -239,6 +283,11 @@ fn finalize_folds_the_join_status_flip_into_the_single_commit_byte_stable() {
 /// are transactional"): with a foreign (non-record) commit in `base..HEAD` the base-guard blocks
 /// the finalize, and the committed record stays `active` (the in-place flip is restored, not left
 /// dangling in the working tree). The omitting-context proof for the flip's restore guard.
+///
+/// **It blocks for its OWN reason (re-verified M47 Inc 3 T2).** The milestone also carries a
+/// real merged doc, so the zero-contribution refusal is inert here and the base-guard is what
+/// speaks — asserted below rather than assumed, because two blocks that both exit 3 are
+/// indistinguishable by exit code alone.
 #[test]
 fn a_blocked_finalize_restores_the_record_leaving_it_active() {
     let repo = TempDir::new("blocked");
@@ -246,6 +295,12 @@ fn a_blocked_finalize_restores_the_record_leaving_it_active() {
     init_repo(repo.path());
     write_compose_marker(repo.path());
     setup_milestone(repo.path(), home.path());
+    stage_doc(
+        repo.path(),
+        "warm-the-read-cache",
+        "adr:warm-policy",
+        &adr_plain("Warm policy"),
+    );
 
     let record_abs = repo.path().join(record_rel());
     let before = fs::read_to_string(&record_abs).expect("record before the blocked finalize");
@@ -261,6 +316,11 @@ fn a_blocked_finalize_restores_the_record_leaving_it_active() {
         Some(3),
         "a foreign commit blocks finalize at the base-guard (exit 3); stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    assert!(
+        stderr.contains("pinned to base") && stderr.contains("more than milestone-record"),
+        "the block must be the BASE-GUARD's, not another refusal that also exits 3; got:\n{stderr}",
     );
 
     // The flip was restored — the working-tree record is byte-identical to its pre-finalize state

@@ -864,9 +864,15 @@ fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
         stdout.contains("4 files committed"),
         "the landing must carry the file count; got:\n{stdout}",
     );
+    // The docs-only milestone provisions no worktrees at all, so EVERY sub-task carries the
+    // `no worktree provisioned` clause (M47 Inc 3 (b)(ii)): with no worktree a sub-task could
+    // not have contributed code even in principle, and the manifest says so rather than
+    // letting `0 code files` read as "the sub-agent staged nothing."
     assert!(
-        stdout
-            .contains("sub-tasks: area-idle: nothing staged · area-low: 2 docs · area-zed: 1 doc"),
+        stdout.contains(
+            "sub-tasks: area-idle: nothing staged, no worktree provisioned · \
+             area-low: 2 docs, no worktree provisioned · area-zed: 1 doc, no worktree provisioned"
+        ),
         "the landing must name each sub-task's contribution, the no-work one included; got:\n{stdout}",
     );
 

@@ -815,10 +815,16 @@ fn the_migration_retire_pathspec_is_exempt() {
 
 // ───────────────────────── the milestone arm (T4) ─────────────────────────
 
-/// Write the `[dev ▸ methodology]` compose marker — the milestone-record flip is what
-/// gives a docs-only milestone a non-empty finalize commit (the
-/// `milestone_record_finalize` precedent), so the finalize reaches the carryover gate
-/// instead of the empty-commit guard.
+/// Write the `[dev ▸ methodology]` compose marker — the milestone record is what makes this a
+/// realistic milestone boundary (the `milestone_record_finalize` precedent).
+///
+/// **The record flip is no longer what carries the commit (M47 Inc 3 T2).** This comment used
+/// to say the flip *"gives a docs-only milestone a non-empty finalize commit, so the finalize
+/// reaches the carryover gate instead of the empty-commit guard"* — i.e. the fixture leaned on
+/// precisely the **zero-contribution** shape now refused (`design/finalize.md` → The
+/// zero-contribution refusal), which would block ahead of the carryover gate and mask every arm
+/// below. [`setup_milestone`] therefore stages one real sub-task doc, so the boundary reaches
+/// the gate because it has actual work to land.
 fn write_compose_marker(repo: &Path) {
     fs::create_dir_all(repo.join(".jigc").join("config")).expect("mk project config");
     fs::write(
@@ -828,9 +834,32 @@ fn write_compose_marker(repo: &Path) {
     .expect("write compose marker");
 }
 
-/// create → add-task ×2 — the milestone whose create-time snapshot the finalize gate
-/// consumes. Each op lands its own path-scoped record commit, so a pre-create staged
-/// foreign entry stays staged (and same-blob) all the way to finalize.
+/// Stage a persisted doc + its provenance bit into a sub-task's `tasks/<sub>/docs/` area — the
+/// milestone's **real work**, so the boundary has something to land (M47 Inc 3 T2: a boundary
+/// that would land nothing is refused before the carryover gate is reached).
+fn stage_subtask_doc(repo: &Path, sub: &str, address: &str, body: &str) {
+    let docs = repo.join(".jigc").join("tasks").join(sub).join("docs");
+    fs::create_dir_all(&docs).expect("mk docs/");
+    fs::write(docs.join(format!("{address}.md")), body).expect("write staged body");
+
+    let manifest = docs.join("provenance.json");
+    let mut record: serde_json::Value = match fs::read_to_string(&manifest) {
+        Ok(s) => serde_json::from_str(&s).expect("provenance manifest parses"),
+        Err(_) => serde_json::json!({ "docs": {} }),
+    };
+    record["docs"][address] = serde_json::Value::String("created".to_string());
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&record).expect("serialize manifest"),
+    )
+    .expect("write provenance manifest");
+}
+
+/// create → add-task ×2 + one authored sub-task doc — the milestone whose create-time snapshot
+/// the finalize gate consumes. Each op lands its own path-scoped record commit, so a pre-create
+/// staged foreign entry stays staged (and same-blob) all the way to finalize; the authored doc
+/// is the work the boundary lands, without which the zero-contribution refusal would block
+/// ahead of the gate under test.
 fn setup_milestone(repo: &Path, home: &Path) {
     ok(
         repo,
@@ -859,6 +888,12 @@ fn setup_milestone(repo: &Path, home: &Path) {
             "Evict cold entries",
         ],
         "milestone add-task #2",
+    );
+    stage_subtask_doc(
+        repo,
+        "warm-the-read-cache",
+        "adr:warm-policy",
+        "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Warm policy\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n",
     );
 }
 
