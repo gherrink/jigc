@@ -228,9 +228,14 @@ pub enum TaskCommand {
         approve: bool,
         /// Print the pre-commit manifest (the file-set the commit would carry, untracked
         /// sweeps flagged) and stop — commit nothing, no destructive side effect (B1
-        /// dirty-tree sweep). A dry-run never requires `--approve`, and never forecasts a
-        /// green the finalize would refuse: an undeclared carry-over is reported (exit 3)
-        /// instead of the manifest — add `--carry-staged` to forecast the carry.
+        /// dirty-tree sweep). A dry-run never requires `--approve`. It forecasts three
+        /// gates: this task's validation findings, the empty-commit guard, and the
+        /// carryover gate — where an undeclared carry-over is reported (exit 3) instead of
+        /// the manifest (add `--carry-staged` to forecast the carry). Every other gate —
+        /// the `owner-artifact` causes, staging, promotion, the commit hook — is decided
+        /// only by the real finalize, so a printed manifest is not a promise the commit
+        /// lands; `jigc task validate <id>` previews the owner-artifact causes this does
+        /// not.
         #[arg(long)]
         dry_run: bool,
         /// Declare the carry-over of pre-task staged changes deliberate: land index

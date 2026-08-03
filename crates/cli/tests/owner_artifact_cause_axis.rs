@@ -552,3 +552,164 @@ fn every_owned_location_cause_previews_except_the_untracked_one() {
         }
     }
 }
+
+/// `jigc task finalize --help`'s emitted bytes, whitespace-collapsed — clap wraps at the
+/// terminal width, so a phrase assertion must be wrap-insensitive. `--help` needs no repo,
+/// no `$HOME` and no pack.
+fn finalize_help() -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["task", "finalize", "--help"])
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc task finalize --help` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8 stdout")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// M47 Increment 4 — **`--dry-run`'s long help states the scope of its forecast, and the
+/// scope is the truth** (`design/surface-contract.md` → law 1, nothing lies).
+///
+/// T3 rewrote that help to promise the flag *"never forecasts a green the finalize would
+/// refuse"*. The clause is unconditional and false: the dry-run branch sits **ahead of**
+/// phase 5, so none of the six previewable `owned_location_violation` causes T2 made
+/// blocking reaches it — over each of them the forecast returns exit 0 with a manifest for a
+/// state the committing run refuses at [`EXIT_BLOCKED`]. Only the report-borne block (cause
+/// 1, pre-empted by `schema-conformance.field-value-conformant` inside `plan_finalize`,
+/// which the dry-run branch *does* run) and the carryover gate T3 itself moved into the
+/// branch are genuinely forecast.
+///
+/// So this drives the **counterexample axis first** — all seven causes through the real
+/// binary, forecast vs commit, the divergence recorded per row — and only then asserts the
+/// emitted help bytes: the flat promise is gone, the carryover axis it *does* forecast is
+/// named with its exit, and the gates it does not run are named as the real finalize's to
+/// decide. (The help enumerates rather than generalizes — *"it forecasts what it can decide
+/// read-only"* would be the same lie again, since these six causes **are** read-only
+/// decidable; this door just does not run them.) Pinning the sentence without the axis is a
+/// claim
+/// about prose; pinning the axis without the sentence would leave the prose free to
+/// re-widen.
+#[test]
+fn the_dry_run_forecast_covers_no_gate_borne_cause_and_its_help_says_so() {
+    for cause in CAUSES {
+        let repo = TempDir::new(&format!("dry-{}", cause.tag));
+        let home = TempDir::new(&format!("dry-{}-home", cause.tag));
+        init_repo(repo.path());
+        let pack = TempDir::new(&format!("dry-{}-pack", cause.tag));
+        seed_fixture_pack(pack.path());
+        list_fixture_pack(repo.path(), pack.path());
+        (cause.plant)(repo.path());
+
+        author_completion(repo.path(), home.path(), cause.value);
+
+        // Cause 1 alone blocks inside `plan_finalize` (the module docs' pre-emption), which
+        // the dry-run branch runs — so it is the one cause the forecast genuinely refuses.
+        let report_borne = cause.finalize_code != GATE_CODE;
+
+        let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+        let forecast = jigc(
+            repo.path(),
+            home.path(),
+            &["task", "finalize", TASK, "--dry-run", "--format", "json"],
+        );
+        let forecast_stdout = String::from_utf8_lossy(&forecast.stdout).to_string();
+
+        if report_borne {
+            assert_eq!(
+                forecast.status.code(),
+                Some(EXIT_BLOCKED),
+                "[{}] the report-borne cause blocks inside `plan_finalize`, which the \
+                 forecast runs; stdout:\n{forecast_stdout}\nstderr:\n{}",
+                cause.tag,
+                String::from_utf8_lossy(&forecast.stderr),
+            );
+        } else {
+            assert_eq!(
+                forecast.status.code(),
+                Some(0),
+                "[{}] the gate-borne cause is not forecast — the dry-run branch sits ahead \
+                 of the phase-5 gate; stdout:\n{forecast_stdout}\nstderr:\n{}",
+                cause.tag,
+                String::from_utf8_lossy(&forecast.stderr),
+            );
+            assert!(
+                !forecast_stdout.contains(GATE_CODE),
+                "[{}] the forecast carries no `{GATE_CODE}` finding; got:\n{forecast_stdout}",
+                cause.tag,
+            );
+            assert!(
+                forecast_stdout.contains("\"dry_run\": true"),
+                "[{}] the forecast is a manifest document; got:\n{forecast_stdout}",
+                cause.tag,
+            );
+
+            // …and the committing run over that identical state refuses. This IS the
+            // falsification of the flat promise: exit 0 forecast, exit 3 commit.
+            let finalize = jigc(
+                repo.path(),
+                home.path(),
+                &["task", "finalize", TASK, "--format", "json"],
+            );
+            assert_eq!(
+                finalize.status.code(),
+                Some(EXIT_BLOCKED),
+                "[{}] the committing door refuses the state the forecast greened; \
+                 stdout:\n{}\nstderr:\n{}",
+                cause.tag,
+                String::from_utf8_lossy(&finalize.stdout),
+                String::from_utf8_lossy(&finalize.stderr),
+            );
+        }
+
+        assert_eq!(
+            git(repo.path(), &["rev-parse", "HEAD"]),
+            head_before,
+            "[{}] neither the forecast nor the refused finalize moves HEAD",
+            cause.tag,
+        );
+    }
+
+    // The emitted help must not carry the flat promise the axis above falsifies…
+    let help = finalize_help();
+    assert!(
+        !help.contains("never forecasts a green the finalize would refuse"),
+        "`task finalize --help` must not promise a forecast the phase-5 gates falsify; \
+         got:\n{help}"
+    );
+    // …it names the axis it does forecast, with the exit and the declaration…
+    for scoped in [
+        "an undeclared carry-over is reported (exit 3) instead of the manifest",
+        "`--carry-staged` to forecast the carry",
+    ] {
+        assert!(
+            help.contains(scoped),
+            "`task finalize --help` must state the carryover axis it forecasts (`{scoped}`); \
+             got:\n{help}"
+        );
+    }
+    // …and names the commit-time gates it does not run, as the real finalize's to decide.
+    for deferred in [
+        "`owner-artifact`",
+        "staging",
+        "promotion",
+        "the commit hook",
+    ] {
+        assert!(
+            help.contains(deferred),
+            "`task finalize --help` must name `{deferred}` among the gates only the real \
+             finalize decides; got:\n{help}"
+        );
+    }
+    assert!(
+        help.contains("decided only by the real finalize"),
+        "`task finalize --help` must say where the un-forecast gates are decided; got:\n{help}"
+    );
+}
