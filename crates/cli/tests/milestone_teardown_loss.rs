@@ -1,0 +1,407 @@
+//! The **landed** fan-out teardown names the work it discards (M47 Inc 3 T4 — the law-1
+//! minimum of `DECISIONS.md` → 2026-07-26 M47 Increment 3 halt resolution, call (c)).
+//!
+//! Both landed arms commit only the **staged** set (`worktree_staged_patch`) and then
+//! `git worktree remove --force` the whole checkout — so a sub-agent's unstaged and
+//! untracked bytes were destroyed at **exit 0, unnarrated, on the success path**. The
+//! codebase already knew this: `dirty_worktrees` reads `git status --porcelain` precisely
+//! because the teardown destroys *"staged, unstaged, and untracked alike"*, and `discard`
+//! guards that set behind `--force` while `finalize` guarded nothing.
+//!
+//! **Honest bound, recorded not glossed:** this makes the loss **visible, not prevented**.
+//! The `discard`-style refusal + `--force` on the landed path is new surface and is
+//! chartered to M46 (`implementation/decisions-pending.md` → the capability wave).
+//!
+//! **The acceptance iterates two axes, not the reported repro:**
+//!
+//! 1. the **porcelain index-column partition** — a *wholly staged* path (`A `), a *never
+//!    staged* path (`??`), and a *partly staged* path (`MM`, the cell whose staged half
+//!    lands and whose unstaged half does not) live in one worktree at once. Only the
+//!    latter two may be named: naming the wholly-staged path would be the over-report the
+//!    M47 completion audit caught, fixed here at birth rather than shipped-then-patched;
+//! 2. the **landed-arm axis** — `finalize.fan-out.squash: true` (the single combine
+//!    commit) and `false` (the per-sub-task chain) each call `remove_worktrees` and each
+//!    build the landing manifest, so both must narrate.
+//!
+//! …across both output surfaces (`agent` text and the pinned `--format json` envelope),
+//! and on **both** channels the call names: the pre-removal warning on stderr and the
+//! landing manifest on stdout.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "jigc-teardown-loss-{tag}-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Run `git <args>` in `cwd`, asserting success.
+fn git_ok(cwd: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} in {cwd:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout).expect("utf-8 git stdout")
+}
+
+/// Initialize a real git repo with one commit (the milestone mint reads HEAD).
+fn init_repo(root: &Path) {
+    git_ok(root, &["init", "-q"]);
+    git_ok(root, &["config", "user.email", "test@example.com"]);
+    git_ok(root, &["config", "user.name", "Test"]);
+    fs::write(root.join("README.md"), "hello\n").expect("write file");
+    git_ok(root, &["add", "."]);
+    git_ok(root, &["commit", "-q", "-m", "initial"]);
+}
+
+/// Run `jigc milestone <args>` with `cwd = repo` and `$HOME = home`.
+fn run_milestone(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("milestone")
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// `.jigc/config/manifest.yaml` opting the project into per-sub-task commits.
+fn set_squash_false(repo: &Path) {
+    let config = repo.join(".jigc").join("config");
+    fs::create_dir_all(&config).expect("mk config layer");
+    fs::write(
+        config.join("manifest.yaml"),
+        "scalar:\n  finalize.fan-out.squash: false\n",
+    )
+    .expect("write manifest");
+}
+
+/// Stage a doc body + its provenance bit into a sub-task's `tasks/<sub>/docs/` area.
+fn stage_doc(repo: &Path, sub: &str, address: &str, body: &str) {
+    let docs = repo.join(".jigc").join("tasks").join(sub).join("docs");
+    fs::create_dir_all(&docs).expect("mk docs/");
+    fs::write(docs.join(format!("{address}.md")), body).expect("write staged body");
+
+    let manifest = docs.join("provenance.json");
+    let mut record: serde_json::Value = match fs::read_to_string(&manifest) {
+        Ok(s) => serde_json::from_str(&s).expect("provenance manifest parses"),
+        Err(_) => serde_json::json!({ "docs": {} }),
+    };
+    record["docs"][address] = serde_json::Value::String("created".to_string());
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&record).expect("serialize manifest"),
+    )
+    .expect("write provenance manifest");
+}
+
+/// A plain, ref-free ADR body.
+fn adr_plain(title: &str) -> String {
+    format!(
+        "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+    )
+}
+
+/// Stage a sub-task's authored `commit:<sub>` doc — the prose the per-sub-task render reads.
+fn stage_subtask_commit(repo: &Path, sub: &str, summary: &str) {
+    let body = format!(
+        "---\ntype: feat\n---\n\n# {sub}\n\n## Summary\n\n{summary}\n\n## Body\n\n\n\n## Trailers\n"
+    );
+    stage_doc(repo, sub, &format!("commit:{sub}"), &body);
+}
+
+fn worktree_dir(repo: &Path, sub: &str) -> PathBuf {
+    repo.join(".jigc").join("worktrees").join(sub)
+}
+
+/// Write + `git add` a file **in** a provisioned fan-out worktree — the `A `/`M ` cell:
+/// wholly staged, so the boundary's `git diff --cached` patch carries every byte and the
+/// teardown discards nothing.
+fn stage_wholly(repo: &Path, sub: &str, rel: &str, body: &str) {
+    let wt = worktree_dir(repo, sub);
+    let p = wt.join(rel);
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent).expect("mkdir worktree parent");
+    }
+    fs::write(&p, body).expect("write worktree file");
+    git_ok(&wt, &["add", rel]);
+}
+
+/// The `MM` cell: a **tracked** file staged and then modified again. The staged half rides
+/// the boundary commit; the later edit dies with the worktree.
+fn stage_partly(repo: &Path, sub: &str, rel: &str, staged: &str, then: &str) {
+    stage_wholly(repo, sub, rel, staged);
+    fs::write(worktree_dir(repo, sub).join(rel), then).expect("re-modify after staging");
+}
+
+/// The `??` cell: never staged at all.
+fn leave_untracked(repo: &Path, sub: &str, rel: &str, body: &str) {
+    let p = worktree_dir(repo, sub).join(rel);
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent).expect("mkdir worktree parent");
+    }
+    fs::write(&p, body).expect("write untracked worktree file");
+}
+
+fn rev_list_count(repo: &Path) -> u32 {
+    git_ok(repo, &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .expect("count parses")
+}
+
+/// Every path the most recent `n` commits changed (`git show --name-only`), unioned.
+fn recent_changed_files(repo: &Path, n: u32) -> Vec<String> {
+    let out = git_ok(repo, &["log", &format!("-{n}"), "--name-only", "--format="]);
+    let mut paths: Vec<String> = out
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(str::to_owned)
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+/// The fan-out fixture: milestone + two sub-tasks, each with a persisted ADR + its authored
+/// commit doc staged, provisioned worktrees, and — in `area-low` — one cell of each of the
+/// three porcelain index-column states at once.
+fn setup_fanout(repo: &Path, home: &Path, squash: bool) {
+    if !squash {
+        set_squash_false(repo);
+    }
+    assert!(
+        run_milestone(repo, home, &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(repo, home, &["add-task", "cache-rework", intent])
+                .status
+                .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+    stage_doc(repo, "area-low", "adr:low-policy", &adr_plain("Low policy"));
+    stage_subtask_commit(repo, "area-low", "rework the low cache path");
+    stage_doc(repo, "area-zed", "adr:zed-policy", &adr_plain("Zed policy"));
+    stage_subtask_commit(repo, "area-zed", "rework the zed cache path");
+
+    let provisioned = run_milestone(repo, home, &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+
+    // The three-cell worktree: wholly staged · partly staged · never staged.
+    stage_wholly(repo, "area-low", "src/low.rs", "pub fn low() {}\n");
+    stage_partly(
+        repo,
+        "area-low",
+        "README.md",
+        "hello\nstaged half\n",
+        "hello\nstaged half\nunstaged half\n",
+    );
+    leave_untracked(repo, "area-low", "notes/scratch.rs", "// sub-agent WIP\n");
+
+    // The clean sibling: everything it holds is staged, so nothing may be reported for it.
+    stage_wholly(repo, "area-zed", "src/zed.rs", "pub fn zed() {}\n");
+}
+
+/// The pre-removal warning block for one worktree — the stderr lines from the
+/// `warning: removing the fan-out worktree …<sub>…` header through its indented body.
+fn warning_block(stderr: &str, sub: &str) -> String {
+    let mut lines = stderr.lines().skip_while(|line| {
+        !(line.starts_with("warning: removing the fan-out worktree") && line.contains(sub))
+    });
+    let header = lines.next().unwrap_or_else(|| {
+        panic!("no pre-removal teardown warning for `{sub}`; stderr:\n{stderr}")
+    });
+    let mut block = header.to_owned();
+    for line in lines {
+        if !line.starts_with(' ') {
+            break;
+        }
+        block.push('\n');
+        block.push_str(line);
+    }
+    block
+}
+
+/// The landing manifest's discarded block — the `  discarded with the fan-out worktrees`
+/// header through its indented body.
+fn discarded_block(stdout: &str) -> String {
+    let mut lines = stdout.lines().skip_while(|line| {
+        !line
+            .trim_start()
+            .starts_with("discarded with the fan-out worktrees")
+    });
+    let header = lines.next().unwrap_or_else(|| {
+        panic!("the landing manifest names no discarded work; stdout:\n{stdout}")
+    });
+    let mut block = header.to_owned();
+    for line in lines {
+        if !line.starts_with("    ") {
+            break;
+        }
+        block.push('\n');
+        block.push_str(line);
+    }
+    block
+}
+
+#[test]
+fn a_landed_fan_out_finalize_names_the_work_its_teardown_discards() {
+    // The landed-arm axis × the output-surface axis. Each cell is a fresh repo: a landed
+    // boundary is terminal.
+    for (squash, json) in [(true, false), (true, true), (false, false), (false, true)] {
+        let label = format!(
+            "squash: {squash}, format: {}",
+            if json { "json" } else { "agent" }
+        );
+        let repo = TempDir::new(if squash { "squash" } else { "chain" });
+        init_repo(repo.path());
+        let home = TempDir::new("home");
+
+        setup_fanout(repo.path(), home.path(), squash);
+
+        let before_count = rev_list_count(repo.path());
+        let mut args = vec!["finalize", "cache-rework"];
+        if json {
+            args.extend(["--format", "json"]);
+        }
+        let finalized = run_milestone(repo.path(), home.path(), &args);
+        let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
+        let stderr = String::from_utf8(finalized.stderr).expect("utf-8 stderr");
+
+        // (1) The boundary landed — the narration is on the SUCCESS path, not a refusal.
+        assert!(
+            finalized.status.success(),
+            "[{label}] the finalize must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        let landed = rev_list_count(repo.path()) - before_count;
+        assert!(landed >= 1, "[{label}] the boundary must land commit(s)");
+
+        // (2) The staged set landed — including the staged HALF of the `MM` path.
+        let changed = recent_changed_files(repo.path(), landed);
+        for path in ["src/low.rs", "src/zed.rs", "README.md"] {
+            assert!(
+                changed.iter().any(|p| p == path),
+                "[{label}] the boundary must commit the staged path `{path}`; landed: {changed:?}",
+            );
+        }
+        let readme = git_ok(repo.path(), &["show", "HEAD:README.md"]);
+        assert!(
+            readme.contains("staged half") && !readme.contains("unstaged half"),
+            "[{label}] only the STAGED half of the partly-staged path may land; got:\n{readme}",
+        );
+
+        // (3) The pre-removal warning names the two discarded cells and NOT the wholly
+        // staged one — the over-report the completion audit caught, fixed at birth.
+        let warning = warning_block(&stderr, "area-low");
+        assert!(
+            warning.contains("notes/scratch.rs") && warning.contains("never staged"),
+            "[{label}] the warning must name the never-staged path; got:\n{warning}",
+        );
+        assert!(
+            warning.contains("README.md") && warning.contains("staged only in part"),
+            "[{label}] the warning must name the partly-staged path; got:\n{warning}",
+        );
+        assert!(
+            !warning.contains("src/low.rs"),
+            "[{label}] the warning must NOT name the wholly-staged path (it landed); got:\n{warning}",
+        );
+        // The clean sibling has nothing to narrate, so it prints no warning at all.
+        assert!(
+            !stderr.contains("worktrees/area-zed discards"),
+            "[{label}] a worktree whose whole content is staged must print no loss warning; \
+             stderr:\n{stderr}",
+        );
+
+        // (4) The landing manifest carries the same set, on stdout, in both surfaces.
+        if json {
+            let envelope: serde_json::Value =
+                serde_json::from_str(&stdout).expect("the landed envelope is valid JSON");
+            let subs = envelope["committed"]["sub_tasks"]
+                .as_array()
+                .expect("sub_tasks is an array");
+            let low = subs
+                .iter()
+                .find(|s| s["id"] == "area-low")
+                .expect("area-low rides the manifest");
+            assert_eq!(
+                low["discarded"],
+                serde_json::json!([
+                    { "path": "README.md", "state": "partly-staged" },
+                    { "path": "notes/scratch.rs", "state": "never-staged" },
+                ]),
+                "[{label}] the JSON manifest must carry the discarded set, path-sorted, and \
+                 nothing else; got:\n{stdout}",
+            );
+            let zed = subs
+                .iter()
+                .find(|s| s["id"] == "area-zed")
+                .expect("area-zed rides the manifest");
+            assert_eq!(
+                zed["discarded"],
+                serde_json::json!([]),
+                "[{label}] a fully-staged sub-task discards nothing; got:\n{stdout}",
+            );
+        } else {
+            let block = discarded_block(&stdout);
+            assert!(
+                block.contains("area-low")
+                    && block.contains("notes/scratch.rs (never staged)")
+                    && block.contains("README.md (staged only in part)"),
+                "[{label}] the manifest's discarded block must name both cells; got:\n{block}",
+            );
+            assert!(
+                !block.contains("src/low.rs"),
+                "[{label}] the manifest must NOT report the wholly-staged path as discarded; \
+                 got:\n{block}",
+            );
+            assert!(
+                !block.contains("area-zed"),
+                "[{label}] a fully-staged sub-task must not appear in the discarded block; \
+                 got:\n{block}",
+            );
+        }
+
+        // (5) The bound is honest: visible, NOT prevented — the worktree is gone.
+        assert!(
+            !worktree_dir(repo.path(), "area-low").exists(),
+            "[{label}] the landed teardown still removes the worktree (visible, not prevented)",
+        );
+    }
+}

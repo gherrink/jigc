@@ -2482,6 +2482,15 @@ fn cleanup_subtask_areas(jigc_root: &Path, list: &engine::milestone::TaskList) {
 /// a **non-blocking warning** naming the leaked worktree path + the `git worktree prune`
 /// remedy — a leaked worktree is a registered git object, not gitignored scratch — yet
 /// it never blocks a commit that already landed (the F1 rollback/landed-commit stance).
+///
+/// **The loss is narrated before it happens** (M47 Inc 3, call (c)): the removal destroys
+/// everything the boundary did not commit — the staged set landed, the rest did not — so
+/// each worktree holding such work prints a non-blocking warning naming it
+/// ([`discarded_work`]). Applies to every caller, including `discard --force`, where it
+/// names what the human's `--force` threw away (the un-forced `discard` refuses earlier,
+/// so the two never both speak). **Honest bound:** this makes the loss *visible*, not
+/// *prevented* — a `discard`-style refusal on the landed path is new surface, chartered
+/// to M46 (`implementation/decisions-pending.md` → the capability wave).
 fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone::TaskList) {
     let registered = registered_worktrees(repo_root).unwrap_or_default();
     // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
@@ -2500,6 +2509,22 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
             eprintln!("warning: fan-out worktree path {path:?} is not valid UTF-8 (left in place)");
             continue;
         };
+        // Name the loss BEFORE the removal (law 1 — nothing lies: a boundary that exits 0
+        // must not also have silently destroyed work). Best-effort: an unreadable status
+        // yields no warning and never blocks a commit that already landed.
+        let discarded = discarded_work(&path).unwrap_or_default();
+        if !discarded.is_empty() {
+            let listing: Vec<String> = discarded
+                .iter()
+                .map(|work| format!("    {} ({})", work.path, work.state.label()))
+                .collect();
+            eprintln!(
+                "warning: removing the fan-out worktree {path_str} discards work that is not in \
+                 git:\n{}\n  note: the worktree is the only copy of these bytes — they are not \
+                 recoverable.",
+                listing.join("\n"),
+            );
+        }
         if let Err(err) = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]) {
             // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
             eprintln!(
@@ -2914,11 +2939,21 @@ fn subtask_contributions(
             Some(path) => worktree_staged_file_count(path)?,
             None => 0,
         };
+        // The loss half of the same pre-commit snapshot (M47 Inc 3, call (c)) — the
+        // teardown removes the whole checkout, so everything the worktree holds beyond
+        // the staged set dies with it. Read here, where the worktrees are still alive
+        // and `code_files` is read, so the manifest's "landed" and "lost" halves come
+        // from one observation of one state.
+        let discarded = match worktree {
+            Some(path) => discarded_work(path)?,
+            None => Vec::new(),
+        };
         out.push(render::SubTaskContribution {
             id,
             docs,
             code_files,
             provisioned: worktree.is_some(),
+            discarded,
         });
     }
     Ok(out)
@@ -2942,6 +2977,78 @@ fn worktree_staged_file_count(worktree: &Path) -> Result<usize> {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .count())
+}
+
+/// The work in a fan-out worktree the teardown **destroys** — path-sorted, empty when
+/// everything the worktree holds is staged (M47 Inc 3, call (c); `DECISIONS.md` →
+/// 2026-07-26 M47 Increment 3 halt resolution).
+///
+/// The boundary commits only [`worktree_staged_patch`] and then `git worktree remove
+/// --force`s the whole checkout, so the difference between those two sets is destroyed at
+/// exit 0. The probe is `git status --porcelain`, the same union its
+/// [`dirty_worktrees`] sibling reads (staged, unstaged and untracked alike; an ignored
+/// file is not work and never appears) — **partitioned on the index column** so the
+/// narration stays true:
+///
+/// * index column set, worktree column clean (`A `, `M `, `R `) — **wholly staged**: every
+///   byte is in the patch the boundary commits, so it is *not* reported. Reporting it
+///   would be an over-report, which is what makes a loss warning untrustworthy.
+/// * index column clear (`??`, ` M`, ` D`) — **never staged**: the commit carries none of
+///   it.
+/// * both columns set (`MM`, `AM`, an unmerged `UU`) — **partly staged**: the commit
+///   carries the indexed version and the worktree's later edit dies.
+///
+/// **`--porcelain -z`, not `--porcelain`.** Git display-quotes a path holding a space,
+/// a quote or a non-ASCII byte **regardless of `core.quotePath`**, and a fan-out worktree
+/// holds arbitrary user code — so the plain form would name a path the repo does not
+/// contain. The `-z` form emits verbatim paths in NUL-terminated records; a rename/copy
+/// entry appends its origin path as an extra record, consumed here so the stream stays
+/// aligned.
+///
+/// **`--untracked-files=all`, not git's default collapse.** The default reports a wholly
+/// untracked directory as the single entry `notes/`, naming a *directory* where this
+/// surface promises the paths being destroyed. A loss narration read after the fact
+/// enumerates the files (an ignored file still never appears).
+fn discarded_work(worktree: &Path) -> Result<Vec<render::DiscardedWork>> {
+    let out = Command::new("git")
+        .args(["status", "--porcelain", "-z", "--untracked-files=all"])
+        .current_dir(worktree)
+        .output()
+        .context("could not run `git status` (is git on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git status --porcelain -z --untracked-files=all` in worktree {worktree:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+
+    let mut records = out.stdout.split(|byte| *byte == 0);
+    let mut discarded = Vec::new();
+    while let Some(record) = records.next() {
+        // `XY <path>` — two status columns, one space, then the verbatim path.
+        if record.len() < 4 {
+            continue;
+        }
+        let index = record[0];
+        let tree = record[1];
+        let path = String::from_utf8_lossy(&record[3..]).into_owned();
+        if index == b'R' || index == b'C' {
+            // A rename/copy carries its origin path as the next record — consume it so
+            // the origin is never mistaken for a status entry.
+            let _ = records.next();
+        }
+        let state = if index == b' ' || index == b'?' {
+            render::DiscardState::NeverStaged
+        } else if tree == b' ' {
+            // Wholly staged — the boundary commits it.
+            continue;
+        } else {
+            render::DiscardState::PartlyStaged
+        };
+        discarded.push(render::DiscardedWork { path, state });
+    }
+    discarded.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(discarded)
 }
 
 /// Assemble the landed-boundary facts for [`render::milestone_finalized`] (C2), read

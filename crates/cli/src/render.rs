@@ -2096,6 +2096,52 @@ pub struct SubTaskContribution {
     /// sub-task without one contributed no code **by construction** — a fact
     /// `code_files: 0` alone cannot distinguish from "staged nothing."
     pub provisioned: bool,
+    /// The work in this sub-task's fan-out worktree the landed teardown **destroys** —
+    /// path-sorted, empty when everything the worktree held was staged (M47 Inc 3, call
+    /// (c)). The boundary commits only the staged set and then removes the whole
+    /// checkout, so these bytes are lost at exit 0; naming them is the law-1 minimum.
+    /// **Bound: visible, not prevented** — a `discard`-style refusal is new surface
+    /// (M46).
+    pub discarded: Vec<DiscardedWork>,
+}
+
+/// One path a landed fan-out teardown destroys, with the reason it was not committed —
+/// the unit of the law-1 loss narration on both channels (the pre-removal stderr warning
+/// and the landing manifest).
+#[derive(Serialize)]
+pub struct DiscardedWork {
+    /// The worktree-relative path, verbatim as `git status --porcelain -z` reports it
+    /// (never display-quoted — a path holding a space must survive the round trip).
+    pub path: String,
+    /// Why the boundary could not carry it.
+    pub state: DiscardState,
+}
+
+/// Why a path in a fan-out worktree is **not** carried by the boundary commit — the two
+/// reportable cells of the `git status --porcelain` **index-column** partition. The third
+/// cell, *wholly staged* (index column set, worktree column clean), is deliberately
+/// absent: those bytes land in the commit, so reporting them would be the over-report
+/// that makes the whole narration untrustworthy.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiscardState {
+    /// Nothing of this path is in the index (`??` untracked, or a worktree-only ` M`/` D`
+    /// change) — the commit carries none of it.
+    NeverStaged,
+    /// The index holds an earlier version and the worktree has moved on (`MM`, `AM`, an
+    /// unmerged cell) — the commit carries the staged half and the rest dies.
+    PartlyStaged,
+}
+
+impl DiscardState {
+    /// The agent-text parenthetical both channels print — one source of truth, so the
+    /// stderr warning and the landing manifest cannot drift apart.
+    pub fn label(self) -> &'static str {
+        match self {
+            DiscardState::NeverStaged => "never staged",
+            DiscardState::PartlyStaged => "staged only in part",
+        }
+    }
 }
 
 /// The landed-boundary facts a successful `jigc milestone finalize` confirms back
@@ -2135,8 +2181,10 @@ pub struct MilestoneLanded {
 /// (surfacing, never blocking — the M42 print posture): `agent` / `human` emit
 /// `finalized <hash> — <subject>`, one [`manifest_line`] per landed path, the
 /// `  <n> file(s) committed` tally, and the `  sub-tasks:` contribution line
-/// (`<id>: 1 doc, 1 code file · <id>: nothing staged, no worktree provisioned`),
-/// followed by the routing
+/// (`<id>: 1 doc, 1 code file · <id>: nothing staged, no worktree provisioned`), then —
+/// only when the teardown destroyed something — the `  discarded with the fan-out
+/// worktrees` block naming each lost path and why it was not committed
+/// ([`DiscardedWork`]), followed by the routing
 /// footer; `json` emits `{"committed": {…}}` — the same [`MilestoneLanded`]
 /// projection, no footer (tooling-consumed).
 pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
@@ -2153,6 +2201,28 @@ pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
             if !landed.sub_tasks.is_empty() {
                 let parts: Vec<String> = landed.sub_tasks.iter().map(contribution_label).collect();
                 out.push_str(&format!("  sub-tasks: {}\n", parts.join(" · ")));
+            }
+            // The teardown's loss, named (M47 Inc 3, call (c)) — the boundary commits only
+            // the staged set and then removes each worktree, so anything else the
+            // sub-agent left there is gone. Omitted entirely when nothing was lost, so the
+            // block's presence is itself the signal.
+            let losers: Vec<&SubTaskContribution> = landed
+                .sub_tasks
+                .iter()
+                .filter(|sub| !sub.discarded.is_empty())
+                .collect();
+            if !losers.is_empty() {
+                out.push_str(
+                    "  discarded with the fan-out worktrees (not committed, not recoverable):\n",
+                );
+                for sub in losers {
+                    let paths: Vec<String> = sub
+                        .discarded
+                        .iter()
+                        .map(|work| format!("{} ({})", work.path, work.state.label()))
+                        .collect();
+                    out.push_str(&format!("    {}: {}\n", sub.id, paths.join(" · ")));
+                }
             }
             out.push_str(ROUTING_FOOTER);
             out
@@ -3611,14 +3681,29 @@ mod tests {
                     docs: 1,
                     code_files: 1,
                     provisioned: true,
+                    // M47 Inc 3 (c) — the two reportable cells of the index-column
+                    // partition. The wholly-staged path (`lru.py`, in the manifest above)
+                    // is deliberately absent: it landed.
+                    discarded: vec![
+                        DiscardedWork {
+                            path: "README.md".to_string(),
+                            state: DiscardState::PartlyStaged,
+                        },
+                        DiscardedWork {
+                            path: "notes/scratch.py".to_string(),
+                            state: DiscardState::NeverStaged,
+                        },
+                    ],
                 },
                 // The never-provisioned sub-task: no worktree ever existed, so its
                 // `code_files: 0` is structural, and the label says so (M47 Inc 3 (b)(ii)).
+                // Nothing to discard either — it never had a worktree to lose.
                 SubTaskContribution {
                     id: "wire-cache-metrics-into".to_string(),
                     docs: 0,
                     code_files: 0,
                     provisioned: false,
+                    discarded: Vec::new(),
                 },
             ],
             hook_output: "hook: fmt clean".to_string(),
@@ -3632,6 +3717,8 @@ mod tests {
           added lru.py
           3 files committed
           sub-tasks: implement-lru-eviction: 1 doc, 1 code file · wire-cache-metrics-into: nothing staged, no worktree provisioned
+          discarded with the fan-out worktrees (not committed, not recoverable):
+            implement-lru-eviction: README.md (staged only in part) · notes/scratch.py (never staged)
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -3651,6 +3738,19 @@ mod tests {
         // M47 Inc 3 (b)(ii) — the degrade is data on the machine surface too, not only prose.
         assert_eq!(value["committed"]["sub_tasks"][0]["provisioned"], true);
         assert_eq!(value["committed"]["sub_tasks"][1]["provisioned"], false);
+        // M47 Inc 3 (c) — the teardown's loss is data on the machine surface too, carrying
+        // the same two-cell partition the prose block renders (and nothing else).
+        assert_eq!(
+            value["committed"]["sub_tasks"][0]["discarded"],
+            serde_json::json!([
+                { "path": "README.md", "state": "partly-staged" },
+                { "path": "notes/scratch.py", "state": "never-staged" },
+            ])
+        );
+        assert_eq!(
+            value["committed"]["sub_tasks"][1]["discarded"],
+            serde_json::json!([])
+        );
         // M45 — the additive `hook_output` key rides the `committed` object, carrying the
         // captured boundary-commit hook string (`design/command-output-contract.md` →
         // Stream discipline); the agent-text arm relays it separately and omits it here.
