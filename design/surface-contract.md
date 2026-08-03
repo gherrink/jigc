@@ -73,7 +73,24 @@ Tiered by what the constraint's source is:
 
 ### The error-code namespace
 
-Not every non-commit is a `Finding` (the [measurement.md](measurement.md):62 rationale). The **error-code vocabulary** — dotted identities carried on `Outcome` into the invocation log (`finalize.commit-rejected`; M43 adds the exit-4 migration review-hold identity) — lives as a **code-side registry const** with a test asserting no member collides with the finding-code inventory (this doc's own medicine — a prose anti-collision rule would be the census the preamble bars; cheap at 2 members). This doc mirrors the registry: `finalize.commit-rejected` (M42) · `migrate.review-pending` (M43).
+Not every non-commit is a `Finding` (the [measurement.md](measurement.md):62 rationale). The **error-code vocabulary** — dotted identities carried on `Outcome` into the invocation log — lives as a **code-side registry const** with a test asserting no member collides with the finding-code inventory (this doc's own medicine — a prose anti-collision rule would be the census the preamble bars).
+
+**The vocabulary is per-door, not per-verb and not shared (M47).** M42's registry closed at two members on the recorded rationale *"deliberately not a per-verb code mint — errored verbs already write records; the registry closes at the identities the log genuinely could not distinguish without."* That was sound while exactly **one** door framed its rejection. Once the survivable frame sweeps all nine committing doors ([finalize.md](finalize.md) → 6. Commit), reusing `finalize.commit-rejected` on the eight non-finalize ones puts a **lying** code in the log — a law-1 violation on the very surface M42 built to stop the log lying. So the rationale is revised with its rationale engaged: one identity per **door**, and every member is still an identity the log could not otherwise distinguish (a rejected `jigc rename` and a `jigc rename <absent>` are both exit 1 with no findings). This doc mirrors the registry member-for-member — **ten**:
+
+| identity | door |
+|---|---|
+| `finalize.commit-rejected` | `jigc task finalize` (M42; kept at its original spelling — a log identity readers already know) |
+| `milestone-finalize.commit-rejected` | `jigc milestone finalize`, `finalize.fan-out.squash: true` (the single combine) |
+| `milestone-finalize.chain-commit-rejected` | `jigc milestone finalize`, `finalize.fan-out.squash: false` (the per-sub-task chain) |
+| `rename.commit-rejected` | `jigc rename` |
+| `migrate-corpus.commit-rejected` | `jigc migrate-corpus` |
+| `milestone-create.commit-rejected` | `jigc milestone create` |
+| `milestone-add-task.commit-rejected` | `jigc milestone add-task` |
+| `milestone-add-from-spec.commit-rejected` | `jigc milestone add-from-spec` |
+| `milestone-discard.commit-rejected` | `jigc milestone discard` |
+| `migrate.review-pending` | the exit-4 migration review hold (M43) — a coded stop, the one non-door member |
+
+**The mirror is enforced, and so is the release build.** The nine doors are a **code-side table** (`cli::invocation_log::COMMITTING_DOORS`) with two consumers: the registry-mirror unit test derives `ERROR_CODE_REGISTRY` from it, and `tests/commit_rejected_axis.rs` iterates it through the real binary, reading each door's `error_code` back **out of the invocation log**. That log read is load-bearing: `Outcome::error`'s membership check is a `debug_assert!`, compiled out of the release build an acceptance trial actually runs, so a test that only exercised the constructor would prove nothing about the shipped binary. One list, two consumers — a door added without a code is a red test, never a silent log entry naming the wrong verb ([DECISIONS.md](../DECISIONS.md) → 2026-07-26 M47 the Settle, Decision 6, and the cross-model review's condition on it).
 
 ## The surface style guide (the judgment tier)
 

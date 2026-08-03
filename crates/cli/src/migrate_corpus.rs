@@ -212,10 +212,22 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
                 Outcome::with_findings(1, &report.blocked)
             }
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        // The door's half of the survivable frame (M47 Inc 3 T7). `commit_migration` stages
+        // the touched paths *before* it commits, so a rejection leaves the migrated bytes
+        // written and staged — and since N2 the re-run judges currency off the **committed**
+        // corpus, so the identical `jigc migrate-corpus` re-stages and lands them rather than
+        // reporting "already current" at exit 0.
+        Err(err) => crate::task::surface_commit_rejection(
+            format,
+            &err,
+            &crate::task::RejectionFrame {
+                code: crate::invocation_log::ERROR_MIGRATE_CORPUS_REJECTED,
+                survived: "nothing was committed — the migrated bytes are written and staged, \
+                           and the corpus is still recorded as unmigrated"
+                    .to_string(),
+                rerun: "jigc migrate-corpus".to_string(),
+            },
+        ),
     }
 }
 

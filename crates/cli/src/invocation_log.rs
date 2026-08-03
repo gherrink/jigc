@@ -50,14 +50,117 @@ pub struct Outcome {
     pub error_code: Option<&'static str>,
 }
 
-/// The error identity of a **commit-phase rejection** — the user's `pre-commit` / `commit-msg`
-/// hook (or git itself) refused the commit, so no commit was made and the task survives intact.
+/// The error identity of the **`jigc task finalize`** door's commit-phase rejection — the
+/// user's `pre-commit` / `commit-msg` hook (or git itself) refused the commit, so no commit
+/// was made and the task survives intact. The axis's shipped identity since M42; kept at its
+/// original spelling (a log identity a reader already knows) while its eight siblings below
+/// name their own doors.
 pub const ERROR_COMMIT_REJECTED: &str = "finalize.commit-rejected";
+
+/// The **`jigc milestone finalize`** boundary's rejection under `finalize.fan-out.squash: true`
+/// (the single combine commit).
+pub const ERROR_MILESTONE_FINALIZE_REJECTED: &str = "milestone-finalize.commit-rejected";
+
+/// The **`jigc milestone finalize`** boundary's rejection under `finalize.fan-out.squash: false`
+/// (the per-sub-task commit chain + its aggregate, all built in a dedicated worktree).
+pub const ERROR_MILESTONE_CHAIN_REJECTED: &str = "milestone-finalize.chain-commit-rejected";
+
+/// The **`jigc rename`** door's rejection — the atomic identity-refactor self-commit.
+pub const ERROR_RENAME_REJECTED: &str = "rename.commit-rejected";
+
+/// The **`jigc migrate-corpus`** door's rejection — the pathspec-limited self-commit.
+pub const ERROR_MIGRATE_CORPUS_REJECTED: &str = "migrate-corpus.commit-rejected";
+
+/// The **`jigc milestone create`** door's rejection — the record-only commit opening the record.
+pub const ERROR_MILESTONE_CREATE_REJECTED: &str = "milestone-create.commit-rejected";
+
+/// The **`jigc milestone add-task`** door's rejection — the record-only append commit.
+pub const ERROR_MILESTONE_ADD_TASK_REJECTED: &str = "milestone-add-task.commit-rejected";
+
+/// The **`jigc milestone add-from-spec`** door's rejection — the record-only seed commit.
+pub const ERROR_MILESTONE_ADD_FROM_SPEC_REJECTED: &str = "milestone-add-from-spec.commit-rejected";
+
+/// The **`jigc milestone discard`** door's rejection — the record-only settle commit.
+pub const ERROR_MILESTONE_DISCARD_REJECTED: &str = "milestone-discard.commit-rejected";
 
 /// The error identity of the **exit-4 migration review hold** (M43) — a migration finalize
 /// without `--approve` rendered the fidelity diff and stopped, committing nothing. A coded
 /// stop that named no *why* in the log before this: exit 4 with `error_code: null`.
 pub const ERROR_REVIEW_PENDING: &str = "migrate.review-pending";
+
+/// One member of the **committing-door axis** — a production door that runs a hook-capable
+/// `git commit` on the user's behalf, paired with the route-exempt error identity it carries
+/// into the invocation log when that commit is rejected.
+pub struct CommittingDoor {
+    /// The door as an operator names it — its `jigc …` verb with arguments elided, and the
+    /// commit-model arm appended for the one verb that has two. The axis label the acceptance
+    /// suite matches on.
+    pub verb: &'static str,
+    /// The [`ERROR_CODE_REGISTRY`] member this door logs on a commit-phase rejection.
+    pub error_code: &'static str,
+}
+
+/// The **committing-door axis** — ONE code-side list with two consumers (M47 Inc 3 T7;
+/// `DECISIONS.md` → 2026-07-26 M47 the Settle, Decision 6 + the cross-model review's
+/// condition that the producer set derive from the same axis):
+///
+/// - [`registry_mirrors_the_declared_members`](self::tests::registry_mirrors_the_declared_members)
+///   derives [`ERROR_CODE_REGISTRY`] from it, so a door added without a code is a red test;
+/// - `tests/commit_rejected_axis.rs` iterates it through the real binary, driving each door
+///   under a rejecting `pre-commit` hook and reading the logged `error_code` back — which is
+///   what closes the **release hole**: [`Outcome::error`]'s membership check is a
+///   `debug_assert!`, compiled out of the release build a trial actually runs.
+///
+/// It is the **rejecting sibling** of `tests/hook_output_axis.rs`' non-blocking enumeration
+/// (the same 9 doors, the same one exclusion: `jigc setup`'s install commit passes
+/// `--no-verify` by recorded design, so no hook runs and there is nothing to reject). Both
+/// read off the one hook-capable commit seam, `task::git_commit_capture`.
+///
+/// **Why `milestone finalize` is two members and not one.** Its two commit models are two
+/// distinct commit constructions with two distinct `Err` arms — the `squash: true` single
+/// combine, and the `squash: false` per-sub-task chain — and the log's job is to say which
+/// one refused. Both arms re-run through the identical argv, so the *route* is shared while
+/// the *identity* is not. Declared bound: inside the chain arm a rejected per-sub-task commit
+/// and a rejected chain aggregate reach one untyped `Err`, so the code names the **arm**, not
+/// the individual commit.
+pub const COMMITTING_DOORS: &[CommittingDoor] = &[
+    CommittingDoor {
+        verb: "jigc task finalize",
+        error_code: ERROR_COMMIT_REJECTED,
+    },
+    CommittingDoor {
+        verb: "jigc milestone finalize (squash: true)",
+        error_code: ERROR_MILESTONE_FINALIZE_REJECTED,
+    },
+    CommittingDoor {
+        verb: "jigc milestone finalize (squash: false)",
+        error_code: ERROR_MILESTONE_CHAIN_REJECTED,
+    },
+    CommittingDoor {
+        verb: "jigc rename",
+        error_code: ERROR_RENAME_REJECTED,
+    },
+    CommittingDoor {
+        verb: "jigc migrate-corpus",
+        error_code: ERROR_MIGRATE_CORPUS_REJECTED,
+    },
+    CommittingDoor {
+        verb: "jigc milestone create",
+        error_code: ERROR_MILESTONE_CREATE_REJECTED,
+    },
+    CommittingDoor {
+        verb: "jigc milestone add-task",
+        error_code: ERROR_MILESTONE_ADD_TASK_REJECTED,
+    },
+    CommittingDoor {
+        verb: "jigc milestone add-from-spec",
+        error_code: ERROR_MILESTONE_ADD_FROM_SPEC_REJECTED,
+    },
+    CommittingDoor {
+        verb: "jigc milestone discard",
+        error_code: ERROR_MILESTONE_DISCARD_REJECTED,
+    },
+];
 
 /// The **error-code registry** — the closed vocabulary of route-exempt error identities an
 /// [`Outcome`] may carry into the log (`design/surface-contract.md` → The error-code
@@ -66,9 +169,29 @@ pub const ERROR_REVIEW_PENDING: &str = "migrate.review-pending";
 /// unit test below), or a log reader could mistake an operational identity for a `Finding`
 /// code. The naming constructors ([`Outcome::error`] / [`Outcome::coded_error`]) debug-assert
 /// membership, so a new identity must join the registry — and thereby the collision test —
-/// to ship. Deliberately **not** a per-verb code mint — errored verbs already write records;
-/// the registry closes at the identities the log genuinely could not distinguish without.
-pub const ERROR_CODE_REGISTRY: &[&str] = &[ERROR_COMMIT_REJECTED, ERROR_REVIEW_PENDING];
+/// to ship.
+///
+/// **M47 revises the recorded "deliberately not a per-verb code mint" rationale rather than
+/// silently overriding it** (`DECISIONS.md` → 2026-07-26 M47 the Settle, Decision 6). That
+/// rationale — *errored verbs already write records; close the registry at the identities the
+/// log genuinely could not distinguish without* — was sound while exactly one door framed its
+/// rejection. Once the frame sweeps all nine committing doors, reusing `finalize.commit-rejected`
+/// on the eight non-finalize ones would put a **lying** code in the log, on the very surface
+/// M42 built to stop the log lying (law 1). So the vocabulary is per-**door**, not per-verb:
+/// it closes at [`COMMITTING_DOORS`] plus the one non-commit identity, and every member is
+/// still an identity the log could not otherwise distinguish.
+pub const ERROR_CODE_REGISTRY: &[&str] = &[
+    ERROR_COMMIT_REJECTED,
+    ERROR_MILESTONE_FINALIZE_REJECTED,
+    ERROR_MILESTONE_CHAIN_REJECTED,
+    ERROR_RENAME_REJECTED,
+    ERROR_MIGRATE_CORPUS_REJECTED,
+    ERROR_MILESTONE_CREATE_REJECTED,
+    ERROR_MILESTONE_ADD_TASK_REJECTED,
+    ERROR_MILESTONE_ADD_FROM_SPEC_REJECTED,
+    ERROR_MILESTONE_DISCARD_REJECTED,
+    ERROR_REVIEW_PENDING,
+];
 
 impl Outcome {
     /// A clean run — exit 0, no findings.
@@ -308,15 +431,37 @@ mod tests {
         }
     }
 
-    /// The registry closes at exactly the two mirrored members — the doc mirrors the
-    /// registry member-for-member, and 'errored verbs carry an error code' is this
-    /// Outcome-identity mechanism drawing from it, not a per-verb mint.
+    /// The registry closes at exactly the **declared** members, and the declaration is
+    /// [`COMMITTING_DOORS`] — the same axis `tests/commit_rejected_axis.rs` drives, never a
+    /// hand-maintained second list (the cross-model review's condition on Decision 6). One
+    /// list, two consumers: a door added without a code, or a code minted for no door, is a
+    /// red test here rather than a silent log entry naming the wrong verb.
+    ///
+    /// The one non-door member is [`ERROR_REVIEW_PENDING`] — the exit-4 migration review
+    /// hold, which is a *coded stop*, not a rejected commit.
     #[test]
     fn registry_mirrors_the_declared_members() {
+        let mut declared: Vec<&str> = COMMITTING_DOORS.iter().map(|d| d.error_code).collect();
+        declared.push(ERROR_REVIEW_PENDING);
         assert_eq!(
-            ERROR_CODE_REGISTRY,
-            &[ERROR_COMMIT_REJECTED, ERROR_REVIEW_PENDING],
-            "the registry and design/surface-contract.md mirror each other member-for-member",
+            ERROR_CODE_REGISTRY, declared,
+            "the registry, the committing-door axis, and design/surface-contract.md mirror \
+             each other member-for-member",
+        );
+        assert_eq!(
+            declared.len(),
+            10,
+            "the declared vocabulary is the 9 committing doors + the review hold; a change \
+             here revises design/surface-contract.md's mirror in the same commit",
+        );
+
+        let mut unique = declared.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            declared.len(),
+            "each door names ITSELF — a shared code would put a lying verb in the log",
         );
     }
 }

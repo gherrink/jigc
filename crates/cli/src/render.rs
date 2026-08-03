@@ -940,16 +940,28 @@ pub fn carried_over_advisory(carried: &[ManifestEntry]) -> String {
 /// never stated (M42, `design/finalize.md` → 6. Commit): git's `rejection` bytes stay
 /// **verbatim and unwrapped** (the hook output *is* the correction signal — the M40
 /// refinement's routed wrap covers jigc's *own* staging acts, never the user's hook
-/// channel), and jigc's own sentence is added *around* them — the task survives a
-/// rejection intact, so the same `finalize` re-run lands the commit once the hook's
-/// complaint is fixed. Emitted on **stderr** by the caller; `json` carries the framed text
-/// in the [`operational_error`] envelope so a tooling consumer still parses it.
-pub fn commit_rejected(format: Format, task_id: &str, rejection: &str) -> String {
-    let framed = format!(
-        "{rejection}\n\ntask {task_id} is intact — nothing was committed and your staged \
-         changes are still staged. Fix the hook's complaint, then re-run `jigc task finalize \
-         {task_id}`."
-    );
+/// channel), and jigc's own sentence is added *around* them. Emitted on **stderr** by the
+/// caller; `json` carries the framed text in the [`operational_error`] envelope so a tooling
+/// consumer still parses it.
+///
+/// **Generalized off the task idiom at M47 Inc 3 T7** (`DECISIONS.md` → 2026-07-26 M47 the
+/// Settle, Decision 6): the frame belongs to every one of the nine committing doors, not just
+/// `jigc task finalize`, so the two door-specific halves are parameters —
+///
+/// - `survived`: the door's **state-truth** clause, no trailing period (this function adds
+///   it). It must describe the state the *rejection* actually leaves, which differs per door
+///   (the task door's staged set is still staged; a rejected `milestone create` unwound its
+///   whole mint), and it may only claim recoverability the door genuinely has.
+/// - `rerun`: the door's **own** copy-runnable command line — the argv an operator lifts out
+///   of this sentence verbatim, never the task door's.
+///
+/// The one sentence shape is deliberate: it keeps the task door's bytes unchanged (its
+/// `survived`/`rerun` reproduce M42's text exactly) while giving the other eight the same
+/// three-part contract the acceptance suite (`tests/commit_rejected_axis.rs`) reads off the
+/// emitted bytes.
+pub fn commit_rejected(format: Format, rejection: &str, survived: &str, rerun: &str) -> String {
+    let framed =
+        format!("{rejection}\n\n{survived}. Fix the hook's complaint, then re-run `{rerun}`.");
     match format {
         Format::Json => json(&serde_json::json!({ "error": framed })),
         Format::Agent | Format::Human => framed,

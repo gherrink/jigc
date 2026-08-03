@@ -33,9 +33,18 @@
 //!   stream to surface. Every other `git commit` in the tree is `#[cfg(test)]`
 //!   fixture machinery.
 //!
+//! **This enumeration is prose; the machine-checked one is
+//! `cli::invocation_log::COMMITTING_DOORS`** (M47 Inc 3 T7) — the same nine doors with the
+//! same one exclusion, as a code-side table with two consumers: the error-code registry
+//! mirror (`invocation_log.rs`) and the **rejecting** sibling of this suite,
+//! `tests/commit_rejected_axis.rs`. This file is the *non-blocking* half of the same axis;
+//! it stays prose because its arms need per-producer fixture machinery that no table can
+//! carry, and it points at the table so the two halves cannot drift on membership.
+//!
 //! A new commit site added later joins this axis: route it through
 //! `task::git_commit_capture` (which *returns* the captured stream, so dropping it is
-//! visible at the call site) and add its arm here.
+//! visible at the call site), add it to `COMMITTING_DOORS` with its own error code, and add
+//! its arm here **and** in the rejecting sibling.
 //!
 //! Each arm installs a **non-blocking** `pre-commit` hook that speaks a distinctive
 //! marker and exits 0, drives the producer through the real binary, and asserts the

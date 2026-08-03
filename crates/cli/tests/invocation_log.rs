@@ -689,17 +689,23 @@ fn stage_subtask_doc(repo: &Path, sub: &str, address: &str, body: &str) {
     .expect("write the provenance manifest");
 }
 
-/// Knob ON: the **fan-out / milestone** finalize arm carries the same error identity as the
-/// per-task one — a hook-rejected `jigc milestone finalize` logs `finalize.commit-rejected`
-/// while `jigc milestone finalize <absent-id>` logs none. Without it the two are
-/// byte-identical in the log on `(exit_code, finding_codes, error_code)` — the L1 defect
+/// Knob ON: the **fan-out / milestone** finalize arm names itself in the log while
+/// `jigc milestone finalize <absent-id>` names nothing. Without an identity the two are
+/// byte-identical on `(exit_code, finding_codes, error_code)` — the L1 defect
 /// (`design/finalize.md` → "A failed finalize must be legible in the invocation log": the
 /// requirement is *a finalize that did not commit*, not *a per-task finalize*).
 ///
 /// Run over **both** commit modes: `squash: true` (the default single aggregate commit, whose
 /// rejection is raised inside the shared executor) and `squash: false` (the per-sub-task commit
-/// chain, whose rejection aborts the chain in its dedicated worktree) — the identity is a
-/// property of the *finalize*, so it must not depend on the knob.
+/// chain, whose rejection aborts the chain in its dedicated worktree) — a rejection must be
+/// identifiable whichever knob is set.
+///
+/// **M47 Inc 3 T7 revises what "identifiable" means here.** M42 gave both arms the *task*
+/// door's `finalize.commit-rejected`, which made them legible at the cost of naming the wrong
+/// verb — a law-1 lie on the surface built to stop the log lying. Each commit model now carries
+/// its **own** registry identity, so the knob is exactly what the two arms differ on and the
+/// log says which construction refused. The identities are read from
+/// `cli::invocation_log::COMMITTING_DOORS`, the one code-side axis table, never re-spelled here.
 #[test]
 fn hook_rejected_milestone_finalize_is_identifiable_absent_milestone_is_not() {
     for squash in ["true", "false"] {
@@ -790,11 +796,22 @@ fn hook_rejected_milestone_finalize_is_identifiable_absent_milestone_is_not() {
             "a hook rejection is an operational error, not a Finding (squash: {squash}); got \
              {rejected_rec}",
         );
+        let expected = cli::invocation_log::COMMITTING_DOORS
+            .iter()
+            .find(|door| door.verb == format!("jigc milestone finalize (squash: {squash})"))
+            .unwrap_or_else(|| panic!("the axis table must carry the squash: {squash} arm"))
+            .error_code;
         assert_eq!(
             rejected_rec["error_code"].as_str(),
+            Some(expected),
+            "the hook-rejected milestone finalize NAMES ITSELF in the log — its own commit \
+             model's identity, not the task door's (squash: {squash}); got {rejected_rec}",
+        );
+        assert_ne!(
+            rejected_rec["error_code"].as_str(),
             Some("finalize.commit-rejected"),
-            "the hook-rejected milestone finalize NAMES its rejection in the log (squash: \
-             {squash}); got {rejected_rec}",
+            "a milestone finalize must not log the TASK door's identity (squash: {squash}); \
+             got {rejected_rec}",
         );
         assert!(
             absent_rec["error_code"].is_null(),

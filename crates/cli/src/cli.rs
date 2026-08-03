@@ -700,10 +700,29 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
             crate::task::relay_hook_output(format, &report.hook_output);
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        // The atomic rename transaction rolls back in full on any pre-commit failure
+        // (`rollback_rename`), so a hook rejection leaves the store exactly as it was —
+        // stated here as this door's half of the survivable frame, with its own re-run and
+        // its own log identity (M47 Inc 3 T7).
+        Err(err) => crate::task::surface_commit_rejection(
+            format,
+            &err,
+            &crate::task::RejectionFrame {
+                code: crate::invocation_log::ERROR_RENAME_REJECTED,
+                survived: format!(
+                    "nothing was committed — the rename was rolled back, so `{old_slug}` still \
+                     holds its original identity and every referrer still points at it"
+                ),
+                rerun: format!(
+                    "jigc rename {old_slug} --to {}{}",
+                    crate::task::shell_token(to),
+                    match slug {
+                        Some(slug) => format!(" --slug {slug}"),
+                        None => String::new(),
+                    },
+                ),
+            },
+        ),
     }
 }
 

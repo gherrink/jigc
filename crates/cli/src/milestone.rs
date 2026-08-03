@@ -180,6 +180,12 @@ impl MilestoneCommand {
         if let MilestoneCommand::Execute { milestone_id } = self {
             return dispatch_execute(cwd, format, &milestone_id);
         }
+        // The four record-only committing doors share ONE `Err` arm below, so each one's
+        // half of the survivable frame — its state-truth clause, its own re-run argv, and
+        // its own error identity — is captured HERE, before the match consumes `self`
+        // (M47 Inc 3 T7). `None` for the read-only verbs: they commit nothing, so no hook
+        // can reject them.
+        let frame = self.rejection_frame();
         // Each committing verb returns `(summary, hook_output)` — the record-only
         // commit's captured non-blocking hook stream (the hook_output producer axis;
         // `design/command-output-contract.md` → Stream discipline). The read-only verbs
@@ -218,11 +224,134 @@ impl MilestoneCommand {
                 crate::task::relay_hook_output(format, &hook_output);
                 Outcome::success()
             }
-            Err(err) => {
-                eprintln!("{}", render::operational_error(format, &err));
-                Outcome::failure()
-            }
+            Err(err) => match &frame {
+                // A record-only door: a hook rejection is framed with what survived + this
+                // door's own re-run, and names itself in the log. Every other failure keeps
+                // the plain operational-error envelope.
+                Some(frame) => crate::task::surface_commit_rejection(format, &err, frame),
+                // A read-only verb — it runs no commit, so no `CommitRejected` can reach here.
+                None => {
+                    eprintln!("{}", render::operational_error(format, &err));
+                    Outcome::failure()
+                }
+            },
         }
+    }
+
+    /// This verb's half of the **survivable frame** — its state-truth clause, its own
+    /// copy-runnable re-run argv, and its own error identity — or `None` for a verb that
+    /// commits nothing (M47 Inc 3 T7; `design/finalize.md` → 6. Commit).
+    ///
+    /// The four record-only doors each write the record, `git add` it, and commit it, and
+    /// since M47 Inc 2 a rejected commit restores the captured pre-image on **both** axes
+    /// (worktree bytes + index entry) and unwinds any mint the door made — which is what
+    /// makes a state-truth clause statable at all here rather than a bricking notice. Each
+    /// clause is nevertheless written to *its own* door's truth, and they differ:
+    /// `create` / `add-task` leave nothing of the op behind; `discard` settles an existing
+    /// record, so the record and the workbench both stay as they were; and `add-from-spec`
+    /// is **resumable**, so its earlier record commits are history no rollback takes back
+    /// (see its inline note — the one clause that must not say "unchanged").
+    ///
+    /// The re-run echoes the flags the repeat run genuinely needs (`--workflow` when it was
+    /// steered off the default, `--force` on a discard), so the printed line is followable
+    /// verbatim rather than merely recognizable.
+    fn rejection_frame(&self) -> Option<crate::task::RejectionFrame> {
+        use crate::task::shell_token;
+        let (code, survived, rerun) = match self {
+            MilestoneCommand::Create { title } => (
+                crate::invocation_log::ERROR_MILESTONE_CREATE_REJECTED,
+                format!(
+                    "nothing was committed — the record write and the milestone workbench were \
+                     both rolled back, so nothing of milestone:{} survives",
+                    engine::milestone::mint_id(title),
+                ),
+                format!("jigc milestone create {}", shell_token(title)),
+            ),
+            MilestoneCommand::AddTask {
+                milestone_id,
+                intent,
+                workflow,
+            } => (
+                crate::invocation_log::ERROR_MILESTONE_ADD_TASK_REJECTED,
+                format!(
+                    "nothing was committed — the record append and the sub-task mint were both \
+                     rolled back, so milestone:{milestone_id} is unchanged"
+                ),
+                format!(
+                    "jigc milestone add-task {milestone_id} {}{}",
+                    shell_token(intent),
+                    workflow_flag(workflow),
+                ),
+            ),
+            MilestoneCommand::AddFromSpec {
+                milestone_id,
+                spec_addr,
+                workflow,
+            } => (
+                crate::invocation_log::ERROR_MILESTONE_ADD_FROM_SPEC_REJECTED,
+                // NOT "the milestone is unchanged": seeding is resumable (M47 Inc 2 T3), so a
+                // rejection at the k-th criterion leaves the k−1 already-landed record commits
+                // as history — only the refused append and the mints it never recorded are
+                // unwound. Claiming otherwise would be a law-1 lie for every k > 1, and the
+                // `note:` lines the seeding loop prints above carry the counts.
+                format!(
+                    "nothing was committed for the sub-task being recorded — its record append \
+                     and every not-yet-recorded mint were rolled back, so \
+                     milestone:{milestone_id}'s task list names exactly what its record names; \
+                     any sub-task this run already recorded stayed committed, and the re-run \
+                     seeds only the remainder"
+                ),
+                format!(
+                    "jigc milestone add-from-spec {milestone_id} {spec_addr}{}",
+                    workflow_flag(workflow),
+                ),
+            ),
+            MilestoneCommand::Discard {
+                milestone_id,
+                force,
+            } => (
+                crate::invocation_log::ERROR_MILESTONE_DISCARD_REJECTED,
+                format!(
+                    "nothing was committed — milestone:{milestone_id}'s record is still at its \
+                     pre-discard state and its workbench is untouched"
+                ),
+                format!(
+                    "jigc milestone discard {milestone_id}{}",
+                    if *force { " --force" } else { "" },
+                ),
+            ),
+            MilestoneCommand::ListTasks { .. }
+            | MilestoneCommand::Provision { .. }
+            | MilestoneCommand::Execute { .. }
+            | MilestoneCommand::Join { .. }
+            | MilestoneCommand::Finalize { .. } => return None,
+        };
+        Some(crate::task::RejectionFrame {
+            code,
+            survived,
+            rerun,
+        })
+    }
+}
+
+/// The milestone boundary's **own** re-run command line — shared by both commit-model arms
+/// (the route is the same argv either way; only the logged identity differs). `--carry-staged`
+/// is echoed when it was declared, else the re-run would refuse at the carryover gate before
+/// it ever reached the commit phase again.
+fn milestone_finalize_rerun(milestone_id: &str, carry_staged: bool) -> String {
+    format!(
+        "jigc milestone finalize {milestone_id}{}",
+        if carry_staged { " --carry-staged" } else { "" },
+    )
+}
+
+/// The ` --workflow <id>` suffix a re-run needs, empty when the door ran on the recorded
+/// default (the flag `clap` fills in when it is absent).
+fn workflow_flag(workflow: &str) -> String {
+    if workflow == DEFAULT_SUB_TASK_WORKFLOW {
+        String::new()
+    } else {
+        format!(" --workflow {workflow}")
     }
 }
 
@@ -1905,9 +2034,14 @@ fn dispatch_finalize(
 ) -> Outcome {
     match run_milestone_finalize(cwd, format, milestone_id, carry_staged) {
         Ok(code) => code,
+        // Orchestration only — every commit this boundary runs happens inside
+        // `try_execute_finalize_plan`, whose rejection is the *inner* `Result` each
+        // commit-model arm frames itself (M47 Inc 3 T7). A `CommitRejected` therefore
+        // cannot reach here, and the arm-specific identity is minted where the arm is
+        // known; a plain failure carries no identity, as before.
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            crate::task::finalize_failure_outcome(&err)
+            Outcome::failure()
         }
     }
 }
@@ -2284,10 +2418,22 @@ fn run_milestone_finalize(
             // a dirty worktree unless `--force`.) Surface git's stderr verbatim and exit
             // `FAILURE`.
             Err(err) => {
-                eprintln!("{}", render::operational_error(format, &err));
-                // A rejected chain names itself in the invocation log (the route-exempt
-                // commit-phase identity), while git's stderr above stays verbatim.
-                Ok(crate::task::finalize_failure_outcome(&err))
+                // A rejected chain names ITSELF in the invocation log — the `squash: false`
+                // arm's own identity, not the task door's (M47 Inc 3 T7) — and states what
+                // the abort above leaves behind, while git's stderr stays verbatim.
+                Ok(crate::task::surface_commit_rejection(
+                    format,
+                    &err,
+                    &crate::task::RejectionFrame {
+                        code: crate::invocation_log::ERROR_MILESTONE_CHAIN_REJECTED,
+                        survived: format!(
+                            "milestone:{milestone_id} is intact — nothing was committed, HEAD is \
+                             at its pre-finalize commit, and every provisioned sub-task worktree \
+                             still holds its staged code"
+                        ),
+                        rerun: milestone_finalize_rerun(milestone_id, carry_staged),
+                    },
+                ))
             }
         }
     } else {
@@ -2338,14 +2484,25 @@ fn run_milestone_finalize(
                 remove_worktrees(&repo_root, &jigc_home, &list);
                 Ok(Outcome::success())
             }
-            // The commit-phase rejection: git's stderr stays verbatim-raw through the
-            // shared operational-error funnel and the run names itself in the invocation
-            // log — behavior unchanged from before the landing manifest; the failure arm
-            // is inlined here so the landed arm can print the manifest.
-            Err(err) => {
-                eprintln!("{}", render::operational_error(format, &err));
-                Ok(crate::task::finalize_failure_outcome(&err))
-            }
+            // The commit-phase rejection: git's stderr stays verbatim-raw and the run names
+            // itself in the invocation log — with the `squash: true` combine's OWN identity
+            // since M47 Inc 3 T7 (it borrowed the task door's before). The failure arm is
+            // inlined here so the landed arm can print the manifest. The executor already
+            // rolled back its promoted-doc copies and the record flip's guard restores the
+            // record, so the milestone is left exactly as the boundary found it.
+            Err(err) => Ok(crate::task::surface_commit_rejection(
+                format,
+                &err,
+                &crate::task::RejectionFrame {
+                    code: crate::invocation_log::ERROR_MILESTONE_FINALIZE_REJECTED,
+                    survived: format!(
+                        "milestone:{milestone_id} is intact — nothing was committed, the merged \
+                         docs were rolled back, and every provisioned sub-task worktree still \
+                         holds its staged code"
+                    ),
+                    rerun: milestone_finalize_rerun(milestone_id, carry_staged),
+                },
+            )),
         }
     }
 }

@@ -908,8 +908,18 @@ fn remove_pre_commit_hook(repo: &Path) {
 /// The user's hooks are **policy** (the `finalize`/`rename` posture — never `--no-verify`):
 /// a `pre-commit` hook that rejects the commit makes the verb **fail loudly non-zero**,
 /// surfacing git's stderr verbatim, never a silent skip behind a success banner.
+///
+/// **Rewritten at M47 Inc 3 T7, not extended** — the shape it pinned was a *dead end*. The
+/// three assertions below were all true of the shipped bytes and all three were satisfied by
+/// output that told the operator **nothing about what to do next**: git's rejection line with
+/// no statement of what survived, no route, and no identity in the invocation log. Pinning
+/// "it fails loudly" as the whole contract is what let this door sit outside the survivable
+/// frame for five waves while `jigc task finalize` had it since M42. The door's contract is
+/// now the axis's contract — state-truth, its own re-run, its own logged code — and the
+/// sweep that proves it over all nine doors lives in `tests/commit_rejected_axis.rs`; this arm
+/// keeps the door-local half, in the suite that owns `migrate-corpus`.
 #[test]
-fn migrate_corpus_fails_loudly_when_a_pre_commit_hook_rejects() {
+fn migrate_corpus_frames_a_pre_commit_rejection_with_what_survived_and_its_own_rerun() {
     let repo = TempDir::new("hook-rejects");
     let home = TempDir::new("home");
     setup_repo(repo.path(), home.path());
@@ -925,9 +935,28 @@ fn migrate_corpus_fails_loudly_when_a_pre_commit_hook_rejects() {
         !migrate.status.success(),
         "a rejected commit fails the verb loudly; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
+    // (1) git's (the hook's) own bytes stay verbatim and unwrapped — the correction signal.
     assert!(
         stderr.contains("policy: no corpus commits"),
         "git's (the hook's) own rejection is surfaced verbatim; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("`git commit` was rejected (no commit was made):"),
+        "git's rejection line stays unwrapped; stderr:\n{stderr}",
+    );
+    // (2) the frame states what survived — the writes are staged, the corpus is unmigrated.
+    assert!(
+        stderr.contains("the migrated bytes are written and staged"),
+        "the frame must say what survived the rejection; stderr:\n{stderr}",
+    );
+    // (3) it routes back to THIS door's own re-run, never `jigc task finalize <id>`.
+    assert!(
+        stderr.contains("re-run `jigc migrate-corpus`"),
+        "the frame must name this door's OWN re-run; stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("jigc task finalize"),
+        "the migrate-corpus door must not borrow the task door's route; stderr:\n{stderr}",
     );
     assert_eq!(
         commits_since(repo.path(), &base).len(),

@@ -1337,8 +1337,8 @@ impl TaskArea {
                 // M42 — the commit-phase rejection keeps git's stderr verbatim-raw AND
                 // gains the recoverability half it never said: the task survives intact,
                 // so the same re-run lands the commit once the hook is satisfied
-                // (`design/finalize.md` → 6. Commit). Framed HERE because the task `id` is
-                // in hand here — `git_commit` never sees it.
+                // (`design/finalize.md` → 6. Commit). Framed HERE because the task `id` and
+                // the run's own flags are in hand — `git_commit` never sees them.
                 // It also carries a **route-exempt error identity** into the invocation log
                 // (M42 T7, `design/finalize.md` → "A failed finalize must be legible in the
                 // invocation log"): without it this record is byte-identical to a
@@ -1347,12 +1347,30 @@ impl TaskArea {
                 // Log-only, deliberately NOT a `Finding` — a Finding would force a mandatory
                 // route (the M41 advisory-route floor) and wrap the hook's stderr, which the
                 // design pins as verbatim and unwrapped.
-                if let Some(rejected) = err.downcast_ref::<CommitRejected>() {
-                    eprintln!("{}", render::commit_rejected(format, id, &rejected.0));
-                    return Ok(Outcome::error(invocation_log::ERROR_COMMIT_REJECTED));
+                // M47 Inc 3 T7 — the framing moved into the shared `surface_commit_rejection`
+                // so all nine committing doors say the same three things; this door's bytes
+                // are unchanged, and the re-run echoes the flags a repeat run genuinely needs
+                // (`--approve` on a migration hold, `--carry-staged` past the carryover gate)
+                // so the printed line is followable, not just recognizable.
+                let mut rerun = format!("jigc task finalize {id}");
+                if approve {
+                    rerun.push_str(" --approve");
                 }
-                eprintln!("{}", render::operational_error(format, &err));
-                Ok(Outcome::failure())
+                if carry_staged {
+                    rerun.push_str(" --carry-staged");
+                }
+                Ok(surface_commit_rejection(
+                    format,
+                    &err,
+                    &RejectionFrame {
+                        code: invocation_log::ERROR_COMMIT_REJECTED,
+                        survived: format!(
+                            "task {id} is intact — nothing was committed and your staged \
+                             changes are still staged"
+                        ),
+                        rerun,
+                    },
+                ))
             }
         }
     }
@@ -2617,14 +2635,18 @@ fn mark_stage_failure(err: anyhow::Error) -> anyhow::Error {
 }
 
 /// Typed marker for a **commit-phase** rejection — the user's `pre-commit` / `commit-msg`
-/// hook (or git itself) refused the commit in [`git_commit`] (M42, `design/finalize.md` →
-/// 6. Commit). It carries git's message **verbatim**, so a surface that has the task `id`
-/// in hand (the per-task `finalize` [`Err`](Task::finalize) arm) can frame it with the
-/// recoverability it declares — *task `<id>` is intact, re-run finalize* — without editing
-/// the hook's own bytes. Its [`Display`](std::fmt::Display) is that verbatim message, so
-/// every other caller (the fan-out / record-only commit paths) keeps its existing surface.
+/// hook (or git itself) refused the commit in [`git_commit_capture`] (M42,
+/// `design/finalize.md` → 6. Commit). It carries git's message **verbatim**, so the door
+/// that raised it — which knows what survived and what its own re-run is — can frame it with
+/// the recoverability it declares without editing the hook's own bytes
+/// ([`surface_commit_rejection`]). Its [`Display`](std::fmt::Display) is that verbatim
+/// message, so any caller that only prints `{err:#}` is byte-unchanged.
+///
+/// `pub(crate)` since M47 Inc 3 T7: the frame swept off the one task door onto the whole
+/// nine-door committing axis, so `milestone` / `rename` / `migrate_corpus` discriminate on it
+/// too (through [`surface_commit_rejection`], the one place that downcasts).
 #[derive(Debug)]
-struct CommitRejected(String);
+pub(crate) struct CommitRejected(String);
 
 impl std::fmt::Display for CommitRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -2634,22 +2656,60 @@ impl std::fmt::Display for CommitRejected {
 
 impl std::error::Error for CommitRejected {}
 
-/// Map a failed finalize to its [`Outcome`]: a **commit-phase rejection** ([`CommitRejected`])
-/// carries the route-exempt error identity [`ERROR_COMMIT_REJECTED`](invocation_log::ERROR_COMMIT_REJECTED)
-/// into the invocation log; every other (unstructured `anyhow`) failure carries none.
+/// One committing door's half of the **survivable frame** (M47 Inc 3 T7; `DECISIONS.md` →
+/// 2026-07-26 M47 the Settle, Decision 6). The door owns all three fields because only the
+/// door knows them: `git_commit_capture` sees no verb, no id, and no argv.
+pub(crate) struct RejectionFrame {
+    /// This door's route-exempt error identity — its
+    /// [`COMMITTING_DOORS`](invocation_log::COMMITTING_DOORS) member's `error_code`, so the
+    /// invocation log names *which* door refused instead of every door borrowing the task
+    /// door's `finalize.commit-rejected`.
+    pub(crate) code: &'static str,
+    /// What survived the rejection, as one clause with **no trailing period** (the renderer
+    /// adds it). Must be true of *this* door: some doors leave their write staged, some
+    /// unwind it entirely.
+    pub(crate) survived: String,
+    /// This door's **own** copy-runnable re-run command line, including any flag the re-run
+    /// genuinely needs to reach the same commit phase again.
+    pub(crate) rerun: String,
+}
+
+/// Surface a failed committing door: a **commit-phase rejection** ([`CommitRejected`]) is
+/// framed with `frame`'s state-truth clause + the door's own re-run and carries `frame.code`
+/// into the invocation log; every other (unstructured `anyhow`) failure keeps the plain
+/// operational-error envelope and carries no identity.
 ///
-/// Shared by **every** finalize arm — the shared executor ([`try_execute_finalize_plan`], the
-/// `squash: true` milestone boundary) and the `squash: false` chain + dispatch arms in
-/// `milestone.rs` — because the requirement is about *a finalize that did not commit*, not
-/// about the per-task one: a hook-rejected `jigc milestone finalize` was byte-identical in the
-/// log to `jigc milestone finalize <absent-id>` (both exit 1, `finding_codes: []`), exactly the
-/// gap the per-task arm closed (`design/finalize.md` → "A failed finalize must be legible in the
-/// invocation log"). The rendering is untouched: git's hook stderr stays verbatim.
-pub(crate) fn finalize_failure_outcome(err: &anyhow::Error) -> Outcome {
-    if err.downcast_ref::<CommitRejected>().is_some() {
-        Outcome::error(invocation_log::ERROR_COMMIT_REJECTED)
+/// The one place that downcasts [`CommitRejected`], shared by all nine doors — the per-task
+/// `finalize` arm, both milestone-finalize commit-model arms, `rename`, `migrate-corpus`, and
+/// the four record-only milestone doors. Before M47 only the task door framed anything and
+/// the two milestone-finalize arms logged the *task* door's code; the requirement is about
+/// *a commit that did not land*, and the log's job is to say which door it was
+/// (`design/finalize.md` → "A failed finalize must be legible in the invocation log", widened
+/// to the family). The rendering discipline is untouched: git's hook stderr stays verbatim.
+pub(crate) fn surface_commit_rejection(
+    format: Format,
+    err: &anyhow::Error,
+    frame: &RejectionFrame,
+) -> Outcome {
+    if let Some(rejected) = err.downcast_ref::<CommitRejected>() {
+        eprintln!(
+            "{}",
+            render::commit_rejected(format, &rejected.0, &frame.survived, &frame.rerun)
+        );
+        return Outcome::error(frame.code);
+    }
+    eprintln!("{}", render::operational_error(format, err));
+    Outcome::failure()
+}
+
+/// Render one argv token into a copy-runnable command line: double-quoted iff it carries
+/// whitespace (a title, an intent), bare otherwise — the one quoting form the frame emits, so
+/// the printed line can be lifted verbatim and re-run.
+pub(crate) fn shell_token(arg: &str) -> String {
+    if arg.chars().any(char::is_whitespace) {
+        format!("\"{}\"", arg.replace('\\', "\\\\").replace('"', "\\\""))
     } else {
-        Outcome::failure()
+        arg.to_owned()
     }
 }
 
