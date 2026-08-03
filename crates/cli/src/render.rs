@@ -959,13 +959,34 @@ pub fn carried_over_advisory(carried: &[ManifestEntry]) -> String {
 /// `survived`/`rerun` reproduce M42's text exactly) while giving the other eight the same
 /// three-part contract the acceptance suite (`tests/commit_rejected_axis.rs`) reads off the
 /// emitted bytes.
+///
+/// The re-run span is **code-fenced the CommonMark way** ([`code_fence`]): the door's argv
+/// embeds author-owned prose, and prose may carry backticks of its own, so a fixed single
+/// backtick would let a title like ``Cache `rework` now`` truncate the very span a reader
+/// lifts. The fence grows past the longest backtick run inside the command line, so the
+/// delimiter is unambiguous for every prose the door can receive.
 pub fn commit_rejected(format: Format, rejection: &str, survived: &str, rerun: &str) -> String {
-    let framed =
-        format!("{rejection}\n\n{survived}. Fix the hook's complaint, then re-run `{rerun}`.");
+    let fence = code_fence(rerun);
+    let framed = format!(
+        "{rejection}\n\n{survived}. Fix the hook's complaint, then re-run {fence}{rerun}{fence}."
+    );
     match format {
         Format::Json => json(&serde_json::json!({ "error": framed })),
         Format::Agent | Format::Human => framed,
     }
+}
+
+/// The backtick run that delimits `content` as a code span: one longer than the longest run
+/// inside it (CommonMark's rule), so the span closes where it means to even when the content
+/// carries backticks. Ordinary content is fenced with the ordinary single backtick.
+fn code_fence(content: &str) -> String {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in content.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    "`".repeat(longest + 1)
 }
 
 /// Render the `task finalize --dry-run` pre-commit manifest to the surface `format`

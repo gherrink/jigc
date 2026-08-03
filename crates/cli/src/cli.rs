@@ -714,10 +714,11 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
                      holds its original identity and every referrer still points at it"
                 ),
                 rerun: format!(
-                    "jigc rename {old_slug} --to {}{}",
+                    "jigc rename {} --to {}{}",
+                    crate::task::shell_token(old_slug),
                     crate::task::shell_token(to),
                     match slug {
-                        Some(slug) => format!(" --slug {slug}"),
+                        Some(slug) => format!(" --slug {}", crate::task::shell_token(slug)),
                         None => String::new(),
                     },
                 ),

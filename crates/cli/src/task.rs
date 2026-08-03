@@ -1352,7 +1352,7 @@ impl TaskArea {
                 // are unchanged, and the re-run echoes the flags a repeat run genuinely needs
                 // (`--approve` on a migration hold, `--carry-staged` past the carryover gate)
                 // so the printed line is followable, not just recognizable.
-                let mut rerun = format!("jigc task finalize {id}");
+                let mut rerun = format!("jigc task finalize {}", shell_token(id));
                 if approve {
                     rerun.push_str(" --approve");
                 }
@@ -2702,14 +2702,27 @@ pub(crate) fn surface_commit_rejection(
     Outcome::failure()
 }
 
-/// Render one argv token into a copy-runnable command line: double-quoted iff it carries
-/// whitespace (a title, an intent), bare otherwise — the one quoting form the frame emits, so
-/// the printed line can be lifted verbatim and re-run.
+/// Render one argv token into a copy-runnable command line: **bare** when every byte is
+/// shell-inert (`[A-Za-z0-9._/@=:+-]`, the alphabet ids, slugs, addresses and flags live in),
+/// **POSIX single-quoted** otherwise — `'` written `'\''`, which is the one quoting form under
+/// which a shell performs no expansion at all.
+///
+/// The tokens this embeds are **author-owned prose** — a milestone title, a sub-task intent, a
+/// rename target — i.e. LLM-written by the determinism boundary, so `$`, a backtick, `;`, `&`
+/// and a glob are input this door is designed to receive, not exotica. Double-quoting (the
+/// pre-M47-fix form) leaves `$` and command substitution live and emits a whitespace-free
+/// token bare, so `Cache $HOME rework` re-ran as printed **exits 0 having created a different
+/// artifact** than the one the frame says it recovers, and `Cache;touch-PWNED` runs a second
+/// command — a silent wrong outcome on the success path. The fence is a real shell: see
+/// `shell_token_round_trips_through_a_real_shell_over_the_metachar_axis`.
 pub(crate) fn shell_token(arg: &str) -> String {
-    if arg.chars().any(char::is_whitespace) {
-        format!("\"{}\"", arg.replace('\\', "\\\\").replace('"', "\\\""))
-    } else {
+    let inert = |c: char| {
+        c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '@' | '=' | ':' | '+' | '-')
+    };
+    if !arg.is_empty() && arg.chars().all(inert) {
         arg.to_owned()
+    } else {
+        format!("'{}'", arg.replace('\'', r"'\''"))
     }
 }
 
@@ -4017,6 +4030,83 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The **shell-safety fence on the re-run seam** (M47 Inc 3 T7 fix). The frame's re-run
+    /// line is bytes an operator or agent pastes into a shell, and the tokens it embeds are
+    /// **author-owned prose** — a milestone title, a sub-task intent, a rename target — i.e.
+    /// LLM-written by the determinism boundary, so `$`, a backtick, `;`, `&`, a quote and a
+    /// glob are all inputs this door is *designed* to receive. The fence is the shell itself,
+    /// swept over the metachar axis rather than the whitespace case the door fixtures happen
+    /// to feed: for every sample `sh` must split the emitted token into **exactly one** word
+    /// whose bytes are **identical** to the input. Anything else — an expansion, a command
+    /// substitution, a second command — means the printed re-run silently does something
+    /// other than what the frame says it does.
+    #[test]
+    fn shell_token_round_trips_through_a_real_shell_over_the_metachar_axis() {
+        let samples = [
+            "Cache rework",
+            "Cache $HOME rework",
+            "Cache `rework` now",
+            "Cache;touch-PWNED",
+            "Cache && touch PWNED",
+            "Cache | tee PWNED",
+            "Cache > PWNED",
+            "Cache 'quoted' rework",
+            "Cache \"quoted\" rework",
+            "Cache \\ rework",
+            "Cache *.md rework",
+            "Cache ${HOME} $(id) rework",
+            "Cache #1 rework!",
+            "Cache ~rework",
+            "Cache\nrework",
+            "Cache\trework",
+            "",
+        ];
+        for sample in samples {
+            let token = shell_token(sample);
+            // `set --` is the shell's own word splitter: `$#` is how many words the token
+            // became, `$1` is the bytes of the first one.
+            let script = format!("set -- {token}\nprintf %s \"$#\"\nprintf :\nprintf %s \"$1\"");
+            let out = Command::new("sh")
+                .arg("-c")
+                .arg(&script)
+                .output()
+                .expect("run sh");
+            assert!(
+                out.status.success(),
+                "the emitted token `{token}` for {sample:?} must parse as a shell word; \
+                 stderr:\n{}",
+                String::from_utf8_lossy(&out.stderr),
+            );
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout),
+                format!("1:{sample}"),
+                "the emitted token `{token}` must be exactly one shell word carrying \
+                 {sample:?} byte-for-byte",
+            );
+        }
+    }
+
+    /// The readable half of the same seam: an id, a slug, an address or a flag value that
+    /// carries no shell-special byte stays **bare**, so the printed re-run reads like the
+    /// command an operator would have typed (the quoting exists for prose, not for ids).
+    #[test]
+    fn shell_token_leaves_an_id_or_address_bare() {
+        for plain in [
+            "jigc",
+            "milestone",
+            "add-from-spec",
+            "cache-rework",
+            "adr:alpha-decision",
+            "spec:rate-limit",
+            "--to",
+            "docs/decisions/alpha.md",
+            "v1.0.0",
+            "single-task",
+        ] {
+            assert_eq!(shell_token(plain), plain, "`{plain}` needs no quoting");
+        }
+    }
 
     /// `git_untracked` is the empty-commit guard's untracked signal: a brand-new
     /// file that `git diff <base>` would miss but `git add --all` would commit must

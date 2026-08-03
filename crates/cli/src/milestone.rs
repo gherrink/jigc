@@ -278,7 +278,8 @@ impl MilestoneCommand {
                      rolled back, so milestone:{milestone_id} is unchanged"
                 ),
                 format!(
-                    "jigc milestone add-task {milestone_id} {}{}",
+                    "jigc milestone add-task {} {}{}",
+                    shell_token(milestone_id),
                     shell_token(intent),
                     workflow_flag(workflow),
                 ),
@@ -302,7 +303,9 @@ impl MilestoneCommand {
                      seeds only the remainder"
                 ),
                 format!(
-                    "jigc milestone add-from-spec {milestone_id} {spec_addr}{}",
+                    "jigc milestone add-from-spec {} {}{}",
+                    shell_token(milestone_id),
+                    shell_token(spec_addr),
                     workflow_flag(workflow),
                 ),
             ),
@@ -316,7 +319,8 @@ impl MilestoneCommand {
                      pre-discard state and its workbench is untouched"
                 ),
                 format!(
-                    "jigc milestone discard {milestone_id}{}",
+                    "jigc milestone discard {}{}",
+                    shell_token(milestone_id),
                     if *force { " --force" } else { "" },
                 ),
             ),
@@ -340,7 +344,8 @@ impl MilestoneCommand {
 /// it ever reached the commit phase again.
 fn milestone_finalize_rerun(milestone_id: &str, carry_staged: bool) -> String {
     format!(
-        "jigc milestone finalize {milestone_id}{}",
+        "jigc milestone finalize {}{}",
+        crate::task::shell_token(milestone_id),
         if carry_staged { " --carry-staged" } else { "" },
     )
 }
@@ -351,7 +356,7 @@ fn workflow_flag(workflow: &str) -> String {
     if workflow == DEFAULT_SUB_TASK_WORKFLOW {
         String::new()
     } else {
-        format!(" --workflow {workflow}")
+        format!(" --workflow {}", crate::task::shell_token(workflow))
     }
 }
 

@@ -355,41 +355,71 @@ fn record_for<'a>(
 /// Lift the re-run command line **verbatim** out of the frame's closing sentence
 /// (``… then re-run `<argv>`.``) — the emitted bytes are the contract, so the recovery run
 /// re-executes what the door printed, never a reconstruction.
+///
+/// The span is **code-fenced the CommonMark way**: the opening run of backticks is as long as
+/// it needs to be to exceed any backtick run inside the command line, so a re-run embedding an
+/// author's backticked prose is still delimited unambiguously. The lift reads the run length
+/// off the emitted bytes rather than assuming one backtick.
 fn lift_rerun(stderr: &str) -> String {
-    let marker = "then re-run `";
+    let marker = "then re-run ";
     let start = stderr
         .rfind(marker)
         .unwrap_or_else(|| panic!("the frame must route back to a re-run; stderr:\n{stderr}"))
         + marker.len();
     let rest = &stderr[start..];
-    let end = rest.find('`').unwrap_or_else(|| {
-        panic!("the re-run command line must be closed by a backtick; stderr:\n{stderr}")
+    let fence: String = rest.chars().take_while(|c| *c == '`').collect();
+    assert!(
+        !fence.is_empty(),
+        "the re-run command line must be code-fenced; stderr:\n{stderr}",
+    );
+    let body = &rest[fence.len()..];
+    let end = body.find(&fence).unwrap_or_else(|| {
+        panic!("the re-run command line must be closed by its fence; stderr:\n{stderr}")
     });
-    rest[..end].to_string()
+    body[..end].to_string()
 }
 
-/// Split a printed command line into argv the way a shell would for the one quoting form the
-/// frame emits: bare tokens, plus double-quoted runs with `\"` / `\\` escapes.
+/// Split a printed command line into argv the way a shell would for the quoting forms the
+/// frame emits: bare tokens, single-quoted runs (POSIX-literal, `'` written `'\''`), plus
+/// double-quoted runs with `\"` / `\\` escapes.
 fn shell_split(line: &str) -> Vec<String> {
+    #[derive(PartialEq)]
+    enum Quote {
+        None,
+        Single,
+        Double,
+    }
     let mut argv = Vec::new();
     let mut current = String::new();
     let mut open = false;
-    let mut quoted = false;
+    let mut state = Quote::None;
     let mut chars = line.chars();
     while let Some(c) = chars.next() {
-        match c {
-            '\\' if quoted => current.push(chars.next().unwrap_or('\\')),
-            '"' => {
-                quoted = !quoted;
+        match (&state, c) {
+            (Quote::Single, '\'') => state = Quote::None,
+            (Quote::Single, c) => current.push(c),
+            (Quote::Double, '\\') => current.push(chars.next().unwrap_or('\\')),
+            (Quote::Double, '"') => state = Quote::None,
+            (Quote::Double, c) => current.push(c),
+            (Quote::None, '\\') => {
+                current.push(chars.next().unwrap_or('\\'));
                 open = true;
             }
-            c if c.is_whitespace() && !quoted => {
+            (Quote::None, '\'') => {
+                state = Quote::Single;
+                open = true;
+            }
+            (Quote::None, '"') => {
+                state = Quote::Double;
+                open = true;
+            }
+            (Quote::None, c) if c.is_whitespace() => {
                 if open {
                     argv.push(std::mem::take(&mut current));
                     open = false;
                 }
             }
-            c => {
+            (Quote::None, c) => {
                 current.push(c);
                 open = true;
             }
@@ -686,6 +716,166 @@ fn every_committing_door_frames_its_rejection_names_itself_and_recovers() {
             "[{verb}] the printed re-run must recover; stdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&recovered.stdout),
             String::from_utf8_lossy(&recovered.stderr),
+        );
+    }
+}
+
+/// The **author-prose axis** of clause (6) — the input class the prose-carrying doors are
+/// designed to receive. Titles and intents are LLM-written by the determinism boundary (the
+/// CLI owns structure, the model owns prose), so `$`, a backtick and `;` are ordinary input,
+/// while every fixture in the sweep above feeds prose whose only special character is
+/// whitespace. This arm drives the three doors whose re-run **embeds author prose** — the
+/// milestone title, the sub-task intent, the rename target — with one title carrying all
+/// three metacharacters, and then executes the lifted line **through a real `sh`** (a `jigc`
+/// shim on `PATH`), because that is what an operator or agent does with a printed command
+/// line. A re-run that expands `$HOME`, substitutes a backticked span, or runs the tail after
+/// `;` as a second command can still **exit 0** — silently creating a *different* artifact
+/// than the one the frame promised to recover.
+const MESSY_PROSE: &str = "Cache $HOME `rework`; drop";
+
+/// Every regular file under `docs/`, concatenated — the committed record surface the recovery
+/// re-run must land the author's prose into, byte-for-byte.
+fn docs_text(repo: &Path) -> String {
+    fn walk(dir: &Path, out: &mut String) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if let Ok(body) = fs::read_to_string(&path) {
+                out.push_str(&body);
+                out.push('\n');
+            }
+        }
+    }
+    let mut out = String::new();
+    walk(&repo.join("docs"), &mut out);
+    out
+}
+
+/// A directory holding a `jigc` shim that execs the binary under test, so a lifted command
+/// line starting with the bare word `jigc` runs as printed under a real shell.
+fn shim_dir(home: &Path) -> PathBuf {
+    let dir = home.join("shim-bin");
+    fs::create_dir_all(&dir).expect("mk the shim dir");
+    let shim = dir.join("jigc");
+    fs::write(
+        &shim,
+        format!("#!/bin/sh\nexec {:?} \"$@\"\n", env!("CARGO_BIN_EXE_jigc")),
+    )
+    .expect("write the jigc shim");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).expect("chmod the shim");
+    }
+    dir
+}
+
+#[test]
+fn the_printed_re_run_survives_a_real_shell_over_author_owned_prose() {
+    for door in [
+        "jigc milestone create",
+        "jigc milestone add-task",
+        "jigc rename",
+    ] {
+        let tag = door.rsplit(' ').next().expect("a door label");
+        let (repo, home) = base_repo(&format!("prose-{tag}"), None);
+        // `witness`: the bytes the recovered artifact must carry — the one the *promised*
+        // artifact carries and an expanded / substituted / severed prose cannot.
+        let (driven, witness): (Vec<String>, String) = match door {
+            // The milestone record's identity is minted **from the title bytes**, so the
+            // recovered record's own H1 is the witness: `$HOME` expanded mints a different id.
+            "jigc milestone create" => (
+                owned(&["milestone", "create", MESSY_PROSE]),
+                format!("# {}", engine::milestone::mint_id(MESSY_PROSE)),
+            ),
+            // The sub-task row carries the intent prose verbatim.
+            "jigc milestone add-task" => {
+                jigc_ok(
+                    repo.path(),
+                    home.path(),
+                    &["milestone", "create", "Cache rework"],
+                    "`jigc milestone create`",
+                );
+                (
+                    owned(&["milestone", "add-task", "cache-rework", MESSY_PROSE]),
+                    format!("intent: {MESSY_PROSE}"),
+                )
+            }
+            // The renamed doc's H1 becomes the new title verbatim.
+            _ => {
+                commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(2));
+                (
+                    owned(&["rename", "adr:alpha-decision", "--to", MESSY_PROSE]),
+                    format!("# {MESSY_PROSE}"),
+                )
+            }
+        };
+
+        install_rejecting_hook(repo.path());
+        let args: Vec<&str> = driven.iter().map(String::as_str).collect();
+        let rejected = jigc(repo.path(), home.path(), &args, None);
+        let stderr = String::from_utf8_lossy(&rejected.stderr).into_owned();
+        assert!(
+            !rejected.status.success(),
+            "[{door}] the rejected run must fail; stderr:\n{stderr}",
+        );
+
+        // The lift is the contract: the printed span must still be delimited even though the
+        // author's prose carries backticks of its own.
+        let lifted = lift_rerun(&stderr);
+        assert_eq!(
+            shell_split(&lifted),
+            {
+                let mut want = vec!["jigc".to_string()];
+                want.extend(driven.iter().cloned());
+                want
+            },
+            "[{door}] the printed line must re-say the door's own argv, prose intact; \
+             printed `{lifted}`",
+        );
+
+        // …and the emitted bytes, pasted into a shell exactly as printed, must recover.
+        remove_hook(repo.path());
+        let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+        let path = format!(
+            "{}:{}",
+            shim_dir(home.path()).display(),
+            std::env::var("PATH").unwrap_or_default(),
+        );
+        let recovered = Command::new("sh")
+            .arg("-c")
+            .arg(&lifted)
+            .current_dir(repo.path())
+            .env("HOME", home.path())
+            .env("PATH", path)
+            .env_remove("JIGC_PACK_DIR")
+            .output()
+            .expect("run the printed line through sh");
+        assert!(
+            recovered.status.success(),
+            "[{door}] the printed re-run must recover under a real shell; printed `{lifted}`\n\
+             stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&recovered.stdout),
+            String::from_utf8_lossy(&recovered.stderr),
+        );
+        assert_ne!(
+            git(repo.path(), &["rev-parse", "HEAD"]),
+            head_before,
+            "[{door}] the recovery re-run must land its commit; printed `{lifted}`",
+        );
+
+        // The artifact it created is the one the frame promised. An expansion, a command
+        // substitution or a `;`-severed tail all still exit 0 — while creating a *different*
+        // artifact, which is exactly the silent wrong outcome this witness catches.
+        let docs = docs_text(repo.path());
+        assert!(
+            docs.contains(&witness),
+            "[{door}] the recovery must produce the promised artifact (expected \
+             {witness:?} in the committed docs); printed `{lifted}`\ndocs:\n{docs}",
         );
     }
 }
