@@ -205,6 +205,12 @@ pub enum TaskCommand {
     Validate {
         /// The task id (the working-area slug under `.jigc/tasks/`).
         id: String,
+        /// Declare the carry-over of pre-task staged changes deliberate, so this
+        /// preview mirrors the `finalize --carry-staged` you intend to run: the
+        /// carryover gate's findings (`finalize.carried-staged`) are omitted, exactly
+        /// as the declared finalize omits them. Inert when nothing is carried.
+        #[arg(long)]
+        carry_staged: bool,
     },
     /// Abandon the task — remove its working area `.jigc/tasks/<id>/`.
     Discard {
@@ -253,7 +259,9 @@ impl TaskCommand {
         let result = match self {
             TaskCommand::List => run_list(cwd, format),
             TaskCommand::Diff { id } => run_diff(cwd, &id),
-            TaskCommand::Validate { id } => return run_validate(cwd, &id, format),
+            TaskCommand::Validate { id, carry_staged } => {
+                return run_validate(cwd, &id, format, carry_staged);
+            }
             TaskCommand::Discard { id } => run_discard(cwd, &id, format),
             TaskCommand::Finalize {
                 id,
@@ -355,7 +363,14 @@ fn run_diff(cwd: &Path, id: &str) -> Result<()> {
 /// `finalize`: validate previews what finalize blocks on) — a blocking report exits
 /// [`EXIT_VALIDATION_BLOCKED`], an operational error 1. The findings render
 /// through `crate::render::validation` in the selected format.
-fn run_validate(cwd: &Path, id: &str, format: Format) -> Outcome {
+///
+/// The sweep runs with the previewable finalize-time gates **on**
+/// ([`GatePreview::On`]; M47 Inc 4, Settle Decision 1) — so a state the committing
+/// door refuses is reported here rather than discovered there. `carry_staged` is the
+/// preview's half of finalize's consent flag: with it declared, the carryover gate is
+/// omitted at both doors, so a driver that always intends to carry reads a preview of
+/// *its own* finalize instead of a permanently-red one.
+fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Outcome {
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
@@ -366,7 +381,7 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> Outcome {
     // The post-sweep record is dropped: a standalone `validate` is a pure reader —
     // the durable baseline advances only at a landed `finalize`
     // (`design/reconciliation.md` → Persistence of the shifted baseline).
-    match task.validate() {
+    match task.validate(GatePreview::On { carry_staged }) {
         Ok((report, _record)) => {
             print!("{}", render::validation(format, &report));
             if format != Format::Json {
@@ -603,6 +618,25 @@ pub(crate) fn no_such_task(id: &str) -> anyhow::Error {
     anyhow::anyhow!("no task `{id}` — list live tasks with {route}")
 }
 
+/// Which finalize-time gates a [`TaskArea::validate`] sweep additionally **previews**
+/// (M47 Inc 4, `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 1).
+///
+/// The seam is a parameter and not a shared default precisely because
+/// [`TaskArea::validate`] has two callers: the read door (`jigc task validate`) wants
+/// the preview, while `finalize`'s preflight must **not** take it — the committing path
+/// runs each of these gates itself at its own position in the phase order
+/// (`design/finalize.md` → 5. Stage), and previewing them in the preflight would move
+/// finalize's block position, which is the one thing this change may not do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GatePreview {
+    /// No preview — the caller runs these gates itself, in position. `finalize`'s
+    /// preflight passes this, so its observable behaviour is unchanged.
+    Off,
+    /// Preview them at the read door. `carry_staged` mirrors finalize's consent flag:
+    /// a declared carry-over is a finding at neither door.
+    On { carry_staged: bool },
+}
+
 /// A named task's working area. `repo_root` is the **worktree** (code, the git index,
 /// HEAD — every `git` shell-out routes here); `jigc_root` (and the doc-store base
 /// `jigc_home`) bind to **jigc_home**, the main checkout, so all worktrees of one
@@ -752,7 +786,10 @@ impl TaskArea {
     /// current HEAD (read via `git`, keeping the engine shell-free). The two reachable
     /// surfaces (committed store + this task's working area) make `validate` preview
     /// exactly the forward-ref block `finalize` gates on.
-    fn validate(&self) -> Result<(engine::result::ValidationReport, FileStateRecord)> {
+    fn validate(
+        &self,
+        preview: GatePreview,
+    ) -> Result<(engine::result::ValidationReport, FileStateRecord)> {
         let schemas = self.schemas()?;
         // Pre-flight the `doc-code` probe before the engine sweep reaches it, so a missing
         // probe on an anchored task is one operational error — never an N-per-anchor
@@ -808,7 +845,73 @@ impl TaskArea {
             &engine::file_state::ConflictBlock::task(&self.id),
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
+        let report = self.preview_gates(report, preview, &schemas)?;
         Ok((report, record))
+    }
+
+    /// Merge the **previewable finalize-time gates** into a `task validate` report
+    /// (M47 Inc 4, `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 1). Inert under
+    /// [`GatePreview::Off`], which is what `finalize`'s preflight passes — the
+    /// committing path keeps running these gates itself, at their own position in the
+    /// phase order (`design/finalize.md` → 5. Stage), so its exits, its rendered
+    /// findings and its block order are untouched by this door existing.
+    ///
+    /// Today's one member is the **carryover** decision: a pure decision over
+    /// CLI-supplied git facts ([`decide_carryover`]) — the mint-time staged snapshot,
+    /// the same probe re-run now, the migration retire pathspec, and the recorded
+    /// owner-artifact paths, all read-only. It stages nothing and mutates nothing, so
+    /// the preview stays a pure reader; the owner exemption comes from the *same*
+    /// [`engine::finalize::plan_owner_artifacts`] the planner feeds the committing
+    /// door, so the two cannot disagree about which paths are the task's own subject.
+    /// A snapshot-less (pre-M43) task yields nothing — the declared fail-open bound
+    /// holds at this door exactly as it does at the committing one.
+    ///
+    /// `carry_staged` is finalize's consent flag, mirrored: a declared carry-over is
+    /// not a finding at either door, so a driver that always intends to carry reads a
+    /// preview of *its own* finalize rather than a permanently-red one (the
+    /// cross-model review's scoping of the non-breaking argument).
+    ///
+    /// The merge goes through [`engine::result::ValidationReport::new`] with the
+    /// resolved severity cascade — like the finalize-scope changelog advisory — so a
+    /// project's severity delta applies to a previewed finding and the envelope stays
+    /// one report.
+    fn preview_gates(
+        &self,
+        report: engine::result::ValidationReport,
+        preview: GatePreview,
+        schemas: &BTreeMap<String, Schema>,
+    ) -> Result<engine::result::ValidationReport> {
+        let GatePreview::On { carry_staged } = preview else {
+            return Ok(report);
+        };
+        if carry_staged {
+            return Ok(report);
+        }
+        let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
+            format!(
+                "could not read the staged snapshot for task at {:?}",
+                self.dir
+            )
+        })?;
+        let retire_exempt = state::read_source_path(&self.dir).with_context(|| {
+            format!("could not read the source path for task at {:?}", self.dir)
+        })?;
+        let carried = decide_carryover(
+            snapshot.as_ref(),
+            &git_staged_snapshot(&self.repo_root)?,
+            retire_exempt.as_deref(),
+            &engine::finalize::plan_owner_artifacts(&self.dir, schemas),
+            CarryoverBoundary::TaskPreview,
+        );
+        if carried.is_empty() {
+            return Ok(report);
+        }
+        let mut findings = report.findings.into_vec();
+        findings.extend(carried);
+        Ok(engine::result::ValidationReport::new(
+            findings,
+            &self.severity_cascade()?,
+        ))
     }
 
     /// Build the git tracked-status predicate the engine's #5 owner-artifact gate
@@ -1002,7 +1105,12 @@ impl TaskArea {
         // record rides along: a *landed* commit persists it (the absorb baseline-advance,
         // `design/reconciliation.md` → Persistence of the shifted baseline); a blocked
         // branch drops it.
-        let (report, swept) = self.validate()?;
+        // `GatePreview::Off` (M47 Inc 4): the committing path runs the previewable
+        // gates itself, each at its own position in the phase order — the carryover
+        // refuse below sits AFTER the `--dry-run` branch and ahead of the migration
+        // review gate. Previewing them here would move that block position, and
+        // finalize's observable behaviour must be unchanged by the preview door.
+        let (report, swept) = self.validate(GatePreview::Off)?;
 
         // The finalize-scope `changelog-recording` check (M42 Settle fork 6;
         // `design/validation.md` → The changelog-gate advisory) — merged into the report

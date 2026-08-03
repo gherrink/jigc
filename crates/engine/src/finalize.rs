@@ -278,7 +278,13 @@ pub fn plan_finalize(
 /// gate's skip-and-continue (an instance's own conformance is `conformance_for`'s concern,
 /// surfaced through phase 2's report before the plan is produced). Repo-relative, trimmed,
 /// non-empty values, in staged-file then document order.
-fn plan_owner_artifacts(task_dir: &Path, schemas: &BTreeMap<String, Schema>) -> Vec<String> {
+///
+/// **`pub` since M47 Inc 4**: the `task validate` carryover *preview*
+/// ([`CarryoverBoundary::TaskPreview`]) needs the same owner-artifact exemption set the
+/// committing door takes from [`FinalizePlan::owner_artifacts`], and it runs no planner —
+/// so the exemption is computed from the one function rather than re-derived, and the two
+/// doors cannot disagree about which paths are the task's own subject.
+pub fn plan_owner_artifacts(task_dir: &Path, schemas: &BTreeMap<String, Schema>) -> Vec<String> {
     use crate::schema::{FieldType, SectionBody};
 
     let docs_dir = task_dir.join(DOCS_DIR);
@@ -624,21 +630,42 @@ pub fn decide_base_repin(
     )])
 }
 
-/// Which finalize boundary the carryover refuse speaks for. The **wording** differs
-/// because the *facts* differ (surface-contract law 1 — say the truth): a task
-/// finalize is a whole-index commit a carried entry WOULD silently ride; a milestone
-/// finalize builds its aggregate from the sub-task worktrees over targeted pathspecs
-/// (throwaway indexes, dedicated worktrees, an `--ff-only` land), so a live-index
-/// entry structurally CANNOT ride it — it **stays staged across the boundary**, and
-/// the refuse is the declare-at-the-boundary rule, not a leak fix. The decision
-/// itself is identical; only the finding's message/route change.
+/// Which **door** the carryover decision speaks for. The **wording** differs because
+/// the *facts* differ (surface-contract law 1 — say the truth): a task finalize is a
+/// whole-index commit a carried entry WOULD silently ride; a milestone finalize builds
+/// its aggregate from the sub-task worktrees over targeted pathspecs (throwaway
+/// indexes, dedicated worktrees, an `--ff-only` land), so a live-index entry
+/// structurally CANNOT ride it — it **stays staged across the boundary**, and the
+/// refuse is the declare-at-the-boundary rule, not a leak fix; and a `task validate`
+/// **preview** has refused nothing at all — it reports what the finalize will refuse.
+/// The decision itself is identical at every door; only the finding's message/route
+/// change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CarryoverBoundary {
     /// `jigc task finalize` — the whole-index commit.
     Task,
+    /// `jigc task validate` — the **preview** of the [`CarryoverBoundary::Task`]
+    /// refusal (M47 Inc 4, Settle Decision 1): the same task boundary, the same
+    /// decision and the same exemptions, read from a door that commits nothing. A
+    /// route text presuming the finalize invocation would be a law-1 lie here, so the
+    /// wording names the door that *will* refuse and never claims one did.
+    TaskPreview,
     /// `jigc milestone finalize` — the aggregate commit built from the sub-task
     /// worktrees; a carried entry stays staged, never committed here.
     Milestone,
+}
+
+impl CarryoverBoundary {
+    /// Whether this door speaks for the **task** boundary — the committing door and
+    /// its preview alike. The owner-artifact exemption keys on the boundary, not on
+    /// the door (the milestone-boundary exemption is a separate, deferred concern), so
+    /// widening the door axis must never widen the exemption's.
+    fn is_task_boundary(self) -> bool {
+        matches!(
+            self,
+            CarryoverBoundary::Task | CarryoverBoundary::TaskPreview
+        )
+    }
 }
 
 /// The **carryover decision** at the finalize commit boundary
@@ -693,7 +720,7 @@ pub fn decide_carryover(
     if let Some(path) = retire_exempt {
         exempt.insert(crate::store::lexical_normalize(Path::new(path)));
     }
-    if matches!(boundary, CarryoverBoundary::Task) {
+    if boundary.is_task_boundary() {
         for path in owner_exempt {
             exempt.insert(crate::store::lexical_normalize(Path::new(path)));
         }
@@ -725,12 +752,14 @@ pub fn decide_carryover(
 /// unit. Its subject is the **file** staged before the boundary's unit existed, so it
 /// [keys at its path](file_location) (the file-path target form — mid-carry the path
 /// may be foreign, with no managed identity). The route names both exits: unstage it,
-/// or re-run finalize with `--carry-staged` to declare the carry-over deliberate (the
-/// `--approve` mold — undecidable intent converted to a declared one). Which exit is
-/// right is a judgment call, so the route is [`Route::human`]. The message states the
-/// boundary's real consequence ([`CarryoverBoundary`], law 1): a task's whole-index
-/// commit would silently absorb the entry; a milestone's aggregate cannot carry it —
-/// the entry stays staged across the boundary either way.
+/// or declare the carry-over deliberate with `--carry-staged` (the `--approve` mold —
+/// undecidable intent converted to a declared one), phrased for the door it is read
+/// from — the committing doors say *re-run*, the preview door cannot (nothing was run).
+/// Which exit is right is a judgment call, so the route is [`Route::human`]. The message
+/// states the door's real consequence ([`CarryoverBoundary`], law 1): a task's
+/// whole-index commit would silently absorb the entry; a milestone's aggregate cannot
+/// carry it — the entry stays staged across the boundary either way; and the `task
+/// validate` preview names the finalize that *will* refuse rather than claiming one did.
 fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoundary) -> Finding {
     let what = if is_deletion {
         "staged for deletion"
@@ -748,6 +777,20 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
                 "unstage it (`git restore --staged -- {path}`) if it is not this task's work, \
                  or re-run the finalize with `--carry-staged` to declare the carry-over \
                  deliberate"
+            ),
+        ),
+        // The preview door (M47 Inc 4): nothing has been refused, so the message says
+        // what *will* be — and the consent flag is accepted at both doors, so the route
+        // says so rather than naming a finalize re-run the reader never ran.
+        CarryoverBoundary::TaskPreview => (
+            format!(
+                "`{path}` was already {what} before this task existed — `jigc task finalize` \
+                 will refuse to let a pre-task staged {kind} silently ride this task's commit"
+            ),
+            format!(
+                "unstage it (`git restore --staged -- {path}`) if it is not this task's work, \
+                 or pass `--carry-staged` — accepted here and at the finalize — to declare \
+                 the carry-over deliberate"
             ),
         ),
         CarryoverBoundary::Milestone => (
@@ -3165,6 +3208,11 @@ sections:
     /// at the **milestone** boundary is **not** exempt (the milestone-boundary owner-artifact
     /// exemption is a separate, deferred concern) — a green over the composing (Task) context
     /// must not hide the omitting (Milestone) context.
+    ///
+    /// **The exemption keys on the boundary, so it iterates the boundary's whole door axis**
+    /// (M47 Inc 4): the committing door and its [`CarryoverBoundary::TaskPreview`] read-door
+    /// preview must exempt the identical set, else the preview would report a block the
+    /// finalize does not have. A door added to the task boundary later joins this loop.
     #[test]
     fn carryover_owner_artifact_paths_exempt_at_task_boundary_only() {
         let snapshot = staged(
@@ -3177,20 +3225,16 @@ sections:
         let current = snapshot.clone();
         let owner_exempt = vec!["./completions/artifacts/M45/audit.md".to_string()];
 
-        // Task boundary: the owner-artifact is exempt; the foreign entry still blocks.
-        let task = decide_carryover(
-            Some(&snapshot),
-            &current,
-            None,
-            &owner_exempt,
-            CarryoverBoundary::Task,
-        );
-        assert_eq!(
-            task.len(),
-            1,
-            "the owner-artifact is exempt at the task boundary; the foreign entry is not: {task:?}"
-        );
-        assert_eq!(task[0].key().target.as_deref(), Some("src/mine.rs"));
+        // Every task-boundary door: the owner-artifact is exempt; the foreign entry blocks.
+        for boundary in [CarryoverBoundary::Task, CarryoverBoundary::TaskPreview] {
+            let task = decide_carryover(Some(&snapshot), &current, None, &owner_exempt, boundary);
+            assert_eq!(
+                task.len(),
+                1,
+                "the owner-artifact is exempt at {boundary:?}; the foreign entry is not: {task:?}"
+            );
+            assert_eq!(task[0].key().target.as_deref(), Some("src/mine.rs"));
+        }
 
         // Milestone boundary: the SAME set is not exempt — both entries carry (the
         // omitting-context guard).
@@ -3312,6 +3356,81 @@ sections:
             assert!(
                 route.contains("--carry-staged") && route.contains("git restore --staged"),
                 "the route names both exits: {route:?}"
+            );
+        }
+    }
+
+    /// The **preview door's wording is law-1 honest** (M47 Inc 4): read from
+    /// `jigc task validate`, nothing has been refused — so the message may not say
+    /// *"refusing"* and the route may not tell the reader to *re-run the finalize* they
+    /// never ran. It names the door that **will** refuse and a flag accepted at both.
+    /// The [`CarryoverBoundary::Task`] door's own bytes are asserted unchanged in the same
+    /// breath: the preview must not have been bought by re-wording the committing door.
+    #[test]
+    fn carryover_preview_door_names_the_finalize_that_will_refuse() {
+        let snapshot = staged(&[("foreign.txt", "aaaa1111")], &["gone.md"]);
+        let current = snapshot.clone();
+
+        let preview = decide_carryover(
+            Some(&snapshot),
+            &current,
+            None,
+            &[],
+            CarryoverBoundary::TaskPreview,
+        );
+        let committing = decide_carryover(
+            Some(&snapshot),
+            &current,
+            None,
+            &[],
+            CarryoverBoundary::Task,
+        );
+        assert_eq!(preview.len(), 2, "the same decision, both halves");
+        assert_eq!(
+            preview
+                .iter()
+                .map(|f| f.key().target.clone())
+                .collect::<Vec<_>>(),
+            committing
+                .iter()
+                .map(|f| f.key().target.clone())
+                .collect::<Vec<_>>(),
+            "same decision, same keys — only the wording differs"
+        );
+        for finding in &preview {
+            assert_eq!(finding.code, "finalize.carried-staged");
+            assert_eq!(finding.severity, Severity::Blocking);
+            let route = finding.route.as_deref().expect("blocking ⇒ routed");
+            assert!(
+                finding.message.contains("jigc task finalize")
+                    && finding.message.contains("will refuse"),
+                "the preview names the door that will refuse: {:?}",
+                finding.message
+            );
+            assert!(
+                !finding.message.contains("refusing") && !route.contains("re-run the finalize"),
+                "the preview never claims a finalize refused or was run; message: {:?}\nroute: {route:?}",
+                finding.message
+            );
+            assert!(
+                route.contains("--carry-staged") && route.contains("git restore --staged"),
+                "the route names both exits: {route:?}"
+            );
+        }
+        // The committing door is untouched by the preview existing.
+        for finding in &committing {
+            assert!(
+                finding.message.contains("refusing to let"),
+                "the committing door keeps its own truth: {:?}",
+                finding.message
+            );
+            assert!(
+                finding
+                    .route
+                    .as_deref()
+                    .is_some_and(|r| r.contains("re-run the finalize with `--carry-staged`")),
+                "the committing door keeps its own route: {:?}",
+                finding.route
             );
         }
     }
