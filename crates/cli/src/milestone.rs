@@ -952,7 +952,10 @@ fn run_add_from_spec(
     // cache exists / dev-only (no record). Refuses a settled record (the terminal guard).
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
-    let added = add_from_spec(
+    // Resumable seeding (M47 Inc 2 T3): a criterion whose sub-task the milestone already
+    // carries is skipped, not collided — so the re-run after a rejected k-th record commit
+    // seeds exactly the remainder instead of dead-ending on `milestone.sub-task-collision`.
+    let seeded = add_from_spec(
         &jigc_root,
         &jigc_home,
         &schemas,
@@ -974,33 +977,141 @@ fn run_add_from_spec(
     // dev-only (no record, no commits, no hook ran).
     let mut streams: Vec<String> = Vec::new();
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
-        for a in &added {
-            let intent = engine::state::read_intent(&a.task.dir).with_context(|| {
-                format!(
-                    "could not read the seeded sub-task intent for `{}`",
-                    a.task.id
-                )
-            })?;
-            streams.push(append_and_commit_record(
-                &jigc_home,
-                &jigc_root,
-                schema,
-                milestone_id,
-                &a.task.id,
-                &intent,
-            )?);
+        for (landed, a) in seeded.added.iter().enumerate() {
+            let recorded = engine::state::read_intent(&a.task.dir)
+                .with_context(|| {
+                    format!(
+                        "could not read the seeded sub-task intent for `{}`",
+                        a.task.id
+                    )
+                })
+                .and_then(|intent| {
+                    append_and_commit_record(
+                        &jigc_home,
+                        &jigc_root,
+                        schema,
+                        milestone_id,
+                        &a.task.id,
+                        &intent,
+                    )
+                });
+            match recorded {
+                Ok(stream) => streams.push(stream),
+                Err(err) => {
+                    // The mid-loop unwind (M47 Inc 2 T3): the k−1 landed record commits are
+                    // history and cannot be undone, so this call's atomicity is "the workbench
+                    // names exactly what the record names" — every mint from here on goes.
+                    unwind_unrecorded_seeds(&jigc_root, milestone_id, &seeded.added[landed..]);
+                    print_resume_route(
+                        milestone_id,
+                        spec_addr,
+                        workflow,
+                        landed,
+                        seeded.added.len(),
+                    );
+                    return Err(err);
+                }
+            }
         }
     }
 
-    let ids: Vec<&str> = added.iter().map(|a| a.task.id.as_str()).collect();
+    let ids: Vec<&str> = seeded.added.iter().map(|a| a.task.id.as_str()).collect();
+    // The ack states **both halves** of a resumable pass — what this call seeded, and what it
+    // found already seeded (`design/surface-contract.md` → law 1: a re-run that skipped N
+    // criteria may not report itself as a fresh seeding of nothing).
+    let mut summary = format!(
+        "seeded {} sub-task(s) into milestone:{milestone_id} from {spec_addr}",
+        ids.len()
+    );
+    if !ids.is_empty() {
+        summary.push_str(&format!(": {}", ids.join(", ")));
+    }
+    if !seeded.already_seeded.is_empty() {
+        summary.push_str(&format!(
+            " ({} already seeded, skipped: {})",
+            seeded.already_seeded.len(),
+            seeded.already_seeded.join(", ")
+        ));
+    }
     Ok((
-        format!(
-            "seeded {} sub-task(s) into milestone:{milestone_id} from {spec_addr}: {}",
-            ids.len(),
-            ids.join(", ")
-        ),
+        summary,
         crate::task::fold_hook_streams(streams.iter().map(String::as_str)),
     ))
+}
+
+/// Unwind the sub-tasks this `add-from-spec` call minted but never recorded — the **mid-loop**
+/// member of the mint-unwinds-with-its-record discipline (M47 Inc 2 T3; the T2 sibling
+/// [`unwind_mint`]).
+///
+/// `add-from-spec` mints N sub-tasks up front and lands one record-only commit per sub-task,
+/// so a rejected k-th commit cannot unwind the call: the k−1 landed record commits are
+/// history. What it *can* — and must — restore is the agreement between the two homes: each
+/// un-recorded mint's area goes and its id leaves the demoted `tasks.json` cache
+/// ([`engine::milestone::drop_sub_tasks`], which re-renders the surviving ids in order, so the
+/// cache is byte-identical to its k−1 state). Without it the cache names sub-tasks the record
+/// does not, and the resume dead-ends on `milestone.sub-task-collision`.
+///
+/// Best-effort, like every sibling rollback — the door's real error (the hook's stderr) stays
+/// the correction signal — but a failure is noted on stderr rather than swallowed, because
+/// what survives is a workbench the operator may have to repair by hand.
+fn unwind_unrecorded_seeds(
+    jigc_root: &Path,
+    milestone_id: &str,
+    unrecorded: &[engine::milestone::AddedTask],
+) {
+    for a in unrecorded {
+        unwind_mint(&a.task.dir, None);
+    }
+    let ids: Vec<String> = unrecorded.iter().map(|a| a.task.id.clone()).collect();
+    if let Err(err) = engine::milestone::drop_sub_tasks(jigc_root, milestone_id, &ids) {
+        eprintln!(
+            "note: could not drop the un-recorded sub-task(s) {ids:?} from milestone \
+             `{milestone_id}`'s task list: {err:#}"
+        );
+    }
+}
+
+/// Print what a mid-loop rejection actually left behind, and the **command that recovers it**
+/// (M47 Inc 2 T3). The recovery is a *resume*: `landed` of this call's `total` mints are in
+/// the record for good, the rest were unwound, and re-running the same door seeds only the
+/// remainder — so the route is the door's own argv, built through the checked
+/// [`Route::mechanical`] constructor (the M43 route fence: a command span that stopped parsing
+/// against the real CLI cannot be constructed). `--workflow` rides along when it is not the
+/// default, else the resumed mints would silently record a different minting workflow.
+///
+/// The hook-rejection channel itself stays **verbatim** (`design/finalize.md` → the M40
+/// refinement 3); this is a note *beside* it, never a rewrite of it.
+fn print_resume_route(
+    milestone_id: &str,
+    spec_addr: &str,
+    workflow: &str,
+    landed: usize,
+    total: usize,
+) {
+    let mut argv = vec![
+        "jigc".to_string(),
+        "milestone".to_string(),
+        "add-from-spec".to_string(),
+        milestone_id.to_string(),
+        spec_addr.to_string(),
+    ];
+    if workflow != DEFAULT_SUB_TASK_WORKFLOW {
+        argv.push("--workflow".to_string());
+        argv.push(workflow.to_string());
+    }
+    let route = engine::finding::Route::mechanical(
+        argv,
+        " — already-seeded criteria are skipped, not re-minted.",
+    );
+    eprintln!(
+        "note: {landed} of {total} newly seeded sub-task(s) landed in the record; the {} \
+         un-recorded mint(s) were unwound, so the task list names exactly what the record does.",
+        total - landed
+    );
+    eprintln!(
+        "note: after clearing the rejection, re-run {}",
+        route.as_str()
+    );
 }
 
 /// Load every shipped schema keyed by doctype — the set [`add_from_spec`] resolves

@@ -305,14 +305,21 @@ pub fn add_task(
 /// so every sub-task inherits the milestone's single shared base in its own
 /// isolated `tasks/<sub>/` area and lands in the milestone's task list.
 ///
+/// **Resumable** (M47 Inc 2 T3): a criterion whose sub-task id the milestone's task
+/// list **already carried at entry** is *skipped* and reported in
+/// [`SeededFromSpec::already_seeded`], never collided — the seeding pass is one
+/// record-only commit per sub-task on the CLI side, so a rejected k-th commit leaves
+/// k−1 seeded and the recovery is a re-run of the same call. The skip set is the list
+/// **as read at entry**, so a duplicate *within one spec* (two criteria slugging alike)
+/// still surfaces the [`add_task`] `milestone.sub-task-collision` block — a resume and
+/// an authoring collision stay distinguishable.
+///
 /// **Unknown milestone** → the [`add_task`] unknown-milestone block, before any
 /// spec read or mint. **Unknown / transient / unparseable spec** → the existing
 /// [`crate::store`]-shaped routed blocking finding (`store.unknown-type`,
 /// `store.transient-type`, `store.not-found`, `store.unparseable`). **Zero
 /// `criteria` items** → a blocking `milestone.no-criteria` finding ("nothing to
-/// seed from"); nothing is minted. A within-spec slug collision between two
-/// criteria surfaces the [`add_task`] `milestone.sub-task-collision` block
-/// unchanged (the suffix is the join's, never incremental seed).
+/// seed from"); nothing is minted.
 pub fn add_from_spec(
     jigc_root: &Path,
     repo_root: &Path,
@@ -320,9 +327,11 @@ pub fn add_from_spec(
     milestone_id: &str,
     spec_addr: &str,
     workflow_id: &str,
-) -> Result<Vec<AddedTask>, Finding> {
+) -> Result<SeededFromSpec, Finding> {
+    let dir = milestone_dir(jigc_root, milestone_id);
+
     // Unknown milestone → reject before any spec read or mint.
-    if !milestone_dir(jigc_root, milestone_id).is_dir() {
+    if !dir.is_dir() {
         return Err(unknown_milestone_finding(milestone_id));
     }
 
@@ -334,12 +343,64 @@ pub fn add_from_spec(
         return Err(no_criteria_finding(spec_addr));
     }
 
-    // One sub-task per criterion, the criterion text as intent, in physical order.
+    // The resume set — the sub-task ids the list carries **at entry**. Read once, so a
+    // criterion minted by *this* call is not in it and a within-spec duplicate still
+    // collides through `add_task`.
+    let seeded_at_entry: std::collections::BTreeSet<String> = read_task_list(&dir)
+        .map_err(|err| io_finding(milestone_id, "read the task list", &err))?
+        .tasks
+        .into_iter()
+        .collect();
+
+    // One sub-task per not-yet-seeded criterion, the criterion text as intent, in
+    // physical order.
     let mut added = Vec::with_capacity(criteria.len());
+    let mut already_seeded = Vec::new();
     for intent in &criteria {
+        let sub_id = mint_sub_id(intent);
+        if seeded_at_entry.contains(&sub_id) {
+            already_seeded.push(sub_id);
+            continue;
+        }
         added.push(add_task(jigc_root, milestone_id, intent, workflow_id)?);
     }
-    Ok(added)
+    Ok(SeededFromSpec {
+        added,
+        already_seeded,
+    })
+}
+
+/// One [`add_from_spec`] seeding pass's outcome — **both halves**, because the pass is
+/// resumable (M47 Inc 2 T3): the caller lands one record-only commit per newly minted
+/// sub-task, and a re-run after a rejected k-th commit must be able to say what it seeded
+/// *and* what was already there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeededFromSpec {
+    /// The sub-tasks **this call** minted, in physical criterion order.
+    pub added: Vec<AddedTask>,
+    /// The sub-task ids whose criterion the milestone's task list already carried at
+    /// entry — skipped, never collided.
+    pub already_seeded: Vec<String>,
+}
+
+/// Drop `ids` from the milestone's persisted task list — the **list half** of a door's
+/// mid-loop unwind (M47 Inc 2 T3).
+///
+/// `add-from-spec` mints N sub-tasks up front while its caller lands one record-only commit
+/// per sub-task, so a rejected k-th commit leaves k−1 recorded and the rest minted but
+/// un-recorded. The door removes those areas and drops their ids here, so the demoted cache
+/// names exactly the sub-tasks the committed record does and the resume mints them afresh.
+///
+/// The list is re-rendered through the same writer [`add_task`] appends with, over the
+/// surviving ids **in their recorded order** — so the result is byte-identical to the list as
+/// of the k−1 appends that did land. Ids the list does not carry are ignored: the drop is
+/// idempotent, which is what a best-effort unwind needs.
+pub fn drop_sub_tasks(jigc_root: &Path, milestone_id: &str, ids: &[String]) -> std::io::Result<()> {
+    let dir = milestone_dir(jigc_root, milestone_id);
+    let mut list = read_task_list(&dir)?;
+    list.tasks
+        .retain(|id| !ids.iter().any(|dropped| dropped == id));
+    std::fs::write(dir.join(TASKS_FILE), list.to_bytes())
 }
 
 /// The block-section id the spec's repeatable acceptance criteria live in
@@ -2363,6 +2424,31 @@ Requests under the cap are admitted unchanged.
 The next window admits requests again.
 ";
 
+    /// A committed `spec` whose two criteria **slug alike** (case is not identity) — the
+    /// authoring-collision fixture the resume must keep distinguishable from "already
+    /// seeded".
+    const DUPLICATE_CRITERIA_SPEC: &str = "\
+# Duplicate criteria
+
+## Goal
+
+Two criteria that name the same thing.
+
+## Context
+
+An authoring slip the seed must refuse, not absorb.
+
+## Criteria
+
+### Cache eviction  {#first}
+
+The cold entries are evicted.
+
+### Cache Eviction  {#second}
+
+The same criterion, capitalized differently.
+";
+
     /// A committed `spec` whose `criteria` section has **zero** items — the
     /// "nothing to seed from" block fixture.
     const ZERO_CRITERIA_SPEC: &str = "\
@@ -2414,6 +2500,12 @@ Context without any acceptance criteria.
             "single-task",
         )
         .expect("3-criteria spec seeds 3 sub-tasks");
+        // A first pass over an empty list seeds every criterion — nothing was already there.
+        assert!(
+            added.already_seeded.is_empty(),
+            "a first pass finds nothing already seeded"
+        );
+        let added = added.added;
 
         // EXACTLY 3 sub-tasks, minted in the spec's physical criterion order, each
         // intent = the criterion title.
@@ -2470,6 +2562,114 @@ Context without any acceptance criteria.
             ],
             "enumeration is id-sorted, not physical/mint order"
         );
+    }
+
+    /// **The resume half** (M47 Inc 2 T3): a criterion whose sub-task the milestone's
+    /// task list already carries is *skipped*, never collided — so a second pass over a
+    /// partially seeded milestone seeds exactly the remainder, and a fully seeded one is
+    /// a true ack rather than a `milestone.sub-task-collision` dead end. The mid-loop
+    /// unwind primitive [`drop_sub_tasks`] is what produces the partial state, so the two
+    /// halves of a rejected k-th record commit are exercised together.
+    #[test]
+    fn add_from_spec_skips_already_seeded_criteria_and_resumes_the_remainder() {
+        let root = TempRoot::new("from-spec-resume");
+        let repo = TempRoot::new("from-spec-resume-repo");
+        let base = BasePin::new("6666666666666666666666666666666666666666", "6666666");
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        write_committed_spec(repo.path(), "gateway-rate-limiting", THREE_CRITERIA_SPEC);
+        let seed = |root: &Path| {
+            add_from_spec(
+                root,
+                repo.path(),
+                &schemas(),
+                &milestone.id,
+                "spec:gateway-rate-limiting",
+                "single-task",
+            )
+        };
+
+        // First pass: all 3.
+        let first = seed(root.path()).expect("the first pass seeds every criterion");
+        assert_eq!(first.added.len(), 3);
+
+        // The mid-loop state a rejected 2nd record commit leaves: the criteria after the
+        // first are unwound — their areas removed and their ids dropped from the list.
+        for a in &first.added[1..] {
+            std::fs::remove_dir_all(&a.task.dir).expect("remove the un-recorded mint's area");
+        }
+        let unwound: Vec<String> = first.added[1..].iter().map(|a| a.task.id.clone()).collect();
+        drop_sub_tasks(root.path(), &milestone.id, &unwound).expect("drop the un-recorded ids");
+        assert_eq!(
+            read_task_list(&milestone.dir).expect("read list").tasks,
+            vec!["rejects-the-101st-request".to_string()],
+            "the unwind leaves the list naming exactly the recorded sub-task"
+        );
+
+        // The resume: exactly the remaining 2 mint, the landed one is acked as already seeded.
+        let resumed = seed(root.path()).expect("the resume seeds the remainder");
+        assert_eq!(
+            resumed
+                .added
+                .iter()
+                .map(|a| a.task.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["admits-within-the-window", "recovers-after-the-window"],
+            "the resume mints only the criteria the milestone does not carry"
+        );
+        assert_eq!(
+            resumed.already_seeded,
+            vec!["rejects-the-101st-request".to_string()],
+            "the already-seeded criterion is reported, never collided"
+        );
+
+        // A fully seeded re-run: nothing to seed, everything acked — and the list is unchanged.
+        let again = seed(root.path()).expect("a fully seeded re-run acks rather than collides");
+        assert!(again.added.is_empty(), "nothing left to seed");
+        assert_eq!(
+            again.already_seeded,
+            vec![
+                "rejects-the-101st-request".to_string(),
+                "admits-within-the-window".to_string(),
+                "recovers-after-the-window".to_string(),
+            ],
+            "every criterion is reported as already seeded, in physical order"
+        );
+        assert_eq!(
+            read_task_list(&milestone.dir).expect("read list").tasks,
+            vec![
+                "rejects-the-101st-request".to_string(),
+                "admits-within-the-window".to_string(),
+                "recovers-after-the-window".to_string(),
+            ],
+            "an already-seeded pass appends nothing"
+        );
+    }
+
+    /// The resume must not swallow an **authoring** collision: two criteria of the *same*
+    /// spec slugging alike still surface [`add_task`]'s `milestone.sub-task-collision`,
+    /// because the skip set is the task list **as read at entry** — an id minted by this
+    /// very call is not in it (M47 Inc 2 T3).
+    #[test]
+    fn add_from_spec_still_blocks_a_within_spec_duplicate_criterion() {
+        let root = TempRoot::new("from-spec-dup");
+        let repo = TempRoot::new("from-spec-dup-repo");
+        let base = BasePin::new("7777777777777777777777777777777777777777", "7777777");
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        write_committed_spec(repo.path(), "duplicate-criteria", DUPLICATE_CRITERIA_SPEC);
+
+        let err = add_from_spec(
+            root.path(),
+            repo.path(),
+            &schemas(),
+            &milestone.id,
+            "spec:duplicate-criteria",
+            "single-task",
+        )
+        .expect_err("two criteria slugging alike collide");
+        assert_eq!(err.severity, Severity::Blocking);
+        assert_eq!(err.code, "milestone.sub-task-collision");
     }
 
     /// A spec whose `criteria` section has **zero** items returns a blocking,

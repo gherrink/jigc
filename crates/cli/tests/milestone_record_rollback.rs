@@ -871,3 +871,348 @@ fn create_refuses_over_an_uncommitted_record_without_claiming_it_is_committed() 
         "the refusal runs ahead of every write — no milestone area is minted",
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// T3 — `add-from-spec`'s mid-loop becomes atomic and resumable.
+//
+// The three sibling doors mint once and commit once, so a rejection unwinds the whole call.
+// `add-from-spec` mints N sub-tasks and lands **one record-only commit per sub-task**, so a
+// rejected k-th commit has k−1 commits already in history: they cannot be unwound, and the
+// approved *"fix the hook, re-run, it succeeds"* is therefore a **resume**, not a re-run of an
+// untouched state. Two halves, one invariant:
+//
+//   (a) **atomic** — the k-th rejection unwinds the mints the record never named (`k..N`), so
+//       the committed record and the demoted `tasks.json` cache name the identical k−1
+//       sub-tasks in the identical order, the record is unstaged and byte-identical to its
+//       k−1 state, and no orphan task area survives for an un-recorded criterion;
+//   (b) **resumable** — a criterion whose sub-task id the milestone's task list already
+//       carries is *skipped*, never collided, so the re-run seeds exactly the remaining
+//       N−k+1 and acks the already-seeded count.
+//
+// The axis is **k ∈ 1..=N over an N=3 spec** (never one reported repro): k=1 exercises the
+// nothing-landed edge, k=N the everything-but-the-last. The re-run is **lifted verbatim from
+// the rejection's own printed line** — the emitted bytes are the contract, and a hand-built
+// equivalent would pass over a route that lies. A fully-seeded re-run closes the loop:
+// nothing to seed is a true ack, never a collision.
+// ---------------------------------------------------------------------------------------
+
+/// A committed **3-criteria** spec — the N of T3's axis. The titles are the engine suite's
+/// (the slugs they mint are pinned there too) and are deliberately not in id-sorted physical
+/// order, so "the same k−1 sub-tasks in the same order" is a real assertion rather than one a
+/// sorted list would satisfy accidentally. Stamped, so the store sweep adjudicates a current
+/// corpus.
+const THREE_CRITERIA_SPEC: &str = "\
+---
+schema-version: 1
+---
+
+# Gateway rate limiting
+
+## Goal
+
+Bound per-client request volume at the gateway.
+
+## Context
+
+Downstream services were each enforcing limits ad hoc.
+
+## Criteria
+
+### Rejects the 101st request  {#rejects-burst}
+
+The gateway rejects the 101st request in a rolling 60s window.
+
+### Admits within the window  {#admits-within}
+
+Requests under the cap are admitted unchanged.
+
+### Recovers after the window  {#recovers}
+
+The next window admits requests again.
+";
+
+/// The 3-criteria spec's committed slug — its address is `spec:<slug>`.
+const THREE_CRITERIA_SLUG: &str = "gateway-rate-limiting";
+
+/// The sub-task ids the three criteria mint, in **physical criterion order** (the order both
+/// the record and the task-list cache record them in).
+const THREE_CRITERIA_IDS: [&str; 3] = [
+    "rejects-the-101st-request",
+    "admits-within-the-window",
+    "recovers-after-the-window",
+];
+
+/// Write + commit the 3-criteria spec at its canonical committed path under docs-root.
+fn commit_three_criteria_spec(repo: &Path) {
+    let specs = repo.join("docs").join("specs");
+    fs::create_dir_all(&specs).expect("mk docs/specs/");
+    fs::write(
+        specs.join(format!("{THREE_CRITERIA_SLUG}.md")),
+        THREE_CRITERIA_SPEC,
+    )
+    .expect("write the 3-criteria spec");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "add the 3-criteria spec"]);
+}
+
+/// Install a `pre-commit` hook rejecting **exactly the k-th** record commit (1-based),
+/// counting record-staging commits in a `.git/`-local counter. Installed *after* the
+/// milestone's `create` commit, so the count is `add-from-spec`'s own loop.
+fn install_kth_record_rejecting_hook(repo: &Path, k: usize) {
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\n\
+             if git diff --cached --name-only | grep -q '^{RECORD_LOCATION}'; then\n\
+             \x20 n=$(cat .git/record-commit-count 2>/dev/null || echo 0)\n\
+             \x20 n=$((n+1))\n\
+             \x20 echo $n > .git/record-commit-count\n\
+             \x20 if [ \"$n\" -eq {k} ]; then\n\
+             \x20   echo '{HOOK_STDERR}' >&2\n\
+             \x20   exit 1\n\
+             \x20 fi\n\
+             fi\n\
+             exit 0\n"
+        ),
+    )
+    .expect("write the k-th-rejecting pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook).expect("hook metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook, perms).expect("chmod hook");
+    }
+}
+
+/// The demoted task-list cache's ids in **recorded (physical) order** — read from the JSON
+/// the engine writes, so the order assertion binds to the persisted state and not to
+/// `list-tasks`' id-sorted projection. An absent cache is the empty list.
+fn tasks_json_ids(repo: &Path) -> Vec<String> {
+    let Ok(bytes) = fs::read(task_list_path(repo)) else {
+        return Vec::new();
+    };
+    let json: serde_json::Value =
+        serde_json::from_slice(&bytes).expect("the task-list cache parses as JSON");
+    json.get("tasks")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every sub-task working area under `.jigc/tasks/`, sorted — the **orphan probe**: an area
+/// for a criterion the record does not name is exactly the residue that blocks the resume.
+fn all_sub_task_dirs(repo: &Path) -> Vec<String> {
+    let mut names: Vec<String> = match fs::read_dir(repo.join(".jigc").join("tasks")) {
+        Ok(entries) => entries
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    names.sort();
+    names
+}
+
+/// The record's bytes **as of HEAD** — the k−1 state, since the only commits touching the
+/// record are its own record-only commits.
+fn head_record_bytes(repo: &Path) -> String {
+    git(repo, &["show", &format!("HEAD:{RECORD_SPEC}")])
+}
+
+/// The re-run command the mid-loop rejection printed, **lifted verbatim** from the emitted
+/// line (the emitted bytes are the contract — a re-run rebuilt in test code would pass over a
+/// route that lies about how to recover). Returns the full argv, leading `jigc`.
+fn lifted_rerun_argv(combined: &str) -> Vec<String> {
+    let line = combined
+        .lines()
+        .find(|line| line.contains("`jigc milestone add-from-spec"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the mid-loop rejection must PRINT the re-run command that recovers it; \
+                 got:\n{combined}"
+            )
+        });
+    let span = line.split('`').nth(1).unwrap_or_else(|| {
+        panic!("the printed re-run command must be a backticked span; got:\n{line}")
+    });
+    let argv: Vec<String> = span.split_whitespace().map(str::to_owned).collect();
+    assert_eq!(
+        argv.first().map(String::as_str),
+        Some("jigc"),
+        "the lifted re-run argv leads with `jigc`; got {argv:?}",
+    );
+    argv
+}
+
+/// Assert the milestone's three homes name `expected` — the committed record and the demoted
+/// cache in the identical order, and `.jigc/tasks/` exactly once each (no orphan, no duplicate).
+fn assert_seeded_set(repo: &Path, home: &Path, expected: &[&str], what: &str) {
+    let expected_ids: Vec<String> = expected.iter().map(|id| (*id).to_string()).collect();
+    assert_eq!(
+        recorded_task_ids(repo, home),
+        expected_ids,
+        "{what}: the committed record must name exactly {expected_ids:?}, in that order",
+    );
+    assert_eq!(
+        tasks_json_ids(repo),
+        expected_ids,
+        "{what}: the demoted `tasks.json` cache must name exactly {expected_ids:?}, in that \
+         order — the same set as the record",
+    );
+    let mut sorted = expected_ids.clone();
+    sorted.sort();
+    assert_eq!(
+        all_sub_task_dirs(repo),
+        sorted,
+        "{what}: `.jigc/tasks/` must hold exactly one area per recorded sub-task — an area for \
+         an un-recorded criterion is the orphan that blocks the resume",
+    );
+}
+
+/// **T3's axis — k ∈ 1..=N over an N=3 spec.** For every k: the k-th record commit is
+/// rejected, the un-recorded mints are unwound (record ≡ cache ≡ areas at k−1, the record
+/// byte-identical to its k−1 state and unstaged), and the re-run **lifted from the
+/// rejection's own printed line** resumes — seeding exactly the remaining N−k+1, acking the
+/// already-seeded count, and leaving all N named once each. A final fully-seeded re-run
+/// closes it: nothing to seed acks, never collides.
+#[test]
+fn add_from_spec_unwinds_its_un_recorded_mints_and_resumes_at_every_k() {
+    const N: usize = THREE_CRITERIA_IDS.len();
+    let spec_addr = format!("spec:{THREE_CRITERIA_SLUG}");
+
+    for k in 1..=N {
+        let repo = TempDir::new(&format!("from-spec-k{k}"));
+        let home = TempDir::new(&format!("home-from-spec-k{k}"));
+        let repo = repo.path();
+        let home = home.path();
+        init_repo(repo);
+        write_compose_marker(repo);
+        commit_three_criteria_spec(repo);
+        ok(
+            repo,
+            home,
+            &["milestone", "create", MILESTONE_TITLE],
+            "milestone create",
+        );
+
+        // The k-th of `add-from-spec`'s N record commits is rejected — the hook is installed
+        // AFTER `create`'s own record commit, so the count is this door's loop.
+        install_kth_record_rejecting_hook(repo, k);
+        let out = jigc(
+            repo,
+            home,
+            &["milestone", "add-from-spec", MILESTONE_ID, &spec_addr],
+            None,
+        );
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            !out.status.success(),
+            "k={k}: a rejected record commit must exit non-zero; got success:\n{combined}",
+        );
+        assert!(
+            combined.contains(HOOK_STDERR),
+            "k={k}: the hook's stderr stays VERBATIM; got:\n{combined}",
+        );
+
+        // (a) atomic — the record, the cache, and the areas all name the k−1 that landed.
+        let landed: Vec<&str> = THREE_CRITERIA_IDS[..k - 1].to_vec();
+        assert_seeded_set(repo, home, &landed, &format!("k={k}, after the rejection"));
+        assert_eq!(
+            fs::read_to_string(repo.join(RECORD_SPEC)).expect("read the record"),
+            head_record_bytes(repo),
+            "k={k}: the record on disk must be byte-identical to its k−1 state (HEAD)",
+        );
+        assert!(
+            porcelain_under_record_location(repo).is_empty(),
+            "k={k}: nothing under `{RECORD_LOCATION}` may be left dirty or staged; got {:?}",
+            porcelain_under_record_location(repo),
+        );
+
+        // (b) resumable — the re-run is LIFTED from the rejection's own printed line.
+        remove_hook(repo);
+        let argv = lifted_rerun_argv(&combined);
+        let rerun_args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+        let rerun = jigc(repo, home, &rerun_args, None);
+        let rerun_out = format!(
+            "{}{}",
+            String::from_utf8_lossy(&rerun.stdout),
+            String::from_utf8_lossy(&rerun.stderr)
+        );
+        assert!(
+            rerun.status.success(),
+            "k={k}: the re-run lifted from the rejection's own line must exit 0; \
+             argv {argv:?}\n{rerun_out}",
+        );
+        assert!(
+            rerun_out.contains(&format!("seeded {} sub-task(s)", N - k + 1)),
+            "k={k}: the resume seeds exactly the remaining {}; got:\n{rerun_out}",
+            N - k + 1,
+        );
+        if k > 1 {
+            assert!(
+                rerun_out.contains(&format!("{} already seeded", k - 1)),
+                "k={k}: the resume acks the {} already-seeded criteri(on/a); got:\n{rerun_out}",
+                k - 1,
+            );
+        } else {
+            assert!(
+                !rerun_out.contains("already seeded"),
+                "k=1: nothing had landed, so the resume must claim no already-seeded \
+                 criteria; got:\n{rerun_out}",
+            );
+        }
+        assert_seeded_set(
+            repo,
+            home,
+            &THREE_CRITERIA_IDS,
+            &format!("k={k}, after the resume"),
+        );
+        ok(repo, home, &["validate"], "jigc validate after the resume");
+
+        // The fully-seeded re-run — nothing to seed is a true ack, never a collision.
+        let head_before = git(repo, &["rev-parse", "HEAD"]);
+        let again = jigc(repo, home, &rerun_args, None);
+        let again_out = format!(
+            "{}{}",
+            String::from_utf8_lossy(&again.stdout),
+            String::from_utf8_lossy(&again.stderr)
+        );
+        assert!(
+            again.status.success(),
+            "k={k}: a fully-seeded re-run has nothing to seed and must exit 0; got:\n{again_out}",
+        );
+        assert!(
+            !again_out.contains("collision"),
+            "k={k}: a fully-seeded re-run must ACK, never collide; got:\n{again_out}",
+        );
+        assert!(
+            again_out.contains("seeded 0 sub-task(s)")
+                && again_out.contains(&format!("{N} already seeded")),
+            "k={k}: the fully-seeded ack states both halves (0 seeded, {N} already seeded); \
+             got:\n{again_out}",
+        );
+        assert_eq!(
+            git(repo, &["rev-parse", "HEAD"]),
+            head_before,
+            "k={k}: a fully-seeded re-run mints nothing and commits nothing",
+        );
+        assert_seeded_set(
+            repo,
+            home,
+            &THREE_CRITERIA_IDS,
+            &format!("k={k}, after the fully-seeded re-run"),
+        );
+    }
+}
