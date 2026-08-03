@@ -228,7 +228,9 @@ pub enum TaskCommand {
         approve: bool,
         /// Print the pre-commit manifest (the file-set the commit would carry, untracked
         /// sweeps flagged) and stop — commit nothing, no destructive side effect (B1
-        /// dirty-tree sweep). A dry-run never requires `--approve`.
+        /// dirty-tree sweep). A dry-run never requires `--approve`, and never forecasts a
+        /// green the finalize would refuse: an undeclared carry-over is reported (exit 3)
+        /// instead of the manifest — add `--carry-staged` to forecast the carry.
         #[arg(long)]
         dry_run: bool,
         /// Declare the carry-over of pre-task staged changes deliberate: land index
@@ -1134,9 +1136,9 @@ impl TaskArea {
         // branch drops it.
         // `GatePreview::Off` (M47 Inc 4): the committing path runs the previewable
         // gates itself, each at its own position in the phase order — the carryover
-        // refuse below sits AFTER the `--dry-run` branch and ahead of the migration
-        // review gate. Previewing them here would move that block position, and
-        // finalize's observable behaviour must be unchanged by the preview door.
+        // refuse below sits inside the `--dry-run` branch and again ahead of the
+        // migration review gate. Previewing them here would move those block positions,
+        // and finalize's observable behaviour must be unchanged by the preview door.
         let (report, swept) = self.validate(GatePreview::Off)?;
 
         // The finalize-scope `changelog-recording` check (M42 Settle fork 6;
@@ -1296,7 +1298,22 @@ impl TaskArea {
         // above is computed read-only (`plan_finalize` only reads), so deriving the
         // prediction from it is side-effect-free.
         if dry_run {
+            // M47 Inc 4 T3 — the forecast obeys the gate it forecasts. An undeclared
+            // carry-over is a state the committing run below refuses at
+            // [`EXIT_VALIDATION_BLOCKED`], so forecasting it at exit 0 was a false green
+            // — and, because `relabel_carried` stamped `carried-over` regardless, the
+            // refusing-state and committing-state JSON documents came out BYTE-IDENTICAL:
+            // `--dry-run` was information-free on the one axis `--carry-staged` decides.
+            // The refusal IS the forecast (the carried paths and their two exits are the
+            // finding's own bytes; the manifest's `carried-over` discriminator survives in
+            // `findings[].key.target`), and `--dry-run --carry-staged` forecasts the
+            // declared carry instead. Still a pure reader: `blocked` renders and returns.
+            if !carry_staged && !carried_findings.is_empty() {
+                return self.blocked(carried_findings, format);
+            }
             let (mut included, left_out) = self.predict_manifest(&plan, is_migration)?;
+            // Reached only under a declared `--carry-staged` or an empty carried set, so
+            // the label can no longer claim a consent this run never carried.
             relabel_carried(&mut included, &carried_paths);
             print!(
                 "{}",
@@ -1310,12 +1327,12 @@ impl TaskArea {
 
         // M43 — the carryover gate: refuse to let index entries staged BEFORE this task
         // existed silently ride its whole-index commit — one blocking routed finding per
-        // carried path. On the COMMITTING path only, after the `--dry-run` branch (the
-        // forecast must render) and ahead of the migration review gate (a blocking
-        // refusal precedes the human-fidelity hold, like the planner's validation
-        // blocks). `--carry-staged` converts the undecidable intent to a declared one
-        // (the `--approve` mold; on a migration the two compose, each gating its own
-        // concern).
+        // carried path. The COMMITTING path's copy of the refusal the `--dry-run` branch
+        // above already made (M47 Inc 4 T3 — one decision, two doors), placed ahead of the
+        // migration review gate (a blocking refusal precedes the human-fidelity hold, like
+        // the planner's validation blocks). `--carry-staged` converts the undecidable
+        // intent to a declared one (the `--approve` mold; on a migration the two compose,
+        // each gating its own concern).
         if !carry_staged && !carried_findings.is_empty() {
             return self.blocked(carried_findings, format);
         }

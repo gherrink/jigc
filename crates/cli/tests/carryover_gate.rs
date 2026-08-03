@@ -9,9 +9,22 @@
 //! managed identity), overridable with `--carry-staged` (the `--approve` mold:
 //! undecidable intent converted to a declared one; on a migration finalize it
 //! **composes** with `--approve` — two independent declarations). The task's own
-//! post-mint staging never trips the gate, a `--dry-run` still renders its forecast
-//! (the refuse sits on the committing path only), and a migration's recorded retire
-//! pathspec is exempt (that deletion is the task's own work).
+//! post-mint staging never trips the gate, a `--dry-run --carry-staged` still renders
+//! its forecast, and a migration's recorded retire pathspec is exempt (that deletion is
+//! the task's own work).
+//!
+//! **M47 Increment 4 / T3 revised the dry-run half of that sentence** — it read *"a
+//! `--dry-run` still renders its forecast (the refuse sits on the committing path
+//! only)"*, and the arms below drove a bare `--dry-run` over a carried state expecting
+//! exit 0. **Basis-has-changed, not an override:** M43 placed the refuse after the
+//! dry-run branch so the forecast would always render, before it was noticed that the
+//! forecast then *forecast a green the finalize refuses* — byte-identically to the
+//! consenting one, with the entries stamped `carried-over` on a consent never given.
+//! The refuse now runs inside the dry-run branch too, so every arm here that forecasts
+//! over a carried state declares its carry (`--dry-run --carry-staged`) — which is also
+//! the like-for-like comparison the forecast/landed symmetry arm always wanted, its
+//! landed run being a `--carry-staged` one. The undeclared forecast's refusal is pinned
+//! in `finalize_manifest.rs` (T3).
 //!
 //! The **milestone arm** (T4): `jigc milestone create` is the shared checkout's
 //! aggregate-index door — its create-time snapshot is what `milestone finalize`
@@ -25,7 +38,7 @@
 //!
 //! The **labeled manifest** (T5): a carried entry riding the commit under a declared
 //! `--carry-staged` is labeled **`carried-over`** at all four render sites — the
-//! `--dry-run` forecast (text + JSON), the pre-commit print, and the landed manifest
+//! `--dry-run --carry-staged` forecast (text + JSON), the pre-commit print, and the landed manifest
 //! text + JSON — over one pre-commit-computed set, so the forecast/landed
 //! identical-set invariant holds by construction (labeling changes no set
 //! membership).
@@ -232,8 +245,9 @@ fn assert_carried(finding: &serde_json::Value, path: &str) {
 
 /// A **pre-mint staged add** blocks finalize — one routed blocking
 /// `finalize.carried-staged` **per carried path** (two staged foreign files → exactly
-/// two findings, each keyed at its own path) — while `--dry-run` still renders its
-/// forecast (the refuse sits on the committing path only, after the dry-run branch).
+/// two findings, each keyed at its own path) — while a `--dry-run` that **declares** the
+/// carry still renders its forecast (M47 Inc 4 T3: the refuse runs inside the dry-run
+/// branch too, so only a declared forecast renders one).
 #[test]
 fn a_pre_mint_staged_add_blocks_with_one_routed_finding_per_path() {
     let repo = TempDir::new("add");
@@ -255,12 +269,13 @@ fn a_pre_mint_staged_add_blocks_with_one_routed_finding_per_path() {
         "feature.rs",
     );
 
-    // The forecast still renders: the refuse must not block the `--dry-run` branch.
+    // The declared forecast still renders: the refuse inside the `--dry-run` branch
+    // takes `--carry-staged` as consent, exactly as the committing one does.
     ok(
         repo.path(),
         home.path(),
-        &["task", "finalize", task, "--dry-run"],
-        "jigc task finalize --dry-run",
+        &["task", "finalize", task, "--dry-run", "--carry-staged"],
+        "jigc task finalize --dry-run --carry-staged",
     );
 
     let before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
@@ -461,10 +476,13 @@ fn kind_of(manifest: &serde_json::Value, path: &str) -> String {
 }
 
 /// A pre-mint staged **add and deletion** render `carried-over` across the agent
-/// surfaces — the `--dry-run` forecast (text **and** JSON) and, on the `--carry-staged`
-/// run, both the **pre-commit print** (named before the commit lands) and the **landed
-/// manifest text** — while the task's own post-mint staged edit keeps its `added` kind
-/// (labeling changes no set membership).
+/// surfaces — the `--dry-run --carry-staged` forecast (text **and** JSON) and, on the
+/// `--carry-staged` run, both the **pre-commit print** (named before the commit lands)
+/// and the **landed manifest text** — while the task's own post-mint staged edit keeps
+/// its `added` kind (labeling changes no set membership).
+///
+/// The forecast declares its carry (M47 Inc 4 T3): the `carried-over` label *is* the
+/// rendering of a declared consent, so the surface that carries it is the declared one.
 #[test]
 fn carried_entries_label_carried_over_across_the_agent_surfaces() {
     let repo = TempDir::new("label-agent");
@@ -494,7 +512,7 @@ fn carried_entries_label_carried_over_across_the_agent_surfaces() {
     let dry = jigc(
         repo.path(),
         home.path(),
-        &["task", "finalize", task, "--dry-run"],
+        &["task", "finalize", task, "--dry-run", "--carry-staged"],
         None,
     );
     assert!(dry.status.success(), "the dry-run forecast must render");
@@ -519,7 +537,15 @@ fn carried_entries_label_carried_over_across_the_agent_surfaces() {
     let dry_json = jigc(
         repo.path(),
         home.path(),
-        &["task", "finalize", task, "--dry-run", "--format", "json"],
+        &[
+            "task",
+            "finalize",
+            task,
+            "--dry-run",
+            "--carry-staged",
+            "--format",
+            "json",
+        ],
         None,
     );
     assert!(dry_json.status.success(), "the JSON forecast must render");
@@ -574,6 +600,10 @@ fn carried_entries_label_carried_over_across_the_agent_surfaces() {
 /// landed `committed.manifest` are byte-identical (one pre-commit-computed carried set,
 /// threaded to both sites). Under `--format json` the pre-commit print goes to stderr
 /// (the envelope owns stdout) and names the carried path there.
+///
+/// Both runs declare the carry (M47 Inc 4 T3) — which is what makes this a comparison of
+/// like with like: the landed run was always `--carry-staged`, and the forecast now is
+/// too, instead of an undeclared forecast standing in for a declared commit.
 #[test]
 fn the_landed_json_labels_carried_over_and_forecast_landed_stay_identical() {
     let repo = TempDir::new("label-json");
@@ -597,7 +627,15 @@ fn the_landed_json_labels_carried_over_and_forecast_landed_stay_identical() {
     let dry = jigc(
         repo.path(),
         home.path(),
-        &["task", "finalize", task, "--dry-run", "--format", "json"],
+        &[
+            "task",
+            "finalize",
+            task,
+            "--dry-run",
+            "--carry-staged",
+            "--format",
+            "json",
+        ],
         None,
     );
     assert!(dry.status.success(), "the JSON forecast must render");

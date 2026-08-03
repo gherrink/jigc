@@ -11,6 +11,14 @@
 //! Drives the built `jigc` binary against throwaway git repos: the binary path comes from
 //! `CARGO_BIN_EXE_jigc`, the pack from `JIGC_PACK_DIR`, and a self-cleaning `TempDir` with
 //! an isolated `$HOME` keeps the test off the developer's machine.
+//!
+//! **M47 Increment 4 / T3 — the `--dry-run` false green.** The forecast used to exit **0**
+//! over a pre-mint staged plant the committing run refuses at **3**, and it labelled those
+//! entries `carried-over` — a consent `--carry-staged` never gave. Its refusing-state and
+//! committing-state `--format json` documents were **byte-identical**, so the flag whose
+//! whole job is *"tell me what this finalize will do"* was information-free on the wave's
+//! #1-ranked v1 gate. The three arms at the bottom of this file pin the fix: the refusal,
+//! the declared carry, the byte-identity broken, and the non-carrying forecast unmoved.
 
 use std::fs;
 use std::io::Write;
@@ -640,5 +648,257 @@ fn staged_new_file_renders_added_not_swept() {
     assert!(
         committed.lines().any(|l| l == "feature.rs"),
         "the staged-new file lands in the commit; files:\n{committed}",
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// M47 Increment 4 / T3 — `finalize --dry-run` stops forecasting a green it will refuse.
+// ---------------------------------------------------------------------------------------
+
+/// The intent + minted task id the T3 arms share.
+const T3_INTENT: &str = "dry run the carry";
+const T3_TASK: &str = "dry-run-the-carry";
+
+/// Seed a `single-task` whose forecast is deterministic: `jigc setup`, an optional
+/// **pre-mint staged plant** (`foreign-a.txt` + `foreign-b.txt` `git add`ed BEFORE the task
+/// exists — the carryover gate's exact subject), then the mint, the task's own staged
+/// `feature.rs`, an untracked `scratch.txt` stray, and a filled commit doc. No ADR: the
+/// included set is then exactly `feature.rs` (+ the plant, when planted), which is what
+/// lets the non-carrying arm pin the manifest bytes.
+fn seed_task_for_dry_run(repo: &Path, home: &Path, plant: bool) {
+    ok_stdout(repo, home, &["setup"], "jigc setup");
+    if plant {
+        fs::write(repo.join("foreign-a.txt"), "not this task's work\n").expect("write foreign-a");
+        fs::write(repo.join("foreign-b.txt"), "also not\n").expect("write foreign-b");
+        git(repo, &["add", "foreign-a.txt", "foreign-b.txt"]);
+    }
+    ok_stdout(
+        repo,
+        home,
+        &["start", "--workflow", "single-task", T3_INTENT],
+        "jigc start",
+    );
+    fs::write(repo.join("feature.rs"), "pub fn work() {}\n").expect("write feature.rs");
+    git(repo, &["add", "feature.rs"]);
+    fs::write(repo.join("scratch.txt"), "private WIP\n").expect("write scratch.txt");
+    fill_commit(repo, home, T3_TASK);
+}
+
+/// The `finalize.carried-staged` findings of a `--format json` envelope on stdout.
+fn carried_staged_findings(out: &std::process::Output) -> Vec<serde_json::Value> {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!("the refusing dry-run emits a findings envelope ({e}):\n{stdout}")
+    });
+    value["findings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the envelope carries a `findings` array; got:\n{stdout}"))
+        .iter()
+        .filter(|f| f["code"] == "finalize.carried-staged")
+        .cloned()
+        .collect()
+}
+
+/// (vi) T3 — **the false green is closed**: over a pre-staged-before-mint plant the
+/// forecast refuses at the same exit the committing run does, carrying one blocking
+/// `finalize.carried-staged` per carried path, and never labels the undeclared carry
+/// `carried-over`. Both surfaces (`json` on stdout, agent text on stderr) are asserted,
+/// and the dry-run remains a pure reader: HEAD unmoved, the index untouched.
+#[test]
+fn dry_run_over_a_pre_mint_plant_refuses_instead_of_forecasting_green() {
+    let repo = TempDir::new("t3-refuse");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_task_for_dry_run(repo.path(), home.path(), true);
+
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+    let staged_before = git(repo.path(), &["diff", "--cached", "--name-only"]);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "task", "finalize", T3_TASK, "--dry-run"],
+        None,
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "the forecast exits at the gate's own code, not 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let carried = carried_staged_findings(&out);
+    assert_eq!(
+        carried.len(),
+        2,
+        "one blocking finding per carried path; got:\n{carried:#?}",
+    );
+    for (finding, path) in carried.iter().zip(["foreign-a.txt", "foreign-b.txt"]) {
+        assert_eq!(
+            finding["severity"], "blocking",
+            "the forecast previews a block; got: {finding}",
+        );
+        assert_eq!(
+            finding["key"]["target"], path,
+            "the finding keys at the carried file path; got: {finding}",
+        );
+    }
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("carried-over"),
+        "an undeclared carry is never labelled `carried-over`; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+
+    // The agent-text surface refuses identically, on stderr.
+    let text = run_jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", T3_TASK, "--dry-run"],
+        None,
+    );
+    assert_eq!(
+        text.status.code(),
+        Some(3),
+        "the agent-text forecast refuses too; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&text.stdout),
+        String::from_utf8_lossy(&text.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&text.stderr);
+    assert!(
+        stderr.contains("foreign-a.txt") && stderr.contains("--carry-staged"),
+        "the refusal names the carried path and the flag that declares it; stderr:\n{stderr}",
+    );
+
+    // Still a dry-run: nothing committed, nothing staged or unstaged.
+    assert_eq!(
+        head_before,
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        "a refusing dry-run must not move HEAD",
+    );
+    assert_eq!(
+        staged_before,
+        git(repo.path(), &["diff", "--cached", "--name-only"]),
+        "a refusing dry-run stages and unstages nothing",
+    );
+}
+
+/// (vii) T3 — **`--dry-run --carry-staged` forecasts the carry**: the identical planted
+/// state exits 0 with `foreign-a.txt` / `foreign-b.txt` in the included manifest under the
+/// `carried-over` label, and **the two `--format json` documents are no longer
+/// byte-identical** — the diff IS the assertion, because byte-identity was the defect.
+#[test]
+fn dry_run_carry_staged_forecasts_the_carry_and_diverges_from_the_refusal() {
+    let repo = TempDir::new("t3-consent");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_task_for_dry_run(repo.path(), home.path(), true);
+
+    // Both runs are side-effect-free, so the same repo serves both — which is exactly
+    // what makes the byte-comparison a comparison of the same state.
+    let refusing = run_jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "task", "finalize", T3_TASK, "--dry-run"],
+        None,
+    );
+    let consenting = run_jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "--format",
+            "json",
+            "task",
+            "finalize",
+            T3_TASK,
+            "--dry-run",
+            "--carry-staged",
+        ],
+        None,
+    );
+
+    assert_eq!(
+        consenting.status.code(),
+        Some(0),
+        "a declared carry-over forecasts green; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&consenting.stdout),
+        String::from_utf8_lossy(&consenting.stderr),
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&consenting.stdout))
+            .expect("the consenting forecast parses as JSON");
+    let manifest = value["manifest"].as_array().expect("manifest is an array");
+    for path in ["foreign-a.txt", "foreign-b.txt"] {
+        assert!(
+            manifest
+                .iter()
+                .any(|e| e["path"] == path && e["kind"] == "carried-over"),
+            "the declared carry is forecast under the `carried-over` label; manifest:\n{manifest:?}",
+        );
+    }
+    assert!(
+        manifest
+            .iter()
+            .any(|e| e["path"] == "feature.rs" && e["kind"] == "added"),
+        "the task's own staged edit is still forecast; manifest:\n{manifest:?}",
+    );
+
+    assert_ne!(
+        refusing.stdout, consenting.stdout,
+        "the refusing and consenting forecasts must not be byte-identical — `--dry-run` \
+         has to be informative on the axis `--carry-staged` decides",
+    );
+}
+
+/// (viii) T3 — **the non-carrying forecast is byte-unchanged**: with no pre-mint plant the
+/// dry-run emits exactly the bytes it emitted before T3 existed, on both surfaces. Pinned
+/// verbatim (captured from the pre-fix binary) rather than probed by `contains`, because
+/// "unchanged" is a byte claim: the fix must reach the carrying state and nothing else.
+#[test]
+fn a_non_carrying_dry_run_manifest_is_byte_unchanged() {
+    let repo = TempDir::new("t3-unchanged");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_task_for_dry_run(repo.path(), home.path(), false);
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+
+    let text = run_jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", T3_TASK, "--dry-run"],
+        None,
+    );
+    assert_eq!(text.status.code(), Some(0), "the clean forecast exits 0");
+    assert_eq!(
+        String::from_utf8_lossy(&text.stdout),
+        "finalize --dry-run — pre-commit manifest (nothing committed)\n  \
+         added feature.rs\n  \
+         left-out (unstaged/untracked — git add to include):\n    scratch.txt\n",
+        "the agent-text forecast is byte-unchanged for a non-carrying task",
+    );
+
+    let json = run_jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "task", "finalize", T3_TASK, "--dry-run"],
+        None,
+    );
+    assert_eq!(
+        json.status.code(),
+        Some(0),
+        "the clean JSON forecast exits 0"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&json.stdout),
+        "{\n  \"dry_run\": true,\n  \"left_out\": [\n    {\n      \"kind\": \"untracked\",\n      \
+         \"path\": \"scratch.txt\"\n    }\n  ],\n  \"manifest\": [\n    {\n      \"kind\": \
+         \"added\",\n      \"path\": \"feature.rs\"\n    }\n  ]\n}",
+        "the JSON forecast is byte-unchanged for a non-carrying task",
+    );
+
+    // And it is still a pure reader.
+    assert_eq!(
+        head_before,
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        "the clean dry-run commits nothing",
     );
 }
