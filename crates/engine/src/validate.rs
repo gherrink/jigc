@@ -286,9 +286,16 @@ pub fn validate_task(
         // — a state phase-5 staging can satisfy, but only *after* the stage — so it moved out
         // of `validate_task` (the phase-2 site both `task validate` and finalize share) to a
         // dedicated post-stage site the CLI finalize transaction re-invokes over the
-        // just-staged index ([`owner_artifacts_gate`]; `design/finalize.md` → 5. Stage). The
-        // recorded behavior change: `jigc task validate` no longer reports the gate (exit 0 on
-        // the same state finalize blocks at exit 3 — the validate-0 / finalize-3 split).
+        // just-staged index ([`owner_artifacts_gate`]; `design/finalize.md` → 5. Stage).
+        //
+        // That relocation stands, and so does this omission: the gate is **not** an entry in
+        // this shared phase-2 sweep. What M47 Inc 4 / T2 changed is the *CLI* wiring above it
+        // — `jigc task validate` re-invokes the gate itself, once, under a constant-true
+        // `tracked` predicate, so the six staging-independent causes preview while cause 7
+        // (untracked) remains structurally unreachable from that door and stays post-stage
+        // (`DECISIONS.md` → 2026-07-26 M47 Settle, Decision 1). Running it here instead would
+        // re-introduce exactly the pre-stage `tracked` false-positive Decision 6 retired,
+        // because finalize's preflight shares this entry.
     }
 
     // Committed-store OOB reconciliation — sweep the committed managed docs and route
@@ -1802,8 +1809,17 @@ fn attribute_to_doc(findings: &mut [Finding], identity: &str, display: &str) {
 /// entry) but re-invoked by the CLI finalize transaction **after phase-5 staging**, with a
 /// `tracked` predicate built over the just-staged index — so a finalize that stages the
 /// recorded artifact in-transaction satisfies the gate in the same commit (the natural
-/// pre-staged authoring order lands, `DECISIONS.md` → 2026-07-23 Decision 5). `task
-/// validate` no longer reports it (Decision 6 — the validate-0 / finalize-3 split).
+/// pre-staged authoring order lands, `DECISIONS.md` → 2026-07-23 Decision 5).
+///
+/// **Two callers since M47 Inc 4 / T2** (`DECISIONS.md` → 2026-07-26 M47 Settle, Decision 1):
+/// the CLI finalize transaction's post-stage site above, and the `jigc task validate`
+/// *preview*, which invokes this same function under a **constant-true** `tracked`
+/// predicate. That predicate is the split: with it, `owned_location_violation`'s untracked
+/// branch is unreachable, so the preview reports the six staging-independent causes (empty ·
+/// absolute · `..` · not-under-home · names-no-file · symlink-escape) and cause 7 stays
+/// post-stage — Decision 6's rationale (a *pre-stage* `tracked` check false-positives a
+/// state phase-5 staging repairs) narrowed to the one cause it actually reaches, not
+/// overturned. The whole axis is swept at `crates/cli/tests/owner_artifact_cause_axis.rs`.
 ///
 /// Walks each staged `<type>:<slug>.md` instance's `owned-location` leaves via
 /// [`owner_artifact_present`]; an instance carrying no such field yields nothing (the
@@ -5932,14 +5948,23 @@ The audit landed green.
         std::fs::write(docs.join("completion-record:m16.md"), source).expect("stage record");
     }
 
-    /// (M45 Inc 8 T2 — the validate-0 / finalize-3 split, Decision 6) The owner-artifact
-    /// gate is **no longer** an entry in `validate_task`'s report — a completion-record
-    /// naming an **absent** owner-artifact makes `validate_task` report **no**
-    /// `owner-artifact.present` finding and **does not block** (so `jigc task validate`
-    /// exits 0 on this state) — while the relocated [`owner_artifacts_gate`], the post-stage
-    /// site the CLI finalize transaction re-invokes, **does** fire the blocker. The two poles
-    /// prove the split: the same absent state is validate-0 and gate-blocking. The staged +
-    /// tracked case keeps the gate silent (it lands).
+    /// (M45 Inc 8 T2 — Decision 6) The owner-artifact gate is **no longer** an entry in
+    /// `validate_task`'s report — a completion-record naming an **absent** owner-artifact
+    /// makes `validate_task` report **no** `owner-artifact.present` finding and **does not
+    /// block** — while the relocated [`owner_artifacts_gate`], the post-stage site the CLI
+    /// finalize transaction re-invokes, **does** fire the blocker. The staged + tracked case
+    /// keeps the gate silent (it lands).
+    ///
+    /// **Basis narrowed (M47 Inc 4 / T2, `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 1).**
+    /// The assertions below are unchanged and still hold: this shared phase-2 entry does not
+    /// run the gate, which is the property that keeps finalize's preflight free of the
+    /// pre-stage `tracked` false-positive. What no longer follows from them is the sentence
+    /// this doc used to draw — *"so `jigc task validate` exits 0 on this state"*. The wiring
+    /// is CLI-side, and `jigc task validate` now re-invokes [`owner_artifacts_gate`] itself
+    /// under a constant-true `tracked` predicate, so an **absent** artifact (the
+    /// names-no-file cause, which never consults `tracked`) blocks that door at exit 3.
+    /// Cause 7 (untracked) is the one that stays validate-0 / finalize-3; the seven-cause ×
+    /// two-surface axis is swept at `crates/cli/tests/owner_artifact_cause_axis.rs`.
     #[test]
     fn owner_artifact_gate_relocated_off_validate_task_to_post_stage() {
         // --- The absent case: validate_task is SILENT (Decision 6), the gate FIRES.
@@ -5978,7 +6003,9 @@ The audit landed green.
         );
         assert!(
             !report.has_blocking(),
-            "the absent-artifact state is validate-0 (blocks only at finalize), got {:?}",
+            "this shared phase-2 entry reports no blocking finding for the absent artifact — \
+             finalize's preflight must stay free of the pre-stage `tracked` check (the CLI \
+             preview door invokes the gate itself; M47 Inc 4 / T2), got {:?}",
             report.findings
         );
 

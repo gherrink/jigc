@@ -856,7 +856,7 @@ impl TaskArea {
     /// phase order (`design/finalize.md` → 5. Stage), so its exits, its rendered
     /// findings and its block order are untouched by this door existing.
     ///
-    /// Today's one member is the **carryover** decision: a pure decision over
+    /// The first member is the **carryover** decision: a pure decision over
     /// CLI-supplied git facts ([`decide_carryover`]) — the mint-time staged snapshot,
     /// the same probe re-run now, the migration retire pathspec, and the recorded
     /// owner-artifact paths, all read-only. It stages nothing and mutates nothing, so
@@ -871,6 +871,21 @@ impl TaskArea {
     /// preview of *its own* finalize rather than a permanently-red one (the
     /// cross-model review's scoping of the non-breaking argument).
     ///
+    /// The second member is the **#5 owner-artifact gate**
+    /// ([`owner_artifacts_gate`]) — run here under a **constant-true `tracked`
+    /// predicate**, which is the whole construction. M45 Decision 6 relocated this gate
+    /// off the shared phase-2 entry because a *pre-stage* `tracked` check false-positives
+    /// a state phase-5 staging repairs, and that rationale is preserved exactly: with
+    /// `tracked` pinned true the untracked branch of `owned_location_violation` is
+    /// structurally unreachable from this door, so cause 7 stays post-stage. What the
+    /// preview reaches is the other six causes — empty · absolute · `..` ·
+    /// not-under-home · names-no-file · symlink-escape — none of which consults
+    /// `tracked`, so no stage can change their verdict and previewing them cannot
+    /// false-positive (`DECISIONS.md` → 2026-07-26 M47 Settle, Decision 1: Decision 6
+    /// narrowed to its own stated grounds, not overturned). The trial's two live blocks
+    /// were causes 4 and 5. The gate reads the task's staged instances and the named
+    /// paths' presence only — no git shell-out, no staging, no mutation.
+    ///
     /// The merge goes through [`engine::result::ValidationReport::new`] with the
     /// resolved severity cascade — like the finalize-scope changelog advisory — so a
     /// project's severity delta applies to a previewed finding and the envelope stays
@@ -884,30 +899,42 @@ impl TaskArea {
         let GatePreview::On { carry_staged } = preview else {
             return Ok(report);
         };
-        if carry_staged {
-            return Ok(report);
+        let mut previewed = Vec::new();
+        if !carry_staged {
+            let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
+                format!(
+                    "could not read the staged snapshot for task at {:?}",
+                    self.dir
+                )
+            })?;
+            let retire_exempt = state::read_source_path(&self.dir).with_context(|| {
+                format!("could not read the source path for task at {:?}", self.dir)
+            })?;
+            previewed.extend(decide_carryover(
+                snapshot.as_ref(),
+                &git_staged_snapshot(&self.repo_root)?,
+                retire_exempt.as_deref(),
+                &engine::finalize::plan_owner_artifacts(&self.dir, schemas),
+                CarryoverBoundary::TaskPreview,
+            ));
         }
-        let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
-            format!(
-                "could not read the staged snapshot for task at {:?}",
-                self.dir
-            )
-        })?;
-        let retire_exempt = state::read_source_path(&self.dir).with_context(|| {
-            format!("could not read the source path for task at {:?}", self.dir)
-        })?;
-        let carried = decide_carryover(
-            snapshot.as_ref(),
-            &git_staged_snapshot(&self.repo_root)?,
-            retire_exempt.as_deref(),
-            &engine::finalize::plan_owner_artifacts(&self.dir, schemas),
-            CarryoverBoundary::TaskPreview,
+        // `&|_| true` is load-bearing, not a shortcut: it is what keeps cause 7 (untracked)
+        // post-stage while the six staging-independent causes preview.
+        previewed.extend(
+            owner_artifacts_gate(&self.dir, schemas, &self.repo_root, &|_| true).with_context(
+                || {
+                    format!(
+                        "previewing the owner-artifact gate for task at {:?}",
+                        self.dir
+                    )
+                },
+            )?,
         );
-        if carried.is_empty() {
+        if previewed.is_empty() {
             return Ok(report);
         }
         let mut findings = report.findings.into_vec();
-        findings.extend(carried);
+        findings.extend(previewed);
         Ok(engine::result::ValidationReport::new(
             findings,
             &self.severity_cascade()?,
@@ -1428,7 +1455,9 @@ impl TaskArea {
                 // stage-git failure or a hook rejection; the rollback (promotions + the third
                 // index axis) already ran in the executor. Checked first — it owns its own
                 // typed marker (`design/finalize.md` → 5. Stage; the validate-0/finalize-3
-                // split).
+                // split, which since M47 Inc 4 / T2 is **cause 7's alone** — the other six
+                // are previewable, so a driver that ran `task validate` has already seen
+                // them; the untracked cause is the only one it could not have).
                 if let Some(block) = err.downcast_ref::<OwnerArtifactBlock>() {
                     return self.blocked(block.0.clone(), format);
                 }
@@ -2432,7 +2461,11 @@ fn path_is_ignored(repo_root: &Path, path: &str) -> bool {
 /// recorded artifact satisfies it in the same transaction (`design/finalize.md` → 5. Stage).
 /// A blocking result becomes an [`OwnerArtifactBlock`] error, so the shared executor rolls
 /// back (promotions + the third index axis) and the per-task surface routes it through
-/// `self.blocked()` (exit 3, the validate-0 / finalize-3 split). Inert (a no-op, no git
+/// `self.blocked()` (exit 3). Still the gate's only *authoritative* home — it is the one
+/// run over the real post-stage index. Since M47 Inc 4 / T2 the six staging-independent
+/// causes are also **previewed** at `task validate` under a constant-true predicate
+/// ([`TaskArea::preview_gates`]), so the validate-0 / finalize-3 split is now **cause 7's
+/// alone**: untracked is the one verdict no preview could have shown. Inert (a no-op, no git
 /// shell-out) when the plan records no owner-artifact — every non-completion task.
 fn gate_owner_artifacts_post_stage(
     repo_root: &Path,

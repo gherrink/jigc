@@ -276,17 +276,24 @@ fn finalize_blocks_on_an_absent_owner_artifact() {
         "completions/artifacts/M16/audit.md",
     );
 
-    // (M45 Inc 8 T2 — the validate-0 / finalize-3 split, Decision 6) The gate moved out of
-    // `validate_task` to a post-stage site, so `jigc task validate` over the SAME
-    // absent-artifact state now exits 0 (it no longer reports the gate) — the block is a
-    // finalize-time-only check.
+    // (M47 Inc 4 / T2 — Decision 1, narrowing M45 Decision 6 to its own stated grounds)
+    // The absent-artifact state is the **names-no-file** cause, which never consults
+    // `tracked` — so no stage can change its verdict and `jigc task validate` PREVIEWS it
+    // rather than reporting a green the committing door refuses. The relocation Decision 6
+    // made still holds for cause 7 (untracked), which stays post-stage; the whole seven-cause
+    // axis is swept in `owner_artifact_cause_axis.rs`.
     let validate = jigc(repo.path(), home.path(), &["task", "validate", task]);
-    assert!(
-        validate.status.success(),
-        "`task validate` over the absent-artifact state exits 0 (the gate is finalize-only \
-         now); stdout:\n{}\nstderr:\n{}",
+    assert_eq!(
+        validate.status.code(),
+        Some(3),
+        "`task validate` previews the absent-artifact block at exit 3; stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&validate.stdout),
         String::from_utf8_lossy(&validate.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&validate.stdout).contains("owner-artifact.present"),
+        "the preview names the gate it previews; stdout:\n{}",
+        String::from_utf8_lossy(&validate.stdout),
     );
 
     let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
