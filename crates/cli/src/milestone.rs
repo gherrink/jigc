@@ -2357,6 +2357,14 @@ fn run_milestone_finalize(
 /// transactional" — the flip must not persist without the commit). The success paths call
 /// [`disarm`](RecordFlipGuard::disarm) once the commit has landed, so the committed `joined`
 /// bytes are kept.
+///
+/// **The guard covers the WORKTREE axis only.** The finalize commit path-adds the record's
+/// pathspec into the **live** index (both fan-out arms, through
+/// `overlay_docs_commit_and_ff`), and restoring the file's bytes does not un-stage that blob —
+/// a refused boundary was left with a `joined` blob staged for a milestone that never
+/// finalized. The **index** half is the executor's fifth-family capture/restore
+/// ([`crate::task::StagePolicy::live_index_record_pathspecs`]; M47 Inc 3 T5,
+/// `design/finalize.md` → Rollback discipline). The two halves together are the transaction.
 struct RecordFlipGuard {
     /// The committed record's on-disk path (outside `.jigc/`).
     path: PathBuf,

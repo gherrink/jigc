@@ -1789,6 +1789,34 @@ pub(crate) enum StagePolicy {
     },
 }
 
+impl StagePolicy {
+    /// The milestone-record pathspecs this arm `git add`s into the **LIVE** index — the
+    /// fifth staged-path family's *fan-out* member (M47 Inc 3 T5; `design/finalize.md` →
+    /// Rollback discipline).
+    ///
+    /// Both fan-out arms land through [`overlay_docs_commit_and_ff`], which stages the
+    /// record alongside the promoted docs + config layer into the live index before its
+    /// `git merge --ff-only`. The promotions / owner-artifact / config-layer axes each
+    /// capture their own contribution; the record's was the one gap, so a boundary that
+    /// refused **after** that stage (an `--ff-only` refusal over ordinary untracked WIP)
+    /// left a `joined` blob staged for a milestone that never finalized — which a later
+    /// plain `git commit` would land as a lying record.
+    ///
+    /// The match is **exhaustive by construction** (the set-fence discipline —
+    /// `implementation/dev-workflow.md` → *a defect at a distance*): a new arm that stages
+    /// a path into the live index must decide here, so the rollback provably covers exactly
+    /// what the stage adds.
+    fn live_index_record_pathspecs(&self) -> Vec<String> {
+        match self {
+            // The per-task stages touch no milestone record.
+            StagePolicy::MigrationFixed | StagePolicy::IndexHonoring => Vec::new(),
+            StagePolicy::Combine(_, record) | StagePolicy::ChainPerSubtask { record, .. } => {
+                record.iter().cloned().collect()
+            }
+        }
+    }
+}
+
 /// The **shared** transactional executor — a [`FinalizePlan`]'s commit phases 4–7: promote + stage + commit +
 /// post-commit, returning `Ok(Ok(hook_output))` when the aggregate landed and
 /// `Ok(Err(_))` when the commit was rejected (the promotions already rolled back). The
@@ -1867,6 +1895,14 @@ pub(crate) fn try_execute_finalize_plan(
     // to its pre-finalize state — never a stray-staged stamp/config the owner-artifact axis (and
     // the promotions axis) did not cover.
     let mut config_index: Vec<ConfigLayerIndexEntry> = Vec::new();
+    // The FIFTH staged-path family's fan-out member (M47 Inc 3 T5, `design/finalize.md` →
+    // Rollback discipline, the record row): the milestone record's pre-finalize index entry.
+    // Both fan-out arms reach `overlay_docs_commit_and_ff`, which `git add`s the record into
+    // the LIVE index before its `--ff-only`; every other path that stage adds is covered by
+    // the promotions / config-layer axes, and the record was the gap. Empty (inert) on every
+    // per-task arm and dev-only (no `milestone-record` schema → no pathspec).
+    let record_paths = stage.live_index_record_pathspecs();
+    let mut record_index: Vec<OwnerArtifactIndexEntry> = Vec::new();
     let commit_result = (|| -> Result<String> {
         // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`,
         // capturing any displaced pre-existing destination bytes for the rollback. The
@@ -1908,6 +1944,13 @@ pub(crate) fn try_execute_finalize_plan(
         // the live index, and the fan-out `overlay_docs_commit_and_ff` stages the config layer into
         // the live index before its `--ff-only` (where a collision aborts to this same rollback).
         config_index = capture_config_layer_index(repo_root)?;
+        // Capture the milestone record's pre-finalize index entry — the fifth family's
+        // fan-out member, on the same shared index primitive (which already models "absent",
+        // so a record not yet in the index is restored to *absent*, never conjured). The
+        // record's WORKTREE bytes are the `RecordFlipGuard`'s half; this is the index half
+        // the guard never covered. Read here, before the stage arm's live `git add`, so it is
+        // the genuine pre-finalize state (the flip touched only the worktree file).
+        record_index = capture_owner_artifact_index(repo_root, &record_paths)?;
         match stage {
             // Narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
             // `DECISIONS.md` B2): a migration touches no code, so stage ONLY its own
@@ -1983,6 +2026,13 @@ pub(crate) fn try_execute_finalize_plan(
             // stage — the `.jigc/version` stamp `refresh_version_stamp` rewrote and the config
             // layer the stage (re)added — so the stamp/config entries are never left staged.
             rollback_config_layer_index(repo_root, &config_index);
+            // The fifth family's fan-out member (M47 Inc 3 T5): restore the milestone
+            // record's captured pre-finalize index entry, so a refused boundary leaves no
+            // `joined` blob staged for a milestone that never finalized (the
+            // `RecordFlipGuard` restores the worktree bytes to `active`; without this the
+            // index kept the flipped blob and the next plain `git commit` landed a lying
+            // record). Inert on every arm that stages no record.
+            rollback_owner_artifact_index(repo_root, &record_index);
             return Ok(Err(err));
         }
     };
