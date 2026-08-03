@@ -259,7 +259,7 @@ creates-task: false   # operates on an existing milestone work-unit; mints no ta
 {{ include: step:milestone-finalize }} # parent finalize: combine the worktree-staged code (disjoint-apply, id order) + promote docs — the commit boundary
 ```
 
-The leading **`provision-worktrees`** step is an ordinary `Run:` step ([Emitted format](#emitted-format)) — it composes to `` Run: `jigc milestone …` `` and provisions one ephemeral, gitignored git worktree per sub-task at the milestone base pin, so each fanned sub-agent has its own index/HEAD to `git add` code into ([storage.md](storage.md#cli-and-git) → the three combine modes). The worktrees are torn down at finalize.
+The leading **`provision-worktrees`** step is an ordinary `Run:` step ([Emitted format](#emitted-format)) — it composes to `` Run: `jigc milestone …` `` and provisions one ephemeral, gitignored git worktree per sub-task at the milestone base pin, so each fanned sub-agent has its own index/HEAD to `git add` code into ([storage.md](storage.md#cli-and-git) → the three combine modes). The worktrees are torn down on a **landed** commit boundary — or by `jigc milestone discard` when the milestone is abandoned; an **aborted** finalize leaves them registered and intact, because the worktree is the sole copy of the sub-agent's staged code and nothing was committed ([team-ready-state.md](team-ready-state.md) → Abandon refuses on a dirty worktree).
 
 The fanned **`sub-task`** workflow (the `run:` target) is **fan-out-free by construction** — `{{ include: step:locate }}` / `step:implement` / `step:author-commit`, no `finalize`, no `fan-out` step — which is what structurally guarantees the no-nested-`fan-out` rule (below): a sub-agent's workflow can never itself fan out.
 

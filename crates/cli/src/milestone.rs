@@ -2208,14 +2208,28 @@ fn run_milestone_finalize(
                 remove_worktrees(&repo_root, &jigc_home, &list);
                 Ok(Outcome::success())
             }
-            // The chain was aborted (a per-sub-task or the aggregate hook rejection). The
-            // chain built every commit in a dedicated worktree and never fast-forwarded main,
-            // so the live checkout is untouched (HEAD at the pre-finalize sha, unrelated WIP
-            // intact) and there is nothing to reset. The executor already rolled back its
-            // promoted-doc copies; tear down the fan-out worktrees (the sub-task areas survive
-            // for retry), surface git's stderr verbatim, and exit `FAILURE`.
+            // The chain was aborted. The `Err` is untyped, so this arm catches EVERY way the
+            // boundary refuses: a per-sub-task hook rejection, the aggregate hook's, and a
+            // `git merge --ff-only` refusal over ordinary untracked main-checkout WIP with no
+            // hook installed at all. The chain built every commit in a dedicated worktree and
+            // never fast-forwarded main, so the live checkout is untouched (HEAD at the
+            // pre-finalize sha, unrelated WIP intact) and there is nothing to reset. The
+            // executor already rolled back its promoted-doc copies.
+            //
+            // **The fan-out worktrees are NOT torn down here** (M47 Inc 3; `finalize.md` →
+            // 6. Commit: *"working area intact"*). `remove_worktrees` runs
+            // `git worktree remove --force`, whose safety rests on the commit having landed
+            // **first** — every byte the worktree held is then already in git
+            // (`design/team-ready-state.md` → Abandon refuses on a dirty worktree). On THIS
+            // arm the commit did not land, and since M31 Inc 4/5 the provisioned worktree is
+            // the **sole copy** of a sub-agent's staged code, so the teardown destroyed exactly
+            // the work a retry needs. The `squash: true` abort sibling below already tears down
+            // nothing; both arms now leave the whole working area — sub-task areas AND
+            // worktrees — intact for the re-run. (A landed boundary still tears down, above;
+            // an abandoned milestone is torn down by `jigc milestone discard`, which refuses on
+            // a dirty worktree unless `--force`.) Surface git's stderr verbatim and exit
+            // `FAILURE`.
             Err(err) => {
-                remove_worktrees(&repo_root, &jigc_home, &list);
                 eprintln!("{}", render::operational_error(format, &err));
                 // A rejected chain names itself in the invocation log (the route-exempt
                 // commit-phase identity), while git's stderr above stays verbatim.
@@ -2397,8 +2411,13 @@ fn cleanup_subtask_areas(jigc_root: &Path, list: &engine::milestone::TaskList) {
     }
 }
 
-/// Tear down the milestone's fan-out worktrees once the commit boundary settles — a
-/// landed finalize (success) or an abort reset. For each sub-task id whose
+/// Tear down the milestone's fan-out worktrees once the milestone actually settles — a
+/// **landed** finalize (both fan-out modes) or a `discard`. Never an **aborted** finalize:
+/// the removal is `--force`, which is safe only because the commit landed first, so every
+/// byte the worktree held is already in git; on an abort nothing landed and the worktree is
+/// the sole copy of the sub-agent's staged code (M47 Inc 3; `design/finalize.md` → 6. Commit,
+/// *"working area intact"*). `discard` is the one un-landed caller, and it refuses on a dirty
+/// worktree unless the human declares `--force`. For each sub-task id whose
 /// `<jigc_home>/.jigc/worktrees/<id>` checkout is still a **registered** worktree,
 /// `git worktree remove --force` it, then `git worktree prune` the admin records (the
 /// [`provision_worktrees`] inverse). A never-provisioned (or already-removed) sub-task

@@ -116,7 +116,7 @@ docs/decisions/ docs/specs/ docs/prds/ docs/architecture/ docs/changelog/   # co
   index/                    #   gitignored — edge index (rebuildable cache)
   state/                    #   gitignored — file↔CLI-state hashes (rebuildable)
   milestones/               #   gitignored — milestone WIP (merge staging, worktrees) + the {base,tasks}.json cache re-derived from the committed milestone-record (M39; team-ready-state.md)
-  worktrees/<sub-task-id>/  #   gitignored — ephemeral per-sub-agent code worktrees (provisioned + torn down per fan-out)
+  worktrees/<sub-task-id>/  #   gitignored — ephemeral per-sub-agent code worktrees (provisioned per fan-out; torn down on a LANDED boundary or by `milestone discard` — an aborted finalize leaves them intact for the re-run)
 ```
 
 **Per-doctype locations are human-chosen, not mechanical.** Each persisted doctype declares its own `location:` (`adr → decisions/`, `spec → specs/`, `prd → prds/`, `arch-doc → architecture/`, `changelog → changelog/`) — deliberately the most readable name for that doctype (`decisions/` over `adrs/`, `architecture/` over `arch-docs/`), **not** a uniform `<type>s/` rule. These nest under the **`docs-root`** parent (default `docs/` → `docs/decisions/`, `docs/specs/`, …; see [Config layout](#config-layout)) — one tidy home rather than five dirs polluting the repo root — committed, human-reviewable plain Markdown alongside the project's own `src/`. (A pre-existing same-named dir with non-conformant content is detected and routed by `ingest`, not silently overwritten.)

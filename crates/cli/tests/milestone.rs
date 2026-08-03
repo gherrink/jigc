@@ -2308,12 +2308,26 @@ fn milestone_finalize_tears_down_the_provisioned_worktrees_on_a_landed_commit() 
 }
 
 #[test]
-fn milestone_finalize_tears_down_the_provisioned_worktrees_on_an_aborted_finalize() {
+fn milestone_finalize_keeps_the_provisioned_worktrees_on_an_aborted_finalize() {
     // (b) An aborted milestone finalize (a `pre-commit` hook rejects the aggregate, driving
-    // the `squash: false` rollback) must STILL tear down the provisioned worktrees, even
-    // though the sub-task areas are left intact for retry. HEAD rolls back to the
-    // pre-finalize sha and the worktrees are removed. RED before the abort-branch teardown
-    // wiring (the worktrees survive the abort), GREEN after.
+    // the `squash: false` rollback) must leave the provisioned worktrees ALIVE — registered,
+    // with their staged code intact — alongside the sub-task areas it already left intact for
+    // retry. HEAD stays at the pre-finalize sha and nothing is torn down.
+    //
+    // **This assertion is the INVERSE of the one this test shipped with, and the reversal is a
+    // basis-has-changed rebuttal, not an override** (M47 Inc 3 T1). The original demanded the
+    // teardown on the strength of `DECISIONS.md` → 2026-06-21 M31 Inc 3 T4, which wired it
+    // into the abort path when that path still `reset --hard`ed the LIVE checkout — the
+    // worktrees were then redundant scratch. M31 Inc 4/5 then made the provisioned worktree
+    // the **sole copy** of a sub-agent's staged code, falsifying that basis: `git worktree
+    // remove --force` on the abort arm destroys work no commit ever captured, against
+    // `design/finalize.md` → 6. Commit (*"working area intact"*). A landed finalize still tears
+    // down (the two success arms), and an abandoned milestone is torn down by `jigc milestone
+    // discard`, which refuses on a dirty worktree unless `--force`.
+    //
+    // The rejection-cause AXIS this instance sits on — the aggregate hook, a per-sub-task
+    // hook, and a hookless `git merge --ff-only` refusal, each with its recovery re-run — is
+    // `crates/cli/tests/milestone_abort_survives.rs`.
     let repo = TempDir::new("teardown-abort");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -2359,16 +2373,16 @@ fn milestone_finalize_tears_down_the_provisioned_worktrees_on_an_aborted_finaliz
         "an aborted finalize must leave the commit count unchanged",
     );
 
-    // The worktrees are torn down despite the abort.
+    // The worktrees survive the abort — the sub-agents' code is not destroyed.
     assert_eq!(
         dir_child_count(&wt_root),
-        0,
-        "an aborted finalize must still remove every provisioned worktree dir",
+        2,
+        "an aborted finalize must leave every provisioned worktree dir in place",
     );
     let list = worktree_list(repo.path());
     assert!(
-        !list.contains("worktrees/area-low") && !list.contains("worktrees/area-zed"),
-        "an aborted finalize must UNREGISTER the fan-out worktrees; got:\n{list}",
+        list.contains("worktrees/area-low") && list.contains("worktrees/area-zed"),
+        "an aborted finalize must leave the fan-out worktrees REGISTERED; got:\n{list}",
     );
 }
 
