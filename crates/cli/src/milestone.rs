@@ -30,9 +30,9 @@ use engine::finalize::plan_milestone_finalize;
 use engine::finding::{Finding, Location, Severity};
 use engine::index::{EdgeIndex, load_committed};
 use engine::milestone::{
-    JoinOutcome, MintedMilestone, add_from_spec, add_task, join, materialize, milestone_dir,
-    mint_milestone, read_base_pin, read_task_list, render_fresh_record, synthesized_message,
-    worktree_path,
+    JoinOutcome, MintedMilestone, TASKS_FILE, add_from_spec, add_task, join, materialize,
+    milestone_dir, mint_milestone, read_base_pin, read_task_list, render_fresh_record,
+    synthesized_message, worktree_path,
 };
 use engine::packsource::PackResourceKind;
 use engine::schema::Schema;
@@ -304,7 +304,14 @@ fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
             .get(MILESTONE_RECORD_TYPE)
             .copied()
             .unwrap_or(1);
-        hook_output = materialize_and_commit_record(&jigc_home, schema, &minted, stamp)?;
+        // The mint unwinds with its record (M47 Inc 2 T2): the record transaction restores the
+        // *committed* half, and this restores the *workbench* half — the milestone area minted
+        // three lines up. Removing it is safe precisely because [`mint_milestone`] refuses on a
+        // pre-existing area, so `minted.dir` is one this call created, never one it found.
+        // Without it the re-run blocks on `milestone.serial-collision` forever, and the approved
+        // recoverability ("fix the hook, re-run, it succeeds") is unreachable.
+        hook_output = materialize_and_commit_record(&jigc_home, schema, &minted, stamp)
+            .inspect_err(|_| unwind_mint(&minted.dir, None))?;
     }
 
     Ok((
@@ -482,6 +489,37 @@ fn rollback_record_pre_image(repo_root: &Path, pre: &RecordPreImage) {
         }
     }
     crate::task::rollback_owner_artifact_index(repo_root, &pre.index);
+}
+
+/// **Unwind exactly what this door minted in the same call** — the *workbench* half of a
+/// rejected record-only door (M47 Inc 2 T2; `DECISIONS.md` 2026-07-26 → the M47 Settle,
+/// Decision 4, the approved *"fix the hook, re-run, it succeeds"*).
+///
+/// [`commit_record_transaction`] restores the *committed* half, but the door's own mint survived
+/// it — so the identical re-run blocked on `milestone.serial-collision` (`create`) or
+/// `milestone.sub-task-collision` (`add-task`) **forever**. `area` is the directory this call
+/// created (`create`'s milestone area, `add-task`'s sub-task area) and `restore` is a file this
+/// call appended to, paired with its captured pre-append bytes (`add-task`'s `tasks.json`).
+///
+/// **The unwind is the CLI door's, never a relaxation of the engine's identity guard.** Both
+/// engine mints refuse on a pre-existing id before creating anything, which is what makes the
+/// removal safe: an `area` reaching here is one *this* call minted, not one it found.
+///
+/// Best-effort, like every sibling rollback: the commit did **not** land, so a cleanup failure
+/// must not replace the door's real error (the hook's stderr stays the correction signal) — but
+/// it is noted on stderr rather than swallowed, because what survives is a workbench the operator
+/// may have to remove by hand.
+fn unwind_mint(area: &Path, restore: Option<(&Path, &[u8])>) {
+    if area.exists()
+        && let Err(err) = std::fs::remove_dir_all(area)
+    {
+        eprintln!("note: could not unwind the minted working area at {area:?}: {err:#}");
+    }
+    if let Some((path, bytes)) = restore
+        && let Err(err) = std::fs::write(path, bytes)
+    {
+        eprintln!("note: could not restore {path:?} to its pre-append bytes: {err:#}");
+    }
 }
 
 /// [`commit_record_only`] as a **transaction**: on any failure of the stage/commit (a
@@ -781,6 +819,12 @@ fn run_add_task(
     // cache exists / dev-only (no record). Refuses a settled record (the terminal guard).
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
+    // The task list's pre-append bytes, captured BEFORE the mint appends to it — the
+    // workbench half of this door's pre-image (M47 Inc 2 T2). Captured as raw bytes, so the
+    // restore puts back what was there rather than a re-render of what was parsed.
+    let list_path = milestone_dir(&jigc_root, milestone_id).join(TASKS_FILE);
+    let pre_list = std::fs::read(&list_path).ok();
+
     let added = add_task(&jigc_root, milestone_id, intent, workflow).map_err(finding_to_err)?;
 
     // The record-home split (`design/team-ready-state.md` → Engine capability 1 (write), the
@@ -793,6 +837,11 @@ fn run_add_task(
     // axis) — empty dev-only (no record, no commit, no hook ran).
     let mut hook_output = String::new();
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        // The mint unwinds with its record (M47 Inc 2 T2): on a rejected commit the sub-task
+        // area this call minted goes, and the task list returns to its captured pre-append
+        // bytes — so the demoted cache never names a sub-task the record does not, and the
+        // identical re-run mints the same id instead of blocking on
+        // `milestone.sub-task-collision`.
         hook_output = append_and_commit_record(
             &jigc_home,
             &jigc_root,
@@ -800,7 +849,15 @@ fn run_add_task(
             milestone_id,
             &added.task.id,
             intent,
-        )?;
+        )
+        .inspect_err(|_| {
+            unwind_mint(
+                &added.task.dir,
+                pre_list
+                    .as_deref()
+                    .map(|bytes| (list_path.as_path(), bytes)),
+            );
+        })?;
     }
 
     Ok((
@@ -997,7 +1054,7 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 /// `milestone.terminal`, routed to the committed record's read surface. Before that refusal
 /// existed, this function was the **resurrection**: it rebuilt the workbench that `discard`'s
 /// teardown (and `finalize`'s) had just removed, straight out of the settled record.
-/// **Refuse a `create` whose id a committed record already owns** — the identity half of the
+/// **Refuse a `create` whose id a record already owns** — the identity half of the
 /// terminal predicate (M42 completion-audit HIGH; `design/team-ready-state.md` → The lifecycle).
 /// Resolves the record home of the **exact id the mint will produce**
 /// ([`engine::milestone::mint_id`] — never a second slug derivation) and blocks when a record

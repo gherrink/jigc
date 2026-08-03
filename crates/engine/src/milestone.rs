@@ -34,7 +34,11 @@ const BASE_PIN_FILE: &str = "base.json";
 
 /// The task-list filename inside a milestone's area — the sub-task ids the
 /// by-task-id join will enumerate, persisted as deterministic engine state.
-const TASKS_FILE: &str = "tasks.json";
+///
+/// `pub` for one consumer: the CLI `add-task` door captures this file's pre-append bytes so a
+/// rejected record commit can restore them (M47 Inc 2 T2). The name is decided **here**, beside
+/// every writer of it, so the door cannot drift onto a second spelling of it.
+pub const TASKS_FILE: &str = "tasks.json";
 
 /// The `milestone-record` doctype's **header (front-matter) section id** — the
 /// `meta` block, the `completion-record` sibling convention
@@ -802,17 +806,25 @@ pub fn terminal_milestone_finding(milestone_id: &str, status: &str) -> Finding {
     )
 }
 
-/// The blocking finding `milestone create` refuses an **already-owned id** with: a committed
-/// record already lives at the minted slug's canonical home (`design/team-ready-state.md` → The
+/// The blocking finding `milestone create` refuses an **already-owned id** with: a record
+/// already lives at the minted slug's canonical home (`design/team-ready-state.md` → The
 /// lifecycle; M42 completion-audit HIGH).
 ///
 /// The mint's own collision check reads the **workbench** (`.jigc/milestones/<id>/`), which is
 /// gitignored, disposable, and *absent by design* in two legitimate states — a fresh clone of an
 /// in-flight milestone, and a settled one whose terminal op tore it down. So the workbench cannot
-/// answer *"is this id taken?"*; only the committed record can, and it is the record — never the
+/// answer *"is this id taken?"*; only the record's home can, and it is the record — never the
 /// cache — that a re-mint would **overwrite**. `status` is the existing record's header status
 /// (`None` if it does not read), which decides the route: a **live** record is *continued*, a
 /// **settled** one is over and its id is spent.
+///
+/// **The message says "a record", never "a committed record"** (M47 Inc 2 T2; law 1 —
+/// `design/surface-contract.md`). The caller probes the record path's **existence on disk** and
+/// runs no git read, so it cannot know the file ever landed: a hand-drafted record, or (before
+/// the record-commit transaction shipped) the residue of a rejected `create`, is present and
+/// uncommitted, and claiming a commit that never happened is exactly the class of lie the
+/// caller's own wave exists to remove. The refusal and its route are unchanged — only the
+/// unfounded provenance claim goes.
 pub fn record_exists_finding(milestone_id: &str, status: Option<&str>) -> Finding {
     let reads = status
         .map(|s| format!(" (its record reads `{s}`)"))
@@ -828,7 +840,7 @@ pub fn record_exists_finding(milestone_id: &str, status: Option<&str>) -> Findin
     Finding::graded(
         Severity::Blocking,
         "milestone.record-exists",
-        format!("milestone `{milestone_id}` already has a committed record{reads}"),
+        format!("milestone `{milestone_id}` already has a record{reads}"),
         Some(Location::addressed(
             format!("milestone:{milestone_id}"),
             1,

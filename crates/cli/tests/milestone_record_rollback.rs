@@ -35,6 +35,26 @@
 //! nothing re-baselines and `design/reconciliation.md`'s re-baselining rule stands
 //! untouched — assertion 5 is what proves the restored bytes still match the baseline
 //! the *last landed* write recorded.
+//!
+//! **T2 — the mint unwinds with its record.** T1 restores the *committed* half; the
+//! *workbench* half survived, so the re-run hit `milestone.serial-collision` /
+//! `milestone.sub-task-collision` — honest, but not the approved recoverability
+//! (*"fix the hook, re-run, it succeeds"*). Two assertions join the same axis, and
+//! the axis card is the **what each door minted in the same call** enumeration:
+//!
+//!   2b. the door's own mint is **unwound** — `create` removed the milestone area it
+//!       created; `add-task` removed the sub-task area and restored `tasks.json` to its
+//!       pre-append bytes; `discard` mints nothing and its workbench is asserted to
+//!       **survive** (the already-safe member, pinned so a future teardown-before-commit
+//!       reddens here); `add-from-spec` is **excluded with its reason** — its k−1 landed
+//!       record commits make its recovery a *resume*, not an unwind, and it is T3's;
+//!   7. the **recovery arm** — with the hook removed the *identical* door argv re-runs at
+//!      exit 0 and lands what it always would have: `create` lands its record commit,
+//!      `add-task` leaves `tasks.json` + `.jigc/tasks/` + the committed record naming
+//!      exactly one sub-task each (no orphan area, no duplicate item) with
+//!      `jigc milestone list-tasks` and `jigc doc show … --format json` agreeing on the
+//!      set, `discard` settles the record and removes the workbench — and `jigc validate`
+//!      is clean at exit 0 afterwards.
 
 use std::fs;
 use std::io::Write;
@@ -157,6 +177,42 @@ const RECORD_SPEC: &str = "docs/milestone-records/cache-rework.md";
 /// rejected door.
 const RECORD_LOCATION: &str = "docs/milestone-records/";
 
+/// The sub-task the `add-task` door mints — its intent, and the frozen slug that intent
+/// mints to. The recovery arm counts **that one identity** in three places (the demoted
+/// `tasks.json` cache, the `.jigc/tasks/` area, the committed record), so it is named once.
+const ADD_TASK_INTENT: &str = "Evict cold entries";
+const ADD_TASK_SUB_ID: &str = "evict-cold-entries";
+
+/// The milestone's **gitignored workbench** `.jigc/milestones/<id>/` — what `create` mints
+/// and what `discard`'s teardown removes.
+fn milestone_area(repo: &Path) -> PathBuf {
+    repo.join(".jigc").join("milestones").join(MILESTONE_ID)
+}
+
+/// The milestone's demoted task-list cache — the file `add-task` appends to and whose
+/// pre-append bytes its unwind restores. Keyed on the engine's own constant, so the suite
+/// cannot pin a second spelling of a name the engine decides.
+fn task_list_path(repo: &Path) -> PathBuf {
+    milestone_area(repo).join(engine::milestone::TASKS_FILE)
+}
+
+/// The sub-task working areas whose directory name starts with `prefix` — the orphan probe
+/// (a leftover `evict-cold-entries` blocks the re-run; a suffixed `evict-cold-entries-2`
+/// would be a *duplicate* identity, which the count catches).
+fn sub_task_areas(repo: &Path, prefix: &str) -> Vec<String> {
+    let mut names: Vec<String> = match fs::read_dir(repo.join(".jigc").join("tasks")) {
+        Ok(entries) => entries
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|name| name.starts_with(prefix))
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    names.sort();
+    names
+}
+
 /// The rejecting hook's own stderr — asserted **verbatim** in the door's output (the
 /// hook channel is never wrapped or edited; `design/finalize.md` → the M40 refinement 3).
 const HOOK_STDERR: &str = "record commit rejected by the test hook";
@@ -274,7 +330,7 @@ fn setup_for(door: &str, repo: &Path, home: &Path) {
 fn door_argv(door: &str) -> Vec<&'static str> {
     match door {
         "create" => vec!["milestone", "create", MILESTONE_TITLE],
-        "add-task" => vec!["milestone", "add-task", MILESTONE_ID, "Evict cold entries"],
+        "add-task" => vec!["milestone", "add-task", MILESTONE_ID, ADD_TASK_INTENT],
         "add-from-spec" => vec![
             "milestone",
             "add-from-spec",
@@ -284,6 +340,242 @@ fn door_argv(door: &str) -> Vec<&'static str> {
         "discard" => vec!["milestone", "discard", MILESTONE_ID],
         other => panic!("unknown door `{other}`"),
     }
+}
+
+/// **T2 assertion 2b — the door's own mint is unwound.** Each door unwinds exactly what
+/// *it* minted in the same call, so the axis card is per-door and every member is
+/// covered / excluded-with-reason / already-safe rather than brainstormed:
+///
+/// - `create` mints `.jigc/milestones/<id>/` → **removed** (never one it *found*: the
+///   engine's serial collision refuses before the mint, so a returned area was created here);
+/// - `add-task` mints `.jigc/tasks/<sub>/` and appends `tasks.json` → **both undone**, the
+///   task list restored to its captured pre-append bytes;
+/// - `add-from-spec` mints N sub-tasks with k−1 record commits already **landed**, so its
+///   recovery is a resume rather than an unwind — **T3's**, excluded here with that reason;
+/// - `discard` mints nothing (its teardown runs *after* the commit) → the workbench must
+///   **survive**, asserted so a future teardown-before-commit reddens on this arm.
+fn assert_mint_unwound(door: &str, repo: &Path, pre_task_list: Option<&Vec<u8>>) {
+    match door {
+        "create" => assert!(
+            !milestone_area(repo).exists(),
+            "door `create`: a rejected record commit must remove the milestone area it minted \
+             (the re-run would otherwise block on `milestone.serial-collision`); {:?} survives",
+            milestone_area(repo),
+        ),
+        "add-task" => {
+            assert!(
+                sub_task_areas(repo, ADD_TASK_SUB_ID).is_empty(),
+                "door `add-task`: a rejected record commit must remove the sub-task area it \
+                 minted (the re-run would otherwise block on `task.serial-collision`); got {:?}",
+                sub_task_areas(repo, ADD_TASK_SUB_ID),
+            );
+            assert_eq!(
+                fs::read(task_list_path(repo)).ok().as_ref(),
+                pre_task_list,
+                "door `add-task`: a rejected record commit must restore `tasks.json` to its \
+                 captured pre-append bytes (the re-run would otherwise block on \
+                 `milestone.sub-task-collision`, and the cache would name a sub-task the record \
+                 does not)",
+            );
+        }
+        // `add-from-spec` — T3 owns the mid-loop unwind + resume (the k−1 landed record commits
+        // cannot be unwound), so this arm asserts nothing about its workbench here.
+        "add-from-spec" => {}
+        "discard" => assert!(
+            milestone_area(repo).exists(),
+            "door `discard` mints nothing and tears down only AFTER its record commit lands — a \
+             rejected commit must leave the workbench {:?} intact for the re-run",
+            milestone_area(repo),
+        ),
+        other => panic!("unknown door `{other}`"),
+    }
+}
+
+/// Every `task-id` value the pinned `doc show --format json` shape carries, in document
+/// order — walked recursively rather than read at a fixed path, so the set assertion binds
+/// to the *values* the contract emits and not to this suite's model of the envelope.
+fn record_task_ids(value: &serde_json::Value) -> Vec<String> {
+    let mut out = Vec::new();
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                if key == "task-id"
+                    && let Some(id) = child.as_str()
+                {
+                    out.push(id.to_string());
+                }
+                out.extend(record_task_ids(child));
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                out.extend(record_task_ids(item));
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// The committed record's sub-task set, read through the **pinned** read contract
+/// (`jigc doc show milestone-record:<id> --format json`).
+fn recorded_task_ids(repo: &Path, home: &Path) -> Vec<String> {
+    let show = jigc(
+        repo,
+        home,
+        &[
+            "doc",
+            "show",
+            &format!("milestone-record:{MILESTONE_ID}"),
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    let stdout = String::from_utf8_lossy(&show.stdout).into_owned();
+    assert!(
+        show.status.success(),
+        "`jigc doc show milestone-record:{MILESTONE_ID} --format json` must exit 0; stdout:\n\
+         {stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&show.stderr),
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("the pinned `--format json` read parses");
+    record_task_ids(&json)
+}
+
+/// The workbench's sub-task set, read through `jigc milestone list-tasks` (whose line is
+/// `milestone:<id> tasks (<n>): <id>, <id>`).
+fn listed_task_ids(repo: &Path, home: &Path) -> Vec<String> {
+    let out = jigc(repo, home, &["milestone", "list-tasks", MILESTONE_ID], None);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "`jigc milestone list-tasks {MILESTONE_ID}` must exit 0; stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let line = stdout
+        .lines()
+        .find(|line| line.starts_with(&format!("milestone:{MILESTONE_ID} tasks")))
+        .unwrap_or_else(|| panic!("`list-tasks` must print its enumeration line; got:\n{stdout}"));
+    let (_, ids) = line
+        .split_once("): ")
+        .unwrap_or_else(|| panic!("`list-tasks` must print `(<n>): <ids>`; got:\n{line}"));
+    ids.split(", ")
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// **T2 assertion 7 — the recovery arm**: *fix the hook, re-run, it succeeds*. The door is
+/// re-run with the **identical argv** (never a repaired one) and must land what it always
+/// would have, leaving `jigc validate` clean at exit 0.
+fn assert_door_recovers(door: &str, repo: &Path, home: &Path) {
+    let head_before = git(repo, &["rev-parse", "HEAD"]);
+    match door {
+        "create" => {
+            ok(
+                repo,
+                home,
+                &door_argv(door),
+                "the identical `milestone create` re-run, hook removed",
+            );
+            assert_ne!(
+                git(repo, &["rev-parse", "HEAD"]),
+                head_before,
+                "door `create`: the recovered re-run lands its record commit",
+            );
+            assert_eq!(
+                git(repo, &["show", "--name-only", "--format=", "HEAD"]).trim(),
+                RECORD_SPEC,
+                "door `create`: the recovered commit is record-only",
+            );
+            assert!(
+                milestone_area(repo).exists(),
+                "door `create`: the recovered re-run mints the workbench it unwound",
+            );
+        }
+        "add-task" => {
+            ok(
+                repo,
+                home,
+                &door_argv(door),
+                "the identical `milestone add-task` re-run, hook removed",
+            );
+            // Exactly one `evict-cold-entries` in all three homes — no orphan area, no
+            // duplicate item, no duplicate cache entry.
+            assert_eq!(
+                sub_task_areas(repo, ADD_TASK_SUB_ID),
+                vec![ADD_TASK_SUB_ID.to_string()],
+                "door `add-task`: exactly one sub-task area survives the reject → re-run pair",
+            );
+            let cache = fs::read_to_string(task_list_path(repo)).expect("the task-list cache");
+            assert_eq!(
+                cache.matches(ADD_TASK_SUB_ID).count(),
+                1,
+                "door `add-task`: the task-list cache names `{ADD_TASK_SUB_ID}` exactly once; \
+                 got:\n{cache}",
+            );
+            let recorded = recorded_task_ids(repo, home);
+            assert_eq!(
+                recorded,
+                vec![ADD_TASK_SUB_ID.to_string()],
+                "door `add-task`: the committed record names `{ADD_TASK_SUB_ID}` exactly once",
+            );
+            let mut listed = listed_task_ids(repo, home);
+            listed.sort();
+            let mut recorded_sorted = recorded;
+            recorded_sorted.sort();
+            assert_eq!(
+                listed, recorded_sorted,
+                "door `add-task`: `jigc milestone list-tasks` and the committed record must agree \
+                 on the sub-task set",
+            );
+        }
+        // `add-from-spec`'s recovery is a **resume**, not a re-run of the identical argv — T3's.
+        "add-from-spec" => return,
+        "discard" => {
+            ok(
+                repo,
+                home,
+                &door_argv(door),
+                "the identical `milestone discard` re-run, hook removed",
+            );
+            let show = jigc(
+                repo,
+                home,
+                &[
+                    "doc",
+                    "show",
+                    &format!("milestone-record:{MILESTONE_ID}"),
+                    "--format",
+                    "json",
+                ],
+                None,
+            );
+            let json = String::from_utf8_lossy(&show.stdout).into_owned();
+            assert!(
+                show.status.success() && json.contains("\"status\": \"discarded\""),
+                "door `discard`: the recovered re-run settles the record at `discarded`; got:\n\
+                 {json}",
+            );
+            assert!(
+                !milestone_area(repo).exists(),
+                "door `discard`: the recovered re-run removes the workbench",
+            );
+        }
+        other => panic!("unknown door `{other}`"),
+    }
+
+    let validate = jigc(repo, home, &["validate"], None);
+    assert!(
+        validate.status.success(),
+        "door `{door}`: `jigc validate` must exit 0 after the recovered re-run; got {:?}\n{}{}",
+        validate.status,
+        String::from_utf8_lossy(&validate.stdout),
+        String::from_utf8_lossy(&validate.stderr),
+    );
 }
 
 /// `git status --porcelain` lines naming anything under the record's location.
@@ -309,8 +601,8 @@ fn unrelated_task_finalizes_clean(repo: &Path, home: &Path, door: &str) {
     );
     fs::write(repo.join("tidy.txt"), "tidy\n").expect("write the unrelated task's edit");
     git(repo, &["add", "tidy.txt"]);
-    // Explicitly `--task`-scoped: a rejected door can leave its own sub-task area behind
-    // (that unwind is T2/T3's), so more than one task may be active here.
+    // Explicitly `--task`-scoped: the `add-from-spec` door still leaves its own sub-task areas
+    // behind (that unwind is T3's), so more than one task may be active here.
     ok(
         repo,
         home,
@@ -399,6 +691,9 @@ fn the_four_record_only_doors_restore_the_records_pre_image_on_a_rejected_commit
         // (empty for `create`), both captured as raw bytes for a byte-identity compare.
         let pre_bytes: Option<Vec<u8>> = fs::read(repo.join(RECORD_SPEC)).ok();
         let pre_index = git(repo, &["ls-files", "--stage", "--", RECORD_SPEC]);
+        // The **workbench** half of the pre-door image (T2): the task-list bytes `add-task`
+        // appends to. Absent for `create`, whose milestone area does not exist yet.
+        let pre_task_list: Option<Vec<u8>> = fs::read(task_list_path(repo)).ok();
         if door == "create" {
             assert!(
                 pre_bytes.is_none() && pre_index.is_empty(),
@@ -449,6 +744,9 @@ fn the_four_record_only_doors_restore_the_records_pre_image_on_a_rejected_commit
              pre-door state (absent stays absent)",
         );
 
+        // (2b) The door's own mint is unwound — the workbench half (T2).
+        assert_mint_unwound(door, repo, pre_task_list.as_ref());
+
         // (3) The index axis — asserted as an ENTRY, never as "not staged".
         assert_eq!(
             git(repo, &["ls-files", "--stage", "--", RECORD_SPEC]),
@@ -490,5 +788,86 @@ fn the_four_record_only_doors_restore_the_records_pre_image_on_a_rejected_commit
         // (6) The carryover clause, driven through the real binary.
         remove_hook(repo);
         unrelated_task_finalizes_clean(repo, home, door);
+
+        // (7) The recovery arm — fix the hook, re-run, it succeeds (T2). Deliberately AFTER
+        // the carryover arm: the recovered door stages the record path itself, so running it
+        // first would commit any residue and mask (6).
+        assert_door_recovers(door, repo, home);
     }
+}
+
+/// A record at the doctype's committed home that was **never committed** — an operator's
+/// hand-drafted file, or (before T1) the residue of a rejected `create`. Its shape is what
+/// `render_fresh_record` writes, so the door's status probe reads it back.
+const UNCOMMITTED_RECORD: &str = "\
+---
+base: 4d1df0f0c90610a03d98c4199c6f6088952731ff 4d1df0f
+status: active
+schema-version: 2
+---
+
+# cache-rework
+
+## Tasks
+";
+
+/// **T2's law-1 repair**: `create`'s id-is-taken refusal states what it actually found.
+///
+/// [`guard_record_free`](../../src/milestone.rs) probes the record's **existence on disk** —
+/// it runs no git read and cannot know whether the file was ever committed — yet
+/// `milestone.record-exists` said *"already has a **committed** record"*. The repro that
+/// surfaced it was the rejected `create` (a record written, staged, and never landed, over
+/// which the re-run then claimed a commit that never happened); T1 removed *that* instance,
+/// but the lie survives wherever the record is present-and-uncommitted, which a hand-drafted
+/// record is. The refusal itself is correct and its route already resolves — only the claim
+/// about provenance goes (`design/surface-contract.md` → law 1: nothing lies).
+#[test]
+fn create_refuses_over_an_uncommitted_record_without_claiming_it_is_committed() {
+    let repo = TempDir::new("uncommitted-record");
+    let home = TempDir::new("home-uncommitted-record");
+    let repo = repo.path();
+    let home = home.path();
+    init_repo(repo);
+    write_compose_marker(repo);
+
+    // The record exists on disk and is **untracked** — never committed, by construction.
+    fs::create_dir_all(repo.join(RECORD_LOCATION)).expect("mk the record home");
+    fs::write(repo.join(RECORD_SPEC), UNCOMMITTED_RECORD).expect("write the untracked record");
+    assert!(
+        git(repo, &["ls-files", "--", RECORD_SPEC]).is_empty(),
+        "the fixture record must be untracked — the whole point is that nothing committed it",
+    );
+
+    let out = jigc(repo, home, &["milestone", "create", MILESTONE_TITLE], None);
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success() && combined.contains("milestone.record-exists"),
+        "the id-is-taken refusal still fires over a record that already owns the slug; got:\n\
+         {combined}",
+    );
+    assert!(
+        !combined.contains("committed record"),
+        "law 1: the refusal must not claim the record was COMMITTED — it probed the file's \
+         existence, not git; got:\n{combined}",
+    );
+    assert!(
+        combined.contains(&format!("milestone `{MILESTONE_ID}` already has a record")),
+        "the refusal states what it actually found — a record already owns the slug; got:\n\
+         {combined}",
+    );
+    assert!(
+        combined.contains("(its record reads `active`)")
+            && combined.contains(&format!(
+                "jigc milestone add-task {MILESTONE_ID} \"<intent>\""
+            )),
+        "the status decoration and the continue-it route survive the repair; got:\n{combined}",
+    );
+    assert!(
+        !milestone_area(repo).exists(),
+        "the refusal runs ahead of every write — no milestone area is minted",
+    );
 }
