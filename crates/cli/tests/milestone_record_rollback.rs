@@ -1216,3 +1216,305 @@ fn add_from_spec_unwinds_its_un_recorded_mints_and_resumes_at_every_k() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// T3 fix — **the resume skip set is keyed on the committed record**, and the
+// mid-mint abort unwinds like every other door.
+// ---------------------------------------------------------------------------
+
+/// A 3-criteria spec whose **third criterion slugs like its second** — the word cap keeps
+/// the first [`engine::slug::MAX_WORDS`] words, so two criteria opening with the same words
+/// mint the same sub-task id and the second one aborts the mint mid-loop. The producer T3's
+/// record-commit unwind deliberately does not cover.
+const COLLIDING_CRITERIA_SPEC: &str = "\
+---
+schema-version: 1
+---
+
+# Gateway rate limiting
+
+## Goal
+
+Bound per-client request volume at the gateway.
+
+## Context
+
+Downstream services were each enforcing limits ad hoc.
+
+## Criteria
+
+### Admits requests under the cap  {#admits}
+
+Requests under the cap are admitted unchanged.
+
+### The gateway rejects the 101st request in a rolling window  {#rejects-window}
+
+The 101st request in a rolling 60s window is rejected.
+
+### The gateway rejects the 101st request without a body  {#rejects-body}
+
+A rejection carries no response body.
+";
+
+/// The same spec with the colliding third criterion **repaired** — the operator's fix, the
+/// repair half of the mint-abort arm.
+const REPAIRED_CRITERIA_SPEC: &str = "\
+---
+schema-version: 1
+---
+
+# Gateway rate limiting
+
+## Goal
+
+Bound per-client request volume at the gateway.
+
+## Context
+
+Downstream services were each enforcing limits ad hoc.
+
+## Criteria
+
+### Admits requests under the cap  {#admits}
+
+Requests under the cap are admitted unchanged.
+
+### The gateway rejects the 101st request in a rolling window  {#rejects-window}
+
+The 101st request in a rolling 60s window is rejected.
+
+### Body-less rejections carry a Retry-After header  {#rejects-body}
+
+A rejection carries no response body.
+";
+
+/// The sub-task ids [`REPAIRED_CRITERIA_SPEC`] mints, in physical criterion order. Its first
+/// two are what [`COLLIDING_CRITERIA_SPEC`] mints before its third aborts the loop.
+const REPAIRED_CRITERIA_IDS: [&str; 3] = [
+    "admits-requests-under-the-cap",
+    "gateway-rejects-the-101st",
+    "body-less-rejections-carry",
+];
+
+/// Write + commit `body` as the spec at `docs/specs/<THREE_CRITERIA_SLUG>.md`.
+fn commit_spec_body(repo: &Path, body: &str, message: &str) {
+    let specs = repo.join("docs").join("specs");
+    fs::create_dir_all(&specs).expect("mk docs/specs/");
+    fs::write(specs.join(format!("{THREE_CRITERIA_SLUG}.md")), body).expect("write the spec");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", message]);
+}
+
+/// **The invariant this axis exists for**: `add-from-spec` never exits 0 while a criterion of
+/// the spec it was pointed at is absent from the **committed record**. A positive ack over a
+/// record that names fewer criteria than the spec is the silent, durable, fresh-clone-visible
+/// loss the wave is named for — so this is asserted after *every* exit-0 run of every arm.
+fn assert_no_criterion_lost(
+    repo: &Path,
+    home: &Path,
+    out: &std::process::Output,
+    criteria: &[&str],
+    what: &str,
+) {
+    if !out.status.success() {
+        return;
+    }
+    let recorded = recorded_task_ids(repo, home);
+    let missing: Vec<&str> = criteria
+        .iter()
+        .copied()
+        .filter(|id| !recorded.iter().any(|got| got == id))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{what}: `add-from-spec` acked success while the committed record does not name \
+         {missing:?} (it names {recorded:?}); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The producers of the divergence — **the axis**: every way the gitignored `.jigc` workbench
+/// can come to name a sub-task the committed record does not.
+const DIVERGENCE_PRODUCERS: [&str; 3] =
+    ["record-commit-rejection", "mint-abort", "planted-residue"];
+
+/// **The producer axis** (the M47 Inc 2 T3 fix). T3 made `add-from-spec` resumable by skipping
+/// criteria the milestone "already carries" — and keyed that skip set on the **gitignored
+/// `tasks.json` cache**, so any criterion that reached the cache but never the record was
+/// silently dropped from the record forever, at exit 0 with a positive ack. The skip set is
+/// now keyed on what the **committed record** names (the source of truth —
+/// `design/team-ready-state.md`), and the mid-mint abort unwinds its own mints through the
+/// same primitive a rejected record commit uses, so the divergence is not produced either.
+///
+/// Iterated over the **producers** of the divergence rather than over the one reported repro:
+/// a rejected k-th record commit (T3's own, already unwound — pinned so it stays covered), an
+/// engine-side mint abort (the reported producer), and a planted cache residue standing for an
+/// unwind that could not complete or a process killed between the mint and its record commit.
+/// Every arm asserts the same invariant: no exit-0 run leaves a criterion out of the record.
+#[test]
+fn add_from_spec_never_drops_a_criterion_from_the_record_at_any_divergence_producer() {
+    for producer in DIVERGENCE_PRODUCERS {
+        let repo = TempDir::new(&format!("divergence-{producer}"));
+        let home = TempDir::new(&format!("home-divergence-{producer}"));
+        let repo = repo.path();
+        let home = home.path();
+        init_repo(repo);
+        write_compose_marker(repo);
+        let spec_addr = format!("spec:{THREE_CRITERIA_SLUG}");
+
+        // Each producer: bring the workbench to a state where it names a sub-task the record
+        // does not (or would, before the fix), then let the operator repair and re-run.
+        let (criteria, resumed): (Vec<&str>, std::process::Output) = match producer {
+            "record-commit-rejection" => {
+                commit_three_criteria_spec(repo);
+                ok(
+                    repo,
+                    home,
+                    &["milestone", "create", MILESTONE_TITLE],
+                    "milestone create",
+                );
+                install_kth_record_rejecting_hook(repo, 2);
+                let first = jigc(
+                    repo,
+                    home,
+                    &["milestone", "add-from-spec", MILESTONE_ID, &spec_addr],
+                    None,
+                );
+                assert!(
+                    !first.status.success(),
+                    "{producer}: the rejected record commit must exit non-zero",
+                );
+                // The operator's repair: clear the rejection, re-run.
+                remove_hook(repo);
+                let resumed = jigc(
+                    repo,
+                    home,
+                    &["milestone", "add-from-spec", MILESTONE_ID, &spec_addr],
+                    None,
+                );
+                (THREE_CRITERIA_IDS.to_vec(), resumed)
+            }
+            "mint-abort" => {
+                commit_spec_body(repo, COLLIDING_CRITERIA_SPEC, "add the colliding spec");
+                ok(
+                    repo,
+                    home,
+                    &["milestone", "create", MILESTONE_TITLE],
+                    "milestone create",
+                );
+                let first = jigc(
+                    repo,
+                    home,
+                    &["milestone", "add-from-spec", MILESTONE_ID, &spec_addr],
+                    None,
+                );
+                let first_out = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&first.stdout),
+                    String::from_utf8_lossy(&first.stderr)
+                );
+                assert!(
+                    !first.status.success(),
+                    "{producer}: two criteria slugging alike must block; got:\n{first_out}",
+                );
+                assert!(
+                    first_out.contains("milestone.sub-task-collision"),
+                    "{producer}: the authoring collision stays the loud block; got:\n{first_out}",
+                );
+                // The abort unwinds its own mints — the workbench names exactly what the
+                // record names (nothing), so the divergence is never produced.
+                assert_eq!(
+                    tasks_json_ids(repo),
+                    Vec::<String>::new(),
+                    "{producer}: the aborted mint leaves no id in the demoted cache",
+                );
+                assert_eq!(
+                    all_sub_task_dirs(repo),
+                    Vec::<String>::new(),
+                    "{producer}: the aborted mint leaves no orphan sub-task area",
+                );
+                // The operator's repair: fix the colliding criterion, commit, re-run.
+                commit_spec_body(
+                    repo,
+                    REPAIRED_CRITERIA_SPEC,
+                    "repair the colliding criterion",
+                );
+                let resumed = jigc(
+                    repo,
+                    home,
+                    &["milestone", "add-from-spec", MILESTONE_ID, &spec_addr],
+                    None,
+                );
+                (REPAIRED_CRITERIA_IDS.to_vec(), resumed)
+            }
+            "planted-residue" => {
+                commit_three_criteria_spec(repo);
+                ok(
+                    repo,
+                    home,
+                    &["milestone", "create", MILESTONE_TITLE],
+                    "milestone create",
+                );
+                // An unwind that could not complete (or a process killed between the mint and
+                // its record commit): the cache names a sub-task the record never got.
+                fs::write(
+                    task_list_path(repo),
+                    format!(
+                        "{{\n  \"tasks\": [\n    \"{}\"\n  ]\n}}\n",
+                        THREE_CRITERIA_IDS[0]
+                    ),
+                )
+                .expect("plant the cache residue");
+                let resumed = jigc(
+                    repo,
+                    home,
+                    &["milestone", "add-from-spec", MILESTONE_ID, &spec_addr],
+                    None,
+                );
+                (THREE_CRITERIA_IDS.to_vec(), resumed)
+            }
+            other => panic!("unknown divergence producer `{other}`"),
+        };
+
+        let resumed_out = format!(
+            "{}{}",
+            String::from_utf8_lossy(&resumed.stdout),
+            String::from_utf8_lossy(&resumed.stderr)
+        );
+        // The invariant — over every producer, on every exit-0 run.
+        assert_no_criterion_lost(
+            repo,
+            home,
+            &resumed,
+            &criteria,
+            &format!("{producer}, after the repair"),
+        );
+        // A producer whose residue the repair could not clear must stay LOUD: a skipped
+        // criterion is never absorbed as "already seeded".
+        if producer == "planted-residue" {
+            assert!(
+                !resumed.status.success(),
+                "{producer}: a cache id the record does not name must block, never be absorbed \
+                 as already-seeded; got:\n{resumed_out}",
+            );
+            assert!(
+                !resumed_out.contains("already seeded"),
+                "{producer}: the residue is not an already-seeded criterion — the record names \
+                 nothing; got:\n{resumed_out}",
+            );
+        } else {
+            assert!(
+                resumed.status.success(),
+                "{producer}: the repaired re-run must land every criterion; got:\n{resumed_out}",
+            );
+            assert_seeded_set(
+                repo,
+                home,
+                &criteria,
+                &format!("{producer}, after the repair"),
+            );
+            ok(repo, home, &["validate"], "jigc validate after the repair");
+        }
+    }
+}

@@ -984,6 +984,11 @@ fn run_add_from_spec(
     // Resumable seeding (M47 Inc 2 T3): a criterion whose sub-task the milestone already
     // carries is skipped, not collided — so the re-run after a rejected k-th record commit
     // seeds exactly the remainder instead of dead-ending on `milestone.sub-task-collision`.
+    // **The skip set is what the COMMITTED RECORD names** (the T3 fix): the record is the
+    // source of truth and `tasks.json` a rebuildable cache, so a criterion that reached the
+    // workbench but never the record must never be absorbed as "already seeded" — that is a
+    // criterion silently absent from the team-ready record forever, at exit 0.
+    let recorded = recorded_sub_tasks(&jigc_home, &schemas, milestone_id)?;
     let seeded = add_from_spec(
         &jigc_root,
         &jigc_home,
@@ -991,8 +996,14 @@ fn run_add_from_spec(
         milestone_id,
         spec_addr,
         workflow,
+        recorded.as_deref(),
     )
-    .map_err(finding_to_err)?;
+    .map_err(|aborted| {
+        // An abort mid-loop minted sub-tasks the record will never name — the same
+        // divergence a rejected k-th record commit leaves, through the same unwind.
+        unwind_unrecorded_seeds(&jigc_root, milestone_id, &aborted.minted);
+        finding_to_err(aborted.finding)
+    })?;
 
     // The record-home split (`design/team-ready-state.md` → Engine capability 1 (write), the
     // `add-task` append arm; The commit model): under a `[dev ▸ methodology]` project the composed
@@ -1088,6 +1099,11 @@ fn unwind_unrecorded_seeds(
     milestone_id: &str,
     unrecorded: &[engine::milestone::AddedTask],
 ) {
+    // Nothing minted — nothing to unwind, and no list to re-render (the failure may well be
+    // that there is no milestone area at all).
+    if unrecorded.is_empty() {
+        return;
+    }
     for a in unrecorded {
         unwind_mint(&a.task.dir, None);
     }
@@ -1220,6 +1236,41 @@ fn guard_record_free(jigc_home: &Path, schema: &Schema, title: &str) -> Result<(
         &milestone_id,
         status.as_deref(),
     )))
+}
+
+/// **The sub-task ids the COMMITTED RECORD names** — the source of truth for what a milestone
+/// already carries (`design/team-ready-state.md` → Engine capability 2 (read-back): the
+/// committed `.md` is the record, the `.jigc` JSON a rebuildable cache), read through the same
+/// [`engine::milestone::read_back_record`] the cache re-derives itself with.
+///
+/// `None` means the milestone has **no committed record home at all** — a dev-only project,
+/// which resolves no `milestone-record` schema and whose doors land no record commit, so the
+/// demoted cache is the only home and is therefore the truth. Under a `[dev ▸ methodology]`
+/// composition a *missing* record file is not that case: the record is the truth and it names
+/// nothing, so this answers with the empty set rather than falling back to the cache — which
+/// is exactly the fallback that let an un-recorded workbench id pass as "already seeded".
+///
+/// Called by `add-from-spec`'s resume skip set, after [`reseed_cache`] (so a fresh clone has
+/// already re-derived its cache from this same record).
+fn recorded_sub_tasks(
+    jigc_home: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    milestone_id: &str,
+) -> Result<Option<Vec<String>>> {
+    let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
+        return Ok(None);
+    };
+    let Some(record_path) = engine::store::canonical_path(jigc_home, schema, milestone_id) else {
+        return Ok(None);
+    };
+    if !record_path.exists() {
+        return Ok(Some(Vec::new()));
+    }
+    let source = std::fs::read_to_string(&record_path)
+        .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
+    let (_, tasks) =
+        engine::milestone::read_back_record(schema, &source).map_err(finding_to_err)?;
+    Ok(Some(tasks.tasks))
 }
 
 fn reseed_cache(

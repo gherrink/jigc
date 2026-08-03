@@ -305,14 +305,31 @@ pub fn add_task(
 /// so every sub-task inherits the milestone's single shared base in its own
 /// isolated `tasks/<sub>/` area and lands in the milestone's task list.
 ///
-/// **Resumable** (M47 Inc 2 T3): a criterion whose sub-task id the milestone's task
-/// list **already carried at entry** is *skipped* and reported in
-/// [`SeededFromSpec::already_seeded`], never collided — the seeding pass is one
-/// record-only commit per sub-task on the CLI side, so a rejected k-th commit leaves
-/// k−1 seeded and the recovery is a re-run of the same call. The skip set is the list
-/// **as read at entry**, so a duplicate *within one spec* (two criteria slugging alike)
-/// still surfaces the [`add_task`] `milestone.sub-task-collision` block — a resume and
+/// **Resumable** (M47 Inc 2 T3): a criterion whose sub-task the milestone **already
+/// carried at entry** is *skipped* and reported in [`SeededFromSpec::already_seeded`],
+/// never collided — the seeding pass is one record-only commit per sub-task on the CLI
+/// side, so a rejected k-th commit leaves k−1 seeded and the recovery is a re-run of the
+/// same call.
+///
+/// **The skip set is what the COMMITTED RECORD names** (`recorded`), never the demoted
+/// `.jigc` cache (M47 Inc 2 T3 fix). The committed `.md` record is the source of truth and
+/// `tasks.json` is a rebuildable cache (`design/team-ready-state.md`), so keying the skip on
+/// the cache made *any* id that reached the workbench but never the record — a mint aborted
+/// mid-loop, an unwind that could not finish, a process killed between the mint and its
+/// record commit — silently absorbed as "already seeded": the criterion is then absent from
+/// the committed, team-ready record **forever**, at exit 0 with a positive ack. Keyed on the
+/// record, an un-recorded id is not skipped; it is re-minted, or it surfaces [`add_task`]'s
+/// loud `milestone.sub-task-collision`. `recorded` is `None` **only** where the milestone has
+/// no committed record home at all (a dev-only project, whose caller lands no record commit),
+/// and there the cache is the only home and therefore is the truth.
+///
+/// The set is read **once, at entry**, so a duplicate *within one spec* (two criteria slugging
+/// alike) still surfaces the [`add_task`] `milestone.sub-task-collision` block — a resume and
 /// an authoring collision stay distinguishable.
+///
+/// **An abort mid-loop hands back what it minted** ([`SeedingAborted::minted`]) so the door
+/// unwinds those areas and ids through the same primitive a rejected record commit uses —
+/// the cache/record divergence this call could produce is never produced.
 ///
 /// **Unknown milestone** → the [`add_task`] unknown-milestone block, before any
 /// spec read or mint. **Unknown / transient / unparseable spec** → the existing
@@ -327,12 +344,13 @@ pub fn add_from_spec(
     milestone_id: &str,
     spec_addr: &str,
     workflow_id: &str,
-) -> Result<SeededFromSpec, Finding> {
+    recorded: Option<&[String]>,
+) -> Result<SeededFromSpec, SeedingAborted> {
     let dir = milestone_dir(jigc_root, milestone_id);
 
     // Unknown milestone → reject before any spec read or mint.
     if !dir.is_dir() {
-        return Err(unknown_milestone_finding(milestone_id));
+        return Err(unknown_milestone_finding(milestone_id).into());
     }
 
     // Read the committed spec and enumerate its `criteria` items (parse-items path).
@@ -340,20 +358,25 @@ pub fn add_from_spec(
 
     // Zero criteria → "nothing to seed from"; mint nothing.
     if criteria.is_empty() {
-        return Err(no_criteria_finding(spec_addr));
+        return Err(no_criteria_finding(spec_addr).into());
     }
 
-    // The resume set — the sub-task ids the list carries **at entry**. Read once, so a
-    // criterion minted by *this* call is not in it and a within-spec duplicate still
+    // The resume set — what the **committed record** names at entry (the source of truth),
+    // falling back to the demoted cache only where there is no record home at all. Read once,
+    // so a criterion minted by *this* call is not in it and a within-spec duplicate still
     // collides through `add_task`.
-    let seeded_at_entry: std::collections::BTreeSet<String> = read_task_list(&dir)
-        .map_err(|err| io_finding(milestone_id, "read the task list", &err))?
-        .tasks
-        .into_iter()
-        .collect();
+    let seeded_at_entry: std::collections::BTreeSet<String> = match recorded {
+        Some(ids) => ids.iter().cloned().collect(),
+        None => read_task_list(&dir)
+            .map_err(|err| io_finding(milestone_id, "read the task list", &err))?
+            .tasks
+            .into_iter()
+            .collect(),
+    };
 
     // One sub-task per not-yet-seeded criterion, the criterion text as intent, in
-    // physical order.
+    // physical order. An abort mid-loop carries this call's mints out with the finding,
+    // so the door unwinds them and the workbench never names what the record does not.
     let mut added = Vec::with_capacity(criteria.len());
     let mut already_seeded = Vec::new();
     for intent in &criteria {
@@ -362,7 +385,15 @@ pub fn add_from_spec(
             already_seeded.push(sub_id);
             continue;
         }
-        added.push(add_task(jigc_root, milestone_id, intent, workflow_id)?);
+        match add_task(jigc_root, milestone_id, intent, workflow_id) {
+            Ok(task) => added.push(task),
+            Err(finding) => {
+                return Err(SeedingAborted {
+                    finding,
+                    minted: added,
+                });
+            }
+        }
     }
     Ok(SeededFromSpec {
         added,
@@ -378,9 +409,40 @@ pub fn add_from_spec(
 pub struct SeededFromSpec {
     /// The sub-tasks **this call** minted, in physical criterion order.
     pub added: Vec<AddedTask>,
-    /// The sub-task ids whose criterion the milestone's task list already carried at
-    /// entry — skipped, never collided.
+    /// The sub-task ids whose criterion the **committed record** already named at entry —
+    /// skipped, never collided.
     pub already_seeded: Vec<String>,
+}
+
+/// What an aborted [`add_from_spec`] pass leaves behind — the blocking [`Finding`] **and the
+/// sub-tasks this call had already minted** when it aborted (M47 Inc 2 T3 fix).
+///
+/// The pass mints N sub-tasks into the demoted cache before its caller lands a single record
+/// commit, so an abort part-way through the loop (an [`add_task`] collision from two criteria
+/// slugging alike, an I/O fault) leaves mints the record will never name. Handing them back
+/// makes the door's existing mid-loop unwind — the very one a rejected k-th record commit
+/// runs — cover this producer too, at one seam rather than two: the workbench names exactly
+/// what the record names, whichever half failed.
+///
+/// `minted` is empty for every failure raised **before** the loop (unknown milestone,
+/// unreadable spec, zero criteria), which is why [`Finding`] converts into this for free.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeedingAborted {
+    /// The blocking finding the pass failed with — propagated to the caller **unchanged**.
+    pub finding: Finding,
+    /// The sub-tasks this call minted before it aborted, in mint order — none of which the
+    /// record names, all of which the door unwinds.
+    pub minted: Vec<AddedTask>,
+}
+
+impl From<Finding> for SeedingAborted {
+    /// A failure raised before the first mint — nothing to unwind.
+    fn from(finding: Finding) -> Self {
+        SeedingAborted {
+            finding,
+            minted: Vec::new(),
+        }
+    }
 }
 
 /// Drop `ids` from the milestone's persisted task list — the **list half** of a door's
@@ -2498,6 +2560,7 @@ Context without any acceptance criteria.
             &milestone.id,
             "spec:gateway-rate-limiting",
             "single-task",
+            None,
         )
         .expect("3-criteria spec seeds 3 sub-tasks");
         // A first pass over an empty list seeds every criterion — nothing was already there.
@@ -2564,12 +2627,13 @@ Context without any acceptance criteria.
         );
     }
 
-    /// **The resume half** (M47 Inc 2 T3): a criterion whose sub-task the milestone's
-    /// task list already carries is *skipped*, never collided — so a second pass over a
-    /// partially seeded milestone seeds exactly the remainder, and a fully seeded one is
-    /// a true ack rather than a `milestone.sub-task-collision` dead end. The mid-loop
-    /// unwind primitive [`drop_sub_tasks`] is what produces the partial state, so the two
-    /// halves of a rejected k-th record commit are exercised together.
+    /// **The resume half** (M47 Inc 2 T3): a criterion the **committed record** already
+    /// names is *skipped*, never collided — so a second pass over a partially seeded
+    /// milestone seeds exactly the remainder, and a fully seeded one is a true ack rather
+    /// than a `milestone.sub-task-collision` dead end. The mid-loop unwind primitive
+    /// [`drop_sub_tasks`] is what produces the partial state, so the two halves of a
+    /// rejected k-th record commit are exercised together. The `recorded` argument is what
+    /// the door reads back from the record, and it advances exactly as the record does.
     #[test]
     fn add_from_spec_skips_already_seeded_criteria_and_resumes_the_remainder() {
         let root = TempRoot::new("from-spec-resume");
@@ -2578,7 +2642,7 @@ Context without any acceptance criteria.
 
         let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
         write_committed_spec(repo.path(), "gateway-rate-limiting", THREE_CRITERIA_SPEC);
-        let seed = |root: &Path| {
+        let seed = |root: &Path, recorded: &[String]| {
             add_from_spec(
                 root,
                 repo.path(),
@@ -2586,11 +2650,12 @@ Context without any acceptance criteria.
                 &milestone.id,
                 "spec:gateway-rate-limiting",
                 "single-task",
+                Some(recorded),
             )
         };
 
-        // First pass: all 3.
-        let first = seed(root.path()).expect("the first pass seeds every criterion");
+        // First pass: the record names nothing, so all 3.
+        let first = seed(root.path(), &[]).expect("the first pass seeds every criterion");
         assert_eq!(first.added.len(), 3);
 
         // The mid-loop state a rejected 2nd record commit leaves: the criteria after the
@@ -2607,7 +2672,8 @@ Context without any acceptance criteria.
         );
 
         // The resume: exactly the remaining 2 mint, the landed one is acked as already seeded.
-        let resumed = seed(root.path()).expect("the resume seeds the remainder");
+        let landed = vec!["rejects-the-101st-request".to_string()];
+        let resumed = seed(root.path(), &landed).expect("the resume seeds the remainder");
         assert_eq!(
             resumed
                 .added
@@ -2624,7 +2690,9 @@ Context without any acceptance criteria.
         );
 
         // A fully seeded re-run: nothing to seed, everything acked — and the list is unchanged.
-        let again = seed(root.path()).expect("a fully seeded re-run acks rather than collides");
+        let all: Vec<String> = read_task_list(&milestone.dir).expect("read list").tasks;
+        let again =
+            seed(root.path(), &all).expect("a fully seeded re-run acks rather than collides");
         assert!(again.added.is_empty(), "nothing left to seed");
         assert_eq!(
             again.already_seeded,
@@ -2646,9 +2714,66 @@ Context without any acceptance criteria.
         );
     }
 
+    /// **The skip set is the committed record's, never the demoted cache's** (the M47 Inc 2
+    /// T3 fix). A sub-task id the gitignored `tasks.json` carries but the record does not —
+    /// an unwind that could not finish, a process killed between the mint and its record
+    /// commit — must **not** be absorbed as "already seeded": that criterion would be absent
+    /// from the committed, team-ready record forever, at a positive ack. Keyed on the record,
+    /// it is not skipped, so it surfaces [`add_task`]'s loud collision instead of vanishing.
+    #[test]
+    fn add_from_spec_keys_its_skip_set_on_the_record_not_the_demoted_cache() {
+        let root = TempRoot::new("from-spec-cache-only");
+        let repo = TempRoot::new("from-spec-cache-only-repo");
+        let base = BasePin::new("8888888888888888888888888888888888888888", "8888888");
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        write_committed_spec(repo.path(), "gateway-rate-limiting", THREE_CRITERIA_SPEC);
+
+        // The divergence: the cache names the first two criteria; the record names only the
+        // first (the second's record commit never landed and its unwind never finished).
+        let cache_only = "admits-within-the-window";
+        std::fs::write(
+            milestone.dir.join(TASKS_FILE),
+            TaskList {
+                tasks: vec![
+                    "rejects-the-101st-request".to_string(),
+                    cache_only.to_string(),
+                ],
+            }
+            .to_bytes(),
+        )
+        .expect("plant the cache residue");
+
+        let recorded = vec!["rejects-the-101st-request".to_string()];
+        let aborted = add_from_spec(
+            root.path(),
+            repo.path(),
+            &schemas(),
+            &milestone.id,
+            "spec:gateway-rate-limiting",
+            "single-task",
+            Some(&recorded),
+        )
+        .expect_err("a cache id the record does not name is never skipped");
+
+        assert_eq!(
+            aborted.finding.code, "milestone.sub-task-collision",
+            "the un-recorded cache id blocks LOUDLY rather than passing as already-seeded"
+        );
+        assert!(
+            aborted.finding.message.contains(cache_only),
+            "the block names the diverged sub-task: {:?}",
+            aborted.finding.message
+        );
+        assert!(
+            aborted.minted.is_empty(),
+            "the recorded criterion was skipped and the diverged one aborted — nothing minted"
+        );
+    }
+
     /// The resume must not swallow an **authoring** collision: two criteria of the *same*
     /// spec slugging alike still surface [`add_task`]'s `milestone.sub-task-collision`,
-    /// because the skip set is the task list **as read at entry** — an id minted by this
+    /// because the skip set is read **once, at entry** — an id minted by this
     /// very call is not in it (M47 Inc 2 T3).
     #[test]
     fn add_from_spec_still_blocks_a_within_spec_duplicate_criterion() {
@@ -2666,10 +2791,21 @@ Context without any acceptance criteria.
             &milestone.id,
             "spec:duplicate-criteria",
             "single-task",
+            Some(&[]),
         )
         .expect_err("two criteria slugging alike collide");
-        assert_eq!(err.severity, Severity::Blocking);
-        assert_eq!(err.code, "milestone.sub-task-collision");
+        assert_eq!(err.finding.severity, Severity::Blocking);
+        assert_eq!(err.finding.code, "milestone.sub-task-collision");
+        // **The abort hands its mints back** (M47 Inc 2 T3 fix) — the first criterion did
+        // mint, and the record will never name it, so the door must be able to unwind it.
+        assert_eq!(
+            err.minted
+                .iter()
+                .map(|a| a.task.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["cache-eviction"],
+            "the aborted pass carries out what it minted, for the door to unwind"
+        );
     }
 
     /// A spec whose `criteria` section has **zero** items returns a blocking,
@@ -2692,8 +2828,14 @@ Context without any acceptance criteria.
             &milestone.id,
             "spec:empty-plan",
             "single-task",
+            Some(&[]),
         )
         .expect_err("a zero-criteria spec blocks");
+        assert!(
+            err.minted.is_empty(),
+            "a failure before the loop minted nothing to unwind"
+        );
+        let err = err.finding;
 
         assert_eq!(err.severity, Severity::Blocking);
         assert_eq!(err.code, "milestone.no-criteria");
@@ -2742,8 +2884,10 @@ Context without any acceptance criteria.
             "no-such-milestone",
             "spec:whatever",
             "single-task",
+            Some(&[]),
         )
-        .expect_err("an unknown milestone rejects");
+        .expect_err("an unknown milestone rejects")
+        .finding;
         assert_eq!(unknown_ms.severity, Severity::Blocking);
         assert_eq!(unknown_ms.code, "milestone.unknown");
         assert!(unknown_ms.route.is_some());
@@ -2757,8 +2901,10 @@ Context without any acceptance criteria.
             &milestone.id,
             "spec:does-not-exist",
             "single-task",
+            Some(&[]),
         )
-        .expect_err("an unknown spec rejects");
+        .expect_err("an unknown spec rejects")
+        .finding;
         assert_eq!(unknown_spec.severity, Severity::Blocking);
         assert_eq!(unknown_spec.code, "store.not-found");
         assert!(unknown_spec.route.is_some());
