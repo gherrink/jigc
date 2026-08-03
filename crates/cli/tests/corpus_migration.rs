@@ -884,6 +884,27 @@ fn migrate_corpus_re_run_commits_nothing() {
     );
 }
 
+/// Replace the warn-only `pre-commit` hook `jigc setup` installed with one that **rejects**
+/// every commit, printing its own reason to stderr.
+fn install_rejecting_hook(repo: &Path) {
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::write(
+        &hook,
+        "#!/bin/sh\necho 'policy: no corpus commits' >&2\nexit 1\n",
+    )
+    .expect("write pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod hook");
+    }
+}
+
+/// Remove the rejecting hook — the operator's repair between the refused run and the re-run.
+fn remove_pre_commit_hook(repo: &Path) {
+    fs::remove_file(repo.join(".git").join("hooks").join("pre-commit")).expect("remove hook");
+}
+
 /// The user's hooks are **policy** (the `finalize`/`rename` posture — never `--no-verify`):
 /// a `pre-commit` hook that rejects the commit makes the verb **fail loudly non-zero**,
 /// surfacing git's stderr verbatim, never a silent skip behind a success banner.
@@ -895,18 +916,7 @@ fn migrate_corpus_fails_loudly_when_a_pre_commit_hook_rejects() {
     commit_v1_changelog(repo.path());
     let base = head(repo.path());
 
-    // A rejecting hook, replacing the warn-only one `jigc setup` installed.
-    let hook = repo.path().join(".git").join("hooks").join("pre-commit");
-    fs::write(
-        &hook,
-        "#!/bin/sh\necho 'policy: no corpus commits' >&2\nexit 1\n",
-    )
-    .expect("write pre-commit hook");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod hook");
-    }
+    install_rejecting_hook(repo.path());
 
     let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
     let stdout = String::from_utf8_lossy(&migrate.stdout);
@@ -923,6 +933,143 @@ fn migrate_corpus_fails_loudly_when_a_pre_commit_hook_rejects() {
         commits_since(repo.path(), &base).len(),
         0,
         "the rejected commit did not land",
+    );
+}
+
+/// **M47 Inc-3, N2 — the re-run after a rejected commit RECOVERS.** The rejection above is
+/// only half a contract: the survivable frame promises every committing door that *a re-run
+/// after any rejection recovers*, and for this door it was a **Law-1 lie**. `commit_migration`
+/// `git add`s the touched paths *before* the commit, so a rejection leaves the migrated bytes
+/// **written and staged**; the re-run then read the **worktree** stamp, found it current, and
+/// reported `0 migrated / N already current` at **exit 0** with `touched` empty — committing
+/// nothing. The migration was permanently stranded in one clone: the operator saw success while
+/// **a fresh clone of the same repo still saw an unmigrated corpus** and routed `migrate-corpus`
+/// — the per-clone split this arm closes.
+///
+/// The currency judgment is keyed on the **committed** corpus, so the re-run sees `HEAD`
+/// behind, re-stages the identical pathspec and lands it. The arm iterates the **candidate-shape
+/// axis** rather than the reported repro — both shapes in one corpus, one rejection, one
+/// recovery:
+/// - **in-place** (`docs/decisions/<slug>.md`, the v0 ADR): source == destination, staged `M`;
+/// - **relocation** (the v1 `changelog` → root `CHANGELOG.md`): source != destination, whose
+///   pathspec is **two** paths — staging the add half alone would land the half-migration the
+///   commit boundary exists to prevent, and the fresh clone would then hold *both* copies.
+#[test]
+fn migrate_corpus_re_run_after_a_rejected_commit_lands_the_migration() {
+    let repo = TempDir::new("hook-rejects-rerun");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    // Both candidate shapes in one corpus.
+    commit_adr(repo.path(), "alpha-decision", "Alpha decision", None);
+    commit_v1_changelog(repo.path());
+    let base = head(repo.path());
+
+    // 1. REFUSED — the hook rejects, the verb fails loudly, nothing lands.
+    install_rejecting_hook(repo.path());
+    let refused = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    assert!(
+        !refused.status.success(),
+        "the rejected commit fails the verb loudly; stderr:\n{}",
+        String::from_utf8_lossy(&refused.stderr),
+    );
+    assert_eq!(head(repo.path()), base, "the rejected commit did not land");
+
+    // 2. RE-RUN — the operator removes the hook and re-runs the IDENTICAL argv.
+    remove_pre_commit_hook(repo.path());
+    let rerun = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out = String::from_utf8_lossy(&rerun.stdout);
+    assert_ok(&rerun, "the `jigc migrate-corpus` re-run after a rejection");
+    // Law 1 — the commit-status line names whose work the commit carries: nothing migrated
+    // *this* run, so it must not claim "only the migrated paths were staged".
+    assert!(
+        out.contains("0 migrated")
+            && out.contains("an earlier run's migration was written but never landed"),
+        "the recovery commit names itself rather than claiming this run migrated; stdout:\n{out}",
+    );
+
+    // The migration LANDED — one commit, carrying both halves of the relocation move and the
+    // in-place stamp.
+    assert_eq!(
+        commits_since(repo.path(), &base).len(),
+        1,
+        "the re-run lands the migration in one commit; stdout:\n{out}",
+    );
+    let names = head_name_status(repo.path());
+    assert!(
+        names.contains("A\tCHANGELOG.md")
+            && names.contains("D\tdocs/changelog/changelog.md")
+            && names.contains("M\tdocs/decisions/alpha-decision.md"),
+        "both relocation halves AND the in-place stamp ride the recovery commit; got:\n{names}\nstdout:\n{out}",
+    );
+    // No staged residue survives the recovery.
+    assert_eq!(
+        porcelain(repo.path()),
+        "",
+        "the recovery leaves the tree clean — nothing staged, nothing stranded; stdout:\n{out}",
+    );
+
+    // 3. THE TWO VIEWS AGREE — the operator's exit-0 and a fresh clone's `jigc validate`.
+    let clone = TempDir::new("fresh-clone");
+    git(
+        repo.path(),
+        &[
+            "clone",
+            "-q",
+            repo.path().to_str().expect("utf-8 repo path"),
+            clone.path().to_str().expect("utf-8 clone path"),
+        ],
+    );
+    let validate = jigc(clone.path(), home.path(), &["validate"]);
+    assert_ok(
+        &validate,
+        "a fresh clone's `jigc validate` agrees with the operator's exit 0",
+    );
+    assert!(
+        clone.path().join("CHANGELOG.md").is_file()
+            && !clone.path().join("docs/changelog/changelog.md").exists(),
+        "the fresh clone holds the relocated changelog ONCE, at its placement home",
+    );
+}
+
+/// **The recovery rule's omitting context** — the corpus with no unlanded migration in it.
+/// Widening the commit pathspec to *"a managed doc whose worktree differs from `HEAD`"* would
+/// sweep the **operator's own staged edit** into a commit titled *"migrate the managed corpus"*,
+/// the blanket-`git add` class one door over. The rule is keyed on `HEAD` being **behind**, so a
+/// doc already at the current schema-version in `HEAD` is skipped outright however dirty its
+/// worktree is: nothing is committed, and the operator's staged work is left exactly as staged.
+#[test]
+fn migrate_corpus_never_commits_an_operators_staged_edit_to_a_current_doc() {
+    let repo = TempDir::new("staged-operator-edit");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    // Committed AT the current schema-version — there is no migration owed anywhere.
+    commit_adr(repo.path(), "beta-decision", "Beta decision", Some(2));
+    let base = head(repo.path());
+
+    // The operator revises it and stages it themselves.
+    fs::write(
+        adr_path(repo.path(), "beta-decision"),
+        adr_body("Beta decision, revised", Some(2)),
+    )
+    .expect("write the operator's edit");
+    git(repo.path(), &["add", "docs/decisions/beta-decision.md"]);
+
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(
+        &migrate,
+        "`jigc migrate-corpus` over an operator's staged edit",
+    );
+    assert_eq!(
+        head(repo.path()),
+        base,
+        "nothing is committed — the operator's staged edit is not an unlanded migration; \
+         stdout:\n{out}",
+    );
+    assert_eq!(
+        porcelain(repo.path()),
+        "M  docs/decisions/beta-decision.md",
+        "the operator's edit is left exactly as they staged it; stdout:\n{out}",
     );
 }
 

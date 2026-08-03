@@ -330,7 +330,7 @@ fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<(Stri
     }
     let paths: Vec<&str> = touched
         .iter()
-        .filter(|p| stageable(repo_root, p))
+        .filter(|p| committable(repo_root, p))
         .map(String::as_str)
         .collect();
     if paths.is_empty() {
@@ -339,9 +339,22 @@ fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<(Stri
 
     // Stage exactly those paths — never a blanket `git add -A`. A tracked-and-removed
     // relocation source stages as its deletion here (the move's other half).
-    let mut add: Vec<&str> = vec!["add", "--"];
-    add.extend(&paths);
-    git_run(repo_root, &add)?;
+    //
+    // **Committable is wider than addable** (N2): a relocation source an earlier, *rejected* run
+    // already staged as deleted is in neither the index nor the worktree, so `git add` would
+    // `fatal: pathspec … did not match any files` on it — while `git commit -- <path>` records
+    // the deletion from `HEAD` exactly as intended. So the two pathspecs are computed with two
+    // predicates: [`stageable`] for the `add`, [`committable`] for the commit.
+    let addable: Vec<&str> = paths
+        .iter()
+        .copied()
+        .filter(|p| stageable(repo_root, p))
+        .collect();
+    if !addable.is_empty() {
+        let mut add: Vec<&str> = vec!["add", "--"];
+        add.extend(&addable);
+        git_run(repo_root, &add)?;
+    }
 
     // Nothing staged among our paths (a re-run over an already-migrated corpus) → no commit,
     // no empty commit. `git diff --cached --quiet` exits 0 when there is no staged diff.
@@ -378,6 +391,15 @@ fn stageable(repo_root: &Path, path: &str) -> bool {
         return true;
     }
     repo_root.join(path).exists() && !git_ok(repo_root, &["check-ignore", "-q", "--", path])
+}
+
+/// Whether `path` belongs in the **commit** pathspec: anything [`stageable`] admits, plus a path
+/// that is only in `HEAD` — an earlier, rejected run's relocation source, already staged as a
+/// deletion and therefore in neither the index nor the worktree. `git add` cannot name such a
+/// path, but `git commit -- <path>` must, or the recovery lands the add half alone and leaves a
+/// half-migration (`design/corpus-migration.md` → The commit boundary).
+fn committable(repo_root: &Path, path: &str) -> bool {
+    stageable(repo_root, path) || exists_in(repo_root, path, Corpus::Head)
 }
 
 /// Whether `git <args>` ran **and** exited 0 (a git that could not be spawned reads as `false`)
@@ -429,6 +451,22 @@ fn git_stdout(repo_root: &Path, args: &[&str]) -> Result<String> {
         );
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// `git <args>`' **untrimmed** stdout, lossily decoded — `None` when git could not be spawned
+/// or exited non-zero. The predicate-form sibling of [`git_stdout`] for the reads whose failure
+/// is a fact (no `HEAD` yet, a path absent from the tree) and whose bytes must survive verbatim:
+/// [`git_stdout`]'s `trim()` would eat a doc's trailing newline and the `-z` walk's separators.
+fn git_stdout_raw(repo_root: &Path, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(args)
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Migrate the committed corpus under `repo_root` for each [`DoctypeMigration`], per-doc
@@ -516,10 +554,14 @@ pub(crate) fn migrate_committed_corpus(
         let to_diff = docs_root_free(&to, &dt.docs_root);
         // The stamp-absent (v0) arm's prior shape, resolved **once per doctype** (a pack read).
         let v0_from = v0_prior_shape(pack, dt, &to_diff);
+        // THE UNLANDED PATHSPEC (N2): what `HEAD` is still missing because an earlier run wrote
+        // the migration and its commit was rejected. Computed **before** the fold applies this
+        // run's writes, so it names only the *earlier* run's residue.
+        report.touched.extend(unlanded_paths(pack, repo_root, dt));
         // Each candidate is `(source, destination)` — the FROM home the walk found the
         // committed instance at, and the path the gated bytes land at
         // (`design/corpus-migration.md` → Relocation: the walk keys on the from home).
-        for (rel_key, target_key) in candidate_docs(pack, repo_root, dt) {
+        for (rel_key, target_key) in candidate_docs(pack, repo_root, dt, Corpus::Worktree) {
             let Ok(bytes) = std::fs::read(repo_root.join(&rel_key)) else {
                 continue; // read race: skip; the next run re-checks.
             };
@@ -1370,10 +1412,27 @@ fn deferred_finding(rel_key: &str) -> Finding {
     )
 }
 
+/// Which corpus a walk enumerates — the **worktree** (the bytes the migration reads, folds and
+/// writes back) or **`HEAD`** (the bytes the repo actually carries for every other clone). The
+/// two are the same on a clean tree and diverge exactly when a migration was written but never
+/// landed, which is the state [`unlanded_paths`] exists to see.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Corpus {
+    /// The files on disk under `repo_root`.
+    Worktree,
+    /// The blobs committed at `HEAD`.
+    Head,
+}
+
 /// Enumerate one doctype migration job's committed candidate docs as
 /// `(source, destination)` pairs — the **from** home the corpus walk found each committed
 /// instance at, and the path its gated bytes land at (`design/corpus-migration.md` →
 /// Relocation: the walk keys on the from home). Empty when nothing is committed to walk.
+///
+/// `corpus` selects **which** corpus is walked: [`Corpus::Worktree`] for the migration itself,
+/// [`Corpus::Head`] for the landed-state audit in [`unlanded_paths`]. The home resolution —
+/// the `location:` branch, the prior-home union, the placement file — is identical for both;
+/// only the enumeration primitive differs.
 ///
 /// - A doctype whose **current** shape declares a `location:` directory migrates
 ///   **in place** — every `.md` under that (already docs-root-resolved) directory,
@@ -1411,9 +1470,10 @@ fn candidate_docs(
     pack: &dyn PackSource,
     repo_root: &Path,
     dt: &DoctypeMigration,
+    corpus: Corpus,
 ) -> Vec<(String, String)> {
     if let Some(location) = &dt.to.location {
-        return committed_slugs(repo_root, location)
+        return committed_slugs(repo_root, location, corpus)
             .into_iter()
             .map(|slug| {
                 let key = format!("{location}{slug}.md");
@@ -1449,12 +1509,12 @@ fn candidate_docs(
             format!("{}/{raw_home}", dt.docs_root)
         };
         out.extend(
-            committed_slugs(repo_root, &from_home)
+            committed_slugs(repo_root, &from_home, corpus)
                 .into_iter()
                 .map(|slug| (format!("{from_home}{slug}.md"), placement.file.clone())),
         );
     }
-    if repo_root.join(&placement.file).is_file() {
+    if exists_in(repo_root, &placement.file, corpus) {
         out.push((placement.file.clone(), placement.file.clone()));
     }
     // Dedupe: the placement file can *itself* sit under the prior home (a `docs/x.md`
@@ -1464,21 +1524,110 @@ fn candidate_docs(
     out
 }
 
-/// The committed-doc slugs of a persisted type — the `.md` file stems under
-/// `<repo_root>/<location>`, slug-sorted. A missing / unreadable location yields none.
-fn committed_slugs(repo_root: &Path, location: &str) -> Vec<String> {
-    let dir = repo_root.join(location);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Vec::new();
+/// The committed-doc slugs of a persisted type — the `.md` file stems directly under
+/// `<location>` in `corpus`, slug-sorted. A missing / unreadable location yields none.
+fn committed_slugs(repo_root: &Path, location: &str, corpus: Corpus) -> Vec<String> {
+    let mut slugs: Vec<String> = match corpus {
+        Corpus::Worktree => {
+            let Ok(entries) = std::fs::read_dir(repo_root.join(location)) else {
+                return Vec::new();
+            };
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+                .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+                .collect()
+        }
+        // `-z` so git emits raw, unquoted names (its default C-style quoting of unusual bytes
+        // would corrupt a slug); `-r` then a direct-child filter, mirroring the non-recursive
+        // `read_dir` above exactly.
+        Corpus::Head => {
+            let Some(out) = git_stdout_raw(
+                repo_root,
+                &["ls-tree", "-r", "--name-only", "-z", "HEAD", "--", location],
+            ) else {
+                return Vec::new();
+            };
+            out.split('\0')
+                .filter_map(|path| path.strip_prefix(location))
+                .filter(|rest| !rest.contains('/'))
+                .filter_map(|name| name.strip_suffix(".md"))
+                .map(str::to_string)
+                .collect()
+        }
     };
-    let mut slugs: Vec<String> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
-        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
-        .collect();
     slugs.sort();
     slugs
+}
+
+/// Whether `path` exists as a file in `corpus`.
+fn exists_in(repo_root: &Path, path: &str, corpus: Corpus) -> bool {
+    match corpus {
+        Corpus::Worktree => repo_root.join(path).is_file(),
+        Corpus::Head => git_ok(repo_root, &["cat-file", "-e", &format!("HEAD:{path}")]),
+    }
+}
+
+/// A doc's bytes in `corpus`, lossily decoded — `None` when it is not there.
+fn doc_source(repo_root: &Path, path: &str, corpus: Corpus) -> Option<String> {
+    match corpus {
+        Corpus::Worktree => std::fs::read(repo_root.join(path))
+            .ok()
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
+        Corpus::Head => git_stdout_raw(repo_root, &["show", &format!("HEAD:{path}")]),
+    }
+}
+
+/// **The unlanded pathspec** — the paths whose migrated form is on disk but **not in `HEAD`**
+/// (M47 Inc-3, N2). [`commit_migration`] stages before it commits, so a rejected commit (a
+/// `pre-commit` hook, a hook the operator then repairs) leaves the migration *written and
+/// staged* but unlanded — and the re-run, which judges currency from the **worktree**, read the
+/// stamp it had itself just written, reported the doc `already-current` and, with `touched`
+/// empty, committed nothing at **exit 0**. The migration was stranded in that one clone: every
+/// other clone still carried the unmigrated corpus and still routed `migrate-corpus`.
+///
+/// The judgment is therefore keyed on the **committed** corpus. Walking `HEAD` (not disk), a
+/// doc is *unlanded* when `HEAD` is behind — below the doctype's current version, or still
+/// sitting at a prior home — **and** the worktree already holds the migrated result at the
+/// current stamp (for a relocation, with the source removed, so the move's remove-half is
+/// complete). Those paths rejoin `report.touched`, so the re-run re-stages the **identical**
+/// pathspec the refused run built — both halves of a relocation move included, never the
+/// half-migration the commit boundary exists to prevent — and lands it.
+///
+/// It cannot fire on a doc this run migrates (that doc's worktree bytes are still the *old*
+/// ones when this is computed) nor on ambient dirt (only the doctypes' own homes are walked),
+/// and a doc landed at the current version in `HEAD` is skipped outright.
+fn unlanded_paths(pack: &dyn PackSource, repo_root: &Path, dt: &DoctypeMigration) -> Vec<String> {
+    let mut out = Vec::new();
+    for (source, target) in candidate_docs(pack, repo_root, dt, Corpus::Head) {
+        // Landed: `HEAD` carries this doc at its final home, already at the current version.
+        if source == target
+            && doc_source(repo_root, &source, Corpus::Head)
+                .and_then(|committed| read_stamp_from_source(&committed))
+                == Some(dt.version)
+        {
+            continue;
+        }
+        // `HEAD` is behind. Only a worktree that already holds the migrated result is an
+        // unlanded migration; a worktree still holding the old bytes is this run's own work.
+        if doc_source(repo_root, &target, Corpus::Worktree)
+            .and_then(|worktree| read_stamp_from_source(&worktree))
+            != Some(dt.version)
+        {
+            continue;
+        }
+        if source != target {
+            // A relocation whose source is still on disk has not been moved yet — the migration
+            // path owns it. Only the completed-but-unlanded move contributes its remove half.
+            if repo_root.join(&source).exists() {
+                continue;
+            }
+            out.push(source);
+        }
+        out.push(target);
+    }
+    out
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the store-walk locate
@@ -3782,7 +3931,7 @@ sections:
             "# Thing\n\n## Body\n\nX.\n",
         );
 
-        let candidates = candidate_docs(&pack, repo.path(), &dt);
+        let candidates = candidate_docs(&pack, repo.path(), &dt, Corpus::Worktree);
 
         assert!(
             candidates.contains(&("docs/things/thing.md".to_string(), "THING.md".to_string())),

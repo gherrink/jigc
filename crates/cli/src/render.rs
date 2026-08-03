@@ -1919,9 +1919,22 @@ pub fn corpus_migration(
             } else if let Some(sha) = &report.commit {
                 // The commit boundary (`design/corpus-migration.md` → The commit boundary): the
                 // verb lands its own migration, so the report names *where* it landed.
-                out.push_str(&format!(
-                    "committed {sha} — only the migrated paths were staged\n"
-                ));
+                //
+                // A commit with **nothing migrated this run** is the N2 recovery: an earlier
+                // run's migration was written but never landed (its commit rejected, or
+                // `--no-commit`), and this run re-staged its pathspec. Saying *"only the
+                // migrated paths were staged"* over `0 migrated` is a Law-1 lie about which
+                // work the commit carries, so the recovery names itself.
+                if report.migrated.is_empty() {
+                    out.push_str(&format!(
+                        "committed {sha} — an earlier run's migration was written but never \
+                         landed; only its paths were staged\n"
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "committed {sha} — only the migrated paths were staged\n"
+                    ));
+                }
             } else if report.no_commit && !report.migrated.is_empty() {
                 out.push_str(
                     "written but NOT committed (`--no-commit`) — the migrated paths are on disk \
