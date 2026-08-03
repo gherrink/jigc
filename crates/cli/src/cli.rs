@@ -1332,7 +1332,8 @@ pub fn unknown_subcommand_tip(err: &clap::Error, argv: &[String]) -> Option<Stri
             .as_str(),
             Route::mechanical(
                 ["jigc", "task", "validate", "<task-id>"],
-                " previews the finalize gate for one task — what still blocks",
+                " previews part of the finalize gate for one task — content findings, \
+                 carryover, and the owner-artifact causes that need no staging",
             )
             .as_str(),
         ),

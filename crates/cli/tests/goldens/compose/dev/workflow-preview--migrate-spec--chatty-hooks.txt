@@ -103,7 +103,10 @@ carried path): unstage it, or pass `--carry-staged` to declare the carryover
 deliberate.
 
 To see what's left before committing, run `jigc task validate your-task-id` — it
-previews the findings finalize will gate on, without committing anything.
+previews part of what finalize gates on (this task's content findings, the
+carryover gate, and the owner-artifact causes that need no staging), without
+committing anything; the staged set, promotion and the commit itself are decided
+at finalize.
 
 Run: `jigc task finalize your-task-id`
 create-gates: spec

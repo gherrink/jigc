@@ -459,11 +459,14 @@ carried path): unstage it, or pass `--carry-staged` to declare the carryover
 deliberate.
 
 To see what's left before committing, run `jigc task validate add-a-thing` — it
-previews the findings finalize will gate on, without committing anything.
+previews part of what finalize gates on (this task's content findings, the
+carryover gate, and the owner-artifact causes that need no staging), without
+committing anything; the staged set, promotion and the commit itself are decided
+at finalize.
 
 Run: `jigc task finalize add-a-thing`
 resume: `jigc start --task add-a-thing`   — re-composes this workflow if context is lost
-what's-left: `jigc task validate add-a-thing`   — previews the findings finalize will gate on
+what's-left: `jigc task validate add-a-thing`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize
 task scope: `jigc doc` writes default to the single active task; `--task add-a-thing` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
 create-gates: adr, changelog
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
@@ -543,13 +546,16 @@ Set the body — why this change:
 Run: `jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter`
 
 To see what's left before committing, run `jigc task validate add-rate-limiter` — it
-previews the findings finalize will gate on, without committing anything.
+previews part of what finalize gates on (this task's content findings, the
+carryover gate, and the owner-artifact causes that need no staging), without
+committing anything; the staged set, promotion and the commit itself are decided
+at finalize.
 
 Then validate and commit:
 
 Run: `jigc task finalize add-rate-limiter`
 resume: `jigc start --task add-rate-limiter`   — re-composes this workflow if context is lost
-what's-left: `jigc task validate add-rate-limiter`   — previews the findings finalize will gate on
+what's-left: `jigc task validate add-rate-limiter`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize
 task scope: `jigc doc` writes default to the single active task; `--task add-rate-limiter` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";

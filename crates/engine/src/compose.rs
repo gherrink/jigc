@@ -5231,7 +5231,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
                   "from": "task.id"
                 }
               ],
-              "hint": "Preview validation findings without committing."
+              "hint": "Preview part of the finalize gate — content findings, carryover, owner-artifact — without committing."
             }
           }
         }
@@ -6720,7 +6720,10 @@ explain what changes (nothing appears if it supersedes none).
         deliberate.
 
         To see what's left before committing, run `jigc task validate {{task.id}}` — it
-        previews the findings finalize will gate on, without committing anything.
+        previews part of what finalize gates on (this task's content findings, the
+        carryover gate, and the owner-artifact causes that need no staging), without
+        committing anything; the staged set, promotion and the commit itself are decided
+        at finalize.
 
         Run: `jigc task finalize add-rate-limiter`
         "#);

@@ -9,7 +9,7 @@
 //!   (repaired at T4). clap's own did-you-mean steers to `discard`, which destroys the
 //!   WHOLE task, so the tip must state that effect out loud.
 //! - `jigc task status` — the tip names what the real siblings actually *do*
-//!   (`task list` enumerates; `task validate <id>` previews the gate), not a bare
+//!   (`task list` enumerates; `task validate <id>` previews part of the gate), not a bare
 //!   did-you-mean.
 //!
 //! Each test asserts the **emitted stderr bytes**: clap's own error + usage output is
@@ -174,7 +174,10 @@ fn task_discard_write_guess_gets_the_whole_task_effect_tip() {
 }
 
 /// `jigc task status` — the tip names what each real sibling does: `task list`
-/// enumerates the active tasks, `task validate <id>` previews the gate. The
+/// enumerates the active tasks, `task validate <id>` previews **part** of the gate.
+/// The scoping is M47 Inc 4 T4's (law 1): the preview covers this task's content
+/// findings, the carryover gate and the staging-independent `owner-artifact` causes,
+/// so the tip says *part of* rather than re-asserting the retired flat promise. The
 /// placeholder-free span (`jigc task list`) is extracted from the emitted bytes and
 /// run verbatim.
 #[test]
@@ -195,9 +198,15 @@ fn task_status_guess_gets_the_real_sibling_effects_and_the_span_runs() {
         "the tip states what `task list` does; got:\n{tip}",
     );
     assert!(
-        tip.contains("`jigc task validate <task-id>` previews the finalize gate"),
+        tip.contains("`jigc task validate <task-id>` previews part of the finalize gate"),
         "the tip states what `task validate` does; got:\n{tip}",
     );
+    for covered in ["content findings", "carryover", "owner-artifact"] {
+        assert!(
+            tip.contains(covered),
+            "the tip names `{covered}` as covered by the preview; got:\n{tip}",
+        );
+    }
 
     // The emitted `jigc task list` span runs verbatim (exit 0) in a real repo.
     run_first_emitted_span(tip, repo.path(), home.path());

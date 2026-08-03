@@ -34,7 +34,7 @@ commands:
   - id: validate-task
     command: jigc
     args: ["task", "validate", { from: "task.id" }]
-    hint: "Preview validation findings without committing."
+    hint: "Preview part of the finalize gate — content findings, carryover, owner-artifact — without committing."
 
   - id: finalize-task
     command: jigc

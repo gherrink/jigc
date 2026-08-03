@@ -242,7 +242,11 @@ fn minted_header(view: &Composition) -> String {
 /// what's-left are named by the surfaces producing the state):
 ///
 /// - `resume:` — `jigc start --task <id>`, the designated recovery after context loss;
-/// - `what's-left:` — `jigc task validate <id>`, the preview of what finalize gates on;
+/// - `what's-left:` — `jigc task validate <id>`, the preview of **part** of the
+///   finalize gate: this task's content findings, the carryover gate and the
+///   staging-independent `owner-artifact` causes (M47 Inc 4 T1/T2). It says so —
+///   the staged set, promotion and the commit itself are decided only at
+///   `finalize`, and law 1 forbids the line implying otherwise;
 /// - `task scope:` — the B3 statement: `jigc doc` writes default to the **single**
 ///   active task, and the explicit `--task <id>` is the override that wins when
 ///   several are active (`crate::doc`'s task-resolution contract, stated where the
@@ -263,7 +267,7 @@ fn task_state_lines(view: &Composition) -> String {
     };
     format!(
         "resume: `jigc start --task {id}`   — re-composes this workflow if context is lost\n\
-         what's-left: `jigc task validate {id}`   — previews the findings finalize will gate on\n\
+         what's-left: `jigc task validate {id}`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize\n\
          task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel\n"
     )
 }
@@ -3170,6 +3174,78 @@ mod tests {
         assert!(!json_out.contains("task scope:"), "got:\n{json_out}");
         let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
         assert!(!back.text.contains("what's-left:"));
+    }
+
+    /// M47 Inc 4 T4 (`surface-contract.md` → law 1): the `what's-left:` line is the
+    /// **highest-traffic** promise surface — it renders on every id-carrying compose —
+    /// and until M47 it claimed `jigc task validate` "previews the findings finalize
+    /// will gate on", flat. It does not: after Inc 4 T1/T2 the preview covers this
+    /// task's content findings, the carryover gate, and the six staging-independent
+    /// `owner-artifact` causes, while the staged set (`empty-commit`/`nothing-staged`),
+    /// promotion, `stage-failed`, the untracked owner-artifact cause and the commit /
+    /// hook rejection are decided only at `finalize`
+    /// ([baseline](../../../completions/artifacts/M47/baseline.md) §4b).
+    ///
+    /// This assertion drives the **emitted** line — sliced out of the rendered agent
+    /// text, not rebuilt here — so the fence is on the bytes an agent reads: the
+    /// scoping clause and each covered family must be named, and the retired unscoped
+    /// promise must not return anywhere in the composed surface. The id-less context
+    /// (the router) stays inert: it emits no such line at all.
+    #[test]
+    fn whats_left_line_scopes_the_preview_to_what_validate_covers() {
+        let minted = Composition {
+            view: ComposedWorkflow {
+                task: Some("add-rate-limiter".to_string()),
+                text: "Reason about the change.\n".to_string(),
+            },
+            gates: Vec::new(),
+            minted: true,
+        };
+        let agent = composed(Format::Agent, &minted);
+        let line = agent
+            .lines()
+            .find(|l| l.starts_with("what's-left:"))
+            .unwrap_or_else(|| panic!("a what's-left line renders; got:\n{agent}"));
+
+        // It states that the preview is a *part* of the gate, never the whole of it.
+        assert!(
+            line.contains("previews part of the finalize gate"),
+            "the line must scope its claim, not re-assert the unscoped promise; \
+             got:\n{line}",
+        );
+        // It names each family the preview genuinely covers…
+        for covered in ["content findings", "carryover", "owner-artifact"] {
+            assert!(
+                line.contains(covered),
+                "the line must name `{covered}` as covered; got:\n{line}",
+            );
+        }
+        // …and where the rest is decided.
+        assert!(
+            line.contains("the staged set, promotion and the commit surface at finalize"),
+            "the line must say where the un-previewed rest surfaces; got:\n{line}",
+        );
+        // The retired promise cannot silently return — anywhere in the emitted surface.
+        assert!(
+            !agent.contains("previews the findings finalize will gate on"),
+            "the unscoped promise is retired; got:\n{agent}",
+        );
+
+        // The omitting context (no id — the router) renders no line to scope.
+        let router = Composition {
+            view: ComposedWorkflow {
+                task: None,
+                text: "Pick a workflow.\n".to_string(),
+            },
+            gates: Vec::new(),
+            minted: false,
+        };
+        let routed = composed(Format::Agent, &router);
+        assert!(!routed.contains("what's-left:"), "got:\n{routed}");
+        assert!(
+            !routed.contains("previews part of the finalize gate"),
+            "got:\n{routed}",
+        );
     }
 
     /// The `--explain` tree renders to agent-text as the workflow line (winning
