@@ -68,8 +68,11 @@ creates-task: true
 allows-create: [{type: arch-doc, as: arch-doc}]
 ---
 {{ include: step:author-arch-doc }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}
 ```
+
+`step:author-commit` is the pack's **one** commit-doc solicit, composed immediately before the finalize include by every task-minting non-migrate workflow (M47 Increment 5). It is what stops a code-less workflow from hitting a finalize gate its composed text never named: before the split the solicit lived inside `step:implement`, so this workflow — which writes no code — asked for the arch-doc and then blocked on a `commit#type`/`#summary` it had never mentioned.
 
 The `author-arch-doc` step walks the agent through: `jigc doc create arch-doc --title "…"` (mints `arch-doc:<slug>`, bound to `task.arch-doc` by the `as:` entry); fill `overview` and the doc-level `cites`; then, **per component**, `jigc doc add-item arch-doc:<slug>#components --title "…"` followed by `set-slot …#components/<id>/description` and `set-field …#components/<id>/implemented-by --value <path>#<symbol>`. The step is principle-first prose (it instructs the agent to add one component per architectural piece and anchor each to its implementing code) — the structural ops are the agent running the named CLI commands, per the determinism boundary; the CLI owns placement and the code-anchor adjudication.
 

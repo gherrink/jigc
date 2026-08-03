@@ -6,4 +6,5 @@ creates-task: true
 allows-create: [{type: arch-doc, as: arch-doc}]
 ---
 {{ include: step:author-arch-doc }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

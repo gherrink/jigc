@@ -7,4 +7,5 @@ allows-create: [{type: adr, as: decision}]
 ---
 {{ include: step:author-adr }}
 {{ include: step:superseded-context }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

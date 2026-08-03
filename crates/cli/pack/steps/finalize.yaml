@@ -1,12 +1,11 @@
 ---
 states-constraints: [finalize.left-out, finalize.nothing-staged, finalize.carried-staged]
 ---
-Validate and commit the task as one logical commit. Make sure your code edits
-are staged (`git add`) first — finalize commits only the staged set plus the
-docs it manages; unstaged edits and untracked files are left out, and with
-nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
-this task was minted makes finalize refuse too (one blocking finding per
-carried path): unstage it, or pass `--carry-staged` to declare the carryover
+Validate and commit the task as one logical commit. Finalize commits only the
+staged set plus the docs it manages; unstaged edits and untracked files are left
+out, and with nothing staged over a dirty tree it refuses. Anything still staged
+from BEFORE this task was minted makes finalize refuse too (one blocking finding
+per carried path): unstage it, or pass `--carry-staged` to declare the carryover
 deliberate.
 
 To see what's left before committing, run `jigc task validate {{task.id}}` — it

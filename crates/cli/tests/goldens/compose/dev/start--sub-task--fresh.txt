@@ -9,11 +9,44 @@ The relevant code paths are not yet known. Inspect the codebase to confirm
 scope before implementing.
 
 Implement the change directly in the working tree. `git add` your code edits
-before finalize — it commits only what you have staged. When done, set the
-required Conventional-Commits type — your editorial call on what this change
-does. The subject renders as `<type>(<scope>): <summary>`, so write the
-summary without a type or scope prefix of its own — the `type` field already
-carries it. Inside slot prose, the reserved heading depths are schema-relative to
+before finalize — it commits only what you have staged.
+
+If a decision is warranted, create an ADR and author its slots — a line per slot
+usually suffices; an ADR earns its keep by capturing the *why*, not by running
+long:
+
+Run: `jigc doc create adr --title <TITLE> --task sweep-the-compose-surface`
+
+Author its three required slots on the address `create` prints — `context` (the
+forces at play), `decision` (the call itself), `consequences` (tradeoffs and
+follow-on effects). Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address:
+
+jigc doc set-slot adr:<slug>#context --from-file - --task sweep-the-compose-surface
+jigc doc set-slot adr:<slug>#decision --from-file - --task sweep-the-compose-surface
+jigc doc set-slot adr:<slug>#consequences --from-file - --task sweep-the-compose-surface
+
+The `options` slot is optional — fill it only when alternatives were genuinely
+weighed; omit it when the call was obvious:
+
+jigc doc set-slot adr:<slug>#options --from-file - --task sweep-the-compose-surface
+
+Before you finalize, verify the change actually works: build it and run the
+tests, and confirm the behaviour you set out to produce. Finalize commits your
+staged work; it does not check that the work is correct.
+
+Author this sub-task's own commit prose. The parent milestone's finalize is
+the only commit boundary: `git add` your code edits so the milestone can fold
+this worktree's staged index, but never `git commit` and never `jigc task finalize`
+here — either lands a commit on this worktree's detached HEAD and strands the
+sub-task's work outside the milestone boundary.
+When done, set the required Conventional-Commits type — your editorial call on
+what this change does. The subject renders as `<type>(<scope>): <summary>`, so
+write the summary without a type or scope prefix of its own — the `type` field
+already carries it. Inside slot prose, the reserved heading depths are schema-relative to
 the address you write — the CLI owns the section, item, and sub-label heading
 levels there, so your headings sit below them; Setext headings are rejected at
 every depth, and a rejected write names the shallowest depth free at that
@@ -36,44 +69,6 @@ it in a commit trailer. Add one trailer item, then set its value on the address
 
 jigc doc add-item commit:sweep-the-compose-surface#trailers --title Co-Authored-By --task sweep-the-compose-surface
 jigc doc set-field commit:sweep-the-compose-surface#trailers/<id>/value --value "Name <email>" --task sweep-the-compose-surface
-
-If a decision is warranted, create an ADR and author its slots — a line per slot
-usually suffices; an ADR earns its keep by capturing the *why*, not by running
-long:
-
-Run: `jigc doc create adr --title <TITLE> --task sweep-the-compose-surface`
-
-Author its three required slots on the address `create` prints — `context` (the
-forces at play), `decision` (the call itself), `consequences` (tradeoffs and
-follow-on effects):
-
-jigc doc set-slot adr:<slug>#context --from-file - --task sweep-the-compose-surface
-jigc doc set-slot adr:<slug>#decision --from-file - --task sweep-the-compose-surface
-jigc doc set-slot adr:<slug>#consequences --from-file - --task sweep-the-compose-surface
-
-The `options` slot is optional — fill it only when alternatives were genuinely
-weighed; omit it when the call was obvious:
-
-jigc doc set-slot adr:<slug>#options --from-file - --task sweep-the-compose-surface
-
-Before you finalize, verify the change actually works: build it and run the
-tests, and confirm the behaviour you set out to produce. Finalize commits your
-staged work; it does not check that the work is correct.
-
-Author this sub-task's own commit prose. The parent milestone's finalize is
-the only commit boundary: `git add` your code edits so the milestone can fold
-this worktree's staged index, but never `git commit` and never `jigc task finalize`
-here — either lands a commit on this worktree's detached HEAD and strands the
-sub-task's work outside the milestone boundary. Set the required
-Conventional-Commits type — your editorial call on what this change does. The
-subject renders as `<type>(<scope>): <summary>`, so write the summary without
-a type or scope prefix of its own — the `type` field already carries it. Set
-the type, then stage the summary (`scope` and `body` are optional):
-
-Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <COMMIT_TYPE> --task sweep-the-compose-surface`
-The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
-Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
-<<author: commit:sweep-the-compose-surface#summary>>
 resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
 what's-left: `jigc task validate sweep-the-compose-surface`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize
 task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel

@@ -5284,6 +5284,13 @@ commands:
 
     /// The shipped single-task definition bytes — the embedded pack file this
     /// composer loads. Kept in sync with `crates/cli/pack/workflows/single-task.yaml`.
+    ///
+    /// A **reduced** mirror: the shipped file also includes `step:record-changelog`
+    /// (M42), which this fixture omits — it carries no placeholder class the four
+    /// steps below do not already exercise. `step:author-commit` is **not** omissible
+    /// for the same reason: since M47 Inc 5 it is the pack's one commit-doc solicit,
+    /// so it is the only shipped step carrying the `<<author: {{…}}>>` directive class
+    /// this fixture's composed-view golden pins.
     const SINGLE_TASK: &str = "\
 ---
 when: implement one scoped change end-to-end
@@ -5293,6 +5300,7 @@ allows-create: [{type: adr, as: decision}]
 {{ include: step:locate }}
 {{ include: step:implement }}
 {{ include: step:superseded-context }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}
 ";
 
@@ -5314,7 +5322,13 @@ allows-create: [{type: adr, as: decision}]
         );
         assert_eq!(
             def.includes,
-            vec!["locate", "implement", "superseded-context", "finalize"]
+            vec![
+                "locate",
+                "implement",
+                "superseded-context",
+                "author-commit",
+                "finalize"
+            ]
         );
 
         let json = serde_json::to_string_pretty(&def).expect("serializes");
@@ -5336,6 +5350,7 @@ allows-create: [{type: adr, as: decision}]
             "locate",
             "implement",
             "superseded-context",
+            "author-commit",
             "finalize"
           ]
         }
@@ -6181,6 +6196,10 @@ explain what changes (nothing appears if it supersedes none).
             ("implement", &implement),
             ("superseded-context", STEP_SUPERSEDED),
             (
+                "author-commit",
+                include_str!("../../cli/pack/steps/author-commit.yaml"),
+            ),
+            (
                 "finalize",
                 include_str!("../../cli/pack/steps/finalize.yaml"),
             ),
@@ -6203,9 +6222,15 @@ explain what changes (nothing appears if it supersedes none).
         // The flattened step-id order is exactly the include-list order.
         assert_eq!(
             composition.step_ids(),
-            vec!["locate", "implement", "superseded-context", "finalize"]
+            vec![
+                "locate",
+                "implement",
+                "superseded-context",
+                "author-commit",
+                "finalize"
+            ]
         );
-        insta::assert_snapshot!(composition.step_ids().join(" -> "), @"locate -> implement -> superseded-context -> finalize");
+        insta::assert_snapshot!(composition.step_ids().join(" -> "), @"locate -> implement -> superseded-context -> author-commit -> finalize");
 
         // Plain step bodies are carried verbatim, placeholders unresolved.
         let locate = &composition.steps[0];
@@ -6657,11 +6682,43 @@ explain what changes (nothing appears if it supersedes none).
         scope before implementing.
 
         Implement the change directly in the working tree. `git add` your code edits
-        before finalize — it commits only what you have staged. When done, set the
-        required Conventional-Commits type — your editorial call on what this change
-        does. The subject renders as `<type>(<scope>): <summary>`, so write the
-        summary without a type or scope prefix of its own — the `type` field already
-        carries it. Inside slot prose, the reserved heading depths are schema-relative to
+        before finalize — it commits only what you have staged.
+
+        If a decision is warranted, create an ADR and author its slots — a line per slot
+        usually suffices; an ADR earns its keep by capturing the *why*, not by running
+        long:
+
+        Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
+
+        Author its three required slots on the address `create` prints — `context` (the
+        forces at play), `decision` (the call itself), `consequences` (tradeoffs and
+        follow-on effects). Inside slot prose, the reserved heading depths are schema-relative to
+        the address you write — the CLI owns the section, item, and sub-label heading
+        levels there, so your headings sit below them; Setext headings are rejected at
+        every depth, and a rejected write names the shallowest depth free at that
+        address:
+
+        jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}}
+        jigc doc set-slot adr:<slug>#decision --from-file - --task {{task.id}}
+        jigc doc set-slot adr:<slug>#consequences --from-file - --task {{task.id}}
+
+        The `options` slot is optional — fill it only when alternatives were genuinely
+        weighed; omit it when the call was obvious:
+
+        jigc doc set-slot adr:<slug>#options --from-file - --task {{task.id}}
+
+        Before you finalize, verify the change actually works: build it and run the
+        tests, and confirm the behaviour you set out to produce. Finalize commits your
+        staged work; it does not check that the work is correct.
+
+        If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+        superseded decision then appears below for reference, so your consequences can
+        explain what changes (nothing appears if it supersedes none).
+
+        When done, set the required Conventional-Commits type — your editorial call on
+        what this change does. The subject renders as `<type>(<scope>): <summary>`, so
+        write the summary without a type or scope prefix of its own — the `type` field
+        already carries it. Inside slot prose, the reserved heading depths are schema-relative to
         the address you write — the CLI owns the section, item, and sub-label heading
         levels there, so your headings sit below them; Setext headings are rejected at
         every depth, and a rejected write names the shallowest depth free at that
@@ -6684,39 +6741,11 @@ explain what changes (nothing appears if it supersedes none).
         jigc doc add-item commit:{{task.id}}#trailers --title Co-Authored-By --task {{task.id}}
         jigc doc set-field commit:{{task.id}}#trailers/<id>/value --value "Name <email>" --task {{task.id}}
 
-        If a decision is warranted, create an ADR and author its slots — a line per slot
-        usually suffices; an ADR earns its keep by capturing the *why*, not by running
-        long:
-
-        Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
-
-        Author its three required slots on the address `create` prints — `context` (the
-        forces at play), `decision` (the call itself), `consequences` (tradeoffs and
-        follow-on effects):
-
-        jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}}
-        jigc doc set-slot adr:<slug>#decision --from-file - --task {{task.id}}
-        jigc doc set-slot adr:<slug>#consequences --from-file - --task {{task.id}}
-
-        The `options` slot is optional — fill it only when alternatives were genuinely
-        weighed; omit it when the call was obvious:
-
-        jigc doc set-slot adr:<slug>#options --from-file - --task {{task.id}}
-
-        Before you finalize, verify the change actually works: build it and run the
-        tests, and confirm the behaviour you set out to produce. Finalize commits your
-        staged work; it does not check that the work is correct.
-
-        If your decision supersedes an earlier one, set `supersedes` on the ADR; the
-        superseded decision then appears below for reference, so your consequences can
-        explain what changes (nothing appears if it supersedes none).
-
-        Validate and commit the task as one logical commit. Make sure your code edits
-        are staged (`git add`) first — finalize commits only the staged set plus the
-        docs it manages; unstaged edits and untracked files are left out, and with
-        nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
-        this task was minted makes finalize refuse too (one blocking finding per
-        carried path): unstage it, or pass `--carry-staged` to declare the carryover
+        Validate and commit the task as one logical commit. Finalize commits only the
+        staged set plus the docs it manages; unstaged edits and untracked files are left
+        out, and with nothing staged over a dirty tree it refuses. Anything still staged
+        from BEFORE this task was minted makes finalize refuse too (one blocking finding
+        per carried path): unstage it, or pass `--carry-staged` to declare the carryover
         deliberate.
 
         To see what's left before committing, run `jigc task validate {{task.id}}` — it
@@ -7673,6 +7702,10 @@ explain what changes (nothing appears if it supersedes none).
                 "{{ include: step:implement }}\n\nRun the project lint probe before you finalize.\n",
             ),
             ("superseded-context", STEP_SUPERSEDED),
+            (
+                "author-commit",
+                include_str!("../../cli/pack/steps/author-commit.yaml"),
+            ),
             (
                 "finalize",
                 include_str!("../../cli/pack/steps/finalize.yaml"),

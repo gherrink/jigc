@@ -8,4 +8,5 @@ allows-create: [{type: adr, as: decision}]
 ---
 {{ include: step:locate-from-spec }}
 {{ include: step:implement }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

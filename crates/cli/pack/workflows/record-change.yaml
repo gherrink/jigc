@@ -10,4 +10,5 @@ suppressed:
 allows-create: [{type: changelog, as: changelog}]
 ---
 {{ include: step:author-change }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

@@ -168,6 +168,7 @@ workflow:single-task    (pack-default · dev/v0.3.0)
       {{include: step:implement}}  → (pack-default · dev/steps/implement.yaml)
     step:record-changelog    (pack-default · dev/steps/record-changelog.yaml)
     step:superseded-context  (pack-default · dev/steps/superseded-context.yaml)
+    step:author-commit       (pack-default · dev/steps/author-commit.yaml)
     step:finalize            (pack-default · dev/steps/finalize.yaml)
   findings (workflow-refs): 0
 ```

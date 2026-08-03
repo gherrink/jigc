@@ -1332,6 +1332,7 @@ mod tests {
         {{ include: step:implement }}
         {{ include: step:record-changelog }}
         {{ include: step:superseded-context }}
+        {{ include: step:author-commit }}
         {{ include: step:finalize }}
         ");
     }
@@ -1505,6 +1506,7 @@ mod tests {
         allows-create: [{type: changelog, as: changelog}]
         ---
         {{ include: step:author-change }}
+        {{ include: step:author-commit }}
         {{ include: step:finalize }}
         "###);
     }
@@ -1518,8 +1520,12 @@ mod tests {
     /// includes), the router's `present-catalog` / `route-to-workflow`,
     /// `author-spec` (the `plan` workflow's create-gated spec-authoring step),
     /// `locate-from-spec` (the `implement-from-spec` workflow's spec-driven locate,
-    /// distinct from the shared `locate`), `author-commit` (the fanned
-    /// `sub-task` workflow's finalize-free commit-authoring step), plus the
+    /// distinct from the shared `locate`), `author-commit` (the M47 pack-wide
+    /// commit-doc solicit — the **one** body every task-minting non-migrate
+    /// workflow composes before its finalize include) and `sub-task-commit` (the
+    /// fanned `sub-task` workflow's boundary framing stated *above* an include of
+    /// that shared solicit, so the double-instruct is structurally impossible),
+    /// plus the
     /// `project-setup` trio `develop-idea` / `author-prd` / `project-finalize`
     /// (the M9 new-project on-ramp), plus the `ingest-existing` pair `run-scan` /
     /// `review-verdicts` (the M9 existing-project on-ramp), plus `author-arch-doc`
@@ -1577,6 +1583,7 @@ mod tests {
                 ResourceId::from("review-verdicts"),
                 ResourceId::from("route-to-workflow"),
                 ResourceId::from("run-scan"),
+                ResourceId::from("sub-task-commit"),
                 ResourceId::from("superseded-context"),
             ],
         );
@@ -1657,32 +1664,7 @@ mod tests {
         let body = read_text(&pack, PackResourceKind::Steps, "implement");
         insta::assert_snapshot!(body, @r#"
         Implement the change directly in the working tree. `git add` your code edits
-        before finalize — it commits only what you have staged. When done, set the
-        required Conventional-Commits type — your editorial call on what this change
-        does. The subject renders as `<type>(<scope>): <summary>`, so write the
-        summary without a type or scope prefix of its own — the `type` field already
-        carries it. Inside slot prose, the reserved heading depths are schema-relative to
-        the address you write — the CLI owns the section, item, and sub-label heading
-        levels there, so your headings sit below them; Setext headings are rejected at
-        every depth, and a rejected write names the shallowest depth free at that
-        address. Set the type, then stage the summary prose:
-
-        {{ cli.set-commit-type }}
-        {{ cli.set-commit-summary }}
-        <<author: {{ task.commit#summary }}>>
-
-        The `scope` and `body` are optional: add a `scope` to name the area touched, or
-        author a `body` to explain the motivation, only when they earn their place —
-
-        jigc doc set-field commit:{{task.id}}#scope --value <area> --task {{task.id}}
-        jigc doc set-slot commit:{{task.id}}#body --from-file - --task {{task.id}}
-
-        When the work shares authorship — a co-author, or an agent that wrote it — record
-        it in a commit trailer. Add one trailer item, then set its value on the address
-        `add-item` prints:
-
-        jigc doc add-item commit:{{task.id}}#trailers --title Co-Authored-By --task {{task.id}}
-        jigc doc set-field commit:{{task.id}}#trailers/<id>/value --value "Name <email>" --task {{task.id}}
+        before finalize — it commits only what you have staged.
 
         If a decision is warranted, create an ADR and author its slots — a line per slot
         usually suffices; an ADR earns its keep by capturing the *why*, not by running
@@ -1692,7 +1674,11 @@ mod tests {
 
         Author its three required slots on the address `create` prints — `context` (the
         forces at play), `decision` (the call itself), `consequences` (tradeoffs and
-        follow-on effects):
+        follow-on effects). Inside slot prose, the reserved heading depths are schema-relative to
+        the address you write — the CLI owns the section, item, and sub-label heading
+        levels there, so your headings sit below them; Setext headings are rejected at
+        every depth, and a rejected write names the shallowest depth free at that
+        address:
 
         jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}}
         jigc doc set-slot adr:<slug>#decision --from-file - --task {{task.id}}
@@ -1731,12 +1717,11 @@ mod tests {
         ---
         states-constraints: [finalize.left-out, finalize.nothing-staged, finalize.carried-staged]
         ---
-        Validate and commit the task as one logical commit. Make sure your code edits
-        are staged (`git add`) first — finalize commits only the staged set plus the
-        docs it manages; unstaged edits and untracked files are left out, and with
-        nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
-        this task was minted makes finalize refuse too (one blocking finding per
-        carried path): unstage it, or pass `--carry-staged` to declare the carryover
+        Validate and commit the task as one logical commit. Finalize commits only the
+        staged set plus the docs it manages; unstaged edits and untracked files are left
+        out, and with nothing staged over a dirty tree it refuses. Anything still staged
+        from BEFORE this task was minted makes finalize refuse too (one blocking finding
+        per carried path): unstage it, or pass `--carry-staged` to declare the carryover
         deliberate.
 
         To see what's left before committing, run `jigc task validate {{task.id}}` — it

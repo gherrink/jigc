@@ -134,33 +134,7 @@ The relevant code paths are not yet known. Inspect the codebase to confirm
 scope before implementing.
 
 Implement the change directly in the working tree. `git add` your code edits
-before finalize — it commits only what you have staged. When done, set the
-required Conventional-Commits type — your editorial call on what this change
-does. The subject renders as `<type>(<scope>): <summary>`, so write the
-summary without a type or scope prefix of its own — the `type` field already
-carries it. Inside slot prose, the reserved heading depths are schema-relative to
-the address you write — the CLI owns the section, item, and sub-label heading
-levels there, so your headings sit below them; Setext headings are rejected at
-every depth, and a rejected write names the shallowest depth free at that
-address. Set the type, then stage the summary prose:
-
-Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
-The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
-Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
-<<author: commit:add-rate-limiter#summary>>
-
-The `scope` and `body` are optional: add a `scope` to name the area touched, or
-author a `body` to explain the motivation, only when they earn their place —
-
-jigc doc set-field commit:add-rate-limiter#scope --value <area> --task add-rate-limiter
-jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter
-
-When the work shares authorship — a co-author, or an agent that wrote it — record
-it in a commit trailer. Add one trailer item, then set its value on the address
-`add-item` prints:
-
-jigc doc add-item commit:add-rate-limiter#trailers --title Co-Authored-By --task add-rate-limiter
-jigc doc set-field commit:add-rate-limiter#trailers/<id>/value --value \"Name <email>\" --task add-rate-limiter
+before finalize — it commits only what you have staged.
 
 If a decision is warranted, create an ADR and author its slots — a line per slot
 usually suffices; an ADR earns its keep by capturing the *why*, not by running
@@ -170,7 +144,11 @@ Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
 Author its three required slots on the address `create` prints — `context` (the
 forces at play), `decision` (the call itself), `consequences` (tradeoffs and
-follow-on effects):
+follow-on effects). Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address:
 
 jigc doc set-slot adr:<slug>#context --from-file - --task add-rate-limiter
 jigc doc set-slot adr:<slug>#decision --from-file - --task add-rate-limiter
@@ -194,12 +172,38 @@ If your decision supersedes an earlier one, set `supersedes` on the ADR; the
 superseded decision then appears below for reference, so your consequences can
 explain what changes (nothing appears if it supersedes none).
 
-Validate and commit the task as one logical commit. Make sure your code edits
-are staged (`git add`) first — finalize commits only the staged set plus the
-docs it manages; unstaged edits and untracked files are left out, and with
-nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
-this task was minted makes finalize refuse too (one blocking finding per
-carried path): unstage it, or pass `--carry-staged` to declare the carryover
+When done, set the required Conventional-Commits type — your editorial call on
+what this change does. The subject renders as `<type>(<scope>): <summary>`, so
+write the summary without a type or scope prefix of its own — the `type` field
+already carries it. Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address. Set the type, then stage the summary prose:
+
+Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
+<<author: commit:add-rate-limiter#summary>>
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:add-rate-limiter#scope --value <area> --task add-rate-limiter
+jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter
+
+When the work shares authorship — a co-author, or an agent that wrote it — record
+it in a commit trailer. Add one trailer item, then set its value on the address
+`add-item` prints:
+
+jigc doc add-item commit:add-rate-limiter#trailers --title Co-Authored-By --task add-rate-limiter
+jigc doc set-field commit:add-rate-limiter#trailers/<id>/value --value \"Name <email>\" --task add-rate-limiter
+
+Validate and commit the task as one logical commit. Finalize commits only the
+staged set plus the docs it manages; unstaged edits and untracked files are left
+out, and with nothing staged over a dirty tree it refuses. Anything still staged
+from BEFORE this task was minted makes finalize refuse too (one blocking finding
+per carried path): unstage it, or pass `--carry-staged` to declare the carryover
 deliberate.
 
 To see what's left before committing, run `jigc task validate add-rate-limiter` — it

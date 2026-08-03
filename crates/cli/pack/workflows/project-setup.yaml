@@ -7,4 +7,5 @@ allows-create: [{type: prd, as: brief}]
 ---
 {{ include: step:develop-idea }}
 {{ include: step:author-prd }}
+{{ include: step:author-commit }}
 {{ include: step:project-finalize }}

@@ -37,8 +37,11 @@ allows-create: [{ type: prd, as: brief }]
 # body: include-list
 #   step:develop-idea     — reason about the idea; shape vision / requirements / context
 #   step:author-prd       — create the prd via the create-gate, set its slots
+#   step:author-commit    — the pack's one commit-doc solicit (type + summary)
 #   step:project-finalize — finalize: validate → promote prd to prds/ → one docs(prd) commit
 ```
+
+`step:author-commit` sits at the **workflow** level, not inside `project-finalize.yaml` — that file is *only* `{{ include: step:finalize }}`, and the 12 migrate workflows reach the same `step:finalize` through `migration-finalize.yaml`, whose mint already pre-fills the commit doc. Pushing the solicit down into the shared commit half would hand every migration a second, redundant solicitation, and the dialect has no conditionals (M47 Increment 5; [DECISIONS.md](../DECISIONS.md) → 2026-07-26 the Settle, Decision 5).
 
 The `as: brief` binding only gates the `create` (it admits `prd` into this workflow and binds the doc to `task.brief`); **no M9 step reads `task.brief`** — unlike the MVP's `task.decision`, which a context-slice consumes — so the role name is for create-gate admission alone. It mirrors the proven `plan` shape (`creates-task: true`, create-gate author, code-less finalize — [roadmap.md](../implementation/roadmap.md) → M3 increment 3) — `plan` assumes you know the change and authors a `spec` for it; `project-setup` is the open-ended *idea-development* altitude above that, authoring the `prd` a later `plan`/`implement-from-spec` decomposes into. Reached via the front door once the project reads as set up: `jigc start --workflow project-setup "<idea>"` mints the task (or bare `jigc start` routes to it through the catalog, post-flip).
 

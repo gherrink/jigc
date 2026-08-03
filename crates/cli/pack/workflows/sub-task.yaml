@@ -10,4 +10,4 @@ allows-create: [{type: adr, as: decision}]
 ---
 {{ include: step:locate }}
 {{ include: step:implement }}
-{{ include: step:author-commit }}
+{{ include: step:sub-task-commit }}

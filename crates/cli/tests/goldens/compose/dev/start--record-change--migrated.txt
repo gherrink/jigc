@@ -41,12 +41,38 @@ the committed doc in and appends — existing releases are untouched:
 
 jigc doc author changelog --from-file - --task sweep-the-compose-surface
 
-Validate and commit the task as one logical commit. Make sure your code edits
-are staged (`git add`) first — finalize commits only the staged set plus the
-docs it manages; unstaged edits and untracked files are left out, and with
-nothing staged over a dirty tree it refuses. Anything still staged from BEFORE
-this task was minted makes finalize refuse too (one blocking finding per
-carried path): unstage it, or pass `--carry-staged` to declare the carryover
+When done, set the required Conventional-Commits type — your editorial call on
+what this change does. The subject renders as `<type>(<scope>): <summary>`, so
+write the summary without a type or scope prefix of its own — the `type` field
+already carries it. Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address. Set the type, then stage the summary prose:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <COMMIT_TYPE> --task sweep-the-compose-surface`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
+<<author: commit:sweep-the-compose-surface#summary>>
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:sweep-the-compose-surface#scope --value <area> --task sweep-the-compose-surface
+jigc doc set-slot commit:sweep-the-compose-surface#body --from-file - --task sweep-the-compose-surface
+
+When the work shares authorship — a co-author, or an agent that wrote it — record
+it in a commit trailer. Add one trailer item, then set its value on the address
+`add-item` prints:
+
+jigc doc add-item commit:sweep-the-compose-surface#trailers --title Co-Authored-By --task sweep-the-compose-surface
+jigc doc set-field commit:sweep-the-compose-surface#trailers/<id>/value --value "Name <email>" --task sweep-the-compose-surface
+
+Validate and commit the task as one logical commit. Finalize commits only the
+staged set plus the docs it manages; unstaged edits and untracked files are left
+out, and with nothing staged over a dirty tree it refuses. Anything still staged
+from BEFORE this task was minted makes finalize refuse too (one blocking finding
+per carried path): unstage it, or pass `--carry-staged` to declare the carryover
 deliberate.
 
 To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it

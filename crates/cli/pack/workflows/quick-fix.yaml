@@ -7,4 +7,5 @@ allows-create: []
 ---
 {{ include: step:locate }}
 {{ include: step:implement-quick }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}
