@@ -68,7 +68,7 @@ Active task: add-rate-limiter
   staged:   commit:add-rate-limiter#type, commit:add-rate-limiter#summary
   findings: none
 
-Run: `jigc task validate add-rate-limiter`   — preview blockers
+Run: `jigc task validate add-rate-limiter`   — preview the blockers this side of the commit
 Run: `jigc task finalize add-rate-limiter`   — validate + commit
 Run: `jigc task discard add-rate-limiter`    — abandon
 ```

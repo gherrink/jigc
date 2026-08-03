@@ -135,7 +135,11 @@ you already have a same-named dir (say an existing `docs/architecture/`), run
 `jigc ingest` first — it detects and routes existing content rather than
 overwriting it.
 
-You can preview what finalize will gate on at any time:
+You can preview part of what finalize will gate on at any time — this task's
+content findings, the carryover gate, and the `owner-artifact` causes that need
+no staging. The staged set, promotion and the commit itself (your hooks
+included) are decided at `finalize`, so a clean `validate` means *nothing this
+side of the commit blocks it*, not *this will commit*:
 
 ```sh
 jigc task validate <id>

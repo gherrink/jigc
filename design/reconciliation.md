@@ -129,8 +129,8 @@ The `file-state` probe fires at six points; reconciliation runs the classifier a
 | **task `start`** | every managed doc the workflow will read or write | baseline-adopt unknowns, absorb clean drift, block before the task does any work |
 | **read through the CLI** | the doc being read | absorbs benign drift transparently; the agent sees current truth |
 | **write through the CLI** | the target doc | re-probe before staging; block if the doc has become conflicted since the task started |
-| **`jigc task validate`** | every doc in the task's scope (working area + referenced docs) | full sweep — same sweep `finalize` runs |
-| **`jigc task finalize` preflight** | same as validate | `finalize ≡ validate + commit` ([finalize.md](finalize.md)) |
+| **`jigc task validate`** | every doc in the task's scope (working area + referenced docs) | full sweep — the same `file-state` sweep `finalize`'s preflight runs |
+| **`jigc task finalize` preflight** | same as validate | `finalize` runs the same validate phase, then the commit-time gates ([finalize.md](finalize.md) → 2. Validate) |
 | **`jigc validate` (ad-hoc)** | scope-flexible (doc / store) | manual check; no task context required |
 
 Probing is cheap (one hash per doc); the classifier and the parse only run when state is `DRIFTED`.
