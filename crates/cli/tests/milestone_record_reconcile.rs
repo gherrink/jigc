@@ -136,6 +136,66 @@ fn oob_edit_status(repo: &Path) -> String {
     after
 }
 
+/// The first `<…>`-shaped span left unsubstituted in `text` — an all-lowercase
+/// `<word-with-dashes>` token, the shape a route placeholder takes. `None` when the text
+/// carries none.
+fn unsubstituted_placeholder(text: &str) -> Option<String> {
+    let mut rest = text;
+    while let Some(open) = rest.find('<') {
+        rest = &rest[open + 1..];
+        if let Some(close) = rest.find('>') {
+            let span = &rest[..close];
+            if !span.is_empty()
+                && span
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
+                return Some(format!("<{span}>"));
+            }
+        }
+    }
+    None
+}
+
+/// The **record-seam conflict contract** (M47 inc-2 / T4). The conflict-block route
+/// belongs to the caller, and at this door the caller is a milestone-record op with **no
+/// task at all** — so the emitted block names the *record*, and carries neither the
+/// inapplicable `jigc task discard` (there is no task to discard) nor an unsubstituted
+/// `<…>` placeholder. Both are what the M43 route floor exists to prevent on a
+/// **blocking** finding (`design/surface-contract.md` → The route fence).
+fn assert_record_conflict_contract(stderr: &str, door: &str) {
+    assert!(
+        stderr.contains("reconciliation.conflict-block")
+            && stderr.contains("docs/milestone-records/cache-rework.md"),
+        "door `{door}`: the block must be a routed `reconciliation.conflict-block` naming \
+         the record; got stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("milestone record"),
+        "door `{door}`: the message names the record, not a task; got stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("this task's staged writes"),
+        "door `{door}`: no task staged anything here — the message must not claim one did; \
+         got stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("jigc task discard"),
+        "door `{door}`: `jigc task discard` is inapplicable at a record-only door (no task \
+         exists); got stderr:\n{stderr}",
+    );
+    assert_eq!(
+        unsubstituted_placeholder(stderr),
+        None,
+        "door `{door}`: a blocking finding's route carries no unsubstituted placeholder; \
+         got stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("route:"),
+        "door `{door}`: a blocking finding always routes; got stderr:\n{stderr}",
+    );
+}
+
 /// create → add-task, establishing the committed record + its file-state baseline.
 fn create_and_seed(repo: &Path, home: &Path) {
     init_repo(repo);
@@ -176,11 +236,7 @@ fn oob_edit_conflict_blocks_the_next_add_task() {
         String::from_utf8_lossy(&out.stdout),
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("docs/milestone-records/cache-rework.md")
-            && (stderr.contains("external edit") || stderr.to_lowercase().contains("conflict")),
-        "the block must be a routed reconcile finding naming the record; got stderr:\n{stderr}",
-    );
+    assert_record_conflict_contract(&stderr, "add-task");
 
     // The record was NOT overwritten: the OOB edit survives and the second task never landed.
     let now = fs::read_to_string(record_path(repo.path())).expect("record after blocked add-task");
@@ -217,11 +273,7 @@ fn oob_edit_conflict_blocks_finalize_flip() {
         String::from_utf8_lossy(&out.stdout),
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("docs/milestone-records/cache-rework.md")
-            && (stderr.contains("external edit") || stderr.to_lowercase().contains("conflict")),
-        "the block must be a routed reconcile finding naming the record; got stderr:\n{stderr}",
-    );
+    assert_record_conflict_contract(&stderr, "finalize");
 
     // The record was NOT flipped/overwritten: the OOB edit survives byte-identical.
     let now = fs::read_to_string(record_path(repo.path())).expect("record after blocked finalize");

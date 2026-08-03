@@ -609,6 +609,10 @@ pub(crate) fn no_such_task(id: &str) -> anyhow::Error {
 /// project share a single `.jigc/` (M31 Inc 2 / WF3). Outside a worktree the two
 /// coincide.
 struct TaskArea {
+    /// The task id this area belongs to — the substitution source for every route a
+    /// finding emits about *this* task (M47 inc-2 / T4: the conflict route names the real
+    /// id, never a `<task-id>` placeholder the engine cannot fill).
+    id: String,
     repo_root: PathBuf,
     jigc_home: PathBuf,
     jigc_root: PathBuf,
@@ -631,6 +635,7 @@ impl TaskArea {
             return Err(no_such_task(id));
         }
         Ok(Self {
+            id: id.to_string(),
             repo_root,
             jigc_home,
             jigc_root,
@@ -798,6 +803,9 @@ impl TaskArea {
             &history,
             &changed_code,
             base_tree.path(),
+            // The conflict route is the caller's, and this caller is a named task: a
+            // `DRIFTED + TOUCHED` block routes at the REAL id (M47 inc-2 / T4).
+            &engine::file_state::ConflictBlock::task(&self.id),
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
         Ok((report, record))

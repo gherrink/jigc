@@ -126,6 +126,25 @@ fn jigc_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> st
     child.wait_with_output().expect("wait for jigc")
 }
 
+/// Lift a **mechanical route's argv** out of the bytes the binary actually printed —
+/// the backticked span opening with `prefix`, split on whitespace. The emitted bytes are
+/// the contract (M47 inc-2 / T4): the route is run VERBATIM from this lift, never
+/// reconstructed in test code, so a route that composes a placeholder instead of the real
+/// id fails here rather than passing against a hand-built equivalent.
+fn lifted_route_argv(rendered: &str, prefix: &str) -> Vec<String> {
+    let open = rendered
+        .find(&format!("`{prefix}"))
+        .unwrap_or_else(|| panic!("no backticked `{prefix}…` route span in:\n{rendered}"));
+    let rest = &rendered[open + 1..];
+    let close = rest
+        .find('`')
+        .unwrap_or_else(|| panic!("the backticked route span never closes in:\n{rendered}"));
+    rest[..close]
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Assert a `jigc` invocation succeeded, surfacing its streams on failure.
 fn assert_ok(out: &std::process::Output, what: &str) {
     assert!(
@@ -584,6 +603,32 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
         .parse()
         .unwrap();
     assert_eq!(before, after, "a conflict-block creates no commit");
+
+    // ── The route belongs to the CALLER (M47 inc-2 / T4) — the task-scope emission seam.
+    // The classifier has no task; the task-scope caller does, so the emitted route names
+    // the REAL task id. No `<task-id>` placeholder survives the print, and the emitted
+    // argv — lifted from the printed bytes and run VERBATIM — resolves that task.
+    assert!(
+        !rendered.contains("<task-id>"),
+        "a blocking finding's mechanical route carries no unsubstituted placeholder \
+         (the M43 route floor); got:\n{rendered}",
+    );
+    let argv = lifted_route_argv(&rendered, "jigc task discard");
+    assert_eq!(
+        argv,
+        vec!["jigc", "task", "discard", warm],
+        "the emitted route names the real task id",
+    );
+    let discarded = jigc(
+        repo.path(),
+        home.path(),
+        &argv[1..].iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    assert_ok(&discarded, "the emitted conflict route, run verbatim");
+    assert!(
+        !repo.path().join(".jigc").join("tasks").join(warm).is_dir(),
+        "the emitted route resolved the real task — its working area is gone",
+    );
 }
 
 #[test]

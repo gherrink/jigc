@@ -177,6 +177,13 @@ pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// weak-signal finding; history empty (the checkout moved underneath the gitignored cache)
 /// downgrades to advisory with a `jigc unmanage` prune route.
 ///
+/// `conflict` is the CLI-supplied [`ConflictBlock`](crate::file_state::ConflictBlock) the
+/// committed-store sweep hands to its `DRIFTED + TOUCHED` classifier (M47 inc-2 / T4). The
+/// engine sees only the working area's *path*, never whose it is — a per-task gate passes
+/// [`ConflictBlock::task`](crate::file_state::ConflictBlock::task) with the real task id, the
+/// milestone join gate passes its own (no single task owns the merged area) — so the naming
+/// and the way out come from the caller that knows, never a placeholder minted here.
+///
 /// `repo_root` is the committed-store root, `jigc_root` is the `.jigc/` home (where the
 /// edge index caches), and `head` is the opaque HEAD stamp the committed index is
 /// tagged with (the CLI reads it via `git`, keeping the engine shell-free). These three
@@ -244,6 +251,7 @@ pub fn validate_task(
     history: &HistoryPredicate<'_>,
     changed_code: &BTreeSet<String>,
     base_code_tree_root: &Path,
+    conflict: &crate::file_state::ConflictBlock,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
     for filename in staged_instances(dir)? {
@@ -296,6 +304,7 @@ pub fn validate_task(
         repo_root,
         dir,
         history,
+        conflict,
     ));
 
     // `schema-conformance.ref-resolves` — the cross-doc forward-ref / edge-index
@@ -4641,6 +4650,12 @@ kind: memo
         |_path| false
     }
 
+    /// The caller-supplied conflict presentation the CLI hands `validate_task` (M47 inc-2 /
+    /// T4) — a task-scope caller names its real task id, never a placeholder.
+    fn test_conflict() -> crate::file_state::ConflictBlock {
+        crate::file_state::ConflictBlock::task("drift-the-cache")
+    }
+
     /// The done-criterion. Over a working area with **two conformance-broken
     /// instances**, `validate_task` aggregates one finding per instance and
     /// `has_blocking() == true`; over a **clean** area it returns an empty report and
@@ -4669,6 +4684,7 @@ kind: memo
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -4707,6 +4723,7 @@ kind: memo
             &|_| true,
             &BTreeSet::new(),
             clean.dir(),
+            &test_conflict(),
         )
         .expect("clean sweep runs");
 
@@ -4815,6 +4832,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -4918,6 +4936,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -4967,6 +4986,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -5018,6 +5038,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -5075,6 +5096,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -5133,6 +5155,7 @@ sections:
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -5229,6 +5252,12 @@ mod ref_resolves_in_sweep_tests {
     /// owner-artifact gate never consults it; `false` is the inert default.
     fn never_tracked() -> impl Fn(&str) -> bool {
         |_path| false
+    }
+
+    /// The caller-supplied conflict presentation the CLI hands `validate_task` (M47 inc-2 /
+    /// T4) — a task-scope caller names its real task id, never a placeholder.
+    fn test_conflict() -> crate::file_state::ConflictBlock {
+        crate::file_state::ConflictBlock::task("drift-the-cache")
     }
 
     /// A committed ADR `A` (the supersede target), with no outgoing ref. Its required
@@ -5361,6 +5390,7 @@ A failed node's sessions are re-routed on next request.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -5418,6 +5448,7 @@ A failed node's sessions are re-routed on next request.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -5471,6 +5502,7 @@ A failed node's sessions are re-routed on next request.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -5522,6 +5554,7 @@ A failed node's sessions are re-routed on next request.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &test_conflict(),
         )
         .expect("sweep runs");
 
@@ -5678,11 +5711,18 @@ The audit landed green.
         |_p| true
     }
 
+    /// The caller-supplied conflict presentation the CLI hands `validate_task` (M47 inc-2 /
+    /// T4) — a task-scope caller names its real task id, never a placeholder.
+    fn test_conflict() -> crate::file_state::ConflictBlock {
+        crate::file_state::ConflictBlock::task("drift-the-cache")
+    }
+
     /// (RED — fires) Each unsafe / absent / untracked owner-artifact path produces
     /// **exactly one** blocking `owner-artifact.present` finding. The cases span every
     /// bar the design names: absent-path (the file is missing), absolute, `..`-containing,
     /// not-under-home (the anti-vacuity bar — a real, tracked, present file that is NOT a
     /// durable owner-artifact), out-of-repo (an absolute escape), and present-but-untracked.
+
     #[test]
     fn gate_fires_on_each_unsafe_or_absent_or_untracked_path() {
         let repo = TempRepo::new("fires");
@@ -5924,6 +5964,7 @@ The audit landed green.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &test_conflict(),
         )
         .expect("validate runs");
         assert!(
@@ -5986,6 +6027,12 @@ mod validate_store_tests {
     use std::cell::RefCell;
     use std::path::PathBuf;
 
+    /// The caller-supplied conflict presentation the CLI hands `validate_task` (M47 inc-2 /
+    /// T4) — a task-scope caller names its real task id, never a placeholder.
+    fn test_conflict() -> crate::file_state::ConflictBlock {
+        crate::file_state::ConflictBlock::task("drift-the-cache")
+    }
+
     /// Regression: the store-sweep scratch path must be unique per call even under
     /// concurrent sweeps in one process. Before the per-call sequence nonce,
     /// [`store_scratch_path`] keyed uniqueness on `pid + nanos` only, so two threads that
@@ -5993,6 +6040,7 @@ mod validate_store_tests {
     /// `remove_file` then deleted the other's snapshot mid-flight, surfacing as a `NotFound`
     /// flake in the whole-suite gate. Generate many paths across threads; every one must be
     /// distinct.
+
     #[test]
     fn store_scratch_path_is_unique_under_concurrency() {
         use std::sync::{Arc, Mutex};
@@ -7961,6 +8009,7 @@ Effects.
                 &|_| true,
                 changed,
                 base,
+                &test_conflict(),
             )
             .expect("sweep runs")
         };
@@ -8029,6 +8078,7 @@ Effects.
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
+            &test_conflict(),
         )
         .expect("sweep runs");
         assert!(
@@ -8098,6 +8148,7 @@ Effects.
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
+            &test_conflict(),
         )
         .expect("sweep runs");
         assert!(
@@ -8166,6 +8217,7 @@ Effects.
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
+            &test_conflict(),
         )
         .expect("sweep runs");
         assert!(
@@ -8340,6 +8392,7 @@ title: {title}
     /// (task scope) Two docs, each an empty-slot note, run through [`conformance_for`]: each
     /// finding's message AND `Location.address` name **its own** `rel_key` (never the
     /// sibling's), with `line`/`col` byte-identical to the bare baseline.
+
     #[test]
     fn conformance_for_attributes_each_finding_to_its_own_doc() {
         let schemas = schemas();

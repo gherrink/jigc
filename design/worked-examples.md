@@ -110,11 +110,11 @@ $ jigc doc set-slot adr:cache-policy#consequences --from-file -
 > error: conflict on adr:cache-policy
 >   external edit since 2026-05-28T14:03:00Z + task add-rate-limiter has staged changes.
 >   resolution:
->     - jigc task discard <task-id>   # drop the whole task's staged writes
->     - revert the file on disk       # drop the human's edit
+>     - jigc task discard add-rate-limiter   # drop the whole task's staged writes
+>     - revert the file on disk              # drop the human's edit
 ```
 
-File-level block; the discard is **whole-task** (no per-doc discard exists — the M43 ghost-verb repair, [reconciliation.md](reconciliation.md) → Conflict — block at file level); three-way merge is [deferred](reconciliation.md#mvp-scope-vs-post-mvp) (parallels override-conflict resolution).
+File-level block; the discard is **whole-task** (no per-doc discard exists — the M43 ghost-verb repair, [reconciliation.md](reconciliation.md) → Conflict — block at file level), and the route names **this** task, since M47 made the presentation the caller's ([reconciliation.md](reconciliation.md) → The conflict route belongs to the caller); three-way merge is [deferred](reconciliation.md#mvp-scope-vs-post-mvp) (parallels override-conflict resolution).
 
 ## 3. Override application at compose time
 

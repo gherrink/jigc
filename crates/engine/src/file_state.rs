@@ -152,6 +152,59 @@ pub fn staged_copy_finding(dest: &str) -> Finding {
     )
 }
 
+/// How a caller presents a `DRIFTED + TOUCHED` **conflict-block** — the clause naming the
+/// *CLI-side* mover plus the route out of it (M47 inc-2 / T4).
+///
+/// The conflict route **belongs to the caller, not the classifier**. The classifier sees a
+/// path, a hash and a `task_touched` flag; it has no task id, and at one of its two callers
+/// there is no task at all — so it cannot name the mover or the way out without lying. It
+/// used to hard-code both (`this task's staged writes` + `jigc task discard <task-id>`),
+/// which put an **inapplicable verb** carrying an **unsubstituted placeholder** on a
+/// *blocking* finding at the milestone-record door — exactly what the M43 route floor exists
+/// to prevent (`design/surface-contract.md` → The route fence; `DECISIONS.md` 2026-07-26 the
+/// Settle, item 8/P6: a placeholder derivable by the caller must be substituted, and
+/// `<task-id>` is not derivable here — it needs a different source).
+///
+/// Each caller supplies its own, from what it actually holds: the task-scope sweep the real
+/// task id ([`ConflictBlock::task`]), the milestone-record preflight a record-shaped block
+/// whose route is a human revert. Fields are private, so the value exists only through its
+/// constructors and the classifier can add nothing of its own.
+#[derive(Clone, Debug)]
+pub struct ConflictBlock {
+    /// The clause after ``conflict on `<path>`: `` — names what moved on the CLI side.
+    detail: String,
+    /// The way out, already substituted by the caller.
+    route: crate::finding::Route,
+}
+
+impl ConflictBlock {
+    /// A caller-composed conflict presentation: `detail` is the message clause after
+    /// ``conflict on `<path>`: ``, `route` the (already-substituted) way out.
+    pub fn new(detail: impl Into<String>, route: crate::finding::Route) -> Self {
+        Self {
+            detail: detail.into(),
+            route,
+        }
+    }
+
+    /// The **task-scope** preset — the sweep runs inside a named task, so the route names
+    /// that task's id outright. The honest resolution pair is unchanged from M43's
+    /// ghost-verb repair: discard the **whole task** (no per-doc discard exists) or revert
+    /// the external edit on disk; only the `<task-id>` placeholder is gone. The jigc span
+    /// rides the checked [`crate::finding::Route::mechanical`] constructor, so a verb that
+    /// does not parse cannot be taught here again.
+    pub fn task(task_id: &str) -> Self {
+        Self::new(
+            "an external edit and this task's staged writes both changed it",
+            crate::finding::Route::mechanical(
+                ["jigc", "task", "discard", task_id],
+                " to drop this task's staged writes (discard retires the whole task — no \
+                 per-doc discard exists), or revert the external edit on disk to keep them",
+            ),
+        )
+    }
+}
+
 /// The full **OOB reconciliation classifier** for a single *committed* managed doc —
 /// the state machine [`file_state`] only baseline-adopted in inc-4
 /// (`reconciliation.md` → The state machine; `DECISIONS.md` 2026-05-31 → inc-5
@@ -165,8 +218,9 @@ pub fn staged_copy_finding(dest: &str) -> Finding {
 /// - **`IN_SYNC`** (recorded hash matches) → no finding (clean / task-only change —
 ///   the working-area writes are reconciled elsewhere, not here).
 /// - **`DRIFTED + TOUCHED`** (`task_touched`) → **conflict-block**: both sides moved.
-///   A blocking `reconciliation.conflict-block` finding carrying the explicit-discard
-///   route; no silent merge, the hash and edge index are left untouched.
+///   A blocking `reconciliation.conflict-block` finding carrying the **caller-supplied**
+///   [`ConflictBlock`] presentation (the classifier has no task and no verb of its own);
+///   no silent merge, the hash and edge index are left untouched.
 /// - **`DRIFTED + UNTOUCHED`** → the **parse classifier**: re-parse + schema-validate
 ///   the on-disk bytes against `schema`.
 ///   - clean → **absorb**: re-hash the recorded baseline forward, incrementally
@@ -189,6 +243,7 @@ pub fn reconcile_committed(
     from: &str,
     bytes: &[u8],
     task_touched: bool,
+    conflict: &ConflictBlock,
 ) -> Vec<Finding> {
     let current = hash_bytes(bytes);
     match record.get(path) {
@@ -207,7 +262,7 @@ pub fn reconcile_committed(
         // IN_SYNC → clean / task-only change: nothing to reconcile here.
         Some(recorded) if recorded == current => Vec::new(),
         // DRIFTED + TOUCHED → conflict-block (both sides moved; no silent merge).
-        Some(_) if task_touched => vec![conflict_block_finding(path)],
+        Some(_) if task_touched => vec![conflict_block_finding(path, conflict)],
         // DRIFTED + UNTOUCHED → the parse classifier (the same conformance gate the
         // UNKNOWN arm above runs; here a fail is **blocking**, not advisory).
         Some(_) => match conformance_gate(schema, bytes) {
@@ -320,6 +375,10 @@ pub fn committed_path_recordable(
 ///   the weak signal (M45, Decision 7): a path with no HEAD history is a dangling
 ///   baseline (advisory + prune route), a path with history is a genuine deletion (block).
 ///
+/// `conflict` is the caller's [`ConflictBlock`] — the sweep knows the working area's
+/// *path*, never which task (or join) owns it, so the naming and the way out come from the
+/// caller that does (M47 inc-2 / T4).
+///
 /// Mutating: `record` (baseline-adopt / absorb) and `index` (absorb) advance in place;
 /// the caller persists them. Findings aggregate in a stable order: persisted schemas
 /// by type, then committed docs by path-sorted slug, then rename findings for each
@@ -332,6 +391,7 @@ pub fn reconcile_committed_store(
     repo_root: &Path,
     task_dir: &Path,
     history: &crate::validate::HistoryPredicate<'_>,
+    conflict: &ConflictBlock,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     // Snapshot the recorded committed paths *before* the reconcile loop mutates the
@@ -369,6 +429,7 @@ pub fn reconcile_committed_store(
                     &from,
                     &bytes,
                     task_touched,
+                    conflict,
                 ));
             }
             continue; // a placement doctype has no location dir to glob.
@@ -405,6 +466,7 @@ pub fn reconcile_committed_store(
                 &from,
                 &bytes,
                 task_touched,
+                conflict,
             ));
         }
     }
@@ -1030,31 +1092,24 @@ fn conformance_advisory_finding(path: &str, cause: Option<Finding>) -> Finding {
 }
 
 /// The blocking **conflict-block** finding (`reconciliation.md` → Conflict — block at
-/// file level): both the on-disk file and the task's working area moved. File
-/// granularity, explicit-discard route, never a silent merge (three-way merge is
-/// deferred).
+/// file level): both the on-disk file and the CLI side moved. File granularity, an
+/// explicit resolution route, never a silent merge (three-way merge is deferred).
 ///
-/// The route names **real verbs only** (the M43 ghost-verb repair, `DECISIONS.md`
-/// 2026-07-16 Settle: a per-write discard verb was designed at MVP and never built —
-/// clap's did-you-mean steered to `task discard`, destroying the task unwarned). The honest resolution pair: discard the **whole task** — the engine
-/// has no task id at this seam, so the mechanical span carries the declared
-/// `<task-id>` placeholder the agent fills — or revert the external edit on disk. The
-/// jigc span rides the checked [`crate::finding::Route::mechanical`] constructor
-/// (`surface-contract.md` → The route fence), so a verb that does not parse cannot
-/// be taught here again.
-fn conflict_block_finding(path: &str) -> Finding {
+/// The message clause and the route are the **caller's** ([`ConflictBlock`], M47 inc-2 /
+/// T4) — the classifier composes only the invariant `` conflict on `<path>`: `` frame and
+/// the location. What the mover is, and how to get out of it, differ per caller and are
+/// unknowable here: the task-scope sweep names the real task id, the milestone-record
+/// preflight names the record (there is no task at that door at all). The route the caller
+/// hands in is verbatim, so a mechanical one has already passed the checked
+/// [`crate::finding::Route::mechanical`] constructor (`surface-contract.md` → The route
+/// fence) at its producer.
+fn conflict_block_finding(path: &str, conflict: &ConflictBlock) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "reconciliation.conflict-block",
-        format!(
-            "conflict on `{path}`: an external edit and this task's staged writes both changed it"
-        ),
+        format!("conflict on `{path}`: {}", conflict.detail),
         Some(Location::addressed(path, 1, 1)),
-        Some(crate::finding::Route::mechanical(
-            ["jigc", "task", "discard", "<task-id>"],
-            " to drop this task's staged writes (discard retires the whole task — no \
-             per-doc discard exists), or revert the external edit on disk to keep them",
-        )),
+        Some(conflict.route.clone()),
     )
 }
 
@@ -1084,6 +1139,12 @@ mod tests {
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
             .expect("adr.yaml loads")
+    }
+
+    /// The caller-supplied conflict presentation a task-scope caller hands the classifier
+    /// (M47 inc-2 / T4) — a real task id, never a placeholder.
+    fn test_conflict() -> ConflictBlock {
+        ConflictBlock::task("drift-the-cache")
     }
 
     /// A committed ADR `B` (superseding nothing) — the recorded baseline before any
@@ -1208,6 +1269,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             edited,
             /* task_touched */ false,
+            &test_conflict(),
         );
 
         // Exactly one advisory absorb finding carrying the message.
@@ -1263,6 +1325,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             edited,
             /* task_touched */ false,
+            &test_conflict(),
         );
 
         assert!(
@@ -1299,9 +1362,13 @@ Referrers must point at the new decision.
     }
 
     /// The DRIFTED+TOUCHED branch: the same committed doc both drifted on disk **and**
-    /// staged by the active task **conflict-blocks** — a blocking
-    /// `reconciliation.conflict-block` finding carrying the explicit-discard route, no
+    /// touched by the CLI side **conflict-blocks** — a blocking
+    /// `reconciliation.conflict-block` finding carrying the **caller-supplied** route, no
     /// silent merge, the recorded hash unadvanced and the edge index untouched.
+    ///
+    /// The task-scope caller's preset is asserted here; the round-trip of an arbitrary
+    /// caller's presentation (the milestone-record door's shape) is
+    /// [`conflict_presentation_is_the_callers`].
     #[test]
     fn oob_conflict_blocks() {
         let schema = adr_schema();
@@ -1321,6 +1388,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             edited,
             /* task_touched */ true,
+            &test_conflict(),
         );
 
         assert_eq!(findings.len(), 1, "conflict emits exactly one finding");
@@ -1328,16 +1396,21 @@ Referrers must point at the new decision.
         assert_eq!(f.code, "reconciliation.conflict-block");
         assert_eq!(f.severity, Severity::Blocking);
         let route = f.route.as_ref().expect("conflict carries a discard route");
-        // The M43 ghost-verb repair (`DECISIONS.md` 2026-07-16 Settle): the route names
-        // only real verbs — the whole-task `jigc task discard <task-id>` (honest that no
-        // per-write discard exists) or the human on-disk revert — never the never-built
-        // per-write discard verb.
+        // The M43 ghost-verb repair (`DECISIONS.md` 2026-07-16 Settle) stands — the route
+        // names only real verbs: the whole-task discard (honest that no per-write discard
+        // exists) or the human on-disk revert. What M47 inc-2 / T4 changed is its SOURCE:
+        // the task-scope caller supplies it, so the argv carries the REAL task id and the
+        // `<task-id>` placeholder the classifier used to mint is gone.
         assert_eq!(
             route.as_str(),
-            "`jigc task discard <task-id>` to drop this task's staged writes (discard \
+            "`jigc task discard drift-the-cache` to drop this task's staged writes (discard \
              retires the whole task — no per-doc discard exists), or revert the external \
              edit on disk to keep them",
-            "the conflict route names the real verbs only"
+            "the task-scope conflict route names real verbs AND the real task id"
+        );
+        assert!(
+            !route.as_str().contains("<task-id>"),
+            "no unsubstituted placeholder survives on a blocking finding's route"
         );
         assert!(
             matches!(route.kind(), crate::finding::RouteKind::Mechanical { .. }),
@@ -1353,6 +1426,54 @@ Referrers must point at the new decision.
         assert!(
             index.edges.is_empty(),
             "conflict-block does not update the edge index"
+        );
+    }
+
+    /// The conflict presentation **round-trips from the caller** (M47 inc-2 / T4): the
+    /// classifier composes only the invariant `` conflict on `<path>`: `` frame + the
+    /// location, and adds nothing of its own to the message clause or the route.
+    ///
+    /// Driven with the shape the **milestone-record** door supplies — a record-naming clause
+    /// and a `Human` route (no task exists at that door, so no `jigc task discard` and no
+    /// `<task-id>` placeholder may appear). This is the seam that made the reported defect
+    /// possible: with the presentation hard-coded, that caller could not say anything true.
+    #[test]
+    fn conflict_presentation_is_the_callers() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        record.record(ADR_B_PATH, hash_bytes(ADR_B_BASE.as_bytes()));
+        let mut index = EdgeIndex::default();
+
+        let detail = "the milestone record is machine-maintained and was edited out of band";
+        let route_text = "restore the record to what jigc last wrote, then re-run";
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            ADR_B_EDITED_SUPERSEDES.as_bytes(),
+            /* task_touched */ true,
+            &ConflictBlock::new(detail, crate::finding::Route::human(route_text)),
+        );
+
+        assert_eq!(findings.len(), 1, "conflict emits exactly one finding");
+        let f = &findings[0];
+        assert_eq!(
+            f.message,
+            format!("conflict on `{ADR_B_PATH}`: {detail}"),
+            "the message is the invariant frame + the caller's clause, verbatim"
+        );
+        let route = f.route.as_ref().expect("the caller's route rides through");
+        assert_eq!(route.as_str(), route_text, "the route round-trips verbatim");
+        assert!(
+            matches!(route.kind(), crate::finding::RouteKind::Human),
+            "the caller's route KIND survives too (a human revert is not mechanical)"
+        );
+        assert!(
+            !f.message.contains("this task's staged writes")
+                && !route.as_str().contains("jigc task discard"),
+            "the classifier contributes no task language of its own: {f:?}"
         );
     }
 
@@ -1375,8 +1496,16 @@ Referrers must point at the new decision.
         let path = "decisions/notes.md";
         let from = "adr:notes";
 
-        let findings =
-            reconcile_committed(&mut record, &mut index, &schema, path, from, foreign, false);
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            path,
+            from,
+            foreign,
+            false,
+            &test_conflict(),
+        );
 
         assert_eq!(
             findings.len(),
@@ -1413,8 +1542,16 @@ Referrers must point at the new decision.
 
         // Re-fire: a second call (still UNKNOWN, since the first did not record) emits
         // the same advisory again — the recurrence the human resolves by ingest/move.
-        let again =
-            reconcile_committed(&mut record, &mut index, &schema, path, from, foreign, false);
+        let again = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            path,
+            from,
+            foreign,
+            false,
+            &test_conflict(),
+        );
         assert_eq!(
             again.len(),
             1,
@@ -1448,6 +1585,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             ADR_B_BASE.as_bytes(),
             false,
+            &test_conflict(),
         );
 
         assert_eq!(
@@ -1644,6 +1782,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &test_conflict(),
         );
 
         // The clean ADR absorbed (advisory) and its baseline advanced + edge folded in.
@@ -1719,6 +1858,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &test_conflict(),
         );
 
         let rename = findings
@@ -1771,6 +1911,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &test_conflict(),
         );
         assert!(
             findings.iter().all(|f| f.code != "reconciliation.rename"),
@@ -1791,6 +1932,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &test_conflict(),
         );
         let rename = findings
             .iter()
@@ -1871,6 +2013,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &test_conflict(),
         );
 
         // (i) NO rename finding — neither the weak-signal restore nor a strong block.
@@ -1900,6 +2043,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &test_conflict(),
         );
         assert!(
             again.iter().all(|f| f.code != "reconciliation.rename"),
@@ -2334,6 +2478,7 @@ sections: []
             root.path(),
             task.path(),
             &|_| true,
+            &test_conflict(),
         );
 
         // (a) the OOB edit to the managed placement file is detected + routed.
@@ -2386,6 +2531,7 @@ sections: []
             root.path(),
             task.path(),
             &|_| true,
+            &test_conflict(),
         );
 
         let rename = findings

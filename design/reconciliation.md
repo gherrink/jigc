@@ -67,11 +67,13 @@ For `DRIFTED + TOUCHED`, both sides have moved: the on-disk file changed since t
 conflict on adr:rate-limit-at-the-gateway:
   external edit since 2026-05-28T14:03:00Z + task add-rate-limiter has staged changes.
   resolution:
-    - jigc task discard <task-id>   # drop the whole task's staged writes
-    - revert the file on disk       # drop the human's edit
+    - jigc task discard add-rate-limiter   # drop the whole task's staged writes
+    - revert the file on disk              # drop the human's edit
 ```
 
-Resolution paths:
+**The conflict route belongs to the caller, not the classifier (M47).** The classifier sees a path, a hash and a *touched* flag — it has no task id, and at one of its callers there is no task at all. It used to hard-code the presentation above, so the **milestone-record doors** (the CLI writing a machine-owned record, [team-ready-state.md](team-ready-state.md) → No-silent-overwrite discipline) blocked with an **inapplicable verb** carrying an **unsubstituted `<task-id>`** — the pair the M43 route floor exists to prevent on a *blocking* finding ([surface-contract.md](surface-contract.md) → The route fence). So the mover clause **and** the route are now supplied per caller, from what that caller actually holds: the task-scope sweep passes the **real task id** (no placeholder survives the print), the milestone join gate routes at the sub-task listing (the merged area belongs to no single task), and the record door names the *record* and routes a human revert to what jigc last wrote — an external edit to a machine-maintained record is never merged and never clobbered. The frame the classifier still owns is only `` conflict on `<path>`: `` + the location.
+
+Resolution paths (task scope):
 
 - Agent discards the **whole task** (`jigc task discard <id>`) — no per-doc discard exists. (A per-write discard verb was sketched at MVP and never built; the route was repaired to the real verb at M43, [DECISIONS.md](../DECISIONS.md) → 2026-07-16 Settle. Doc-granular discard is deferred with the same machinery as three-way merge.)
 - Human reverts the on-disk edit; the task's writes are kept.

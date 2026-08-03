@@ -587,6 +587,34 @@ fn baseline_record(jigc_root: &Path, schema: &Schema, milestone_id: &str, bytes:
     let _ = record.save(jigc_root);
 }
 
+/// The record door's own **conflict-block presentation** (M47 inc-2 / T4) — the caller half
+/// of [`ConflictBlock`](engine::file_state::ConflictBlock).
+///
+/// There is **no task at this door**: a milestone-record op writes the record directly, so
+/// the classifier's task-scope default (`this task's staged writes` + `jigc task discard
+/// <task-id>`) was an **inapplicable verb** carrying an **unsubstituted placeholder** on a
+/// *blocking* finding — the pair the M43 route floor exists to prevent
+/// (`design/surface-contract.md` → The route fence; `DECISIONS.md` 2026-07-26 the Settle,
+/// item 8/P6: `<task-id>` is not derivable here — it needs a different source, and here that
+/// source does not exist at all). So the message names the **record** and the route is the
+/// only resolution that exists: restore what jigc last wrote, then re-run. It is a
+/// [`Route::human`](engine::finding::Route::human) — reverting an out-of-band edit is a
+/// human judgment over git, not a `jigc` verb (the record is machine-maintained, so the
+/// edit is never merged and never clobbered; `design/team-ready-state.md` → the
+/// No-silent-overwrite discipline).
+fn record_conflict_block(key: &str) -> engine::file_state::ConflictBlock {
+    engine::file_state::ConflictBlock::new(
+        "the milestone record is machine-maintained and was edited out of band since jigc \
+         last wrote it",
+        engine::finding::Route::human(format!(
+            "restore `{key}` to what jigc last wrote (`git checkout -- {key}` for an \
+             uncommitted edit, else revert the commit that changed it) and re-run this \
+             command — an external edit to a machine-maintained record is never merged and \
+             never clobbered",
+        )),
+    )
+}
+
 /// The **reconcile preflight** before a `set: on-transition` record overwrite — the
 /// No-silent-overwrite discipline (`design/team-ready-state.md` → F3;
 /// `design/reconciliation.md`). Because the `milestone-record` is machine-owned, an OOB human
@@ -641,6 +669,7 @@ fn reconcile_record_preflight(
         &from,
         &bytes,
         /* task_touched = */ true,
+        &record_conflict_block(&key),
     );
     if let Some(blocking) = findings.iter().find(|f| f.severity == Severity::Blocking) {
         // Drift on a machine-owned record → conflict-block, the record untouched, routed.
@@ -2551,6 +2580,17 @@ fn milestone_boundary_gate(
         &history,
         &changed_code,
         base_tree.path(),
+        // The merged gate area belongs to no single task, so the conflict route cannot name
+        // one (M47 inc-2 / T4): it routes at the sub-task listing the human picks from,
+        // never at a `<task-id>` placeholder.
+        &engine::file_state::ConflictBlock::new(
+            "an external edit and a joined sub-task's staged writes both changed it",
+            engine::finding::Route::mechanical(
+                ["jigc", "task", "list"],
+                " names the live tasks — discard the sub-task that staged this doc, or revert \
+                 the external edit on disk, then re-run the join",
+            ),
+        ),
     )
     .with_context(|| format!("validating the merged effective state under {staging_dir:?}"))?;
 
