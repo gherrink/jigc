@@ -864,6 +864,84 @@ pub fn reseed_cache_from_record(
     Ok(())
 }
 
+/// **Rebuild every sub-task's WORKING AREA from the committed record** — the second half of
+/// the fresh-clone reseed ([`reseed_cache_from_record`] is the first;
+/// `design/team-ready-state.md` → Engine capability 2 (read-back), whose CLI site already
+/// promises the teammate "resumes its un-joined sub-tasks from scratch"). M47 Increment 3 T3.
+///
+/// The milestone-cache half rebuilt only `.jigc/milestones/<id>/{base,tasks}.json`, so a fresh
+/// clone knew *which* sub-tasks the milestone carries and nothing else: `.jigc/tasks/<sub>/`
+/// stayed absent, and the milestone-execution workflow's own emitted
+/// `` Spawn: `cd .jigc/worktrees/<sub> && jigc workflow <W> --task <sub>` `` line dead-ended on
+/// *"no task"* — routed back at `jigc milestone list-tasks`, which names that same sub-task. A
+/// loop, and the one T2's `milestone.zero-contribution` refusal routes a fresh-clone operator
+/// into. This closes it: for every sub-task the record names, mint the standard working area
+/// ([`crate::state::mint_task`], never a second minting discipline) at the recorded id, with the
+/// milestone's shared `base` pin and the item's **verbatim** `intent`.
+///
+/// The recorded id is used as the slug **override**, never re-derived from the intent: the
+/// record's `{#id}` anchor *is* the sub-task id the join, the worktree path and the spawn line
+/// all key on, and re-slugging the intent would silently fork them the moment the slug rule
+/// generation moves.
+///
+/// **Idempotent and never destructive**: a sub-task whose area already exists is skipped
+/// untouched, so a live session's working area — including the `--workflow` it actually
+/// recorded, and any staged docs under it — is never clobbered by a later milestone op.
+///
+/// **`workflow_id` is the caller's** (the engine ships empty of pack content): the CLI passes
+/// the pack's default sub-task workflow. The committed record carries `task-id`, `intent` and
+/// `status` and **nothing about the minting workflow**, so an `add-task --workflow <other>`
+/// override is workbench-local and *not* fresh-clone-durable. The re-derived default is what
+/// `add-task`/`add-from-spec` record absent an override — correct for every un-overridden
+/// sub-task — and for an overridden one the operator's own `jigc workflow <other> --task <id>`
+/// re-entry hits the shipped W-equality guard and is refused **loudly**, naming what the area
+/// records, rather than being composed as something else. Making the override durable means
+/// putting it in the record, i.e. a frozen-doctype schema bump — a one-way door, out of charter.
+///
+/// Every item the record names is rebuilt: a record whose header is non-terminal has no settled
+/// items, because both terminals flip the header and every item in one write
+/// ([`flip_record_status_to_joined`] / [`discard_record`]), and a terminal header never reaches
+/// here — [`reseed_cache_from_record`] refuses it first.
+pub fn reseed_sub_task_areas(
+    jigc_root: &Path,
+    schema: &crate::schema::Schema,
+    record_source: &str,
+    workflow_id: &str,
+) -> Result<(), Finding> {
+    let doc = crate::parse::parse_sections(schema, record_source)
+        .map_err(|findings| read_back_finding(findings.first()))?;
+    let base = doc
+        .sections
+        .iter()
+        .find(|s| s.id == RECORD_HEADER_SECTION)
+        .and_then(|s| s.fields.iter().find(|f| f.key == RECORD_BASE_FIELD))
+        .map(|f| parse_base_field(&f.value.render()))
+        .ok_or_else(|| read_back_finding(None))?;
+    let Some(tasks) = doc.sections.iter().find(|s| s.id == RECORD_TASKS_SECTION) else {
+        return Ok(());
+    };
+    for item in &tasks.items {
+        if jigc_root.join("tasks").join(&item.id).exists() {
+            continue;
+        }
+        let intent = item
+            .fields
+            .iter()
+            .find(|f| f.key == RECORD_TASK_INTENT_FIELD)
+            .map(|f| f.value.render())
+            .unwrap_or_default();
+        crate::state::mint_task(
+            jigc_root,
+            &intent,
+            SUB_TASK_TYPE,
+            workflow_id,
+            base.clone(),
+            Some(&item.id),
+        )?;
+    }
+    Ok(())
+}
+
 /// The **header `status`** a committed record reads — whatever it says (`active`, `joined`,
 /// `discarded`), read from the record itself, which is the source of truth for a milestone's
 /// lifecycle ([Engine capability 2]; the `.jigc` JSON cache carries no status at all, which is

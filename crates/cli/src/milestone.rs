@@ -1193,6 +1193,14 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 /// record present) re-derives the milestone shape from the source-of-truth record and resumes
 /// its un-joined sub-tasks from scratch.
 ///
+/// **Two halves, one site** (M47 Inc 3 T3): the milestone cache
+/// ([`engine::milestone::reseed_cache_from_record`]) **and** every sub-task's working area
+/// ([`engine::milestone::reseed_sub_task_areas`]). The first alone told the clone *which*
+/// sub-tasks the milestone carries while leaving `.jigc/tasks/<sub>/` absent, so the
+/// milestone-execution workflow's own emitted `Spawn:` line dead-ended on *"no task"* — routed
+/// straight back at `jigc milestone list-tasks`, a loop. Both halves hang off this one site, so
+/// the promise above holds for every verb that reaches it rather than for a hand-kept subset.
+///
 /// Gated twice so it stays inert where there is nothing to re-derive: (1) the `milestone-record`
 /// schema must be resolved (a `[dev ▸ methodology]` project) — dev-only (no methodology pack) has
 /// no committed record, so the demoted JSON cache is the only home and this no-ops; and (2) the
@@ -1291,7 +1299,15 @@ fn reseed_cache(
     let source = std::fs::read_to_string(&record_path)
         .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
     let dir = milestone_dir(jigc_root, milestone_id);
-    engine::milestone::reseed_cache_from_record(&dir, schema, &source).map_err(finding_to_err)
+    engine::milestone::reseed_cache_from_record(&dir, schema, &source).map_err(finding_to_err)?;
+    // The sub-task working areas, rebuilt from the same record (M47 Inc 3 T3). Second, on
+    // purpose: `reseed_cache_from_record` carries the terminal guard, so a settled milestone
+    // refuses above this line and never has areas rebuilt for it. `DEFAULT_SUB_TASK_WORKFLOW`
+    // is the pack fact the engine may not know — the record carries no minting workflow, so an
+    // `--workflow` override is workbench-local and not fresh-clone-durable (the engine fn's
+    // declared bound).
+    engine::milestone::reseed_sub_task_areas(jigc_root, schema, &source, DEFAULT_SUB_TASK_WORKFLOW)
+        .map_err(finding_to_err)
 }
 
 /// `jigc milestone list-tasks <milestone-id>` — read the milestone's persisted

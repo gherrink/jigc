@@ -17,6 +17,37 @@
 //!
 //! Pre-fix, (b) fails: `list-tasks` bails "milestone does not exist" because the WIP cache
 //! is gone and nothing reseeds it from the committed record.
+//!
+//! ---
+//!
+//! **M47 Increment 3 / T3 — the refusal's route is followable from a fresh clone.** The M39
+//! reseed above rebuilt only `.jigc/milestones/<id>/{base,tasks}.json`; the per-sub-task
+//! working areas `.jigc/tasks/<sub-task-id>/` were **never** rebuilt, so the milestone-execution
+//! workflow's own emitted `` Spawn: `cd .jigc/worktrees/<sub> && jigc workflow sub-task --task
+//! <sub>` `` line failed with *"no task `<sub>`"* — and its route pointed back at
+//! `jigc milestone list-tasks`, which names the very sub-task that has no area. A **loop**.
+//! T2's new `milestone.zero-contribution` refusal routes a fresh-clone operator straight into
+//! it (`jigc milestone provision <id>` → execute → dead end), so the shared reseed site closes
+//! it here: it rebuilds every sub-task area the record names — base pin, verbatim `intent`, and
+//! the pack's default sub-task workflow — from the committed record.
+//!
+//! The three arms below build their fresh-clone state **only by driving the binary** — a real
+//! `git clone` of a real origin repo, never a hand-written `.jigc/tasks/…`. That is the point:
+//! the lost build's mask was this increment's own suite hand-writing exactly the state the tool
+//! could not rebuild (`completions/artifacts/M47/recovery-report.md` → §4.2 finding 2), so a
+//! fixture that reaches inside `.jigc/tasks/` would prove nothing here.
+//!
+//!   (c) the whole route, run as emitted: `finalize` (exit 3) → its route's own `` `…` `` span
+//!       verbatim → `execute` → each emitted `Spawn:` span verbatim through a `jigc` shim on
+//!       `PATH`, reaching a sub-task compose at exit 0 that carries the record's intent → stage
+//!       code in the worktrees → a re-run `finalize` that **lands** it;
+//!   (d) the entry-door axis: every milestone verb reaches the reseed through **one** shared
+//!       site, so each of `list-tasks` / `provision` / `execute` / `finalize` rebuilds the areas
+//!       as the *first* op on its own fresh clone (`finalize` too — the reseed runs before its
+//!       refusal);
+//!   (e) the declared bound: `--workflow` is workbench-local and **not** fresh-clone-durable —
+//!       the reseed re-derives the pack default, so the operator's own overridden re-entry is
+//!       refused **loudly** by the shipped W-equality guard rather than composing the override.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -279,5 +310,386 @@ fn fresh_clone_reseeds_cache_from_record_and_resumes() {
         fs::read_to_string(record_path(repo.path())).expect("record still readable"),
         record_before,
         "the read-path reseed must not rewrite the committed record",
+    );
+}
+
+// =======================================================================================
+// M47 Inc 3 T3 — the refusal's route is followable from a fresh clone.
+// =======================================================================================
+
+/// Initialize a `[dev ▸ methodology]` origin repo whose **initial** commit already carries the
+/// compose marker — so the milestone's base pin (HEAD at `create`) is that commit and every
+/// later commit in the range is record-only, the shape `finalize`'s base guard advances over.
+fn init_methodology_origin(repo: &Path) {
+    git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+    fs::write(repo.join("README.md"), "hello\n").expect("write file");
+    write_compose_marker(repo);
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+}
+
+/// Drive the binary to build the origin's milestone state: `create` + two `add-task`s, each
+/// landing its own record-only commit. Nothing is hand-written.
+fn drive_origin_milestone(repo: &Path, home: &Path) {
+    assert_ok(
+        &run_jigc(repo, home, &["milestone", "create", "Cache rework"]),
+        "`jigc milestone create`",
+    );
+    for intent in ["Warm the read cache", "Evict cold entries"] {
+        assert_ok(
+            &run_jigc(
+                repo,
+                home,
+                &["milestone", "add-task", "cache-rework", intent],
+            ),
+            "`jigc milestone add-task`",
+        );
+    }
+}
+
+/// `git clone <origin> <dir>/clone` — a **real** clone, carrying exactly the tracked bytes a
+/// teammate gets: the committed record and config, and none of the gitignored `.jigc/` workbench.
+fn clone_origin(origin: &Path, workdir: &Path) -> PathBuf {
+    let clone = workdir.join("clone");
+    git(
+        workdir,
+        &[
+            "clone",
+            "-q",
+            &origin.display().to_string(),
+            &clone.display().to_string(),
+        ],
+    );
+    git(&clone, &["config", "user.email", "test@example.com"]);
+    git(&clone, &["config", "user.name", "Test"]);
+    assert!(
+        !clone.join(".jigc").join("milestones").exists(),
+        "a fresh clone must not carry the gitignored milestone workbench",
+    );
+    assert!(
+        !clone.join(".jigc").join("tasks").exists(),
+        "a fresh clone must not carry the gitignored sub-task working areas",
+    );
+    clone
+}
+
+/// The first `` `…` `` span of `text`, split into an argv — the **emitted** route bytes an
+/// agent would copy, never a reconstruction.
+fn first_command_span(text: &str) -> Vec<String> {
+    let (_, rest) = text.split_once('`').expect("the route carries a `…` span");
+    let (span, _) = rest.split_once('`').expect("the `…` span closes");
+    span.split_whitespace().map(str::to_owned).collect()
+}
+
+/// Every `` Spawn: `…` `` span of a composed milestone-execution view, **verbatim** — each is a
+/// shell line (`cd <worktree> && jigc workflow <W> --task <id>`), run as emitted below.
+fn spawn_spans(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.strip_prefix("Spawn: `"))
+        .filter_map(|rest| rest.strip_suffix('`'))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Install a `jigc` shim on a throwaway `PATH` entry, so an emitted `Spawn:` span — which names
+/// the bare command `jigc`, as an agent would run it — resolves to the binary under test.
+#[cfg(unix)]
+fn install_jigc_shim(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = dir.join("shim-bin");
+    fs::create_dir_all(&bin).expect("mk the shim bin dir");
+    let shim = bin.join("jigc");
+    fs::write(
+        &shim,
+        format!("#!/bin/sh\nexec {:?} \"$@\"\n", env!("CARGO_BIN_EXE_jigc")),
+    )
+    .expect("write the jigc shim");
+    fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).expect("chmod the jigc shim");
+    bin
+}
+
+/// Run an emitted shell span verbatim through `sh -c`, with the `jigc` shim first on `PATH`.
+#[cfg(unix)]
+fn run_span(cwd: &Path, home: &Path, shim_bin: &Path, span: &str) -> std::process::Output {
+    let path = match std::env::var("PATH") {
+        Ok(rest) => format!("{}:{rest}", shim_bin.display()),
+        Err(_) => shim_bin.display().to_string(),
+    };
+    Command::new("sh")
+        .arg("-c")
+        .arg(span)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .env("PATH", path)
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the emitted span")
+}
+
+/// A sub-task's rebuilt working area — the three files [`engine::state::mint_task`] writes.
+fn sub_task_area(repo: &Path, sub: &str) -> PathBuf {
+    repo.join(".jigc").join("tasks").join(sub)
+}
+
+// ---------------------------------------------------------------------------------------
+// (c) The whole route, followed as emitted.
+// ---------------------------------------------------------------------------------------
+
+#[cfg(unix)]
+#[test]
+fn the_zero_contribution_route_is_followable_from_a_fresh_clone() {
+    let origin = TempDir::new("route-origin");
+    let home = TempDir::new("home");
+    init_methodology_origin(origin.path());
+    drive_origin_milestone(origin.path(), home.path());
+
+    let workdir = TempDir::new("route-clone");
+    let clone = clone_origin(origin.path(), workdir.path());
+    let shim_bin = install_jigc_shim(workdir.path());
+
+    // --- step 1: the refusal, and its own route bytes ------------------------------------
+    let blocked = run_jigc(
+        &clone,
+        home.path(),
+        &["--format", "json", "milestone", "finalize", "cache-rework"],
+    );
+    assert_eq!(
+        blocked.status.code(),
+        Some(3),
+        "a fresh clone's zero-contribution finalize blocks; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&blocked.stdout),
+        String::from_utf8_lossy(&blocked.stderr),
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&blocked.stdout).expect("the blocked envelope is valid JSON");
+    let route = report["findings"]
+        .as_array()
+        .expect("findings array")
+        .iter()
+        .find(|f| f["code"] == "milestone.zero-contribution")
+        .and_then(|f| f["route"].as_str())
+        .unwrap_or_else(|| panic!("the refusal carries a route; got:\n{report:#}"))
+        .to_string();
+
+    // --- step 2: run the route's own argv, verbatim --------------------------------------
+    let argv = first_command_span(&route);
+    assert_eq!(
+        argv,
+        vec!["jigc", "milestone", "provision", "cache-rework"],
+        "the route leads with the provision step; got: {route}",
+    );
+    let provisioned = run_jigc(
+        &clone,
+        home.path(),
+        &argv[1..].iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    assert_ok(&provisioned, "the emitted `jigc milestone provision` span");
+
+    // The shared reseed rebuilt each sub-task's working area from the record — base pin,
+    // verbatim intent, recorded workflow.
+    for (sub, intent) in [
+        ("warm-the-read-cache", "Warm the read cache"),
+        ("evict-cold-entries", "Evict cold entries"),
+    ] {
+        let area = sub_task_area(&clone, sub);
+        assert!(
+            area.join("base.json").is_file(),
+            "the reseed rebuilds `{sub}`'s base pin",
+        );
+        assert_eq!(
+            fs::read_to_string(area.join("intent")).expect("the rebuilt area carries its intent"),
+            intent,
+            "the rebuilt intent is the record's, verbatim",
+        );
+        assert_eq!(
+            fs::read_to_string(area.join("workflow")).expect("the rebuilt area names a workflow"),
+            "sub-task",
+            "the rebuilt area records the pack's default sub-task workflow",
+        );
+    }
+
+    // --- step 3: compose the execution view and run each emitted `Spawn:` span ------------
+    let executed = run_jigc(
+        &clone,
+        home.path(),
+        &["milestone", "execute", "cache-rework"],
+    );
+    assert_ok(&executed, "`jigc milestone execute` on the fresh clone");
+    let view = String::from_utf8(executed.stdout).expect("utf-8 composed view");
+    let spans = spawn_spans(&view);
+    assert_eq!(
+        spans.len(),
+        2,
+        "the fan-out emits one `Spawn:` span per sub-task; got:\n{view}",
+    );
+    for span in &spans {
+        let composed = run_span(&clone, home.path(), &shim_bin, span);
+        assert!(
+            composed.status.success(),
+            "the emitted span `{span}` must reach a sub-task compose at exit 0; got {:?}\n\
+             stdout:\n{}\nstderr:\n{}",
+            composed.status,
+            String::from_utf8_lossy(&composed.stdout),
+            String::from_utf8_lossy(&composed.stderr),
+        );
+        let text = String::from_utf8_lossy(&composed.stdout).to_string();
+        assert!(
+            text.contains("Warm the read cache") || text.contains("Evict cold entries"),
+            "the composed sub-task carries the record's verbatim intent; got:\n{text}",
+        );
+    }
+
+    // --- step 4: the sub-agents stage their code, and the re-run finalize lands it ---------
+    for (sub, rel) in [
+        ("warm-the-read-cache", "src/warm.rs"),
+        ("evict-cold-entries", "src/evict.rs"),
+    ] {
+        let wt = clone.join(".jigc").join("worktrees").join(sub);
+        let path = wt.join(rel);
+        fs::create_dir_all(path.parent().expect("code parent")).expect("mk code parent");
+        fs::write(&path, format!("pub fn {}() {{}}\n", sub.replace('-', "_")))
+            .expect("write sub-task code");
+        git(&wt, &["add", rel]);
+    }
+
+    let before = git(&clone, &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse::<u32>()
+        .expect("commit count parses");
+    let landed = run_jigc(
+        &clone,
+        home.path(),
+        &["milestone", "finalize", "cache-rework"],
+    );
+    assert_ok(
+        &landed,
+        "the re-run `jigc milestone finalize` after the route",
+    );
+    let after = git(&clone, &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse::<u32>()
+        .expect("commit count parses");
+    assert!(after > before, "the re-run finalize lands a commit");
+    let committed = git(&clone, &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        committed.contains("src/warm.rs") && committed.contains("src/evict.rs"),
+        "both sub-tasks' staged code lands in the milestone boundary; got:\n{committed}",
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// (d) The entry-door axis — one shared reseed site, every milestone verb.
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn every_milestone_entry_door_rebuilds_the_sub_task_areas_on_a_fresh_clone() {
+    // The axis is the set of verbs that reach [`reseed_cache`]; `create` is excluded by design
+    // (it targets an id no record may own yet, so it takes the opposite guard). `finalize` is
+    // in even though it refuses — the reseed runs ahead of the refusal, which is precisely what
+    // makes the refusal's route followable.
+    for door in ["list-tasks", "provision", "execute", "finalize"] {
+        let origin = TempDir::new(&format!("door-origin-{door}"));
+        let home = TempDir::new("home");
+        init_methodology_origin(origin.path());
+        drive_origin_milestone(origin.path(), home.path());
+
+        let workdir = TempDir::new(&format!("door-clone-{door}"));
+        let clone = clone_origin(origin.path(), workdir.path());
+
+        // The door is the FIRST jigc invocation on this clone — nothing else could have
+        // rebuilt the areas.
+        let out = run_jigc(&clone, home.path(), &["milestone", door, "cache-rework"]);
+        assert!(
+            out.status.code() == Some(0) || out.status.code() == Some(3),
+            "`jigc milestone {door}` on a fresh clone either serves or refuses, never faults; \
+             got {:?}\nstderr:\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        for sub in ["warm-the-read-cache", "evict-cold-entries"] {
+            let area = sub_task_area(&clone, sub);
+            assert!(
+                area.join("intent").is_file() && area.join("workflow").is_file(),
+                "`jigc milestone {door}` must rebuild `{sub}`'s working area from the record",
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// (e) The declared bound — `--workflow` is not fresh-clone-durable, and says so loudly.
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn an_overridden_workflow_is_refused_loudly_on_fresh_clone_re_entry() {
+    let origin = TempDir::new("override-origin");
+    let home = TempDir::new("home");
+    init_methodology_origin(origin.path());
+    assert_ok(
+        &run_jigc(
+            origin.path(),
+            home.path(),
+            &["milestone", "create", "Cache rework"],
+        ),
+        "`jigc milestone create`",
+    );
+    assert_ok(
+        &run_jigc(
+            origin.path(),
+            home.path(),
+            &[
+                "milestone",
+                "add-task",
+                "cache-rework",
+                "Tune the eviction clock",
+                "--workflow",
+                "single-task",
+            ],
+        ),
+        "`jigc milestone add-task --workflow single-task`",
+    );
+
+    let workdir = TempDir::new("override-clone");
+    let clone = clone_origin(origin.path(), workdir.path());
+    assert_ok(
+        &run_jigc(
+            &clone,
+            home.path(),
+            &["milestone", "provision", "cache-rework"],
+        ),
+        "`jigc milestone provision` on the fresh clone",
+    );
+
+    // The committed record carries `task-id`/`intent`/`status` and NOTHING about the minting
+    // workflow, so the reseed re-derives the pack default. The operator who minted the
+    // override re-enters with it — and is refused loudly, naming what the area actually
+    // records, rather than being silently composed into the wrong workflow.
+    let wt = clone
+        .join(".jigc")
+        .join("worktrees")
+        .join("tune-the-eviction-clock");
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args([
+            "workflow",
+            "single-task",
+            "--task",
+            "tune-the-eviction-clock",
+        ])
+        .current_dir(&wt)
+        .env("HOME", home.path())
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the overridden re-entry");
+    assert!(
+        !out.status.success(),
+        "an overridden re-entry on a fresh clone must be refused, never composed; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    assert!(
+        stderr.contains("workflow-refs.workflow-mismatch") || stderr.contains("was minted with"),
+        "the refusal is the shipped W-equality guard, naming the recorded workflow; got:\n{stderr}",
     );
 }
