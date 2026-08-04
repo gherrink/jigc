@@ -956,8 +956,7 @@ fn run_set_slot(
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "set-slot", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let target =
-        slot_target(&schema, &address).with_context(|| format!("no slot addressed by `{addr}`"))?;
+    let target = slot_target(&schema, &address)?;
 
     let prose = read_handoff(from_file)?;
 
@@ -2146,8 +2145,7 @@ fn apply_leaf(
         Leaf::SetSlot { fragment, prose } => {
             let addr = format!("{head}#{fragment}");
             let address = parse_addr(&addr)?;
-            let target = slot_target(schema, &address)
-                .with_context(|| format!("no slot addressed by `{addr}`"))?;
+            let target = slot_target(schema, &address)?;
             apply_slot_target(schema, source, target, &addr, prose)
         }
     }
@@ -4035,12 +4033,61 @@ enum SlotTarget {
 /// slot of a repeatable item (`#<section>/<item>/<slot>`). The CLI extracts the
 /// `(section, item)` pair for the item form; the engine's gated `set_slot_validated`
 /// adjudicates item/section presence.
-fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
-    let section_id = match address.fragment.as_ref()? {
+///
+/// **The section arm's undeclared-address guard** (M47 — the undeclared-address table;
+/// `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9): a simple section's prose slot
+/// **is** the section, addressed `#<section>` with no leaf hop, so a trailing hop over
+/// one names a leaf the schema does not declare there. This used to *drop* that hop and
+/// splice the section's real slot at exit 0 — the section-leaf face of the item arms'
+/// `slot_span` fallback — so it is now rejected here, before the write, with the same
+/// `write.unknown-field` code (and route) the item arms and the field verbs emit. The
+/// message names the leaf-less address form, since an agent that reached here was aiming
+/// at prose that does have a home. (A simple section declares **at most one** slot, and it
+/// is unnamed — the grammar's `unit/leaf` depth reaches only its *fields* today. If
+/// sub-labelled section slots are ever added, this arm is where they are declared
+/// resolvable; the guard would then admit a declared sub-label rather than reject it.)
+fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFailure> {
+    let uri = address.to_string();
+    let no_slot = || -> DocFailure { anyhow::anyhow!("no slot addressed by `{uri}`").into() };
+    let Some(fragment) = address.fragment.as_ref() else {
+        return Err(no_slot());
+    };
+    let section_id = match fragment {
         Fragment::Unit(u) => u.as_str(),
-        Fragment::UnitLeaf(u, _) => u.as_str(),
+        Fragment::UnitLeaf(section, leaf) => {
+            let section = section.as_str();
+            // Only a **simple** section can be the section arm's target, so only there is
+            // the trailing hop an undeclared leaf; over a repeatable section it is an item
+            // id with no leaf, which addresses no slot at all (today's message).
+            let Some(declared) = schema
+                .sections
+                .iter()
+                .find(|s| s.id == section && matches!(s.body, SectionBody::Simple { .. }))
+            else {
+                return Err(no_slot());
+            };
+            // Where the prose *does* have a home, name it — an agent that reached here was
+            // aiming at something real. Where the section declares no slot at all, say so
+            // instead of pointing at an address that would fail too.
+            let at = if matches!(&declared.body, SectionBody::Simple { slot: Some(_), .. }) {
+                format!(
+                    "section {section:?} (its prose slot is the section itself — address it \
+                     as `#{section}`, with no leaf hop)"
+                )
+            } else {
+                format!("section {section:?} (which declares no prose slot)")
+            };
+            return Err(block(
+                &engine::write::splice_error_finding(&engine::write::SpliceError::UnknownLeaf {
+                    leaf: leaf.as_str().to_string(),
+                    at,
+                }),
+                "set-slot",
+                &uri,
+            ));
+        }
         Fragment::UnitItemLeaf(section, item, leaf) => {
-            return Some(SlotTarget::Item {
+            return Ok(SlotTarget::Item {
                 section: section.as_str().to_string(),
                 item: item.as_str().to_string(),
                 leaf: leaf.as_str().to_string(),
@@ -4050,25 +4097,33 @@ fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
         // (leading) and the slot leaf (trailing); the hops between are the parent-scoped
         // item id chain.
         Fragment::Deep(hops) => {
-            let (section, rest) = hops.split_first()?;
-            let (leaf, items) = rest.split_last()?;
+            let Some((section, rest)) = hops.split_first() else {
+                return Err(no_slot());
+            };
+            let Some((leaf, items)) = rest.split_last() else {
+                return Err(no_slot());
+            };
             if items.is_empty() {
-                return None;
+                return Err(no_slot());
             }
-            return Some(SlotTarget::NestedItem {
+            return Ok(SlotTarget::NestedItem {
                 section: section.clone(),
                 items: items.to_vec(),
                 leaf: leaf.clone(),
             });
         }
-        _ => return None,
+        _ => return Err(no_slot()),
     };
-    schema.sections.iter().find_map(|s| match &s.body {
-        SectionBody::Simple { slot: Some(_), .. } if s.id == section_id => {
-            Some(SlotTarget::Section(s.id.clone()))
-        }
-        _ => None,
-    })
+    schema
+        .sections
+        .iter()
+        .find_map(|s| match &s.body {
+            SectionBody::Simple { slot: Some(_), .. } if s.id == section_id => {
+                Some(SlotTarget::Section(s.id.clone()))
+            }
+            _ => None,
+        })
+        .ok_or_else(no_slot)
 }
 
 /// Wrap a blocking [`Finding`] as a [`DocFailure::Block`], ensuring it carries a

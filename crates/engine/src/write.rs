@@ -904,6 +904,25 @@ pub enum SpliceError {
         /// The section id the caller named.
         section: String,
     },
+    /// The addressed **slot leaf is not declared** where the write addressed it — on the
+    /// item block the address bottoms out in, or (the CLI's section arm) on a simple
+    /// section, whose prose slot is the section itself and carries no leaf hop.
+    ///
+    /// The slot sibling of [`GenerateError::UnknownField`], and it carries the **same**
+    /// `write.unknown-field` code: an undeclared address is one contract member whichever
+    /// leaf kind it names, and the schema can answer it, so the code's
+    /// `jigc doc schema <doctype>` route is the followable repair for both. Only the
+    /// sentence differs — a `set-slot` reject says *slot*, because that is what the agent
+    /// addressed (M47 — the undeclared-address table; `DECISIONS.md` → 2026-07-26 M47
+    /// Settle, Decision 9).
+    UnknownLeaf {
+        /// The undeclared slot leaf id.
+        leaf: String,
+        /// Where the write addressed it (`item [...] in section "..."`, or `section "..."`
+        /// for the section arm) — free-form, so the section arm can name the leaf-less
+        /// address form in the same breath.
+        at: String,
+    },
 }
 
 impl std::fmt::Display for SpliceError {
@@ -923,6 +942,9 @@ impl std::fmt::Display for SpliceError {
             },
             SpliceError::UndeclaredSection { section } => {
                 write!(f, "no section {section:?} declared in the schema")
+            }
+            SpliceError::UnknownLeaf { leaf, at } => {
+                write!(f, "no slot {leaf:?} declared on {at}")
             }
         }
     }
@@ -1506,6 +1528,13 @@ fn set_item_slot(
         .ok_or_else(|| SpliceError::NotPresent {
             what: format!("item {item_id:?} in section {section_id:?}"),
         })?;
+    // The addressed leaf must be **declared** by the item's template before it is looked
+    // for in the bytes ([`undeclared_slot_reject`] — the item is already resolved here, so
+    // presence keeps its own `write.not-present` above and only a *present* item reaches
+    // the declaredness question, the ordering the field sibling takes).
+    if let Some(err) = undeclared_slot_reject(schema, section_id, &[item_id], leaf_id) {
+        return Err(err);
+    }
     // The addressed leaf's slot span must be present — single-slot via the bare
     // `slot`, multi-slot via the named `slots` entry (`slot_span` resolves either).
     if item.slot_span(leaf_id).is_none() {
@@ -1743,6 +1772,11 @@ fn set_nested_item_slot(
             what: format!("item {item_ids:?} in section {section_id:?}"),
         }
     })?;
+    // The declaredness guard the top-level dual carries, at every nesting depth: the
+    // chain's own template answers it (`undeclared_slot_reject`).
+    if let Some(err) = undeclared_slot_reject(schema, section_id, item_ids, leaf_id) {
+        return Err(err);
+    }
     if item.slot_span(leaf_id).is_none() {
         return Err(SpliceError::NotPresent {
             what: format!("slot {leaf_id:?} in item {:?}", item.id),
@@ -3364,6 +3398,14 @@ pub fn set_item_field_or_insert(
         // generation path's own code for exactly that.
         Err(SpliceError::UndeclaredSection { section }) => {
             Err(GenerateError::UnknownSection { id: section })
+        }
+        // The undeclared-leaf reject is the slot writers' ([`undeclared_slot_reject`]);
+        // [`set_item_field`] addresses field bullets and constructs none. The mapping is
+        // the total one the two error types already agree on — same class, same
+        // `write.unknown-field` code — so the translation stays faithful if a future
+        // field-side caller ever does raise it.
+        Err(SpliceError::UnknownLeaf { leaf, at }) => {
+            Err(GenerateError::UnknownField { key: leaf, at })
         }
     }
 }
@@ -6412,15 +6454,6 @@ fn field_schema<'a>(
     fields.iter().find(|f| f.id == field_key)
 }
 
-/// Find the [`SchemaField`] declared for `field_key` in the repeatable block a
-/// (possibly nested) item id chain bottoms out in: the section's own repeatable for a
-/// top-level chain (`["1-0-0"]`), descending one nested repeatable per nested-section
-/// segment for a deeper chain (`["1-0-0", "changes", "added"]`). The chain alternates
-/// item-id / nested-section-id segments (the shape [`physical_item_chain`] walks), so the
-/// returned field is declared exactly where the addressed item lives. `None` if the
-/// section is not repeatable, a nested-section segment names no declared repeatable, or
-/// the field is not declared at that level (an unknown item field stays unadjudicated
-/// here — the engine does not invent a type to check against).
 /// The **undeclared-address guard** the two insert-capable item-field writers consult
 /// once [`item_field_schema`] has come back `None`: `Some(GenerateError::UnknownField)`
 /// when the write must be rejected **before any bytes move**, `None` when the miss is
@@ -6455,6 +6488,47 @@ fn undeclared_field_reject(
     })
 }
 
+/// The **slot** sibling of [`undeclared_field_reject`], consulted by the two item-slot
+/// splices ([`set_item_slot`] / [`set_nested_item_slot`]) once the addressed item is in
+/// hand and **before** [`crate::parse::ParsedItem::slot_span`] is asked for its bytes:
+/// `Some(SpliceError::UnknownLeaf)` when the chain's own template declares no slot by
+/// that id, `None` when the leaf is declared (or the chain is a shape miss the splice
+/// path below names better).
+///
+/// This is where Settle Decision 9 puts the tightening — **at the write callers, not in
+/// `slot_span`**, whose second consumer is conformance adjudication and needs the
+/// single-slot fallback it applies. That fallback is exactly the hole: `slot_span`
+/// ignores the leaf id whenever the item carries no sub-labelled `slots`, so **any** leaf
+/// name resolved to the item's one real slot and the write landed there at exit 0, acking
+/// the leaf it never wrote (`baseline.md` §3a, N4). Asking the *template* first also
+/// re-diagnoses the slot-less block arm, which used to surface as a
+/// [`SpliceError::NotPresent`] about a slot the schema never had.
+fn undeclared_slot_reject(
+    schema: &Schema,
+    section_id: &str,
+    item_ids: &[&str],
+    leaf_id: &str,
+) -> Option<SpliceError> {
+    let template = chain_repeatable(schema, section_id, item_ids)?;
+    let declared = template
+        .block
+        .iter()
+        .any(|leaf| matches!(leaf, crate::schema::Leaf::Slot { id, .. } if id == leaf_id));
+    (!declared).then(|| SpliceError::UnknownLeaf {
+        leaf: leaf_id.to_string(),
+        at: format!("item {item_ids:?} in section {section_id:?}"),
+    })
+}
+
+/// Find the [`SchemaField`] declared for `field_key` in the repeatable block a
+/// (possibly nested) item id chain bottoms out in: the section's own repeatable for a
+/// top-level chain (`["1-0-0"]`), descending one nested repeatable per nested-section
+/// segment for a deeper chain (`["1-0-0", "changes", "added"]`). The chain alternates
+/// item-id / nested-section-id segments (the shape [`physical_item_chain`] walks), so the
+/// returned field is declared exactly where the addressed item lives. `None` if the
+/// section is not repeatable, a nested-section segment names no declared repeatable, or
+/// the field is not declared at that level (an unknown item field stays unadjudicated
+/// here — the engine does not invent a type to check against).
 fn item_field_schema<'a>(
     schema: &'a Schema,
     section_id: &str,
@@ -6482,6 +6556,10 @@ pub fn splice_error_finding(err: &SpliceError) -> Finding {
             findings.first().and_then(|f| f.location.clone()),
         ),
         SpliceError::UndeclaredSection { .. } => ("write.unknown-section", None),
+        // The undeclared **slot** leaf carries the `GenerateError::UnknownField`
+        // sibling's code — one contract member for "the address names no declared leaf",
+        // whichever leaf kind it named — so both doors route the caller at the schema.
+        SpliceError::UnknownLeaf { .. } => ("write.unknown-field", None),
     };
     let message = format!("write rejected: {err}");
     blocking_write(

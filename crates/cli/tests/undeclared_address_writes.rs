@@ -1,5 +1,6 @@
-//! M47 Increment 6, T4 — **no write lands at an undeclared address** (the field-leaf
-//! column of the undeclared-address table).
+//! M47 Increment 6, T4 + T5 — **no write lands at an undeclared address** (the whole
+//! 9-cell undeclared-address table: `{set-field, set-slot, doc author}` × `{section leaf,
+//! top-level item leaf, nested item leaf}`).
 //!
 //! The class: *a write addressed at a leaf the schema does not declare*. The section-leaf
 //! cell has always been guarded — `set_field_validated` resolves the declared field first
@@ -13,6 +14,24 @@
 //! `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9). The batch `doc author` inherited
 //! the same hole through the shared `apply_field_target` seam.
 //!
+//! **The slot column (T5, `baseline.md` §3a N4) is the same class through the other leaf
+//! kind, and it failed *more* quietly** — it did not break the doc, it wrote the agent's
+//! prose into the item's **real** slot and acked the phantom leaf, exit 0: a law-1 lie on
+//! the success path. Three faces, one rule — *resolve the addressed leaf against the
+//! declaring template before touching bytes*:
+//!
+//!   * **the item arms** (`set_item_slot` / `set_nested_item_slot`) consulted
+//!     `ParsedItem::slot_span`, which ignores the leaf id on a single-slot item (the
+//!     bare-prose fallback) — so any leaf name at all hit the one real slot. `slot_span`
+//!     itself is deliberately **unchanged**: its second consumer is conformance
+//!     adjudication, which needs that leniency (Settle Decision 9 — the guard lands at
+//!     the write callers);
+//!   * **the section arm** dropped the trailing hop in the CLI's `slot_target`, so
+//!     `#<section>/<anything>` wrote the section's own slot;
+//!   * **the batch verb** dropped an undeclared section-level `set` key in the payload
+//!     lowering (the declared key for a section slot is the **section's own id** — what
+//!     `doc author --help` documents and the `{{schema:}}` skeleton generates).
+//!
 //! N3's aftermath also broke a **declared exemption**: `conformance.*` findings are
 //! route-exempt because *"the located message is the repair — no CLI verb repairs a
 //! hand-broken byte"*, a rationale that assumed out-of-band bytes. N3 made them arrive
@@ -21,7 +40,7 @@
 //! scope** rather than overturning it (`design/validation.md` → the `conformance.*` route
 //! exemption).
 //!
-//! The column is enumerated as **data**, one row per cell, so a write verb added later is
+//! The table is enumerated as **data**, one row per cell, so a write verb added later is
 //! covered by adding a row rather than by remembering this file exists. Every row asserts
 //! the same four things through the real binary:
 //!
@@ -42,12 +61,10 @@
 //! **Why the offending leaf is last in every batch payload.** A `set:` map is applied in
 //! sorted key order and a *following* leaf's own re-parse would catch the corruption
 //! incidentally — a green that proves nothing about the guard. Each payload therefore
-//! places the undeclared key alone on the **final** item, so the reject can only be the
-//! guard's own. (Live at the pre-fix HEAD: both batch cells exit 0 and leave the doc
-//! unreadable.)
-//!
-//! **The slot-leaf column of the table lands at T5** — named here so the split is tracked
-//! to a landing, never left to "a later task".
+//! places the undeclared key alone on the **final** item (or, for the section cell, in
+//! the payload's **final section**), so the reject can only be the guard's own. (Live at
+//! the pre-fix HEAD: all three batch cells exit 0 — the two item cells leaving the doc
+//! unreadable, the section cell leaving it readable but silently wrong.)
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -395,6 +412,35 @@ sections:
                   notes: \"<<- A fix.>>\"
 ";
 
+/// The batch payload whose **last** section writes an undeclared **section-level** key,
+/// and its corrected twin. A section that *is* one slot is authored `set: {<section-id>:
+/// <<…>>}` — keyed by the section's own id (`doc author --help`; the `{{schema:}}`
+/// skeleton generates exactly that key) — so `bogus:` names no leaf the schema declares.
+const AUTHOR_SECTION_LEAF: &str = "\
+title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1-3-0
+        set:
+          summary: \"<<A release.>>\"
+  - id: overview
+    set:
+      bogus: \"<<Stray prose at a leaf the schema never declared.>>\"
+";
+const AUTHOR_SECTION_LEAF_FIXED: &str = "\
+title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1-3-0
+        set:
+          summary: \"<<A release.>>\"
+  - id: overview
+    set:
+      overview: \"<<What this changelog covers.>>\"
+";
+
 /// How a row addresses its undeclared leaf.
 enum Write {
     /// The per-leaf verb, over a doc the fixture already minted: the `set-field` address
@@ -402,6 +448,12 @@ enum Write {
     SetField {
         fragment: &'static str,
         value: &'static str,
+    },
+    /// The slot sibling, over the same minted doc: the `set-slot` address tail and the
+    /// prose it hands over stdin.
+    SetSlot {
+        fragment: &'static str,
+        prose: &'static str,
     },
     /// The batch verb, over a doc-less task: the whole-doc payload carrying the undeclared
     /// leaf **last**, plus the corrected payload the reject must leave landable.
@@ -423,9 +475,10 @@ struct Row {
     show_section: &'static str,
 }
 
-/// **The column.** Two `set-field` item-leaf cells, two `doc author` item-leaf cells, and
-/// the section-leaf control that was already correct — it stays in the table so the
-/// already-guarded cell keeps a live witness rather than being assumed.
+/// **The table** — all nine cells, `{set-field, set-slot, doc author}` × `{section leaf,
+/// top-level item leaf, nested item leaf}`. The `set-field` section-leaf cell was already
+/// correct before either task; it stays in the table so the already-guarded cell keeps a
+/// live witness rather than being assumed.
 const ROWS: &[Row] = &[
     Row {
         what: "set-field at an undeclared field of a top-level item",
@@ -472,11 +525,50 @@ const ROWS: &[Row] = &[
         target: "changelog:changelog#releases/1-3-0/changes/fixed/bogus",
         show_section: "#releases",
     },
+    // The slot column (T5). The item cells address a **single-slot** item template, where
+    // `ParsedItem::slot_span` falls back to the bare prose body for *any* leaf id — the
+    // face that wrote the agent's prose into the real slot at exit 0.
+    Row {
+        what: "set-slot at an undeclared slot leaf of a top-level item",
+        write: Write::SetSlot {
+            fragment: "#releases/1-3-0/bogus",
+            prose: "Stray prose at a leaf the schema never declared.\n",
+        },
+        target: "changelog:changelog#releases/1-3-0/bogus",
+        show_section: "#releases",
+    },
+    Row {
+        what: "set-slot at an undeclared slot leaf of a nested item",
+        write: Write::SetSlot {
+            fragment: "#releases/1-3-0/changes/added/bogus",
+            prose: "Stray prose at a leaf the schema never declared.\n",
+        },
+        target: "changelog:changelog#releases/1-3-0/changes/added/bogus",
+        show_section: "#releases",
+    },
+    Row {
+        what: "set-slot at an undeclared leaf of a section",
+        write: Write::SetSlot {
+            fragment: "#overview/bogus",
+            prose: "Stray prose at a leaf the schema never declared.\n",
+        },
+        target: "changelog:changelog#overview/bogus",
+        show_section: "#overview",
+    },
+    Row {
+        what: "doc author at an undeclared leaf of a section",
+        write: Write::Author {
+            payload: AUTHOR_SECTION_LEAF,
+            corrected: AUTHOR_SECTION_LEAF_FIXED,
+        },
+        target: "changelog:changelog#overview/bogus",
+        show_section: "#overview",
+    },
 ];
 
 #[test]
-fn no_write_lands_at_an_undeclared_field_leaf() {
-    // Every row is adjudicated, then the whole column is reported at once — a per-row
+fn no_write_lands_at_an_undeclared_address() {
+    // Every row is adjudicated, then the whole table is reported at once — a per-row
     // panic would hide the rest of the table behind the first broken cell.
     let mut broken: Vec<String> = Vec::new();
 
@@ -497,6 +589,18 @@ fn no_write_lands_at_an_undeclared_field_leaf() {
                     "json",
                 ],
                 None,
+            ),
+            Write::SetSlot { fragment, prose } => fx.run(
+                &[
+                    "doc",
+                    "set-slot",
+                    &format!("{ADDR}{fragment}"),
+                    "--from-file",
+                    "-",
+                    "--format",
+                    "json",
+                ],
+                Some(prose.as_bytes()),
             ),
             Write::Author { payload, .. } => fx.run(
                 &[
@@ -597,7 +701,7 @@ fn no_write_lands_at_an_undeclared_field_leaf() {
 
     assert!(
         broken.is_empty(),
-        "{} defect(s) across {} cells of the undeclared-address field-leaf column:\n{}",
+        "{} defect(s) across {} cells of the undeclared-address table:\n{}",
         broken.len(),
         ROWS.len(),
         broken.join("\n"),

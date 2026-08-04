@@ -204,13 +204,19 @@ impl<'a> SchemaCtx<'a> {
     }
 
     /// The declared leaf-kind of a **section-level** `set` key (a simple section): a
-    /// declared field id is a field; otherwise the section's own slot, if it has one.
-    fn section_set_kind(&self, key: &str) -> Option<DeclaredKind> {
+    /// declared field id is a field; the **section's own id** is its slot, when it has
+    /// one (the documented key — `doc author --help`, and what the `{{schema:}}` payload
+    /// skeleton generates). Any other key names a leaf the section does not declare, so
+    /// it yields no kind: the cross-check stands down and the lowering carries the key
+    /// into the address, where the write caller rejects it (M47 — the undeclared-address
+    /// table). Keying the slot on *any* non-field id would make the `<<…>>` cross-check
+    /// demand the wrapper for a key that has no home either way.
+    fn section_set_kind(&self, key: &str, section_id: &str) -> Option<DeclaredKind> {
         match self {
             SchemaCtx::Simple { slot, fields } => {
                 if fields.iter().any(|f| f.id == key) {
                     Some(DeclaredKind::Field)
-                } else if slot.is_some() {
+                } else if slot.is_some() && key == section_id {
                     Some(DeclaredKind::Slot)
                 } else {
                     None
@@ -289,9 +295,14 @@ fn flatten_section(
     leaves: &mut Vec<Leaf>,
 ) -> Result<()> {
     // Doc-level (simple-section) leaves: a scalar field is addressed `…/<section>/<key>`;
-    // the section's slot is the section itself (`…/<section>`, no key hop).
+    // the section's slot is the section itself (`…/<section>`, no key hop) — and that
+    // key-less form is reached **only** by the section's own id, the documented key.
+    // Any other slot-shaped key keeps its hop (`…/<section>/<key>`), so the write caller
+    // adjudicates it exactly as the per-leaf `set-slot` verb does rather than the
+    // lowering silently dropping it onto the section's real slot (M47 — the
+    // undeclared-address table; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9).
     for (key, raw) in &section.set {
-        if let Some(declared) = ctx.section_set_kind(key) {
+        if let Some(declared) = ctx.section_set_kind(key, &section.id) {
             check_kind(
                 declared,
                 raw,
@@ -303,8 +314,12 @@ fn flatten_section(
                 fragment: join(parent, [section.id.as_str(), key.as_str()]),
                 value,
             }),
-            LeafValue::Slot(prose) => leaves.push(Leaf::SetSlot {
+            LeafValue::Slot(prose) if key == &section.id => leaves.push(Leaf::SetSlot {
                 fragment: join(parent, [section.id.as_str()]),
+                prose,
+            }),
+            LeafValue::Slot(prose) => leaves.push(Leaf::SetSlot {
+                fragment: join(parent, [section.id.as_str(), key.as_str()]),
                 prose,
             }),
         }

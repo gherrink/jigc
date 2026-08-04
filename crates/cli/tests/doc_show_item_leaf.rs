@@ -12,6 +12,18 @@
 //! Pre-fix, every leaf slice returned the routed `store.no-such-leaf` block; post-fix the
 //! field/id-from leaves resolve to their values, while a genuinely-absent leaf name STILL
 //! blocks (the block stays reachable).
+//!
+//! **The multi-slot arm (M47 Inc 6, T5).** The write side's undeclared-leaf class
+//! (`undeclared_address_writes.rs`) has a read-side face: `ParsedItem::slot_span` falls
+//! back to the item's bare prose body whenever the item carries no sub-labelled `slots`,
+//! so a leaf-resolving read that consulted it *first* would hand back a neighbouring
+//! slot's prose at exit 0 for a leaf the schema never declared. It does not — both
+//! duplicated leaf resolvers (`engine::store::resolve_leaf` and its CLI twin `leaf_json`,
+//! the plain and `--format json` surfaces) gate the span on the **template's** declaration
+//! first. That was never covered on a **multi-slot** item, because no dev-pack repeatable
+//! declares two slots (`baseline.md` §3a — N4's multi-slot arm, `UNVERIFIED`); the arm
+//! below closes it against a synthetic multi-slot fixture pack rather than re-declaring
+//! the bound, in **both** item states — mint-empty and filled.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -98,6 +110,117 @@ fn ok_stdout(out: &std::process::Output, what: &str) -> String {
         .expect("utf-8 stdout")
         .trim_end()
         .to_string()
+}
+
+/// Recursively copy `from` into `to` (both directories) — the fixture pack is built by
+/// copying the embedded dev pack tree and overwriting one schema.
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).expect("create dest dir");
+    for entry in fs::read_dir(from).expect("read src dir") {
+        let entry = entry.expect("dir entry");
+        let src = entry.path();
+        let dst = to.join(entry.file_name());
+        if src.is_dir() {
+            copy_tree(&src, &dst);
+        } else {
+            fs::copy(&src, &dst).expect("copy file");
+        }
+    }
+}
+
+/// The **multi-slot** fixture: a repeatable whose item block declares **two** slots, so
+/// `slot_span`'s single-slot (bare-prose) fallback is not what resolves a leaf here and
+/// the two slots are distinguishable prose. No dev-pack repeatable declares two, which is
+/// why this arm needs a fixture at all.
+const MULTI_SLOT_SCHEMA: &str = "\
+type: changelog
+id-from: title
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - { id: summary, slot: { hint: \"One-line release summary.\" } }
+        - { id: caveats, slot: { hint: \"Anything to watch out for.\" } }
+";
+
+/// Build a throwaway pack: the embedded dev pack tree plus the multi-slot `changelog`
+/// fixture schema and a workflow whose create-gate admits it.
+fn fixture_pack() -> TempDir {
+    let pack = TempDir::new("pack");
+    let dev_pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack");
+    copy_tree(&dev_pack, pack.path());
+    // The fixture ships a deliberately divergent `changelog` shape, so it is NOT the
+    // frozen dev pack — drop the copied freeze manifest, which would otherwise block the
+    // un-bumped shape change at pack-load.
+    fs::remove_file(pack.path().join("config").join("schema-manifest.yaml"))
+        .expect("drop the copied freeze manifest");
+    fs::write(
+        pack.path().join("schemas").join("changelog.yaml"),
+        MULTI_SLOT_SCHEMA,
+    )
+    .expect("write the multi-slot changelog schema");
+    fs::write(
+        pack.path().join("workflows").join("log-change.yaml"),
+        "\
+---
+when: record a release's changes in the changelog
+description: Author the changelog for a release.
+usage: a release's changes need recording in the changelog.
+creates-task: true
+allows-create: [{type: changelog, as: changelog}]
+---
+{{ include: step:finalize }}
+",
+    )
+    .expect("write the log-change workflow");
+    pack
+}
+
+/// Initialize a git repo + the `.jigc/config/` project layer, without the compose marker
+/// (the fixture-pack arm resolves its schema through `JIGC_PACK_DIR`).
+fn init_plain_repo(repo: &Path) {
+    git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+    fs::write(repo.join("README.md"), "hello\n").expect("write file");
+    git(repo, &["add", "README.md"]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+    fs::create_dir_all(repo.join(".jigc").join("config")).expect("mk project config");
+}
+
+/// Run `jigc <args>` against the fixture pack, handing `stdin` when given.
+fn run_fixture(
+    repo: &Path,
+    home: &Path,
+    pack: &Path,
+    args: &[&str],
+    stdin: Option<&str>,
+) -> std::process::Output {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", pack)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if stdin.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    let mut child = command.spawn().expect("spawn the jigc binary");
+    if let Some(text) = stdin {
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(text.as_bytes())
+            .expect("write stdin");
+    }
+    child.wait_with_output().expect("wait for jigc")
 }
 
 /// A canonical committed ADR (the shipped `write::render` shape): its `status` header
@@ -252,4 +375,160 @@ fn item_leaf_slices_resolve_field_and_id_from_leaves() {
         stderr.contains("store.no-such-leaf") && stderr.contains("not-a-leaf"),
         "the block names the absent leaf + its route; got:\n{stderr}",
     );
+}
+
+/// The multi-slot item's address for both states below.
+const MULTI_SLOT_ITEM: &str = "changelog:changelog#releases/1-0-0";
+/// The task the fixture arm writes and reads through.
+const MULTI_SLOT_TASK: &str = "log-the-release";
+
+/// (M47 Inc 6, T5) On a **multi-slot** repeatable item, an **undeclared** leaf blocks
+/// `store.no-such-leaf` on **both** read surfaces — plain and `--format json`, the two
+/// duplicated leaf resolvers — never a neighbouring slot's prose at exit 0.
+///
+/// Driven in **both** item states, because they reach `slot_span` differently: the
+/// **mint-empty** item (whose sub-labels exist but carry no prose — the state closest to
+/// the single-slot bare-prose fallback the write side had to guard against) and the
+/// **filled** item, where each declared leaf must resolve to *its own* prose, so the block
+/// on the undeclared leaf cannot be a resolver that simply fails everywhere.
+///
+/// This arm closes `baseline.md` §3a's `UNVERIFIED` multi-slot bound with a synthetic
+/// fixture rather than re-declaring it; it found the read side **already correct** (the
+/// `declares_slot` gate both resolvers apply since M40) and pins it so.
+#[test]
+fn multi_slot_item_undeclared_leaf_blocks_on_both_read_surfaces() {
+    let repo = TempDir::new("multi-slot");
+    let home = TempDir::new("multi-slot-home");
+    let pack = fixture_pack();
+    init_plain_repo(repo.path());
+    let jigc = |args: &[&str], stdin: Option<&str>| {
+        run_fixture(repo.path(), home.path(), pack.path(), args, stdin)
+    };
+
+    ok_stdout(&jigc(&["setup"], None), "`jigc setup`");
+    ok_stdout(
+        &jigc(
+            &["start", "--workflow", "log-change", "log the release"],
+            None,
+        ),
+        "`jigc start --workflow log-change`",
+    );
+    ok_stdout(
+        &jigc(
+            &["doc", "create", "changelog", "--title", "Changelog"],
+            None,
+        ),
+        "`jigc doc create changelog`",
+    );
+    ok_stdout(
+        &jigc(
+            &[
+                "doc",
+                "add-item",
+                "changelog:changelog#releases",
+                "--title",
+                "1-0-0",
+            ],
+            None,
+        ),
+        "`jigc doc add-item`",
+    );
+
+    // The undeclared leaf, adjudicated on both surfaces.
+    let assert_blocks = |state: &str| {
+        let addr = format!("{MULTI_SLOT_ITEM}/bogus");
+        for format in [&[][..], &["--format", "json"][..]] {
+            let mut args = vec!["doc", "show", &addr, "--task", MULTI_SLOT_TASK];
+            args.extend_from_slice(format);
+            let out = jigc(&args, None);
+            assert!(
+                !out.status.success(),
+                "`{addr}` ({state}, {format:?}) must exit non-zero — an undeclared leaf is \
+                 never a neighbouring slot's prose; stdout:\n{}",
+                String::from_utf8_lossy(&out.stdout),
+            );
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(
+                stderr.contains("store.no-such-leaf") && stderr.contains("bogus"),
+                "`{addr}` ({state}, {format:?}) blocks `store.no-such-leaf` naming the leaf; \
+                 got:\n{stderr}",
+            );
+        }
+    };
+
+    // (1) Mint-empty: the declared leaves resolve (to their empty prose), the undeclared
+    //     one blocks. This is the state where a leaf-blind resolver would hand back the
+    //     item's whole body.
+    for leaf in ["summary", "caveats"] {
+        let plain = ok_stdout(
+            &jigc(
+                &[
+                    "doc",
+                    "show",
+                    &format!("{MULTI_SLOT_ITEM}/{leaf}"),
+                    "--task",
+                    MULTI_SLOT_TASK,
+                ],
+                None,
+            ),
+            &format!("mint-empty `{leaf}`"),
+        );
+        assert_eq!(plain, "", "a mint-empty declared slot reads back empty");
+    }
+    assert_blocks("mint-empty");
+
+    // (2) Filled: each declared leaf carries its OWN prose — so the undeclared leaf's
+    //     block below is a resolver that discriminates, not one that fails blindly.
+    for (leaf, prose) in [
+        ("summary", "The summary prose.\n"),
+        ("caveats", "The caveats prose.\n"),
+    ] {
+        ok_stdout(
+            &jigc(
+                &[
+                    "doc",
+                    "set-slot",
+                    &format!("{MULTI_SLOT_ITEM}/{leaf}"),
+                    "--from-file",
+                    "-",
+                    "--task",
+                    MULTI_SLOT_TASK,
+                ],
+                Some(prose),
+            ),
+            &format!("`jigc doc set-slot` on `{leaf}`"),
+        );
+    }
+    for (leaf, want) in [
+        ("summary", "The summary prose."),
+        ("caveats", "The caveats prose."),
+    ] {
+        let addr = format!("{MULTI_SLOT_ITEM}/{leaf}");
+        let plain = ok_stdout(
+            &jigc(&["doc", "show", &addr, "--task", MULTI_SLOT_TASK], None),
+            &format!("plain `{addr}`"),
+        );
+        assert_eq!(plain, want, "plain `{addr}` is that slot's own prose");
+        let json = ok_stdout(
+            &jigc(
+                &[
+                    "doc",
+                    "show",
+                    &addr,
+                    "--task",
+                    MULTI_SLOT_TASK,
+                    "--format",
+                    "json",
+                ],
+                None,
+            ),
+            &format!("json `{addr}`"),
+        );
+        assert_eq!(
+            json,
+            format!("\"{want}\""),
+            "json `{addr}` is that slot's own prose, never its neighbour's",
+        );
+    }
+    assert_blocks("filled");
 }
