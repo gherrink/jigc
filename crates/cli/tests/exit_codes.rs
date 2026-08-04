@@ -533,14 +533,21 @@ const REJECTED_WRITES: &[RejectedWrite] = &[
         args: &[
             "doc",
             "retitle-item",
-            "commit:add-a-widget#summary/nope",
+            // The **repeatable** `trailers` section, not the slot-only `summary`: an item
+            // address under a non-repeatable section is a genuine *shape* question (the
+            // `add-item` arm above pins that), while a not-yet-minted id under a real
+            // repeatable is the item-id miss this arm is here to refuse.
+            "commit:add-a-widget#trailers/nope",
             "--title",
             "New",
             "--task",
             "add-a-widget",
         ],
         stdin: None,
-        finding: "write.wrong-shape",
+        // An item-id miss is not a shape question — the addressed item was never minted,
+        // and the schema names shapes, never the corpus's live item ids (M47 — the
+        // write-verb × miss-shape axis; `write_miss_shape_axis.rs`).
+        finding: "write.not-present",
     },
     RejectedWrite {
         verb: "set-field",

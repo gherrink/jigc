@@ -1797,13 +1797,17 @@ pub fn set_nested_item_field_or_insert(
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
     })?;
-    let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
-        GenerateError::WrongShape {
-            what: format!("item {item_ids:?} in section {section_id:?} not present"),
-        }
-    })?;
+    // Shape before presence ([`physical_item_chain`] fails **only** on a schema-shape
+    // defect — an undeclared or non-repeatable section, or a chain segment naming no
+    // declared nested repeatable), so a section miss keeps its shape question and only a
+    // genuinely absent item reaches [`GenerateError::NotPresent`].
     let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
         GenerateError::WrongShape {
+            what: format!("item {item_ids:?} in section {section_id:?} not addressable"),
+        }
+    })?;
+    let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
+        GenerateError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?} not present"),
         }
     })?;
@@ -1852,17 +1856,20 @@ pub fn add_nested_item(
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
     })?;
-    let parent =
-        nested_parsed_item(schema, &doc, section_id, parent_item_ids).ok_or_else(|| {
-            GenerateError::WrongShape {
-                what: format!(
-                    "parent item {parent_item_ids:?} in section {section_id:?} not present"
-                ),
-            }
-        })?;
+    // Shape before presence (see [`set_nested_item_field_or_insert`]): the chain resolves
+    // against the schema first, so a section/nested-repeatable miss stays a shape question
+    // and only a genuinely absent **parent item** is an item-id miss.
     let parent_physical =
         physical_item_chain(schema, section_id, parent_item_ids).ok_or_else(|| {
             GenerateError::WrongShape {
+                what: format!(
+                    "parent item {parent_item_ids:?} in section {section_id:?} not addressable"
+                ),
+            }
+        })?;
+    let parent =
+        nested_parsed_item(schema, &doc, section_id, parent_item_ids).ok_or_else(|| {
+            GenerateError::NotPresent {
                 what: format!(
                     "parent item {parent_item_ids:?} in section {section_id:?} not present"
                 ),
@@ -2034,16 +2041,19 @@ pub fn retitle_item(
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
     })?;
+    // Shape before presence (see [`set_nested_item_field_or_insert`]): an undeclared or
+    // non-repeatable section is a shape question the schema can answer; only a genuinely
+    // absent item is an item-id miss.
+    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("item {item_ids:?} in section {section_id:?} not addressable"),
+        }
+    })?;
     if nested_parsed_item(schema, &doc, section_id, item_ids).is_none() {
-        return Err(GenerateError::WrongShape {
+        return Err(GenerateError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?} not present"),
         });
     }
-    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
-        GenerateError::WrongShape {
-            what: format!("item {item_ids:?} in section {section_id:?} not present"),
-        }
-    })?;
     let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
         GenerateError::WrongShape {
             what: format!("item {item_ids:?} block not locatable"),
@@ -2614,6 +2624,17 @@ pub enum GenerateError {
     /// into a simple section, or `generate_section` for the header).
     WrongShape {
         /// A human-readable description of the mismatch.
+        what: String,
+    },
+    /// The **addressed item is absent** — the id was never minted (or names no item
+    /// under the addressed parent). This is *not* a shape question: the schema names
+    /// the declared shape, never the corpus's real item ids, so routing such a miss to
+    /// `jigc doc schema <doctype>` is a dead end. It carries the [`SpliceError::NotPresent`]
+    /// sibling's `write.not-present` code, whose route names the followable recovery —
+    /// show the containing section and read its live item ids (M47 — the write-verb ×
+    /// miss-shape axis; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 8).
+    NotPresent {
+        /// A human-readable description of the absent item.
         what: String,
     },
     /// The `add_item` title has no slug-able content, so it would mint an **empty**
@@ -3192,7 +3213,7 @@ pub fn insert_item_field(
     // cold-fill re-render below uses the FULL sub-tree region (children preserved).
     let blocks = parse::scan_blocks(source);
     let region = locate_item_path(schema, source, section_id, &[item_id]).ok_or_else(|| {
-        GenerateError::WrongShape {
+        GenerateError::NotPresent {
             what: format!("item {item_id:?} in section {section_id:?} not present"),
         }
     })?;
@@ -3228,7 +3249,7 @@ pub fn insert_item_field(
                         .find(|s| s.id == section_id)
                         .and_then(|s| s.items.into_iter().find(|i| i.id == item_id))
                 })
-                .ok_or_else(|| GenerateError::WrongShape {
+                .ok_or_else(|| GenerateError::NotPresent {
                     what: format!("item {item_id:?} in section {section_id:?} not present"),
                 })?;
             let mut content = item_content_from_parsed(&item, source);
@@ -3261,8 +3282,8 @@ pub fn insert_item_field(
 /// declared type before touching bytes** (the item-field write-time parity of the
 /// header path's [`set_field_validated`], closing the 2026-06-07 gap —
 /// `design/write-commands.md` → Two check times): a value failing its declared type is
-/// rejected as [`GenerateError::MalformedValue`]. A genuinely absent item or a
-/// non-repeatable section surfaces as [`GenerateError::WrongShape`].
+/// rejected as [`GenerateError::MalformedValue`]. A genuinely absent item surfaces as
+/// [`GenerateError::NotPresent`]; a non-repeatable section as [`GenerateError::WrongShape`].
 pub fn set_item_field_or_insert(
     schema: &Schema,
     source: &str,
@@ -3281,7 +3302,9 @@ pub fn set_item_field_or_insert(
         // The field bullet is absent on a present item ⇒ generate it. (`set_item_field`
         // returns `NotPresent` both for an absent field *and* an absent item;
         // `insert_item_field` re-locates the item and routes a truly-absent item to a
-        // `WrongShape`, so the two absence cases stay distinguishable.)
+        // `GenerateError::NotPresent`, so the item miss reaches the agent as the item
+        // miss it is — the two absence cases stay distinguishable in the code, and both
+        // now emit the code whose route names the containing section.)
         Err(SpliceError::NotPresent { .. }) => {
             let new_field = Field {
                 key: field_key.to_string(),
@@ -5716,6 +5739,14 @@ pub fn unset_field_validated(
 /// The gated `set-field --unset` (repeatable item field): the item-addressed sibling of
 /// [`unset_field_validated`] — same eligibility guard + re-parse, over [`unset_item_field`].
 /// `item_ids` is the parent-scoped id chain (single-level or nested).
+///
+/// **Item presence is adjudicated before field declaration** (M47 — the write-verb ×
+/// miss-shape axis): an undeclared field *on an item that does not exist* is an item-id
+/// miss, not a field question, and answering it with `write.unknown-field` sends the agent
+/// to the schema for a defect the schema cannot show. The item miss outranks. **Shape
+/// outranks both**: the chain is resolved against the schema first ([`physical_item_chain`]),
+/// so an undeclared or non-repeatable section keeps today's shape-question diagnosis. A
+/// source that no longer parses is left to the splice path below, which diagnoses the break.
 pub fn unset_item_field_validated(
     schema: &Schema,
     source: &str,
@@ -5723,6 +5754,14 @@ pub fn unset_item_field_validated(
     item_ids: &[&str],
     field_key: &str,
 ) -> Result<String, Finding> {
+    if physical_item_chain(schema, section_id, item_ids).is_some()
+        && parse::parse_sections(schema, source)
+            .is_ok_and(|doc| nested_parsed_item(schema, &doc, section_id, item_ids).is_none())
+    {
+        return Err(generate_error_finding(&GenerateError::NotPresent {
+            what: format!("item {item_ids:?} in section {section_id:?} not present"),
+        }));
+    }
     let field = item_field_schema(schema, section_id, item_ids, field_key).ok_or_else(|| {
         blocking_write(
             "write.unknown-field",
@@ -6283,6 +6322,13 @@ pub fn generate_error_finding(err: &GenerateError) -> Finding {
         ),
         GenerateError::WrongShape { what } => {
             ("write.wrong-shape", format!("write rejected: {what}"))
+        }
+        // The item-id miss emits the splice path's `write.not-present` (the same literal
+        // [`splice_error_finding`] uses for [`SpliceError::NotPresent`]), so the same miss
+        // carries the same code whichever half of the write path adjudicated it — and with
+        // it the route that names the containing section rather than the schema.
+        GenerateError::NotPresent { what } => {
+            ("write.not-present", format!("write rejected: {what}"))
         }
         GenerateError::UnslugableTitle { title } => (
             "write.unslugable-title",
@@ -11523,16 +11569,21 @@ OAuth device-code flow.
     }
 
     /// Done-criterion (3): an absent item — top-level, nested, or under a mis-named
-    /// parent — and an unknown section error with the existing nested-write shape
-    /// ([`GenerateError::WrongShape`]), never a wrong-item write.
+    /// parent — and an unknown section both error, never a wrong-item write.
+    ///
+    /// **M47 — the two now carry *different* errors, and that is the point.** An absent
+    /// item is an item-**id** miss ([`GenerateError::NotPresent`], routed to the
+    /// containing section's live ids); an undeclared section is a genuine shape question
+    /// the schema *can* answer, so it keeps [`GenerateError::WrongShape`]. Before the flip
+    /// both were `WrongShape`, which is why this test could not tell them apart.
     #[test]
     fn absent_item_or_section_errors_with_the_existing_shapes() {
         let schema = changelog_schema();
-        // Absent top-level item.
+        // Absent top-level item — an item-id miss.
         let err = retitle_item(&schema, TWO_PARENT, "releases", &["9-9-9"], "New")
             .expect_err("no such release");
-        assert!(matches!(err, GenerateError::WrongShape { .. }));
-        // Absent nested item under a present parent.
+        assert!(matches!(err, GenerateError::NotPresent { .. }));
+        // Absent nested item under a present parent — also an item-id miss.
         let err = retitle_item(
             &schema,
             TWO_PARENT,
@@ -11541,8 +11592,8 @@ OAuth device-code flow.
             "New",
         )
         .expect_err("no such nested group");
-        assert!(matches!(err, GenerateError::WrongShape { .. }));
-        // Unknown section.
+        assert!(matches!(err, GenerateError::NotPresent { .. }));
+        // Unknown section — a shape question, untouched by the flip.
         let err = retitle_item(&schema, TWO_PARENT, "nope", &["1-2-0"], "New")
             .expect_err("no such section");
         assert!(matches!(err, GenerateError::WrongShape { .. }));

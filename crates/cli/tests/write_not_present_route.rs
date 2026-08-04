@@ -17,9 +17,21 @@
 //!   (c) a **nested / field-leaf** not-present strips to the **top showable section**
 //!       (`#releases`) — the route target resolves and is never an unshowable field-leaf
 //!       (the N2 pin);
-//!   (d) `write.wrong-shape` (a `set-field` on a non-existent item) still routes the
-//!       generic `jigc doc schema <doctype>` — the arm split left the genuine
+//!   (d) `write.wrong-shape` (an `add-item` into a **non-repeatable** section) still
+//!       routes the generic `jigc doc schema <doctype>` — the arm split left the genuine
 //!       shape-questions untouched.
+//!
+//! **M47 Increment 6, T1 — arm (d)'s subject moved, on a changed basis.** Arm (d)
+//! originally pinned a `set-field` at a **non-existent item** as a shape question. That
+//! was the wrong half of M44's split: a missing item **id** is not a shape question at
+//! all — the schema names the declared shape, never the corpus's live item ids — so the
+//! whole write-verb × miss-shape axis now emits `write.not-present` there
+//! (`write_miss_shape_axis.rs`; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 8). This
+//! is recorded as a **basis-has-changed rebuttal, not an override**: M44's arm split was
+//! right that a *genuine* shape question routes the schema, and wrong that a missing item
+//! id is one. A genuine shape question — an `add-item` into a section the schema declares
+//! as **non-repeatable** — takes arm (d)'s place, so the "the split left the genuine
+//! shape-questions untouched" claim keeps a live witness rather than losing one.
 //!
 //! **M45 Increment 2, T5** joins the suite with the *dead-end* half of the same law:
 //!
@@ -460,17 +472,19 @@ fn a_nested_not_present_strips_to_the_top_showable_section() {
 #[test]
 fn a_genuine_shape_question_still_routes_to_doc_schema() {
     let fx = provision(&["1-3-0"]);
-    let slug = &fx.slug;
 
-    // (d) A `set-field` on a non-existent item is a shape question (`write.wrong-shape`),
-    // NOT a not-present — the arm split left it routing the generic `jigc doc schema`.
+    // (d) An `add-item` into a section the schema declares **non-repeatable** is a genuine
+    // shape question (`write.wrong-shape`) — the schema *can* answer it — so it still
+    // routes the generic `jigc doc schema`. (The task's own transient commit doc carries
+    // the non-repeatable `summary` section; the same cell is swept as data in
+    // `write_miss_shape_axis.rs`.)
     let out = fx.run(
         &[
             "doc",
-            "set-field",
-            &format!("changelog:{slug}#releases/9-9-9/date"),
-            "--value",
-            "2026-07-21",
+            "add-item",
+            "commit:log-the-release#summary",
+            "--title",
+            "Nope",
             "--format",
             "json",
         ],
@@ -478,7 +492,7 @@ fn a_genuine_shape_question_still_routes_to_doc_schema() {
     );
     assert!(
         !out.status.success(),
-        "a set-field on a non-existent item must block; stderr:\n{}",
+        "an add-item into a non-repeatable section must block; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -486,7 +500,7 @@ fn a_genuine_shape_question_still_routes_to_doc_schema() {
         serde_json::from_str(stderr.trim()).unwrap_or_else(|e| panic!("stderr is JSON: {e}"));
     assert_eq!(
         report["findings"][0]["code"], "write.wrong-shape",
-        "a set-field at a non-existent item is a shape question; got:\n{stderr}",
+        "an add-item into a non-repeatable section is a shape question; got:\n{stderr}",
     );
     let route = report["findings"][0]["route"]
         .as_str()
