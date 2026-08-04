@@ -41,6 +41,20 @@
 //! top *showable* section — the M44 N2 pin, re-asserted here at the four verbs the CLI
 //! enrichment did not reach (`set-field --value` / `--unset` · `retitle-item` ·
 //! `add-item`).
+//!
+//! **T3 closes the id-from-leaf strip.** Naming the miss and routing it are worth nothing
+//! at a cell that never reaches either, and two *schema-only* CLI pre-checks —
+//! `write.id-from-field` (`set-field` at an id-from leaf) and `write.identity-change`
+//! (`retitle-item` under an **enum** id-from), plus the engine's own `retitle_item`
+//! id-from re-validation — answered from the doctype alone and so out-ranked presence:
+//! they asserted what a **nonexistent** item derives its id from, and routed to a
+//! `retitle-item` / `remove-item` / `set-field` that blocks on the same absence. Four rows
+//! were added over the two verbs × the two depths, and — the reason the one pre-existing
+//! nested row greened over a live defect — **the fixture's id-from topology was corrected
+//! to the shipped dev pack's**: its change-group `category` was declared a plain `string`,
+//! the one shape that sidesteps the enum arm, while `crates/cli/pack/schemas/changelog.yaml`
+//! declares it an **enum**. A fixture authored in the case the implementation handles
+//! proves nothing about the case the corpus actually has.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -93,12 +107,29 @@ fn copy_tree(from: &Path, to: &Path) {
 /// `link` field (the only unset-eligible shape: a required or defaulted field is
 /// refused by the eligibility guard before the item is ever adjudicated), plus a
 /// **non-repeatable** `overview` section so the genuine shape question has a target.
+///
+/// **The id-from topology mirrors the shipped dev pack's changelog, deliberately** (M47
+/// Increment 6, T3 — the fixture-topology mask): the two CLI-side, schema-only
+/// pre-checks that outranked item presence (`write.id-from-field` /
+/// `write.identity-change`) are reached only through an id-from leaf, and the
+/// **`write.identity-change`** arm only through an **enum** id-from. A fixture that
+/// declares its change-group `category` as a plain `string` — as this one first did —
+/// sidesteps that arm entirely and greens a cell the shipped pack false-fails. So both
+/// `category` blocks are enums (`crates/cli/pack/schemas/changelog.yaml`), and a
+/// single-level `staged` repeatable mirrors the pack's `unreleased-changes` so the
+/// **top-level** enum id-from is on the axis too, not only the nested one.
 const CHANGELOG_SCHEMA: &str = "\
 type: changelog
 id-from: title
 sections:
   - id: overview
     slot: { hint: \"What this changelog covers.\", optional: true }
+  - id: staged
+    repeatable:
+      id-from: category
+      block:
+        - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
+        - { id: notes, slot: { hint: \"One bullet per staged change.\" } }
   - id: releases
     repeatable:
       id-from: version
@@ -110,7 +141,7 @@ sections:
           repeatable:
             id-from: category
             block:
-              - { id: category, type: string }
+              - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
               - { id: notes, slot: { hint: \"One bullet per change.\" } }
 ";
 
@@ -323,6 +354,21 @@ fn provision() -> Fixture {
         ),
         "add-item nested change-group",
     );
+    // One live item in the top-level **enum** id-from section, so the `staged` cells'
+    // emitted route has something real to reveal when it is run verbatim.
+    ok_stdout(
+        fx.run(
+            &[
+                "doc",
+                "add-item",
+                &format!("changelog:{}#staged", fx.slug),
+                "--title",
+                "Changed",
+            ],
+            None,
+        ),
+        "add-item staged change-group",
+    );
 
     fx
 }
@@ -342,6 +388,17 @@ struct Cell {
     /// for the two non-item-miss cells, whose route stays the schema's — they *are*
     /// questions the schema answers.
     route_section: Option<&'static str>,
+}
+
+/// The item [`provision`] mints in each showable section — what the emitted route, run
+/// verbatim, must reveal. A property of the fixture (not of the cell), so a new row only
+/// declares *which* section its route must strip to.
+fn live_item(section: &str) -> &'static str {
+    match section {
+        "releases" => "1-3-0",
+        "staged" => "Changed",
+        other => panic!("no live item provisioned in section `{other}`"),
+    }
 }
 
 /// **The axis.** Six item-id misses, the undeclared-section miss, and the one genuine
@@ -436,6 +493,65 @@ const CELLS: &[Cell] = &[
         code: "write.not-present",
         route_section: Some("releases"),
     },
+    // ---- The **id-from leaf** strip (M47 Increment 6, T3). Two CLI-side, schema-only
+    // pre-checks sit in front of the engine's presence adjudication at two of the six
+    // enriched dispatch sites — `write.id-from-field` (`set-field` at an id-from leaf)
+    // and `write.identity-change` (`retitle-item` under an **enum** id-from). Both
+    // assert a property of an item and hand back a route whose first verb blocks at an
+    // item that was never minted, so item presence must outrank them: the same
+    // shape → presence → leaf order the engine's own item-field doors already keep.
+    Cell {
+        what: "set-field --value at a nonexistent item's id-from leaf",
+        args: &[
+            "doc",
+            "set-field",
+            "{addr}#releases/9-9-9/version",
+            "--value",
+            "9.9.9",
+        ],
+        stdin: None,
+        code: "write.not-present",
+        route_section: Some("releases"),
+    },
+    Cell {
+        what: "set-field --value at a nonexistent item's enum id-from leaf",
+        args: &[
+            "doc",
+            "set-field",
+            "{addr}#staged/no-such-group/category",
+            "--value",
+            "fixed",
+        ],
+        stdin: None,
+        code: "write.not-present",
+        route_section: Some("staged"),
+    },
+    Cell {
+        what: "set-field --value at a nonexistent nested item's enum id-from leaf",
+        args: &[
+            "doc",
+            "set-field",
+            "{addr}#releases/1-3-0/changes/no-such-group/category",
+            "--value",
+            "fixed",
+        ],
+        stdin: None,
+        code: "write.not-present",
+        route_section: Some("releases"),
+    },
+    Cell {
+        what: "retitle-item at a nonexistent item under an enum id-from",
+        args: &[
+            "doc",
+            "retitle-item",
+            "{addr}#staged/no-such-group",
+            "--title",
+            "Fixed",
+        ],
+        stdin: None,
+        code: "write.not-present",
+        route_section: Some("staged"),
+    },
     Cell {
         what: "add-item into an undeclared section",
         args: &[
@@ -491,18 +607,24 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
         let report: serde_json::Value = serde_json::from_str(stderr.trim())
             .unwrap_or_else(|e| panic!("`{}` stderr is JSON: {e}; got:\n{stderr}", cell.what));
         let got = report["findings"][0]["code"].as_str().unwrap_or("<absent>");
-        if got != cell.code {
+        let named_its_miss = got == cell.code;
+        if !named_its_miss {
             broken.push(format!(
-                "  {}: expected `{}`, got `{}`",
-                cell.what, cell.code, got
+                "  {}: expected `{}`, got `{}` (route: {})",
+                cell.what,
+                cell.code,
+                got,
+                report["findings"][0]["route"].as_str().unwrap_or("<none>"),
             ));
         }
 
         // **The route column.** An item-id miss must hand back the containing section's
         // `doc show`, with the doc's real slug and the resolved task id substituted — the
         // engine's `<address>` / `<task-id>` fallback reaching an agent is the dead end
-        // this axis exists to close.
-        if let Some(section) = cell.route_section {
+        // this axis exists to close. Only adjudicated once the cell named its own miss:
+        // a wrong-code cell has already been recorded, and its foreign route shape must
+        // not panic the run and hide the rest of the matrix.
+        if let Some(section) = cell.route_section.filter(|_| named_its_miss) {
             let route = report["findings"][0]["route"]
                 .as_str()
                 .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", cell.what));
@@ -517,8 +639,9 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
                 // Followability: the emitted argv, run **verbatim**, must exit 0 and print
                 // the section's live item ids — the address the agent should have used.
                 let shown = fx.run_route(cmd, cell.what);
+                let live = live_item(section);
                 assert!(
-                    shown.contains("1-3-0"),
+                    shown.contains(live),
                     "`{}`: the emitted route reveals the section's live item ids; got:\n{shown}",
                     cell.what,
                 );

@@ -534,19 +534,33 @@ fn apply_field_target(
     uri: &str,
     value: &str,
 ) -> Result<String, DocFailure> {
+    // **Item presence outranks both CLI-side guards below** (M47 — the write-verb ×
+    // item-id-miss axis). Both are *schema-only* pre-checks: they answer from the doctype
+    // alone and never look at the corpus, so at an item that was never minted they assert
+    // a property of a nonexistent item (a law-1 lie) and hand back a route whose first
+    // verb blocks on the same absence — costing a second hop and answering nothing. Gated
+    // once **here**, at the shared seam, rather than inside each guard: the per-leaf verb
+    // and the `doc author` batch inherit the ordering together, and a guard added to this
+    // seam later is ranked by construction. Falling through leaves the engine's own
+    // `write.not-present` + [`enrich_not_present_route`] to answer — the same
+    // shape → presence → leaf order the engine's item-field doors keep
+    // ([`engine::write::item_chain_absent`]).
+    let item_present = !addressed_item_absent(schema, source, &target);
     // The set-field id-from guard (`design/write-commands.md` → The set-field id-from
     // guard): a heading-derived field is never written through `set-field` — living
     // here, the per-leaf verb AND the `doc author` batch (via `apply_leaf`) inherit
     // the reject in one place, killing the or-insert corruption shapes.
-    if let Some(finding) = id_from_field_guard(schema, &target, uri, value) {
+    if item_present && let Some(finding) = id_from_field_guard(schema, &target, uri, value) {
         return Err(DocFailure::block(finding));
     }
     // The set-field machine-maintained guard (`design/write-commands.md` → The set-field
     // machine-maintained guard): a `set:`-derived **absolute** (the freeze stamp / a
     // milestone transition) is CLI-owned and never author-writable — sharing this seam,
     // both the per-leaf verb and the `doc author` batch refuse the forge. `set: on-create`
-    // is NOT absolute (a mint-time default the author may override), so it passes.
-    if let Some(finding) = machine_maintained_field_guard(schema, &target, uri) {
+    // is NOT absolute (a mint-time default the author may override), so it passes. The
+    // presence rank is inert for today's members (the freeze stamp is doc-level, and a
+    // milestone-record is refused whole upstream) — it is the seam's rule, not a patch.
+    if item_present && let Some(finding) = machine_maintained_field_guard(schema, &target, uri) {
         return Err(DocFailure::block(finding));
     }
     Ok(match target {
@@ -722,6 +736,39 @@ fn enrich_not_present_route(failure: DocFailure, uri: &str, task_id: &str) -> Do
         ));
     }
     DocFailure::Block(finding)
+}
+
+/// Is the item a [`FieldTarget`] addresses **absent** from `source`? The
+/// [`engine::write::item_chain_absent`] presence question, asked in the target's own
+/// vocabulary: a section-level target names no item (never absent), an item / nested-item
+/// target hands its parent-scoped chain straight through. A shape miss and an unparseable
+/// source both answer "not absent", leaving those diagnoses to the splice path.
+fn addressed_item_absent(schema: &Schema, source: &str, target: &FieldTarget) -> bool {
+    match target {
+        FieldTarget::Section { .. } => false,
+        FieldTarget::Item { section, item, .. } => {
+            engine::write::item_chain_absent(schema, source, section, &[item.as_str()])
+        }
+        FieldTarget::NestedItem { section, items, .. } => {
+            let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
+            engine::write::item_chain_absent(schema, source, section, &item_ids)
+        }
+    }
+}
+
+/// The [`addressed_item_absent`] sibling over a [`RemoveItemTarget`] — the item forms the
+/// `retitle-item` / `remove-item` doors resolve. Same presence question, same three
+/// not-absent answers.
+fn removable_item_absent(schema: &Schema, source: &str, target: &RemoveItemTarget) -> bool {
+    match target {
+        RemoveItemTarget::TopLevel { section, item } => {
+            engine::write::item_chain_absent(schema, source, section, &[item.as_str()])
+        }
+        RemoveItemTarget::Nested { section, items } => {
+            let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
+            engine::write::item_chain_absent(schema, source, section, &item_ids)
+        }
+    }
 }
 
 /// The set-field id-from guard (`design/write-commands.md` → The set-field id-from
@@ -1498,7 +1545,13 @@ fn remove_item_target(address: &Address) -> Option<RemoveItemTarget> {
 /// (the Settle-decided route); and a `commit` trailer item's new title must be a
 /// well-shaped git-trailer token (the same shared adjudicator the `add-item` door
 /// runs — the confidence-audit wave, sibling-hunt finding 6). Both fire before any
-/// bytes are read or moved.
+/// bytes are **moved**, and both are outranked by **item presence** (M47 — the
+/// write-verb × item-id-miss axis): they are schema-only checks, so at an item that was
+/// never minted they would describe a nonexistent item and route to a verb that blocks
+/// on the same absence. The doctype-keyed milestone-record refusal above them is
+/// deliberately **not** presence-gated: "no `jigc doc` write applies to this doctype" is
+/// true whether or not the item exists, and its route is informational — it dead-ends
+/// nowhere.
 fn run_retitle_item(
     cwd: &Path,
     addr: &str,
@@ -1546,12 +1599,21 @@ fn run_retitle_item(
         )));
     }
 
-    if let Some(finding) = retitle_id_from_refusal(&schema, &address, &target, addr, title) {
-        return Err(DocFailure::block(finding));
-    }
-
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+
+    // **Item presence outranks the id-from refusals** (M47 — the write-verb ×
+    // item-id-miss axis), which is why they run after the read rather than before it: an
+    // enum id-from refusal at an item that was never minted asserts what a nonexistent
+    // item derives its id from, and routes to a `remove-item` that blocks on the same
+    // absence. At an absent item the engine's `write.not-present` +
+    // [`enrich_not_present_route`] below answer instead. Nothing is *moved* by the read —
+    // a rejected retitle still persists nothing.
+    if !removable_item_absent(&schema, &source, &target)
+        && let Some(finding) = retitle_id_from_refusal(&schema, &address, &target, addr, title)
+    {
+        return Err(DocFailure::block(finding));
+    }
 
     let edited = match &target {
         RemoveItemTarget::TopLevel { section, item } => {

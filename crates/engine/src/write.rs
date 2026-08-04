@@ -2048,15 +2048,20 @@ pub fn remove_nested_item(
 /// **re-validates against that field's declared type** when the block declares it
 /// (the [`set_nested_item_field_or_insert`] `check_value` guard shape) — a
 /// non-member title against an enum id-source is rejected as
-/// [`GenerateError::MalformedValue`]. (The *unconditional* enum-id-from refusal —
-/// a member-to-member change is an identity change, not a retitle — is the CLI
-/// guard's, mirroring `add-item`'s.) The anchor is read from the located heading
-/// via [`anchor_of`], never re-derived from the new title. An empty/whitespace
-/// title, a title carrying a control character (which would split the heading
-/// line) or embedding the `{#` anchor pattern (which would out-shadow the frozen
-/// anchor on re-parse) — both [`reject_malformed_title`] — an absent item/section,
-/// or a non-conformant source → [`GenerateError::WrongShape`] (the existing
-/// nested-write error shapes).
+/// [`GenerateError::MalformedValue`] — but only **once the addressed item is known
+/// to exist** (M47 — the write-verb × item-id-miss axis): the question is about
+/// *that item's* id-source, so at an item that was never minted the item-id miss
+/// answers first. (The *unconditional* enum-id-from refusal — a member-to-member
+/// change is an identity change, not a retitle — is the CLI guard's, mirroring
+/// `add-item`'s, and is presence-ranked the same way.) The anchor is read from the
+/// located heading via [`anchor_of`], never re-derived from the new title. An
+/// empty/whitespace title, a title carrying a control character (which would split
+/// the heading line) or embedding the `{#` anchor pattern (which would out-shadow
+/// the frozen anchor on re-parse) — all [`reject_malformed_title`], all checks on
+/// the caller's own argument, so all ahead of presence — an **undeclared or
+/// non-repeatable section**, or a non-conformant source → [`GenerateError::WrongShape`];
+/// a declared chain naming an item that is simply **absent** →
+/// [`GenerateError::NotPresent`], routed to the containing section's live ids.
 pub fn retitle_item(
     schema: &Schema,
     source: &str,
@@ -2073,17 +2078,6 @@ pub fn retitle_item(
     // The anchor-injection reject: a title embedding `{#…}` would out-shadow the
     // frozen `{#id}` on re-parse — the reslug-hijack this verb's contract forbids.
     reject_malformed_title(title)?;
-    // The id-from re-validation (see doc comment): resolved against the repeatable
-    // block the chain bottoms out in, before any bytes move.
-    if let Some(repeatable) = chain_repeatable(schema, section_id, item_ids)
-        && let Some(field) = repeatable.block.iter().find_map(|leaf| match leaf {
-            crate::schema::Leaf::Field(field) if field.id == repeatable.id_from => Some(&**field),
-            _ => None,
-        })
-        && let Err(why) = check_value(field, &Value::Scalar(title.to_string()))
-    {
-        return Err(GenerateError::MalformedValue { why });
-    }
 
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
@@ -2100,6 +2094,23 @@ pub fn retitle_item(
         return Err(GenerateError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?} not present"),
         });
+    }
+    // The id-from re-validation (see doc comment): resolved against the repeatable block
+    // the chain bottoms out in, before any bytes move — but **after** presence (M47 — the
+    // write-verb × item-id-miss axis). It adjudicates the new title against the field the
+    // *addressed item's* id derives from and routes to `set-field` on that item, so at an
+    // item that was never minted it would answer a question about a nonexistent item with
+    // a route that blocks on the same absence. The two rejects above it are argument-shape
+    // checks on the caller's own title (empty, anchor-injecting) — they claim nothing about
+    // the item, so they keep their place.
+    if let Some(repeatable) = chain_repeatable(schema, section_id, item_ids)
+        && let Some(field) = repeatable.block.iter().find_map(|leaf| match leaf {
+            crate::schema::Leaf::Field(field) if field.id == repeatable.id_from => Some(&**field),
+            _ => None,
+        })
+        && let Err(why) = check_value(field, &Value::Scalar(title.to_string()))
+    {
+        return Err(GenerateError::MalformedValue { why });
     }
     let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
         GenerateError::WrongShape {
@@ -5821,6 +5832,34 @@ pub fn unset_field_validated(
     Ok(edited)
 }
 
+/// Does the addressed item chain name an item that is **not present** in `source`? The
+/// shared presence question every write door asks *before* it adjudicates a leaf, a
+/// title, or a field declaration — the `shape → presence → leaf` order (M47 — the
+/// write-verb × miss-shape axis).
+///
+/// Three answers are deliberately **not** "absent":
+/// - a **shape** miss (an undeclared or non-repeatable section, an unknown nested-section
+///   hop — [`physical_item_chain`] `None`): shape outranks presence, and the splice path
+///   below names it `write.unknown-section` / `write.wrong-shape`;
+/// - a **source that no longer parses**: "cannot tell" is not a yes, so today's
+///   parse-break diagnosis is left standing;
+/// - a chain that **resolves** to a live item.
+///
+/// Public because the presence question also has to outrank two **CLI-side, schema-only**
+/// pre-checks that never touch the source — `write.id-from-field` and
+/// `write.identity-change` (`crates/cli/src/doc.rs`) — which otherwise assert properties
+/// of an item that does not exist and hand back a route whose first verb blocks.
+pub fn item_chain_absent(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+) -> bool {
+    physical_item_chain(schema, section_id, item_ids).is_some()
+        && parse::parse_sections(schema, source)
+            .is_ok_and(|doc| nested_parsed_item(schema, &doc, section_id, item_ids).is_none())
+}
+
 /// The gated `set-field --unset` (repeatable item field): the item-addressed sibling of
 /// [`unset_field_validated`] — same eligibility guard + re-parse, over [`unset_item_field`].
 /// `item_ids` is the parent-scoped id chain (single-level or nested).
@@ -5839,10 +5878,7 @@ pub fn unset_item_field_validated(
     item_ids: &[&str],
     field_key: &str,
 ) -> Result<String, Finding> {
-    if physical_item_chain(schema, section_id, item_ids).is_some()
-        && parse::parse_sections(schema, source)
-            .is_ok_and(|doc| nested_parsed_item(schema, &doc, section_id, item_ids).is_none())
-    {
+    if item_chain_absent(schema, source, section_id, item_ids) {
         return Err(generate_error_finding(&GenerateError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?} not present"),
         }));
@@ -11760,6 +11796,34 @@ OAuth device-code flow.
         let err = retitle_item(&schema, TWO_PARENT, "nope", &["1-2-0"], "New")
             .expect_err("no such section");
         assert!(matches!(err, GenerateError::WrongShape { .. }));
+    }
+
+    /// **Item presence outranks the id-from re-validation** (M47 — the write-verb ×
+    /// item-id-miss axis). The deterministic pin for the ordering: the sibling above runs
+    /// over the **string**-id-from fixture, whose `check_value` accepts any title, so it
+    /// cannot witness the rank at all — under the **enum** fixture (the shape the shipped
+    /// dev pack's `changelog` actually declares) the re-validation used to answer first,
+    /// telling the caller what a nonexistent item's id derives from and routing at a
+    /// `set-field` that blocks on the same absence. Both an absent top-level item and an
+    /// absent nested one under a real parent must reach [`GenerateError::NotPresent`],
+    /// with a member title *and* a non-member one — the value question is not asked until
+    /// there is an item to ask it of.
+    #[test]
+    fn an_absent_item_outranks_the_enum_id_from_revalidation() {
+        let schema = enum_changelog_schema();
+        for (item_ids, title) in [
+            (["9-9-9"].as_slice(), "Fixed"),
+            (["9-9-9"].as_slice(), "Rewritten"),
+            (["1-2-0", "changes", "removed"].as_slice(), "Fixed"),
+            (["1-2-0", "changes", "removed"].as_slice(), "Rewritten"),
+        ] {
+            let err = retitle_item(&schema, TWO_PARENT, "releases", item_ids, title)
+                .expect_err("no such item");
+            assert!(
+                matches!(err, GenerateError::NotPresent { .. }),
+                "{item_ids:?} + {title:?} is an item-id miss, got {err:?}"
+            );
+        }
     }
 
     /// The id-from re-validation: the heading IS the id-source field's value, so a new
