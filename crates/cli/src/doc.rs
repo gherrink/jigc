@@ -476,8 +476,13 @@ fn run_set_field(
     let ack_target = field_ack_target(&address, &target);
     let value_json = field_json(&engine::field_block::parse_value(value));
 
+    // A mis-named item → `write.not-present`, enriched to the followable containing
+    // section ([`enrich_not_present_route`]). It runs **past** the empty-value repoint: an
+    // absent item outranks the clear-a-field footgun, since `--unset` at an item that was
+    // never minted is no more writable than `--value ""` was.
     let edited = apply_field_target(&schema, &source, target, &uri, value)
-        .map_err(|e| repoint_empty_value(e, addr, value))?;
+        .map_err(|e| repoint_empty_value(e, addr, value))
+        .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -578,7 +583,8 @@ fn run_unset_field(
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     let ack_target = field_ack_target(&address, &target);
-    let edited = apply_unset_target(&schema, &source, target, &uri)?;
+    let edited = apply_unset_target(&schema, &source, target, &uri)
+        .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -662,10 +668,28 @@ fn repoint_empty_value(failure: DocFailure, addr: &str, value: &str) -> DocFailu
 ///
 /// The section is the write address's fragment **top hop**, so a nested / field-leaf
 /// address strips to the top **showable** section, never an unshowable field-leaf (the N2
-/// pin). Applied as a post-pass at the write-verb dispatch (`run_set_slot` / `run_remove_item`,
-/// where the real URI + resolved task id are in scope) — never threaded through the shared
-/// `apply_slot_target`, so the batch `doc author` path is untouched. A non-`not-present`
-/// block, or an orchestration failure, passes through unchanged.
+/// pin).
+///
+/// Applied as a post-pass at **every write-verb dispatch that can produce a
+/// `write.not-present`** — the site is where the real URI + resolved task id are in scope,
+/// so the enrichment cannot live deeper. The applied set is the whole write-verb ×
+/// item-id-miss axis (`crates/cli/tests/write_miss_shape_axis.rs`; M47 Inc 6 T2):
+/// `run_set_slot` · `run_remove_item` (M44's two) and `run_set_field` (past
+/// [`repoint_empty_value`]) · `run_unset_field` · `run_retitle_item` · `run_add_item` (the
+/// four M47 wired, two of them turned into not-present producers by T1's engine flip).
+/// **Adding a write verb means adding its call here** — the enumeration is fenced by that
+/// suite's row-per-cell axis, not by this comment.
+///
+/// The widened domain's response holds at its edge: a `write.not-present` raised over a
+/// **section-level** target (an absent structural home rather than an absent item id) gets
+/// the same containing-section read — the section it could not find — the shape
+/// `run_set_slot`'s own section-slot arm could already raise and enrich under M44, not a
+/// new one invented here.
+///
+/// Deliberately **not** threaded through the shared `apply_slot_target` / `apply_field_target`
+/// (the M44 rationale), so the batch `doc author` path keeps the engine's defensive
+/// fallback route rather than a route built from an address it does not resolve per leaf. A
+/// non-`not-present` block, or an orchestration failure, passes through unchanged.
 fn enrich_not_present_route(failure: DocFailure, uri: &str, task_id: &str) -> DocFailure {
     let DocFailure::Block(mut finding) = failure else {
         return failure;
@@ -1032,7 +1056,8 @@ fn run_add_item(
     let ack_target = add_item_ack_target(&address, &target, title);
 
     let (edited, minted_path) =
-        apply_add_item_target(&schema, &source, target, &uri, title, task.is_migration()?)?;
+        apply_add_item_target(&schema, &source, target, &uri, title, task.is_migration()?)
+            .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -1524,10 +1549,14 @@ fn run_retitle_item(
         }
     }
     .map_err(|e| {
-        block(
-            &engine::write::generate_error_finding(&e),
-            "retitle-item",
+        enrich_not_present_route(
+            block(
+                &engine::write::generate_error_finding(&e),
+                "retitle-item",
+                &uri,
+            ),
             &uri,
+            &task.id,
         )
     })?;
 

@@ -13,11 +13,13 @@
 //! The axis is enumerated as **data**, one row per cell, so a write verb added later is
 //! covered by adding a row rather than by remembering this file exists:
 //!
-//!   * six **item-id misses** → `write.not-present`
+//!   * the **item-id misses** → `write.not-present`
 //!     (`set-slot` · `remove-item` · `set-field --value` · `set-field --unset` at a
 //!     declared field · `set-field --unset` at an *undeclared* field — the item miss
 //!     outranks the field question — · `retitle-item` · nested `add-item` under an
-//!     absent parent, the eighth cell the baseline census under-counted);
+//!     absent parent, the eighth cell the baseline census under-counted · and, added
+//!     with the route column, `retitle-item` at an absent **nested** item under a real
+//!     parent, the deepest strip);
 //!   * the **undeclared-section** miss → `write.unknown-section`;
 //!   * a **genuine declared-shape defect** (`add-item` into a non-repeatable section) →
 //!     `write.wrong-shape`, which the flip deliberately leaves standing.
@@ -27,7 +29,18 @@
 //! **staged bytes are byte-identical** to before the call (a rejected write persists
 //! nothing).
 //!
-//! The route half of these cells is T2's; this suite pins the diagnosis.
+//! **T2 adds the route column** — the same axis, one hop further: naming the miss
+//! correctly is worthless if the route the agent is handed is still the schema dead end.
+//! Every item-id-miss cell must emit
+//! `jigc doc show <type>:<slug>#<top-section> --task <id>` carrying the **real** slug and
+//! the **resolved** task id (never the `<address>` / `<task-id>` placeholders of the
+//! engine's defensive fallback), and the emitted argv is **run verbatim** — it must exit 0
+//! and print the section's live item ids, so the recovery is followable and not merely
+//! well-worded (`design/surface-contract.md` law 2: nothing hides;
+//! `design/validation.md` → the `write.*` route split). A **nested** cell strips to the
+//! top *showable* section — the M44 N2 pin, re-asserted here at the four verbs the CLI
+//! enrichment did not reach (`set-field --value` / `--unset` · `retitle-item` ·
+//! `add-item`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -204,10 +217,35 @@ impl Fixture {
             .path()
             .join(".jigc")
             .join("tasks")
-            .join("log-the-release")
+            .join(TASK_ID)
             .join("docs")
             .join(format!("changelog:{}.md", self.slug))
     }
+
+    /// Run a route's emitted command **verbatim** (split on whitespace, the leading
+    /// `jigc` dropped), returning its trimmed stdout — the followability proof.
+    fn run_route(&self, cmd: &str, what: &str) -> String {
+        let mut parts = cmd.split_whitespace();
+        assert_eq!(
+            parts.next(),
+            Some("jigc"),
+            "`{what}`: the route leads `jigc`"
+        );
+        let args: Vec<&str> = parts.collect();
+        ok_stdout(self.run(&args, None), what)
+    }
+}
+
+/// The task id `jigc start "log the release"` mints — the id the enriched route must
+/// carry (never the `<task-id>` placeholder).
+const TASK_ID: &str = "log-the-release";
+
+/// The leading backticked command of a route string (`` `<cmd>`<tail> ``).
+fn backticked<'a>(route: &'a str, what: &str) -> &'a str {
+    route
+        .strip_prefix('`')
+        .and_then(|rest| rest.split('`').next())
+        .unwrap_or_else(|| panic!("`{what}`: the route carries a backticked command; got: {route}"))
 }
 
 /// The trimmed stdout of a successful `jigc` invocation, or a panic carrying stderr.
@@ -299,6 +337,11 @@ struct Cell {
     stdin: Option<&'static [u8]>,
     /// The finding `code` the reject must carry.
     code: &'static str,
+    /// For an **item-id miss**: the top showable section the emitted route must show
+    /// (`jigc doc show <type>:<slug>#<section> --task <id>`, run verbatim here). `None`
+    /// for the two non-item-miss cells, whose route stays the schema's — they *are*
+    /// questions the schema answers.
+    route_section: Option<&'static str>,
 }
 
 /// **The axis.** Six item-id misses, the undeclared-section miss, and the one genuine
@@ -315,12 +358,14 @@ const CELLS: &[Cell] = &[
         ],
         stdin: Some(b"A summary.\n"),
         code: "write.not-present",
+        route_section: Some("releases"),
     },
     Cell {
         what: "remove-item at a nonexistent item",
         args: &["doc", "remove-item", "{addr}#releases/9-9-9"],
         stdin: None,
         code: "write.not-present",
+        route_section: Some("releases"),
     },
     Cell {
         what: "set-field --value at a nonexistent item",
@@ -333,18 +378,21 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
+        route_section: Some("releases"),
     },
     Cell {
         what: "set-field --unset at a nonexistent item, declared field",
         args: &["doc", "set-field", "{addr}#releases/9-9-9/link", "--unset"],
         stdin: None,
         code: "write.not-present",
+        route_section: Some("releases"),
     },
     Cell {
         what: "set-field --unset at a nonexistent item, undeclared field",
         args: &["doc", "set-field", "{addr}#releases/9-9-9/bogus", "--unset"],
         stdin: None,
         code: "write.not-present",
+        route_section: Some("releases"),
     },
     Cell {
         what: "retitle-item at a nonexistent item",
@@ -357,6 +405,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
+        route_section: Some("releases"),
     },
     Cell {
         what: "nested add-item under an absent parent item",
@@ -369,6 +418,23 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
+        route_section: Some("releases"),
+    },
+    Cell {
+        // The **deep** strip at one of the newly-enriched verbs: a real parent release
+        // (`1-3-0`), an absent nested change-group — the route must still strip past two
+        // hops to the top *showable* section (the N2 pin, re-asserted at `retitle-item`).
+        what: "retitle-item at a nonexistent nested item under a real parent",
+        args: &[
+            "doc",
+            "retitle-item",
+            "{addr}#releases/1-3-0/changes/no-such-group",
+            "--title",
+            "Fixed",
+        ],
+        stdin: None,
+        code: "write.not-present",
+        route_section: Some("releases"),
     },
     Cell {
         what: "add-item into an undeclared section",
@@ -381,17 +447,19 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.unknown-section",
+        route_section: None,
     },
     Cell {
         what: "add-item into a non-repeatable section (the genuine shape question)",
         args: &["doc", "add-item", "{addr}#overview", "--title", "Added"],
         stdin: None,
         code: "write.wrong-shape",
+        route_section: None,
     },
 ];
 
 #[test]
-fn every_write_miss_names_the_shape_of_its_own_miss() {
+fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
     let fx = provision();
     let addr = format!("changelog:{}", fx.slug);
     let staged = fx.staged();
@@ -430,6 +498,33 @@ fn every_write_miss_names_the_shape_of_its_own_miss() {
             ));
         }
 
+        // **The route column.** An item-id miss must hand back the containing section's
+        // `doc show`, with the doc's real slug and the resolved task id substituted — the
+        // engine's `<address>` / `<task-id>` fallback reaching an agent is the dead end
+        // this axis exists to close.
+        if let Some(section) = cell.route_section {
+            let route = report["findings"][0]["route"]
+                .as_str()
+                .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", cell.what));
+            let cmd = backticked(route, cell.what);
+            let expected = format!("jigc doc show {addr}#{section} --task {TASK_ID}");
+            if cmd != expected {
+                broken.push(format!(
+                    "  {}: expected route `{}`, got `{}`",
+                    cell.what, expected, cmd
+                ));
+            } else {
+                // Followability: the emitted argv, run **verbatim**, must exit 0 and print
+                // the section's live item ids — the address the agent should have used.
+                let shown = fx.run_route(cmd, cell.what);
+                assert!(
+                    shown.contains("1-3-0"),
+                    "`{}`: the emitted route reveals the section's live item ids; got:\n{shown}",
+                    cell.what,
+                );
+            }
+        }
+
         let after = fs::read_to_string(&staged).expect("read the staged changelog");
         assert_eq!(
             after, before,
@@ -440,7 +535,7 @@ fn every_write_miss_names_the_shape_of_its_own_miss() {
 
     assert!(
         broken.is_empty(),
-        "{} of {} cells name the wrong miss:\n{}",
+        "{} defect(s) across {} cells (the miss named, or the route handed back):\n{}",
         broken.len(),
         CELLS.len(),
         broken.join("\n"),
