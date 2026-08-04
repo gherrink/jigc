@@ -19,4 +19,5 @@ allows-create:
 {{ include: step:author-roadmap }}
 {{ include: step:author-ledger }}
 {{ include: step:author-decisions }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

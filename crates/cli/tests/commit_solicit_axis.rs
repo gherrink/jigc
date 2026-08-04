@@ -1,20 +1,31 @@
-//! M47 Increment 5 / T1 — the **commit-doc solicitation axis**, swept over the
-//! whole **dev pack registry** ([pinning.md](../../../implementation/pinning.md) §1:
-//! an axis test enumerates its members from the registry, never from a hand list).
+//! M47 Increment 5 — the **commit-doc solicitation axis**, swept over the whole
+//! **composite registry**: every workflow **both** shipped packs carry
+//! ([pinning.md](../../../implementation/pinning.md) §1: an axis test enumerates its
+//! members from the registry, never from a hand list).
 //!
 //! **The class** (`DECISIONS.md` → 2026-07-26 the Settle, Decision 5; N6): the commit
 //! doc is the one doc *every* task-minting workflow's finalize gate blocks on, yet
-//! the solicitation for its two required leaves lived inside the **code-writing**
-//! steps (`step:implement` / `step:implement-quick`) and inside `sub-task`'s own
-//! `step:author-commit`. So a workflow that reaches `step:finalize` without writing
-//! code — `architecture-documentation`, `plan`, `record-change`, `record-decision`,
-//! and `project-setup` through `project-finalize.yaml` — composed text that named
-//! every write **except** the two its gate would refuse on: a law-1 ambush
-//! (`design/surface-contract.md` → law 1 / The stated-at fence). `sub-task` had the
-//! opposite defect — it solicited **twice**.
+//! each pack solicited its two required leaves from the wrong home. In the dev pack
+//! the solicit lived inside the **code-writing** steps (`step:implement` /
+//! `step:implement-quick`) and inside `sub-task`'s own `step:author-commit`, so the
+//! five workflows reaching `step:finalize` without writing code composed text naming
+//! every write **except** the two their gate would refuse on (a law-1 ambush —
+//! `design/surface-contract.md` → law 1 / The stated-at fence) while `sub-task`
+//! solicited **twice**. In the methodology pack the solicit lived inside
+//! `step:finalize` itself, which `step:migration-finalize` includes — so all seven
+//! methodology migrate workflows solicited a commit doc their **mint already
+//! pre-filled**.
 //!
-//! **The axis is "every dev workflow", and the expectation is a derived function,
-//! never a table.** For each workflow the pack ships:
+//! **S1 (the Settle's cross-pack rule): both packs carry the change or it lands on
+//! half the surface** — which is why this suite's axis is the composite registry and
+//! not either pack alone. It runs against the `[dev ▸ methodology]` pack-set a plain
+//! `jigc setup` installs (no `JIGC_PACK_DIR`, no `packs.yaml`) — the set a dogfooding
+//! project actually runs, and the one where per-origin-pack include resolution is
+//! live: methodology's `dev-task` composes *methodology's* `step:author-commit` even
+//! though dev ships a step of the same id.
+//!
+//! **The axis is "every shipped workflow", and the expectation is a derived function,
+//! never a table.** For each workflow, in its own origin pack:
 //!
 //!   * `creates-task: false` → the workflow mints no task and provisions no commit
 //!     doc, so it must solicit **zero** times;
@@ -26,11 +37,11 @@
 //!     must solicit **zero** times;
 //!   * every other task-minting workflow → **exactly once** per required leaf.
 //!
-//! **The required leaves come from the pack's own `commit` schema**, not from this
-//! file: every author-required header field and every non-optional slot section
-//! (`engine::validate::is_author_required` — the shared predicate the mint, the
-//! write path and `doc schema` all read). Today that resolves to `type` + `summary`;
-//! a schema change moves the axis without touching the test.
+//! **The required leaves come from each origin pack's own `commit` schema**, not from
+//! this file: every author-required header field and every non-optional slot section
+//! (`engine::validate::is_author_required` — the shared predicate the mint, the write
+//! path and `doc schema` all read). Today that resolves to `type` + `summary` in both
+//! packs; a schema change moves the axis without touching the test.
 //!
 //! **Two arms, because counting is not following.**
 //!
@@ -40,21 +51,22 @@
 //!   2. **Followability** — for every workflow the count expects at one:
 //!      `jigc start --workflow <id>` in a fresh repo, then the composed write
 //!      commands **executed verbatim as printed** (the emitted bytes are the
-//!      contract — the only substitution is the author-owned payload: the
-//!      `<COMMIT_TYPE>` placeholder and the piped slot prose), then
+//!      contract — the only substitution is the author-owned payload: the value
+//!      placeholder, read off the emitted bytes because the two packs spell it
+//!      differently (`<COMMIT_TYPE>` / `<TYPE>`), and the piped slot prose), then
 //!      `jigc task validate <id>` must report **no finding targeting `commit:<id>`**.
 //!      A composed text that names the writes but names them wrongly passes arm 1
 //!      and fails here.
 //!
-//! Everything drives the **real binary** against the on-disk dev pack
-//! (`JIGC_PACK_DIR = crates/cli/pack`), which is also the registry this suite
-//! enumerates — surface and enumeration cannot drift.
+//! Everything drives the **real binary** against the two **embedded** packs, which
+//! are also the registry this suite enumerates — surface and enumeration cannot
+//! drift.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-use cli::pack::{FilesystemPack, load_pack_schema};
+use cli::pack::{EmbeddedPack, load_pack_schema};
 use engine::compose::load_workflow_def;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::SectionBody;
@@ -98,12 +110,6 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk dev pack — both the surface the binary composes and the registry
-/// this suite enumerates.
-fn pack_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
-}
-
 /// The directory holding the built `jigc`, prepended to `PATH` so a composed
 /// command line can be executed **verbatim** (it names the bare `jigc`).
 fn bin_dir() -> PathBuf {
@@ -126,8 +132,9 @@ fn git(repo: &Path, args: &[&str]) {
     );
 }
 
-/// A real git repo with one commit and the `.jigc/config/` project layer, plus
-/// `jigc setup` run, so the cascade resolves and the dev pack composes alone.
+/// A real git repo with one commit, plus a plain `jigc setup` — which writes the
+/// `compose-embedded-methodology` marker, so the cascade resolves over the
+/// `[dev ▸ methodology]` composite the registry below enumerates.
 fn init_repo(repo: &Path, home: &Path) {
     git(repo, &["init", "-q"]);
     git(repo, &["config", "user.email", "test@example.com"]);
@@ -135,7 +142,6 @@ fn init_repo(repo: &Path, home: &Path) {
     std::fs::write(repo.join("README.md"), "# repo\n").expect("write readme");
     git(repo, &["add", "."]);
     git(repo, &["commit", "-q", "-m", "initial"]);
-    std::fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
     let out = jigc(repo, home, &["setup"]);
     assert!(
         out.status.success(),
@@ -144,13 +150,15 @@ fn init_repo(repo: &Path, home: &Path) {
     );
 }
 
-/// Run `jigc <args>` against the on-disk dev pack.
+/// Run `jigc <args>` against the **embedded** composite pack-set: `JIGC_PACK_DIR` is
+/// removed, never inherited — it would swap the pack out from under the sweep and
+/// silently narrow the axis back to one pack.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_PACK_DIR", pack_dir())
+        .env_remove("JIGC_PACK_DIR")
         .output()
         .expect("run the jigc binary")
 }
@@ -220,12 +228,15 @@ fn first_commit_type(pack: &dyn PackSource) -> String {
     panic!("the `commit` schema declares a `type` field");
 }
 
-/// One swept workflow: its id, whether it mints a task, and whether it is a
-/// migrate workflow (whose mint pre-fills the commit doc).
+/// One swept workflow: its origin pack, its id, whether it mints a task, whether it
+/// is a migrate workflow (whose mint pre-fills the commit doc), and the required
+/// `commit` leaves **its own pack's** schema declares.
 struct Workflow {
+    pack: &'static str,
     id: String,
     creates_task: bool,
     migrate: bool,
+    leaves: Vec<String>,
 }
 
 impl Workflow {
@@ -235,38 +246,63 @@ impl Workflow {
     }
 }
 
-/// Every workflow the dev pack ships, with the expectation function applied.
+/// The two embedded packs, in the precedence order the marker installs (dev first).
+/// Built the CWD-free way, like `compose_goldens`.
+fn embedded_packs() -> Vec<(&'static str, EmbeddedPack)> {
+    vec![
+        ("dev", EmbeddedPack::new()),
+        ("methodology", EmbeddedPack::methodology()),
+    ]
+}
+
+/// Every workflow the **composite** ships — both packs, undivided — with the
+/// expectation function applied per origin pack.
 ///
 /// The migrate discrimination is derived **twice** and the two must agree: by name
-/// (`migrate-<doctype>` over the pack's own schema list) and structurally (the
-/// `step:migration-finalize` include). Either alone could rot silently.
-fn dev_workflows(pack: &dyn PackSource) -> Vec<Workflow> {
-    let doctypes: Vec<String> = pack
-        .list(PackResourceKind::Schemas)
-        .into_iter()
-        .map(|id| id.as_str().to_string())
-        .collect();
+/// (`migrate-<doctype>` over the **origin** pack's own schema list) and structurally
+/// (the `step:migration-finalize` include). Either alone could rot silently.
+///
+/// Workflow ids do not collide across the two packs, and that premise is fenced here:
+/// a collision would silently drop the loser's surface out of the axis.
+fn composite_workflows() -> Vec<Workflow> {
+    let mut seen: Vec<String> = Vec::new();
     let mut out = Vec::new();
-    for id in pack.list(PackResourceKind::Workflows) {
-        let bytes = pack
-            .read(PackResourceKind::Workflows, &id)
-            .expect("workflow is readable");
-        let def = load_workflow_def(&bytes).expect("workflow front-matter parses");
-        let id = id.as_str().to_string();
-        let by_name = doctypes.iter().any(|ty| id == format!("migrate-{ty}"));
-        let by_include = def.includes.iter().any(|step| step == MIGRATION_FINALIZE);
-        assert_eq!(
-            by_name, by_include,
-            "the two migrate derivations disagree on `{id}`: name says {by_name}, \
-             the `step:{MIGRATION_FINALIZE}` include says {by_include} — one of them has rotted",
-        );
-        out.push(Workflow {
-            id,
-            creates_task: def.creates_task,
-            migrate: by_name,
-        });
+    for (pack_name, pack) in embedded_packs() {
+        let leaves = required_commit_leaves(&pack);
+        let doctypes: Vec<String> = pack
+            .list(PackResourceKind::Schemas)
+            .into_iter()
+            .map(|id| id.as_str().to_string())
+            .collect();
+        for id in pack.list(PackResourceKind::Workflows) {
+            let bytes = pack
+                .read(PackResourceKind::Workflows, &id)
+                .expect("workflow is readable");
+            let def = load_workflow_def(&bytes).expect("workflow front-matter parses");
+            let id = id.as_str().to_string();
+            assert!(
+                !seen.contains(&id),
+                "workflow id `{id}` ships in more than one pack — the composite resolves \
+                 it first-wins and this sweep would leave the loser's surface unswept",
+            );
+            seen.push(id.clone());
+            let by_name = doctypes.iter().any(|ty| id == format!("migrate-{ty}"));
+            let by_include = def.includes.iter().any(|step| step == MIGRATION_FINALIZE);
+            assert_eq!(
+                by_name, by_include,
+                "the two migrate derivations disagree on `{id}`: name says {by_name}, \
+                 the `step:{MIGRATION_FINALIZE}` include says {by_include} — one of them has rotted",
+            );
+            out.push(Workflow {
+                pack: pack_name,
+                id,
+                creates_task: def.creates_task,
+                migrate: by_name,
+                leaves: leaves.clone(),
+            });
+        }
     }
-    assert!(!out.is_empty(), "the dev pack ships workflows");
+    assert!(!out.is_empty(), "the composite ships workflows");
     out
 }
 
@@ -299,10 +335,8 @@ fn emitted_writes(text: &str, task: &str, leaf: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn every_dev_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_demands() {
-    let pack = FilesystemPack::new(pack_dir());
-    let leaves = required_commit_leaves(&pack);
-    let workflows = dev_workflows(&pack);
+fn every_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_demands() {
+    let workflows = composite_workflows();
 
     let home = TempDir::new("count-home");
     let repo = TempDir::new("count-repo");
@@ -310,12 +344,20 @@ fn every_dev_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_dem
 
     let mut wrong = Vec::new();
     let (mut expecting_one, mut expecting_zero) = (0usize, 0usize);
+    let mut packs_at_one: Vec<&str> = Vec::new();
+    let mut packs_at_zero: Vec<&str> = Vec::new();
     for workflow in &workflows {
         let expected = workflow.expected_solicits();
         if expected == 1 {
             expecting_one += 1;
+            if !packs_at_one.contains(&workflow.pack) {
+                packs_at_one.push(workflow.pack);
+            }
         } else {
             expecting_zero += 1;
+            if !packs_at_zero.contains(&workflow.pack) {
+                packs_at_zero.push(workflow.pack);
+            }
         }
         let out = jigc(
             repo.path(),
@@ -323,26 +365,41 @@ fn every_dev_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_dem
             &["workflow", &workflow.id, "--preview"],
         );
         let text = stdout_of(&out);
-        for leaf in &leaves {
+        for leaf in &workflow.leaves {
             let found = emitted_writes(&text, PREVIEW_TASK, leaf).len();
             if found != expected {
                 wrong.push(format!(
-                    "  {} — `#{leaf}`: expected {expected}, composed {found}",
-                    workflow.id,
+                    "  [{}] {} — `#{leaf}`: expected {expected}, composed {found}",
+                    workflow.pack, workflow.id,
                 ));
             }
         }
     }
 
-    // The sweep must discriminate: a partition with an empty side proves nothing.
+    // The sweep must discriminate: a partition with an empty side proves nothing —
+    // and S1 demands BOTH packs sit on BOTH sides, or the axis is one pack wide.
     assert!(
         expecting_one > 0 && expecting_zero > 0,
         "the axis must have members on both sides; got {expecting_one} at one \
          and {expecting_zero} at zero",
     );
+    packs_at_one.sort_unstable();
+    packs_at_zero.sort_unstable();
+    assert_eq!(
+        packs_at_one,
+        vec!["dev", "methodology"],
+        "S1: both packs must contribute workflows expecting ONE solicit, or this sweep \
+         only covers half the surface",
+    );
+    assert_eq!(
+        packs_at_zero,
+        vec!["dev", "methodology"],
+        "S1: both packs must contribute workflows expecting ZERO solicits, or this sweep \
+         only covers half the surface",
+    );
     assert!(
         wrong.is_empty(),
-        "every dev workflow must solicit each required `commit` leaf exactly as many \
+        "every shipped workflow must solicit each required `commit` leaf exactly as many \
          times as its gate demands (once when it mints a task and does not pre-fill \
          the commit doc, zero otherwise); offenders:\n{}",
         wrong.join("\n"),
@@ -353,11 +410,26 @@ fn every_dev_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_dem
 // Arm 2 — following the composed text to a commit-clean validate
 // ---------------------------------------------------------------------------
 
+/// Substitute the **author-owned value placeholder** in an emitted field write. The
+/// two packs spell it differently (`<COMMIT_TYPE>` in dev, `<TYPE>` in methodology),
+/// so the token is read off the emitted bytes rather than typed here — everything
+/// outside the angle brackets stays verbatim.
+fn fill_value_placeholder(command: &str, value: &str) -> String {
+    let (Some(open), Some(close)) = (command.find('<'), command.rfind('>')) else {
+        return command.to_string();
+    };
+    assert!(
+        open < close,
+        "a composed command's placeholder brackets must nest sanely; got `{command}`",
+    );
+    format!("{}{value}{}", &command[..open], &command[close + 1..])
+}
+
 /// Execute one composed write command **verbatim**, substituting only the
-/// author-owned payload: the `<COMMIT_TYPE>` placeholder and, for a slot write,
-/// the prose piped to `--from-file -`.
+/// author-owned payload: the value placeholder and, for a slot write, the prose
+/// piped to `--from-file -`.
 fn run_composed(repo: &Path, home: &Path, command: &str, commit_type: &str, prose: &str) {
-    let filled = command.replace("<COMMIT_TYPE>", commit_type);
+    let filled = fill_value_placeholder(command, commit_type);
     assert!(
         !filled.contains('<'),
         "an unsubstituted placeholder survives in the composed command `{filled}` — \
@@ -375,7 +447,7 @@ fn run_composed(repo: &Path, home: &Path, command: &str, commit_type: &str, pros
         .current_dir(repo)
         .env("HOME", home)
         .env("PATH", path)
-        .env("JIGC_PACK_DIR", pack_dir())
+        .env_remove("JIGC_PACK_DIR")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -400,16 +472,29 @@ fn run_composed(repo: &Path, home: &Path, command: &str, commit_type: &str, pros
 
 #[test]
 fn following_the_composed_text_leaves_no_commit_finding() {
-    let pack = FilesystemPack::new(pack_dir());
-    let leaves = required_commit_leaves(&pack);
-    let commit_type = first_commit_type(&pack);
-    let workflows: Vec<Workflow> = dev_workflows(&pack)
+    // The `type` enum is read from the composite's WINNING `commit` schema — the one
+    // the write actually validates against.
+    let winner = embedded_packs()
+        .into_iter()
+        .next()
+        .expect("the composite ships a precedence winner")
+        .1;
+    let commit_type = first_commit_type(&winner);
+    let workflows: Vec<Workflow> = composite_workflows()
         .into_iter()
         .filter(|w| w.expected_solicits() == 1)
         .collect();
-    assert!(
-        !workflows.is_empty(),
-        "the followability arm must cover the task-minting non-migrate workflows",
+    let packs: Vec<&str> = {
+        let mut packs: Vec<&str> = workflows.iter().map(|w| w.pack).collect();
+        packs.sort_unstable();
+        packs.dedup();
+        packs
+    };
+    assert_eq!(
+        packs,
+        vec!["dev", "methodology"],
+        "S1: followability must be proven for BOTH packs' task-minting non-migrate \
+         workflows, not one pack's",
     );
 
     let mut offenders = Vec::new();
@@ -438,7 +523,7 @@ fn following_the_composed_text_leaves_no_commit_finding() {
             .trim()
             .to_string();
 
-        for leaf in &leaves {
+        for leaf in &workflow.leaves {
             let writes = emitted_writes(&composed, &task, leaf);
             assert_eq!(
                 writes.len(),
@@ -476,7 +561,8 @@ fn following_the_composed_text_leaves_no_commit_finding() {
             .collect();
         if !commit_findings.is_empty() {
             offenders.push(format!(
-                "  {} — {}",
+                "  [{}] {} — {}",
+                workflow.pack,
                 workflow.id,
                 commit_findings.join(", ")
             ));

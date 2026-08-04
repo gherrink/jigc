@@ -10,4 +10,5 @@ allows-create:
   - { type: dogfood-record, as: record }
 ---
 {{ include: step:author-dogfood-record }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

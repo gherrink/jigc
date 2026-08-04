@@ -1,0 +1,23 @@
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+{{ cli.set-commit-type }}
+
+Set the scope — the area this change touches:
+
+{{ cli.set-commit-scope }}
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+{{ cli.set-commit-summary }}
+
+Set the body — why this change:
+
+{{ cli.set-commit-body }}

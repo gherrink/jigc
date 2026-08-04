@@ -2,36 +2,11 @@
 states-constraints: [finalize.left-out, finalize.nothing-staged, finalize.carried-staged]
 ---
 Land the change as exactly one logical commit. finalize commits the git index —
-`git add` your code edits before you finalize, because it commits only what you
-have staged, plus the docs it manages. Unstaged edits and untracked files are
-left out of the commit; with nothing staged over a dirty tree, finalize
-refuses. Anything still staged from BEFORE this task was minted makes finalize
-refuse too (one blocking finding per carried path): unstage it, or pass
-`--carry-staged` to declare the carryover deliberate.
-
-finalize renders the commit doc; it does not fill it, so set its header and prose
-first. Inside slot prose, the reserved heading depths are schema-relative to the
-address you write — the CLI owns the section, item, and sub-label heading levels
-there, so your headings sit below them; Setext headings are rejected at every
-depth, and a rejected write names the shallowest depth free at that address.
-
-Set the Conventional-Commits type:
-
-{{ cli.set-commit-type }}
-
-Set the scope — the area this change touches:
-
-{{ cli.set-commit-scope }}
-
-Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
-summary without a type or scope prefix of its own (the `type` field already
-carries it):
-
-{{ cli.set-commit-summary }}
-
-Set the body — why this change:
-
-{{ cli.set-commit-body }}
+only what you have staged (`git add`), plus the docs it manages. Unstaged edits
+and untracked files are left out of the commit; with nothing staged over a dirty
+tree, finalize refuses. Anything still staged from BEFORE this task was minted
+makes finalize refuse too (one blocking finding per carried path): unstage it, or
+pass `--carry-staged` to declare the carryover deliberate.
 
 To see what's left before committing, run `jigc task validate {{task.id}}` — it
 previews part of what finalize gates on (this task's content findings, the

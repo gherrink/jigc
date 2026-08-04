@@ -16,4 +16,5 @@ allows-create:
 {{ include: step:re-verify }}
 {{ include: step:author-completion-record }}
 {{ include: step:author-decisions }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

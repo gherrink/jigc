@@ -7,4 +7,5 @@ creates-task: true
 {{ include: step:scope }}
 {{ include: step:implement }}
 {{ include: step:gate }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

@@ -908,11 +908,13 @@ The M12 acceptance: **jigc composes its own development methodology and runs it 
 #  packs/methodology/config/knobs.yaml    : the full intrinsic-check severity surface (floored at blocking) + default-workflow enum
 #  packs/methodology/config/commands.yaml : the command-refs the steps use (set-commit-summary, finalize-task)
 #  packs/methodology/schemas/commit.yaml  : VENDORED (finalize hardcodes COMMIT_TYPE="commit")
-#  packs/methodology/workflows/dev-task.yaml : body = flat {{include: step:scope/implement/gate/finalize}}
+#  packs/methodology/workflows/dev-task.yaml : body = flat {{include: step:scope/implement/gate/author-commit/finalize}}
 #  packs/methodology/steps/scope.yaml     : restate {{task.intent}} + an observable done-criterion; stop-and-check the human if scope drifted
 #  packs/methodology/steps/implement.yaml : write the FAILING TEST FIRST (confirm it fails for the right reason), THEN minimal green, THEN refactor — PROSE the agent self-polices
 #  packs/methodology/steps/gate.yaml      : "run your project's configured test + lint + build gate; all pass or the task isn't done" — PROSE, no hardcoded `cargo`
-#  packs/methodology/steps/finalize.yaml  : set-field type + scope, set-slot summary + body (a command-ref EACH — the commit schema requires all four), then {{cli.finalize-task}}
+#  packs/methodology/steps/author-commit.yaml : set-field type + scope, set-slot summary + body (a command-ref EACH — the commit schema requires all four)
+#  packs/methodology/steps/finalize.yaml  : the commit half alone — the staging contract + the what's-left preview, then {{cli.finalize-task}}
+#   (M47 Inc 5 split the two: `step:finalize` is reached by the 7 migrate workflows through migration-finalize.yaml, and their mint PRE-FILLS the commit doc)
 #   (all step ids single-word — the multi-word section-id defect)
 #   (every {{…}} placeholder must be the SOLE content of its line — inline-in-a-sentence emits the literal {{…}})
 

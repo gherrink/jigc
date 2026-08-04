@@ -35,14 +35,6 @@ jigc doc set-slot vision:vision#thesis --from-file - --task your-task-id
 jigc doc set-slot vision:vision#invariants --from-file - --task your-task-id
 jigc doc set-slot vision:vision#open-questions --from-file - --task your-task-id
 
-Land the change as exactly one logical commit. finalize commits the git index —
-`git add` your code edits before you finalize, because it commits only what you
-have staged, plus the docs it manages. Unstaged edits and untracked files are
-left out of the commit; with nothing staged over a dirty tree, finalize
-refuses. Anything still staged from BEFORE this task was minted makes finalize
-refuse too (one blocking finding per carried path): unstage it, or pass
-`--carry-staged` to declare the carryover deliberate.
-
 finalize renders the commit doc; it does not fill it, so set its header and prose
 first. Inside slot prose, the reserved heading depths are schema-relative to the
 address you write — the CLI owns the section, item, and sub-label heading levels
@@ -67,6 +59,13 @@ Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-ta
 Set the body — why this change:
 
 Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+Land the change as exactly one logical commit. finalize commits the git index —
+only what you have staged (`git add`), plus the docs it manages. Unstaged edits
+and untracked files are left out of the commit; with nothing staged over a dirty
+tree, finalize refuses. Anything still staged from BEFORE this task was minted
+makes finalize refuse too (one blocking finding per carried path): unstage it, or
+pass `--carry-staged` to declare the carryover deliberate.
 
 To see what's left before committing, run `jigc task validate your-task-id` — it
 previews part of what finalize gates on (this task's content findings, the

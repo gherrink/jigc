@@ -11,4 +11,5 @@ allows-create:
 {{ include: step:implement }}
 {{ include: step:gate }}
 {{ include: step:author-decision }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

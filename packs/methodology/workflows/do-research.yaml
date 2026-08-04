@@ -8,4 +8,5 @@ allows-create:
   - { type: research, as: record }
 ---
 {{ include: step:author-research }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

@@ -8,4 +8,5 @@ allows-create:
   - { type: idea, as: idea }
 ---
 {{ include: step:author-idea }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}

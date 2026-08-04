@@ -8,4 +8,5 @@ allows-create:
   - { type: vision, as: vision }
 ---
 {{ include: step:author-vision }}
+{{ include: step:author-commit }}
 {{ include: step:finalize }}
