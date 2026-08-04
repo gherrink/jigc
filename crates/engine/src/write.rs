@@ -12924,3 +12924,72 @@ Smuggled prose.
         );
     }
 }
+
+#[cfg(test)]
+mod not_present_route_followability {
+    //! **P6 route-followability over the write gate's own routes** (M47 Inc 6 T3;
+    //! `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 8). [`write_route`] mints two
+    //! placeholder-carrying mechanical routes — the `jigc doc schema <doctype>` shape
+    //! question and the `write.not-present` **defensive fallback** — and both are
+    //! substituted from the finding's own target the moment one is established.
+    //!
+    //! The fallback is exercised **here** rather than through the binary, and the reason is
+    //! recorded rather than glossed: M47 Inc 6 T2 wired
+    //! [`crate::finding::Finding`]-enrichment onto all six write verbs, and the batch
+    //! `jigc doc author` path lowers every item hop with the same `slugify` the engine
+    //! mints ids with (`cli::author::flatten_section`), so it cannot address an item it did
+    //! not just add. The fallback therefore has **no binary-reachable producer today** — it
+    //! is the declared defence for a future un-wired one, and its substitution is pinned at
+    //! the level where it is reachable.
+
+    use super::*;
+    use crate::finding::Location;
+
+    /// The shape question: `<doctype>` is the `<type>` head of the finding's own target,
+    /// so the emitted route names the doctype whose schema the agent must read.
+    #[test]
+    fn the_shape_question_route_names_the_real_doctype() {
+        let mut finding = blocking_write(
+            "write.wrong-shape",
+            "write rejected: section \"summary\" is not repeatable",
+            Location::at(1, 1),
+        );
+        crate::finding::readdress_to_uri(
+            std::slice::from_mut(&mut finding),
+            "commit:log-it#summary",
+        );
+
+        assert_eq!(
+            finding.route.as_ref().map(|r| r.as_str()),
+            Some(
+                "`jigc doc schema commit` to see the declared shape, then re-run the write \
+                 at a declared address"
+            ),
+        );
+    }
+
+    /// The **un-enriched `write.not-present` fallback**: once a target is established the
+    /// route names the real, *showable* containing section — byte-identical to the CLI
+    /// enrichment's own address half — never the `<address>` placeholder, and never the
+    /// absent item's own address (which no read verb can resolve).
+    #[test]
+    fn the_not_present_fallback_route_names_the_real_showable_address() {
+        let mut finding = blocking_write(
+            "write.not-present",
+            "write rejected: item [\"9-9-9\"] in section \"releases\" not present",
+            Location::at(1, 1),
+        );
+        crate::finding::readdress_to_uri(
+            std::slice::from_mut(&mut finding),
+            "changelog:changelog#releases/9-9-9/summary",
+        );
+
+        assert_eq!(
+            finding.route.as_ref().map(|r| r.as_str()),
+            Some(
+                "`jigc doc show changelog:changelog#releases --task <task-id>` to see the \
+                 section's current item ids, then re-run the write at an existing item"
+            ),
+        );
+    }
+}

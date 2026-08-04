@@ -18,8 +18,11 @@
 //!       (`#releases`) — the route target resolves and is never an unshowable field-leaf
 //!       (the N2 pin);
 //!   (d) `write.wrong-shape` (an `add-item` into a **non-repeatable** section) still
-//!       routes the generic `jigc doc schema <doctype>` — the arm split left the genuine
-//!       shape-questions untouched.
+//!       routes the generic `jigc doc schema` read — the arm split left the genuine
+//!       shape-questions untouched. (Since M47 Inc 6 T3 the route names the **real**
+//!       doctype: `<doctype>` is derivable from the finding's own `key.target`, so P6
+//!       route-followability substitutes it. Followability of that route is swept in
+//!       `route_followability.rs`.)
 //!
 //! **M47 Increment 6, T1 — arm (d)'s subject moved, on a changed basis.** Arm (d)
 //! originally pinned a `set-field` at a **non-existent item** as a shape question. That
@@ -505,9 +508,15 @@ fn a_genuine_shape_question_still_routes_to_doc_schema() {
     let route = report["findings"][0]["route"]
         .as_str()
         .expect("wrong-shape carries a route");
+    // M47 Inc 6 T3 — the pin moves with the fix that repairs it: the shape question still
+    // routes `jigc doc schema`, but the `<doctype>` placeholder no longer reaches the agent.
+    // It is derivable from the finding's own `key.target` (`commit:…#summary` → `commit`),
+    // so P6 route-followability requires it substituted (`design/surface-contract.md` → The
+    // route fence). The claim this arm carries is unchanged; only the emitted bytes are.
     assert!(
-        route.contains("jigc doc schema <doctype>"),
-        "a genuine shape question still routes `jigc doc schema <doctype>`; route:\n{route}",
+        route.contains("jigc doc schema commit"),
+        "a genuine shape question still routes `jigc doc schema`, naming the real doctype; \
+         route:\n{route}",
     );
 }
 

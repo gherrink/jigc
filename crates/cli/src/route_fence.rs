@@ -116,6 +116,32 @@ mod tests {
         assert_eq!(route.as_str(), "`jigc task finalize <task-id>`");
     }
 
+    /// **The two tables are one membership set** (M47 Inc 6 T3, P6 route-followability):
+    /// this table declares what may *appear* in a route's argv; the engine's
+    /// [`engine::finding::ROUTE_PLACEHOLDERS`] declares, per token, whether the finding's
+    /// own `key.target` must *fill* it. A token in one and not the other is a hole — a new
+    /// placeholder that silently skips the derivability verdict, or a verdict about a token
+    /// no route may carry. The fence lives here because this is the only module where both
+    /// tables are visible (the engine is CLI-blind by layering), and it asserts the sets
+    /// match **in order**, so the two tables read as one.
+    #[test]
+    fn the_dummy_table_and_the_derivability_table_declare_the_same_placeholders() {
+        let declared: Vec<&str> = DUMMY_SUBSTITUTIONS
+            .iter()
+            .map(|(placeholder, _)| *placeholder)
+            .collect();
+        let derivability: Vec<&str> = engine::finding::ROUTE_PLACEHOLDERS
+            .iter()
+            .map(|row| row.token)
+            .collect();
+        assert_eq!(
+            declared, derivability,
+            "every legal route placeholder carries a derivability verdict, and every verdict \
+             names a legal route placeholder (crates/cli/src/route_fence.rs → \
+             DUMMY_SUBSTITUTIONS; engine `finding::ROUTE_PLACEHOLDERS`)",
+        );
+    }
+
     /// The validator's own contract, exercised directly: a real verb line parses; a route
     /// whose argv omits the leading `jigc` is rejected even though clap alone would ignore
     /// argv[0] and accept it (the composed text is what the agent runs, and it would lack

@@ -4522,9 +4522,14 @@ mod tests {
                     "schema-conformance.required-slot-present",
                     "required slot in section `summary` is empty",
                     Some(Location::addressed("commit:x#summary", 1, 1)),
-                    // Routed, as the production gate block routes it (the route floor).
+                    // Routed as the production gate block routes it (the route floor) — and
+                    // **substituted**, as P6 route-followability requires (M47 Inc 6 T3):
+                    // the shipped route carries the finding's own `key.target`, never the
+                    // `<address>` placeholder this fixture used to demonstrate as if it
+                    // were production.
                     Some(
-                        "`jigc doc set-slot <address> --from-file -` to fill the empty slot".into(),
+                        "`jigc doc set-slot commit:x#summary --from-file -` to fill the empty slot"
+                            .into(),
                     ),
                 ),
             ],
@@ -4536,7 +4541,7 @@ mod tests {
         blocking · file-state.hash-matches — on-disk content of `decisions/x.md` differs
           route: reconcile decisions/x.md
         blocking · schema-conformance.required-slot-present — required slot in section `summary` is empty
-          route: `jigc doc set-slot <address> --from-file -` to fill the empty slot
+          route: `jigc doc set-slot commit:x#summary --from-file -` to fill the empty slot
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));

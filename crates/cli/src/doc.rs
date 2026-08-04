@@ -302,7 +302,16 @@ enum DocFailure {
 
 impl DocFailure {
     /// A blocking finding, boxed into the [`DocFailure::Block`] arm.
-    fn block(finding: Finding) -> Self {
+    ///
+    /// **The write-path P6 seam** (M47 Inc 6 T3; `design/surface-contract.md` → The route
+    /// fence): this is the one door every `doc`-verb block passes through, and by the time
+    /// it does, the target is established — either by the producer itself or by
+    /// [`stamp_target`] one call earlier — so it is where a route's derivable placeholders
+    /// are filled from the finding's own `key.target`
+    /// ([`engine::finding::ROUTE_PLACEHOLDERS`]). Without it the engine's write routes reach
+    /// an agent as `jigc doc schema <doctype>`: parseable, declared, and unrunnable.
+    fn block(mut finding: Finding) -> Self {
+        finding.substitute_derivable_route_placeholders();
         DocFailure::Block(Box::new(finding))
     }
 }

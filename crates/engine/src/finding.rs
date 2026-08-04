@@ -171,33 +171,18 @@ pub fn readdress_to_uri(findings: &mut [Finding], identity: &str) {
             Some(fragment) => format!("{identity}#{fragment}"),
             None => identity.to_string(),
         };
-        // The route half of the flip (2026-07-17 surface-comprehension review, B1): a
-        // mechanical route minted before the doc's identity was in hand carries the
-        // `<address>` placeholder of the CLI-seam dummy table — but here the finding's
-        // real URI address *is* the write address (`<type>:<slug>#<section[/leaf]>` is
-        // exactly the grammar `set-slot`/`set-field` accept), so the placeholder is
-        // rendered concrete and the route becomes copy-runnable. Rebuilt through
-        // [`Route::mechanical`], so the parse fence re-proves the concrete argv.
-        if let Some(route) = &finding.route
-            && let RouteKind::Mechanical { argv, tail } = route.kind()
-            && argv.iter().any(|arg| arg == "<address>")
-        {
-            let argv: Vec<String> = argv
-                .iter()
-                .map(|arg| {
-                    if arg == "<address>" {
-                        uri.clone()
-                    } else {
-                        arg.clone()
-                    }
-                })
-                .collect();
-            finding.route = Some(Route::mechanical(argv, tail.clone()));
-        }
         match &mut finding.location {
             Some(location) => location.address = Some(uri),
             None => finding.location = Some(Location::addressed(uri, 1, 1)),
         }
+        // The route half of the flip (2026-07-17 surface-comprehension review, B1;
+        // generalized to every derivable placeholder at M47's P6): a mechanical route
+        // minted before the doc's identity was in hand carries `<PLACEHOLDER>`-class tokens
+        // of the CLI-seam dummy table — and the identity just installed above determines
+        // the derivable ones ([`ROUTE_PLACEHOLDERS`]), so they are rendered concrete and the
+        // route becomes copy-runnable. Runs **after** the address lands, because the
+        // substitution reads the finding's own `key.target`.
+        finding.substitute_derivable_route_placeholders();
     }
 }
 
@@ -270,6 +255,144 @@ pub fn is_declared_singleton(code: &str) -> bool {
 /// — so it never reaches this seam and needs no entry here.
 pub fn is_route_exempt(code: &str) -> bool {
     code.starts_with("conformance.")
+}
+
+/// One row of the **route-placeholder derivability table** — the declaration behind **P6
+/// route-followability** (M47; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 8 + the
+/// pre-decompose review's P6 rider). Sibling of [`is_route_exempt`] /
+/// [`is_declared_singleton`]: a verdict checkable from the token alone, each with its
+/// reason, never a census of call sites.
+pub struct RoutePlaceholder {
+    /// The `<PLACEHOLDER>`-class argv token — byte-identical to its row in the CLI-seam
+    /// parse table (`crates/cli/src/route_fence.rs` → `DUMMY_SUBSTITUTIONS`), whose
+    /// membership is fenced against this one there (the only place both are visible).
+    pub token: &'static str,
+    /// Whether the token's value is **derivable from the finding's own `key.target`** —
+    /// and therefore *must* be substituted before the finding reaches a driver.
+    pub derivable: bool,
+    /// Why. A verdict without a reason is the un-swept state this table exists to end.
+    pub reason: &'static str,
+}
+
+/// The **derivability table**: for every `<PLACEHOLDER>`-class token a mechanical route may
+/// carry, whether the finding's own `key.target` determines it.
+///
+/// The M43 CLI-seam fence proves a mechanical route **parses**; it sits on
+/// [`Route::mechanical`] and never sees the finding, so it cannot know whether the route an
+/// agent reads is **followable**. A placeholder the finding could have filled and did not is
+/// a route that names a command the driver cannot run — law 2's *nothing hides* failing at
+/// the last inch. So: *derivable ⇒ substituted*, asserted on [`Finding`]'s `Serialize`
+/// ([`Finding::route_placeholders_are_substituted`], the fourth assert on that seam).
+///
+/// The non-derivable rows are the honest half. `<task-id>` in particular is **not**
+/// derivable under any rule — one doc is written from many tasks, so the address a finding
+/// concerns names no task — and it therefore needs a *different* source (the CLI dispatch
+/// that resolved the task supplies it at every enriched write-verb producer).
+///
+/// Rows are in the CLI-seam table's own order, so the two read as one; a test beside
+/// `DUMMY_SUBSTITUTIONS` asserts exactly that (membership **and** order), because a token in
+/// one table and not the other is a placeholder with no verdict or a verdict about a
+/// placeholder no route may carry.
+pub const ROUTE_PLACEHOLDERS: &[RoutePlaceholder] = &[
+    RoutePlaceholder {
+        token: "<task-id>",
+        derivable: false,
+        reason: "a task is not a property of the address: one doc is written from many \
+                 tasks. It needs a different source — the CLI dispatch that resolved the \
+                 task — so it stays outside the property rather than being faked from the \
+                 target",
+    },
+    RoutePlaceholder {
+        token: "<address>",
+        derivable: true,
+        reason: "the finding's own `key.target` — the URI-normal-form address the write \
+                 grammar accepts verbatim; narrowed to the top showable hop on a `jigc doc \
+                 show` route, which resolves a doc or a section and never the absent item a \
+                 `write.not-present` names",
+    },
+    RoutePlaceholder {
+        token: "<value>",
+        derivable: false,
+        reason: "the value is the agent's to author — the finding reports what is missing \
+                 or malformed, never what it should become",
+    },
+    RoutePlaceholder {
+        token: "<doctype>",
+        derivable: true,
+        reason: "the `<type>` head of `key.target` — every write / gate target is a \
+                 `<type>:<slug>[#…]` URI, so the doctype whose schema answers the question \
+                 is already carried",
+    },
+    RoutePlaceholder {
+        token: "<milestone-id>",
+        derivable: false,
+        reason: "a milestone is a work unit, not a managed address; no doc target names one",
+    },
+    RoutePlaceholder {
+        token: "<path>",
+        derivable: false,
+        reason: "a foreign source path is outside management by definition, so no managed \
+                 target carries it",
+    },
+    RoutePlaceholder {
+        token: "<type>",
+        derivable: false,
+        reason: "the doctype the agent chooses to provision next — deliberately not the \
+                 doctype of the finding's own target (the `jigc doc create <type>` \
+                 positional, named after that verb's usage line)",
+    },
+    RoutePlaceholder {
+        token: "<intent>",
+        derivable: false,
+        reason: "free-text task intent — the agent's to write",
+    },
+];
+
+/// Whether `token` is a placeholder a finding's own `key.target` determines
+/// ([`ROUTE_PLACEHOLDERS`]). An unknown token is **not** derivable: the CLI-seam parse fence
+/// already refuses an undeclared placeholder at construction, so this predicate stays a pure
+/// lookup rather than a second gate.
+pub fn is_derivable_route_placeholder(token: &str) -> bool {
+    ROUTE_PLACEHOLDERS
+        .iter()
+        .any(|row| row.token == token && row.derivable)
+}
+
+/// The concrete value `token` takes on a route whose finding targets `target`, or `None`
+/// when the target does not carry it (a non-URI target has no `<doctype>` head). `argv` is
+/// the route's own argv, because the **verb decides what address it can accept**: see
+/// [`showable_address`].
+fn derive_route_placeholder(token: &str, target: &str, argv: &[String]) -> Option<String> {
+    match token {
+        "<address>" if is_show_route(argv) => Some(showable_address(target)),
+        "<address>" => Some(target.to_owned()),
+        "<doctype>" => target.split_once(':').map(|(head, _)| head.to_owned()),
+        _ => None,
+    }
+}
+
+/// Whether `argv` is a `jigc doc show …` read route (argv\[0\] is the leading `jigc` the
+/// fence requires).
+fn is_show_route(argv: &[String]) -> bool {
+    argv.get(1).map(String::as_str) == Some("doc")
+        && argv.get(2).map(String::as_str) == Some("show")
+}
+
+/// The **top showable hop** of `target`: `<type>:<slug>#<section>` for a deeper fragment,
+/// the target itself otherwise. A read verb resolves a doc or one of its sections; the
+/// address a `write.not-present` carries is precisely the node that is *absent*, so echoing
+/// it into a `doc show` route would mint a concrete dead end — worse than the placeholder it
+/// replaced. This is the same containing-section read the CLI's `write.not-present`
+/// enrichment computes, so the engine's defensive fallback and the enriched route agree
+/// byte-for-byte on the address (`design/validation.md` → the `write.*` route split).
+fn showable_address(target: &str) -> String {
+    match target.split_once('#') {
+        Some((head, fragment)) => match fragment.split('/').next() {
+            Some(top) if !top.is_empty() => format!("{head}#{top}"),
+            _ => head.to_owned(),
+        },
+        None => target.to_owned(),
+    }
 }
 
 /// Whether `code` is a **declared non-unique exception** — a code whose key is *deliberately
@@ -715,6 +838,18 @@ impl Serialize for Finding {
              (design/surface-contract.md → The route fence)",
             self.code,
         );
+        // P6 route-followability (M47) — the fourth assert on this seam: a mechanical route
+        // may not reach a driver carrying a derivable placeholder. The parse fence proves
+        // the argv runs; this proves it runs *here*, at the address the finding names.
+        debug_assert!(
+            self.route_placeholders_are_substituted(),
+            "finding `{}` is serialized with a mechanical route carrying a derivable \
+             placeholder — fill it from `key.target` where the target is established \
+             (`Finding::substitute_derivable_route_placeholders`), or declare the \
+             placeholder non-derivable with its reason (engine `finding::ROUTE_PLACEHOLDERS`; \
+             design/surface-contract.md → The route fence)",
+            self.code,
+        );
         use serde::ser::SerializeStruct;
         let mut st = serializer.serialize_struct("Finding", 8)?;
         st.serialize_field("severity", &self.severity)?;
@@ -750,6 +885,59 @@ impl Finding {
     /// together are the membership test.
     pub fn carries_declared_target(&self) -> bool {
         self.key().target.is_some() || is_declared_singleton(&self.code)
+    }
+
+    /// **Fill every derivable placeholder on this finding's mechanical route** from its own
+    /// `key.target` ([`ROUTE_PLACEHOLDERS`]) — the P6 substitution, applied wherever a
+    /// target is established ([`readdress_to_uri`]; the CLI's write-failure target stamp).
+    /// A target-less finding, a non-mechanical route, and a route carrying only
+    /// non-derivable placeholders are all left exactly as they are.
+    ///
+    /// The route is rebuilt through the checked [`Route::mechanical`] constructor, so the
+    /// CLI-seam parse fence re-adjudicates the **concrete** argv — a substitution that
+    /// produced an unrunnable command could not be constructed.
+    pub fn substitute_derivable_route_placeholders(&mut self) {
+        let Some(target) = self.key().target else {
+            return;
+        };
+        let Some(route) = &self.route else { return };
+        let RouteKind::Mechanical { argv, tail } = route.kind() else {
+            return;
+        };
+        if !argv.iter().any(|arg| is_derivable_route_placeholder(arg)) {
+            return;
+        }
+        let substituted: Vec<String> = argv
+            .iter()
+            .map(|arg| {
+                if is_derivable_route_placeholder(arg) {
+                    derive_route_placeholder(arg, &target, argv).unwrap_or_else(|| arg.clone())
+                } else {
+                    arg.clone()
+                }
+            })
+            .collect();
+        self.route = Some(Route::mechanical(substituted, tail.clone()));
+    }
+
+    /// Whether this finding honours **P6 route-followability**: no token of its mechanical
+    /// route's argv is a placeholder its own `key.target` could have filled
+    /// ([`ROUTE_PLACEHOLDERS`]). Asserted on every projection by [`Finding`]'s `Serialize` —
+    /// the fourth assert on that seam, and the one the M43 parse fence structurally cannot
+    /// make (it never sees the finding).
+    ///
+    /// A finding with no target has nothing to derive from and passes; the non-derivable
+    /// placeholders (`<task-id>` foremost) are outside the property by declaration, and
+    /// human-route prose spans are outside it entirely — a route's *kind* decides whether it
+    /// carries an argv at all.
+    pub fn route_placeholders_are_substituted(&self) -> bool {
+        let Some(route) = &self.route else {
+            return true;
+        };
+        let RouteKind::Mechanical { argv, .. } = route.kind() else {
+            return true;
+        };
+        self.key().target.is_none() || !argv.iter().any(|arg| is_derivable_route_placeholder(arg))
     }
 
     /// A blocking conformance finding at a [`Location`], with no route — suited to the
@@ -887,6 +1075,143 @@ mod tests {
         assert_eq!(
             findings[1].route.as_ref().map(|r| r.as_str()),
             Some("check the type against `jigc describe`"),
+        );
+    }
+
+    /// **P6 route-followability, the property itself** (M47 Inc 6 T3; `DECISIONS.md` →
+    /// 2026-07-26 M47 Settle, Decision 8 + the pre-decompose review's P6 rider): the
+    /// **fourth** assert on the finding-serialization seam. The CLI-seam parse fence
+    /// proves a mechanical route *parses*; it can say nothing about whether the route an
+    /// agent reads is **followable**, because it never sees the finding. This assert does:
+    /// a mechanical route may not reach a driver carrying a placeholder the finding's own
+    /// `key.target` could have filled.
+    #[test]
+    #[should_panic(expected = "derivable placeholder")]
+    fn serializing_a_route_that_keeps_a_derivable_placeholder_fires_the_seam() {
+        let unsubstituted = Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.required-slot-present",
+            "required slot in section `decision` is empty",
+            Some(Location::addressed("adr:use-sqlite#decision", 3, 1)),
+            Some(Route::mechanical(
+                ["jigc", "doc", "set-slot", "<address>", "--from-file", "-"],
+                " to fill the empty slot",
+            )),
+        );
+
+        let _ = serde_json::to_string(&unsubstituted);
+    }
+
+    /// **The honest carve-out**: `<task-id>` is *not* derivable from `key.target` under any
+    /// rule — one doc is written from many tasks, so the address the finding concerns does
+    /// not name a task. It therefore needs a different source (the CLI dispatch that
+    /// resolved the task) and stays **outside** the property: the identical finding,
+    /// carrying `<task-id>` instead of `<address>`, projects clean and keeps its
+    /// placeholder verbatim.
+    #[test]
+    fn a_task_id_placeholder_is_outside_the_property_and_projects_verbatim() {
+        let carve_out = Finding::graded(
+            Severity::Blocking,
+            "write.not-present",
+            "write rejected: item `9-9-9` in section `releases` not present",
+            Some(Location::addressed("changelog:changelog#releases", 3, 1)),
+            Some(Route::mechanical(
+                [
+                    "jigc",
+                    "doc",
+                    "show",
+                    "changelog:changelog#releases",
+                    "--task",
+                    "<task-id>",
+                ],
+                " to see the section's current item ids",
+            )),
+        );
+
+        let json = serde_json::to_string(&carve_out).expect("the carve-out projects");
+        assert!(
+            json.contains("<task-id>"),
+            "`<task-id>` is declared non-derivable, so it survives the seam verbatim; got:\n{json}",
+        );
+    }
+
+    /// The two tables are **one membership set** stated twice — once as *what may appear*
+    /// (the CLI-seam `DUMMY_SUBSTITUTIONS` parse table) and once as *what must be filled*
+    /// (this crate's derivability table). This half asserts every declared row carries a
+    /// non-empty reason and that exactly the two derivable rows are derivable; the
+    /// cross-table membership fence lives beside `DUMMY_SUBSTITUTIONS`, the only place
+    /// both are visible (`crates/cli/src/route_fence.rs`).
+    #[test]
+    fn the_derivability_table_declares_a_verdict_and_a_reason_per_row() {
+        let derivable: Vec<&str> = ROUTE_PLACEHOLDERS
+            .iter()
+            .filter(|row| row.derivable)
+            .map(|row| row.token)
+            .collect();
+        assert_eq!(
+            derivable,
+            ["<address>", "<doctype>"],
+            "exactly the two placeholders a `key.target` determines are derivable",
+        );
+        for row in ROUTE_PLACEHOLDERS {
+            assert!(
+                row.token.starts_with('<') && row.token.ends_with('>'),
+                "a row's token is `<PLACEHOLDER>`-class; got `{}`",
+                row.token,
+            );
+            assert!(
+                !row.reason.trim().is_empty(),
+                "row `{}` declares a verdict with no reason",
+                row.token,
+            );
+        }
+    }
+
+    /// The **derivation rules**, exercised through the shared method: `<address>` takes the
+    /// finding's own `key.target`, `<doctype>` its `<type>` head — and on a `jigc doc show`
+    /// route the address is **narrowed to the top showable hop**, because a read verb
+    /// resolves a doc or a section, never the absent item a `write.not-present` names.
+    #[test]
+    fn the_shared_substitution_fills_address_and_doctype_from_the_target() {
+        let mut shape_question = Finding::graded(
+            Severity::Blocking,
+            "write.wrong-shape",
+            "write rejected: section `summary` is not repeatable",
+            Some(Location::addressed("commit:log-it#summary", 1, 1)),
+            Some(Route::mechanical(
+                ["jigc", "doc", "schema", "<doctype>"],
+                " to see the declared shape",
+            )),
+        );
+        shape_question.substitute_derivable_route_placeholders();
+        assert_eq!(
+            shape_question.route.as_ref().map(Route::as_str),
+            Some("`jigc doc schema commit` to see the declared shape"),
+        );
+
+        let mut deep_miss = Finding::graded(
+            Severity::Blocking,
+            "write.not-present",
+            "write rejected: item `nonesuch` not present",
+            Some(Location::addressed(
+                "changelog:changelog#releases/1-3-0/changes/nonesuch/notes",
+                1,
+                1,
+            )),
+            Some(Route::mechanical(
+                ["jigc", "doc", "show", "<address>", "--task", "<task-id>"],
+                " to see the section's current item ids",
+            )),
+        );
+        deep_miss.substitute_derivable_route_placeholders();
+        assert_eq!(
+            deep_miss.route.as_ref().map(Route::as_str),
+            Some(
+                "`jigc doc show changelog:changelog#releases --task <task-id>` to see the \
+                 section's current item ids"
+            ),
+            "a `doc show` route narrows to the top showable hop; `<task-id>` is left to its \
+             own source",
         );
     }
 
