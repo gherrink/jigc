@@ -521,6 +521,12 @@ fn run_set_field(
 /// the batch `doc author` apply (the chain-the-primitives B1 path). It does **no**
 /// I/O: the caller reads the buffer (per-leaf: from the staged file; batch: the
 /// running in-memory buffer) and persists the result.
+///
+/// Because it is the shared seam, the engine's **undeclared-address guard** reaches both
+/// doors from one place: a `set-field` at a field leaf the schema does not declare is
+/// rejected `write.unknown-field` before any bytes move, whether it arrives as the
+/// per-leaf verb or as one lowered leaf of a `doc author` payload (M47 — the
+/// undeclared-address table; `crates/cli/tests/undeclared_address_writes.rs`).
 fn apply_field_target(
     schema: &Schema,
     source: &str,
@@ -3972,9 +3978,12 @@ fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
         }
         // The item-leaf field hop. The CLI only extracts the `(section, item, field)`
         // triple; the engine `set_item_field_or_insert` adjudicates shape (item/section
-        // presence) AND the value's declared type — the 2026-06-07 parity gap is closed
-        // (M24 inc-2 T2): a malformed item-field value is rejected at the write verb with
-        // finalize's `schema-conformance.field-value-conformant` code.
+        // presence), the **declaration** of the addressed field leaf, AND the value's
+        // declared type — the 2026-06-07 parity gap is closed (M24 inc-2 T2): a malformed
+        // item-field value is rejected at the write verb with finalize's
+        // `schema-conformance.field-value-conformant` code, and an **undeclared** leaf
+        // with `write.unknown-field` before any bytes move (M47 — the undeclared-address
+        // table; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9).
         Fragment::UnitItemLeaf(section, item, field) => Some(FieldTarget::Item {
             section: section.as_str().to_string(),
             item: item.as_str().to_string(),

@@ -1083,14 +1083,26 @@ fn flow24_foreign_changelog_routes_needs_reconcile() {
     );
 }
 
-/// M40 triage — an UNDECLARED field key written onto a NESTED item must block before
-/// commit, never corrupt the committed store silently. The change-group template
-/// declares NO bullet fields (`category` is the heading-derived id-source, `notes` a
-/// slot), so `set-field …/changes/added/title` splices a stray `- title: Changed`
-/// fields block after the notes prose. The write itself lands exit-0 — mirroring the
-/// top-level undeclared write, whose gate is also validate/finalize, not write time —
-/// but `task validate` must then fire `conformance.unknown-field` and `task finalize`
-/// must block, committing nothing.
+/// M40 triage — an UNDECLARED field key on a NESTED item must never reach the committed
+/// store. The change-group template declares NO bullet fields (`category` is the
+/// heading-derived id-source, `notes` a slot), so a stray `- title: Changed` fields block
+/// after the notes prose is undeclared bytes.
+///
+/// **M47 Increment 6, T4 — the pin moves with the fix that repairs it.** This arm used to
+/// assert the write itself lands **exit-0** ("mirroring the top-level undeclared write,
+/// whose gate is also validate/finalize, not write time") and then be caught downstream.
+/// That premise is gone in both halves: the undeclared address is now rejected at the
+/// **write door**, `write.unknown-field`, nothing persisted, at every depth and at both
+/// the per-leaf and batch verbs (swept as data in `undeclared_address_writes.rs`;
+/// `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9). The claim this arm carries is
+/// unchanged and now proven **twice**, so it asserts the write-time reject first.
+///
+/// The downstream gate keeps its own live witness on the one cause still reachable — the
+/// stray bullet arriving **out of band**, which is exactly the shape the `conformance.*`
+/// route exemption was written for (*"no CLI verb repairs a hand-broken byte"*) and which
+/// the storage model guarantees stays possible (`design/storage.md`: managed docs are
+/// plain, human-editable files). Hand-broken, `task validate` must still fire
+/// `conformance.unknown-field` and `task finalize` must still block, committing nothing.
 #[test]
 fn flow24_nested_undeclared_field_blocks_at_validate_and_finalize() {
     let repo = TempDir::new("nested-undeclared");
@@ -1149,23 +1161,51 @@ fn flow24_nested_undeclared_field_blocks_at_validate_and_finalize() {
     fill_commit(repo, home, pack, task, "changelog", "cut 1.0.0");
 
     // The undeclared write: `title` is not a declared field of the change-group block.
-    // It lands exit-0 (write-time behavior mirrors the top-level undeclared write).
-    ok_stdout(
-        run_jigc(
-            repo,
-            home,
-            pack,
-            &[
-                "doc",
-                "set-field",
-                &format!("{group}/title"),
-                "--value",
-                "Changed",
-            ],
-            None,
-        ),
-        "set-field nested undeclared `title` (exit-0 like its top-level dual)",
+    // The write door refuses it outright and persists nothing — the class the M40 triage
+    // could only catch downstream is now closed at its source.
+    let rejected = run_jigc(
+        repo,
+        home,
+        pack,
+        &[
+            "doc",
+            "set-field",
+            &format!("{group}/title"),
+            "--value",
+            "Changed",
+        ],
+        None,
     );
+    assert!(
+        !rejected.status.success(),
+        "set-field at an undeclared nested field must block; stdout:\n{}",
+        String::from_utf8_lossy(&rejected.stdout),
+    );
+    let reject = String::from_utf8_lossy(&rejected.stderr);
+    assert!(
+        reject.contains("write.unknown-field"),
+        "the reject names the undeclared address; stderr:\n{reject}",
+    );
+    let clean = staged_changelog(repo, task);
+    assert!(
+        !clean.contains("- title: Changed"),
+        "the rejected write persisted nothing; staged:\n{clean}",
+    );
+
+    // The one cause still reachable: the stray bullet arrives **out of band** — a human
+    // edit of the staged working copy, the shape the downstream gate exists for. These
+    // are the exact bytes the write verb used to splice.
+    let staged_path = repo
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join("changelog:changelog.md");
+    fs::write(
+        &staged_path,
+        format!("{clean}\n<!-- fields -->\n- title: Changed\n"),
+    )
+    .expect("hand-break the staged working copy");
     let staged = staged_changelog(repo, task);
     assert!(
         staged.contains("- title: Changed"),

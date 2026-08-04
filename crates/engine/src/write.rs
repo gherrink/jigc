@@ -1779,7 +1779,8 @@ fn set_nested_item_slot(
 /// field, re-renders at the item's nesting depth, and splices canonically. Like its
 /// top-level dual it **adjudicates the value's declared type before touching bytes**
 /// (closing the 2026-06-07 item-field parity gap) — a malformed value is rejected as
-/// [`GenerateError::MalformedValue`]. A genuinely absent item / non-repeatable section →
+/// [`GenerateError::MalformedValue`], an **undeclared** field leaf as
+/// [`GenerateError::UnknownField`]. A genuinely absent item / non-repeatable section →
 /// [`GenerateError`].
 pub fn set_nested_item_field_or_insert(
     schema: &Schema,
@@ -1789,10 +1790,22 @@ pub fn set_nested_item_field_or_insert(
     field_key: &str,
     new_value: &str,
 ) -> Result<String, GenerateError> {
-    if let Some(field) = item_field_schema(schema, section_id, item_ids, field_key)
-        && let Err(why) = check_value(field, &Value::Scalar(new_value.to_string()))
-    {
-        return Err(GenerateError::MalformedValue { why });
+    // The depth-aware twin of [`set_item_field_or_insert`]'s pre-byte adjudication: the
+    // undeclared **nested** item-field address is rejected here, not spliced (M47 — the
+    // undeclared-address table; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9).
+    match item_field_schema(schema, section_id, item_ids, field_key) {
+        Some(field) => {
+            if let Err(why) = check_value(field, &Value::Scalar(new_value.to_string())) {
+                return Err(GenerateError::MalformedValue { why });
+            }
+        }
+        None => {
+            if let Some(err) =
+                undeclared_field_reject(schema, source, section_id, item_ids, field_key)
+            {
+                return Err(err);
+            }
+        }
     }
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
@@ -2637,6 +2650,20 @@ pub enum GenerateError {
         /// A human-readable description of the absent item.
         what: String,
     },
+    /// The addressed **field leaf is not declared** on the item block the address bottoms
+    /// out in. An undeclared address is not a value defect and not a corpus question: the
+    /// schema *can* answer it, so it carries the `write.unknown-field` code — and with it
+    /// the route — the `set-field --unset` sibling ([`unset_item_field_validated`]) has
+    /// always emitted for the identical miss, rather than minting a second contract member
+    /// for one half of one verb (M47 — the undeclared-address table;
+    /// `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9).
+    UnknownField {
+        /// The undeclared field key.
+        key: String,
+        /// Where the write addressed it (`item [...] in section "..."`) — the `--unset`
+        /// sibling's own phrasing, so both doors emit the identical sentence.
+        at: String,
+    },
     /// The `add_item` title has no slug-able content, so it would mint an **empty**
     /// `{#}` anchor. `slugify` is total (maps such input to `""`), so the mint site
     /// rejects it rather than emit a malformed item.
@@ -3282,8 +3309,11 @@ pub fn insert_item_field(
 /// declared type before touching bytes** (the item-field write-time parity of the
 /// header path's [`set_field_validated`], closing the 2026-06-07 gap —
 /// `design/write-commands.md` → Two check times): a value failing its declared type is
-/// rejected as [`GenerateError::MalformedValue`]. A genuinely absent item surfaces as
-/// [`GenerateError::NotPresent`]; a non-repeatable section as [`GenerateError::WrongShape`].
+/// rejected as [`GenerateError::MalformedValue`], and an **undeclared** field leaf on a
+/// present item as [`GenerateError::UnknownField`] — the address is adjudicated before the
+/// bytes, so no write lands at an address the schema does not declare. A genuinely absent
+/// item surfaces as [`GenerateError::NotPresent`]; a non-repeatable section as
+/// [`GenerateError::WrongShape`].
 pub fn set_item_field_or_insert(
     schema: &Schema,
     source: &str,
@@ -3292,10 +3322,23 @@ pub fn set_item_field_or_insert(
     field_key: &str,
     new_value: &str,
 ) -> Result<String, GenerateError> {
-    if let Some(field) = item_field_schema(schema, section_id, &[item_id], field_key)
-        && let Err(why) = check_value(field, &Value::Scalar(new_value.to_string()))
-    {
-        return Err(GenerateError::MalformedValue { why });
+    // Shape/value adjudication **before any bytes move** — including the undeclared
+    // address itself ([`undeclared_field_reject`]): the `None` arm used to fall straight
+    // through and splice the bullet anyway, leaving the doc unreadable at exit 0 (M47 —
+    // the undeclared-address table; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9).
+    match item_field_schema(schema, section_id, &[item_id], field_key) {
+        Some(field) => {
+            if let Err(why) = check_value(field, &Value::Scalar(new_value.to_string())) {
+                return Err(GenerateError::MalformedValue { why });
+            }
+        }
+        None => {
+            if let Some(err) =
+                undeclared_field_reject(schema, source, section_id, &[item_id], field_key)
+            {
+                return Err(err);
+            }
+        }
     }
     match set_item_field(schema, source, section_id, item_id, field_key, new_value) {
         Ok(edited) => Ok(edited),
@@ -6330,6 +6373,14 @@ pub fn generate_error_finding(err: &GenerateError) -> Finding {
         GenerateError::NotPresent { what } => {
             ("write.not-present", format!("write rejected: {what}"))
         }
+        // The undeclared item-field leaf emits the `--unset` sibling's own code AND its
+        // own sentence (`unset_item_field_validated`), so the same miss reads identically
+        // whichever half of the write path adjudicated it — and routes identically too,
+        // since [`write_route`] keys on the code.
+        GenerateError::UnknownField { key, at } => (
+            "write.unknown-field",
+            format!("no field {key:?} declared on {at}"),
+        ),
         GenerateError::UnslugableTitle { title } => (
             "write.unslugable-title",
             format!("write rejected: title {title:?} has no slug-able content for an item id"),
@@ -6370,6 +6421,40 @@ fn field_schema<'a>(
 /// section is not repeatable, a nested-section segment names no declared repeatable, or
 /// the field is not declared at that level (an unknown item field stays unadjudicated
 /// here — the engine does not invent a type to check against).
+/// The **undeclared-address guard** the two insert-capable item-field writers consult
+/// once [`item_field_schema`] has come back `None`: `Some(GenerateError::UnknownField)`
+/// when the write must be rejected **before any bytes move**, `None` when the miss is
+/// really something else and the splice path below is the better diagnostician.
+///
+/// Two ranks outrank the field question, so both fall through here:
+/// - **Shape.** An undeclared or non-repeatable section ([`chain_repeatable`] `None`) is a
+///   section-shaped miss the splice path names `write.unknown-section` / `write.wrong-shape`.
+/// - **Item presence.** An undeclared field *on an item that does not exist* is an item-id
+///   miss, not a field question — the [`unset_item_field_validated`] sibling's settled
+///   ordering (M47 — the write-verb × miss-shape axis). Falling through lets the splice
+///   path emit its own `write.not-present`, so the two doors agree without a second
+///   construction site.
+///
+/// A source that no longer **parses** answers "is the item present?" with "cannot tell",
+/// which is not a yes: it too falls through, leaving today's parse-break diagnosis intact
+/// (and leaving the migration transform caller, which splices over intermediate buffers,
+/// byte-identical).
+fn undeclared_field_reject(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+    field_key: &str,
+) -> Option<GenerateError> {
+    chain_repeatable(schema, section_id, item_ids)?;
+    let doc = parse::parse_sections(schema, source).ok()?;
+    nested_parsed_item(schema, &doc, section_id, item_ids)?;
+    Some(GenerateError::UnknownField {
+        key: field_key.to_string(),
+        at: format!("item {item_ids:?} in section {section_id:?}"),
+    })
+}
+
 fn item_field_schema<'a>(
     schema: &'a Schema,
     section_id: &str,
