@@ -42,7 +42,7 @@
 //!   (8) A plain copy is **provably** independent of its source, in both directions a
 //!       sweep arm mutates — the working tree and the git dir.
 
-mod support;
+use crate::support;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};

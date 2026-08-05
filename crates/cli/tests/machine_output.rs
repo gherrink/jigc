@@ -29,7 +29,7 @@
 //! merged-fd reality the M45 `hook_output` key answers: the captured hook text rides the one
 //! stdout document while the verbatim `--- hook output ---` relay rides stderr.
 
-mod support;
+use crate::support;
 
 use clap::CommandFactory;
 use cli::cli::Cli;

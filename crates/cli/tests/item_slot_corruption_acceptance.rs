@@ -37,7 +37,7 @@
 //! [`implementation/roadmap.md`]: ../../../implementation/roadmap.md
 //! [`DECISIONS.md`]: ../../../DECISIONS.md
 
-mod support;
+use crate::support;
 
 use std::collections::BTreeMap;
 use std::fs;

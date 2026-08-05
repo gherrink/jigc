@@ -65,7 +65,7 @@
 //!       against real tracked symbols, proven by *flipping the lever* (delete the
 //!       symbols, watch both checks fire) so the clean sweep cannot be vacuous.
 
-mod support;
+use crate::support;
 
 use support::trial_corpus::{State, TrialCorpus, unique_root};
 

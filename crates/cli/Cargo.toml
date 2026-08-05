@@ -6,6 +6,18 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
+# The ~250 suite files under `tests/` are NOT cargo targets of their own — they are
+# compiled into the ten `[[test]]` group binaries declared at the bottom of this file
+# (each group root pulls its suites in with `#[path = "../<name>.rs"] mod <name>;`, the
+# idiom `tests/pinned_facts.rs` already used). One cargo target per suite file cost a
+# **macOS Gatekeeper policy assessment per freshly-linked binary** — measured at ~44 s
+# of `syspolicyd` per binary on first execution, i.e. ~3 hours per gate run over 252
+# binaries, against 8 minutes of actual test execution. The count of test *files* was
+# the multiplier, so the gate got slower with every suite the milestone added.
+# `tests/test_target_registration.rs` fences the cost of turning discovery off: a suite
+# file that no group root registers would otherwise compile nowhere and silently never
+# run.
+autotests = false
 
 [lib]
 name = "cli"
@@ -30,3 +42,57 @@ insta = { workspace = true }
 
 [lints]
 workspace = true
+
+# The consolidated integration-test targets — see `autotests = false` above.
+# Generated grouping; a new suite file must be added to exactly one group root, which
+# `tests/test_target_registration.rs` enforces.
+[[test]]
+name = "g_flow"
+path = "tests/groups/g_flow.rs"
+
+[[test]]
+name = "g_migrate"
+path = "tests/groups/g_migrate.rs"
+
+[[test]]
+name = "g_finalize"
+path = "tests/groups/g_finalize.rs"
+
+[[test]]
+name = "g_migration"
+path = "tests/groups/g_migration.rs"
+
+[[test]]
+name = "g_item"
+path = "tests/groups/g_item.rs"
+
+[[test]]
+name = "g_compose"
+path = "tests/groups/g_compose.rs"
+
+[[test]]
+name = "g_config"
+path = "tests/groups/g_config.rs"
+
+[[test]]
+name = "g_milestone"
+path = "tests/groups/g_milestone.rs"
+
+[[test]]
+name = "g_methodology"
+path = "tests/groups/g_methodology.rs"
+
+[[test]]
+name = "g_doc"
+path = "tests/groups/g_doc.rs"
+
+# Solo by necessity — these two suites mutate process-global env vars, which is only
+# sound while each is the sole test in its process (see the group roots for the leak
+# this prevents). Never fold them into a shared group.
+[[test]]
+name = "g_solo_store_sweep"
+path = "tests/groups/g_solo_store_sweep.rs"
+
+[[test]]
+name = "g_solo_trial_corpus"
+path = "tests/groups/g_solo_trial_corpus.rs"

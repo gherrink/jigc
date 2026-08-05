@@ -45,9 +45,11 @@
 //! **A capture is the whole invocation** — stdout, stderr **and** the exit code — and
 //! the only normalization is the repo path → `<REPO>` (the harness owns both). Regen
 //! is one step, refused under CI:
-//! `UPDATE_GOLDENS=1 cargo test -p cli --test compose_goldens`.
+//! `UPDATE_GOLDENS=1 cargo test -p cli compose_goldens::` (this suite is a module
+//! inside the `g_compose` group target since the M47 test-target consolidation, so
+//! `--test compose_goldens` names nothing).
 
-mod support;
+use crate::support;
 
 use std::collections::BTreeSet;
 

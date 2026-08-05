@@ -54,7 +54,13 @@ pub const REPO_TOKEN: &str = "<REPO>";
 
 /// The regen route, quoted verbatim in every failure so a red golden always carries
 /// its own remedy (the surface contract's route floor, applied to our own tests).
-const REGEN_ROUTE: &str = "UPDATE_GOLDENS=1 cargo test -p cli --test <suite>";
+///
+/// A suite is a **module inside its group target** since the M47 test-target
+/// consolidation, so `--test <suite>` no longer names anything — the route addresses
+/// the suite by module path instead. Golden writes are per-member files and never
+/// contend ([pinning.md](../../../../implementation/pinning.md) → Golden layout), so
+/// the nextest form — which runs each test in its own process — regenerates safely too.
+const REGEN_ROUTE: &str = "UPDATE_GOLDENS=1 cargo test -p cli <suite>::";
 
 /// One captured invocation, rendered to the exact bytes a golden holds: the exit
 /// code, then stdout, then stderr, with absolute repo paths normalized to

@@ -1,0 +1,39 @@
+# cargo-nextest configuration.
+#
+# **nextest is NOT the gate.** The gate is `cargo test`
+# (`implementation/dev-workflow.md` → Gate). This config exists because nextest is
+# measurably faster on this suite — 1265 tests in 92 s against `cargo test`'s ~7 min,
+# roughly 4–5× — and because it will become usable once the blocker below is fixed.
+#
+# **The blocker, measured 2026-08-05.** ~30 integration suites shell out to cargo for
+# the detached `doc-code` probe workspace (`crates/cli/probes/doc-code`), and every one
+# of them drives the *same* `probes/doc-code/target/` directory — some with an explicit
+# `--target-dir`, the rest via the manifest default. `doc_code_probe_suite` runs
+# `cargo test` there, which rebuilds and replaces `target/debug/doc-code`. While each
+# suite owned its own test binary this was serialized by construction; consolidating
+# into group targets made suites co-resident, and nextest's process-per-test pool makes
+# them maximally concurrent. The result is reproducible: a run dies on
+# `anchor_root_truth` with *"`doc-code` probe not found"* while another suite is
+# mid-rebuild. `cargo test` survives it because it runs the group binaries one after
+# another, and the gate's probe prebuild makes each in-test build an up-to-date no-op.
+#
+# Fixing it properly means giving each probe-building suite its own `--target-dir` (or
+# routing them all through one built-once shared path that nothing rebuilds). That is a
+# real change across ~30 suites and was deliberately not taken mid-milestone.
+#
+# Until then: use nextest for scoped, exploratory runs, never to certify a gate green.
+
+[profile.default]
+# Most tests drive the real binary through git in a throwaway repo, so they idle far more
+# than they compute; oversubscribing the 10 cores keeps the pool full.
+test-threads = 16
+
+# A suite that drives the binary through a full migration legitimately runs for a while;
+# only shout about the genuinely pathological ones.
+slow-timeout = { period = "60s", terminate-after = 8 }
+
+status-level = "fail"
+final-status-level = "slow"
+
+[profile.ci]
+fail-fast = false

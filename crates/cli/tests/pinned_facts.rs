@@ -103,7 +103,8 @@
 //! beside their suites (`corpus_migration.rs` — the M40 seed-order witness;
 //! `carryover_gate.rs` — the M43 staging-order witness), each citing its audit run.
 
-mod support;
+// This file only aggregates; the `support` module it used to declare is now declared
+// once by the group root, and each repro block below reaches it as `crate::support`.
 
 #[path = "pinned_facts/address_grammar.rs"]
 mod address_grammar;

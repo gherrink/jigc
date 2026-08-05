@@ -43,7 +43,7 @@
 //! [`implementation/pinning.md`]: ../../../implementation/pinning.md
 //! [`implementation/increment-workflow.md`]: ../../../implementation/increment-workflow.md
 
-mod support;
+use crate::support;
 
 use cli::pack::{CompositePack, EmbeddedPack, load_pack_schema};
 use engine::compose::load_workflow_def;

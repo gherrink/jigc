@@ -34,7 +34,7 @@
 //! [`cli::pack::load_pack_schema`] over the shipped `[dev ▸ methodology]` composite) so
 //! a leaf the projection drops **entirely** cannot hide.
 
-mod support;
+use crate::support;
 
 use std::collections::BTreeSet;
 use std::process::Output;

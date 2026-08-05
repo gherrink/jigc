@@ -1,0 +1,54 @@
+// GENERATED GROUP ROOT — see implementation/dev-workflow.md (test target consolidation).
+// Each suite below keeps its own file; this root only makes them one cargo target,
+// so a source change relinks ~10 test binaries instead of 252.
+
+#[path = "../changelog_cold_create.rs"]
+mod changelog_cold_create;
+#[path = "../changelog_gate_advisory.rs"]
+mod changelog_gate_advisory;
+#[path = "../changelog_step_subset.rs"]
+mod changelog_step_subset;
+#[path = "../checkpoint_acceptance.rs"]
+mod checkpoint_acceptance;
+#[path = "../cold_start_zero_commit.rs"]
+mod cold_start_zero_commit;
+#[path = "../config_fill.rs"]
+mod config_fill;
+#[path = "../config_fork.rs"]
+mod config_fork;
+#[path = "../config_fork_compose.rs"]
+mod config_fork_compose;
+#[path = "../config_insert_step.rs"]
+mod config_insert_step;
+#[path = "../config_replace_remove_step.rs"]
+mod config_replace_remove_step;
+#[path = "../flow13_acceptance.rs"]
+mod flow13_acceptance;
+#[path = "../flow13_contract_and_severity.rs"]
+mod flow13_contract_and_severity;
+#[path = "../flow18_acceptance.rs"]
+mod flow18_acceptance;
+#[path = "../flow19_planning_encode.rs"]
+mod flow19_planning_encode;
+#[path = "../flow41_acceptance.rs"]
+mod flow41_acceptance;
+#[path = "../flow44_acceptance.rs"]
+mod flow44_acceptance;
+#[path = "../ingest.rs"]
+mod ingest;
+#[path = "../ingest_finding_keys.rs"]
+mod ingest_finding_keys;
+#[path = "../ingest_flow12.rs"]
+mod ingest_flow12;
+#[path = "../nested_add_item_on_create.rs"]
+mod nested_add_item_on_create;
+#[path = "../nested_item_addressing.rs"]
+mod nested_item_addressing;
+#[path = "../pack_source_determinism.rs"]
+mod pack_source_determinism;
+#[path = "../planning_checklist_sanction.rs"]
+mod planning_checklist_sanction;
+#[path = "../slug_override.rs"]
+mod slug_override;
+#[path = "../stated_at_fence.rs"]
+mod stated_at_fence;

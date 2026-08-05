@@ -23,6 +23,16 @@ publish = false
 [workspace.lints.clippy]
 result_large_err = "allow"
 
+# Full debug info on a workspace whose test surface links the whole of `cli` + `engine`
+# into every test binary cost 6.3 GB of `target/debug/deps` and dominated link time.
+# `line-tables-only` keeps what this repo actually reads — the file:line of a panic in a
+# test backtrace — and drops the type/variable tables only an interactive debugger uses.
+# `unpacked` leaves the debug sections in the object files instead of running `dsymutil`
+# to build a `.dSYM` bundle per binary, which is pure cost when nothing consumes it.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
 # Load-bearing crates (language-runtime.md). Declared centrally; each member
 # opts in per-increment with `<crate>.workspace = true` when it actually needs them.
 [workspace.dependencies]
