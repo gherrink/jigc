@@ -800,6 +800,50 @@ pub struct CreatedDoc {
     /// `doc create` ack's always-present `existed` key
     /// (`design/command-output-contract.md` §2).
     pub existed: bool,
+    /// The **staged pre-image** — the working-area file's bytes as this call found them,
+    /// or `None` when `path` did not exist before the call. It is what makes a create
+    /// undoable *correctly* ([`CreatedDoc::rollback`]), and it is **not** the same
+    /// discriminator as [`existed`](Self::existed): a committed copy-in reports
+    /// `existed: true` while still *provisioning* the staged file, so only the
+    /// same-identity **staged** copy (M45 Inc 5 T2 — `create_gated` hands back the file
+    /// it found and writes nothing) carries a pre-image.
+    ///
+    /// The capture lives here, at the seam that decides which branch ran, rather than in
+    /// each caller: a caller cannot re-derive the minted path without duplicating
+    /// [`mint_instance`]'s slug precedence, and "did this call create the file?" is
+    /// exactly the question a caller has no other way to answer.
+    pub staged_pre_image: Option<Vec<u8>>,
+}
+
+impl CreatedDoc {
+    /// **Undo what this create did to the working area** — restore the captured
+    /// [`staged_pre_image`](Self::staged_pre_image), or remove `path` when the create
+    /// provisioned it (a fresh mint or a committed copy-in, whose pre-image is "absent"
+    /// and whose removal therefore restores exactly the pre-call state — the committed
+    /// source is untouched either way, [`copy_in`] never writes it).
+    ///
+    /// The caller is a multi-step write that persisted the create and then failed
+    /// (`doc author`'s leaf chain): the batch promises "persisted nothing", so the empty
+    /// doc it minted must not leak. **But an unconditional `remove_file` here is data
+    /// loss**: over a same-identity staged copy the create provisioned nothing, so the
+    /// removal deletes the editing session's prior work — silently, on the very path the
+    /// reject's route invites the agent to re-run (M47 Increment 6, the triage fix). It is
+    /// the same **captured-pre-image** discipline finalize's staged-path families follow
+    /// (`design/finalize.md` → Rollback discipline), applied one layer down, to the task
+    /// working area: restore what was found, never assume the call created it.
+    ///
+    /// Best-effort, like every sibling rollback: the write did **not** land, so a restore
+    /// failure must not replace the caller's real (blocking) finding.
+    pub fn rollback(&self) {
+        match &self.staged_pre_image {
+            Some(bytes) => {
+                let _ = std::fs::write(&self.path, bytes);
+            }
+            None => {
+                let _ = std::fs::remove_file(&self.path);
+            }
+        }
+    }
 }
 
 /// The minted identity of a create — the frozen `slug`, the display `title`, the
@@ -963,6 +1007,11 @@ pub fn create(
             address,
             path,
             existed: true,
+            // Step 3 above rejected a pre-existing working-area path, so this copy-in
+            // provisioned the staged file itself: its pre-image is **absent**, and an
+            // undo is the removal of what this call wrote (the committed source is
+            // never touched by `copy_in`).
+            staged_pre_image: None,
         });
     }
 
@@ -975,6 +1024,9 @@ pub fn create(
         address,
         path,
         existed: false,
+        // A fresh mint: step 3 rejected a pre-existing path, so this call wrote the file
+        // and its pre-image is absent — an undo removes it.
+        staged_pre_image: None,
     })
 }
 
@@ -1030,10 +1082,19 @@ pub fn create_gated(
     // derivation identical to `create`'s, so the probe can never diverge from the reject).
     let minted = mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
     let created = if minted.path.exists() {
+        // The staged copy is handed back **as found** — this call writes nothing — so its
+        // bytes are captured as the pre-image: a caller undoing a failed multi-step write
+        // must restore them, never remove a file it did not create (M47 Increment 6).
+        // "Present" is read, never assumed: an unreadable working copy is an IO block
+        // here, because swallowing it into "absent" would make the undo a **deletion** of
+        // a doc that still exists — the failure mode the pre-image exists to prevent.
+        let bytes = std::fs::read(&minted.path)
+            .map_err(|err| io_finding(&minted.address, "read the staged instance", &err))?;
         CreatedDoc {
             address: minted.address,
             path: minted.path,
             existed: true,
+            staged_pre_image: Some(bytes),
         }
     } else {
         create(
@@ -2556,6 +2617,128 @@ sections:
         )
         .expect_err("an unknown type rejects before the gate");
         assert_eq!(unknown.code, "create.unknown-doctype");
+    }
+
+    /// (M47 Increment 6, the triage fix) **A create's rollback restores exactly what it
+    /// found** — the [`CreatedDoc::staged_pre_image`] axis iterated over *all three*
+    /// branches the create seam can take, because the caller that undoes a failed
+    /// multi-step write (`doc author`'s leaf chain) reaches every one of them:
+    ///
+    ///   1. **fresh mint** — pre-image absent; the undo removes the file this call wrote;
+    ///   2. **committed copy-in** — `existed: true`, yet the call still *provisioned* the
+    ///      staged file, so the pre-image is absent too and the undo restores "not
+    ///      staged" while leaving the committed source untouched (the branch that shows
+    ///      `existed` is **not** the discriminator a rollback may key on);
+    ///   3. **same-identity staged copy** — the call hands back the file it found and
+    ///      writes nothing, so the pre-image carries its bytes and the undo puts them
+    ///      back. This is the destructive cell: an unconditional `remove_file` deletes an
+    ///      editing session's prior work.
+    ///
+    /// Branch 3 rolls back over a **clobbered** file rather than an untouched one: the
+    /// restore must be a real write-back, not "it happened to still be there".
+    #[test]
+    fn a_creates_rollback_restores_exactly_what_it_found() {
+        use crate::compose::AllowsCreate;
+
+        let root = TempRoot::new("create-rollback");
+        let task_dir = root.path().join("tasks").join("r");
+        let adr_yaml = b"\
+type: adr
+location: decisions/
+id-from: title
+sections:
+  - id: decision
+    slot: {}
+";
+        let adr = crate::schema::load_schema(adr_yaml).expect("adr fixture loads");
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr.clone());
+        // A bare-form gate entry: create permission, no role binding (the binding is
+        // orthogonal to the pre-image and keeps this pin on one axis).
+        let gate = [AllowsCreate {
+            doc_type: "adr".to_string(),
+            as_role: String::new(),
+        }];
+        let create_it = |id_source: &str| {
+            create_gated(
+                &task_dir,
+                &schemas,
+                &gate,
+                "adr",
+                id_source,
+                root.path(),
+                &[],
+                None,
+            )
+            .expect("the gate admits `adr`")
+        };
+
+        // 1. Fresh mint → pre-image absent; the undo removes what this call provisioned.
+        let fresh = create_it("Rate limit");
+        assert!(
+            fresh.staged_pre_image.is_none(),
+            "a fresh mint provisioned the file itself — its pre-image is absent",
+        );
+        assert!(fresh.path.is_file(), "the fresh mint staged a file");
+        fresh.rollback();
+        assert!(
+            !fresh.path.exists(),
+            "the undo removes the file the fresh mint provisioned",
+        );
+
+        // 2. Committed copy-in → `existed: true`, pre-image STILL absent (the call
+        //    provisioned the staged file from the committed body), and the committed
+        //    source survives the undo untouched.
+        let committed = "---\n---\n\n# Burst limit\n\n## Decision\n\nLimit at the gateway.\n";
+        let committed_path = crate::store::canonical_path(root.path(), &adr, "burst-limit")
+            .expect("adr has a committed path");
+        std::fs::create_dir_all(committed_path.parent().unwrap()).expect("mk decisions/");
+        std::fs::write(&committed_path, committed).expect("commit the prior adr");
+        let warm = create_it("Burst limit");
+        assert!(warm.existed, "a committed slug is copied in for update");
+        assert!(
+            warm.staged_pre_image.is_none(),
+            "the copy-in provisioned the staged file — `existed` is not the rollback \
+             discriminator, the pre-image is",
+        );
+        warm.rollback();
+        assert!(
+            !warm.path.exists(),
+            "the undo restores `not staged` for a copy-in",
+        );
+        assert_eq!(
+            std::fs::read_to_string(&committed_path).expect("read committed"),
+            committed,
+            "the undo never touches the committed source",
+        );
+
+        // 3. The same-identity staged copy → the pre-image carries the found bytes, and
+        //    the undo writes them back over whatever the failed caller left behind.
+        let prior = "---\n---\n\n# Rate limit\n\n## Decision\n\nThe prior work.\n";
+        let seeded = create_it("Rate limit");
+        std::fs::write(&seeded.path, prior).expect("seed the prior work");
+        let over_staged = create_it("Rate limit");
+        assert_eq!(
+            over_staged.path, seeded.path,
+            "the same title mints the same working-area path",
+        );
+        assert!(
+            over_staged.existed,
+            "a same-identity staged copy acks `existed` (M45 Inc 5 T2)",
+        );
+        assert_eq!(
+            over_staged.staged_pre_image.as_deref(),
+            Some(prior.as_bytes()),
+            "the create captured the staged bytes it found",
+        );
+        std::fs::write(&over_staged.path, "clobbered\n").expect("simulate a partial write");
+        over_staged.rollback();
+        assert_eq!(
+            std::fs::read_to_string(&over_staged.path).expect("read staged"),
+            prior,
+            "the undo restores the prior work byte-for-byte — it never removes a file the \
+             create did not provision",
+        );
     }
 
     /// (M42 inc-9 T1) The **doctype-scoped** create blocks key at the **bare doctype

@@ -2142,14 +2142,20 @@ fn run_author(
     // Atomicity (`design/auto-migration.md` → Hardening #1): `create_gated` already
     // persisted the empty instance before the chain, so a mid-chain leaf failure must
     // **also** discard that staged file — otherwise an empty doc leaks for a batch that
-    // "persisted nothing". Rollback = drop the in-memory buffer + remove the staged
-    // file `create_gated` provisioned; the block finding propagates unchanged.
+    // "persisted nothing". Rollback = drop the in-memory buffer + [`CreatedDoc::rollback`],
+    // which restores exactly what the create found: it removes the file the create
+    // provisioned, and **restores the captured pre-image** when the create merely handed
+    // back an already-staged working copy (M45 Inc 5 T2's create-or-update — authoring
+    // over a staged doc merges into it, so an unconditional removal here deleted the
+    // session's prior work, silently, on the path the reject's own route invites the
+    // agent to re-run; M47 Increment 6, the triage fix). The block finding propagates
+    // unchanged either way.
     let mut buffer = read_staged(&created.path, &created.address)?;
     for leaf in &plan.leaves {
         match apply_leaf(schema, &buffer, &created.address, leaf, migration) {
             Ok(edited) => buffer = edited,
             Err(failure) => {
-                let _ = std::fs::remove_file(&created.path);
+                created.rollback();
                 return Err(failure);
             }
         }

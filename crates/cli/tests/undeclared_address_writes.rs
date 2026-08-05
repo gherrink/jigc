@@ -41,8 +41,9 @@
 //! exemption).
 //!
 //! The table is enumerated as **data**, one row per cell, so a write verb added later is
-//! covered by adding a row rather than by remembering this file exists. Every row asserts
-//! the same four things through the real binary:
+//! covered by adding a row rather than by remembering this file exists. Every cell runs
+//! over every **staged state** its verb can meet ([`Staged`], the corpus-state axis), and
+//! each run asserts the same four things through the real binary:
 //!
 //!   1. the write **blocks non-zero**;
 //!   2. the emitted `--format json` finding carries `write.unknown-field` — the *same*
@@ -51,12 +52,27 @@
 //!      the full write address, never the degenerate `null`
 //!      (`design/command-output-contract.md` → The stable finding key);
 //!   3. the staged bytes are **unchanged** — present-and-identical, or absent-and-still-
-//!      absent for the batch cells, whose whole-doc rollback removes the file it created;
+//!      absent when the rejected write ran over a doc-less task;
 //!   4. the containing section is **still readable** through `jigc doc show` — the
 //!      unreadable-doc aftermath is what made this a data-loss class rather than a
-//!      papercut. (For the batch cells the doc never existed, so readability is proven the
-//!      only way it can be: the rejected batch left the doc **authorable**, and the
-//!      corrected payload lands and reads back.)
+//!      papercut. (For a batch cell run over a doc-less task the doc never existed, so
+//!      readability is proven the only way it can be: the rejected batch left the doc
+//!      **authorable**, and the corrected payload lands and reads back.)
+//!
+//! **The corpus-state axis (M47 Increment 6, the triage fix).** The batch verb's rollback
+//! is the destructive half of a working operation: `doc author` over an **already-staged**
+//! doc merges into it (the M45 Inc 5 T2 same-identity staged copy — `create_gated` acks
+//! `existed` and hands back the file it found), so a rejected batch that removes "the file
+//! it created" deletes an editing session's prior work, silently. Pinning the batch cells
+//! only over a doc-less task certified byte-identity in the one topology where that defect
+//! **cannot fire**, so every `Author` row now also runs over [`Staged::PriorWork`] — a
+//! staged doc carrying an unrelated release plus real slot prose — and asserts both that
+//! the reject leaves it byte-identical *and* that the prior work survives the corrected
+//! re-author the emitted route invites. The third state a create can meet — a
+//! **committed** instance copied in — is covered by construction rather than by a row:
+//! the copy-in provisions the staged file within the same call, so its pre-image is
+//! "absent" and the rollback's removal restores exactly the pre-call state (pinned at the
+//! seam, `engine::state` → `a_creates_rollback_restores_exactly_what_it_found`).
 //!
 //! **Why the offending leaf is last in every batch payload.** A `set:` map is applied in
 //! sorted key order and a *following* leaf's own re-parse would catch the corruption
@@ -272,10 +288,32 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
         .to_owned()
 }
 
-/// Bring a repo to a live `log-change` task. With `with_doc`, mint the changelog plus
-/// release `1-3-0` and its nested `Added` change-group (the per-leaf rows write into an
-/// existing doc); without it, leave the task doc-less (the batch rows mint their own).
-fn provision(with_doc: bool) -> Fixture {
+/// The **staged state** a cell's write runs over — the corpus-state axis. A per-leaf verb
+/// needs its target minted; the batch verb meets both an empty working area and one that
+/// already holds a working copy of the very doc it authors.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Staged {
+    /// No doc in the working area — the batch verb mints its own.
+    Absent,
+    /// The fixture doc with release `1-3-0` and its nested `Added` change-group: the
+    /// targets the per-leaf rows address.
+    PerLeafTarget,
+    /// The fixture doc carrying **prior work** none of the batch payloads touches —
+    /// release `0-9-0` with real slot prose. A rejected `doc author` must leave it
+    /// byte-identical, and the corrected re-author must not lose it.
+    PriorWork,
+}
+
+/// The prior-work release the [`Staged::PriorWork`] working copy carries — a version no
+/// batch payload mints, so nothing the payload does can collide with (or recreate) it.
+const PRIOR_RELEASE: &str = "0-9-0";
+
+/// The prior-work slot prose — real authored content, so "the staged doc survived" is a
+/// claim about *content*, not merely about a file existing.
+const PRIOR_PROSE: &str = "The release that was already being authored.\n";
+
+/// Bring a repo to a live `log-change` task, staged per the [`Staged`] axis member.
+fn provision(staged: Staged) -> Fixture {
     let repo = TempDir::new("repo");
     let home = TempDir::new("home");
     let pack = fixture_pack();
@@ -290,8 +328,49 @@ fn provision(with_doc: bool) -> Fixture {
         ),
         "jigc start --workflow log-change",
     );
-    if !with_doc {
-        return fx;
+    match staged {
+        Staged::Absent => return fx,
+        Staged::PriorWork => {
+            let created = ok_stdout(
+                fx.run(
+                    &["doc", "create", "changelog", "--title", "Changelog"],
+                    None,
+                ),
+                "jigc doc create changelog",
+            );
+            assert_eq!(
+                created, ADDR,
+                "the fixture title mints the expected address"
+            );
+            let release = ok_stdout(
+                fx.run(
+                    &[
+                        "doc",
+                        "add-item",
+                        &format!("{ADDR}#releases"),
+                        "--title",
+                        PRIOR_RELEASE,
+                    ],
+                    None,
+                ),
+                "add-item the prior release",
+            );
+            ok_stdout(
+                fx.run(
+                    &[
+                        "doc",
+                        "set-slot",
+                        &format!("{release}/summary"),
+                        "--from-file",
+                        "-",
+                    ],
+                    Some(PRIOR_PROSE.as_bytes()),
+                ),
+                "set-slot the prior release's summary",
+            );
+            return fx;
+        }
+        Staged::PerLeafTarget => {}
     }
 
     let created = ok_stdout(
@@ -455,12 +534,24 @@ enum Write {
         fragment: &'static str,
         prose: &'static str,
     },
-    /// The batch verb, over a doc-less task: the whole-doc payload carrying the undeclared
-    /// leaf **last**, plus the corrected payload the reject must leave landable.
+    /// The batch verb: the whole-doc payload carrying the undeclared leaf **last**, plus
+    /// the corrected payload the reject must leave landable. Runs over **both** staged
+    /// states the verb can meet — a doc-less task and one already holding prior work.
     Author {
         payload: &'static str,
         corrected: &'static str,
     },
+}
+
+impl Write {
+    /// The staged states this cell runs over — the corpus-state axis, enumerated per verb
+    /// rather than per row, so a row added to the table inherits its verb's whole axis.
+    fn stagings(&self) -> &'static [Staged] {
+        match self {
+            Write::Author { .. } => &[Staged::Absent, Staged::PriorWork],
+            Write::SetField { .. } | Write::SetSlot { .. } => &[Staged::PerLeafTarget],
+        }
+    }
 }
 
 /// One cell of the undeclared-address table's **field-leaf** column.
@@ -572,9 +663,15 @@ fn no_write_lands_at_an_undeclared_address() {
     // panic would hide the rest of the table behind the first broken cell.
     let mut broken: Vec<String> = Vec::new();
 
-    for row in ROWS {
-        let batch = matches!(row.write, Write::Author { .. });
-        let fx = provision(!batch);
+    let mut cells = 0usize;
+
+    for (row, &staged) in ROWS
+        .iter()
+        .flat_map(|row| row.write.stagings().iter().map(move |s| (row, s)))
+    {
+        cells += 1;
+        let what = format!("{} (over a {staged:?} working area)", row.what);
+        let fx = provision(staged);
         let before = fx.staged();
 
         let out = match &row.write {
@@ -619,47 +716,48 @@ fn no_write_lands_at_an_undeclared_address() {
         // 1. The write blocks non-zero.
         if out.status.success() {
             broken.push(format!(
-                "  {}: exited 0 (the undeclared address was written); stdout:\n{}",
-                row.what,
+                "  {what}: exited 0 (the undeclared address was written); stdout:\n{}",
                 String::from_utf8_lossy(&out.stdout),
             ));
         } else {
             // 2. The code + the located target.
             let stderr = String::from_utf8_lossy(&out.stderr);
             let report: serde_json::Value = serde_json::from_str(stderr.trim())
-                .unwrap_or_else(|e| panic!("`{}` stderr is JSON: {e}; got:\n{stderr}", row.what));
+                .unwrap_or_else(|e| panic!("`{what}` stderr is JSON: {e}; got:\n{stderr}"));
             let finding = &report["findings"][0];
             let code = finding["code"].as_str().unwrap_or("<absent>");
             if code != "write.unknown-field" {
                 broken.push(format!(
-                    "  {}: expected `write.unknown-field`, got `{code}`",
-                    row.what,
+                    "  {what}: expected `write.unknown-field`, got `{code}`",
                 ));
             }
             let target = finding["key"]["target"].as_str().unwrap_or("<absent>");
             if target != row.target {
                 broken.push(format!(
-                    "  {}: expected the located target `{}`, got `{target}`",
-                    row.what, row.target,
+                    "  {what}: expected the located target `{}`, got `{target}`",
+                    row.target,
                 ));
             }
         }
 
-        // 3. The staged bytes are unchanged — including "still absent". A row whose bytes
-        // *did* move has already wrecked its own doc, so its readability cell is
-        // meaningless: record it and move to the next cell rather than panic the column.
+        // 3. The staged bytes are unchanged — including "still absent". A cell whose bytes
+        // *did* move has already wrecked (or deleted) its own doc, so its readability cell
+        // is meaningless: record it and move on rather than panic the column.
         let after = fx.staged();
         if after != before {
             broken.push(format!(
-                "  {}: persisted a write — the staged state moved from {:?} to {:?}",
-                row.what, before, after,
+                "  {what}: the rejected write moved the staged state from {before:?} to {after:?}",
             ));
             continue;
         }
 
-        // 4. The containing section still reads back. The batch cells never had a doc, so
-        // readability is proven the only way it can be: the reject left the doc
-        // **authorable**, and the corrected payload lands and reads back.
+        // 4. The containing section still reads back. Over a doc-less working area the
+        // batch cells never had a doc, so readability is proven the only way it can be:
+        // the reject left the doc **authorable**, and the corrected payload lands and
+        // reads back. Over a working area that already held prior work, the corrected
+        // re-author — the very action the emitted route invites — must additionally leave
+        // that prior work intact: a rollback that removed the file it did not create loses
+        // it here, silently.
         if let Write::Author { corrected, .. } = &row.write {
             ok_stdout(
                 fx.run(
@@ -674,8 +772,18 @@ fn no_write_lands_at_an_undeclared_address() {
                     ],
                     Some(corrected.as_bytes()),
                 ),
-                "the corrected batch payload",
+                &format!("the corrected batch payload after `{what}`"),
             );
+            if staged == Staged::PriorWork {
+                let survived = fx.staged().unwrap_or_default();
+                if !survived.contains(PRIOR_RELEASE) || !survived.contains(PRIOR_PROSE.trim_end()) {
+                    broken.push(format!(
+                        "  {what}: the corrected re-author lost the prior work \
+                         (release `{PRIOR_RELEASE}` + its summary prose); staged:\n{survived}",
+                    ));
+                    continue;
+                }
+            }
         }
         let shown = ok_stdout(
             fx.run(
@@ -688,22 +796,20 @@ fn no_write_lands_at_an_undeclared_address() {
                 ],
                 None,
             ),
-            &format!("`doc show` after `{}`", row.what),
+            &format!("`doc show` after `{what}`"),
         );
         if row.show_section == "#releases" {
             assert!(
                 shown.contains("1-3-0"),
-                "`{}`: the containing section reads back with its live items; got:\n{shown}",
-                row.what,
+                "`{what}`: the containing section reads back with its live items; got:\n{shown}",
             );
         }
     }
 
     assert!(
         broken.is_empty(),
-        "{} defect(s) across {} cells of the undeclared-address table:\n{}",
+        "{} defect(s) across {cells} cells of the undeclared-address table:\n{}",
         broken.len(),
-        ROWS.len(),
         broken.join("\n"),
     );
 }
