@@ -20,7 +20,8 @@
 //!     absent parent, the eighth cell the baseline census under-counted · and, added
 //!     with the route column, `retitle-item` at an absent **nested** item under a real
 //!     parent, the deepest strip);
-//!   * the **undeclared-section** miss → `write.unknown-section`;
+//!   * the **undeclared-section** misses → `write.unknown-section`, over the same six
+//!     item-addressing verbs plus the bare `add-item` (see the column note below);
 //!   * a **genuine declared-shape defect** (`add-item` into a non-repeatable section) →
 //!     `write.wrong-shape`, which the flip deliberately leaves standing.
 //!
@@ -55,6 +56,27 @@
 //! the one shape that sidesteps the enum arm, while `crates/cli/pack/schemas/changelog.yaml`
 //! declares it an **enum**. A fixture authored in the case the implementation handles
 //! proves nothing about the case the corpus actually has.
+//!
+//! **The undeclared-SECTION column is swept like the item-id one.** The matrix is verb ×
+//! miss-shape, and this column shipped with **one** cell (bare `add-item`) against the
+//! item-id column's twelve — so the same miss came back four different ways underneath it:
+//! `set-slot` / `remove-item` answered `write.not-present` (and, enriched, handed back a
+//! `jigc doc show <doc>#<undeclared-section>` whose **verbatim run exits 1** — the
+//! un-followable route this suite's T2 property exists to forbid), `retitle-item` / nested
+//! `add-item` answered `write.wrong-shape`, and `set-field --unset` answered
+//! `write.unknown-field` about a field on an item in a section that does not exist. Six
+//! rows join the column, and the shape cells' route is now **run verbatim** too: it must be
+//! `jigc doc schema <doctype>` — the read that genuinely answers a shape question — and it
+//! must exit 0 naming the doctype's declared sections. Engine-side the fix is one ranked
+//! predicate (`engine::write::section_undeclared`, rank 1 of shape → presence → leaf)
+//! opening every item-addressing door.
+//!
+//! **Declared bound.** The two *section-level* address forms — `set-slot` / `set-field` at
+//! `#<undeclared-section>` with no item hop — are **not** cells of this matrix: the CLI
+//! address resolver refuses to resolve a slot/field target inside an undeclared section and
+//! emits the `{"error": …}` envelope, so they never reach a write door and never mint a
+//! `write.*` finding. That is a different seam (target resolution, not the write-reject
+//! taxonomy) and is left as it is.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -552,6 +574,88 @@ const CELLS: &[Cell] = &[
         code: "write.not-present",
         route_section: Some("staged"),
     },
+    // ---- The **undeclared-section** column. The row below (`add-item` at a bare
+    // undeclared section) was for a long time the column's only cell, so the matrix had
+    // 1 of N there while the item-id-miss column had every verb — and five of the six
+    // item-addressing verbs disagreed underneath it: `set-slot` / `remove-item` claimed
+    // `write.not-present` (and handed back a `jigc doc show <doc>#<undeclared>` that
+    // **exits 1** — a route that does not answer), `retitle-item` / nested `add-item`
+    // claimed `write.wrong-shape`, and `set-field --unset` claimed `write.unknown-field`
+    // about a field on an item in a section that does not exist. Shape outranks presence
+    // and presence outranks the leaf (`design/write-commands.md` → Adjudication order),
+    // so an undeclared section is `write.unknown-section` at **every** door, whose route
+    // is the schema read that genuinely answers it.
+    Cell {
+        what: "set-slot at an item in an undeclared section",
+        args: &[
+            "doc",
+            "set-slot",
+            "{addr}#no-such-section/9-9-9/summary",
+            "--from-file",
+            "-",
+        ],
+        stdin: Some(b"A summary.\n"),
+        code: "write.unknown-section",
+        route_section: None,
+    },
+    Cell {
+        what: "remove-item at an item in an undeclared section",
+        args: &["doc", "remove-item", "{addr}#no-such-section/9-9-9"],
+        stdin: None,
+        code: "write.unknown-section",
+        route_section: None,
+    },
+    Cell {
+        what: "set-field --value at an item in an undeclared section",
+        args: &[
+            "doc",
+            "set-field",
+            "{addr}#no-such-section/9-9-9/link",
+            "--value",
+            "https://x",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route_section: None,
+    },
+    Cell {
+        what: "set-field --unset at an item in an undeclared section",
+        args: &[
+            "doc",
+            "set-field",
+            "{addr}#no-such-section/9-9-9/link",
+            "--unset",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route_section: None,
+    },
+    Cell {
+        what: "retitle-item at an item in an undeclared section",
+        args: &[
+            "doc",
+            "retitle-item",
+            "{addr}#no-such-section/9-9-9",
+            "--title",
+            "9.9.9",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route_section: None,
+    },
+    Cell {
+        what: "nested add-item under an item in an undeclared section",
+        args: &[
+            "doc",
+            "add-item",
+            "{addr}#no-such-section/9-9-9/changes",
+            "--title",
+            "Added",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route_section: None,
+    },
     Cell {
         what: "add-item into an undeclared section",
         args: &[
@@ -643,6 +747,33 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
                 assert!(
                     shown.contains(live),
                     "`{}`: the emitted route reveals the section's live item ids; got:\n{shown}",
+                    cell.what,
+                );
+            }
+        }
+
+        // The complement: a **shape** cell must route at the schema read that answers a
+        // shape question — never at a `jigc doc show` of the very section the address got
+        // wrong, which is the un-followable route (it exits 1) an unranked declaredness
+        // check hands back. The CLI seam resolves the `<doctype>` placeholder, so this
+        // route is run **verbatim** too: it must exit 0 and name the doctype's real
+        // sections — the declared shape the agent addressed past.
+        if cell.route_section.is_none() && named_its_miss {
+            let route = report["findings"][0]["route"]
+                .as_str()
+                .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", cell.what));
+            let cmd = backticked(route, cell.what);
+            let expected = "jigc doc schema changelog";
+            if cmd != expected {
+                broken.push(format!(
+                    "  {}: expected route `{}`, got `{}`",
+                    cell.what, expected, cmd
+                ));
+            } else {
+                let shown = fx.run_route(cmd, cell.what);
+                assert!(
+                    shown.contains("releases"),
+                    "`{}`: the emitted route reveals the doctype's declared sections; got:\n{shown}",
                     cell.what,
                 );
             }

@@ -1207,6 +1207,10 @@ pub fn remove_item(
     section_id: &str,
     item_id: &str,
 ) -> Result<String, SpliceError> {
+    // Rank 1 — the schema-declaredness question, ahead of the parsed-doc lookup below.
+    if let Some(err) = undeclared_section_splice(schema, section_id) {
+        return Err(err);
+    }
     let doc = parse::parse_sections(schema, source)
         .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
@@ -1512,6 +1516,12 @@ fn set_item_slot(
     leaf_id: &str,
     new_prose: &str,
 ) -> Result<String, SpliceError> {
+    // Rank 1 — an **undeclared** section outranks source presence
+    // ([`undeclared_section_splice`]): the section lookup below reads the *parsed doc*, so
+    // without this an address the schema never declared came back "section not present".
+    if let Some(err) = undeclared_section_splice(schema, section_id) {
+        return Err(err);
+    }
     let doc = parse::parse_sections(schema, source)
         .map_err(|findings| SpliceError::NotConformant { findings })?;
     let section = doc
@@ -1765,6 +1775,10 @@ fn set_nested_item_slot(
     leaf_id: &str,
     new_prose: &str,
 ) -> Result<String, SpliceError> {
+    // Rank 1, at every nesting depth (the top-level dual's ordering).
+    if let Some(err) = undeclared_section_splice(schema, section_id) {
+        return Err(err);
+    }
     let doc = parse::parse_sections(schema, source)
         .map_err(|findings| SpliceError::NotConformant { findings })?;
     let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
@@ -1824,6 +1838,10 @@ pub fn set_nested_item_field_or_insert(
     field_key: &str,
     new_value: &str,
 ) -> Result<String, GenerateError> {
+    // Rank 1 — the undeclared section, as the top-level dual.
+    if let Some(err) = undeclared_section_generate(schema, section_id) {
+        return Err(err);
+    }
     // The depth-aware twin of [`set_item_field_or_insert`]'s pre-byte adjudication: the
     // undeclared **nested** item-field address is rejected here, not spliced (M47 — the
     // undeclared-address table; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9).
@@ -1888,7 +1906,10 @@ pub fn set_nested_item_field_or_insert(
 /// appends a freshly-minted nested [`ItemContent`] (mint-empty / multi-slot skeleton per
 /// the nested block's template), re-renders the parent at its depth, and splices it back
 /// canonically. A minted id colliding with a present nested item under that parent →
-/// [`GenerateError::AlreadyPresent`]; an unslugable title → [`GenerateError::UnslugableTitle`].
+/// [`GenerateError::AlreadyPresent`]; an unslugable title → [`GenerateError::UnslugableTitle`];
+/// an **undeclared section** → [`GenerateError::UnknownSection`]
+/// ([`undeclared_section_generate`], rank 1, ahead of the parse), a declared-but-wrong
+/// shape → [`GenerateError::WrongShape`].
 #[allow(clippy::too_many_arguments)]
 pub fn add_nested_item(
     schema: &Schema,
@@ -1900,6 +1921,12 @@ pub fn add_nested_item(
     slot: Option<&str>,
     fields: &[Field],
 ) -> Result<String, GenerateError> {
+    // Rank 1 — the undeclared section, answered from the schema alone and so **ahead of
+    // the parse**: the address is wrong whatever state the source is in, and every sibling
+    // door opens with the same check.
+    if let Some(err) = undeclared_section_generate(schema, section_id) {
+        return Err(err);
+    }
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
     })?;
@@ -2008,6 +2035,10 @@ pub fn remove_nested_item(
     section_id: &str,
     item_ids: &[&str],
 ) -> Result<String, SpliceError> {
+    // Rank 1, as the top-level dual ([`remove_item`]).
+    if let Some(err) = undeclared_section_splice(schema, section_id) {
+        return Err(err);
+    }
     let doc = parse::parse_sections(schema, source)
         .map_err(|findings| SpliceError::NotConformant { findings })?;
     if nested_parsed_item(schema, &doc, section_id, item_ids).is_none() {
@@ -2058,10 +2089,12 @@ pub fn remove_nested_item(
 /// empty/whitespace title, a title carrying a control character (which would split
 /// the heading line) or embedding the `{#` anchor pattern (which would out-shadow
 /// the frozen anchor on re-parse) — all [`reject_malformed_title`], all checks on
-/// the caller's own argument, so all ahead of presence — an **undeclared or
-/// non-repeatable section**, or a non-conformant source → [`GenerateError::WrongShape`];
-/// a declared chain naming an item that is simply **absent** →
-/// [`GenerateError::NotPresent`], routed to the containing section's live ids.
+/// the caller's own argument, so all ahead of presence. An **undeclared section** →
+/// [`GenerateError::UnknownSection`] ([`undeclared_section_generate`], rank 1, ahead of
+/// the parse); a declared but **non-repeatable** section, an unknown nested hop, or a
+/// non-conformant source → [`GenerateError::WrongShape`]; a declared chain naming an item
+/// that is simply **absent** → [`GenerateError::NotPresent`], routed to the containing
+/// section's live ids.
 pub fn retitle_item(
     schema: &Schema,
     source: &str,
@@ -2079,6 +2112,13 @@ pub fn retitle_item(
     // frozen `{#id}` on re-parse — the reslug-hijack this verb's contract forbids.
     reject_malformed_title(title)?;
 
+    // Rank 1 — within shape, the **undeclared** section is its own answer
+    // ([`undeclared_section_generate`]): `write.unknown-section`, not the
+    // `write.wrong-shape` that means "declared, but the wrong shape". Answered from the
+    // schema alone, so it sits ahead of the parse, as every sibling door.
+    if let Some(err) = undeclared_section_generate(schema, section_id) {
+        return Err(err);
+    }
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
     })?;
@@ -3367,6 +3407,11 @@ pub fn set_item_field_or_insert(
     field_key: &str,
     new_value: &str,
 ) -> Result<String, GenerateError> {
+    // Rank 1 — the undeclared section, stated at the door rather than left to whichever
+    // deeper lookup happens to notice it first ([`undeclared_section_generate`]).
+    if let Some(err) = undeclared_section_generate(schema, section_id) {
+        return Err(err);
+    }
     // Shape/value adjudication **before any bytes move** — including the undeclared
     // address itself ([`undeclared_field_reject`]): the `None` arm used to fall straight
     // through and splice the bullet anyway, leaving the doc unreadable at exit 0 (M47 —
@@ -5839,8 +5884,10 @@ pub fn unset_field_validated(
 ///
 /// Three answers are deliberately **not** "absent":
 /// - a **shape** miss (an undeclared or non-repeatable section, an unknown nested-section
-///   hop — [`physical_item_chain`] `None`): shape outranks presence, and the splice path
-///   below names it `write.unknown-section` / `write.wrong-shape`;
+///   hop — [`physical_item_chain`] `None`): shape outranks presence, and it is named a rank
+///   above — the *undeclared* section by each door's opening [`section_undeclared`] check
+///   (`write.unknown-section`), the declared-but-wrong shape by the splice path below
+///   (`write.wrong-shape`);
 /// - a **source that no longer parses**: "cannot tell" is not a yes, so today's
 ///   parse-break diagnosis is left standing;
 /// - a chain that **resolves** to a live item.
@@ -5878,6 +5925,13 @@ pub fn unset_item_field_validated(
     item_ids: &[&str],
     field_key: &str,
 ) -> Result<String, Finding> {
+    // Rank 1 — the undeclared section outranks both presence and the field question
+    // ([`undeclared_section_generate`]): `item_chain_absent` answers "not absent" for a
+    // shape miss, so without this the door fell through to `write.unknown-field` and
+    // asserted a field question about an item in a section that does not exist.
+    if let Some(err) = undeclared_section_generate(schema, section_id) {
+        return Err(generate_error_finding(&err));
+    }
     if item_chain_absent(schema, source, section_id, item_ids) {
         return Err(generate_error_finding(&GenerateError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?} not present"),
@@ -6490,6 +6544,45 @@ fn field_schema<'a>(
     fields.iter().find(|f| f.id == field_key)
 }
 
+/// **Rank 1 of the write address adjudication order** — shape → item presence → leaf
+/// (`design/write-commands.md` → Every write resolves its address before it moves bytes):
+/// does the address name a section the schema **does not declare**?
+///
+/// Asked *first* by every item-addressing write door, because neither lower rank can
+/// answer it honestly: an undeclared section holds no items whose presence could be
+/// adjudicated, and no block on which a leaf could be declared. Answering it lower down is
+/// what let one miss emit four different codes across the six item-addressing verbs —
+/// `write.not-present` at [`set_item_slot`] / [`remove_item`] (whose enriched route is a
+/// `jigc doc show <doc>#<undeclared-section>` that **exits 1**, a recovery that does not
+/// answer), `write.wrong-shape` at [`retitle_item`] / [`add_nested_item`], and
+/// `write.unknown-field` at [`unset_item_field_validated`], which asserted a field
+/// question about an item in a section that does not exist (M47 — the write-verb ×
+/// miss-shape axis, the undeclared-**section** column).
+///
+/// Deliberately narrower than "is this a shape miss": a **declared but non-repeatable**
+/// section is a genuine declared-shape defect each door keeps diagnosing itself
+/// (`write.wrong-shape`), and only the *undeclared* section is re-ranked here.
+fn section_undeclared(schema: &Schema, section_id: &str) -> bool {
+    !schema.sections.iter().any(|s| s.id == section_id)
+}
+
+/// [`section_undeclared`] as the **splice** path's reject — the ranked-first `?`-able form
+/// the [`SpliceError`]-returning item doors open with.
+fn undeclared_section_splice(schema: &Schema, section_id: &str) -> Option<SpliceError> {
+    section_undeclared(schema, section_id).then(|| SpliceError::UndeclaredSection {
+        section: section_id.to_string(),
+    })
+}
+
+/// [`section_undeclared`] as the **generation** path's reject — the [`GenerateError`]
+/// sibling of [`undeclared_section_splice`]. Both render `write.unknown-section`, whose
+/// route is the `jigc doc schema <doctype>` read that genuinely answers the miss.
+fn undeclared_section_generate(schema: &Schema, section_id: &str) -> Option<GenerateError> {
+    section_undeclared(schema, section_id).then(|| GenerateError::UnknownSection {
+        id: section_id.to_string(),
+    })
+}
+
 /// The **undeclared-address guard** the two insert-capable item-field writers consult
 /// once [`item_field_schema`] has come back `None`: `Some(GenerateError::UnknownField)`
 /// when the write must be rejected **before any bytes move**, `None` when the miss is
@@ -6497,7 +6590,9 @@ fn field_schema<'a>(
 ///
 /// Two ranks outrank the field question, so both fall through here:
 /// - **Shape.** An undeclared or non-repeatable section ([`chain_repeatable`] `None`) is a
-///   section-shaped miss the splice path names `write.unknown-section` / `write.wrong-shape`.
+///   section-shaped miss named a rank above — the undeclared section by the door's own
+///   [`undeclared_section_generate`] check (`write.unknown-section`), the
+///   declared-but-not-repeatable one by the splice path (`write.wrong-shape`).
 /// - **Item presence.** An undeclared field *on an item that does not exist* is an item-id
 ///   miss, not a field question — the [`unset_item_field_validated`] sibling's settled
 ///   ordering (M47 — the write-verb × miss-shape axis). Falling through lets the splice
@@ -11770,11 +11865,17 @@ OAuth device-code flow.
     /// Done-criterion (3): an absent item — top-level, nested, or under a mis-named
     /// parent — and an unknown section both error, never a wrong-item write.
     ///
-    /// **M47 — the two now carry *different* errors, and that is the point.** An absent
+    /// **M47 — the three carry *different* errors, and that is the point.** An absent
     /// item is an item-**id** miss ([`GenerateError::NotPresent`], routed to the
-    /// containing section's live ids); an undeclared section is a genuine shape question
-    /// the schema *can* answer, so it keeps [`GenerateError::WrongShape`]. Before the flip
-    /// both were `WrongShape`, which is why this test could not tell them apart.
+    /// containing section's live ids); an **undeclared section** is
+    /// [`GenerateError::UnknownSection`] → `write.unknown-section`, the schema read that
+    /// answers it; [`GenerateError::WrongShape`] is reserved for a *declared* section of
+    /// the wrong shape. Before the flip all three were `WrongShape`, which is why this
+    /// test could not tell them apart; the undeclared-section arm was **revised from
+    /// `WrongShape` to `UnknownSection`** when the undeclared-**section** column of the
+    /// verb × miss-shape matrix was swept ([`section_undeclared`], rank 1) — the code the
+    /// `write.*` route split has always specified for it
+    /// (`design/validation.md`; `crates/cli/tests/write_miss_shape_axis.rs`).
     #[test]
     fn absent_item_or_section_errors_with_the_existing_shapes() {
         let schema = changelog_schema();
@@ -11792,9 +11893,20 @@ OAuth device-code flow.
         )
         .expect_err("no such nested group");
         assert!(matches!(err, GenerateError::NotPresent { .. }));
-        // Unknown section — a shape question, untouched by the flip.
+        // Undeclared section — the schema can answer it, so it is its own code.
         let err = retitle_item(&schema, TWO_PARENT, "nope", &["1-2-0"], "New")
             .expect_err("no such section");
+        assert!(matches!(err, GenerateError::UnknownSection { .. }));
+        // A **declared** section addressed through an undeclared nested hop keeps
+        // `WrongShape` — the distinction the arm above would otherwise erase.
+        let err = retitle_item(
+            &schema,
+            TWO_PARENT,
+            "releases",
+            &["1-2-0", "nope", "x"],
+            "New",
+        )
+        .expect_err("no such nested repeatable");
         assert!(matches!(err, GenerateError::WrongShape { .. }));
     }
 
