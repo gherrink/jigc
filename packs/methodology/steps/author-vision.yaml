@@ -1,5 +1,5 @@
 <!-- research-advisory -->
-No committed research exists yet — a vision grounds in the research it cites, so consider running `do-research` first to gather it. (Advisory, not required: a vision may ground in experience, and grounding can take several research rounds.)
+No committed research exists yet — a vision grounds in the research it cites, so consider running `do-research` first to gather it. Do that in a separate task and come back: leave this task open, finalize the research, then re-compose here with `jigc start --task {{task.id}}` — the research you just committed is in view from there. (Advisory, not required: a vision may ground in experience, and grounding can take several research rounds.)
 <!-- /research-advisory -->
 Form the project vision on the `vision` singleton. Create it — this is
 safe whether or not it already exists (an existing committed vision is copied in
@@ -15,7 +15,10 @@ research this vision is formed from — pass ALL of it in ONE call as an inline 
 jigc doc set-field vision:vision#meta/grounded-in --value "[research:<slug>, …]" --task {{task.id}}
 
 Now RE-COMPOSE so the grounding research comes into view — the findings below
-resolve only after `grounded-in` is set:
+resolve only after `grounded-in` is set. The same call is the way back in when the
+grounding research was committed in a separate task while this one stayed open: a
+commit that landed elsewhere re-pins this task, as long as its paths are disjoint
+from this task's own:
 
 jigc start --task {{task.id}}
 

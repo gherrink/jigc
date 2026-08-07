@@ -94,7 +94,7 @@ at finalize.
 Run: `jigc task finalize sweep-the-compose-surface`
 resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
 what's-left: `jigc task validate sweep-the-compose-surface`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize
-task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
 create-gates: prd
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

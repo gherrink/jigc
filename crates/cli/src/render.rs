@@ -254,7 +254,13 @@ fn minted_header(view: &Composition) -> String {
 ///   state is produced instead of learned from the more-than-one rejection). It also
 ///   names the deliberate-parallelize affordance (findings §71): several open tasks
 ///   are **legal**, each addressed by its own `--task` — the single-active default is
-///   a convenience, not a one-task cap.
+///   a convenience, not a one-task cap. The parallel claim is **scoped to what holds**
+///   (M47 Inc 8 / T2, law 1, the Inc 4 T4 mold): parallel tasks are carried while their
+///   work stays disjoint, and a task whose base moved on **overlapping** paths blocks
+///   and names them — the identical `decide_base_repin` decision the resume door named
+///   two lines above and `finalize` both make (`design/finalize.md` → Parallel
+///   hand-editing). Before Inc 8 the claim was flat, and the resume door it invites the
+///   agent back through refused the sequence outright.
 ///
 /// Unlike [`minted_header`] — which states an **invocation fact** (this run minted)
 /// and so stays off a resume — these state **standing affordances of the active-task
@@ -269,7 +275,7 @@ fn task_state_lines(view: &Composition) -> String {
     format!(
         "resume: `jigc start --task {id}`   — re-composes this workflow if context is lost\n\
          what's-left: `jigc task validate {id}`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize\n\
-         task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel\n"
+         task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths\n"
     )
 }
 
@@ -3238,13 +3244,26 @@ mod tests {
             "the B3 statement also names the deliberate-parallelize affordance; \
              got:\n{scope}",
         );
+        // …and the affordance is SCOPED, not flat (M47 Inc 8 / T2, law 1): the condition
+        // it holds under, and the block that follows when it does not. The behaviour
+        // behind both halves is driven end-to-end in `start_compose.rs`.
+        assert!(
+            scope.contains("disjoint")
+                && scope.contains("blocks")
+                && scope.contains("overlapping paths"),
+            "the parallel claim names its condition and the overlap that blocks; \
+             got:\n{scope}",
+        );
         // Stack order: text, then the task-state lines, then gates, then footer.
         assert!(
             agent.contains(
                 "task scope: `jigc doc` writes default to the single active task; \
                  `--task add-rate-limiter` is the explicit override and wins when \
                  several are active — several open tasks are legal, each addressed by \
-                 its own `--task`, so you can run them in parallel\ncreate-gates: adr\n— jigc"
+                 its own `--task`, so you can run them in parallel while their work \
+                 stays disjoint; once a sibling task commits a path this one also \
+                 touches, resuming or finalizing here blocks and names the overlapping \
+                 paths\ncreate-gates: adr\n— jigc"
             ),
             "the task-state lines sit above the gates line + footer; got:\n{agent}",
         );

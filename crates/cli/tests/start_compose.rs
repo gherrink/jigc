@@ -176,7 +176,7 @@ at finalize.
 Run: `jigc task finalize add-rate-limiter`
 resume: `jigc start --task add-rate-limiter`   — re-composes this workflow if context is lost
 what's-left: `jigc task validate add-rate-limiter`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize
-task scope: `jigc doc` writes default to the single active task; `--task add-rate-limiter` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+task scope: `jigc doc` writes default to the single active task; `--task add-rate-limiter` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
 create-gates: adr, changelog
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
@@ -216,6 +216,88 @@ fn run_start(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
         .env("HOME", home)
         .output()
         .expect("run the jigc binary")
+}
+
+/// Run `jigc <args>` with `cwd = repo` and `$HOME = home` — the whole verb surface
+/// ([`run_start`] generalized), for the parallel-task arms that drive `doc` + `task`
+/// alongside `start`.
+fn run_jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command.args(args);
+    command
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Assert a `jigc` invocation succeeded, surfacing both streams on failure.
+fn assert_ok(out: &std::process::Output, what: &str) {
+    assert!(
+        out.status.success(),
+        "{what} must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
+fn git_in(repo: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string()
+}
+
+/// Fill `task`'s provisioned commit doc to a finalize-clean state, every write addressed
+/// by its **own** `--task` — the surface the composed `task scope:` line names, and with
+/// two tasks open the only form the write door accepts. The summary rides a file under
+/// `home` (never the repo), so no probe path is dirtied by the fixture itself.
+fn fill_commit(repo: &Path, home: &Path, task: &str, summary: &str) {
+    assert_ok(
+        &run_jigc(
+            repo,
+            home,
+            &[
+                "doc",
+                "set-field",
+                &format!("commit:{task}#type"),
+                "--value",
+                "fix",
+                "--task",
+                task,
+            ],
+        ),
+        &format!("set-field commit:{task}#type"),
+    );
+    let summary_file = home.join(format!("{task}-summary.txt"));
+    fs::write(&summary_file, format!("{summary}\n")).expect("write the summary source");
+    assert_ok(
+        &run_jigc(
+            repo,
+            home,
+            &[
+                "doc",
+                "set-slot",
+                &format!("commit:{task}#summary"),
+                "--from-file",
+                summary_file.to_str().expect("utf-8 path"),
+                "--task",
+                task,
+            ],
+        ),
+        &format!("set-slot commit:{task}#summary"),
+    );
 }
 
 /// Run `jigc config <args>` with `cwd = repo` and `$HOME = home`.
@@ -1903,5 +1985,146 @@ fn store_placement_doctype_composes_its_committed_singleton() {
         stdout.contains("> changelog:changelog"),
         "`{{store.changelog}}` must surface the committed placement singleton as a \
          `> changelog:changelog` Content line; got:\n{stdout}",
+    );
+}
+
+/// M47 Increment 8 / T2 (N7): the composed `task scope:` line's parallelism claim, driven
+/// **literally** — two open tasks, each addressed by its own `--task`, one finalizes and
+/// the other resumes and finalizes on top of it, every call exit 0.
+///
+/// The line promised *"you can run them in parallel"* flat, while the resume door
+/// blanket-refused any `base != HEAD` — so the very sequence it invited (finalize one of
+/// the parallel pair, come back to the other) was refused by the binary at the door the
+/// same footer names two lines above (`resume:`). The door is fixed (M47 Inc 8 / T1) and
+/// the claim is now **scoped to what holds**: parallel work is carried while it stays
+/// disjoint, and the counter-arm below drives the overlap the scoping names.
+#[test]
+fn two_open_tasks_run_in_parallel_and_both_finalize() {
+    let repo = TempDir::new("parallel-disjoint");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // Two open tasks through the same front door.
+    let alpha = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "quick-fix", "fix alpha"],
+    );
+    assert_ok(&alpha, "`jigc start --workflow quick-fix \"fix alpha\"`");
+    let beta = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "quick-fix", "fix beta"],
+    );
+    assert_ok(&beta, "`jigc start --workflow quick-fix \"fix beta\"`");
+
+    // The claim is scoped where it is printed: the `task scope:` line names the condition
+    // the parallel promise holds under, and the block that follows when it does not — a
+    // flat promise here is the law-1 lie this arm exists to keep out.
+    let composed = String::from_utf8(beta.stdout).expect("utf-8 composed stdout");
+    let scope = composed
+        .lines()
+        .find(|l| l.starts_with("task scope:"))
+        .unwrap_or_else(|| panic!("a task-scope line renders; got:\n{composed}"));
+    assert!(
+        scope.contains("several open tasks are legal") && scope.contains("parallel"),
+        "the parallelize affordance survives the scoping; got:\n{scope}",
+    );
+    assert!(
+        scope.contains("disjoint"),
+        "the parallel claim must name the condition it holds under — the work stays \
+         disjoint; got:\n{scope}",
+    );
+    assert!(
+        scope.contains("blocks") && scope.contains("overlap"),
+        "and must name what happens when it does not — the overlapping paths block, \
+         which is what makes the promise followable; got:\n{scope}",
+    );
+
+    // Both commit docs are authored while BOTH tasks are open, each addressed by its own
+    // `--task` — the line's other half, exercised rather than asserted.
+    fill_commit(repo.path(), home.path(), "fix-alpha", "fix alpha");
+    fill_commit(repo.path(), home.path(), "fix-beta", "fix beta");
+
+    // Disjoint work: one file per task.
+    let before: u32 = git_in(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    fs::write(repo.path().join("alpha.txt"), "alpha\n").expect("write alpha");
+    git_in(repo.path(), &["add", "alpha.txt"]);
+    assert_ok(
+        &run_jigc(repo.path(), home.path(), &["task", "finalize", "fix-alpha"]),
+        "the first parallel task finalizes",
+    );
+
+    // The second task's base has moved. Its work is disjoint, so the door the footer
+    // names two lines above carries it through — this is the call that was refused.
+    let resume = run_start(repo.path(), home.path(), &["--task", "fix-beta"]);
+    assert_ok(
+        &resume,
+        "`jigc start --task fix-beta` after its parallel sibling committed",
+    );
+
+    fs::write(repo.path().join("beta.txt"), "beta\n").expect("write beta");
+    git_in(repo.path(), &["add", "beta.txt"]);
+    assert_ok(
+        &run_jigc(repo.path(), home.path(), &["task", "finalize", "fix-beta"]),
+        "the second parallel task finalizes on top of the first",
+    );
+
+    let after: u32 = git_in(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    assert_eq!(
+        after,
+        before + 2,
+        "both parallel tasks land their own commit",
+    );
+}
+
+/// M47 Increment 8 / T2 (N7), the counter-arm: the scoped wording's *other* half, driven.
+/// Two open tasks whose work **overlaps** — one commits a path the other is editing — and
+/// the second one's resume blocks, naming the overlapping path. That refusal is exactly
+/// what the `task scope:` line now describes, so the scoping is a statement about
+/// observed behaviour rather than a hedge.
+#[test]
+fn overlapping_parallel_work_blocks_and_names_the_path() {
+    let repo = TempDir::new("parallel-overlap");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    for intent in ["fix alpha", "fix beta"] {
+        assert_ok(
+            &run_start(
+                repo.path(),
+                home.path(),
+                &["--workflow", "quick-fix", intent],
+            ),
+            "`jigc start --workflow quick-fix`",
+        );
+    }
+    fill_commit(repo.path(), home.path(), "fix-alpha", "fix alpha");
+    fill_commit(repo.path(), home.path(), "fix-beta", "fix beta");
+
+    // Both tasks touch the SAME file — the case the scoping carves out.
+    fs::write(repo.path().join("shared.txt"), "from alpha\n").expect("write shared");
+    git_in(repo.path(), &["add", "shared.txt"]);
+    assert_ok(
+        &run_jigc(repo.path(), home.path(), &["task", "finalize", "fix-alpha"]),
+        "the first task commits the shared path",
+    );
+    fs::write(repo.path().join("shared.txt"), "from beta\n").expect("edit shared in beta");
+
+    let resume = run_start(repo.path(), home.path(), &["--task", "fix-beta"]);
+    assert!(
+        !resume.status.success(),
+        "overlapping parallel work must block, not silently re-pin; got:\n{}",
+        String::from_utf8_lossy(&resume.stdout),
+    );
+    let stderr = String::from_utf8(resume.stderr).expect("utf-8 stderr");
+    assert!(
+        stderr.contains("shared.txt"),
+        "the block must NAME the overlapping path — the footer's scoped wording promises \
+         exactly that; got:\n{stderr}",
     );
 }

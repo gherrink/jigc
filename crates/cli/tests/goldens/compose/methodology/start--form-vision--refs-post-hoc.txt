@@ -16,7 +16,10 @@ research this vision is formed from — pass ALL of it in ONE call as an inline 
 jigc doc set-field vision:vision#meta/grounded-in --value "[research:<slug>, …]" --task sweep-the-compose-surface
 
 Now RE-COMPOSE so the grounding research comes into view — the findings below
-resolve only after `grounded-in` is set:
+resolve only after `grounded-in` is set. The same call is the way back in when the
+grounding research was committed in a separate task while this one stayed open: a
+commit that landed elsewhere re-pins this task, as long as its paths are disjoint
+from this task's own:
 
 jigc start --task sweep-the-compose-surface
 
@@ -75,7 +78,7 @@ Then validate and commit:
 Run: `jigc task finalize sweep-the-compose-surface`
 resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
 what's-left: `jigc task validate sweep-the-compose-surface`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize
-task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
 create-gates: vision
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

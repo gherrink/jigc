@@ -138,28 +138,34 @@ fn assert_ok(out: &std::process::Output, what: &str) {
 }
 
 /// Set one prose slot through the binary (stdin `--from-file -`), asserting success.
-fn set_slot(repo: &Path, home: &Path, addr: &str, prose: &[u8]) {
+///
+/// Every write names its `--task` explicitly. That is redundant while one task is open
+/// and **load-bearing** once two are (the mandated-ordering arm below keeps the vision
+/// task open across a whole `do-research` task): several open tasks are legal, each
+/// addressed by its own `--task` — the compose footer's own rule.
+fn set_slot(repo: &Path, home: &Path, addr: &str, prose: &[u8], task: &str) {
     assert_ok(
         &jigc(
             repo,
             home,
-            &["doc", "set-slot", addr, "--from-file", "-"],
+            &["doc", "set-slot", addr, "--from-file", "-", "--task", task],
             Some(prose),
         ),
-        &format!("set-slot {addr}"),
+        &format!("set-slot {addr} --task {task}"),
     );
 }
 
-/// Set one header field through the binary, asserting success.
-fn set_field(repo: &Path, home: &Path, addr: &str, value: &str) {
+/// Set one header field through the binary, asserting success. `--task` explicit, for
+/// the reason [`set_slot`] states.
+fn set_field(repo: &Path, home: &Path, addr: &str, value: &str, task: &str) {
     assert_ok(
         &jigc(
             repo,
             home,
-            &["doc", "set-field", addr, "--value", value],
+            &["doc", "set-field", addr, "--value", value, "--task", task],
             None,
         ),
-        &format!("set-field {addr}"),
+        &format!("set-field {addr} --task {task}"),
     );
 }
 
@@ -167,19 +173,21 @@ fn set_field(repo: &Path, home: &Path, addr: &str, value: &str) {
 /// to whichever `commit` doctype wins under the composition (the dev `commit`'s
 /// `scope`/`body` are optional; both accept the value).
 fn fill_commit(repo: &Path, home: &Path, task: &str) {
-    set_field(repo, home, &format!("commit:{task}#type"), "docs");
-    set_field(repo, home, &format!("commit:{task}#scope"), "vision");
+    set_field(repo, home, &format!("commit:{task}#type"), "docs", task);
+    set_field(repo, home, &format!("commit:{task}#scope"), "vision", task);
     set_slot(
         repo,
         home,
         &format!("commit:{task}#summary"),
         b"record it\n",
+        task,
     );
     set_slot(
         repo,
         home,
         &format!("commit:{task}#body"),
         b"A design-altitude record.\n",
+        task,
     );
 }
 
@@ -202,6 +210,7 @@ fn committed(repo: &Path, path: &str) -> String {
 /// so it is a reachable `grounded-in` target for the vision task. `intent` derives the
 /// task id; `title` mints the `research:<slug>`. Returns the committed `<type>:<slug>`.
 fn commit_research(repo: &Path, home: &Path, intent: &str, title: &str, findings: &[u8]) -> String {
+    let task = intent.replace(' ', "-");
     assert_ok(
         &jigc(
             repo,
@@ -214,7 +223,9 @@ fn commit_research(repo: &Path, home: &Path, intent: &str, title: &str, findings
     let create = jigc(
         repo,
         home,
-        &["doc", "create", "research", "--title", title],
+        &[
+            "doc", "create", "research", "--title", title, "--task", &task,
+        ],
         None,
     );
     assert_ok(&create, "`jigc doc create research`");
@@ -222,10 +233,21 @@ fn commit_research(repo: &Path, home: &Path, intent: &str, title: &str, findings
         .expect("utf-8")
         .trim()
         .to_string();
-    set_slot(repo, home, &format!("{addr}#question"), b"A question.\n");
-    set_slot(repo, home, &format!("{addr}#findings"), findings);
-    set_slot(repo, home, &format!("{addr}#sources"), b"Some sources.\n");
-    let task = intent.replace(' ', "-");
+    set_slot(
+        repo,
+        home,
+        &format!("{addr}#question"),
+        b"A question.\n",
+        &task,
+    );
+    set_slot(repo, home, &format!("{addr}#findings"), findings, &task);
+    set_slot(
+        repo,
+        home,
+        &format!("{addr}#sources"),
+        b"Some sources.\n",
+        &task,
+    );
     fill_commit(repo, home, &task);
     assert_ok(
         &jigc(repo, home, &["task", "finalize", &task], None),
@@ -335,6 +357,7 @@ fn form_vision_reentry_reads_grounding_research_and_finalizes() {
         home.path(),
         &format!("{addr}#meta/grounded-in"),
         &format!("[{research_a}, {research_b}]"),
+        task,
     );
 
     // RE-COMPOSE: the edge-walk slice now reads ALL grounding research's findings.
@@ -359,18 +382,21 @@ fn form_vision_reentry_reads_grounding_research_and_finalizes() {
         home.path(),
         &format!("{addr}#thesis"),
         b"A context compiler for coding agents.\n",
+        task,
     );
     set_slot(
         repo.path(),
         home.path(),
         &format!("{addr}#invariants"),
         b"The CLI owns structure; the LLM owns prose.\n",
+        task,
     );
     set_slot(
         repo.path(),
         home.path(),
         &format!("{addr}#open-questions"),
         b"When does a public pack platform earn its keep?\n",
+        task,
     );
     fill_commit(repo.path(), home.path(), task);
 
@@ -488,6 +514,200 @@ fn form_vision_reentry_reads_grounding_research_and_finalizes() {
     assert!(
         block["route"].is_string(),
         "the conformance-block carries a route to a human: {block:#?}",
+    );
+}
+
+/// (5) M47 Increment 8 / T2 (N7): the step's **own mandated ordering**, driven end to end.
+///
+/// `author-vision.yaml` opens by advising `do-research` *first* and later mandates a
+/// literal `jigc start --task {{task.id}}` re-compose. An agent that follows both — the
+/// only ordering the step describes — mints `form-vision` over an empty store, goes and
+/// **commits** the grounding research in a separate task, then comes back through the
+/// resume door. That research commit moves HEAD off the vision task's pin, so before the
+/// resume door adopted the finalize guard's overlap-aware test (M47 Inc 8 / T1) this exact
+/// sequence dead-ended at the re-compose: the workflow's own step mandated a door the
+/// binary refused. The work is disjoint (`research/` vs the vision's `VISION.md`), so the
+/// task now re-pins and is carried through — and the advisory that sent the agent away
+/// **says so**, rather than leaving the return trip to be discovered.
+///
+/// The shipped spine arm above commits both research docs *before* minting `form-vision`,
+/// which is exactly why the defect never showed there — this arm inverts that order.
+#[test]
+fn form_vision_carries_through_research_committed_in_a_separate_task() {
+    let repo = TempDir::new("mandated-order");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    const FINDINGS: &str = "One writer node caps the ingest path.";
+    let vision_task = "form-the-project-vision";
+
+    // (1) `form-vision` FIRST, over an EMPTY research store: the advisory renders — and
+    // it states the ordering it is sending the agent into, namely that the grounding
+    // research may be committed in a SEPARATE task and this one re-composed afterwards.
+    let start = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "form-vision",
+            "form the project vision",
+        ],
+        None,
+    );
+    assert_ok(
+        &start,
+        "`jigc start --workflow form-vision` over an empty research store",
+    );
+    let first_compose = String::from_utf8(start.stdout).expect("utf-8 composed stdout");
+    let advisory = first_compose
+        .split("Form the project vision on the")
+        .next()
+        .expect("the composed text opens with the advisory region")
+        .to_string();
+    assert!(
+        advisory.contains("consider running `do-research`"),
+        "the empty-research advisory must render over an empty store; got:\n{first_compose}",
+    );
+    assert!(
+        advisory.contains("separate task"),
+        "the advisory must state that the grounding research may be committed in a \
+         SEPARATE task — the ordering it is sending the agent into; got:\n{advisory}",
+    );
+    assert!(
+        advisory.contains(&format!("jigc start --task {vision_task}")),
+        "the advisory must name the return trip it implies — the literal re-compose that \
+         carries this task forward after the research lands; got:\n{advisory}",
+    );
+
+    // (2) Follow the advisory: the grounding research is authored and FINALIZED in its own
+    // task while the vision task stays open. HEAD moves off the vision task's pin.
+    let pin_before = git(repo.path(), &["rev-parse", "HEAD"]);
+    let research = commit_research(
+        repo.path(),
+        home.path(),
+        "benchmark the ingest path",
+        "Ingest Benchmarks",
+        format!("{FINDINGS}\n").as_bytes(),
+    );
+    assert_eq!(research, "research:ingest-benchmarks");
+    assert_ne!(
+        pin_before,
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        "the research task's finalize must move HEAD off the vision task's pinned base — \
+         without that, this arm proves nothing",
+    );
+
+    // (3) The step's LITERAL re-compose door, over moved-but-disjoint history.
+    let resume = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--task", vision_task],
+        None,
+    );
+    assert_ok(
+        &resume,
+        "the step's own `jigc start --task <id>` must carry the agent through after the \
+         grounding research was committed in a separate task",
+    );
+    let resumed = String::from_utf8(resume.stdout).expect("utf-8 resumed stdout");
+    assert!(
+        !resumed.contains("consider running `do-research`"),
+        "with research committed the advisory falls silent; got:\n{resumed}",
+    );
+
+    // (4) Now follow the step body: create, ground, re-compose, author, finalize.
+    let create = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "create",
+            "vision",
+            "--title",
+            "Vision",
+            "--task",
+            vision_task,
+        ],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create vision` after the resume");
+    let addr = String::from_utf8(create.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string();
+    assert_eq!(addr, "vision:vision");
+
+    set_field(
+        repo.path(),
+        home.path(),
+        &format!("{addr}#meta/grounded-in"),
+        &format!("[{research}]"),
+        vision_task,
+    );
+
+    let second = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--task", vision_task],
+        None,
+    );
+    assert_ok(
+        &second,
+        "the step's second `jigc start --task <id>` re-compose",
+    );
+    let recomposed = String::from_utf8(second.stdout).expect("utf-8 recomposed stdout");
+    assert!(
+        recomposed.contains(FINDINGS),
+        "the edge-walk slice must read the separately-committed research's findings into \
+         the guidance; got:\n{recomposed}",
+    );
+
+    set_slot(
+        repo.path(),
+        home.path(),
+        &format!("{addr}#thesis"),
+        b"Ingest is the constraint.\n",
+        vision_task,
+    );
+    set_slot(
+        repo.path(),
+        home.path(),
+        &format!("{addr}#invariants"),
+        b"One writer, many readers.\n",
+        vision_task,
+    );
+    set_slot(
+        repo.path(),
+        home.path(),
+        &format!("{addr}#open-questions"),
+        b"When does sharding earn its keep?\n",
+        vision_task,
+    );
+    fill_commit(repo.path(), home.path(), vision_task);
+
+    let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["task", "finalize", vision_task],
+            None,
+        ),
+        "the vision task finalizes over the moved-but-disjoint base",
+    );
+    let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    assert_eq!(after, before + 1, "exactly ONE commit lands");
+
+    let managed = committed(repo.path(), "VISION.md");
+    assert!(
+        managed.contains("Ingest is the constraint.") && managed.contains(&research),
+        "the committed vision carries the authored thesis and the grounding it was formed \
+         from; got:\n{managed}",
     );
 }
 
