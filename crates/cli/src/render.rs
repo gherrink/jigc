@@ -762,6 +762,28 @@ fn gates_at_compose(finding: &Finding) -> bool {
     finding.code.starts_with("workflow-refs.")
 }
 
+/// The wording of the **above-current stamp** condition, shared by the two surfaces that
+/// state it (M47 T1 — RC-alpha4 A3). [`ahead_corpus_trailer`] interpolates it at the
+/// point of contradiction, and `adapter.rs`'s `BOOTSTRAP_OUTPUT_CONTRACT` states it in the
+/// preload tier as the named exception to the store sweep's report-only stance; the
+/// adapter's `bootstrap_names_the_ahead_exception` asserts **both** against this constant
+/// (the same statement-==-constant idiom the exit-code line already uses), so the preloaded
+/// contract an agent trusts without re-checking cannot drift from the trailer the sweep
+/// actually prints — it had, for one wave: the preload claimed exit 0 unconditionally while
+/// the trailer said "exits non-zero".
+pub(crate) const AHEAD_STAMP_PHRASE: &str = "stamped above this build's schema-version";
+
+/// The store trailer's above-current-stamp sentence (2026-07-24), composed from
+/// [`AHEAD_STAMP_PHRASE`] so the condition has one source and the preload tier can be
+/// asserted to agree with it. Byte-identical to the literal it replaced.
+pub(crate) fn ahead_corpus_trailer() -> String {
+    format!(
+        "a committed doc is {AHEAD_STAMP_PHRASE} — it was written to a schema this jigc \
+         build does not know, so the sweep could not adjudicate it and exits non-zero; \
+         upgrade jigc, or restore the stamp from git history, then re-validate.\n"
+    )
+}
+
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
 /// exit-0-with-`blocking`-findings is unambiguous. Five cases, matching the three
 /// exit-flipping exceptions (`validation.md` → Exit semantics; the third is a code *pair*
@@ -831,10 +853,7 @@ fn store_trailer(
     } else if ahead_corpus {
         // The above-current sibling (2026-07-24): honest and Human-shaped — no verb fixes
         // a future stamp, so the trailer must not name `jigc migrate-corpus` as the repair.
-        "a committed doc is stamped above this build's schema-version — it was written to a \
-         schema this jigc build does not know, so the sweep could not adjudicate it and exits \
-         non-zero; upgrade jigc, or restore the stamp from git history, then re-validate.\n"
-            .to_string()
+        ahead_corpus_trailer()
     } else {
         let n = report.findings.len();
         let gating = report

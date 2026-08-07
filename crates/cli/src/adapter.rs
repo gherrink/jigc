@@ -1083,7 +1083,22 @@ const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the 
 /// so the line cannot drift from the [`crate::task::EXIT_CODES`] table
 /// (statement == constant, replacing the earlier "frozen CLI constants" claim
 /// that was aspirational when only 3/4 were named).
-const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings.";
+///
+/// **The report-only stance carries its exception (M47 T1 — RC-alpha4 A3).**
+/// The store-scope-blind clause shipped *unqualified*, and four days after it was
+/// written the confidence-audit fix (2026-07-24) minted an
+/// [`engine::validate::SCHEMA_VERSION_AHEAD_CODE`] break that **flips** the sweep's
+/// exit — the trial planted exactly that state and read the preload as a lie. The
+/// clause is now scoped to the real predicate
+/// ([`crate::render::validation_store_exit_flips`]): report-only *unless the sweep
+/// itself could not be trusted*, stated as the class rather than as a list, since
+/// four conditions flip it (an unreliable pack probe · an out-of-band rename · an
+/// unmigrated corpus · an above-current stamp) and enumerating them here is content
+/// that rots. The one the agent meets is **named**, in
+/// [`crate::render::AHEAD_STAMP_PHRASE`] — the trailer's own words — and
+/// [`bootstrap_names_the_ahead_exception`] asserts the agreement, so preload and
+/// output cannot say opposite things about the same exit again.
+const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless the sweep itself could not be trusted, as when a doc is stamped above this build's schema-version: then it exits non-zero and its closing line says why.";
 
 /// The machine-output contract stated as the fifth paragraph (M44 Inc 4,
 /// change 1 — RC rc.7 discoverability rerun, 2026-07-20): the preload tier now
@@ -1442,7 +1457,7 @@ mod tests {
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
-        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings.
+        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless the sweep itself could not be trusted, as when a doc is stamped above this build's schema-version: then it exits non-zero and its closing line says why.
 
         Every verb speaks `--format json` on a successful or validation outcome: pass it and parse the structured result — do not scrape the human-readable lines (a usage error rejected before parsing still prints plain text, not JSON). The composed producers — `jigc start`, `jigc workflow`, `jigc migrate` — return the minted task id at `.task`; read it there, never from the human line.
         "###);
@@ -1479,9 +1494,12 @@ mod tests {
         );
         assert!(
             body.contains("store-scope `jigc validate` is report-only")
-                && body.contains("exits 0 even when it surfaces findings"),
+                && body.contains("exits 0 even when it surfaces findings")
+                && body.contains("unless the sweep itself could not be trusted"),
             "the bootstrap body carries the store-scope-blind clause the qualifier rests \
-             on (M45 Decision 6); got:\n{body}",
+             on (M45 Decision 6) — with the exit-flipping exception it is scoped by \
+             (M47 T1, asserted in full by `bootstrap_names_the_ahead_exception`); \
+             got:\n{body}",
         );
         // (M44 Inc 4, change 1) The machine-output paragraph: every verb speaks
         // `--format json` on a successful/validation outcome (the clap-error
@@ -1527,6 +1545,47 @@ mod tests {
             body.contains(&line),
             "the bootstrap body's exit-code line must be the EXIT_CODES rendering \
              (statement == constant); rendered:\n{line}\nbody:\n{body}",
+        );
+    }
+
+    /// The preload tier names the **exit-flipping exception an agent actually meets**
+    /// (M47 T1 — RC-alpha4 A3): the unqualified *"a store-scope `jigc validate` is
+    /// report-only — it exits 0 even when it surfaces findings"* was four days staler than
+    /// the deliberate exit flip the 2026-07-24 confidence-audit fix minted, and the trial
+    /// planted exactly that state — a doc stamped above this build's schema-version, which
+    /// the sweep cannot adjudicate, so it exits non-zero. The binary was honest at the point
+    /// of contradiction (its own trailer says "exits non-zero" and why); the lie lived only
+    /// in the preloaded contract, which is the tier an agent trusts *without* re-checking.
+    ///
+    /// The assert is an **agreement** assert, not a wording one: the emitted body and the
+    /// rendered [`crate::render::ahead_corpus_trailer`] must both carry
+    /// [`crate::render::AHEAD_STAMP_PHRASE`] and both state the non-zero exit, so neither
+    /// surface can be reworded away from the other. Driven on the emitted body — the bytes
+    /// `setup` writes into `.jigc/AGENT.md`.
+    #[test]
+    fn bootstrap_names_the_ahead_exception() {
+        let body = bootstrap_file();
+        let phrase = crate::render::AHEAD_STAMP_PHRASE;
+        let trailer = crate::render::ahead_corpus_trailer();
+
+        assert!(
+            trailer.contains(phrase) && trailer.contains("exits non-zero"),
+            "the store trailer states the above-current condition and its non-zero exit; \
+             got:\n{trailer}",
+        );
+        assert!(
+            body.contains(phrase),
+            "the preloaded output contract must name the ahead-stamp exception in the same \
+             words the store trailer uses ({phrase:?}); got:\n{body}",
+        );
+        assert!(
+            body.contains("exits non-zero"),
+            "the preloaded output contract must state that the exception flips the exit, \
+             agreeing with the trailer the sweep prints; got:\n{body}",
+        );
+        assert!(
+            body.contains("store-scope `jigc validate` is report-only"),
+            "the report-only stance the exception qualifies is still stated; got:\n{body}",
         );
     }
 
