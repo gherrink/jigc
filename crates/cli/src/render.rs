@@ -691,8 +691,8 @@ fn gates_at_task(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool {
 /// **every row**).
 ///
 /// The store sweep prints each finding at its **cascade severity** while exiting 0, so `blocking ·`
-/// on its own tells the reader nothing about whether anything ever *stops* on it. Two conditions,
-/// both necessary:
+/// on its own tells the reader nothing about whether anything ever *stops* on it. Three
+/// conditions, all necessary:
 ///
 /// 1. **A gate exists for the finding at all** — [`gates_at_task`], the trailer's own criterion
 ///    (the store-scope-only codes, and the un-baselined-committed-doc discriminator).
@@ -700,9 +700,46 @@ fn gates_at_task(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool {
 ///    at the task boundary but never blocks the transaction, so labelling it *"gates at finalize"*
 ///    would be exactly the falsehood this label exists to retire (the cascade can demote any
 ///    non-intrinsic check — `flow13_contract_and_severity.rs` demotes a `doc-code` break to
-///    `warning`, and that demoted row must claim no gate).
+///    `warning`, and that demoted row must claim no gate). This is N10's first arm (M47 inc-8 /
+///    T4): the trailer counted with [`gates_at_task`], which never consults severity, so an
+///    advisory-by-default `doc-code.title-names-symbol` printed the row `advisory · …` and the
+///    trailer *"these gate at …"* — the row and the trailer disagreeing in one report.
+/// 3. **The finding's gate is a *boundary* gate** — not [`gates_at_compose`]. A `workflow-refs.*`
+///    break has a real, hard gate, but it is **compose**: its emit sites are the store sweep's
+///    family 2 and `crate::start`, and `engine::validate::validate_task` — the shared body of
+///    `jigc task validate`, finalize's preflight, **and** the milestone-boundary gate — never runs
+///    the workflow↔refs family at all. Labelling it *"gates at finalize"* is the same lie one
+///    family over.
 fn gates_at_finalize(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool {
-    matches!(finding.severity, Severity::Blocking) && gates_at_task(finding, unbaselined)
+    matches!(finding.severity, Severity::Blocking)
+        && !gates_at_compose(finding)
+        && gates_at_task(finding, unbaselined)
+}
+
+/// Every door the shared `engine::validate::validate_task` entry stands behind — the two task
+/// doors (`jigc task validate`, the `finalize` preflight) **and** the milestone-boundary gate
+/// (`crate::milestone`'s `milestone_boundary_gate`, which drives that same entry over the merged
+/// effective state under the same cascade and blocks exit 3). N10's second arm (M47 inc-8 / T4):
+/// the trailer named only the two task doors while the milestone door gates on the same findings,
+/// so a fan-out operator was told the boundary they were actually standing at could not stop them.
+const BOUNDARY_DOORS: &str =
+    "`jigc task validate` / `jigc task finalize` / `jigc milestone finalize`";
+
+/// The door a [`gates_at_compose`] finding really has — the compose gate `jigc start` runs before
+/// it hands a task its steps.
+const COMPOSE_DOOR: &str = "`jigc start`";
+
+/// Whether this store-scope finding's gate is **compose**, never the task/milestone boundary
+/// (M47 inc-8 / T4). One family qualifies: `workflow-refs.*`, whose checks run at
+/// [`crate::start`]'s compose gate and in the store sweep's family 2
+/// (`engine::validate::validate_store_families`) — and nowhere else. Derived from the emit sites,
+/// per [`GATES_NOWHERE`]'s own rule: `engine::validate::validate_task` runs staged-instance
+/// conformance, the committed-store reconciler, `ref_resolves`, and `doc-code` — no workflow↔refs
+/// pass — so neither task door nor `milestone_boundary_gate` (which drives that same entry) can
+/// ever see one. It is **not** a [`GATES_NOWHERE`] member: a gate does exist for it, so the claim
+/// is scoped to the right door rather than withdrawn.
+fn gates_at_compose(finding: &Finding) -> bool {
+    finding.code.starts_with("workflow-refs.")
 }
 
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
@@ -733,6 +770,23 @@ fn gates_at_finalize(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool 
 /// dominant `jigc validate` corpus). [`gates_at_task`] decides per finding; this branch counts
 /// the findings that *do* carry a gate and scopes the claim to them: all → the original sentence;
 /// none → no gate claim at all; mixed → how many, and that the rest gate nowhere.
+///
+/// **N10 (M47 inc-8 / T4) — the count is by severity, and the door list is complete and true.**
+/// Two corrections, both on the same claim:
+///
+/// - the count moves from [`gates_at_task`] to [`gates_at_finalize`], so an **advisory** finding
+///   is never counted as gating (the shipped trailer counted by probe family: a sweep whose only
+///   finding was the advisory-by-default `doc-code.title-names-symbol` printed `advisory · …` and
+///   then *"these gate at …"*). The row label and the trailer now share one predicate outright;
+/// - the door list names **`jigc milestone finalize`** beside the two task doors —
+///   `crate::milestone`'s boundary gate drives the *same* `engine::validate::validate_task` entry
+///   under the same cascade and blocks exit 3 on the same families — and a **compose**-gated
+///   family ([`gates_at_compose`]) gets its own count naming `jigc start`, rather than riding a
+///   boundary claim that is false for it.
+///
+/// The all/none/mixed shapes are unchanged; the mixed sentence gains a compose clause only when a
+/// compose-gated finding is present, so a store without one renders exactly as before (modulo the
+/// door list).
 fn store_trailer(
     report: &ValidationReport,
     probe_unreliable: bool,
@@ -766,25 +820,41 @@ fn store_trailer(
         let gating = report
             .findings
             .iter()
-            .filter(|f| gates_at_task(f, unbaselined))
+            .filter(|f| gates_at_finalize(f, unbaselined))
             .count();
-        if gating == 0 {
+        let compose = report
+            .findings
+            .iter()
+            .filter(|f| matches!(f.severity, Severity::Blocking) && gates_at_compose(f))
+            .count();
+        let claim = if gating == n {
+            format!("these gate at {BOUNDARY_DOORS}.")
+        } else if compose == n {
             format!(
-                "{n} finding(s) — report-only at store scope (exit 0); each gates nowhere — a \
-                 store-scope advisory, actionable through its own route above.\n"
+                "these gate at compose ({COMPOSE_DOOR}), never at the task or milestone boundary."
             )
-        } else if gating == n {
-            format!(
-                "{n} finding(s) — report-only at store scope (exit 0); these gate at \
-                 `jigc task validate` / `jigc task finalize`.\n"
-            )
+        } else if gating == 0 && compose == 0 {
+            "each gates nowhere — a store-scope advisory, actionable through its own route above."
+                .to_string()
         } else {
+            let mut clauses = Vec::new();
+            if gating > 0 {
+                clauses.push(format!("{gating} of them gate at {BOUNDARY_DOORS}"));
+            }
+            if compose > 0 {
+                clauses.push(format!(
+                    "{compose} of them gate at compose ({COMPOSE_DOOR})"
+                ));
+            }
+            if n - gating - compose > 0 {
+                clauses.push("the rest are store-scope advisories that gate nowhere".to_string());
+            }
             format!(
-                "{n} finding(s) — report-only at store scope (exit 0); {gating} of them gate at \
-                 `jigc task validate` / `jigc task finalize`; the rest are store-scope advisories \
-                 that gate nowhere — follow each finding's route above.\n"
+                "{} — follow each finding's route above.",
+                clauses.join("; ")
             )
-        }
+        };
+        format!("{n} finding(s) — report-only at store scope (exit 0); {claim}\n")
     }
 }
 
@@ -4741,7 +4811,7 @@ mod tests {
         insta::assert_snapshot!(agent, @"
         blocking (gates at finalize) · doc-code.symbol-exists — cited symbol `evict_lru` not found
           route: update the citation, or restore the cited symbol
-        1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
+        1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize` / `jigc milestone finalize`.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert_eq!(
@@ -4860,7 +4930,9 @@ mod tests {
 
         let agent = validation_store(Format::Agent, &gate_nowhere, &BTreeSet::new());
         assert!(
-            !agent.contains("jigc task validate") && !agent.contains("jigc task finalize"),
+            !agent.contains("jigc task validate")
+                && !agent.contains("jigc task finalize")
+                && !agent.contains("jigc milestone finalize"),
             "every finding here gates nowhere — the trailer must not name a gate: {agent}",
         );
         assert!(
@@ -4887,8 +4959,12 @@ mod tests {
         );
         let agent = validation_store(Format::Agent, &gating, &BTreeSet::new());
         assert!(
-            agent.contains("these gate at `jigc task validate` / `jigc task finalize`"),
-            "a doc-code break DOES gate at the task boundary — say so: {agent}",
+            agent.contains(
+                "these gate at `jigc task validate` / `jigc task finalize` / \
+                 `jigc milestone finalize`."
+            ),
+            "a doc-code break DOES gate at the task boundary — say so, at every door that \
+             carries it (M47 inc-8 / T4 added the milestone one): {agent}",
         );
 
         // Mixed: the gate claim is scoped to the findings that carry one.
@@ -4907,12 +4983,69 @@ mod tests {
         );
         let agent = validation_store(Format::Agent, &mixed, &BTreeSet::new());
         assert!(
-            agent.contains("1 of them gate at `jigc task validate` / `jigc task finalize`"),
+            agent.contains(
+                "1 of them gate at `jigc task validate` / `jigc task finalize` / \
+                 `jigc milestone finalize`"
+            ),
             "the claim covers the gating finding only: {agent}",
         );
         assert!(
             agent.contains("the rest are store-scope advisories that gate nowhere"),
             "and disowns the gate for the store-scope-only one: {agent}",
+        );
+
+        // **Severity, not probe family** (M47 inc-8 / T4, N10 arm 1). `doc-code` is a genuine
+        // task-scope family and `doc-code.title-names-symbol` is deliberately NOT a
+        // `GATES_NOWHERE` member — yet it is advisory by pack default, and nothing anywhere
+        // stops on an advisory. The shipped criterion counted it as gating, so the row printed
+        // `advisory · …` and the trailer *"these gate at …"* two lines apart.
+        let advisory_only =
+            ValidationReport::new(vec![advisory("doc-code.title-names-symbol")], &resolved);
+        let agent = validation_store(Format::Agent, &advisory_only, &BTreeSet::new());
+        assert!(
+            !agent.contains("jigc task validate")
+                && !agent.contains("jigc task finalize")
+                && !agent.contains("jigc milestone finalize"),
+            "an advisory `doc-code` finding gates NOWHERE — the trailer must not claim a gate \
+             its own row disowns: {agent}",
+        );
+        assert!(
+            agent.contains("gates nowhere"),
+            "and states what is true of it: {agent}",
+        );
+
+        // **The compose-scoped family keeps its own door** (M47 inc-8 / T4, the red-step
+        // assumption that proved false). `validate_task` runs no workflow↔refs pass, so neither
+        // task door nor the milestone gate can see this finding — but a hard gate does exist,
+        // at compose, so the claim is re-doored rather than withdrawn.
+        let compose_only = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Blocking,
+                "workflow-refs.include-resolves",
+                "include `step:not-a-step` resolves to no step file in the cascade",
+                None,
+                None,
+            )],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &compose_only, &BTreeSet::new());
+        assert!(
+            !agent.contains("jigc task validate")
+                && !agent.contains("jigc task finalize")
+                && !agent.contains("jigc milestone finalize"),
+            "no task-scope path emits `workflow-refs.*`: {agent}",
+        );
+        assert!(
+            agent.contains(
+                "these gate at compose (`jigc start`), never at the task or \
+                            milestone boundary."
+            ),
+            "the door it really has is named: {agent}",
+        );
+        assert!(
+            !agent.contains("(gates at finalize)"),
+            "and the row label shares the predicate — it must not claim a finalize block \
+             either: {agent}",
         );
     }
 
@@ -4971,7 +5104,9 @@ mod tests {
         let unbaselined: BTreeSet<String> = ["adr:cache-it".to_string()].into_iter().collect();
         let agent = validation_store(Format::Agent, &report(), &unbaselined);
         assert!(
-            !agent.contains("jigc task validate") && !agent.contains("jigc task finalize"),
+            !agent.contains("jigc task validate")
+                && !agent.contains("jigc task finalize")
+                && !agent.contains("jigc milestone finalize"),
             "at task scope this committed doc is graded ADVISORY by the reconciler — the \
              conformance break gates nowhere, and the trailer must not claim it does: {agent}",
         );
@@ -4984,7 +5119,10 @@ mod tests {
         // reaches the reconciler's blocking arm, so the gate is real and the claim stands.
         let agent = validation_store(Format::Agent, &report(), &BTreeSet::new());
         assert!(
-            agent.contains("1 of them gate at `jigc task validate` / `jigc task finalize`"),
+            agent.contains(
+                "1 of them gate at `jigc task validate` / `jigc task finalize` / \
+                 `jigc milestone finalize`"
+            ),
             "a baselined doc's drift DOES block at the task boundary — withdrawing the claim \
              here would be the opposite lie: {agent}",
         );

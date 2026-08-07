@@ -537,8 +537,12 @@ fn validate_labels_a_gating_store_finding_with_the_gate_it_carries() {
         "a content-only finding over a migrated corpus stays exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert!(
-        stdout.contains("these gate at `jigc task validate` / `jigc task finalize`"),
-        "the trailer's claim and the row's label are one criterion; stdout:\n{stdout}",
+        stdout.contains(
+            "these gate at `jigc task validate` / `jigc task finalize` / `jigc milestone finalize`."
+        ),
+        "the trailer's claim and the row's label are one criterion — and the door list is \
+         complete: the milestone-boundary gate (M47 inc-8 / T4) drives the same shared \
+         `validate_task` entry and blocks exit 3 on this same finding; stdout:\n{stdout}",
     );
 
     // The **JSON severity token is unchanged** — the label is a text-surface affordance, never a
@@ -582,7 +586,9 @@ fn validate_leaves_a_gateless_store_finding_unlabelled() {
          one; stdout:\n{stdout}",
     );
     assert!(
-        !stdout.contains("jigc task validate") && !stdout.contains("jigc task finalize"),
+        !stdout.contains("jigc task validate")
+            && !stdout.contains("jigc task finalize")
+            && !stdout.contains("jigc milestone finalize"),
         "and the trailer must claim none either; stdout:\n{stdout}",
     );
 

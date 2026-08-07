@@ -511,9 +511,12 @@ fn a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrat
     // the claim is gone.
     let (_, text) = validate_text(repo.path(), home.path());
     assert!(
-        !text.contains("jigc task validate") && !text.contains("jigc task finalize"),
+        !text.contains("jigc task validate")
+            && !text.contains("jigc task finalize")
+            && !text.contains("jigc milestone finalize"),
         "the sole finding gates nowhere — the trailer must not send the reader to a gate that \
-         will never see it; got:\n{text}",
+         will never see it, at ANY of the three doors it may name (M47 inc-8 / T4 added the \
+         milestone one); got:\n{text}",
     );
     assert!(
         text.contains("report-only at store scope (exit 0)"),
@@ -1011,9 +1014,12 @@ fn a_conformance_break_on_an_un_baselined_committed_doc_gates_nowhere_and_the_tr
     // Therefore the trailer must not claim a gate for it.
     let (_, text) = validate_text(repo.path(), home.path());
     assert!(
-        !text.contains("jigc task validate") && !text.contains("jigc task finalize"),
+        !text.contains("jigc task validate")
+            && !text.contains("jigc task finalize")
+            && !text.contains("jigc milestone finalize"),
         "every finding here gates nowhere — the trailer must not send the reader to a gate that \
-         will never fire; got:\n{text}",
+         will never fire, at ANY of the three doors it may name (M47 inc-8 / T4 added the \
+         milestone one); got:\n{text}",
     );
     assert!(
         text.contains("report-only at store scope (exit 0)"),

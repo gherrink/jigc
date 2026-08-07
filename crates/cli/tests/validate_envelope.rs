@@ -1023,3 +1023,223 @@ fn validate_detects_an_oob_edit_to_a_committed_placement_doc() {
          drift naming its literal home — not `no findings`; stdout:\n{stdout}",
     );
 }
+
+// ---------------------------------------------------------------------------
+// M47 inc-8 / T4 — the store trailer classifies by **severity**, not probe family,
+// and names the **milestone** door beside the two task doors (N10, both arms;
+// `design/validation.md` → The trailer must not claim a gate that does not exist).
+//
+// Three arms over real committed stores through the real binary:
+//
+// - **(a) advisory-only → no gate claim.** A store whose sole finding is the
+//   advisory-by-default `doc-code.title-names-symbol` printed the row `advisory · …`
+//   and then *"these gate at `jigc task validate` / `jigc task finalize`"* — the row and
+//   the trailer disagreeing in the same report, because the trailer's count consulted
+//   `GATES_NOWHERE` and the un-baselined discriminator but **never severity**.
+// - **(b) advisory + blocking sibling → the mixed sentence counts 1, not 2**, and its
+//   door list names `jigc milestone finalize` (the milestone-boundary gate drives the
+//   same shared `validate_task` entry and blocks exit 3).
+// - **(c) the compose-scoped family is scoped OUT of the boundary claim.**
+//   `workflow-refs.*` is emitted by the store sweep's family 2 and by compose
+//   (`crate::start`) — and by **no** task-scope path: `engine::validate::validate_task`
+//   (the shared body of `jigc task validate`, finalize's preflight, and the
+//   milestone-boundary gate) never runs the workflow↔refs family. So the boundary
+//   sentence must not claim it; the trailer names the door it really has.
+// ---------------------------------------------------------------------------
+
+/// `src/lib.rs` after **one** of the two anchored symbols is renamed away: `session_store`
+/// still resolves (so its component keeps the *advisory* stale-heading finding and raises no
+/// `symbol-exists`), while `cache_warmer` is gone (one **blocking** `doc-code.symbol-exists`).
+/// The mixed-severity store the trailer's count has to discriminate.
+const CODE_WITH_ONE_SYMBOL_RENAMED: &str = "\
+pub fn session_store() -> u32 {
+    1
+}
+
+pub fn warmer_of_caches() -> u32 {
+    2
+}
+";
+
+/// The store sweep's human/agent text — the emitted bytes an operator reads, run verbatim.
+fn validate_text(repo: &Path, home: &Path) -> (bool, String) {
+    let out = jigc(repo, home, &["validate"]);
+    (
+        out.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    )
+}
+
+/// Every door the trailer may name — asserted absent as a set, so a claim can never be
+/// withdrawn from one door and left standing on another.
+fn assert_names_no_gate(text: &str, why: &str) {
+    for door in [
+        "jigc task validate",
+        "jigc task finalize",
+        "jigc milestone finalize",
+    ] {
+        assert!(
+            !text.contains(door),
+            "{why} — the trailer must not name `{door}`; got:\n{text}",
+        );
+    }
+}
+
+/// (a) **Advisory-only → no gate claim.** The store's sole finding is the
+/// advisory-by-default `doc-code.title-names-symbol` (`pack/config/knobs.yaml` — the
+/// brand-name false-positive class has no valid remedy under blocking). Nothing anywhere
+/// stops on an advisory, so the trailer must make no gate claim at all — the "gates nowhere"
+/// sentence — rather than sending the reader to a gate that will report clean at exit 0.
+#[test]
+fn the_trailer_claims_no_gate_when_every_finding_is_advisory() {
+    let repo = TempDir::new("advisory-only-trailer");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_code(repo.path(), CODE_WITH_SYMBOLS, "the anchored source");
+    // The anchor RESOLVES; only the heading names a different compound identifier.
+    commit_arch_doc(
+        repo.path(),
+        home.path(),
+        &[("sessionStore", "session_store")],
+    );
+
+    let envelope = store_envelope(repo.path(), home.path());
+    assert_eq!(
+        finding_codes(&envelope),
+        vec!["doc-code.title-names-symbol".to_string()],
+        "precondition: the advisory stale-heading finding is the ONLY finding; json:\n{envelope}",
+    );
+    assert_eq!(
+        envelope["findings"][0]["severity"], "advisory",
+        "precondition: and it is advisory by pack default; json:\n{envelope}",
+    );
+
+    let (ok, text) = validate_text(repo.path(), home.path());
+    assert!(ok, "a content-only sweep stays exit 0; got:\n{text}");
+    assert!(
+        text.contains("advisory · doc-code.title-names-symbol"),
+        "precondition: the row prints the bare advisory token; got:\n{text}",
+    );
+    assert_names_no_gate(
+        &text,
+        "an advisory gates nowhere — `jigc task validate` reports it clean at exit 0",
+    );
+    assert!(
+        text.contains("gates nowhere"),
+        "and the trailer states what is actually true of it; got:\n{text}",
+    );
+}
+
+/// (b) **The mixed sentence counts by severity, and names the milestone door.** Two
+/// findings over one committed arch-doc: the *advisory* stale heading (anchor resolves) and
+/// a *blocking* `doc-code.symbol-exists` (its sibling component's symbol renamed away).
+/// Exactly **one** of the two gates, and the sentence names all three doors the shared
+/// `engine::validate::validate_task` entry stands behind — `jigc milestone finalize` drives
+/// it over the merged effective state and blocks exit 3 on the same families.
+#[test]
+fn the_mixed_trailer_counts_by_severity_and_names_the_milestone_door() {
+    let repo = TempDir::new("mixed-trailer");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_code(repo.path(), CODE_WITH_SYMBOLS, "the anchored source");
+    commit_arch_doc(
+        repo.path(),
+        home.path(),
+        &[
+            ("sessionStore", "session_store"),
+            ("Cache warmer", "cache_warmer"),
+        ],
+    );
+    commit_code(
+        repo.path(),
+        CODE_WITH_ONE_SYMBOL_RENAMED,
+        "rename ONE anchored symbol away",
+    );
+
+    let envelope = store_envelope(repo.path(), home.path());
+    let codes = finding_codes(&envelope);
+    assert_eq!(
+        codes.len(),
+        2,
+        "precondition: exactly two findings — one advisory, one blocking; json:\n{envelope}",
+    );
+    assert!(
+        codes.iter().any(|c| c == "doc-code.title-names-symbol")
+            && codes.iter().any(|c| c == "doc-code.symbol-exists"),
+        "precondition: the advisory stale heading AND its blocking dangling-anchor sibling; \
+         json:\n{envelope}",
+    );
+
+    let (ok, text) = validate_text(repo.path(), home.path());
+    assert!(ok, "a content-only sweep stays exit 0; got:\n{text}");
+    assert!(
+        text.contains(
+            "1 of them gate at `jigc task validate` / `jigc task finalize` / \
+             `jigc milestone finalize`"
+        ),
+        "one of the two findings gates — the count is by severity, not by probe family, and \
+         the door list names the milestone boundary; got:\n{text}",
+    );
+    assert!(
+        !text.contains("2 of them gate"),
+        "the advisory must not be counted into the gating set; got:\n{text}",
+    );
+    assert!(
+        text.contains("the rest are store-scope advisories that gate nowhere"),
+        "and the remainder is named for what it is; got:\n{text}",
+    );
+    // The per-finding label and the trailer are one criterion: only the blocking sibling
+    // carries the label.
+    assert!(
+        text.contains("blocking (gates at finalize) · doc-code.symbol-exists"),
+        "the gating row keeps its label; got:\n{text}",
+    );
+    assert!(
+        text.contains("advisory · doc-code.title-names-symbol"),
+        "the advisory row claims nothing; got:\n{text}",
+    );
+}
+
+/// (c) **The compose-scoped family is scoped out of the boundary claim.** A project
+/// workflow shadow with a dangling `{{ include: step:not-a-step }}` raises the **blocking**
+/// `workflow-refs.include-resolves` at store scope — and `engine::validate::validate_task`,
+/// the shared body of `jigc task validate`, the finalize preflight, and the
+/// milestone-boundary gate, never runs the workflow↔refs family at all: its emit sites are
+/// the store sweep (`validate_store_families`, family 2) and **compose** (`crate::start`).
+/// So the boundary sentence must not claim it — the trailer names the door it really has,
+/// and the row carries no `(gates at finalize)` label.
+#[test]
+fn a_workflow_ref_break_is_claimed_at_compose_never_at_the_boundary() {
+    let repo = TempDir::new("compose-scoped-trailer");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    seed_dangling_workflow_ref(repo.path());
+
+    let envelope = store_envelope(repo.path(), home.path());
+    let codes = finding_codes(&envelope);
+    assert!(
+        !codes.is_empty() && codes.iter().all(|c| c.starts_with("workflow-refs.")),
+        "precondition: every finding is a workflow↔refs break; json:\n{envelope}",
+    );
+
+    let (ok, text) = validate_text(repo.path(), home.path());
+    assert!(ok, "a content-only sweep stays exit 0; got:\n{text}");
+    assert_names_no_gate(
+        &text,
+        "no task-scope path emits `workflow-refs.*` — neither task door nor the milestone \
+         gate can ever see it",
+    );
+    assert!(
+        text.contains("compose (`jigc start`)"),
+        "the trailer names the door the finding really has; got:\n{text}",
+    );
+    assert!(
+        !text.contains("(gates at finalize)"),
+        "and the row must not claim a finalize block either — the label and the trailer are \
+         one criterion; got:\n{text}",
+    );
+}
