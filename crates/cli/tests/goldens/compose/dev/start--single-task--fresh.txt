@@ -39,9 +39,71 @@ tests, and confirm the behaviour you set out to produce. Finalize commits your
 staged work; it does not check that the work is correct.
 
 If the change is user-facing — a feature, a fix, or a behaviour a user would
-notice — record it on the changelog:
+notice — record it on the changelog. Create-or-update the singleton first:
 
-jigc doc create changelog --title Changelog --task sweep-the-compose-surface
+Run: `jigc doc create changelog --title Changelog --task sweep-the-compose-surface`
+
+If a changelog is ALREADY committed, the CLI does not mint a fresh one — it copies
+the committed body in as your edit base, so what you author below APPENDS to the
+entries already there and any slot you set overwrites. Author only what THIS change
+adds; an entry the committed changelog already holds would double.
+
+Then author the entry itself. The target schema and its batch payload, both
+generated from the resolved `changelog` schema, follow — one call places the whole
+entry over the staged buffer:
+
+The `changelog` schema — the managed singleton at `CHANGELOG.md`.
+
+- `meta` (front-matter fields):
+    - `schema-version`: int — CLI-stamped (schema-version) unless authored
+- `unreleased-changes`: repeatable items, one per `category`:
+    - `category`: enum, one of: added | changed | deprecated | removed | fixed | security — the item's id-source (authored as the item's `title:` payload key)
+    - `notes`: prose slot — One bullet per change in this category.
+- `releases`: repeatable items, one per `title`:
+    - `title`: string — the item's id-source (authored as the item's `title:` payload key)
+    - `date`: date — CLI-stamped (on-create) unless authored
+    - `link`: string — optional
+    - `changes`: repeatable items, one per `category`:
+        - `category`: enum, one of: added | changed | deprecated | removed | fixed | security — the item's id-source (authored as the item's `title:` payload key)
+        - `notes`: prose slot — One bullet per change in this category.
+
+Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, the reserved depths differ by slot — headings must sit at `####` or deeper in `unreleased-changes.notes`, at `#####` or deeper in `releases.changes.notes`. Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+<slot-id>: |-
+  <<The first line of the prose
+  and its second line, inside the SAME pair.>>
+
+Pipe the payload on stdin:
+
+jigc doc author changelog --from-file - --task sweep-the-compose-surface <<'EOF'
+title: Changelog
+sections:
+  - id: unreleased-changes
+    items:
+      - title: "<added | changed | deprecated | removed | fixed | security>"
+        set:
+          notes: |-
+            <<One bullet per change in this category.>>
+  - id: releases
+    items:
+      - title: "<the title>"
+        set:
+          link: "<the link>" # optional — omit if unused
+        sections:
+          - id: changes
+            items:
+              - title: "<added | changed | deprecated | removed | fixed | security>"
+                set:
+                  notes: |-
+                    <<One bullet per change in this category.>>
+EOF
+
+Author the entry under `unreleased-changes` — the staging area — and OMIT the
+`releases` entry: work records a staged change, it does not cut a release (cutting
+one is its own deliberate pass, `jigc start --workflow record-change`). The item
+`title` is the CATEGORY, one of the enum members the schema above lists, and the
+category is the group's id — so several bullets in the same category are ONE item
+with all its bullets merged into that item's `notes`.
 
 If your decision supersedes an earlier one, set `supersedes` on the ADR; the
 superseded decision then appears below for reference, so your consequences can
