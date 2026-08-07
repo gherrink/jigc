@@ -18,6 +18,7 @@ use engine::finding::{Finding, Findings, Severity};
 use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
 use engine::result::{NextStep, Orientation, OrientationView, ResolutionTree, ValidationReport};
+use engine::state::BasePin;
 use serde::Serialize;
 use std::collections::BTreeSet;
 
@@ -1369,6 +1370,90 @@ pub fn task_ack(format: Format, ack: &TaskAck) -> String {
                 }
             }
         },
+    }
+}
+
+/// One staged doc in a [`TaskDiffView`]: its `<type>:<slug>` **identity** — which *is*
+/// the address `jigc doc show <id> --task <task-id>` takes — plus the staged `body` the
+/// agent-text arm prints verbatim.
+///
+/// The JSON arm carries the identity and **never** the body: echoing bodies would mint a
+/// second, unversioned managed-doc content-read path beside the separately-versioned
+/// `doc show` (`design/doc-read-surface.md` → The version/posture map). It carries no
+/// `address` key either — the identity *is* the address, and a contract does not carry
+/// the same fact twice (`DECISIONS.md` → 2026-08-05, the increment-7 plan halt).
+pub struct StagedDoc {
+    /// The `<type>:<slug>` identity, the working-area filename minus `.md`.
+    pub id: String,
+    /// The staged file's bytes (agent-text only).
+    pub body: String,
+}
+
+/// What `jigc task diff <id>` reports: the task's own base pin, the working tree's diff
+/// against it, and the docs its working area has staged.
+pub struct TaskDiffView<'a> {
+    /// The task id.
+    pub task: &'a str,
+    /// The task's recorded base pin — `{sha, short}` on the wire.
+    pub base: &'a BasePin,
+    /// The working tree's diff against `base.sha`; empty when there is none.
+    pub code_diff: &'a str,
+    /// The working area's staged docs, sorted by identity.
+    pub staged: &'a [StagedDoc],
+}
+
+/// Render `jigc task diff`'s report to the surface `format` selects
+/// (`design/command-output-contract.md` §2 → `jigc task diff`).
+///
+/// **Agent-text is byte-unchanged** from the pre-M47 surface: a `# code changes vs base
+/// <short>` section when the diff is non-empty, then a `# staged docs` section listing
+/// `--- <id>.md` + the verbatim body per staged doc — each section omitted entirely when
+/// its content is empty, which is why the empty state renders as silence there.
+///
+/// **JSON is the settled envelope** (`DECISIONS.md` → 2026-07-26 M47 Settle, Decision 11):
+/// `op` + `task` + `base` + `code_diff` + `staged_docs` + `findings`. `code_diff` and
+/// `staged_docs` are **present-always** (`""` / `[]`) under the contract's own
+/// absent-versus-empty rule — a discrimination a driver should never have to infer — and
+/// that is what makes the **empty state non-empty**: the verb printed zero bytes on both
+/// streams at exit 0 before this, silence a driver cannot tell from a crash. `findings`
+/// is **structurally always empty**: `task diff` is a pure reader and the exit-code
+/// taxonomy restricts the blocking verdict to the three gate verbs, so this verb raises
+/// none; the key is present anyway so a driver deserializes one envelope shape.
+pub fn task_diff(format: Format, view: &TaskDiffView<'_>) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({
+            "op": "task-diff",
+            "task": view.task,
+            "base": view.base,
+            "code_diff": view.code_diff,
+            "staged_docs": view
+                .staged
+                .iter()
+                .map(|doc| serde_json::json!({ "id": doc.id }))
+                .collect::<Vec<_>>(),
+            "findings": [],
+        })),
+        Format::Agent | Format::Human => {
+            let mut out = String::new();
+            if !view.code_diff.trim().is_empty() {
+                out.push_str(&format!("# code changes vs base {}\n", view.base.short));
+                out.push_str(view.code_diff);
+                if !view.code_diff.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            if !view.staged.is_empty() {
+                out.push_str("# staged docs\n");
+                for doc in view.staged {
+                    out.push_str(&format!("--- {}.md\n", doc.id));
+                    out.push_str(&doc.body);
+                    if !doc.body.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
+            }
+            out
+        }
     }
 }
 

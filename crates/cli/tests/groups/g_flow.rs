@@ -47,6 +47,8 @@ mod machine_output;
 mod release_smoke;
 #[path = "../routing_loop.rs"]
 mod routing_loop;
+#[path = "../task_diff_envelope.rs"]
+mod task_diff_envelope;
 #[path = "../validate_command.rs"]
 mod validate_command;
 #[path = "../validate_envelope.rs"]

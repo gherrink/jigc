@@ -265,7 +265,7 @@ impl TaskCommand {
     pub fn dispatch(self, cwd: &Path, format: Format) -> Outcome {
         let result = match self {
             TaskCommand::List => run_list(cwd, format),
-            TaskCommand::Diff { id } => run_diff(cwd, &id),
+            TaskCommand::Diff { id } => run_diff(cwd, &id, format),
             TaskCommand::Validate { id, carry_staged } => {
                 return run_validate(cwd, &id, format, carry_staged);
             }
@@ -338,29 +338,40 @@ fn run_list(cwd: &Path, format: Format) -> Result<()> {
 /// SHA (the code changes — "CLI orchestrates, git executes"), and (2) the staged
 /// managed-doc instances under the working area's `docs/` (which live outside the
 /// tree, so git does not see them). Read-only.
-fn run_diff(cwd: &Path, id: &str) -> Result<()> {
+///
+/// **`format` reaches the render (M47 Inc 7).** This was the one dispatch arm of the
+/// six that dropped it, so `--format json` printed markdown here and — over a working
+/// area that staged nothing, with no code change — printed **zero bytes on both
+/// streams at exit 0**. Both halves close through [`render::task_diff`]: JSON emits the
+/// settled `task-diff` envelope, whose present-always `code_diff` / `staged_docs` keys
+/// make the empty state non-empty; agent-text is byte-unchanged.
+fn run_diff(cwd: &Path, id: &str, format: Format) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
     let base = task.base()?;
 
-    let diff = git_diff(&task.repo_root, &base.sha)?;
-    if !diff.trim().is_empty() {
-        println!("# code changes vs base {}", base.short);
-        print!("{diff}");
-        if !diff.ends_with('\n') {
-            println!();
-        }
-    }
+    let code_diff = git_diff(&task.repo_root, &base.sha)?;
+    // The working area's `docs/<type>:<slug>.md` set, stripped to the `<type>:<slug>`
+    // identity exactly as `dropped_staged_docs` derives the `task-discard` ack's list —
+    // and that identity *is* the address `jigc doc show <id> --task <id>` takes, which
+    // is why the envelope carries one key and never the bodies.
+    let staged: Vec<render::StagedDoc> = task
+        .staged_docs()?
+        .into_iter()
+        .map(|(name, body)| render::StagedDoc {
+            id: name.strip_suffix(".md").unwrap_or(&name).to_string(),
+            body,
+        })
+        .collect();
 
-    let staged = task.staged_docs()?;
-    if !staged.is_empty() {
-        println!("# staged docs");
-        for (name, body) in staged {
-            println!("--- {name}");
-            print!("{body}");
-            if !body.ends_with('\n') {
-                println!();
-            }
-        }
+    let view = render::TaskDiffView {
+        task: id,
+        base: &base,
+        code_diff: &code_diff,
+        staged: &staged,
+    };
+    print!("{}", render::task_diff(format, &view));
+    if format == Format::Json {
+        println!();
     }
     Ok(())
 }
