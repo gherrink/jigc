@@ -41,6 +41,13 @@
 //! section owes the append half too (`cli::pack::COPY_IN_APPEND_TOKENS`), and a
 //! declarer whose singleton is slot-only owes nothing and stays clean — the
 //! exemption asserted over the enumerated declarer set, never assumed.
+//!
+//! Its **obligation direction** (T3) closes the pair into a biconditional: every
+//! `create.singleton-copy-in` declarer of the two trees (two in dev, four in
+//! methodology — six across both, enumerated from the trees) must still reference
+//! the `{{schema:<T>}}` its declaration guards, so deleting the ref cannot delete
+//! the obligation itself while the composed step keeps promising a payload that
+//! never follows.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -895,6 +902,158 @@ fn a_named_fact_manifest_less_pack_is_unchecked() {
     assert!(
         out.status.success(),
         "a manifest-less pack must be outside the named-fact fence; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M47 Inc 9 T3 — the OBLIGATION axis: `create.singleton-copy-in` becomes a
+// BICONDITIONAL with the `{{schema:<T>}}` ref it guards. Every tier above runs
+// ref ⇒ declaration (⇒ named facts); this runs declaration ⇒ ref, so deleting
+// the ref cannot delete the obligation itself while the composed step keeps
+// promising a payload that never follows.
+// ---------------------------------------------------------------------------
+
+/// Delete every `{{schema:<T>}}` reference from a copied pack's step **body**,
+/// leaving its `states-constraints:` declaration and every contract sentence
+/// standing — the mutation the obligation direction must catch. The deletion is
+/// asserted to bite, so the sweep also proves each declarer really solicits a
+/// schema payload today.
+fn delete_schema_refs(pack: &Path, step: &str) {
+    let path = pack.join("steps").join(format!("{step}.yaml"));
+    let text = fs::read_to_string(&path).expect("read the copied step");
+    let (front, body) = split_body(&text);
+
+    let mut out = String::new();
+    let mut rest = body;
+    loop {
+        let Some(open) = rest.find("{{") else {
+            out.push_str(rest);
+            break;
+        };
+        let Some(close) = rest[open + 2..].find("}}") else {
+            out.push_str(rest);
+            break;
+        };
+        let end = open + 2 + close + 2;
+        if rest[open + 2..open + 2 + close]
+            .trim()
+            .starts_with("schema:")
+        {
+            out.push_str(&rest[..open]);
+        } else {
+            out.push_str(&rest[..end]);
+        }
+        rest = &rest[end..];
+    }
+
+    assert_ne!(
+        out, body,
+        "the shipped `{step}` step must reference a schema for its deletion to be a real mutation",
+    );
+    fs::write(&path, format!("{front}{out}")).expect("write the mutated step");
+}
+
+/// Drive the obligation axis through the real binary: for every
+/// `create.singleton-copy-in` declarer of the tree, delete the `{{schema:<T>}}`
+/// ref its declaration guards, assert the load blocks naming step + code, then
+/// restore the step before the next declarer. The declarer set is read off the
+/// tree (two in dev, four in methodology today — six across both), never
+/// hand-listed.
+fn drive_obligation_axis(pack: &Path, run: &dyn Fn() -> std::process::Output) {
+    let declarers = copy_in_declarers(pack);
+    assert!(
+        !declarers.is_empty(),
+        "this pack must ship at least one copy-in declarer for the obligation axis to sweep",
+    );
+
+    for step in declarers {
+        let path = pack.join("steps").join(format!("{step}.yaml"));
+        let original = fs::read_to_string(&path).expect("read the step");
+        delete_schema_refs(pack, &step);
+        let out = run();
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        fs::write(&path, &original).expect("restore the step");
+
+        assert!(
+            !out.status.success(),
+            "deleting the `{{{{schema:<T>}}}}` ref from the copy-in declarer `{step}` must block \
+             pack load — the declared obligation would outlive the write it guards, while the \
+             composed step still promises a payload that never follows; stdout:\n{stdout}\n\
+             stderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(&format!("`{step}`")),
+            "stderr must name the `{step}` step; got:\n{stderr}",
+        );
+        assert!(
+            stderr.contains("create.singleton-copy-in"),
+            "stderr must name the `create.singleton-copy-in` code; got:\n{stderr}",
+        );
+    }
+}
+
+/// The dev-pack seam: both copy-in declarers of the shipped dev tree
+/// (`record-changelog` + `author-migration`) lose the write their declaration
+/// guards when their `{{schema:changelog}}` ref goes — so its deletion blocks
+/// `jigc start` at pack load.
+#[test]
+fn every_dev_copy_in_declarer_still_solicits_the_schema_it_promises() {
+    let repo = TempDir::new("ob-repo");
+    let home = TempDir::new("ob-home");
+    let pack = pack_copy("ob-dev", &embedded_pack_tree());
+    init_repo(repo.path());
+
+    drive_obligation_axis(pack.path(), &|| {
+        run_with_pack(repo.path(), home.path(), pack.path(), START)
+    });
+}
+
+/// The methodology seam: the same axis over the on-disk methodology tree through
+/// the `packs.yaml`-listed pack path — its four copy-in declarers
+/// (`author-migration-roadmap` / `-decisions-log` / `-deferral-ledger` /
+/// `-vision`, the slot-only one included: the obligation direction binds on the
+/// declaration, not on whether items can double) checked in isolation from the
+/// dev pack's intact steps in the same composition.
+#[test]
+fn every_methodology_copy_in_declarer_still_solicits_the_schema_it_promises() {
+    let repo = TempDir::new("obm-repo");
+    let home = TempDir::new("obm-home");
+    let pack = pack_copy("ob-meth", &methodology_pack_tree());
+    init_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.path().display()),
+    )
+    .expect("write packs.yaml naming the methodology copy");
+
+    drive_obligation_axis(pack.path(), &|| {
+        run_embedded(repo.path(), home.path(), START)
+    });
+}
+
+/// The omitting context: a **manifest-less** pack is outside the obligation
+/// direction too — the same deleted ref the manifest-bearing copy blocks on loads
+/// clean once `config/schema-manifest.yaml` is dropped.
+#[test]
+fn a_ref_less_copy_in_declarer_in_a_manifest_less_pack_is_unchecked() {
+    let repo = TempDir::new("obnm-repo");
+    let home = TempDir::new("obnm-home");
+    let pack = pack_copy("obnm", &embedded_pack_tree());
+    init_repo(repo.path());
+    let step = copy_in_declarers(pack.path())
+        .into_iter()
+        .next()
+        .expect("the dev pack ships at least one copy-in declarer");
+    delete_schema_refs(pack.path(), &step);
+    fs::remove_file(pack.path().join("config").join("schema-manifest.yaml"))
+        .expect("drop the freeze manifest");
+
+    let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
+    assert!(
+        out.status.success(),
+        "a manifest-less pack must be outside the obligation direction; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
 }

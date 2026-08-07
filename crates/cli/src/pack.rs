@@ -496,6 +496,23 @@ fn schema_refs(body: &str) -> Vec<String> {
 /// `author-migration-vision`) is inert here, never in error — flat-mapping the tokens
 /// would force it to state a falsehood. Same A-3 bound: the *named facts* of jigc's
 /// own contract, never prose quality.
+///
+/// **The obligation direction (M47 Inc 9 T3).** Every tier above runs *ref ⇒
+/// declaration ⇒ named facts*; this runs the reverse, closing the pair into a
+/// **biconditional**: a step declaring [`SINGLETON_COPY_IN_CODE`] must still
+/// reference a `{{schema:<T>}}` whose `T` resolves to a singleton. Without it,
+/// deleting the ref deletes the *obligation itself* — every tier above goes inert
+/// (there is no solicit left to fence) while the step's prose keeps promising a
+/// payload that never follows. Demonstrated live: with `{{schema:changelog}}`
+/// deleted, the dev pack loads clean and `record-changelog` composes *"The target
+/// schema and its batch payload … follow"* above nothing.
+/// `workflow-refs.schema-ref-resolves` guards only the opposite case (ref present,
+/// schema absent) and structurally cannot see this one. The check is **structural,
+/// not token-based** — no prose-matching of the promise sentence, which would leave
+/// the A-3 bound. Declared boundary: a step deleting **both** its ref and its
+/// declaration leaves the fence family entirely (the family is *every step carrying
+/// a `states-constraints:` code*), so that case is out of scope by the family's own
+/// definition rather than silently narrowed.
 fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> {
     use anyhow::Context;
 
@@ -531,12 +548,11 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
                     matches!(section.body, engine::schema::SectionBody::Repeatable { .. })
                 });
             }
-            if solicits_singleton
-                && !def
-                    .states_constraints
-                    .iter()
-                    .any(|c| c == SINGLETON_COPY_IN_CODE)
-            {
+            let declares_copy_in = def
+                .states_constraints
+                .iter()
+                .any(|c| c == SINGLETON_COPY_IN_CODE);
+            if solicits_singleton && !declares_copy_in {
                 anyhow::bail!(
                     "pack-load stated-at fence failed: step `{}` solicits a singleton \
                      doctype's authoring (a `{{{{schema:<T>}}}}` ref with `T` singleton) but does \
@@ -546,6 +562,25 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
                      route: state the copy-in/append constraint above the authoring solicit and \
                      declare `{SINGLETON_COPY_IN_CODE}` in the step's `states-constraints:` \
                      front-matter",
+                    id.as_str(),
+                );
+            }
+            // The obligation direction (T3): the declaration is only worth what it
+            // guards. Deleting the `{{schema:<T>}}` ref deletes the write the
+            // contract binds to, while the step's prose keeps promising a payload
+            // that never follows.
+            if declares_copy_in && !solicits_singleton {
+                anyhow::bail!(
+                    "pack-load stated-at fence failed: step `{}` declares \
+                     `{SINGLETON_COPY_IN_CODE}` but its body references no \
+                     `{{{{schema:<T>}}}}` with `T` a resolvable singleton — the declared \
+                     copy-in/append contract no longer guards any authoring solicit, while the \
+                     composed step still promises a schema payload that never follows, an ambush \
+                     (design/surface-contract.md → The stated-at fence)\n\
+                     route: restore the `{{{{schema:<T>}}}}` reference this step's prose \
+                     promises — or, if the step no longer solicits a singleton's authoring, drop \
+                     `{SINGLETON_COPY_IN_CODE}` from its `states-constraints:` front-matter \
+                     together with the contract sentences it stands for",
                     id.as_str(),
                 );
             }
