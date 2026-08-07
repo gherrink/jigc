@@ -31,6 +31,26 @@
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp repo
 //! is a real `git init`, the probe is the real built `doc-code`, and a self-cleaning
 //! `TempDir` keeps the test off the developer's repo.
+//!
+//! **M47 inc-7 / T2 — `blocking_probes`.** The store envelope gains a third top-level key
+//! beside `scope`/`report_only`: the sorted, de-duplicated probe names of the findings whose
+//! **resolved severity is blocking**, `[]` when none, so a shell consumer can key on severity
+//! without reaching into a finding object (`design/command-output-contract.md` → The store
+//! sweep's envelope; DECISIONS.md → 2026-07-26 M47, Decision 7 re-settled). Three arms, over
+//! real committed stores through the real binary:
+//!
+//! - **(v) blocking → present, sorted, de-duplicated.** An arch-doc whose **two** components
+//!   anchor symbols that are then renamed away yields two blocking `doc-code.symbol-exists`
+//!   findings; a dangling workflow shadow adds a blocking `workflow-refs.include-resolves` →
+//!   `blocking_probes == ["doc-code", "workflow-refs"]` (one entry per probe, sorted).
+//! - **(vi) advisory does NOT promote.** An arch-doc component whose anchor **resolves**
+//!   while its title names a different compound identifier raises the *advisory*
+//!   `doc-code.title-names-symbol`; with an unrelated blocking finding present,
+//!   `blocking_probes` is non-empty and **omits** `"doc-code"` — the false positive the
+//!   severity filter exists to prevent.
+//! - **(vii) no blocking finding → the empty array.** The same advisory-only store without
+//!   the unrelated blocking finding yields `blocking_probes == []` — present and empty, never
+//!   absent.
 
 use std::fs;
 use std::io::Write;
@@ -510,6 +530,313 @@ fn validate_honors_project_schema_location_shadow_in_store_sweep() {
         "the store sweep must resolve the `adr` schema through the cascade and walk the \
          project-shadowed `adrs/` location, surfacing the un-baselined doc there; a pack-only \
          sweep walks `decisions/` and misses it; stdout:\n{stdout}",
+    );
+}
+
+/// The tracked Rust source every `implemented-by` anchor in the `blocking_probes` arms
+/// resolves against — two present symbols, so one arch-doc can anchor two components at
+/// real code (the `doc-code` probe's Rust grammar).
+const CODE_WITH_SYMBOLS: &str = "\
+pub fn session_store() -> u32 {
+    1
+}
+
+pub fn cache_warmer() -> u32 {
+    2
+}
+";
+
+/// The same file after **both** symbols are renamed away — every committed anchor into it
+/// now dangles, so the store sweep raises one blocking `doc-code.symbol-exists` per anchor.
+const CODE_WITH_SYMBOLS_RENAMED: &str = "\
+pub fn store_of_sessions() -> u32 {
+    1
+}
+
+pub fn warmer_of_caches() -> u32 {
+    2
+}
+";
+
+/// Write + commit `src/lib.rs` — the tracked code the arch-doc components anchor into.
+fn commit_code(repo: &Path, body: &str, message: &str) {
+    fs::create_dir_all(repo.join("src")).expect("create src dir");
+    fs::write(repo.join("src").join("lib.rs"), body).expect("write src/lib.rs");
+    git(repo, &["add", "src/lib.rs"]);
+    git(repo, &["commit", "-q", "-m", message]);
+}
+
+/// Author + finalize one `arch-doc` through the real binary, with one `components` item per
+/// `(title, symbol)` pair anchored at `src/lib.rs#<symbol>` — the committed, code-anchored
+/// doc the `doc-code` store family adjudicates. Every `add-item` address is captured from
+/// stdout and run verbatim (the emitted bytes are the contract).
+fn commit_arch_doc(repo: &Path, home: &Path, components: &[(&str, &str)]) {
+    let task = "document-the-cache-layer";
+    let out = jigc(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "architecture-documentation",
+            "document the cache layer",
+        ],
+    );
+    assert_ok(&out, "`jigc start --workflow architecture-documentation`");
+
+    let create = jigc_doc(
+        repo,
+        home,
+        &["create", "arch-doc", "--title", "Cache layer"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create arch-doc`");
+    let arch = String::from_utf8(create.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string();
+
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_doc(
+            repo,
+            home,
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    let set_field = |addr: &str, value: &str| {
+        let out = jigc_doc(repo, home, &["set-field", addr, "--value", value], None);
+        assert_ok(&out, &format!("set-field {addr}"));
+    };
+
+    set_slot(
+        &format!("{arch}#overview"),
+        b"The cache layer owns ephemeral session state.\n",
+    );
+
+    for (title, symbol) in components {
+        let added = jigc_doc(
+            repo,
+            home,
+            &["add-item", &format!("{arch}#components"), "--title", title],
+            None,
+        );
+        assert_ok(
+            &added,
+            &format!("`jigc doc add-item …#components` ({title})"),
+        );
+        let item = String::from_utf8(added.stdout)
+            .expect("utf-8")
+            .trim_end_matches('\n')
+            .to_owned();
+        set_slot(
+            &format!("{item}/description"),
+            b"One part of the cache layer.\n",
+        );
+        set_field(
+            &format!("{item}/implemented-by"),
+            &format!("src/lib.rs#{symbol}"),
+        );
+    }
+
+    fill_commit(repo, home, task);
+    let out = jigc(repo, home, &["task", "finalize", task]);
+    assert_ok(&out, "`jigc task finalize` (arch-doc)");
+}
+
+/// The store envelope `jigc validate --format json` emits, parsed — the machine surface a
+/// driver (and the installed pre-commit hook) consumes.
+fn store_envelope(repo: &Path, home: &Path) -> serde_json::Value {
+    let out = jigc(repo, home, &["validate", "--format", "json"]);
+    serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
+        panic!(
+            "`jigc validate --format json` must emit valid JSON ({err}); stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        )
+    })
+}
+
+/// The envelope's `blocking_probes` as a plain string vector — asserted to be an array of
+/// plain strings (the flat, `]`-delimited shape the hook's bounded match relies on).
+fn blocking_probes(envelope: &serde_json::Value) -> Vec<String> {
+    envelope["blocking_probes"]
+        .as_array()
+        .unwrap_or_else(|| {
+            panic!("the store envelope carries a `blocking_probes` array; json:\n{envelope}")
+        })
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .unwrap_or_else(|| {
+                    panic!("`blocking_probes` holds plain probe-name strings; json:\n{envelope}")
+                })
+                .to_string()
+        })
+        .collect()
+}
+
+/// Every finding code in the envelope's `findings` array, in emission order.
+fn finding_codes(envelope: &serde_json::Value) -> Vec<String> {
+    envelope["findings"]
+        .as_array()
+        .unwrap_or_else(|| {
+            panic!("the store envelope carries a `findings` array; json:\n{envelope}")
+        })
+        .iter()
+        .map(|f| {
+            f["code"]
+                .as_str()
+                .expect("a finding carries a code")
+                .to_string()
+        })
+        .collect()
+}
+
+/// The two unchanged top-level keys, asserted on every `blocking_probes` arm: the new key is
+/// **additive** — it must not disturb `scope`, `report_only`, or the findings list.
+fn assert_store_envelope_unchanged(envelope: &serde_json::Value) {
+    assert_eq!(envelope["scope"], "store", "json:\n{envelope}");
+    assert_eq!(
+        envelope["report_only"],
+        serde_json::Value::Bool(true),
+        "a content-only sweep stays report-only; json:\n{envelope}",
+    );
+    assert!(
+        !finding_codes(envelope).is_empty(),
+        "each arm's store carries findings; json:\n{envelope}",
+    );
+}
+
+/// (v) A **blocking** `doc-code` finding lands in `blocking_probes` — sorted and
+/// de-duplicated. Two dangling anchors (two blocking `doc-code.symbol-exists` findings)
+/// collapse to ONE `"doc-code"` entry, and the unrelated blocking
+/// `workflow-refs.include-resolves` sorts after it.
+#[test]
+fn blocking_probes_carries_each_blocking_probe_once_sorted() {
+    let repo = TempDir::new("blocking-probes");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_code(repo.path(), CODE_WITH_SYMBOLS, "the anchored source");
+
+    // Two components, each anchored at a present symbol; descriptive titles carry no
+    // compound identifier, so the advisory `title-names-symbol` guard stays silent here.
+    commit_arch_doc(
+        repo.path(),
+        home.path(),
+        &[
+            ("Session store", "session_store"),
+            ("Cache warmer", "cache_warmer"),
+        ],
+    );
+
+    // Both symbols renamed away — the two committed anchors now dangle.
+    commit_code(
+        repo.path(),
+        CODE_WITH_SYMBOLS_RENAMED,
+        "rename both anchored symbols",
+    );
+    // A second, unrelated blocking family, so the array's ORDER is a real claim.
+    seed_dangling_workflow_ref(repo.path());
+
+    let envelope = store_envelope(repo.path(), home.path());
+    assert_store_envelope_unchanged(&envelope);
+
+    let codes = finding_codes(&envelope);
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|c| *c == "doc-code.symbol-exists")
+            .count(),
+        2,
+        "precondition: BOTH dangling anchors raise their own blocking finding; json:\n{envelope}",
+    );
+    assert_eq!(
+        blocking_probes(&envelope),
+        vec!["doc-code".to_string(), "workflow-refs".to_string()],
+        "two blocking findings of one probe yield ONE entry, and the entries are sorted; \
+         json:\n{envelope}",
+    );
+}
+
+/// (vi) An **advisory** `doc-code` finding does NOT promote its probe into
+/// `blocking_probes`. The arch-doc component's anchor resolves (no `symbol-exists`), while
+/// its title names a different compound identifier → the advisory
+/// `doc-code.title-names-symbol`. With an unrelated blocking finding present the array is
+/// non-empty and still omits `"doc-code"` — a consumer keying on the array reads severity,
+/// not mere presence.
+#[test]
+fn blocking_probes_omits_a_probe_whose_only_finding_is_advisory() {
+    let repo = TempDir::new("advisory-only");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_code(repo.path(), CODE_WITH_SYMBOLS, "the anchored source");
+
+    // `sessionStore` is a compound identifier that is not the anchored `session_store` —
+    // the stale-heading guard, advisory by default — while the anchor itself resolves.
+    commit_arch_doc(
+        repo.path(),
+        home.path(),
+        &[("sessionStore", "session_store")],
+    );
+    seed_dangling_workflow_ref(repo.path());
+
+    let envelope = store_envelope(repo.path(), home.path());
+    assert_store_envelope_unchanged(&envelope);
+
+    let codes = finding_codes(&envelope);
+    assert!(
+        codes.iter().any(|c| c == "doc-code.title-names-symbol"),
+        "precondition: the advisory stale-heading finding is IN `findings`; json:\n{envelope}",
+    );
+    assert!(
+        !codes.iter().any(|c| c == "doc-code.symbol-exists"),
+        "precondition: the anchor resolves — no blocking doc-code finding; json:\n{envelope}",
+    );
+
+    let probes = blocking_probes(&envelope);
+    assert!(
+        !probes.is_empty(),
+        "the unrelated blocking finding keeps the array non-empty, so an omission is a \
+         severity claim rather than an empty sweep; json:\n{envelope}",
+    );
+    assert!(
+        !probes.contains(&"doc-code".to_string()),
+        "an advisory-only `doc-code` must NOT appear in `blocking_probes`; json:\n{envelope}",
+    );
+}
+
+/// (vii) No blocking finding at all → `blocking_probes` is the **empty array**: present and
+/// empty, never absent. Same advisory-only store as (vi), minus the unrelated blocking
+/// finding.
+#[test]
+fn blocking_probes_is_the_empty_array_when_nothing_blocks() {
+    let repo = TempDir::new("nothing-blocks");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_code(repo.path(), CODE_WITH_SYMBOLS, "the anchored source");
+    commit_arch_doc(
+        repo.path(),
+        home.path(),
+        &[("sessionStore", "session_store")],
+    );
+
+    let envelope = store_envelope(repo.path(), home.path());
+    assert_store_envelope_unchanged(&envelope);
+
+    assert!(
+        finding_codes(&envelope)
+            .iter()
+            .any(|c| c == "doc-code.title-names-symbol"),
+        "precondition: the advisory finding is present — the array is empty on severity, \
+         not on an empty report; json:\n{envelope}",
+    );
+    assert_eq!(
+        blocking_probes(&envelope),
+        Vec::<String>::new(),
+        "no blocking finding yields the empty array; json:\n{envelope}",
     );
 }
 

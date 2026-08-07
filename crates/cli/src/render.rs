@@ -448,6 +448,15 @@ pub fn validation_upgrade(format: Format, report: &ValidationReport, checked: us
 /// failure. So the agent/human view appends a [`store_trailer`] naming where these findings
 /// actually gate, and the JSON adds a machine-readable `report_only` (+ `scope`) signal —
 /// the per-finding severity token is left untouched (it is meaningful).
+///
+/// The JSON carries a third top-level key, **`blocking_probes`** (M47, `design/command-output-contract.md`
+/// → The store sweep's envelope): the sorted, de-duplicated probe names of the findings whose
+/// resolved severity is `Blocking`, `[]` when none. It exists so a **shell** consumer — the
+/// installed warn-only pre-commit hook above all — can key on *severity* without reaching into
+/// a finding object: a flat array of plain strings is a `]`-delimited region a bounded match
+/// cannot escape, where the findings list is a sequence of nested objects. Store sweep only;
+/// [`validation`]'s task-scope envelope is untouched (its exit code already carries the
+/// blocking verdict).
 pub fn validation_store(
     format: Format,
     report: &ValidationReport,
@@ -491,6 +500,24 @@ pub fn validation_store(
                 object.insert(
                     "report_only".to_string(),
                     serde_json::Value::Bool(!validation_store_exit_flips(report)),
+                );
+                // Sorted + de-duplicated by construction: a `BTreeSet` over the probe names of
+                // the *blocking* findings only. Severity is the engine's resolved (post-cascade)
+                // one, so a project that demotes a check demotes it here too.
+                let blocking: BTreeSet<&str> = report
+                    .findings
+                    .iter()
+                    .filter(|finding| finding.severity == Severity::Blocking)
+                    .map(|finding| finding.probe.as_str())
+                    .collect();
+                object.insert(
+                    "blocking_probes".to_string(),
+                    serde_json::Value::Array(
+                        blocking
+                            .into_iter()
+                            .map(|probe| serde_json::Value::String(probe.to_string()))
+                            .collect(),
+                    ),
                 );
             }
             json(&value)

@@ -104,6 +104,22 @@ One envelope shape, pinned once here, consumed **everywhere a finding is emitted
 - **`route`** — the direction, **always present** (M41 Fork 2 / V15 floor rule, [validation.md](validation.md) → the advisory-route floor; never `null`). Two route *kinds*, distinguished so a driver/agent reads the right intent: a **repair route** names an action — mechanical (`run jigc …`) *or* a non-mechanical human one ("correct or drop the mention", "author a referrer" — a real fix jigc can't execute); an **informational route** ("no action needed — uncheckable by design", e.g. `unsupported-language`) marks a genuine no-op. The floor rule is "every finding routes," **not** "every route is 'no action needed'" — flattening the two would tell an agent a dangling mention needs no action (a regression). This honors [validation.md](validation.md)'s rationale (`none` was fine only where there is no *mechanical* route) by reifying that case as an explicit route value rather than a null. (Supersedes the earlier "route is optional / `none` is fine" model.)
 - **`location`** — line/col when the finding has a source position, else `null`. **Advisory only** — `location` is *not* part of the stable key (it churns under edits); it is a convenience pointer for a human reader.
 
+#### The store sweep's envelope — `jigc validate --format json` (M47)
+
+The store sweep wraps the findings list in three top-level keys of its own (`render::validation_store`), because a store-scope report says two things a task-scope one does not: *which* scope produced it, and whether its exit is a verdict.
+
+```json
+{ "schema_version": 2,
+  "findings": [ … ],                       // the envelope above, inherited unchanged
+  "scope": "store",
+  "report_only": true,                     // false iff the exit flips (validation.md → Exit semantics)
+  "blocking_probes": ["doc-code"] }        // sorted, de-duplicated; [] when nothing blocks
+```
+
+- **`scope`** / **`report_only`** — the scope marker and the machine half of the exit contract: the sweep is detect-and-report, so a `blocking` severity token on a *finding* is a claim about where it gates, not about this run's exit ([validation.md](validation.md) → Exit semantics — report-only, with three exit-flipping exceptions). `report_only` reads the same predicate as the exit code, so the two can never diverge.
+- **`blocking_probes`** — the **sorted, de-duplicated probe names** of the findings whose resolved severity is `blocking`, `[]` when none. It carries no fact the findings list lacks; it carries it in a shape a **shell** consumer can bind. The installed warn-only pre-commit hook ([validation.md](validation.md) → Auto-firing the sweep) must answer *"did anything blocking come from `doc-code`?"* from a script, and a grep that reaches into a finding object has to bind a key to a member **across nested `{}`** — unsound, and the reason the hook previously warned on advisory findings too. A flat array of plain strings is a **`]`-delimited region**: a match bounded by the array's own `]` structurally cannot escape into `findings`. Greppability is a property of the delimiter you can rely on, not of JSON in general. (Severity is the engine's *resolved* one, so a project that demotes a check through the cascade demotes it here as well.)
+- **Scope bound: the store sweep only.** `jigc task validate`'s envelope is untouched — its **exit code** already carries the blocking verdict for the one scope where blocking *is* a gate, and no consumer greps it.
+
 ## The stable finding key — `{ code, target }`
 
 Findings-as-data is a sound 1.0 contract only if a finding has a **stable per-instance identity** — otherwise a driver cannot tell "the same finding as last sweep" from "a new one," and the pin freezes an unusable key. Today a `Finding` is keyed only by its line/col `location` ([finding.rs](../crates/engine/src/finding.rs)), which moves on every edit.
