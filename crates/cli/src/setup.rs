@@ -292,7 +292,12 @@ const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
 ///     byte-identical and the sentinel appears exactly once.
 ///
 /// The written file is made owner-executable (a git hook must be executable to fire).
-pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Result<()> {
+///
+/// Returns the hook's **resolved** path, so the caller can name the file it actually
+/// wrote instead of the assumed `.git/hooks/pre-commit` literal (D4 — the literal lies
+/// under `core.hooksPath` and in a linked worktree, the two cases this resolution
+/// exists for).
+pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Result<PathBuf> {
     let hooks_dir = resolve_hooks_dir(repo_root)?;
     std::fs::create_dir_all(&hooks_dir)?;
     let hook = hooks_dir.join("pre-commit");
@@ -334,7 +339,28 @@ pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Re
     };
 
     std::fs::write(&hook, next)?;
-    make_executable(&hook)
+    make_executable(&hook)?;
+    Ok(hook)
+}
+
+/// Render an installed hook path for the success summary: repo-root-relative when the
+/// hook lives inside the repo (the common `.git/hooks/pre-commit` case, and a
+/// `core.hooksPath` pointing in-repo), absolute otherwise — a `core.hooksPath` outside
+/// the repo, or the **common** hooks dir a linked worktree resolves to, neither of
+/// which any repo-relative path can name. Both sides are canonicalized before the
+/// strip so a symlinked repo root (macOS `/var` → `/private/var`) still reads relative.
+fn display_hook_path(repo_root: &Path, hook: &Path) -> String {
+    let (root, real) = match (
+        std::fs::canonicalize(repo_root),
+        std::fs::canonicalize(hook),
+    ) {
+        (Ok(root), Ok(real)) => (root, real),
+        _ => return hook.display().to_string(),
+    };
+    match real.strip_prefix(&root) {
+        Ok(relative) => relative.display().to_string(),
+        Err(_) => real.display().to_string(),
+    }
 }
 
 /// The jigc-managed block for the **wrap** case: the rendered body with its shebang
@@ -678,6 +704,10 @@ pub struct SetupSummary {
     pub line_file: String,
     /// The repo-root-relative settings file the allowlist was merged into.
     pub allowlist_file: String,
+    /// The `pre-commit` hook's path as git resolved it ([`display_hook_path`]) —
+    /// repo-root-relative inside the repo, absolute when the hooks dir lives outside it
+    /// (`core.hooksPath`, or a linked worktree's common hooks dir).
+    pub hook_file: String,
     /// The outcome of committing setup's own install files as a dedicated commit
     /// (M26 shakedown — see [`commit_install`]).
     pub install_commit: InstallCommit,
@@ -895,13 +925,14 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
             "re-run `jigc setup` (the install resolves its own absolute path)",
         )
     })?;
-    install_precommit_hook(repo_root, &jigc_path).map_err(|err| {
+    let hook_file = install_precommit_hook(repo_root, &jigc_path).map_err(|err| {
         Finding::block(
             "setup.install-hook",
             format!("cannot install the `pre-commit` hook into the repo's hooks dir: {err}"),
             "ensure the repo's git hooks directory is writable, then re-run `jigc setup`",
         )
     })?;
+    let hook_file = display_hook_path(repo_root, &hook_file);
 
     // 6. Extract the embedded `doc-code` probe beside the installed `jigc` (the
     //    production resolution path `<jigc-bin-dir>/doc-code`), so a `cargo
@@ -953,6 +984,7 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     Ok(SetupSummary {
         line_file,
         allowlist_file,
+        hook_file,
         install_commit,
     })
 }

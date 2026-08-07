@@ -1778,7 +1778,11 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
             out.push_str("  - SessionStart hook → ");
             out.push_str(&summary.allowlist_file);
             out.push_str("   (runs `jigc start` to orient your assistant each session)\n");
-            out.push_str("  - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)\n");
+            // The hooks dir git **resolved** (D4) — `core.hooksPath` and a linked
+            // worktree's common hooks dir both make the `.git/hooks` literal a lie.
+            out.push_str("  - pre-commit hook → ");
+            out.push_str(&summary.hook_file);
+            out.push_str("   (warn-only doc↔code drift backstop)\n");
             // When setup committed its own install (M26), name that commit so the user
             // knows the scaffolding landed on its own, not in their first feature commit.
             if let InstallCommit::Committed(sha) = &summary.install_commit {
@@ -4596,6 +4600,10 @@ mod tests {
         let summary = SetupSummary {
             line_file: "CLAUDE.md".to_string(),
             allowlist_file: ".claude/settings.json".to_string(),
+            // Deliberately NOT the `.git/hooks` literal: the line carries the hooks dir
+            // git resolved (D4), so a `core.hooksPath` install names where the hook
+            // really landed. The prior hardcoded literal pinned that lie here.
+            hook_file: "my-hooks/pre-commit".to_string(),
             install_commit: InstallCommit::Skipped,
         };
 
@@ -4607,7 +4615,7 @@ mod tests {
           - bootstrap reference → CLAUDE.md   (orients your assistant to `jigc start` each session)
           - jigc allowlist → .claude/settings.json   (pre-approves the `jigc` commands the agent runs)
           - SessionStart hook → .claude/settings.json   (runs `jigc start` to orient your assistant each session)
-          - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
+          - pre-commit hook → my-hooks/pre-commit   (warn-only doc↔code drift backstop)
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));

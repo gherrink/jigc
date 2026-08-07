@@ -857,6 +857,144 @@ fn setup_self_commits_install_with_a_git_identity() {
     );
 }
 
+/// Run a git subcommand in `root` with the ambient global/system config neutralized,
+/// asserting it succeeds (the hermetic sibling of [`mark_repo`]'s `git init`).
+fn git(root: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .unwrap_or_else(|err| panic!("run git {args:?}: {err}"));
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The path the setup success summary names for the installed `pre-commit` hook —
+/// extracted from the emitted line itself (the surface under test is the emitted
+/// bytes, never a reconstruction).
+fn printed_hook_path(stdout: &str) -> &str {
+    const MARKER: &str = "pre-commit hook → ";
+    let line = stdout
+        .lines()
+        .find(|line| line.contains(MARKER))
+        .unwrap_or_else(|| {
+            panic!("the setup summary must name the pre-commit hook; got:\n{stdout}")
+        });
+    let (_, rest) = line.split_once(MARKER).expect("the marker is present");
+    rest.split_once("   (").map_or(rest, |(path, _)| path)
+}
+
+/// Resolve a printed path the way its reader would: absolute as-is, relative against
+/// the directory they ran `jigc setup` in.
+fn resolve_printed(cwd: &Path, printed: &str) -> PathBuf {
+    let path = Path::new(printed);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
+
+/// Assert the summary's hook line names **the file the install actually wrote** — the
+/// D4 / P1-7 contract: `jigc setup` names the hooks dir git resolved, not the assumed
+/// `.git/hooks` literal. `expected` is where the hook really landed.
+fn assert_names_installed_hook(stdout: &str, cwd: &Path, expected: &Path) {
+    let printed = printed_hook_path(stdout);
+    let named = resolve_printed(cwd, printed);
+    assert!(
+        named.exists(),
+        "the summary names `{printed}`, which resolves to `{}` — a file that does not \
+         exist (the hook the install wrote is `{}`)",
+        named.display(),
+        expected.display(),
+    );
+    assert_eq!(
+        fs::canonicalize(&named).expect("canonicalize the named hook"),
+        fs::canonicalize(expected).expect("canonicalize the installed hook"),
+        "the summary must name the installed hook; it named `{printed}`",
+    );
+}
+
+/// With `core.hooksPath` set, the summary names **that** dir's `pre-commit`, not the
+/// `.git/hooks` literal (which holds no hook at all here).
+#[test]
+fn setup_names_the_core_hookspath_hook() {
+    let repo = TempDir::new("hookspath");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+    let hooks = repo.path().join("my-hooks");
+    git(
+        repo.path(),
+        &["config", "core.hooksPath", hooks.to_str().unwrap()],
+    );
+
+    let out = run_setup(repo.path(), home.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must exit 0; stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let installed = hooks.join("pre-commit");
+    assert!(
+        installed.exists(),
+        "the install must write the hook into the core.hooksPath dir",
+    );
+    assert!(
+        !repo.path().join(".git/hooks/pre-commit").exists(),
+        "with core.hooksPath set nothing lands in .git/hooks — the literal names nothing",
+    );
+    assert_names_installed_hook(&stdout, repo.path(), &installed);
+}
+
+/// From a linked worktree (the `.git`-is-a-file case), the summary names the **common**
+/// hooks dir under the main checkout — the worktree's own `.git/hooks` does not exist.
+#[test]
+fn setup_names_the_worktree_common_hooks_dir() {
+    let main = TempDir::new("wt-main");
+    mark_repo(main.path());
+    let home = TempDir::new("home");
+    git(
+        main.path(),
+        &["commit", "-q", "--allow-empty", "-m", "init"],
+    );
+    let linked = main.path().join("linked");
+    git(
+        main.path(),
+        &["worktree", "add", "-q", linked.to_str().unwrap()],
+    );
+    assert!(
+        linked.join(".git").is_file(),
+        "the linked worktree's .git must be a file",
+    );
+
+    let out = run_setup(&linked, home.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "`jigc setup` in a linked worktree must exit 0; stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let installed = main.path().join(".git/hooks/pre-commit");
+    assert!(
+        installed.exists(),
+        "a worktree install writes into the common hooks dir",
+    );
+    assert!(
+        !linked.join(".git/hooks/pre-commit").exists(),
+        "the worktree has no `.git/hooks` — the literal names nothing",
+    );
+    assert_names_installed_hook(&stdout, &linked, &installed);
+}
+
 /// Whether `settings` carries a `hooks.PreToolUse[*].hooks[*]` entry running the
 /// seeded `house-precheck.sh` command — the pre-existing non-jigc hook the merge
 /// must preserve.
