@@ -293,15 +293,21 @@ fn build_v2(dir: &Path) -> PathBuf {
     )
     .expect("write v2 implement");
     // finalize: changed body (the fork's upstream moved on). The
-    // `states-constraints:` declaration is kept — a manifest-shipping pack must
-    // stay stated-at-fence-conformant (the M43 pack-load fence), and this test's
-    // subject is the changed BODY, not a withdrawn declarer.
+    // `states-constraints:` declaration is kept AND the three staging contracts it
+    // declares are re-stated in the rewritten prose — a manifest-shipping pack must
+    // stay stated-at-fence-conformant down to the M47 named-fact tier (a kept
+    // declaration over prose that states nothing is exactly what that fence
+    // refuses), and this test's subject is the changed BODY, not a withdrawn or
+    // hollowed declarer.
     fs::write(
         steps.join("finalize.yaml"),
         "---\n\
          states-constraints: [finalize.left-out, finalize.nothing-staged, finalize.carried-staged]\n\
          ---\n\
-         Validate and commit the task as one logical commit (v2 rewrite):\n\n\
+         Validate and commit the task as one logical commit (v2 rewrite). Unstaged edits\n\
+         and untracked files are left out; with nothing staged it refuses. Anything staged\n\
+         from BEFORE this task was minted makes it refuse too — unstage it, or pass\n\
+         `--carry-staged`:\n\n\
          {{ cli.finalize-task }}\n",
     )
     .expect("write v2 finalize");

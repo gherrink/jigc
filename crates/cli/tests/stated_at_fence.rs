@@ -29,7 +29,16 @@
 //! This drives the **real `jigc` binary** end-to-end — the emitted exit code +
 //! stderr are the contract (the `freeze_enforcement.rs` /
 //! `suppression_fence.rs` pattern).
+//!
+//! The M47 Inc 9 **named-fact tier** rides the same molds one level deeper: a
+//! declared code must buy the contract's *named facts*, not the declaration
+//! alone. For every (declaring step × declared code × required token) triple the
+//! two shipped pack trees and the code-side map owe — enumerated from the trees
+//! and `cli::pack::CONSTRAINT_REQUIRED_TOKENS`, never hand-listed — deleting that
+//! token's occurrences from a copied pack blocks pack load, naming step, code and
+//! token.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -397,6 +406,225 @@ fn a_singleton_copy_in_manifest_less_pack_is_unchecked() {
     assert!(
         out.status.success(),
         "a manifest-less pack must be outside the per-soliciting-step fence; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M47 Inc 9 T1 — the named-fact tier: a declared code buys the contract's own
+// named facts, not just the declaration. The axis is mechanically enumerated:
+// (declaring step × declared code × required token) over each shipped pack tree
+// and the code-side map.
+// ---------------------------------------------------------------------------
+
+/// Split a step file into `(front-matter prefix, body)` — the body is exactly
+/// what the fence reads (`engine::compose::load_step_def`'s `body`), so the
+/// deletion below never touches the `states-constraints:` line that declares the
+/// code under test.
+fn split_body(text: &str) -> (&str, &str) {
+    if let Some(rest) = text.strip_prefix("---\n")
+        && let Some(end) = rest.find("\n---\n")
+    {
+        let cut = "---\n".len() + end + "\n---\n".len();
+        return text.split_at(cut);
+    }
+    ("", text)
+}
+
+/// Delete every occurrence of `token` from `body`, matching it the way the fence
+/// reads the prose — whitespace runs collapsed, ASCII case folded — so a phrase
+/// that wraps across a hard line break or opens a sentence capitalized is removed
+/// too. Each match's raw span collapses to a single space.
+fn delete_token(body: &str, token: &str) -> String {
+    // The normalized view, plus a byte-for-byte map back into `body`.
+    let mut norm = String::new();
+    let mut origin: Vec<usize> = Vec::new();
+    let mut pending_space = false;
+    for (at, ch) in body.char_indices() {
+        if ch.is_whitespace() {
+            pending_space = true;
+            continue;
+        }
+        if pending_space && !norm.is_empty() {
+            norm.push(' ');
+            origin.resize(norm.len(), at);
+        }
+        pending_space = false;
+        norm.push(ch.to_ascii_lowercase());
+        origin.resize(norm.len(), at);
+    }
+
+    let mut spans = Vec::new();
+    let mut from = 0;
+    while let Some(hit) = norm[from..].find(token) {
+        let start = from + hit;
+        let end = start + token.len();
+        spans.push((
+            origin[start],
+            origin.get(end).copied().unwrap_or(body.len()),
+        ));
+        from = end;
+    }
+
+    let mut out = body.to_string();
+    for (start, end) in spans.into_iter().rev() {
+        out.replace_range(start..end, " ");
+    }
+    out
+}
+
+/// Delete a named fact from a copied pack's step, leaving its `states-constraints:`
+/// declaration standing — the mutation the named-fact fence must catch. The
+/// deletion is asserted to bite, so the loop also proves the shipped prose really
+/// carries every token the map claims.
+fn delete_fact(pack: &Path, step: &str, token: &str) {
+    let path = pack.join("steps").join(format!("{step}.yaml"));
+    let text = fs::read_to_string(&path).expect("read the copied step");
+    let (front, body) = split_body(&text);
+    let stripped = delete_token(body, token);
+    assert_ne!(
+        stripped, body,
+        "the shipped `{step}` step must state \"{token}\" for its deletion to be a real mutation",
+    );
+    fs::write(&path, format!("{front}{stripped}")).expect("write the mutated step");
+}
+
+/// Every (declaring step × declared code × required token) triple a pack tree owes
+/// — read off the tree's own steps and the code-side map, never a hand-list.
+fn owed_triples(pack: &Path) -> Vec<(String, String, String)> {
+    let mut steps: Vec<PathBuf> = fs::read_dir(pack.join("steps"))
+        .expect("read the copied steps dir")
+        .map(|entry| entry.expect("dir entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "yaml"))
+        .collect();
+    steps.sort();
+
+    let mut out = Vec::new();
+    for path in steps {
+        let id = path
+            .file_stem()
+            .expect("step file stem")
+            .to_string_lossy()
+            .into_owned();
+        let bytes = fs::read(&path).expect("read the copied step");
+        let def = engine::compose::load_step_def(&id, &bytes).expect("step front-matter parses");
+        for code in &def.states_constraints {
+            let Some((_, tokens)) = cli::pack::CONSTRAINT_REQUIRED_TOKENS
+                .iter()
+                .find(|(fenced, _)| fenced == code)
+            else {
+                continue;
+            };
+            for token in *tokens {
+                out.push((id.clone(), code.clone(), (*token).to_owned()));
+            }
+        }
+    }
+    out
+}
+
+/// Drive the whole axis through the real binary: delete each owed token in turn
+/// from `pack`, assert the load blocks naming step + code + token, then restore
+/// the step before the next triple. The covered code set must equal the map's, so
+/// a pack that silently stopped declaring a fenced code cannot pass by having
+/// nothing to sweep.
+fn drive_named_fact_axis(pack: &Path, run: &dyn Fn() -> std::process::Output) {
+    let triples = owed_triples(pack);
+    let covered: BTreeSet<&str> = triples.iter().map(|(_, code, _)| code.as_str()).collect();
+    let fenced: BTreeSet<&str> = cli::pack::CONSTRAINT_REQUIRED_TOKENS
+        .iter()
+        .map(|(code, _)| *code)
+        .collect();
+    assert_eq!(
+        covered, fenced,
+        "this pack must declare every fenced constraint code for the axis to sweep them",
+    );
+
+    for (step, code, token) in triples {
+        let path = pack.join("steps").join(format!("{step}.yaml"));
+        let original = fs::read_to_string(&path).expect("read the step");
+        delete_fact(pack, &step, &token);
+        let out = run();
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        fs::write(&path, &original).expect("restore the step");
+
+        assert!(
+            !out.status.success(),
+            "deleting \"{token}\" from `{step}` (declaring `{code}`) must block pack load; \
+             stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(&format!("`{step}`")),
+            "stderr must name the `{step}` step; got:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(&code),
+            "stderr must name the `{code}` code; got:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(&token),
+            "stderr must name the missing \"{token}\" fact; got:\n{stderr}",
+        );
+    }
+}
+
+/// The dev-pack seam: every named fact the shipped dev tree owes, deleted one at a
+/// time from a `JIGC_PACK_DIR` copy, blocks `jigc start` at pack load.
+#[test]
+fn every_named_fact_the_dev_pack_owes_is_bought_at_pack_load() {
+    let repo = TempDir::new("nf-repo");
+    let home = TempDir::new("nf-home");
+    let pack = pack_copy("nf-dev", &embedded_pack_tree());
+    init_repo(repo.path());
+
+    drive_named_fact_axis(pack.path(), &|| {
+        run_with_pack(repo.path(), home.path(), pack.path(), START)
+    });
+}
+
+/// The methodology seam: the same axis over the on-disk methodology tree, reached
+/// through the `packs.yaml`-listed pack path — each manifest-shipping constituent
+/// is checked in isolation, so the dev pack's intact prose in the same composition
+/// buys the methodology copy nothing.
+#[test]
+fn every_named_fact_the_methodology_pack_owes_is_bought_at_pack_load() {
+    let repo = TempDir::new("nfm-repo");
+    let home = TempDir::new("nfm-home");
+    let pack = pack_copy("nf-meth", &methodology_pack_tree());
+    init_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.path().display()),
+    )
+    .expect("write packs.yaml naming the methodology copy");
+
+    drive_named_fact_axis(pack.path(), &|| {
+        run_embedded(repo.path(), home.path(), START)
+    });
+}
+
+/// The omitting context: a **manifest-less** pack is outside the named-fact tier
+/// too — the same deleted fact that the manifest-bearing copy blocks on loads
+/// clean once `config/schema-manifest.yaml` is dropped.
+#[test]
+fn a_named_fact_manifest_less_pack_is_unchecked() {
+    let repo = TempDir::new("nfnm-repo");
+    let home = TempDir::new("nfnm-home");
+    let pack = pack_copy("nfnm", &embedded_pack_tree());
+    init_repo(repo.path());
+    let (step, _, token) = owed_triples(pack.path())
+        .into_iter()
+        .next()
+        .expect("the dev pack owes at least one named fact");
+    delete_fact(pack.path(), &step, &token);
+    fs::remove_file(pack.path().join("config").join("schema-manifest.yaml"))
+        .expect("drop the freeze manifest");
+
+    let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
+    assert!(
+        out.status.success(),
+        "a manifest-less pack must be outside the named-fact fence; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
 }

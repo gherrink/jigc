@@ -514,6 +514,136 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
     Ok(())
 }
 
+/// **The named-fact map** (M47 Inc 9 — `design/surface-contract.md` → The
+/// stated-at fence, named-fact tier): for each constraint code the two tiers
+/// above fence, the phrase(s) the declaring step's own prose must contain for the
+/// declaration to buy anything. Without it a `states-constraints:` code is a
+/// receipt for a statement that need not exist — the M47 review deleted 590
+/// characters of copy-in/append contract prose, kept the code, and every fence
+/// stayed green.
+///
+/// The tokens are compared against [`normalized_body`]'s view (whitespace runs
+/// collapsed, ASCII case folded), so a phrase that wraps across a newline or opens
+/// a sentence capitalized still matches — **both** halves are load-bearing over the
+/// shipped prose (methodology's `finalize` opens with "Unstaged"; the copy-in
+/// sentence wraps in every declarer). Each token is therefore authored in
+/// normalized form (lowercase, single-spaced), fenced by
+/// `constraint_tokens_are_authored_in_normalized_form`.
+///
+/// Honest bound — this stays inside the A-3 presence-never-content rule
+/// ([design/methodology-docs.md](../../../design/methodology-docs.md)): it buys the
+/// *named facts* of a contract jigc itself owns, never prose quality, register, or
+/// order. The set of fenced codes is jigc's, not the pack author's — a
+/// pack-authored code outside it carries no token requirement, and the map is
+/// bijected against the two code-side consts by
+/// `constraint_token_map_bijects_with_the_fenced_codes`.
+pub const CONSTRAINT_REQUIRED_TOKENS: [(&str, &[&str]); 5] = [
+    (
+        "finalize.promote-clobber",
+        &["--approve", "retire", "fidelity diff"],
+    ),
+    ("finalize.left-out", &["unstaged", "untracked", "left out"]),
+    ("finalize.nothing-staged", &["nothing staged", "refuse"]),
+    (
+        "finalize.carried-staged",
+        &["--carry-staged", "this task was minted"],
+    ),
+    (
+        SINGLETON_COPY_IN_CODE,
+        &["copies the committed body in as", "edit base", "overwrites"],
+    ),
+];
+
+/// The named-fact comparison view of a step body: every whitespace run collapsed
+/// to a single space, every ASCII letter case-folded. Step prose is hard-wrapped
+/// and sentence-cased, so a fact's phrase legitimately spans a line break or opens
+/// capitalized; matching the raw bytes would fail on presentation, not on content.
+fn normalized_body(body: &str) -> String {
+    let mut out = String::new();
+    let mut pending_space = false;
+    for ch in body.chars() {
+        if ch.is_whitespace() {
+            pending_space = true;
+            continue;
+        }
+        if pending_space && !out.is_empty() {
+            out.push(' ');
+        }
+        pending_space = false;
+        out.push(ch.to_ascii_lowercase());
+    }
+    out
+}
+
+/// **The stated-at fence, named-fact tier (law 3, M47 Inc 9)** —
+/// `design/surface-contract.md` → The stated-at fence: a step that declares a
+/// fenced constraint code must actually state that contract's named facts in its
+/// own body ([`CONSTRAINT_REQUIRED_TOKENS`]), so the declaration cannot outlive the
+/// statement it stands for.
+///
+/// Scope is the **fence family**, not one file: every declaring step of every
+/// manifest-shipping constituent, in both shipped packs — the break was
+/// demonstrated on a migrate step's `create.singleton-copy-in` prose, so a
+/// finalize-only guard would not sweep its own axis. Every miss in a pack is
+/// reported at once (step + code + token), so the author sees the whole owed set
+/// rather than one bail per re-run.
+///
+/// Declared bounds: a **project-layer forked step** (`.jigc/config/steps/*.yaml`)
+/// is outside this fence as it is outside every pack-load fence — the fences run
+/// over manifest-shipping pack constituents only. A **manifest-less** pack stays on
+/// skip-on-absent (the `assert_schema_freeze` opt-in precedent). And the fence
+/// proves the facts are *named*, never that the surrounding prose is good.
+fn assert_named_facts_stated(pack: &dyn PackSource) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
+    for owner in pack.origin_packs(PackResourceKind::Config, &manifest_id) {
+        let mut missing: Vec<String> = Vec::new();
+        for id in owner.list(PackResourceKind::Steps) {
+            let bytes = owner
+                .read(PackResourceKind::Steps, &id)
+                .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
+            let def = engine::compose::load_step_def(id.as_str(), &bytes).map_err(|finding| {
+                anyhow::anyhow!(
+                    "pack-load step-front-matter sweep failed on `{}`: {}",
+                    id.as_str(),
+                    finding.message,
+                )
+            })?;
+            let body = normalized_body(&def.body);
+            for code in &def.states_constraints {
+                let Some((_, tokens)) = CONSTRAINT_REQUIRED_TOKENS
+                    .iter()
+                    .find(|(fenced, _)| fenced == code)
+                else {
+                    continue;
+                };
+                for token in *tokens {
+                    if !body.contains(token) {
+                        missing.push(format!(
+                            "step `{}` declares `{code}` but its prose never says \"{token}\"",
+                            id.as_str(),
+                        ));
+                    }
+                }
+            }
+        }
+        if !missing.is_empty() {
+            anyhow::bail!(
+                "pack-load named-fact fence failed: {} — the `states-constraints:` \
+                 declaration would buy presence alone while the contract itself went \
+                 unstated, so the constraint still first surfaces when it binds, an ambush \
+                 (design/surface-contract.md → The stated-at fence)\n\
+                 route: restate each named fact in that step's body, above the solicit the \
+                 constraint gates — or, if the step no longer states the contract, drop its \
+                 code from the step's `states-constraints:` front-matter",
+                missing.join("; "),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The `when:` catalog line's char cap (the catalog shape fence's length half).
 /// The line interpolates mid-sentence into the router catalog beside its
 /// neighbours, so it must stay a short situation phrase
@@ -779,8 +909,10 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
 
     // The eager front-matter sweeps (M43, `design/surface-contract.md` → The
     // fences): the workflow sweep (suppression + catalog shape) and the step
-    // sweeps — the stated-at fence's ambush-class tier ([`assert_stated_at`])
-    // and its M44 per-soliciting-step tier ([`assert_singleton_copy_in_stated`]).
+    // sweeps — the stated-at fence's ambush-class tier ([`assert_stated_at`]),
+    // its M44 per-soliciting-step tier ([`assert_singleton_copy_in_stated`]), and
+    // its M47 named-fact tier ([`assert_named_facts_stated`], which buys the
+    // declared contract's own facts rather than the declaration alone).
     // Memoized for the two embedded compositions
     // (their bytes cannot change within a process; `make_pack` has ~38 call
     // sites), recomputed whenever a filesystem pack is in the set (its tree is
@@ -794,6 +926,7 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
                 assert_workflow_front_matter(pack.as_ref())
                     .and_then(|()| assert_stated_at(pack.as_ref()))
                     .and_then(|()| assert_singleton_copy_in_stated(pack.as_ref()))
+                    .and_then(|()| assert_named_facts_stated(pack.as_ref()))
                     .map_err(|err| format!("{err:#}"))
             })
             .clone()
@@ -802,6 +935,7 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
         assert_workflow_front_matter(pack.as_ref())?;
         assert_stated_at(pack.as_ref())?;
         assert_singleton_copy_in_stated(pack.as_ref())?;
+        assert_named_facts_stated(pack.as_ref())?;
     }
     Ok(pack)
 }
@@ -1643,6 +1777,47 @@ mod tests {
 
         // T1 adds no fence (that is T2), so the shipped embedded surface still loads.
         make_pack().expect("the embedded pack loads");
+    }
+
+    /// (M47 Inc 9 T1) The named-fact map covers **exactly** the codes jigc fences
+    /// — [`AMBUSH_CLASS_CODES`] plus [`SINGLETON_COPY_IN_CODE`] — iterated from the
+    /// consts, both directions. A fenced code with no token requirement would be
+    /// back to buying presence alone; a token requirement on a code jigc does not
+    /// fence would put jigc's prose demands on a pack author's own vocabulary
+    /// (the declared bound in `design/surface-contract.md` → The stated-at fence).
+    #[test]
+    fn constraint_token_map_bijects_with_the_fenced_codes() {
+        let mapped: std::collections::BTreeSet<&str> = CONSTRAINT_REQUIRED_TOKENS
+            .iter()
+            .map(|(code, _)| *code)
+            .collect();
+        let fenced: std::collections::BTreeSet<&str> = AMBUSH_CLASS_CODES
+            .into_iter()
+            .chain(std::iter::once(SINGLETON_COPY_IN_CODE))
+            .collect();
+        assert_eq!(mapped, fenced);
+        assert_eq!(
+            mapped.len(),
+            CONSTRAINT_REQUIRED_TOKENS.len(),
+            "no code may appear twice in the map",
+        );
+    }
+
+    /// (M47 Inc 9 T1) Every required token is authored in [`normalized_body`]'s own
+    /// form — lowercase, single-spaced, untrimmed-free. A token carrying a capital
+    /// or a double space could never match a normalized body, so the fence would
+    /// redden the shipped packs (or, worse, be silently unsatisfiable for a new one).
+    #[test]
+    fn constraint_tokens_are_authored_in_normalized_form() {
+        for (code, tokens) in CONSTRAINT_REQUIRED_TOKENS {
+            for token in tokens {
+                assert_eq!(
+                    normalized_body(token),
+                    *token,
+                    "`{code}`'s token {token:?} is not in normalized form",
+                );
+            }
+        }
     }
 
     #[test]
