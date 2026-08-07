@@ -1530,11 +1530,21 @@ mod tests {
         );
     }
 
-    /// `--format` is a **global** clap arg, consumed by every dispatch arm — the
-    /// structural fact the machine-output paragraph (M44 Inc 4, change 1) rests
-    /// on: "every verb speaks `--format json`" is only true because a single
-    /// global flag reaches every subcommand. A lightweight fence beneath the
-    /// prose claim.
+    /// `--format` is a **global** clap arg — the structural half of the fact the
+    /// machine-output paragraph (M44 Inc 4, change 1) rests on: "every verb speaks
+    /// `--format json`" is only *possible* because a single global flag reaches
+    /// every subcommand.
+    ///
+    /// **This fence is shape-limited, and deliberately named as such** (M47 Inc 7
+    /// T4): it asserts only that the arg *is* global — that every dispatch arm can
+    /// see it. It stays green if every arm parses the flag and then **ignores** it,
+    /// which is not hypothetical: `TaskCommand::Diff` did exactly that until M47
+    /// Inc 7 T1, printing plain text at exit 0 under `--format json` while this
+    /// assertion passed. The **behavioural half** — every leaf verb driven to a real
+    /// success and asserted to emit exactly one JSON document on stdout and none on
+    /// stderr, enumerated from this same clap tree — lives in
+    /// `crates/cli/tests/format_json_success_axis.rs`; its reject-surface sibling is
+    /// `crates/cli/tests/machine_output.rs`.
     #[test]
     fn format_is_a_global_arg() {
         use clap::CommandFactory;
