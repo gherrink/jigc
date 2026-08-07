@@ -27,6 +27,29 @@
 //! the `JIGC_DOC_CODE_PROBE` dev/test knob (the `validate_command.rs` idiom). That env
 //! var is inherited by `git commit` → the hook → `jigc validate`, so the commit-time
 //! sweep drives the genuine subprocess exactly as production would.
+//!
+//! **M47 inc-7 / T3 — the hook keys on SEVERITY, via `blocking_probes`.** The hook no
+//! longer greps the report for a `"probe": "doc-code"` finding at *any* severity; it
+//! matches the store envelope's top-level `blocking_probes` array (T2), so only a
+//! **blocking** `doc-code` finding warns (`design/command-output-contract.md` → The store
+//! sweep's envelope; DECISIONS.md → 2026-07-26 M47, Decision 7 re-settled). Three arms,
+//! each a **real `git commit`** through the hook `jigc setup` installed, over a **real**
+//! store swept by the **real** binary — behaviour, not field order, so a renderer or serde
+//! change reddens them:
+//!
+//! - **(i)** a **blocking** `doc-code.symbol-exists` (the arch-doc component's anchored
+//!   symbol renamed away) → `blocking_probes` names `doc-code`, the warning appears, the
+//!   commit lands (warn-only);
+//! - **(ii)** an **advisory-only** `doc-code.title-names-symbol` present in `findings` and
+//!   absent from a **non-empty** `blocking_probes` → **no** warning (the false positive the
+//!   array bound exists to prevent, and the exact state a non-Rust project following
+//!   `implement-from-spec` sits in);
+//! - **(iii)** an **empty** `blocking_probes` with that same `doc-code` finding present →
+//!   **no** warning.
+//!
+//! Each of the three pins the fixture's sweep state through the real binary first (which
+//! findings, which `blocking_probes`), so an arm that stopped producing its finding fails
+//! loudly instead of passing on a store that carries nothing.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -128,6 +151,64 @@ fn jigc(repo: &Path, args: &[&str]) -> std::process::Output {
         .current_dir(repo)
         .output()
         .expect("run the jigc binary")
+}
+
+/// The store envelope the hook itself consumes: `jigc validate --format json` run through
+/// the **real** binary with the **real** `doc-code` probe selected, parsed. The M47 arms
+/// pin their fixture's sweep state with it before asserting the hook's behaviour, so an
+/// arm whose store stopped carrying the finding under test fails loudly instead of passing
+/// vacuously.
+fn store_envelope(repo: &Path) -> serde_json::Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["validate", "--format", "json"])
+        .current_dir(repo)
+        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .output()
+        .expect("run the jigc binary");
+    serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
+        panic!(
+            "`jigc validate --format json` must emit valid JSON ({err}); stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        )
+    })
+}
+
+/// The envelope's `blocking_probes` as plain strings — the flat, `]`-delimited array the
+/// hook's bounded match keys on.
+fn blocking_probes(envelope: &serde_json::Value) -> Vec<String> {
+    envelope["blocking_probes"]
+        .as_array()
+        .unwrap_or_else(|| {
+            panic!("the store envelope carries a `blocking_probes` array; json:\n{envelope}")
+        })
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .unwrap_or_else(|| {
+                    panic!("`blocking_probes` holds plain probe-name strings; json:\n{envelope}")
+                })
+                .to_string()
+        })
+        .collect()
+}
+
+/// Every finding code in the envelope, in emission order.
+fn finding_codes(envelope: &serde_json::Value) -> Vec<String> {
+    envelope["findings"]
+        .as_array()
+        .unwrap_or_else(|| {
+            panic!("the store envelope carries a `findings` array; json:\n{envelope}")
+        })
+        .iter()
+        .map(|f| {
+            f["code"]
+                .as_str()
+                .expect("a finding carries a code")
+                .to_string()
+        })
+        .collect()
 }
 
 /// A committed `adr` citing `<rel>#<symbol>` from its `cites-code` header anchor
@@ -243,6 +324,235 @@ fn baseline_file_state(repo: &Path, entries: &[&str]) {
     record
         .save(&repo.join(".jigc"))
         .expect("save the file-state baseline");
+}
+
+/// The tracked Rust source the arch-doc component's `implemented-by` anchor resolves
+/// against — one present symbol, so the anchor itself is clean and the store's only
+/// `doc-code` finding is the **advisory** stale-heading guard.
+const ANCHORED_SOURCE: &str = "pub fn session_store() -> u32 {\n    1\n}\n";
+
+/// The same file with the anchored symbol renamed away — the committed anchor now dangles,
+/// so the sweep adds a **blocking** `doc-code.symbol-exists` beside the advisory.
+const ANCHORED_SOURCE_RENAMED: &str = "pub fn store_of_sessions() -> u32 {\n    1\n}\n";
+
+/// A committed `arch-doc` (rendered in the shipped schema's canonical shape) whose single
+/// component anchors `src/lib.rs#session_store` while its heading names the *compound
+/// identifier* `sessionStore` — the **advisory** `doc-code.title-names-symbol` stale-heading
+/// guard (advisory by default: the brand-name false-positive class has no valid remedy under
+/// blocking). It carries the current `schema-version` stamp, so the sweep raises **no**
+/// conformance break and each arm's store carries exactly the findings that arm seeds. (If
+/// `arch-doc` ever bumps past schema-version 1, this fixture goes stale and the arms' own
+/// precondition assertions say so, loudly.)
+const ARCH_DOC_WITH_STALE_HEADING: &str = "---\n\
+     schema-version: 1\n\
+     ---\n\
+     \n\
+     # Index layer\n\
+     \n\
+     ## Overview\n\
+     \n\
+     The edge index and target surface.\n\
+     \n\
+     ## Components\n\
+     \n\
+     ### sessionStore  {#sessionstore}\n\
+     \n\
+     Walks forward refs.\n\
+     \n\
+     <!-- fields -->\n\
+     - implemented-by: src/lib.rs#session_store\n";
+
+/// Seed + commit the advisory-only `doc-code` store: the anchored source and the arch-doc
+/// whose heading names a different compound identifier. Establishes a first commit so a
+/// later HEAD exists.
+fn seed_arch_doc_store(repo: &Path) {
+    let src = repo.join("src");
+    fs::create_dir_all(&src).expect("mk src dir");
+    fs::write(src.join("lib.rs"), ANCHORED_SOURCE).expect("write src/lib.rs");
+
+    fs::create_dir_all(repo.join("docs/architecture")).expect("mk architecture dir");
+    fs::write(
+        repo.join("docs/architecture/index-layer.md"),
+        ARCH_DOC_WITH_STALE_HEADING,
+    )
+    .expect("write the arch-doc");
+
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "seed the arch-doc store"]);
+}
+
+/// A project workflow shadow carrying a dangling include — a **blocking**
+/// `workflow-refs.include-resolves` from a probe that is not `doc-code`, so
+/// `blocking_probes` is non-empty while still omitting `"doc-code"` (the
+/// `validate_envelope.rs` idiom).
+fn seed_dangling_workflow_ref(repo: &Path) {
+    let workflows = repo.join(".jigc").join("config").join("workflows");
+    fs::create_dir_all(&workflows).expect("create project workflows dir");
+    fs::write(
+        workflows.join("single-task.yaml"),
+        "---\n\
+         when: implement one scoped change end-to-end\n\
+         creates-task: true\n\
+         ---\n\
+         {{ include: step:not-a-step }}\n",
+    )
+    .expect("write the dangling workflow shadow");
+}
+
+/// (i) M47 — a **blocking** `doc-code` finding puts `"doc-code"` in the sweep's
+/// `blocking_probes`, so the hook warns and the commit still lands (warn-only). The severity
+/// filter narrows *what* warns; it must not silence the case the backstop exists for.
+#[test]
+fn commit_warns_when_blocking_probes_names_doc_code() {
+    let repo = TempDir::new("blocking-doc-code");
+    init_repo(repo.path());
+    seed_arch_doc_store(repo.path());
+    mark_set_up(repo.path());
+
+    let setup = jigc(repo.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // Rename the anchored symbol: the committed `implemented-by` anchor now dangles.
+    fs::write(repo.path().join("src/lib.rs"), ANCHORED_SOURCE_RENAMED)
+        .expect("rename the anchored symbol");
+    git(repo.path(), &["add", "."]);
+
+    let envelope = store_envelope(repo.path());
+    assert!(
+        finding_codes(&envelope)
+            .iter()
+            .any(|c| c == "doc-code.symbol-exists"),
+        "precondition: the dangling anchor raises the blocking finding; json:\n{envelope}",
+    );
+    assert!(
+        blocking_probes(&envelope).contains(&"doc-code".to_string()),
+        "precondition: a blocking doc-code finding names its probe in `blocking_probes`; \
+         json:\n{envelope}",
+    );
+
+    let out = git_commit(repo.path(), "rename the anchored symbol");
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    assert!(
+        out.status.success(),
+        "the warn-only hook must NOT block the commit; output:\n{merged}",
+    );
+    assert!(
+        merged.contains(DRIFT_WARNING),
+        "a BLOCKING doc-code finding must warn; output:\n{merged}",
+    );
+}
+
+/// (ii) M47 — an **advisory-only** `doc-code` finding, present in `findings` and absent from
+/// a **non-empty** `blocking_probes`, must NOT warn. This is the false positive the array
+/// bound exists to prevent: the array is non-empty (another probe blocked), so the omission
+/// is a *severity* claim rather than an empty sweep, and the hook keying on mere presence
+/// would warn here forever.
+#[test]
+fn commit_is_silent_on_advisory_only_doc_code_beside_another_blocking_probe() {
+    let repo = TempDir::new("advisory-beside-blocking");
+    init_repo(repo.path());
+    seed_arch_doc_store(repo.path());
+    mark_set_up(repo.path());
+
+    let setup = jigc(repo.path(), &["setup"]);
+    assert!(setup.status.success(), "`jigc setup` must succeed");
+
+    // A blocking finding from a probe that is NOT doc-code.
+    seed_dangling_workflow_ref(repo.path());
+
+    let envelope = store_envelope(repo.path());
+    let codes = finding_codes(&envelope);
+    assert!(
+        codes.iter().any(|c| c == "doc-code.title-names-symbol"),
+        "precondition: the ADVISORY doc-code finding is in `findings`; json:\n{envelope}",
+    );
+    assert!(
+        !codes.iter().any(|c| c == "doc-code.symbol-exists"),
+        "precondition: the anchor resolves — no blocking doc-code finding; json:\n{envelope}",
+    );
+    let probes = blocking_probes(&envelope);
+    assert!(
+        !probes.is_empty() && !probes.contains(&"doc-code".to_string()),
+        "precondition: `blocking_probes` is non-empty and omits doc-code; json:\n{envelope}",
+    );
+
+    // A trivial, anchor-irrelevant staged change to commit through the hook.
+    fs::write(repo.path().join("README.md"), "hello\n").expect("write README");
+    git(repo.path(), &["add", "README.md"]);
+
+    let out = git_commit(repo.path(), "trivial change over an advisory-only store");
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    assert!(
+        out.status.success(),
+        "the warn-only hook must not block; output:\n{merged}",
+    );
+    assert!(
+        !merged.contains(DRIFT_WARNING),
+        "an ADVISORY-only doc-code finding must NOT warn, even beside another blocking \
+         probe; output:\n{merged}",
+    );
+}
+
+/// (iii) M47 — an **empty** `blocking_probes` with a `doc-code` finding present must NOT
+/// warn. Same store as (ii) minus the unrelated blocking finding: the array is present and
+/// empty, and the bounded match cannot reach the finding object that follows it.
+#[test]
+fn commit_is_silent_when_blocking_probes_is_empty_with_a_doc_code_finding() {
+    let repo = TempDir::new("empty-blocking-probes");
+    init_repo(repo.path());
+    seed_arch_doc_store(repo.path());
+    mark_set_up(repo.path());
+
+    let setup = jigc(repo.path(), &["setup"]);
+    assert!(setup.status.success(), "`jigc setup` must succeed");
+
+    let envelope = store_envelope(repo.path());
+    assert!(
+        finding_codes(&envelope)
+            .iter()
+            .any(|c| c == "doc-code.title-names-symbol"),
+        "precondition: the doc-code finding is present — silence is a severity verdict, \
+         not an empty report; json:\n{envelope}",
+    );
+    assert_eq!(
+        blocking_probes(&envelope),
+        Vec::<String>::new(),
+        "precondition: nothing blocks — the empty array; json:\n{envelope}",
+    );
+
+    fs::write(repo.path().join("README.md"), "hello\n").expect("write README");
+    git(repo.path(), &["add", "README.md"]);
+
+    let out = git_commit(repo.path(), "trivial change over a nothing-blocks store");
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    assert!(
+        out.status.success(),
+        "the warn-only hook must not block; output:\n{merged}",
+    );
+    assert!(
+        !merged.contains(DRIFT_WARNING),
+        "an empty `blocking_probes` must NOT warn, even with a doc-code finding present; \
+         output:\n{merged}",
+    );
 }
 
 /// (g) The M35 headline: a commit that **itself** stages a bare `git mv` of a managed doc

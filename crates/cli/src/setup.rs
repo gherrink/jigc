@@ -154,10 +154,27 @@ pub const PRECOMMIT_SENTINEL: &str =
 /// **content findings**, never on the exit code (the exit code is wrong-way-round —
 /// `jigc validate` exits 0 on *found drift* but non-zero on not-a-project /
 /// probe-missing / probe-integrity). Concretely, it surfaces a warning **iff** the
-/// JSON report on stdout carries a `doc-code` content finding (a `"probe":
-/// "doc-code"` entry); on a clean store, a not-a-jigc-project, a probe-missing run,
-/// any `pack-probe-integrity` meta-finding, or a `jigc` that is absent / fails to
-/// run, it **prints nothing and exits 0**.
+/// JSON report on stdout names `doc-code` in its top-level **`blocking_probes`**
+/// array; on a clean store, a store whose only `doc-code` finding is *advisory*, a
+/// not-a-jigc-project, a probe-missing run, any `pack-probe-integrity` meta-finding,
+/// or a `jigc` that is absent / fails to run, it **prints nothing and exits 0**.
+///
+/// **The match keys on severity, via the array** (M47, `design/command-output-contract.md`
+/// → The store sweep's envelope; DECISIONS.md → 2026-07-26 M47, Decision 7 re-settled).
+/// Until M47 it grepped the report for a `"probe": "doc-code"` finding at *any* severity,
+/// which warned forever over a store whose only `doc-code` finding is the advisory
+/// stale-heading guard — permanent false drift for a project the probe cannot fully check.
+/// A finding-object grep also has to bind a key to a member **across nested `{}`**, which no
+/// line-oriented pattern can do soundly. `blocking_probes` is a **flat array of plain
+/// strings**, so the match is bounded by the array's **own `]`** (`[^]]*`) and structurally
+/// cannot reach into `findings`. Two mechanics are load-bearing:
+///   - the report is pretty-printed, so the array spans several lines — the pattern is fed a
+///     **newline-collapsed** copy (`tr -d '\n'`), without which it matches nothing;
+///   - that collapse is **pipeline-local**: `$report` itself keeps its newlines, because
+///     [`PRECOMMIT_RENAME_BLOCK`] pairs one `git mv` route **per line**.
+///
+/// The whitespace classes are POSIX (`[[:space:]]`, never the GNU-only `\s`) so the pattern
+/// holds under BSD/macOS `grep -E` as well.
 ///
 /// The **absolute** installing-`jigc` path is embedded (the PATH-vs-absolute hazard:
 /// a hook calling bare `jigc` would run whatever is on PATH at commit time, possibly
@@ -174,24 +191,32 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
          {PRECOMMIT_SENTINEL}\n\
          #\n\
          # Warn-only doc<->code drift backstop: runs `jigc validate` over the\n\
-         # committed store and prints a warning ONLY on a real doc-code content\n\
-         # finding. Always exits 0 — it never blocks the commit. Keys on the\n\
+         # committed store and prints a warning ONLY when a doc-code check raised a\n\
+         # BLOCKING finding. Always exits 0 — it never blocks the commit. Keys on the\n\
          # findings, never on the exit code (the exit code is wrong-way-round).\n\
          \n\
          jigc='{jigc}'\n\
          \n\
          # Run the sweep, capturing stdout only. If jigc is absent or fails to run,\n\
-         # `report` is empty and the doc-code probe never matches -> silent exit 0.\n\
+         # `report` is empty and nothing below matches -> silent exit 0.\n\
          report=\"$(\"$jigc\" validate --format json 2>/dev/null)\"\n\
          \n\
-         # Warn IFF the report carries a doc-code CONTENT finding. A clean store\n\
-         # (empty findings), a not-a-jigc-project / probe-missing run (an `error`\n\
-         # envelope on stderr, nothing matching here on stdout), and any\n\
-         # `pack-probe-integrity` meta-finding (probe != doc-code) all fall through\n\
-         # to a silent exit 0. The match is whitespace-tolerant after the colon (a\n\
-         # POSIX ERE) so it survives compact or differently-spaced JSON — it keys on\n\
-         # the `\"probe\": \"doc-code\"` finding, never on the pretty-printer's spacing.\n\
-         if printf '%s' \"$report\" | grep -Eq '\"probe\"[[:space:]]*:[[:space:]]*\"doc-code\"'; then\n\
+         # Warn IFF the report's top-level `blocking_probes` array names `doc-code` —\n\
+         # the probes that raised a BLOCKING finding. Keying on SEVERITY, not on mere\n\
+         # presence: an advisory-only doc-code finding (the stale-heading guard; a\n\
+         # citation the probe cannot check) must not warn on every commit forever. A\n\
+         # clean store, a not-a-jigc-project / probe-missing run (an `error` envelope\n\
+         # on stderr, nothing matching here on stdout), and any `pack-probe-integrity`\n\
+         # meta-finding all fall through to a silent exit 0.\n\
+         #\n\
+         # The report is pretty-printed, so the array spans several lines: the newline\n\
+         # collapse is what lets one ERE bind the key to a member (without it this\n\
+         # matches nothing). The collapse is PIPELINE-LOCAL — `$report` itself keeps\n\
+         # its newlines, because the rename block below pairs one route per LINE. The\n\
+         # match is bounded by the array's OWN `]`, so it cannot reach into `findings`;\n\
+         # whitespace is POSIX-classed so it holds on BSD/macOS grep and survives\n\
+         # compact or differently-spaced JSON.\n\
+         if printf '%s' \"$report\" | tr -d '\\n' | grep -Eq '\"blocking_probes\"[[:space:]]*:[[:space:]]*\\[[^]]*\"doc-code\"'; then\n\
          \techo 'jigc: doc<->code drift detected in committed docs — run `jigc validate` for details (commit not blocked).' >&2\n\
          fi\n\
          {PRECOMMIT_RENAME_BLOCK}\
@@ -1508,9 +1533,15 @@ mod tests {
 
     /// The load-bearing B2 output-discipline contract, executed end-to-end: the
     /// rendered hook is driven by `sh` against canned `jigc validate --format json`
-    /// outputs across all five cases. It warns IFF the report carries a `"probe":
-    /// "doc-code"` content finding — keyed on the finding, **never** on the exit
-    /// code — and **always exits 0** (warn-only; it never blocks a commit).
+    /// outputs across all six cases. It warns IFF the report's top-level
+    /// `blocking_probes` array names `doc-code` — keyed on the findings, **never** on the
+    /// exit code — and **always exits 0** (warn-only; it never blocks a commit).
+    ///
+    /// **This is the shape-robustness pin, not the acceptance** (M47). A hand-written
+    /// report cannot see a serde or renderer change, so the behavioural contract is proven
+    /// in `crates/cli/tests/precommit_hook_acceptance.rs` against **real** reports from the
+    /// real binary; what these canned cases add is that the match survives *spacing*
+    /// (pretty vs compact) and the array's multi-line pretty rendering.
     #[test]
     fn rendered_hook_warns_iff_doc_code_content_finding_always_exits_zero() {
         let dir = TempDir::new();
@@ -1519,8 +1550,9 @@ mod tests {
         // spacing `jigc validate --format json` emits (`render::json` → to_string_pretty).
         let warning = "doc<->code drift detected";
 
-        // (1) Clean store: a report with an empty findings array, exit 0 -> silent.
-        let clean = "{\n  \"schema_version\": 1,\n  \"findings\": []\n}";
+        // (1) Clean store: nothing blocked, no findings, exit 0 -> silent.
+        let clean =
+            "{\n  \"blocking_probes\": [],\n  \"findings\": [],\n  \"schema_version\": 2\n}";
         let jigc = write_fake_jigc(dir.path(), "jigc-clean", clean, "", 0);
         let (stderr, code) = run_rendered_hook(&jigc);
         assert_eq!(code, 0, "clean store must exit 0; stderr:\n{stderr}");
@@ -1529,9 +1561,10 @@ mod tests {
             "a clean store must warn nothing; stderr:\n{stderr}",
         );
 
-        // (2) A doc-code CONTENT finding (exit 0, per the detect-and-report rule) ->
-        // the only case that warns. The probe field is the keyed surface.
-        let drift = "{\n  \"schema_version\": 1,\n  \"findings\": [\n    {\n      \"severity\": \"blocking\",\n      \"probe\": \"doc-code\",\n      \"check\": \"symbol-exists\",\n      \"code\": \"doc-code.symbol-exists\",\n      \"message\": \"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\n      \"address\": \"decisions/cache.md\",\n      \"route\": null\n    }\n  ]\n}";
+        // (2) A BLOCKING doc-code finding (exit 0, per the detect-and-report rule) ->
+        // the only case that warns. `blocking_probes` is the keyed surface, and it
+        // renders multi-line — the case the newline collapse exists for.
+        let drift = "{\n  \"blocking_probes\": [\n    \"doc-code\"\n  ],\n  \"findings\": [\n    {\n      \"severity\": \"blocking\",\n      \"probe\": \"doc-code\",\n      \"check\": \"symbol-exists\",\n      \"code\": \"doc-code.symbol-exists\",\n      \"message\": \"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\n      \"address\": \"decisions/cache.md\",\n      \"route\": null\n    }\n  ],\n  \"schema_version\": 2\n}";
         let jigc = write_fake_jigc(dir.path(), "jigc-drift", drift, "", 0);
         let (stderr, code) = run_rendered_hook(&jigc);
         assert_eq!(
@@ -1540,11 +1573,11 @@ mod tests {
         );
         assert!(
             stderr.contains(warning),
-            "a doc-code content finding MUST warn; stderr:\n{stderr}",
+            "a BLOCKING doc-code finding MUST warn; stderr:\n{stderr}",
         );
 
         // (3) Not-a-jigc-project: the operational-error envelope on STDERR, a
-        // non-zero exit. No `"probe": "doc-code"` on stdout -> silent, exit 0
+        // non-zero exit. No `blocking_probes` array on stdout at all -> silent, exit 0
         // (keyed on the finding, never the exit code).
         let jigc = write_fake_jigc(
             dir.path(),
@@ -1563,10 +1596,12 @@ mod tests {
             "not-a-jigc-project must warn nothing (a non-zero exit must not warn); stderr:\n{stderr}",
         );
 
-        // (4) A `pack-probe-integrity` meta-finding (probe crashed): a finding is
-        // present and the command exits non-zero, but its probe is NOT `doc-code`
-        // -> silent, exit 0. The discipline must not warn on a meta-finding.
-        let meta = "{\n  \"schema_version\": 1,\n  \"findings\": [\n    {\n      \"severity\": \"blocking\",\n      \"probe\": \"pack-probe-integrity\",\n      \"check\": \"crash\",\n      \"code\": \"pack-probe-integrity.crash\",\n      \"message\": \"the doc-code probe exited 2 without emitting JSON\",\n      \"route\": null\n    }\n  ]\n}";
+        // (4) A blocking `pack-probe-integrity` meta-finding, with an ADVISORY doc-code
+        // finding sitting in `findings` right after the array -> silent, exit 0. Two
+        // properties at once: the discipline must not warn on a meta-finding, and the
+        // match must stay INSIDE the array — bounded by its own `]`, it cannot reach the
+        // `"probe": "doc-code"` member that follows.
+        let meta = "{\n  \"blocking_probes\": [\n    \"pack-probe-integrity\"\n  ],\n  \"findings\": [\n    {\n      \"severity\": \"blocking\",\n      \"probe\": \"pack-probe-integrity\",\n      \"check\": \"crash\",\n      \"code\": \"pack-probe-integrity.crash\",\n      \"message\": \"the doc-code probe exited 2 without emitting JSON\",\n      \"route\": null\n    },\n    {\n      \"severity\": \"advisory\",\n      \"probe\": \"doc-code\",\n      \"check\": \"title-names-symbol\",\n      \"code\": \"doc-code.title-names-symbol\",\n      \"message\": \"component title `sessionStore` names a symbol its anchor does not implement\",\n      \"route\": null\n    }\n  ],\n  \"schema_version\": 2\n}";
         let jigc = write_fake_jigc(dir.path(), "jigc-meta", meta, "", 1);
         let (stderr, code) = run_rendered_hook(&jigc);
         assert_eq!(
@@ -1575,7 +1610,8 @@ mod tests {
         );
         assert!(
             !stderr.contains(warning),
-            "a pack-probe-integrity meta-finding must warn nothing (probe != doc-code); stderr:\n{stderr}",
+            "a pack-probe-integrity meta-finding must warn nothing, and the match must not \
+             escape the array into the advisory doc-code finding beside it; stderr:\n{stderr}",
         );
 
         // (5) jigc absent: the embedded path does not resolve to an executable, so
@@ -1592,13 +1628,12 @@ mod tests {
             "an absent jigc must warn nothing (it no-ops cleanly); stderr:\n{stderr}",
         );
 
-        // (6) A doc-code CONTENT finding, but the JSON is emitted **compact** (no space
-        // after the colons): `{"findings":[{"probe":"doc-code",...}]}`. The detection
-        // must NOT couple to the pretty-print spacing — if `jigc validate --format json`
-        // is ever emitted compact (or with different spacing), the hook must still warn,
-        // not go silently dead and ship drift as a false-clean. Keyed on the finding,
-        // robust to whitespace after the colon.
-        let compact = "{\"schema_version\":1,\"findings\":[{\"severity\":\"blocking\",\"probe\":\"doc-code\",\"check\":\"symbol-exists\",\"code\":\"doc-code.symbol-exists\",\"message\":\"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\"address\":\"decisions/cache.md\",\"route\":null}]}";
+        // (6) A blocking doc-code finding, but the JSON is emitted **compact** (no space
+        // after the colons): `{"blocking_probes":["doc-code"],…}`. The detection must NOT
+        // couple to the pretty-print spacing — if `jigc validate --format json` is ever
+        // emitted compact (or with different spacing), the hook must still warn, not go
+        // silently dead and ship drift as a false-clean.
+        let compact = "{\"blocking_probes\":[\"doc-code\"],\"findings\":[{\"severity\":\"blocking\",\"probe\":\"doc-code\",\"check\":\"symbol-exists\",\"code\":\"doc-code.symbol-exists\",\"message\":\"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\"address\":\"decisions/cache.md\",\"route\":null}],\"schema_version\":2}";
         let jigc = write_fake_jigc(dir.path(), "jigc-compact", compact, "", 0);
         let (stderr, code) = run_rendered_hook(&jigc);
         assert_eq!(
@@ -1607,14 +1642,16 @@ mod tests {
         );
         assert!(
             stderr.contains(warning),
-            "a compact (no-space-after-colon) doc-code content finding MUST still warn; stderr:\n{stderr}",
+            "a compact (no-space-after-colon) blocking doc-code finding MUST still warn; \
+             stderr:\n{stderr}",
         );
     }
 
     /// Golden-lock the rendered `pre-commit` body for a fixed `jigc_path`: the
     /// sentinel marker is present, the **absolute** path is embedded (quoted),
-    /// `--format json` is invoked, the discipline keys on `"probe": "doc-code"`
-    /// whitespace-tolerantly (a POSIX ERE), and the script always `exit 0`. Pins the
+    /// `--format json` is invoked, the discipline keys on the `blocking_probes` array
+    /// over a newline-collapsed copy of the report (a POSIX ERE, bounded by the array's
+    /// own `]`), and the script always `exit 0`. Pins the
     /// bytes an installed hook would run — a
     /// rename, a reorder, or a discipline slip breaks it (the B2 contract).
     #[test]
@@ -1626,24 +1663,33 @@ mod tests {
              # jigc-managed pre-commit hook (doc<->code backstop) — regenerated by `jigc setup`\n\
              #\n\
              # Warn-only doc<->code drift backstop: runs `jigc validate` over the\n\
-             # committed store and prints a warning ONLY on a real doc-code content\n\
-             # finding. Always exits 0 — it never blocks the commit. Keys on the\n\
+             # committed store and prints a warning ONLY when a doc-code check raised a\n\
+             # BLOCKING finding. Always exits 0 — it never blocks the commit. Keys on the\n\
              # findings, never on the exit code (the exit code is wrong-way-round).\n\
              \n\
              jigc='/abs/install/bin/jigc'\n\
              \n\
              # Run the sweep, capturing stdout only. If jigc is absent or fails to run,\n\
-             # `report` is empty and the doc-code probe never matches -> silent exit 0.\n\
+             # `report` is empty and nothing below matches -> silent exit 0.\n\
              report=\"$(\"$jigc\" validate --format json 2>/dev/null)\"\n\
              \n\
-             # Warn IFF the report carries a doc-code CONTENT finding. A clean store\n\
-             # (empty findings), a not-a-jigc-project / probe-missing run (an `error`\n\
-             # envelope on stderr, nothing matching here on stdout), and any\n\
-             # `pack-probe-integrity` meta-finding (probe != doc-code) all fall through\n\
-             # to a silent exit 0. The match is whitespace-tolerant after the colon (a\n\
-             # POSIX ERE) so it survives compact or differently-spaced JSON — it keys on\n\
-             # the `\"probe\": \"doc-code\"` finding, never on the pretty-printer's spacing.\n\
-             if printf '%s' \"$report\" | grep -Eq '\"probe\"[[:space:]]*:[[:space:]]*\"doc-code\"'; then\n\
+             # Warn IFF the report's top-level `blocking_probes` array names `doc-code` —\n\
+             # the probes that raised a BLOCKING finding. Keying on SEVERITY, not on mere\n\
+             # presence: an advisory-only doc-code finding (the stale-heading guard; a\n\
+             # citation the probe cannot check) must not warn on every commit forever. A\n\
+             # clean store, a not-a-jigc-project / probe-missing run (an `error` envelope\n\
+             # on stderr, nothing matching here on stdout), and any `pack-probe-integrity`\n\
+             # meta-finding all fall through to a silent exit 0.\n\
+             #\n\
+             # The report is pretty-printed, so the array spans several lines: the newline\n\
+             # collapse is what lets one ERE bind the key to a member (without it this\n\
+             # matches nothing). The collapse is PIPELINE-LOCAL — `$report` itself keeps\n\
+             # its newlines, because the rename block below pairs one route per LINE. The\n\
+             # match is bounded by the array's OWN `]`, so it cannot reach into `findings`;\n\
+             # whitespace is POSIX-classed so it holds on BSD/macOS grep and survives\n\
+             # compact or differently-spaced JSON.\n\
+             if printf '%s' \"$report\" | tr -d '\\n\
+             ' | grep -Eq '\"blocking_probes\"[[:space:]]*:[[:space:]]*\\[[^]]*\"doc-code\"'; then\n\
              \techo 'jigc: doc<->code drift detected in committed docs — run `jigc validate` for details (commit not blocked).' >&2\n\
              fi\n\
              \n\
