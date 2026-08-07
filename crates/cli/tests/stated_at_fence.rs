@@ -36,7 +36,11 @@
 //! two shipped pack trees and the code-side map owe — enumerated from the trees
 //! and `cli::pack::CONSTRAINT_REQUIRED_TOKENS`, never hand-listed — deleting that
 //! token's occurrences from a copied pack blocks pack load, naming step, code and
-//! token.
+//! token. Its **conditional tier** (T2) rides the referenced singleton's own
+//! structure: a copy-in declarer whose solicited singleton has ≥1 `repeatable:`
+//! section owes the append half too (`cli::pack::COPY_IN_APPEND_TOKENS`), and a
+//! declarer whose singleton is slot-only owes nothing and stays clean — the
+//! exemption asserted over the enumerated declarer set, never assumed.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -602,6 +606,272 @@ fn every_named_fact_the_methodology_pack_owes_is_bought_at_pack_load() {
     drive_named_fact_axis(pack.path(), &|| {
         run_embedded(repo.path(), home.path(), START)
     });
+}
+
+// ---------------------------------------------------------------------------
+// M47 Inc 9 T2 — the conditional append tier: the append half of the copy-in
+// contract is owed wherever items can double, and the owe-set is derived from the
+// referenced singleton's own `repeatable:` sections — never hand-listed, never an
+// exclusion list.
+// ---------------------------------------------------------------------------
+
+/// The named-fact comparison view (`cli::pack::normalized_body`'s twin): whitespace
+/// runs collapsed, ASCII case folded — how the fence reads a step's prose.
+fn normalized(body: &str) -> String {
+    let mut out = String::new();
+    let mut pending_space = false;
+    for ch in body.chars() {
+        if ch.is_whitespace() {
+            pending_space = true;
+            continue;
+        }
+        if pending_space && !out.is_empty() {
+            out.push(' ');
+        }
+        pending_space = false;
+        out.push(ch.to_ascii_lowercase());
+    }
+    out
+}
+
+/// Every `<T>` a step body solicits via `{{schema:<T>}}` — read from the body the
+/// same way the compose seam does, independently of the fence's own extractor.
+fn solicited_types(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = body;
+    while let Some(open) = rest.find("{{") {
+        rest = &rest[open + 2..];
+        let Some(close) = rest.find("}}") else { break };
+        if let Some(ty) = rest[..close].trim().strip_prefix("schema:") {
+            out.push(ty.trim().to_owned());
+        }
+        rest = &rest[close + 2..];
+    }
+    out
+}
+
+/// Load a pack tree's step defs, sorted by id — the shared read behind both
+/// enumerations below.
+fn step_defs(pack: &Path) -> Vec<(String, engine::compose::StepDef)> {
+    let mut steps: Vec<PathBuf> = fs::read_dir(pack.join("steps"))
+        .expect("read the copied steps dir")
+        .map(|entry| entry.expect("dir entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "yaml"))
+        .collect();
+    steps.sort();
+    steps
+        .into_iter()
+        .map(|path| {
+            let id = path
+                .file_stem()
+                .expect("step file stem")
+                .to_string_lossy()
+                .into_owned();
+            let bytes = fs::read(&path).expect("read the copied step");
+            let def =
+                engine::compose::load_step_def(&id, &bytes).expect("step front-matter parses");
+            (id, def)
+        })
+        .collect()
+}
+
+/// The pack tree's `create.singleton-copy-in` declarers — the full declarer set the
+/// conditional tier partitions.
+fn copy_in_declarers(pack: &Path) -> BTreeSet<String> {
+    step_defs(pack)
+        .into_iter()
+        .filter(|(_, def)| {
+            def.states_constraints
+                .iter()
+                .any(|code| code == "create.singleton-copy-in")
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// The **item-bearing** declarers: steps soliciting a singleton whose schema declares
+/// ≥1 `repeatable:` section, so authored items append and a re-authored one would
+/// double. Enumerated from the shipped tree (steps × their `{{schema:<T>}}` refs ×
+/// `T`'s own schema), never hand-listed.
+fn append_owing_steps(pack: &Path) -> BTreeSet<String> {
+    let source = cli::pack::FilesystemPack::new(pack.to_path_buf());
+    step_defs(pack)
+        .into_iter()
+        .filter(|(_, def)| {
+            solicited_types(&def.body).into_iter().any(|ty| {
+                let Ok(raw) = fs::read(pack.join("schemas").join(format!("{ty}.yaml"))) else {
+                    return false;
+                };
+                let Ok(schema) = cli::pack::load_pack_schema(&source, &raw) else {
+                    return false;
+                };
+                schema.singleton
+                    && schema.sections.iter().any(|section| {
+                        matches!(section.body, engine::schema::SectionBody::Repeatable { .. })
+                    })
+            })
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// Drive the conditional tier's whole axis through the real binary: delete each
+/// append fact in turn from each item-bearing declarer, assert the load blocks
+/// naming step, code and token, then restore the step before the next deletion.
+fn drive_append_axis(pack: &Path, run: &dyn Fn() -> std::process::Output) {
+    let owing = append_owing_steps(pack);
+    assert!(
+        !owing.is_empty(),
+        "this pack must ship at least one item-bearing copy-in declarer for the axis to sweep",
+    );
+    assert!(
+        owing.is_subset(&copy_in_declarers(pack)),
+        "every item-bearing solicit must already declare `create.singleton-copy-in`",
+    );
+
+    for step in owing {
+        for token in cli::pack::COPY_IN_APPEND_TOKENS {
+            let path = pack.join("steps").join(format!("{step}.yaml"));
+            let original = fs::read_to_string(&path).expect("read the step");
+            delete_fact(pack, &step, token);
+            let out = run();
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+            fs::write(&path, &original).expect("restore the step");
+
+            assert!(
+                !out.status.success(),
+                "deleting \"{token}\" from the item-bearing declarer `{step}` must block pack \
+                 load; stdout:\n{stdout}\nstderr:\n{stderr}",
+            );
+            assert!(
+                stderr.contains(&format!("`{step}`")),
+                "stderr must name the `{step}` step; got:\n{stderr}",
+            );
+            assert!(
+                stderr.contains("create.singleton-copy-in"),
+                "stderr must name the `create.singleton-copy-in` code; got:\n{stderr}",
+            );
+            assert!(
+                stderr.contains(token),
+                "stderr must name the missing \"{token}\" fact; got:\n{stderr}",
+            );
+        }
+    }
+}
+
+/// The dev-pack seam: every item-bearing copy-in declarer of the shipped dev tree
+/// (`record-changelog` + `author-migration`, both soliciting the repeatable-bearing
+/// `changelog` singleton) owes the append half — deleting it blocks `jigc start` at
+/// pack load.
+#[test]
+fn every_item_bearing_dev_declarer_states_the_append_half() {
+    let repo = TempDir::new("ap-repo");
+    let home = TempDir::new("ap-home");
+    let pack = pack_copy("ap-dev", &embedded_pack_tree());
+    init_repo(repo.path());
+
+    drive_append_axis(pack.path(), &|| {
+        run_with_pack(repo.path(), home.path(), pack.path(), START)
+    });
+}
+
+/// The methodology seam: the same axis over the on-disk methodology tree through the
+/// `packs.yaml`-listed pack path — its item-bearing declarers (`roadmap`,
+/// `decisions-log`, `deferral-ledger`) are checked in isolation from the dev pack's
+/// intact prose in the same composition.
+#[test]
+fn every_item_bearing_methodology_declarer_states_the_append_half() {
+    let repo = TempDir::new("apm-repo");
+    let home = TempDir::new("apm-home");
+    let pack = pack_copy("ap-meth", &methodology_pack_tree());
+    init_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.path().display()),
+    )
+    .expect("write packs.yaml naming the methodology copy");
+
+    drive_append_axis(pack.path(), &|| {
+        run_embedded(repo.path(), home.path(), START)
+    });
+}
+
+/// The omitting context that must stay **inert, never an error**: a copy-in declarer
+/// whose singleton is **slot-only** (methodology's `author-migration-vision` — the
+/// `vision` schema has no `repeatable:` section, and its prose says the slots
+/// OVERWRITE) owes no append fact and loads clean. Asserted, not assumed: the exempt
+/// declarers are enumerated as the declarer set minus the item-bearing one, and each
+/// is proven to state neither append fact — so the clean load below is the tier
+/// standing down, not prose accidentally satisfying it. Flat-mapping the tokens would
+/// make the fence demand a statement that is false for this step.
+#[test]
+fn a_slot_only_copy_in_declarer_is_exempt_from_the_append_tier() {
+    let repo = TempDir::new("apx-repo");
+    let home = TempDir::new("apx-home");
+    let pack = pack_copy("ap-exempt", &methodology_pack_tree());
+    init_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.path().display()),
+    )
+    .expect("write packs.yaml naming the methodology copy");
+
+    let owing = append_owing_steps(pack.path());
+    let exempt: Vec<String> = copy_in_declarers(pack.path())
+        .difference(&owing)
+        .cloned()
+        .collect();
+    assert!(
+        !exempt.is_empty(),
+        "the methodology tree must ship a slot-only copy-in declarer for the exemption to be real",
+    );
+    for step in &exempt {
+        let bytes = fs::read(pack.path().join("steps").join(format!("{step}.yaml")))
+            .expect("read the exempt step");
+        let def = engine::compose::load_step_def(step, &bytes).expect("step front-matter parses");
+        let body = normalized(&def.body);
+        for token in cli::pack::COPY_IN_APPEND_TOKENS {
+            assert!(
+                !body.contains(token),
+                "the exempt `{step}` step must state no append fact for its clean load to prove \
+                 the exemption; it says \"{token}\"",
+            );
+        }
+    }
+
+    let out = run_embedded(repo.path(), home.path(), START);
+    assert!(
+        out.status.success(),
+        "a slot-only copy-in declarer must load clean — the append tier is inert where the \
+         solicited singleton has no repeating items; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The second omitting context: a **manifest-less** pack is outside the conditional
+/// tier too — the same deleted append fact that the manifest-bearing copy blocks on
+/// loads clean once `config/schema-manifest.yaml` is dropped.
+#[test]
+fn a_missing_append_fact_manifest_less_pack_is_unchecked() {
+    let repo = TempDir::new("apnm-repo");
+    let home = TempDir::new("apnm-home");
+    let pack = pack_copy("apnm", &embedded_pack_tree());
+    init_repo(repo.path());
+    let step = append_owing_steps(pack.path())
+        .into_iter()
+        .next()
+        .expect("the dev pack owes at least one append fact");
+    delete_fact(pack.path(), &step, cli::pack::COPY_IN_APPEND_TOKENS[1]);
+    fs::remove_file(pack.path().join("config").join("schema-manifest.yaml"))
+        .expect("drop the freeze manifest");
+
+    let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
+    assert!(
+        out.status.success(),
+        "a manifest-less pack must be outside the conditional append tier; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
 }
 
 /// The omitting context: a **manifest-less** pack is outside the named-fact tier

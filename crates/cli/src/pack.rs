@@ -432,6 +432,23 @@ fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
 /// identifier the fence checks for.
 const SINGLETON_COPY_IN_CODE: &str = "create.singleton-copy-in";
 
+/// **The append half of the copy-in contract** (M47 Inc 9 T2 — the conditional
+/// tier of the named-fact fence): the facts a copy-in declarer owes *only when the
+/// singleton it solicits can hold repeating items*. The flat map
+/// ([`CONSTRAINT_REQUIRED_TOKENS`]) carries what binds at **every** declarer —
+/// copy-in as the edit base, slots overwrite; these two carry what binds where
+/// **items exist**: that authored items *append* to the committed ones, and that
+/// re-authoring one the doc already holds *would double* it.
+///
+/// The condition is the referenced singleton's own structure (≥1 `repeatable:`
+/// section), so the tier is derived, never listed: flat-mapping these tokens onto
+/// `create.singleton-copy-in` would force a slot-only declarer (methodology's
+/// `author-migration-vision`, whose `vision` schema OVERWRITES and has nothing to
+/// double) to state a falsehood — a law-1 lie the fence itself would demand.
+/// Authored in [`normalized_body`]'s form, fenced by
+/// `constraint_tokens_are_authored_in_normalized_form`.
+pub const COPY_IN_APPEND_TOKENS: [&str; 2] = ["append", "would double"];
+
 /// Extract every `<T>` from a step body's `{{schema:<T>}}` references — the same
 /// `schema:`-prefix the compose seam strips (`engine::compose` → the schema
 /// projection). Whitespace-tolerant inside the braces and around the type id.
@@ -465,9 +482,20 @@ fn schema_refs(body: &str) -> Vec<String> {
 /// mirrors [`assert_stated_at`]: manifest-shipping constituents, each checked in
 /// isolation; **per-origin schema resolution suffices** — each soliciting step
 /// references a singleton of its own origin pack (the composition model's
-/// cross-pack solicit does not arise for these five steps). Presence-only (A-3):
-/// proves the obligation is carried, never that the prose is good. A manifest-less
-/// pack stays on skip-on-absent.
+/// cross-pack solicit does not arise for these five steps). A manifest-less pack
+/// stays on skip-on-absent.
+///
+/// **The conditional append tier (M47 Inc 9 T2).** The declaration bought presence;
+/// the named-fact map ([`CONSTRAINT_REQUIRED_TOKENS`]) buys what binds at *every*
+/// declarer. What binds only where **items can double** rides here, on the same
+/// schema load: when the solicited singleton declares ≥1 `repeatable:` section, the
+/// step must also state [`COPY_IN_APPEND_TOKENS`] — that authored items append, and
+/// that re-authoring one the doc already holds would double it. The condition is the
+/// referenced schema's own structure, so the tier is derived exactly like the owe-set
+/// above and needs no exclusion list: a slot-only singleton's declarer (methodology's
+/// `author-migration-vision`) is inert here, never in error — flat-mapping the tokens
+/// would force it to state a falsehood. Same A-3 bound: the *named facts* of jigc's
+/// own contract, never prose quality.
 fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> {
     use anyhow::Context;
 
@@ -484,13 +512,25 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
                     finding.message,
                 )
             })?;
-            let solicits_singleton = schema_refs(&def.body).iter().any(|ty| {
-                owner
+            let mut solicits_singleton = false;
+            let mut items_can_double = false;
+            for ty in schema_refs(&def.body) {
+                let Some(schema) = owner
                     .read(PackResourceKind::Schemas, &ResourceId::from(ty.as_str()))
                     .ok()
                     .and_then(|b| load_pack_schema(owner, &b).ok())
-                    .is_some_and(|s| s.singleton)
-            });
+                    .filter(|schema| schema.singleton)
+                else {
+                    continue;
+                };
+                solicits_singleton = true;
+                // The conditional tier's signal: a `repeatable:` section means the
+                // authored items land beside the committed ones, so the append half
+                // of the contract binds at this solicit.
+                items_can_double |= schema.sections.iter().any(|section| {
+                    matches!(section.body, engine::schema::SectionBody::Repeatable { .. })
+                });
+            }
             if solicits_singleton
                 && !def
                     .states_constraints
@@ -508,6 +548,32 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
                      front-matter",
                     id.as_str(),
                 );
+            }
+            if items_can_double {
+                let body = normalized_body(&def.body);
+                let missing: Vec<&str> = COPY_IN_APPEND_TOKENS
+                    .into_iter()
+                    .filter(|token| !body.contains(token))
+                    .collect();
+                if !missing.is_empty() {
+                    anyhow::bail!(
+                        "pack-load named-fact fence failed: step `{}` declares \
+                         `{SINGLETON_COPY_IN_CODE}` and solicits a singleton whose sections \
+                         repeat (authored items land beside the committed ones) but its prose \
+                         never says {} — the append half of the copy-in contract would first \
+                         surface when an authored item doubles, an ambush \
+                         (design/surface-contract.md → The stated-at fence)\n\
+                         route: state, beside the copy-in sentence, that what you author \
+                         APPENDS to the items already committed and that re-authoring one the \
+                         doc already holds would double it",
+                        id.as_str(),
+                        missing
+                            .iter()
+                            .map(|token| format!("\"{token}\""))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    );
+                }
             }
         }
     }
@@ -1807,16 +1873,22 @@ mod tests {
     /// form — lowercase, single-spaced, untrimmed-free. A token carrying a capital
     /// or a double space could never match a normalized body, so the fence would
     /// redden the shipped packs (or, worse, be silently unsatisfiable for a new one).
+    /// (M47 Inc 9 T2) The conditional [`COPY_IN_APPEND_TOKENS`] tier matches over the
+    /// same normalized view, so it is held to the same rule.
     #[test]
     fn constraint_tokens_are_authored_in_normalized_form() {
-        for (code, tokens) in CONSTRAINT_REQUIRED_TOKENS {
-            for token in tokens {
-                assert_eq!(
-                    normalized_body(token),
-                    *token,
-                    "`{code}`'s token {token:?} is not in normalized form",
-                );
-            }
+        let flat = CONSTRAINT_REQUIRED_TOKENS
+            .iter()
+            .flat_map(|(code, tokens)| tokens.iter().map(move |token| (*code, *token)));
+        let conditional = COPY_IN_APPEND_TOKENS
+            .iter()
+            .map(|token| (SINGLETON_COPY_IN_CODE, *token));
+        for (code, token) in flat.chain(conditional) {
+            assert_eq!(
+                normalized_body(token),
+                token,
+                "`{code}`'s token {token:?} is not in normalized form",
+            );
         }
     }
 
