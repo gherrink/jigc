@@ -11,6 +11,7 @@
 
 use crate::cli::Format;
 use crate::ingest::IngestReport;
+use crate::milestone::MilestoneCreated;
 use crate::setup::{InstallCommit, SetupSummary, UninstallSummary};
 use crate::start::Composition;
 use crate::task::TaskListRow;
@@ -2209,9 +2210,56 @@ pub fn freeze_exempt_relocation(
     }
 }
 
+/// The `jigc milestone create` summary — the mint line, what the mint **landed**, and the
+/// step that follows (M47 Inc 8 / T5; `completions/artifacts/M47/baseline.md` § 3c → N13,
+/// `design/surface-contract.md` → law 2, nothing hides). It is the summary text
+/// [`milestone`] then wraps, so the pinned `--format json` envelope stays exactly
+/// `{text, hook_output}` — the growth rides inside `text`.
+///
+/// The mold is [`setup_success`], which already names the install commit it lands: a door that
+/// commits on the operator's behalf says which commit, so the commit is reviewable instead of
+/// discovered later in a `git log`. `create` landed one silently through rc.9.
+///
+/// **The record half is named only when it exists.** Under a `[dev ▸ methodology]` project
+/// `create` materializes `docs/milestone-records/<id>.md` and lands a record-only commit;
+/// dev-only it does neither, so those two lines render **no bytes at all** — the omitting
+/// context stays inert, and an ack naming a path and a sha that do not exist would be the
+/// law-1 lie this line exists to close. The sha line is likewise omitted (not printed as
+/// `unknown`) when the post-commit read-back failed.
+///
+/// The `next:` step rides the checked [`engine::finding::Route::mechanical`] constructor, so
+/// the CLI-seam parse fence asserts the printed argv parses against the real CLI — the quoted
+/// `"<intent>"` placeholder is the same span form the sibling `create`-route uses.
+pub fn milestone_created(created: &MilestoneCreated) -> String {
+    let mut out = format!(
+        "minted milestone:{} (shared base {})\n",
+        created.id, created.base_short
+    );
+    if let Some(record) = &created.record {
+        out.push_str(&format!(
+            "record: {}   — the committed record this milestone's state lives in\n",
+            record.path
+        ));
+        if let Some(sha) = &record.commit {
+            out.push_str(&format!(
+                "record commit: {sha}   — the record on its own; anything else you had staged stayed staged\n"
+            ));
+        }
+    }
+    let next = engine::finding::Route::mechanical(
+        ["jigc", "milestone", "add-task", &created.id, "\"<intent>\""],
+        "",
+    );
+    out.push_str(&format!(
+        "next: {next}   — add the milestone's first sub-task"
+    ));
+    out
+}
+
 /// Render a successful `jigc milestone <verb>` action to the surface `format`
-/// selects: `agent` / `human` emit the action summary line (e.g. `minted
-/// milestone:<id> …`) followed by the routing footer; `json` emits a generic
+/// selects: `agent` / `human` emit the action summary (one line for most verbs;
+/// `create`'s is the multi-line [`milestone_created`] ack) followed by the routing
+/// footer; `json` emits a generic
 /// object carrying the summary text plus the `hook_output` key — the record-only
 /// commit's captured non-blocking hook stream, **present-always** (the empty string
 /// when the verb committed nothing or no hook spoke; the hook_output producer axis,

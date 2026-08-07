@@ -430,6 +430,10 @@ fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
     // The record commit's captured non-blocking hook stream (the hook_output producer
     // axis) — empty dev-only (no record, no commit, no hook ran).
     let mut hook_output = String::new();
+    // What the ack may name: the record this call landed, or `None` dev-only — there is no
+    // record and no commit there, and naming one would be exactly the law-1 lie this ack
+    // exists to close (M47 Inc 8 / T5).
+    let mut record = None;
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         // The record's schema-version stamp value: the doctype's manifest version (the
         // same authority `doc create`'s stamp deriver reads — milestone-record is
@@ -444,17 +448,54 @@ fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
         // pre-existing area, so `minted.dir` is one this call created, never one it found.
         // Without it the re-run blocks on `milestone.serial-collision` forever, and the approved
         // recoverability ("fix the hook, re-run, it succeeds") is unreachable.
-        hook_output = materialize_and_commit_record(&jigc_home, schema, &minted, stamp)
+        let landed = materialize_and_commit_record(&jigc_home, schema, &minted, stamp)
             .inspect_err(|_| unwind_mint(&minted.dir, None))?;
+        hook_output = landed.hook_output;
+        record = Some(landed.record);
     }
 
     Ok((
-        format!(
-            "minted milestone:{} (shared base {})",
-            minted.id, minted.base.short
-        ),
+        render::milestone_created(&MilestoneCreated {
+            id: minted.id.clone(),
+            base_short: minted.base.short.clone(),
+            record,
+        }),
         hook_output,
     ))
+}
+
+/// What `jigc milestone create` landed, for its ack ([`crate::render::milestone_created`]).
+///
+/// The `record` half is `Option` **by the same discrimination the door itself makes**: under a
+/// `[dev ▸ methodology]` project `create` materializes a committed record and lands a
+/// record-only commit; dev-only it does neither. Carrying the absence as a value is what keeps
+/// the dev-only ack from naming a path and a sha that do not exist (`design/surface-contract.md`
+/// → law 1).
+pub struct MilestoneCreated {
+    /// The minted milestone's work-unit id.
+    pub id: String,
+    /// The short sha of the shared base every sub-task pins.
+    pub base_short: String,
+    /// The committed record this call landed — `None` dev-only.
+    pub record: Option<CreatedRecord>,
+}
+
+/// The committed `milestone-record` a `[dev ▸ methodology]` `create` landed ([`MilestoneCreated`]).
+pub struct CreatedRecord {
+    /// The record's repo-relative path — the same string the commit staged.
+    pub path: String,
+    /// The record-only commit's short sha, or `None` when git could not be read back after the
+    /// commit landed. The read is a convenience on top of a commit that already succeeded, so a
+    /// failure degrades to naming no sha (the [`crate::setup::InstallCommit::Skipped`] posture)
+    /// rather than reporting a landed `create` as failed.
+    pub commit: Option<String>,
+}
+
+/// What [`materialize_and_commit_record`] landed: the record commit's captured non-blocking
+/// hook stream (the hook_output producer axis) plus the record identity the ack names.
+struct LandedRecord {
+    hook_output: String,
+    record: CreatedRecord,
 }
 
 /// The methodology-pack doctype governing a milestone's committed team-ready state
@@ -471,13 +512,14 @@ pub(crate) const MILESTONE_RECORD_TYPE: &str = "milestone-record";
 /// the record's canonical committed home under docs-root (`docs/milestone-records/<id>.md`,
 /// resolved by [`shipped_schemas`]' `apply_docs_root`), then lands a **record-only** commit —
 /// never sweeping the agent's in-flight staged/untracked WIP (the M30/M31 path-scoped
-/// discipline). Returns the record commit's captured non-blocking hook stream.
+/// discipline). Returns what landed ([`LandedRecord`]): the commit's captured non-blocking hook
+/// stream plus the record path + short sha the ack names.
 fn materialize_and_commit_record(
     jigc_home: &Path,
     schema: &Schema,
     minted: &MintedMilestone,
     schema_version: u32,
-) -> Result<String> {
+) -> Result<LandedRecord> {
     let record_path = engine::store::canonical_path(jigc_home, schema, &minted.id)
         .context("the `milestone-record` doctype declares no committed location")?;
     if let Some(parent) = record_path.parent() {
@@ -511,7 +553,19 @@ fn materialize_and_commit_record(
         &minted.id,
         body.as_bytes(),
     );
-    Ok(hook_output)
+    // The landed commit's short sha, read back the way `setup`'s install commit reads its own
+    // (`crate::setup` → `commit_install`): the commit is already in history, so a git hiccup
+    // here degrades to naming no sha, never to failing a `create` that succeeded.
+    let commit = crate::task::git_capture(jigc_home, &["rev-parse", "--short", "HEAD"])
+        .ok()
+        .filter(|sha| !sha.is_empty());
+    Ok(LandedRecord {
+        hook_output,
+        record: CreatedRecord {
+            path: record_pathspec(jigc_home, &record_path)?,
+            commit,
+        },
+    })
 }
 
 /// Land a **record-only** commit for a milestone op (`design/team-ready-state.md` → The commit

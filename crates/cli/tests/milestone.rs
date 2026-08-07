@@ -3177,3 +3177,235 @@ fn describe_narrates_milestone_execution_hidden_from_the_router_catalog() {
         "the emitted prose must carry milestone-execution's suppression reason; got:\n{text}",
     );
 }
+
+// ── N13 · `jigc milestone create` names its commit, its path, and the next step ─────────
+//
+// M47 Increment 8 / T5 (`completions/artifacts/M47/baseline.md` § 3c → N13;
+// `design/surface-contract.md` → law 2, nothing hides). Live-reproduced at rc.9: `create`
+// printed only `minted milestone:<id> (shared base <sha>)` while landing a
+// `chore(milestone): open record …` commit and writing `docs/milestone-records/<id>.md` —
+// commit, path and next step all unnamed, the `jigc setup` mold (which DOES name its install
+// commit) unapplied. The ack now names all three — **and stays honest in the dev-only arm**,
+// where there is no record and no commit to name.
+
+/// Run the `jigc` binary with `cwd = repo` and `$HOME = home`, never inheriting a harness
+/// `JIGC_PACK_DIR` (the compose-marker path requires it ABSENT, else the env pack supersedes
+/// the marker).
+fn run_jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Write the `[dev ▸ methodology]` compose marker — the exact key `make_pack` reads, so the
+/// composed cascade resolves the `milestone-record` doctype and `create` lands a record commit.
+fn compose_methodology(repo: &Path) {
+    fs::create_dir_all(repo.join(".jigc").join("config")).expect("mk project config");
+    fs::write(
+        repo.join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write the compose marker");
+}
+
+/// The remainder of the line in `stdout` starting with `prefix`, panicking with the whole
+/// surface when no such line was emitted (the emitted bytes are the contract).
+fn ack_line<'a>(stdout: &'a str, prefix: &str) -> &'a str {
+    stdout
+        .lines()
+        .find_map(|line| line.strip_prefix(prefix))
+        .unwrap_or_else(|| panic!("the create ack must carry a `{prefix}` line; got:\n{stdout}"))
+}
+
+/// The backticked command span of an ack line (`next: \`jigc …\`   — why`) — the emitted argv,
+/// extracted from the line the binary printed rather than reconstructed here.
+fn backticked(line: &str) -> &str {
+    let after = line
+        .split_once('`')
+        .unwrap_or_else(|| panic!("expected a backticked command in: {line}"))
+        .1;
+    after
+        .split_once('`')
+        .unwrap_or_else(|| panic!("expected a closing backtick in: {line}"))
+        .0
+}
+
+/// Run the emitted `next:` argv verbatim, substituting `real` for its `"<intent>"`
+/// placeholder — the emitted bytes are what an agent runs, so the test runs them too.
+fn run_emitted_next_step(repo: &Path, home: &Path, stdout: &str, real: &str) {
+    let argv = backticked(ack_line(stdout, "next: "));
+    let mut parts: Vec<&str> = argv.split_whitespace().collect();
+    assert_eq!(
+        parts.first().copied(),
+        Some("jigc"),
+        "the next-step argv must lead with `jigc`; got `{argv}`",
+    );
+    let placeholder = parts
+        .iter()
+        .position(|p| *p == "\"<intent>\"")
+        .unwrap_or_else(|| panic!("the next step must carry an `\"<intent>\"` slot; got `{argv}`"));
+    parts[placeholder] = real;
+    let out = run_jigc(repo, home, &parts[1..]);
+    assert!(
+        out.status.success(),
+        "the emitted next step `{argv}` must run as printed; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// (a) `[dev ▸ methodology]` — the ack names the landed record commit (a short sha that
+/// `git rev-parse` resolves to the `chore(milestone): open record …` commit at HEAD), the
+/// record path it wrote (which exists on disk), and a next step that runs as printed.
+#[test]
+fn milestone_create_names_its_record_commit_its_path_and_the_next_step() {
+    let repo = TempDir::new("ack-composed");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    compose_methodology(repo.path());
+
+    let created = run_jigc(
+        repo.path(),
+        home.path(),
+        &["milestone", "create", "Wave One"],
+    );
+    let stdout = String::from_utf8(created.stdout).expect("utf-8 stdout");
+    assert!(
+        created.status.success(),
+        "`jigc milestone create` must exit 0; got {:?}\nstderr:\n{}",
+        created.status,
+        String::from_utf8_lossy(&created.stderr),
+    );
+
+    // The record path it names exists on disk, at the record home.
+    let path = ack_line(&stdout, "record: ")
+        .split_whitespace()
+        .next()
+        .expect("a named record path");
+    assert_eq!(
+        path, "docs/milestone-records/wave-one.md",
+        "the ack names the record's repo-relative home; got:\n{stdout}",
+    );
+    assert!(
+        repo.path().join(path).is_file(),
+        "the named record must exist on disk at {path}; got:\n{stdout}",
+    );
+
+    // The short sha it names resolves — to the record commit, which is HEAD.
+    let sha = ack_line(&stdout, "record commit: ")
+        .split_whitespace()
+        .next()
+        .expect("a named record commit");
+    let resolved = Command::new("git")
+        .args(["rev-parse", "--verify", &format!("{sha}^{{commit}}")])
+        .current_dir(repo.path())
+        .output()
+        .expect("run git");
+    assert!(
+        resolved.status.success(),
+        "`git rev-parse {sha}` must resolve the named record commit; stderr:\n{}",
+        String::from_utf8_lossy(&resolved.stderr),
+    );
+    let resolved = String::from_utf8(resolved.stdout).expect("utf-8 sha");
+    assert_eq!(
+        resolved.trim(),
+        git_state(repo.path()).0.trim(),
+        "the named commit must be the record commit at HEAD",
+    );
+    assert_eq!(
+        head_message(repo.path()).lines().next().unwrap_or_default(),
+        "chore(milestone): open record for milestone:wave-one",
+        "the named sha must be the record-opening commit",
+    );
+
+    // The next step runs verbatim.
+    run_emitted_next_step(repo.path(), home.path(), &stdout, "Add caching");
+}
+
+/// (b) Dev-only (no methodology pack) — there is no record and no record commit, so the ack
+/// claims neither (law 1: naming one would be the lie this task closes), while still naming
+/// the next step.
+#[test]
+fn milestone_create_dev_only_claims_no_record_and_no_commit_but_names_the_next_step() {
+    let repo = TempDir::new("ack-dev-only");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let before = rev_list_count(repo.path());
+    let created = run_jigc(
+        repo.path(),
+        home.path(),
+        &["milestone", "create", "Wave One"],
+    );
+    let stdout = String::from_utf8(created.stdout).expect("utf-8 stdout");
+    assert!(
+        created.status.success(),
+        "dev-only `jigc milestone create` must exit 0; got {:?}\nstderr:\n{}",
+        created.status,
+        String::from_utf8_lossy(&created.stderr),
+    );
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before,
+        "dev-only create lands no commit — the ack below must claim none",
+    );
+    assert!(
+        !stdout.contains("record commit:"),
+        "dev-only create must claim NO record commit (it made none); got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("milestone-records"),
+        "dev-only create must claim NO record path (it wrote none); got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("minted milestone:wave-one"),
+        "the mint itself is still named; got:\n{stdout}",
+    );
+
+    run_emitted_next_step(repo.path(), home.path(), &stdout, "Add caching");
+}
+
+/// (c) The pinned `--format json` envelope is untouched by the growth: exactly
+/// `{text, hook_output}`, with the grown ack inside `text`
+/// (`design/command-output-contract.md` → Stream discipline).
+#[test]
+fn milestone_create_json_envelope_keeps_exactly_text_and_hook_output() {
+    let repo = TempDir::new("ack-json");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    compose_methodology(repo.path());
+
+    let created = run_jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "milestone", "create", "Wave One"],
+    );
+    assert!(
+        created.status.success(),
+        "`jigc --format json milestone create` must exit 0; got {:?}\nstderr:\n{}",
+        created.status,
+        String::from_utf8_lossy(&created.stderr),
+    );
+    let value: serde_json::Value =
+        serde_json::from_slice(&created.stdout).expect("the create envelope parses as JSON");
+    let keys: Vec<&str> = value
+        .as_object()
+        .expect("a JSON object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        vec!["hook_output", "text"],
+        "the create envelope stays exactly `{{text, hook_output}}`; got {value}",
+    );
+    let text = value["text"].as_str().expect("a text string");
+    assert!(
+        text.contains("record commit: ") && text.contains("next: "),
+        "the growth rides inside `text`; got:\n{text}",
+    );
+}
