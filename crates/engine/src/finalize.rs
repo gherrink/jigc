@@ -588,7 +588,10 @@ pub enum RepinDecision {
 ///
 /// [`plan_finalize`]'s phase-1 equality stays as defense — on a re-pin the CLI
 /// feeds it the effective pin. The milestone sibling ([`plan_milestone_finalize`])
-/// is consciously unchanged: the amendment targets the serial-task phase 1.
+/// is consciously unchanged: the amendment targets the **per-task** doors. Since M47
+/// (N7) those doors are two — the commit door and the read-only `jigc start --task`
+/// resume door, which called a blanket `base != HEAD` refusal and was therefore
+/// stricter than the commit door it precedes; both now make this one decision.
 /// `task_id` is the task the decision speaks about — the **work-unit ref** its overlap block
 /// keys at (M42 inc-9 T4; [`Unit::location`]).
 pub fn decide_base_repin(

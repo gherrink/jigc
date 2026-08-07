@@ -3314,7 +3314,11 @@ pub(crate) fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
 /// the deleted OLD path would never enter the changed set and a rename of a footprint
 /// path would auto-re-pin instead of blocking; it also pins the decision against the
 /// user's `diff.renames` config (Validation hardening #7 — a pure function of repo state).
-fn git_changed_paths(repo_root: &Path, base_sha: &str, head_sha: &str) -> Result<Vec<String>> {
+pub(crate) fn git_changed_paths(
+    repo_root: &Path,
+    base_sha: &str,
+    head_sha: &str,
+) -> Result<Vec<String>> {
     let out = git_capture(
         repo_root,
         &["diff", "--no-renames", "--name-only", base_sha, head_sha],
@@ -3333,7 +3337,7 @@ fn git_changed_paths(repo_root: &Path, base_sha: &str, head_sha: &str) -> Result
 /// inside untracked directories individually, else a collapsed `dir/` entry could
 /// never match a changed file path and an overlap would slip). A rename line names
 /// both sides; both count.
-fn git_dirty_paths(repo_root: &Path) -> Result<Vec<String>> {
+pub(crate) fn git_dirty_paths(repo_root: &Path) -> Result<Vec<String>> {
     let out = Command::new("git")
         .args(["status", "--porcelain", "--untracked-files=all"])
         .current_dir(repo_root)

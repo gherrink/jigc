@@ -54,25 +54,39 @@ impl Drop for TempDir {
 /// Initialize a real git repo with one commit and the `.jigc/config/` project
 /// layer so the cascade resolves (composition mints, which reads HEAD).
 fn init_repo(root: &Path) {
-    let git = |args: &[&str]| {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .output()
-            .expect("run git");
-        assert!(
-            out.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    };
-    git(&["init", "-q"]);
-    git(&["config", "user.email", "test@example.com"]);
-    git(&["config", "user.name", "Test"]);
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.email", "test@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
     fs::write(root.join("README.md"), "hello\n").expect("write file");
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "initial"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "initial"]);
     fs::create_dir_all(root.join(".jigc").join("config")).expect("create project layer");
+}
+
+/// Run a `git` command in `root`, asserting success.
+fn git(root: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Commit `path` with `body` — the intervening-commit primitive the base-pin arms
+/// below advance HEAD with.
+fn commit_file(root: &Path, path: &str, body: &str, message: &str) {
+    let full = root.join(path);
+    if let Some(parent) = full.parent() {
+        fs::create_dir_all(parent).expect("create parent dir");
+    }
+    fs::write(&full, body).expect("write file");
+    git(root, &["add", path]);
+    git(root, &["commit", "-q", "-m", message]);
 }
 
 /// Run `jigc <args>` with `cwd = repo` and `$HOME = home`.
@@ -239,5 +253,292 @@ fn resume_composes_the_tasks_own_minting_workflow_not_the_default() {
     assert!(
         orphan_err.contains("workflow") && orphan_err.contains(slug),
         "the error must name the task and its missing workflow; got:\n{orphan_err}",
+    );
+}
+
+// ── the base pin, overlap-aware (M47 Inc 8 T1 / N7) ─────────────────────────────────
+//
+// `jigc start --task <id>` used to blanket-refuse any `base != HEAD`, so the
+// **read-only** resume door was stricter than the **commit** door, whose phase-1 guard
+// has been overlap-aware since M17 (`design/finalize.md` → Parallel hand-editing, the
+// 2026-06-12 amendment; `design/storage.md` → The per-task working area). Resume now
+// makes the identical `engine::finalize::decide_base_repin` decision, so disjoint moved
+// history re-pins in memory (`base.json` is never rewritten) and only an **overlap**
+// with the task's footprint — dirty working-tree paths ∪ promote destinations — blocks.
+//
+// The change is **un-refusing**: every state it turns into a success previously refused,
+// and no state that succeeded begins to refuse (pinned by the control arm below).
+
+/// (a) **Disjoint** — an agent that commits work in a separate task and re-composes is
+/// carried through instead of dead-ended, and the just-committed doc is **in view**:
+/// resume exits 0, re-composes the task's own `implement-from-spec` workflow, and the
+/// spec committed by the intervening commit is listed by `{{ store.specs }}` (which was
+/// empty at mint — the committed store feeds from the **actual** HEAD, not the pin).
+#[test]
+fn resume_re_pins_over_disjoint_moved_history_and_sees_the_new_commit() {
+    let repo = TempDir::new("disjoint");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let slug = "wire-the-cache";
+    let mint = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "implement-from-spec",
+            "--slug",
+            slug,
+            "wire the cache",
+        ],
+    );
+    assert!(
+        mint.status.success(),
+        "the mint must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&mint.stderr),
+    );
+    let mint_out = String::from_utf8(mint.stdout).expect("utf-8 stdout");
+    assert!(
+        !mint_out.contains("> spec:cache-layer"),
+        "no spec is committed at mint — `store.specs` must be empty; got:\n{mint_out}",
+    );
+
+    // The intervening commit: a spec committed by other work. It touches nothing in the
+    // task's footprint (the tree is clean; the task stages no doc), so the moved history
+    // is **disjoint**.
+    commit_file(
+        repo.path(),
+        "docs/specs/cache-layer.md",
+        "# Cache layer\n",
+        "spec: the cache layer",
+    );
+
+    let resume = run(repo.path(), home.path(), &["start", "--task", slug]);
+    assert!(
+        resume.status.success(),
+        "disjoint moved history must re-pin and resume, not dead-end; stderr:\n{}",
+        String::from_utf8_lossy(&resume.stderr),
+    );
+    let resume_out = String::from_utf8(resume.stdout).expect("utf-8 stdout");
+    assert!(
+        resume_out.contains("> spec:cache-layer"),
+        "the doc committed by the intervening commit must be in view; got:\n{resume_out}",
+    );
+    assert!(
+        resume_out.contains("jigc task bind spec"),
+        "resume must re-compose the task's own `implement-from-spec` workflow; \
+         got:\n{resume_out}",
+    );
+
+    // The re-pin is in-memory only: `base.json` still records the ORIGINAL base (a
+    // landed finalize is the only writer of durable task state).
+    let pin = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join(slug)
+            .join("base.json"),
+    )
+    .expect("base.json readable");
+    let head_short = String::from_utf8(
+        Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .current_dir(repo.path())
+            .output()
+            .expect("run git")
+            .stdout,
+    )
+    .expect("utf-8");
+    assert!(
+        !pin.contains(head_short.trim()),
+        "the re-pin is in-memory only — `base.json` must still record the original base; \
+         got:\n{pin}",
+    );
+}
+
+/// (b) **Overlap** — the moved history touches a path in the task's footprint (a dirty
+/// working-tree path), so resume keeps the block, and the block is the engine's
+/// `finalize.base-mismatch` finding: it **names the overlapping path** and routes at
+/// resolving the overlap first, discarding only as the alternative (the old refusal
+/// offered destructive exits only).
+#[test]
+fn resume_blocks_when_the_moved_history_overlaps_the_tasks_work() {
+    let repo = TempDir::new("overlap");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let slug = "my-task";
+    let mint = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "--slug",
+            slug,
+            "do the thing",
+        ],
+    );
+    assert!(
+        mint.status.success(),
+        "the mint must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&mint.stderr),
+    );
+
+    // The moved history touches `notes.md`; the task's working tree carries an
+    // uncommitted edit to the same path — the parallel-hand-editing case the pin exists
+    // to catch.
+    commit_file(repo.path(), "notes.md", "theirs\n", "second");
+    fs::write(repo.path().join("notes.md"), "mine\n").expect("write file");
+
+    let resume = run(repo.path(), home.path(), &["start", "--task", slug]);
+    assert!(
+        !resume.status.success(),
+        "overlapping moved history must keep the block; stdout:\n{}",
+        String::from_utf8_lossy(&resume.stdout),
+    );
+    let err = String::from_utf8(resume.stderr).expect("utf-8 stderr");
+    assert!(
+        err.contains("the moved history overlaps the task's work on `notes.md`"),
+        "the block must name the overlapping path; got:\n{err}",
+    );
+    assert!(
+        err.contains("route: resolve the overlap on `notes.md` against the new history"),
+        "the route must lead with the non-destructive repair; got:\n{err}",
+    );
+}
+
+/// (c) The **un-refusing control**: `base == HEAD` still resumes exactly as before, and
+/// the overlapping state — the only one that still blocks — is a state that **already
+/// refused** under the blanket rule (it refuses for every `base != HEAD`). So the rule
+/// change is provably only ever refusal→success: no state that succeeds today begins to
+/// refuse.
+#[test]
+fn resume_at_its_pin_still_succeeds_and_only_refusals_become_successes() {
+    let repo = TempDir::new("control");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let slug = "pin-holds";
+    let mint = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "--slug",
+            slug,
+            "hold the pin",
+        ],
+    );
+    assert!(
+        mint.status.success(),
+        "the mint must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&mint.stderr),
+    );
+
+    // `base == HEAD`: the pin holds — unchanged by the rule change.
+    let at_pin = run(repo.path(), home.path(), &["start", "--task", slug]);
+    assert!(
+        at_pin.status.success(),
+        "a task at its pin must resume exactly as before; stderr:\n{}",
+        String::from_utf8_lossy(&at_pin.stderr),
+    );
+
+    // The same repo, advanced onto an overlapping path: still refused — as the blanket
+    // rule refused it, since `base != HEAD`.
+    commit_file(repo.path(), "notes.md", "theirs\n", "second");
+    fs::write(repo.path().join("notes.md"), "mine\n").expect("write file");
+    let overlapping = run(repo.path(), home.path(), &["start", "--task", slug]);
+    assert!(
+        !overlapping.status.success(),
+        "the overlapping state must still refuse — it refused under the blanket rule too; \
+         stdout:\n{}",
+        String::from_utf8_lossy(&overlapping.stdout),
+    );
+}
+
+/// (d) The **declared non-goal**, pinned rather than left to inference: the milestone
+/// sub-agent re-entry door (`jigc workflow <W> --task <sub>`) keeps the blanket refusal.
+/// Its commit boundary is the consciously-strict `plan_milestone_finalize` (whose base
+/// equality `decide_base_repin`'s own doc comment calls "consciously unchanged"), so
+/// relaxing it would make a read door **looser** than its commit door — the inverse of
+/// the defect this task fixes. One repo state, two doors, opposite verdicts.
+#[test]
+fn sub_task_re_entry_keeps_the_blanket_base_pin_refusal() {
+    let repo = TempDir::new("reentry");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // A milestone + one sub-task (`milestone create` commits the record, so the sub-task
+    // pins to the post-record HEAD), then a top-level task pinned to that same HEAD.
+    let created = run(repo.path(), home.path(), &["milestone", "create", "Rework"]);
+    assert!(
+        created.status.success(),
+        "`milestone create` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr),
+    );
+    let added = run(
+        repo.path(),
+        home.path(),
+        &[
+            "milestone",
+            "add-task",
+            "rework",
+            "Do the thing",
+            "--workflow",
+            "single-task",
+        ],
+    );
+    assert!(
+        added.status.success(),
+        "`add-task` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&added.stderr),
+    );
+    let top = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "--slug",
+            "top-task",
+            "do the top thing",
+        ],
+    );
+    assert!(
+        top.status.success(),
+        "the top-level mint must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&top.stderr),
+    );
+
+    // One disjoint intervening commit moves HEAD under both tasks.
+    commit_file(repo.path(), "unrelated.md", "unrelated\n", "unrelated");
+
+    let resume = run(repo.path(), home.path(), &["start", "--task", "top-task"]);
+    assert!(
+        resume.status.success(),
+        "the top-level resume door re-pins over disjoint history; stderr:\n{}",
+        String::from_utf8_lossy(&resume.stderr),
+    );
+
+    let reentry = run(
+        repo.path(),
+        home.path(),
+        &["workflow", "single-task", "--task", "do-the-thing"],
+    );
+    assert!(
+        !reentry.status.success(),
+        "the sub-agent re-entry door must keep the blanket refusal; stdout:\n{}",
+        String::from_utf8_lossy(&reentry.stdout),
+    );
+    let err = String::from_utf8(reentry.stderr).expect("utf-8 stderr");
+    assert!(
+        err.contains("is pinned to base") && err.contains("jigc task discard do-the-thing"),
+        "the re-entry refusal keeps its pinned-to-base prose and discard route; got:\n{err}",
     );
 }

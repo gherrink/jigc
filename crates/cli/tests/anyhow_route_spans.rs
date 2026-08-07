@@ -432,29 +432,41 @@ fn rename_rejects_route_to_describe() {
     );
 }
 
-// ── the pinned-base mismatch (`start.rs`, both resume forms) ────────────────────────
+// ── the pinned-base mismatch (`start.rs`, the sub-agent re-entry form) ──────────────
 
-/// A resumed task off its pinned base routes to `git checkout` (not a jigc span —
-/// untouched prose) or `jigc task discard <the concrete id>`, the jigc span riding
-/// the checked constructor with the runtime id in its argv.
+/// A milestone sub-task re-entered off its pinned base routes to `git checkout` (not a
+/// jigc span — untouched prose) or `jigc task discard <the concrete id>`, the jigc span
+/// riding the checked constructor with the runtime id in its argv.
+///
+/// **Retargeted at M47 Inc 8 T1 (N7):** this arm drove the `jigc start --task` *resume*
+/// door, whose blanket `base != HEAD` refusal is gone — resume now makes the commit
+/// door's overlap-aware `decide_base_repin` decision and blocks on a `Finding` route
+/// (the T3 floor, out of this file's scope; pinned in `start_resume.rs`). The **re-entry**
+/// door is the declared non-goal that keeps the blanket refusal — its commit boundary is
+/// the consciously-strict `plan_milestone_finalize` — so it is where this anyhow-embedded
+/// span still lives, byte-identical.
 #[test]
 fn pinned_base_mismatch_routes_to_task_discard() {
     let repo = TempDir::new("pinned");
     let home = TempDir::new("home");
     init_repo(repo.path());
-    mint_task(repo.path(), home.path(), "my-task");
+    let sub = mint_subtask(repo.path(), home.path());
 
     fs::write(repo.path().join("more.md"), "more\n").expect("write file");
     git(repo.path(), &["add", "."]);
     git(repo.path(), &["commit", "-q", "-m", "second"]);
 
-    let out = jigc(repo.path(), home.path(), &["start", "--task", "my-task"]);
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["workflow", "single-task", "--task", sub],
+    );
     assert_error_contains(
         &out,
         &[
-            "task `my-task` is pinned to base ",
+            &format!("task `{sub}` is pinned to base "),
             " — switch back with `git checkout ",
-            "` or `jigc task discard my-task`\n",
+            &format!("` or `jigc task discard {sub}`\n"),
         ],
     );
 }

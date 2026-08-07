@@ -1677,17 +1677,19 @@ pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogE
 /// Unlike [`compose_in_repo`] this **mints nothing**: it resolves the existing
 /// `.jigc/tasks/<id>/` working area, reads its persisted state (base pin, the
 /// original intent, the recorded minting workflow id, the bound context roles in
-/// `roles.json`), verifies the task's
-/// base still matches the current checkout (the CLI never operates a task off its
-/// pinned base — `storage.md` → A task is pinned to its base), then re-composes
-/// with the bound roles in scope. A role bound since the task was minted (e.g. an
-/// ADR created in-task through the create-gate) now resolves in the composed view
-/// — the surface the superseding-decision context-slice reads
+/// `roles.json`), tests the task's base pin with the **same overlap-aware decision
+/// the commit door makes** ([`engine::finalize::decide_base_repin`] — `storage.md` →
+/// The per-task working area; `finalize.md` → Parallel hand-editing), then
+/// re-composes with the bound roles in scope. A role bound since the task was minted
+/// (e.g. an ADR created in-task through the create-gate) now resolves in the composed
+/// view — the surface the superseding-decision context-slice reads
 /// (`worked-examples.md` → Superseding decision).
 ///
-/// A nonexistent id rejects with `no task \`<id>\``; a base mismatch rejects with
-/// the divergence-routing prompt (`write-commands.md` → Base mismatch on an
-/// existing task).
+/// A nonexistent id rejects with `no task \`<id>\``; moved history that **overlaps**
+/// the task's footprint rejects with the engine's routed `finalize.base-mismatch`
+/// block naming the overlapping paths, while **disjoint** moved history re-pins to
+/// HEAD in memory and composes (`write-commands.md` → Base mismatch on an existing
+/// task).
 pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
@@ -1702,18 +1704,47 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
         return Err(crate::task::no_such_task(id));
     }
 
-    // The task is pinned to its base; never operate it off its pinned commit.
+    // The task is pinned to its base, and the pin is tested **exactly** as the commit
+    // door tests it (M47 Inc 8 T1 / N7; `design/storage.md` → The per-task working
+    // area): the identical `decide_base_repin` decision `jigc task finalize` makes, over
+    // the same facts — base→HEAD changed paths, dirty working-tree paths, and the task's
+    // promote destinations. Disjoint moved history re-pins to HEAD; only an overlap with
+    // the task's footprint blocks. A read-only door may never be stricter than the
+    // commit door it precedes, which the blanket `base != HEAD` refusal made it.
     let pinned = state::read_base_pin(&task_dir)
         .with_context(|| format!("could not read the base pin for task `{id}`"))?;
     let head = read_head(&repo_root)?;
     if pinned.sha != head.sha {
-        bail!(
-            "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or {}",
-            pinned.short,
-            head.short,
-            pinned.short,
-            engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
-        );
+        // The schema set the promote-destination half of the footprint needs — loaded
+        // only on divergence, so a task at its pin pays nothing for the decision.
+        let pack = make_pack()?;
+        let pack = pack.as_ref();
+        let (resolved, _) = resolve_cascade(pack, &project_config)?;
+        let schemas = CascadeDefs::new(&resolved, &project_config).all_schemas(pack)?;
+        if let Err(findings) = engine::finalize::decide_base_repin(
+            id,
+            &task_dir,
+            &pinned,
+            &head.sha,
+            &crate::task::git_changed_paths(&repo_root, &pinned.sha, &head.sha)?,
+            &crate::task::git_dirty_paths(&repo_root)?,
+            &schemas,
+        ) {
+            // The decision blocks with one routed finding — `finalize.base-mismatch`,
+            // which names the overlapping paths and claims no commit (honest as written
+            // at a read-only door), or the promote sweep's own I/O block. `jigc start`
+            // is not a gate verb, so it surfaces as the door's clean exit-1 error, never
+            // a validation exit.
+            let finding = findings
+                .into_iter()
+                .next()
+                .expect("a blocked re-pin decision carries its finding");
+            return Err(finding_to_err(finding));
+        }
+        // A re-pin is **in-memory only**: `base.json` is never rewritten (finalize's
+        // landed-only discipline — the next invocation re-derives the decision). The
+        // compose below already reads the committed store and the edge index from the
+        // actual HEAD, so the intervening commit is in view with no further work.
     }
 
     // Resume composes the task's **own** minting workflow, never the cascade
