@@ -19,7 +19,7 @@
 //! resolved cascade in → same workflow out).
 
 use crate::pack::make_pack;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use engine::address::Address;
 use engine::cascade::{
     self, AnchorSpec, OverrideLayer, PackDefaultLayer, SlotFillDelta, SlotFillTarget,
@@ -589,6 +589,12 @@ pub struct Composition {
     /// a header there would announce a mint that never happened. `false` on every
     /// re-compose and on the `creates-task: false` (router) arm, which mints nothing at all.
     pub minted: bool,
+    /// The id of the milestone that owns [`view.task`](ComposedWorkflow::task), when this
+    /// compose is a **milestone sub-task**'s — the unit-kind fact the `task scope:` footer
+    /// scopes its parallel-work claim on (M47 Inc 8 / N7). `None` for a top-level task and
+    /// for an id-less compose, which is what every *minting* door produces: a task joins a
+    /// milestone only through `jigc milestone add-task`, never at the mint that composes.
+    pub sub_task_of: Option<String>,
 }
 
 /// The composing workflow's create-gate doctypes, in declaration order — the source of the
@@ -937,6 +943,8 @@ pub(crate) fn compose_migrate_in_repo(
         // The `jigc migrate` verb minted this task in *this* invocation (just above the
         // compose), so the announcement is true here exactly as on the front door.
         minted: true,
+        // A just-minted task belongs to no milestone (membership is `add-task`'s alone).
+        sub_task_of: None,
     })
 }
 
@@ -1255,6 +1263,10 @@ fn compose_core(
         // The composing workflow's create-gates — the CLI-side presentation fact the
         // renderer names on the `create-gates:` line (never the pinned JSON).
         gates: create_gates(&def),
+        // The fresh front door either mints a brand-new task or composes none at all;
+        // either way this compose is never a milestone sub-task's (membership is
+        // `jigc milestone add-task`'s alone, and it does not compose).
+        sub_task_of: None,
     })
 }
 
@@ -1666,6 +1678,27 @@ pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogE
     Ok(entries)
 }
 
+/// The **blanket base-pin refusal** — the one message every door of a *milestone
+/// sub-task* raises when the checkout has moved off the milestone's shared pin.
+///
+/// It lives here, constructed once, because two doors raise it and their prose must
+/// not drift: [`reenter_in_repo`] (`jigc workflow <W> --task <sub>`) and the
+/// sub-task arm of [`resume_in_repo`] (`jigc start --task <sub>`). A sub-task's only
+/// commit boundary is `jigc milestone finalize <m>` — which blocks on *any* moved
+/// history, since the sub-agent worktrees were cut from the pin — so both of its read
+/// doors stay blanket-strict rather than making the overlap-aware `decide_base_repin`
+/// decision a top-level task's own `finalize` makes (M47 Inc 8 / N7; `design/storage.md`
+/// → The per-task working area).
+fn blanket_base_pin_refusal(id: &str, pinned: &BasePin, head: &BasePin) -> anyhow::Error {
+    anyhow!(
+        "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or {}",
+        pinned.short,
+        head.short,
+        pinned.short,
+        engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
+    )
+}
+
 /// Resume an existing task by `id` and re-compose its **own** minting workflow —
 /// the `jigc start --task <id>` form (`design/write-commands.md` → Task-id
 /// collision & resume: `--task` "resumes an existing task … where it is in *its*
@@ -1689,7 +1722,8 @@ pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogE
 /// the task's footprint rejects with the engine's routed `finalize.base-mismatch`
 /// block naming the overlapping paths, while **disjoint** moved history re-pins to
 /// HEAD in memory and composes (`write-commands.md` → Base mismatch on an existing
-/// task).
+/// task) — **unless the id is a milestone sub-task**, whose commit door is the
+/// milestone's, not this task's ([`blanket_base_pin_refusal`]).
 pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
@@ -1699,22 +1733,37 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
     // checkout); only the base-pin HEAD read below stays on the worktree `repo_root`
     // (M31 Inc 2 / WF3).
     let jigc_home = jigc_home_or_repo(start)?;
-    let task_dir = jigc_home.join(".jigc").join("tasks").join(id);
+    let jigc_root = jigc_home.join(".jigc");
+    let task_dir = jigc_root.join("tasks").join(id);
     if !task_dir.is_dir() {
         return Err(crate::task::no_such_task(id));
     }
 
     // The task is pinned to its base, and the pin is tested **exactly** as the commit
-    // door tests it (M47 Inc 8 T1 / N7; `design/storage.md` → The per-task working
-    // area): the identical `decide_base_repin` decision `jigc task finalize` makes, over
-    // the same facts — base→HEAD changed paths, dirty working-tree paths, and the task's
-    // promote destinations. Disjoint moved history re-pins to HEAD; only an overlap with
-    // the task's footprint blocks. A read-only door may never be stricter than the
-    // commit door it precedes, which the blanket `base != HEAD` refusal made it.
+    // door of *this task's unit kind* tests it (M47 Inc 8 T1 / N7; `design/storage.md` →
+    // The per-task working area). For a top-level task that door is `jigc task finalize`,
+    // so resume makes the identical `decide_base_repin` decision over the same facts —
+    // base→HEAD changed paths, dirty working-tree paths, and the task's promote
+    // destinations: disjoint moved history re-pins to HEAD, only an overlap with the
+    // task's footprint blocks. A read-only door may never be stricter than the commit
+    // door it precedes, which the blanket `base != HEAD` refusal made it.
+    //
+    // For a **milestone sub-task** that door is `jigc milestone finalize <m>` — `jigc
+    // task finalize <sub>` refuses outright (`finalize.milestone-sub-task`) — and the
+    // milestone door blocks on *any* moved history. So the sub-task keeps the blanket
+    // refusal, exactly as its sibling read door [`reenter_in_repo`] does: relaxing it
+    // would make a read door **looser** than its own commit door, the inverse of the
+    // defect above. The unit kind is read with the same `owning_milestone` membership
+    // test `jigc task finalize` uses to mint that refusal, never a second rule.
     let pinned = state::read_base_pin(&task_dir)
         .with_context(|| format!("could not read the base pin for task `{id}`"))?;
     let head = read_head(&repo_root)?;
     if pinned.sha != head.sha {
+        // Read **only on divergence**, like the schema set below: a task at its pin takes
+        // the same door it always did, so it pays for no membership scan.
+        if engine::milestone::owning_milestone(&jigc_root, id).is_some() {
+            return Err(blanket_base_pin_refusal(id, &pinned, &head));
+        }
         // The schema set the promote-destination half of the footprint needs — loaded
         // only on divergence, so a task at its pin pays nothing for the decision.
         let pack = make_pack()?;
@@ -1815,13 +1864,7 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
         .with_context(|| format!("could not read the base pin for task `{id}`"))?;
     let head = read_head(&repo_root)?;
     if pinned.sha != head.sha {
-        bail!(
-            "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or {}",
-            pinned.short,
-            head.short,
-            pinned.short,
-            engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
-        );
+        return Err(blanket_base_pin_refusal(id, &pinned, &head));
     }
 
     // The W-equality guard: the requested `<W>` must equal the sub-task's recorded
@@ -2044,6 +2087,14 @@ fn compose_task_workflow(
         // and the caller supplied it. A `task minted:` header here would state a mint that
         // did not happen (`design/workflow-dialect.md` → The `task minted:` header).
         minted: false,
+        // The unit kind of the id being re-composed, read at the **shared** spine so both
+        // re-compose doors (resume and sub-agent re-entry) carry it — the same
+        // `owning_milestone` membership test the sub-task finalize refusal is minted from,
+        // never a second rule. The `task scope:` footer scopes its parallel-work claim on
+        // it: a sub-task's commit boundary is the milestone's, so the top-level
+        // "resuming or finalizing here blocks and names the overlapping paths" would be a
+        // law-1 lie there (M47 Inc 8 / N7; `design/surface-contract.md` → law 1).
+        sub_task_of: engine::milestone::owning_milestone(&jigc_root, id),
     })
 }
 

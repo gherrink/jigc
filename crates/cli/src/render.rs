@@ -261,7 +261,12 @@ fn minted_header(view: &Composition) -> String {
 ///   and names them — the identical `decide_base_repin` decision the resume door named
 ///   two lines above and `finalize` both make (`design/finalize.md` → Parallel
 ///   hand-editing). Before Inc 8 the claim was flat, and the resume door it invites the
-///   agent back through refused the sequence outright.
+///   agent back through refused the sequence outright. **Scoped per unit kind**: that
+///   divergence clause holds of a *top-level* task only — a **milestone sub-task**'s
+///   `jigc task finalize` refuses outright and its one real commit boundary blocks on
+///   *any* moved history, so a sub-task compose names the milestone instead
+///   ([`Composition::sub_task_of`]). Stating the top-level behaviour there was the
+///   second face of Inc 8's N7 finding.
 ///
 /// Unlike [`minted_header`] — which states an **invocation fact** (this run minted)
 /// and so stays off a resume — these state **standing affordances of the active-task
@@ -273,10 +278,24 @@ fn task_state_lines(view: &Composition) -> String {
     let Some(id) = view.view.task.as_deref() else {
         return String::new();
     };
+    let divergence = match view.sub_task_of.as_deref() {
+        // A milestone sub-task: `jigc task finalize <sub>` refuses outright, and the only
+        // commit boundary it has blocks on *any* moved history (the sub-agent worktrees
+        // were cut from the milestone's pin), so both of its read doors stay blanket-strict
+        // too. The top-level clause below would state the opposite of all three.
+        Some(milestone) => format!(
+            "this task is a sub-task of milestone `{milestone}`, whose `jigc milestone \
+             finalize {milestone}` is its only commit boundary — every door here stays \
+             pinned to the milestone's base"
+        ),
+        None => "once a sibling task commits a path this one also touches, resuming or \
+                 finalizing here blocks and names the overlapping paths"
+            .to_string(),
+    };
     format!(
         "resume: `jigc start --task {id}`   — re-composes this workflow if context is lost\n\
          what's-left: `jigc task validate {id}`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize\n\
-         task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths\n"
+         task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; {divergence}\n"
     )
 }
 
@@ -3229,6 +3248,7 @@ mod tests {
             view: view.clone(),
             gates: vec!["adr".to_string(), "changelog".to_string()],
             minted: true,
+            sub_task_of: None,
         };
 
         let agent = composed(Format::Agent, &granting);
@@ -3247,6 +3267,7 @@ mod tests {
             view: view.clone(),
             gates: Vec::new(),
             minted: true,
+            sub_task_of: None,
         };
         let bare = composed(Format::Agent, &gateless);
         assert!(!bare.contains("create-gates"), "got:\n{bare}");
@@ -3277,6 +3298,7 @@ mod tests {
             },
             gates: Vec::new(),
             minted: true,
+            sub_task_of: None,
         };
 
         let agent = composed(Format::Agent, &minted);
@@ -3295,6 +3317,7 @@ mod tests {
             },
             gates: Vec::new(),
             minted: false,
+            sub_task_of: None,
         };
         let re = composed(Format::Agent, &resumed);
         assert!(!re.contains("task minted"), "got:\n{re}");
@@ -3305,6 +3328,7 @@ mod tests {
             view: ComposedWorkflow { task: None, text },
             gates: Vec::new(),
             minted: false,
+            sub_task_of: None,
         };
         let routed = composed(Format::Agent, &router);
         assert!(!routed.contains("task minted"), "got:\n{routed}");
@@ -3333,6 +3357,7 @@ mod tests {
             },
             gates: vec!["adr".to_string()],
             minted: true,
+            sub_task_of: None,
         };
 
         let agent = composed(Format::Agent, &minted);
@@ -3395,12 +3420,49 @@ mod tests {
             },
             gates: Vec::new(),
             minted: false,
+            sub_task_of: None,
         };
         let re = composed(Format::Agent, &resumed);
         assert!(!re.contains("task minted"), "got:\n{re}");
         assert!(
             re.contains("what's-left: `jigc task validate add-rate-limiter`"),
             "got:\n{re}",
+        );
+
+        // The **other unit kind** on the same axis (M47 Inc 8 / N7, law 1): on a milestone
+        // sub-task the clause above is a lie — `jigc task finalize <sub>` refuses outright
+        // and the milestone door blocks on *any* moved history, not on overlap — so the
+        // sub-task compose names the milestone's commit boundary instead. The end-to-end
+        // proof through the real binary is `start_resume.rs`; this is the seam fence.
+        let sub = Composition {
+            view: ComposedWorkflow {
+                task: Some("add-rate-limiter".to_string()),
+                text: text.clone(),
+            },
+            gates: Vec::new(),
+            minted: false,
+            sub_task_of: Some("rework".to_string()),
+        };
+        let sub_agent = composed(Format::Agent, &sub);
+        let sub_scope = sub_agent
+            .lines()
+            .find(|l| l.starts_with("task scope:"))
+            .unwrap_or_else(|| panic!("a task-scope line renders; got:\n{sub_agent}"));
+        assert!(
+            !sub_scope
+                .contains("resuming or finalizing here blocks and names the overlapping paths"),
+            "a sub-task must not carry the top-level overlap claim; got:\n{sub_scope}",
+        );
+        assert!(
+            sub_scope.contains("sub-task of milestone `rework`")
+                && sub_scope.contains("jigc milestone finalize rework")
+                && sub_scope.contains("only commit boundary"),
+            "a sub-task names the milestone commit boundary that gates it; got:\n{sub_scope}",
+        );
+        // The shared half is unchanged — only the divergence clause is unit-kind-scoped.
+        assert!(
+            sub_scope.contains("several open tasks are legal"),
+            "the parallelize affordance still holds for a sub-task; got:\n{sub_scope}",
         );
 
         // The id-less router renders no bytes — the omitting context stays inert.
@@ -3411,6 +3473,7 @@ mod tests {
             },
             gates: Vec::new(),
             minted: false,
+            sub_task_of: None,
         };
         let routed = composed(Format::Agent, &router);
         for needle in ["resume:", "what's-left:", "task scope:"] {
@@ -3449,6 +3512,7 @@ mod tests {
             },
             gates: Vec::new(),
             minted: true,
+            sub_task_of: None,
         };
         let agent = composed(Format::Agent, &minted);
         let line = agent
@@ -3488,6 +3552,7 @@ mod tests {
             },
             gates: Vec::new(),
             minted: false,
+            sub_task_of: None,
         };
         let routed = composed(Format::Agent, &router);
         assert!(!routed.contains("what's-left:"), "got:\n{routed}");

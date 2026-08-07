@@ -461,29 +461,20 @@ fn resume_at_its_pin_still_succeeds_and_only_refusals_become_successes() {
     );
 }
 
-/// (d) The **declared non-goal**, pinned rather than left to inference: the milestone
-/// sub-agent re-entry door (`jigc workflow <W> --task <sub>`) keeps the blanket refusal.
-/// Its commit boundary is the consciously-strict `plan_milestone_finalize` (whose base
-/// equality `decide_base_repin`'s own doc comment calls "consciously unchanged"), so
-/// relaxing it would make a read door **looser** than its commit door — the inverse of
-/// the defect this task fixes. One repo state, two doors, opposite verdicts.
-#[test]
-fn sub_task_re_entry_keeps_the_blanket_base_pin_refusal() {
-    let repo = TempDir::new("reentry");
-    init_repo(repo.path());
-    let home = TempDir::new("home");
-
-    // A milestone + one sub-task (`milestone create` commits the record, so the sub-task
-    // pins to the post-record HEAD), then a top-level task pinned to that same HEAD.
-    let created = run(repo.path(), home.path(), &["milestone", "create", "Rework"]);
+/// Set up one milestone with one sub-task (`do-the-thing`) plus one top-level task
+/// (`top-task`) pinned to the same HEAD — the two unit kinds the per-task doors must
+/// treat differently. `milestone create` commits the record, so both pin to the
+/// post-record HEAD.
+fn milestone_with_a_sub_task_and_a_top_level_task(repo: &Path, home: &Path) {
+    let created = run(repo, home, &["milestone", "create", "Rework"]);
     assert!(
         created.status.success(),
         "`milestone create` must exit 0; stderr:\n{}",
         String::from_utf8_lossy(&created.stderr),
     );
     let added = run(
-        repo.path(),
-        home.path(),
+        repo,
+        home,
         &[
             "milestone",
             "add-task",
@@ -499,8 +490,8 @@ fn sub_task_re_entry_keeps_the_blanket_base_pin_refusal() {
         String::from_utf8_lossy(&added.stderr),
     );
     let top = run(
-        repo.path(),
-        home.path(),
+        repo,
+        home,
         &[
             "start",
             "--workflow",
@@ -515,10 +506,33 @@ fn sub_task_re_entry_keeps_the_blanket_base_pin_refusal() {
         "the top-level mint must exit 0; stderr:\n{}",
         String::from_utf8_lossy(&top.stderr),
     );
+}
+
+/// (d) The **declared non-goal**, pinned rather than left to inference — and pinned over
+/// its whole axis: **every** per-task read door of a milestone sub-task keeps the blanket
+/// refusal, not just the one door the original arm happened to drive. A sub-task's commit
+/// boundary is the consciously-strict `plan_milestone_finalize` (`jigc task finalize
+/// <sub>` refuses outright), so a read door that re-pins over moved history would be
+/// **looser** than its own commit door — the inverse of the defect this task fixes.
+///
+/// The axis is *door × unit kind*: `jigc start --task <id>` (resume) and `jigc workflow
+/// <W> --task <id>` (sub-agent re-entry) are both iterated for the sub-task, against the
+/// top-level control in the same repo state. The first face of M47 Inc 8's finding was
+/// exactly the un-iterated member — the resume half drove `top-task`, so relaxing resume
+/// unconditionally left the suite green while `jigc start --task do-the-thing` (the
+/// sub-task's own advertised resume door) had become looser than the milestone finalize.
+#[test]
+fn sub_task_read_doors_keep_the_blanket_base_pin_refusal() {
+    let repo = TempDir::new("reentry");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    milestone_with_a_sub_task_and_a_top_level_task(repo.path(), home.path());
 
     // One disjoint intervening commit moves HEAD under both tasks.
     commit_file(repo.path(), "unrelated.md", "unrelated\n", "unrelated");
 
+    // The top-level control: its commit door re-pins over disjoint history, so its read
+    // door does too.
     let resume = run(repo.path(), home.path(), &["start", "--task", "top-task"]);
     assert!(
         resume.status.success(),
@@ -526,19 +540,77 @@ fn sub_task_re_entry_keeps_the_blanket_base_pin_refusal() {
         String::from_utf8_lossy(&resume.stderr),
     );
 
-    let reentry = run(
+    // Every sub-task read door, same repo state, opposite verdict — one message.
+    for argv in [
+        ["start", "--task", "do-the-thing"].as_slice(),
+        ["workflow", "single-task", "--task", "do-the-thing"].as_slice(),
+    ] {
+        let blocked = run(repo.path(), home.path(), argv);
+        assert!(
+            !blocked.status.success(),
+            "`jigc {}` on a sub-task must keep the blanket refusal; stdout:\n{}",
+            argv.join(" "),
+            String::from_utf8_lossy(&blocked.stdout),
+        );
+        let err = String::from_utf8(blocked.stderr).expect("utf-8 stderr");
+        assert!(
+            err.contains("is pinned to base") && err.contains("jigc task discard do-the-thing"),
+            "`jigc {}` keeps the pinned-to-base prose and discard route; got:\n{err}",
+            argv.join(" "),
+        );
+    }
+}
+
+/// (e) The **second face** of the same top-level-task assumption: the composed
+/// `task scope:` footer. Its parallel claim ends "resuming or finalizing here blocks and
+/// names the overlapping paths" — true of a top-level task, a law-1 lie on a milestone
+/// sub-task, whose `jigc task finalize` refuses outright and whose only commit boundary
+/// blocks on *any* moved history, not on overlap. The claim is scoped per unit kind: a
+/// sub-task compose names the milestone finalize instead.
+#[test]
+fn the_task_scope_footer_scopes_its_parallel_claim_per_unit_kind() {
+    let repo = TempDir::new("footer");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    milestone_with_a_sub_task_and_a_top_level_task(repo.path(), home.path());
+
+    // Both tasks sit at their pin, so both doors compose.
+    let top = run(repo.path(), home.path(), &["start", "--task", "top-task"]);
+    assert!(
+        top.status.success(),
+        "the top-level resume must compose; stderr:\n{}",
+        String::from_utf8_lossy(&top.stderr),
+    );
+    let top_out = String::from_utf8(top.stdout).expect("utf-8 stdout");
+    assert!(
+        top_out.contains(
+            "once a sibling task commits a path this one also touches, resuming or finalizing \
+             here blocks and names the overlapping paths"
+        ),
+        "a top-level compose keeps the overlap claim verbatim; got:\n{top_out}",
+    );
+
+    let sub = run(
         repo.path(),
         home.path(),
         &["workflow", "single-task", "--task", "do-the-thing"],
     );
     assert!(
-        !reentry.status.success(),
-        "the sub-agent re-entry door must keep the blanket refusal; stdout:\n{}",
-        String::from_utf8_lossy(&reentry.stdout),
+        sub.status.success(),
+        "the sub-task re-entry must compose at its pin; stderr:\n{}",
+        String::from_utf8_lossy(&sub.stderr),
     );
-    let err = String::from_utf8(reentry.stderr).expect("utf-8 stderr");
+    let sub_out = String::from_utf8(sub.stdout).expect("utf-8 stdout");
     assert!(
-        err.contains("is pinned to base") && err.contains("jigc task discard do-the-thing"),
-        "the re-entry refusal keeps its pinned-to-base prose and discard route; got:\n{err}",
+        !sub_out.contains("resuming or finalizing here blocks and names the overlapping paths"),
+        "a sub-task compose must not claim the top-level overlap behaviour; got:\n{sub_out}",
+    );
+    assert!(
+        sub_out.contains(
+            "this task is a sub-task of milestone `rework`, whose `jigc milestone finalize \
+             rework` is its only commit boundary — every door here stays pinned to the \
+             milestone's base"
+        ),
+        "a sub-task compose names the milestone commit boundary instead; got:\n{sub_out}",
     );
 }
