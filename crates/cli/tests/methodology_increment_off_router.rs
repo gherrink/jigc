@@ -168,8 +168,8 @@ fn bare_start_over_methodology_lists_the_selectables_never_increment() {
     let human_out = String::from_utf8(human.stdout).expect("utf-8 stdout");
     assert!(
         human_out.contains(
-            "dev-task — implement one scoped change test-first, recording no decision \
-             and touching no documented code"
+            "dev-task — implement one scoped change test-first, recording no decision, \
+             touching no documented code (code a managed doc names)"
         ),
         "the orientation catalog must list the `dev-task` selection line (the M43 \
          decision-axis `when` hint); got:\n{human_out}",

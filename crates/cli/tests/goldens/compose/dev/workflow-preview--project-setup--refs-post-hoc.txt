@@ -21,8 +21,8 @@ Create the prd, then author its `vision` and `context` slots on the address
 `prd:<slug>#<slot>`:
 
 Run: `jigc doc create prd --title <TITLE> --task your-task-id`
-<<author: brief#vision>>
-<<author: brief#context>>
+<<author: prd:<slug>#vision>>
+<<author: prd:<slug>#context>>
 
 jigc doc set-slot prd:<slug>#vision --from-file - --task your-task-id
 jigc doc set-slot prd:<slug>#context --from-file - --task your-task-id

@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+#[path = "../author_write_contract.rs"]
+mod author_write_contract;
 #[path = "../catalog_shape_fence.rs"]
 mod catalog_shape_fence;
 #[path = "../compose_create_gates.rs"]

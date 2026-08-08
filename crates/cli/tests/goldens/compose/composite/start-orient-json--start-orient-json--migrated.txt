@@ -15,7 +15,7 @@ exit: 0
     },
     {
       "id": "dev-task",
-      "when": "implement one scoped change test-first, recording no decision and touching no documented code"
+      "when": "implement one scoped change test-first, recording no decision, touching no documented code (code a managed doc names)"
     },
     {
       "id": "do-research",
@@ -43,7 +43,7 @@ exit: 0
     },
     {
       "id": "quick-fix",
-      "when": "apply a small commit-only fix that touches no documented code and records no decision"
+      "when": "apply a small commit-only fix that touches no documented code (code a managed doc names) and records no decision"
     },
     {
       "id": "record-decision",

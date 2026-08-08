@@ -1,5 +1,5 @@
 ---
-when: implement one scoped change test-first, recording no decision and touching no documented code
+when: implement one scoped change test-first, recording no decision, touching no documented code (code a managed doc names)
 description: The reduced-linear dev-workflow — scope the task, implement test-first, run the project's own gate, and land exactly one commit, all as one pass.
 usage: the work is one coherent change you can carry from intent to a single commit, and you want the test-first discipline kept visible. If it makes a decision worth recording, pick decided-task; if it touches code a managed doc describes (a documented symbol renamed or reshaped), pick single-task, whose doc gates cover the update.
 creates-task: true

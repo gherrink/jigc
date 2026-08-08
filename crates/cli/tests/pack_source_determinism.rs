@@ -62,7 +62,7 @@ These are the selectable work-workflows, each with the situation it fits:
 - implement-from-spec — a committed spec already covers the intent, with acceptance criteria to build against
 - plan — draft the specification for upcoming work before writing any code
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
-- quick-fix — apply a small commit-only fix that touches no documented code and records no decision
+- quick-fix — apply a small commit-only fix that touches no documented code (code a managed doc names) and records no decision
 - record-decision — capture a choice you have settled, preserving its rationale with no code to write
 - single-task — implement one scoped change end-to-end, recording its decisions as ADRs
 

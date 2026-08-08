@@ -111,8 +111,7 @@ fn streams(out: &std::process::Output) -> String {
 // `- <id> — <when>` option line per selectable workflow.
 const SINGLE_TASK_WHEN: &str =
     "implement one scoped change end-to-end, recording its decisions as ADRs";
-const QUICK_FIX_WHEN: &str =
-    "apply a small commit-only fix that touches no documented code and records no decision";
+const QUICK_FIX_WHEN: &str = "apply a small commit-only fix that touches no documented code (code a managed doc names) and records no decision";
 const PLAN_WHEN: &str = "draft the specification for upcoming work before writing any code";
 const IMPLEMENT_FROM_SPEC_WHEN: &str =
     "a committed spec already covers the intent, with acceptance criteria to build against";

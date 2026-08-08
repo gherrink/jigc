@@ -19,7 +19,10 @@ INSTEAD of the create + per-entry verbs, never after them — an already-staged 
 rejects a second create): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every entry in a single
 write. Over an already-committed ledger it copies the committed doc in and
-appends — existing entries are untouched:
+appends — existing entries are untouched; an entry whose title mints an id the
+ledger already holds is refused (`write.already-present`), the WHOLE payload
+rejected and nothing staged, so edit that entry in place with the per-entry
+`set-field` / `set-slot` lines above rather than re-authoring it here:
 <!-- /once -->
 
 jigc doc author deferral-ledger --from-file - --task {{task.id}}

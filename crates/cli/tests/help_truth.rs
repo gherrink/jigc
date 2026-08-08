@@ -305,3 +305,81 @@ fn doc_create_help_names_title_literally_and_drops_the_phantom_form() {
         "`doc create --help`'s about must name `--title` literally; got:\n{help}"
     );
 }
+
+/// M47 Increment 10, T7 (N15) — **no help text names a Rust path.** Six `--task`
+/// doc-comments read *"(see `Create::task`)"*, a `clap::Subcommand` variant path
+/// that renders verbatim into `jigc doc <verb> --help`: an agent is pointed at a
+/// symbol that exists only in this crate's source, so the pointer answers nothing
+/// and the surface reads as a leaked internal.
+///
+/// Swept over **every leaf verb of the real clap tree**, not the six sites — the
+/// enumeration is the axis (`pinning.md` §1), so a seventh leak arrives red.
+#[test]
+fn no_verb_help_carries_a_rust_path() {
+    let mut leaked = Vec::new();
+    for path in leaf_verb_paths() {
+        let mut args: Vec<&str> = path.iter().map(String::as_str).collect();
+        args.push("--help");
+        let help = help_stdout(&args);
+        for token in help.split_whitespace() {
+            if token.contains("::") {
+                leaked.push(format!("`jigc {} --help` prints `{token}`", path.join(" ")));
+            }
+        }
+    }
+    assert!(
+        leaked.is_empty(),
+        "a help text names a `::`-qualified Rust path — a symbol that exists only in \
+         this crate's source, so the reader cannot follow it:\n  {}",
+        leaked.join("\n  "),
+    );
+}
+
+/// Every leaf verb path of the real clap tree (`jigc doc set-field` → `["doc",
+/// "set-field"]`) — the `leaf_verb_paths()` idiom the machine-output sweep uses,
+/// so a verb added to the tree joins this sweep with no edit here.
+fn leaf_verb_paths() -> Vec<Vec<String>> {
+    use clap::CommandFactory;
+    fn walk(cmd: &clap::Command, prefix: Vec<String>, out: &mut Vec<Vec<String>>) {
+        let mut had_child = false;
+        for sub in cmd.get_subcommands() {
+            if sub.get_name() == "help" {
+                continue;
+            }
+            had_child = true;
+            let mut child = prefix.clone();
+            child.push(sub.get_name().to_string());
+            walk(sub, child, out);
+        }
+        if !had_child && !prefix.is_empty() {
+            out.push(prefix);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&cli::cli::Cli::command(), Vec::new(), &mut out);
+    out
+}
+
+/// M47 Increment 10, T7 (B1 / P3-2) — `jigc doc author --help` states the **whole**
+/// write contract over a committed doc, not the append half alone. The batch verb's
+/// own grammar surface is where an agent reads what `author` does before running it;
+/// at HEAD it said only *"a committed doc is fine: `author` copies it in and updates
+/// it"*, which reads as "re-authoring is safe" — and a payload item the doc already
+/// holds rejects the whole payload.
+#[test]
+fn doc_author_help_states_the_three_way_write_contract() {
+    let help = help_stdout(&["doc", "author", "--help"]);
+    for fact in [
+        "appended",
+        "in place",
+        "write.already-present",
+        "whole payload",
+    ] {
+        assert!(
+            help.contains(fact),
+            "`doc author --help` must state \"{fact}\" — the three-way contract over a \
+             COMMITTED doc (a new item appends · an existing leaf overwrites in place · \
+             a colliding item rejects the whole payload); got:\n{help}"
+        );
+    }
+}

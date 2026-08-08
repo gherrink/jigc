@@ -53,7 +53,10 @@ INSTEAD of the create + per-entry verbs, never after them — an already-staged 
 rejects a second create): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every entry in a single
 write. Over an already-committed log it copies the committed doc in and appends —
-existing entries are untouched:
+existing entries are untouched; an entry whose title mints an id the log already
+holds is refused (`write.already-present`), the WHOLE payload rejected and
+nothing staged, so edit that entry in place with the per-entry `set-slot` line
+above rather than re-authoring it here:
 
 jigc doc author decisions-log --from-file - --task sweep-the-compose-surface
 

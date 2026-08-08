@@ -109,7 +109,8 @@ pub enum DocCommand {
         /// item's slot/fields are filled by later `set-slot`/`set-field` writes).
         #[arg(long)]
         title: String,
-        /// The active task to scope the write to (see `Create::task`).
+        /// The active task to scope the write to. Optional: explicit wins; else the
+        /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
         task: Option<String>,
     },
@@ -122,7 +123,8 @@ pub enum DocCommand {
         /// The item address — top-level `<type>:<slug>#<section>/<id>` or the nested
         /// section-qualified chain `#<section>/<parent>/.../<nested-section>/<id>`.
         addr: String,
-        /// The active task to scope the write to (see `Create::task`).
+        /// The active task to scope the write to. Optional: explicit wins; else the
+        /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
         task: Option<String>,
     },
@@ -141,7 +143,8 @@ pub enum DocCommand {
         /// The new heading title (the item's `{#id}` anchor stays frozen).
         #[arg(long)]
         title: String,
-        /// The active task to scope the write to (see `Create::task`).
+        /// The active task to scope the write to. Optional: explicit wins; else the
+        /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
         task: Option<String>,
     },
@@ -164,7 +167,8 @@ pub enum DocCommand {
         /// absent). Refused for author-required / defaulted / CLI-`set:` fields.
         #[arg(long)]
         unset: bool,
-        /// The active task to scope the write to (see `Create::task`).
+        /// The active task to scope the write to. Optional: explicit wins; else the
+        /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
         task: Option<String>,
     },
@@ -176,7 +180,8 @@ pub enum DocCommand {
         /// The prose source: a path, or `-` for stdin (prose never inline).
         #[arg(long)]
         from_file: String,
-        /// The active task to scope the write to (see `Create::task`).
+        /// The active task to scope the write to. Optional: explicit wins; else the
+        /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
         task: Option<String>,
     },
@@ -196,8 +201,15 @@ pub enum DocCommand {
     /// Use `create` then `set-slot`/`set-field`/`add-item` for incremental,
     /// one-leaf-at-a-time authoring instead. Run `author` INSTEAD of those verbs,
     /// never after them — a doc already staged by `create` rejects the second
-    /// create `author` implies. (A committed doc is fine: `author` copies it in
-    /// and updates it.)
+    /// create `author` implies.
+    ///
+    /// Over a COMMITTED doc `author` copies the committed body in as the edit base
+    /// and writes three ways: a payload item the doc does not hold is **appended**
+    /// (the committed items stay untouched); an existing doc-level leaf you
+    /// re-author overwrites **in place**; and a payload item whose title mints an id
+    /// the doc ALREADY holds is refused (`write.already-present`) with the whole
+    /// payload rejected and nothing staged — edit that item in place with
+    /// `set-slot`/`set-field` instead of re-authoring it here.
     ///
     /// Payload shape (YAML; `--from-file`), mirroring the document's structure:
     ///
@@ -227,7 +239,8 @@ pub enum DocCommand {
         /// large, so it arrives the same way slot prose does — never inline).
         #[arg(long = "from-file")]
         from_file: String,
-        /// The active task to scope the write to (see `Create::task`).
+        /// The active task to scope the write to. Optional: explicit wins; else the
+        /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
         task: Option<String>,
     },

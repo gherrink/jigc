@@ -420,8 +420,8 @@ fn decided_task_routes_from_the_catalog_and_composes() {
     );
     assert!(
         catalog.contains(
-            "- dev-task — implement one scoped change test-first, recording no decision \
-             and touching no documented code"
+            "- dev-task — implement one scoped change test-first, recording no decision, \
+             touching no documented code (code a managed doc names)"
         ),
         "the sibling axis discriminates — `dev-task` records none; got:\n{catalog}",
     );

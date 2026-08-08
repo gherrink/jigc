@@ -3,8 +3,8 @@ Create the prd, then author its `vision` and `context` slots on the address
 `prd:<slug>#<slot>`:
 
 {{ cli.create-prd }}
-<<author: {{ task.brief#vision }}>>
-<<author: {{ task.brief#context }}>>
+<<author: prd:<slug>#vision>>
+<<author: prd:<slug>#context>>
 
 jigc doc set-slot prd:<slug>#vision --from-file - --task {{task.id}}
 jigc doc set-slot prd:<slug>#context --from-file - --task {{task.id}}

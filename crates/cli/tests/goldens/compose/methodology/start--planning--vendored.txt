@@ -82,7 +82,10 @@ INSTEAD of the create + per-entry verbs, never after them — an already-staged 
 rejects a second create): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every entry in a single
 write. Over an already-committed roadmap it copies the committed doc in and
-appends the new milestone — existing entries are untouched:
+appends the new milestone — existing entries are untouched; an entry whose title
+mints an id the roadmap already holds is refused (`write.already-present`), the
+WHOLE payload rejected and nothing staged, so edit that milestone in place with
+the per-entry `set-slot` lines above rather than re-authoring it here:
 
 jigc doc author roadmap --from-file - --task sweep-the-compose-surface
 
