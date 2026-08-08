@@ -282,8 +282,8 @@ pub enum DocCommand {
     ///
     /// The `{#id}` anchor on a rendered item heading IS that item's `<id>` — the
     /// address component every `#section/<id>` slice and every item write verb
-    /// takes. It is minted from the title, never equal to it (a release titled
-    /// `1.0.0` has the id `100`), and it stays frozen across a retitle, so read the
+    /// takes. It is minted from the title, not always equal to it (a release titled
+    /// `1.0.0` has the id `1-0-0`), and it stays frozen across a retitle, so read the
     /// id off the anchor rather than slugging the title yourself; `--format json`
     /// carries the same value as each item object's `id` key.
     ///
@@ -3421,10 +3421,11 @@ fn item_json(
 ) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     // The item's minted, frozen id — the handle every address into the item takes, and
-    // NOT derivable from the heading (a release titled `1.0.0` mints `100`; a retitle
-    // diverges the two permanently). Without it the contract is not closed under its own
-    // address grammar (M42, `design/doc-read-surface.md` → The item `id` closes the json
-    // contract). The key is reserved at schema load (`schema::RESERVED_ITEM_ID_KEY`), so
+    // NOT derivable from the heading (it is minted once and frozen; a retitle diverges
+    // the two permanently, and the mint-time caps, a `-2` collision suffix, or a
+    // slug-rule generation diverge them at mint). Without it the contract is not closed
+    // under its own address grammar (M42, `design/doc-read-surface.md` → The item `id`
+    // closes the json contract). The key is reserved at schema load (`schema::RESERVED_ITEM_ID_KEY`), so
     // no declared leaf below can collide with it.
     map.insert(
         engine::schema::RESERVED_ITEM_ID_KEY.to_owned(),

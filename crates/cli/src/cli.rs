@@ -2706,6 +2706,43 @@ mod cli_parse {
         }
     }
 
+    /// (M47 inc-10 triage — the C3 sibling) A **worked example** of the mint is only
+    /// as true as the mint rule that ships. The T5 statement above illustrated
+    /// *minted-from-the-title-never-equal-to-it* with a release titled `1.0.0`
+    /// carrying the id `100` — the **generation-1** id the M42 slug-rule fork retired
+    /// (since `SLUG_RULE_VERSION` 2 a `.` is a separator, so the mint is `1-0-0`), and
+    /// the word-presence assertions above could not catch it. So the example is no
+    /// longer a literal anyone re-checks by eye: every surface that states it is
+    /// asserted against `engine::slug::slugify` — **the mint site's own function**
+    /// ([`engine::write`]'s `add-item` path calls it) — so the next slug-rule
+    /// generation reddens here instead of shipping a fresh lie. The axis is *the
+    /// surfaces that state this example*: the read verb's long help and the dev pack's
+    /// `record-change` step text (the emitted bytes an agent follows).
+    #[test]
+    fn the_release_id_worked_example_states_the_shipped_mint() {
+        let minted = engine::slug::slugify("1.0.0");
+        // The generation-1 id this example carried before slug-rule-version 2.
+        let retired = "100";
+
+        for (surface, text) in [
+            ("jigc doc show --help", long_help(&["doc", "show"])),
+            (
+                "the dev pack's `author-change` step",
+                include_str!("../pack/steps/author-change.yaml").to_owned(),
+            ),
+        ] {
+            assert!(
+                text.contains(&minted),
+                "{surface} states the release-id example as the shipped mint \
+                 (`slugify(\"1.0.0\") == {minted}`): {text}"
+            );
+            assert!(
+                !text.contains(retired),
+                "{surface} states no retired generation-1 id (`{retired}`): {text}"
+            );
+        }
+    }
+
     /// (M47 inc-10 T9 — N20, half 1) Every id-source-taking **mint** verb's own
     /// usage line names the form that verb takes its id-source in — the mechanical
     /// half of the argument convention (`design/write-commands.md` → The argument

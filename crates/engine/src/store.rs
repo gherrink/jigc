@@ -772,8 +772,9 @@ fn render_item(item: &ParsedItem, source: &str) -> String {
 /// byte-exactness claim). The render was anchorless by design until M42, which withheld
 /// from every plain read (and every compose-time `{{@task.spec#criteria}}` deref) the one
 /// value an agent needs in order to *address the item back*: its id, which is not
-/// derivable from the heading (a release titled `1.0.0` mints `100`, and a retitle
-/// diverges the two permanently by design). The re-rooting of a nested slice is *not*
+/// derivable from the heading (it is minted once and frozen — a retitle diverges the
+/// two permanently by design, and the mint-time caps, a `-2` collision suffix, or a
+/// slug-rule generation diverge them at mint). The re-rooting of a nested slice is *not*
 /// repaired here and stays — lifting a sub-tree out of its document re-heads it — so this
 /// is the canonical render of the addressed node, never a byte slice.
 fn render_item_at(item: &ParsedItem, source: &str, depth: usize) -> String {

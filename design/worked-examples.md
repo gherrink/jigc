@@ -1608,19 +1608,19 @@ $ jigc start --workflow record-change "cut 1.0.0"            # off-router, by na
 $ jigc doc create changelog --title Changelog               # → changelog:changelog.md (mints; cold)
 
 # add a release item (the level-1 repeatable; `date` is item-level set:on-create → stamped automatically).
-# add-item PRINTS the minted address — the slugger drops dots, so `1.0.0` mints id `100`. Drive the
+# add-item PRINTS the minted address — the slugger MAPS dots, so `1.0.0` mints id `1-0-0`. Drive the
 # PRINTED address verbatim downstream (never re-spell the version):
-$ jigc doc add-item  changelog:changelog#releases --title "1.0.0"       # → changelog:changelog#releases/100
-$ jigc doc set-field changelog:changelog#releases/100/link --value https://example.com/compare/0.9.0...1.0.0  # OPTIONAL field — may be omitted
+$ jigc doc add-item  changelog:changelog#releases --title "1.0.0"       # → changelog:changelog#releases/1-0-0
+$ jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/compare/0.9.0...1.0.0  # OPTIONAL field — may be omitted
 
 # add NESTED change-groups under the release (the level-2 repeatable — the Leaf::Repeatable path).
 # the minted group address is SECTION-QUALIFIED (carries the `changes` segment) — the form set-slot accepts:
-$ jigc doc add-item  changelog:changelog#releases/100/changes --title added    # → changelog:changelog#releases/100/changes/added
-$ jigc doc set-slot  changelog:changelog#releases/100/changes/added/notes --from-file -   # "- OAuth device-code flow"
-$ jigc doc add-item  changelog:changelog#releases/100/changes --title fixed    # → …/releases/100/changes/fixed
-$ jigc doc set-slot  changelog:changelog#releases/100/changes/fixed/notes --from-file -
+$ jigc doc add-item  changelog:changelog#releases/1-0-0/changes --title added    # → changelog:changelog#releases/1-0-0/changes/added
+$ jigc doc set-slot  changelog:changelog#releases/1-0-0/changes/added/notes --from-file -   # "- OAuth device-code flow"
+$ jigc doc add-item  changelog:changelog#releases/1-0-0/changes --title fixed    # → …/releases/1-0-0/changes/fixed
+$ jigc doc set-slot  changelog:changelog#releases/1-0-0/changes/fixed/notes --from-file -
 
-$ jigc task finalize cut-100
+$ jigc task finalize cut-1-0-0
 > validate: clean
 > promote: changelog/changelog.md
 > commit:  docs(changelog): cut 1.0.0           ← one commit, the singleton + the code
@@ -1634,11 +1634,11 @@ The `## Unreleased Changes` section (a **multi-word section id** — the multi-w
 $ jigc start --workflow record-change "cut 1.1.0"
 # WARM (changelog is committed): create copies the committed doc in (read_or_copy_in) — prior 1.0.0 release survives.
 $ jigc doc create changelog --title Changelog               # copy-in: the 1.0.0 release is preserved
-$ jigc doc add-item changelog:changelog#releases --title "1.1.0"               # → changelog:changelog#releases/110
-$ jigc doc add-item changelog:changelog#releases/110/changes --title changed   # → …/releases/110/changes/changed
-$ jigc doc set-slot changelog:changelog#releases/110/changes/changed/notes --from-file -
+$ jigc doc add-item changelog:changelog#releases --title "1.1.0"               # → changelog:changelog#releases/1-1-0
+$ jigc doc add-item changelog:changelog#releases/1-1-0/changes --title changed   # → …/releases/1-1-0/changes/changed
+$ jigc doc set-slot changelog:changelog#releases/1-1-0/changes/changed/notes --from-file -
 #   (no `link` authored this release — the OPTIONAL field is left absent)
-$ jigc task finalize cut-110
+$ jigc task finalize cut-1-1-0
 > promote: changelog/changelog.md (re-promoted byte-stable, BOTH 1.0.0 + 1.1.0 present, nested groups intact)
 ```
 
@@ -1646,15 +1646,15 @@ $ jigc task finalize cut-110
 
 ```text
 # RED 1 — a half-authored NESTED entry BLOCKS at validate (recursive repeatable conformance):
-$ jigc doc add-item changelog:changelog#releases/110/changes --title removed   # → …/releases/110/changes/removed
+$ jigc doc add-item changelog:changelog#releases/1-1-0/changes --title removed   # → …/releases/1-1-0/changes/removed
 #   leave the nested `notes` slot empty
-$ jigc task finalize cut-110
-> BLOCK schema-conformance.required-slot-present @ changelog:changelog … #releases/110/changes/removed/notes
+$ jigc task finalize cut-1-1-0
+> BLOCK schema-conformance.required-slot-present @ changelog:changelog … #releases/1-1-0/changes/removed/notes
 #   the gate names the genuinely-empty NESTED leaf at its SECTION-QUALIFIED address; non-zero exit, NO commit.
 #   (the nested-leaf address depends on the parent-scoped path locator — confirmed at the build spike, B1/S1.)
 
 # RED 2 — the OPTIONAL `link` field, absent, finalizes CLEAN (the optional-field lift):
-$ jigc task finalize cut-110     # with no `link` on 1.1.0 → no required-field-present finding for it
+$ jigc task finalize cut-1-1-0     # with no `link` on 1.1.0 → no required-field-present finding for it
 > validate: clean                  # an absent OPTIONAL field does not block; an absent REQUIRED field/slot still does
 ```
 
@@ -1696,14 +1696,14 @@ $ jigc migrate CHANGELOG.md --as changelog      # the new verb: mints an OFF-ROU
 
 # the LLM rewrites the foreign prose into canonical shape through the EXISTING write verbs (flow 24's spine):
 $ jigc doc create changelog --title Changelog                                    # → changelog:changelog.md
-$ jigc doc add-item  changelog:changelog#releases --title "1.2.0"                # → …#releases/120
-$ jigc doc set-field changelog:changelog#releases/120/date --value 2026-03-01    # HISTORICAL date overwrites the on-create stamp
-$ jigc doc add-item  changelog:changelog#releases/120/changes --title added      # → …/changes/added
-$ jigc doc set-slot  changelog:changelog#releases/120/changes/added/notes --from-file -   # "- OAuth device-code flow"
+$ jigc doc add-item  changelog:changelog#releases --title "1.2.0"                # → …#releases/1-2-0
+$ jigc doc set-field changelog:changelog#releases/1-2-0/date --value 2026-03-01    # HISTORICAL date overwrites the on-create stamp
+$ jigc doc add-item  changelog:changelog#releases/1-2-0/changes --title added      # → …/changes/added
+$ jigc doc set-slot  changelog:changelog#releases/1-2-0/changes/added/notes --from-file -   # "- OAuth device-code flow"
 #   the foreign `Performance` category is mapped by the LLM to a valid enum member (`changed`) — NOT coerced by the CLI:
-$ jigc doc add-item  changelog:changelog#releases/120/changes --title changed     # → …/changes/changed
-$ jigc doc set-slot  changelog:changelog#releases/120/changes/changed/notes --from-file -   # "- Cut cold-start 40%"
-$ jigc doc add-item  changelog:changelog#releases --title "1.1.0"                # → …#releases/110  (… etc)
+$ jigc doc add-item  changelog:changelog#releases/1-2-0/changes --title changed     # → …/changes/changed
+$ jigc doc set-slot  changelog:changelog#releases/1-2-0/changes/changed/notes --from-file -   # "- Cut cold-start 40%"
+$ jigc doc add-item  changelog:changelog#releases --title "1.1.0"                # → …#releases/1-1-0  (… etc)
 
 $ jigc task finalize migrate-changelog            # WITHOUT --approve: renders the diff, exits non-zero, commits nothing
 > validate: clean
@@ -1724,9 +1724,9 @@ After approval the foreign `CHANGELOG.md` is **gone**, `changelog/changelog.md` 
 
 ```text
 # RED 1 — a rewrite whose category stays NON-CONFORMANT blocks at the strict gate (enum-on-id-from enforcement):
-$ jigc doc add-item changelog:changelog#releases/120/changes --title Performance   # foreign category; mints id slug `performance`
+$ jigc doc add-item changelog:changelog#releases/1-2-0/changes --title Performance   # foreign category; mints id slug `performance`
 $ jigc task finalize migrate-changelog --approve
-> BLOCK schema-conformance.field-value-conformant @ …#releases/120/changes/performance/category
+> BLOCK schema-conformance.field-value-conformant @ …#releases/1-2-0/changes/performance/category
 #   the `category` enum is now enforced even on the id-from field, compared by RE-SLUG: `Performance`→`performance` ∉ enum → BLOCK,
 #   whereas a foreign `Fixed`/`Added` re-slugs to the valid member `fixed`/`added` and PASSES (no coercion by the CLI).
 #   the finding names the item at its slug-cased address (exact code/leaf-suffix pinned at the build spike); non-zero exit, NO commit, NO retire.
@@ -1745,7 +1745,7 @@ $ jigc task finalize migrate-changelog          # (a conformant rewrite, but the
 3. **The `enum` is enforced on the `id-from` field.** A foreign category outside the `category` enum (`Performance`) is **rejected** at conformance — the migration's "adopted iff conformant" guarantee is real, not hollow (RED 1). The LLM must map foreign categories to valid members.
 4. **Historical dates survive.** A release's `date` is set from the foreign file's historical date (`set-field` overwrites the `set: on-create` today-stamp), not stamped to today.
 5. **The review gate is the fidelity check, and it is byte-safe both ways.** Approval is required before commit; the foreign original is **retired only on approval** (the first byte-destructive op, CLI-owned, transactional); rejection leaves the foreign original untouched and adopts nothing (RED 2).
-6. **The honest bounds hold.** Changelog only (**M25** generalizes to `adr`/`spec`/`prd`; **M24** first hardens this changelog reference — flow 26); the doc preamble / per-release summary / `[Unreleased]` compare-link have no schema home and are **dropped** (accepted, mostly boilerplate); a foreign changelog whose versions collide under dot-dropping slugify (`1.2.0`/`1.20`→`120`) **blocks loudly** (accept-and-block), never silently suffixed. The migration-quality measure (a small real corpus + round-trip-conformance / fidelity-acceptance / content-preservation) is the milestone's done-bar.
+6. **The honest bounds hold.** Changelog only (**M25** generalizes to `adr`/`spec`/`prd`; **M24** first hardens this changelog reference — flow 26); the doc preamble / per-release summary / `[Unreleased]` compare-link have no schema home and are **dropped** (accepted, mostly boilerplate); a foreign changelog whose versions collide under the slug rule (`1.2.0`/`1_2_0`→`1-2-0` — the separator map, since slug-rule-version 2; the pre-fork dot-dropping rule collided `1.2.0`/`1.20` instead) **blocks loudly** (accept-and-block), never silently suffixed. The migration-quality measure (a small real corpus + round-trip-conformance / fidelity-acceptance / content-preservation) is the milestone's done-bar.
 
 ## 26. Changelog migration, hardened — the full real-repo live migration through the batch path (M24)
 
@@ -1797,15 +1797,15 @@ The committed `changelog/changelog.md` carries all 12 releases, dateless ones re
 
 ```text
 # #3 write-time enum reject — fires at the AUTHORING point, not finalize:
-$ jigc doc add-item changelog:changelog#releases/140/changes --title Improvements   # ∉ enum
+$ jigc doc add-item changelog:changelog#releases/1-4-0/changes --title Improvements   # ∉ enum
 > BLOCK schema-conformance.field-value-conformant @ …/changes/improvements   ← rejected NOW (re-slug membership), not at finalize
 
 # #2 item-field value reject at write time (the closed parity gap):
-$ jigc doc set-field changelog:changelog#releases/140/date --value "March 2026"     # not ISO
+$ jigc doc set-field changelog:changelog#releases/1-4-0/date --value "March 2026"     # not ISO
 > BLOCK schema-conformance.field-value-conformant — date "March 2026" is not an ISO date   ← at write, not finalize
 
 # #1 remove-item retracts a mis-authored NESTED change-group (top-level remove_item couldn't reach it):
-$ jigc doc remove-item changelog:changelog#releases/140/changes/changed     # removes the nested group + its notes
+$ jigc doc remove-item changelog:changelog#releases/1-4-0/changes/changed     # removes the nested group + its notes
 > removed.
 
 # #8 in-location squatter now authors end-to-end (was the M23 clean-fail):

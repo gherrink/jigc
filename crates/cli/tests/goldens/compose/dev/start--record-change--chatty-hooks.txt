@@ -9,12 +9,12 @@ is copied in for append):
 Run: `jigc doc create changelog --title Changelog --task sweep-the-compose-surface`
 
 Then author the change. To cut a release, mint a release item (its id is minted
-from the version title you give — e.g. `1.0.0` mints `100` — and its `date` is
+from the version title you give — e.g. `1.0.0` mints `1-0-0` — and its `date` is
 stamped on create). `add-item` PRINTS the new item's address; use that printed
 address verbatim for every follow-up verb — never re-spell the version string:
 
 jigc doc add-item changelog:changelog#releases --title "<version>" --task sweep-the-compose-surface
-#   → prints e.g. changelog:changelog#releases/100  (call this <release-addr>)
+#   → prints e.g. changelog:changelog#releases/1-0-0  (call this <release-addr>)
 jigc doc set-field <release-addr>/link --value "<diff-url>" --task sweep-the-compose-surface
 
 Under that release, add one nested change-group per category and author its notes
@@ -22,7 +22,7 @@ Under that release, add one nested change-group per category and author its note
 deprecated / removed / fixed / security). Again, drive the printed address verbatim:
 
 jigc doc add-item <release-addr>/changes --title "<category>" --task sweep-the-compose-surface
-#   → prints e.g. changelog:changelog#releases/100/changes/added  (call this <group-addr>)
+#   → prints e.g. changelog:changelog#releases/1-0-0/changes/added  (call this <group-addr>)
 jigc doc set-slot <group-addr>/notes --from-file - --task sweep-the-compose-surface
 
 For a change that is not yet cut into a release, add the change-group under the
