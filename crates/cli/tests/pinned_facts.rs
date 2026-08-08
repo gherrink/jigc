@@ -103,15 +103,109 @@
 //! beside their suites (`corpus_migration.rs` — the M40 seed-order witness;
 //! `carryover_gate.rs` — the M43 staging-order witness), each citing its audit run.
 
+//! ───────────────────────────────────────────────────────────────────────────────
+//! ## The RC-alpha4 ledger (M47 Inc 11 / T3) — the disposition of all 31 rows
+//!
+//! The final unseeded trial's verification
+//! ([RC-alpha4/findings-verification.md](../../../completions/artifacts/RC-alpha4/findings-verification.md);
+//! 20 CONFIRMED + 1 confirmed-as-decided · 6 PARTIAL · 4 REFUTED, every verdict with
+//! a repro block) is the
+//! evidence base the **rc.10 wave** was chartered on. Per pinning.md §3 the
+//! **confirmed** blocks are already their fix increment's red test and are *not*
+//! re-converted here; the standing obligation is the **refuted** set, plus a stated
+//! disposition for every remaining row. **Nothing is UNPINNED without a reason.**
+//!
+//! Two boundaries govern the UNPINNED reasons, and neither is a shrug: the wave
+//! *"changes what existing surfaces **say**, never what surfaces **exist**"* (the
+//! 2026-07-25 charter razor — a capability gap routes to the **M46 capability wave**,
+//! [decisions-pending.md](../../../implementation/decisions-pending.md)), and a
+//! **capability gap has no false statement to fence** — pinning its absence would
+//! pin the gap as expected output, the exact anti-pattern the wave's ordering rule
+//! exists to prevent.
+//!
+//! ### Part A — the validate/finalize contract
+//!
+//! | row | verdict | disposition |
+//! |---|---|---|
+//! | A1 | CONFIRMED | Inc 4's red tests — `validate_previews_the_gate.rs` (the carryover probe at the `task validate` seam) · `owner_artifact_cause_axis.rs` (the six staging-independent causes) |
+//! | A2 | REFUTED | [`finalize_left_out_stream`] **(new here)** — the agent-text `left-out` block P2 read as "three lines before the JSON" is stderr's; its stdout sibling stands at `finalize_manifest::json_manifest_on_dry_run_and_landed_run`, and the chatty-hook purity arm at [`finalize_json`] |
+//! | A3 | CONFIRMED | Inc 10 T1 — the `BOOTSTRAP_OUTPUT_CONTRACT` body assertion in `crates/cli/src/adapter.rs` (which pinned the lie verbatim until the fix) + the six `agent-md` compose goldens |
+//! | A4 | PARTIAL | **UNPINNED (residue only), reason stated:** the row finds no false statement — the gating semantics *are* stated (`task.rs` → `Validate`: *"exit non-zero iff any blocks"*, behaviourally pinned at `exit_codes::blocked_task_validate_exits_task_gate_blocked`), and the store/task label asymmetry is drained by Inc 8's severity-keyed trailer (`validate_envelope.rs`) + Inc 4 T4's scoped promise surfaces. The remaining wish — an *output* line restating the exit rule — was not chartered into tier 2's ~16 items |
+//! | A5 | CONFIRMED | Inc 3's red tests — `commit_rejected_axis.rs` (one error code per committing door, the whole nine-door axis) + the `migrate-corpus` re-run recovery that replaced *"already current"* |
+//!
+//! ### Part B — the write surface
+//!
+//! | row | verdict | disposition |
+//! |---|---|---|
+//! | B1 | CONFIRMED | Inc 10 T7 — `author_write_contract.rs` (the append/update/**collision** three-way, aligned on all five surfaces) |
+//! | B2 | REFUTED | **`batch_author_rerun.rs`** (Inc 11 T1) — `create` → `author` → `create` → `author` all exit 0 on one task, and no composed step text or help surface claims a rejection. *Named here on purpose:* this increment's own internal punt is tracked to a landing, not left to "a later task" |
+//! | B3 | REFUTED | Already standing before the trial ran — `set_field_unset::unset_clears_an_optional_scalar_byte_stable_and_reconforms` (the capability M41 shipped) + `::empty_value_reject_routes_to_unset` (the route that names `--unset`). §3's obligation is that a refuted fact **has** a standing test, not that a duplicate is minted |
+//! | B4 | CONFIRMED | **UNPINNED:** a capability gap (no `--before`/`--after`/`--position`, no reorder verb) — outside the wave's boundary, routed to M46 |
+//! | B5 | CONFIRMED | **UNPINNED:** a capability gap (no slot `--append`; set-slot replaces) — same boundary, same routing |
+//! | B6 | PARTIAL | Inc 7 — `task_diff_envelope.rs` (the `--format json` half P3 was right about) + `format_json_success_axis.rs`. The *author dry-run* half is a capability → M46 |
+//! | B7 | CONFIRMED | Inc 10 T8 — `slug::mint_statement_states_the_whole_mint_rule` (the statement built from the enforcing constants) + `help_truth.rs` |
+//!
+//! ### Part C — the read surface
+//!
+//! | row | verdict | disposition |
+//! |---|---|---|
+//! | C1 | REFUTED (capability) / CONFIRMED (route) | [`doc_show_address_depth`] **(new here)** — every documented depth resolves, and the section-eliding address fails identically on the **write** side. The confirmed route half is Inc 10 T4's, pinned at `store::store_no_such_section_route_names_the_real_sections_and_teaches_the_item_form` |
+//! | C2 | CONFIRMED | **UNPINNED:** no search surface exists — a capability gap ([ideas/doc-search.md](../../../ideas/doc-search.md)), and the standing evidence under M46's read-side entry |
+//! | C3 | PARTIAL | Inc 10 T5 — `doc_show.rs` (the anchor-is-the-id sentence now on `doc show --help`, where the reader stands) |
+//! | C4 | CONFIRMED | **UNPINNED:** reading a managed doc at a past revision is a capability the surface does not have — outside the boundary, M46 |
+//! | C5 | CONFIRMED | **UNPINNED:** a new key on the pinned `doc list` projection is a *new surface* (and a contract-version bump), which the razor routes to M46 |
+//! | C6 | CONFIRMED | Inc 10 T5 — `doc_show.rs` (the leaf-purity guarantee stated on `doc show --help` **and** driven, with the whole-doc newline wart named) |
+//! | C7 | CONFIRMED | **UNPINNED (residue), reason stated:** the served-read half is closed by C6's guarantee (a served read carries the addressed node alone); reconsidering the footer's last-line position on *findings envelopes* changes a surface's shape and was not chartered |
+//!
+//! ### Part D — routing & misleading messages
+//!
+//! | row | verdict | disposition |
+//! |---|---|---|
+//! | D1 | CONFIRMED | Inc 10 T6 — `describe.rs` + `compose_create_gates.rs` + the orientation goldens (the affordance advertised over the members it serves) |
+//! | D2 | CONFIRMED | The **ambush** half is Inc 4 T2's — `owner_artifact_cause_axis.rs`: the six staging-independent causes now surface at `task validate`, so the constraint is met before the finalize block P1 paid twice. The soliciting steps already state the owned home (`packs/methodology/steps/author-*-record.yaml`); that prose carries no fence of its own — **UNPINNED prose residue, stated** |
+//! | D3 | CONFIRMED | Inc 10 T4 — `target_surface::title_names_symbol_states_the_comparison_it_made_not_a_rename` (the check narrates its comparison, never a rename it never looked for) |
+//! | D4 | CONFIRMED | Inc 10 T2 — `setup.rs` (the hook path threaded from `resolve_hooks_dir` through `SetupSummary`, so `core.hooksPath` and worktree cases print repo-real) |
+//! | D5 | PARTIAL | Inc 10 T5 — `doc_show_staged.rs` (the stale-copy note phrased for a reader who may *be* the staging task) |
+//! | D6 | CONFIRMED | **UNPINNED:** marking store-vs-task scope inside a per-task finding list was not chartered; Inc 8's severity-keyed store trailer (`validate_envelope.rs`) is the adjacent fix, not this one |
+//! | D7 | CONFIRMED-as-decided | **UNPINNED:** works-as-decided (M42 fork 6) — a contested *value* judgment is a charter question, not a fact a repro block can hold. Its young-corpus sibling (`repeatable-populated` false-alarming on a fresh changelog) did ship, at Inc 10 T9 (`validate_envelope.rs`) |
+//! | D8 | CONFIRMED | The collision **root** closed at M44 (the `blake3(source-path)` task-id disambiguator, `flow45_acceptance.rs`); the live-collision arm's loud refusal is pinned at `start_compose::serial_re_run_of_the_same_intent_blocks` (a slug collision hard-rejects with a resume route); the mint rule now states itself at every mint site (Inc 10 T8). **UNPINNED residue:** naming the *disambiguators* (`--slug`, the path hash) at mint time was not chartered |
+//! | D9 | CONFIRMED | Inc 5 — `commit_solicit_axis.rs` (the commit doc is solicited by its own step, so its first appearance is no longer the block message) |
+//! | D10 | PARTIAL | The **refuted** half is [`code_anchor_bare_path`] **(new here)** — a bare path is accepted at write, `task validate`, `finalize` and the store sweep, with a dangling path still blocking. The **confirmed** projection half (both `code-anchor` fields rendering indistinguishably, the check-activation difference stated nowhere) is a separate finding, **UNPINNED**: it was not among tier 2's items, and the pin here must not be read as blessing it |
+//! | D11 | CONFIRMED | **UNPINNED:** works-as-designed — the agent-is-the-router invariant (the CLI does no selection by construction; the residue is [ideas/spec-router-matching.md](../../../ideas/spec-router-matching.md)). The byte-shape of both surfaces is carried by the `start-orient*` / `start-intent*` compose goldens; substituting the real intent into the re-run line is a surface change that was not chartered |
+//! | D12 | CONFIRMED | Inc 10 T6 (the severity label says whose grading it is, stated where the label prints) + Inc 8's `validate_envelope.rs` (the trailer counts by severity and names every gating door) |
+//!
+//! ### The M47 baseline's §2 premises — disposition
+//!
+//! The [planning baseline](../../../completions/artifacts/M47/baseline.md) corrected
+//! eight charter premises against the real binary; each is carried by the increment
+//! that acted on it, and **premise 6 is this task's own**:
+//!
+//! | premise | disposition |
+//! |---|---|
+//! | 1 · the `--dry-run` "third arm" is dead | Inc 4 T3 — `validate_previews_the_gate.rs` (the forecast stops greening a state finalize refuses) |
+//! | 2 · the promise is on nine surfaces, not four | Inc 4 T4 — the five printed sites + their compose goldens |
+//! | 3 · no construction makes the promise literally true | Inc 4 T4/T5 — the scoped prose + the eight reconciled doc sites |
+//! | 4 · P5-4's "field-group-absent miss" premise is false | Inc 6 — `write_miss_shape_axis.rs` (the 7-cell write-verb × miss-shape matrix) |
+//! | 5 · `task diff` falsifies a recorded clean confirmation | Inc 7 — `task_diff_envelope.rs` + `format_json_success_axis.rs` (all leaf verbs bijected against the clap tree) |
+//! | 6 · tier 3's framing is half wrong — the non-empty-`left_out` **stdout** arm is pinned, the **stderr** arm is not | **This task.** Re-checked at HEAD as an explicit red-step obligation rather than assumed: no suite asserted the advisory's *stream*, so [`finalize_left_out_stream`] is a new pin, not a disposition |
+//! | 7 · P3-2 narrows — the append prose is accurate; the defect is the collision case | Inc 10 T7 — `author_write_contract.rs` |
+//! | 8 · the golden count is 612 on disk, and `pinning.md` contradicts itself | Inc 11 T2 — the whole-tree regeneration measured the fixed point and corrected the doc |
+
 // This file only aggregates; the `support` module it used to declare is now declared
 // once by the group root, and each repro block below reaches it as `crate::support`.
 
 #[path = "pinned_facts/address_grammar.rs"]
 mod address_grammar;
+#[path = "pinned_facts/code_anchor_bare_path.rs"]
+mod code_anchor_bare_path;
+#[path = "pinned_facts/doc_show_address_depth.rs"]
+mod doc_show_address_depth;
 #[path = "pinned_facts/file_state_transactional.rs"]
 mod file_state_transactional;
 #[path = "pinned_facts/finalize_json.rs"]
 mod finalize_json;
+#[path = "pinned_facts/finalize_left_out_stream.rs"]
+mod finalize_left_out_stream;
 #[path = "pinned_facts/finding_emission_order.rs"]
 mod finding_emission_order;
 #[path = "pinned_facts/form_vision_grounding.rs"]
