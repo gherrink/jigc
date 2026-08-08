@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 doctype: adr (schema-version 2)
-fields (* = author-required):
+fields:
   - status: enum [proposed|accepted|superseded] (section: status) (default: proposed) (set-field: adr:<slug>#status/status)
   - date: date (section: status) (set: on-create) (set-field: adr:<slug>#status/date)
   - supersedes: ref (section: status) (set-field: adr:<slug>#status/supersedes)

@@ -712,6 +712,87 @@ fn fields_only_header_section_slice_serves_its_fields() {
     );
 }
 
+/// (M47 inc-10 T5 — C6) **The leaf-purity guarantee, held to the emitted bytes.**
+/// `doc show --help` now *states* that stdout carries the addressed content and nothing
+/// else — no routing footer, no banner — with diagnostics on stderr. A trial worker had
+/// already round-tripped a leaf through a shell file and verified it with `tail -c`
+/// because the behaviour was stated nowhere; a stated guarantee that no test drives is
+/// the same gap one register up, so the statement lands with its witness.
+///
+/// The axis is the **slice depth**: whole-doc, a slot section, a fields-only section,
+/// and an item leaf all serve pure. Byte-exact on stdout, **zero bytes** on stderr.
+#[test]
+fn doc_show_stdout_carries_the_addressed_content_alone() {
+    let repo = TempDir::new("leaf-purity");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let decisions = repo.path().join("decisions");
+    fs::create_dir_all(&decisions).expect("mk decisions/");
+    fs::write(decisions.join("single-node-cache.md"), COMMITTED_ADR).expect("write committed adr");
+    git(repo.path(), &["add", "decisions"]);
+    git(repo.path(), &["commit", "-q", "-m", "adr"]);
+
+    // The banner that must never ride a read (`render.rs` — the routing footer).
+    const FOOTER: &str = "— jigc · run `jigc start`";
+
+    for (addr, expected) in [
+        // A slot-section slice — the case the shell round-trip depends on.
+        (
+            "adr:single-node-cache#decision",
+            "A single in-memory node.\n",
+        ),
+        // A fields-only (header) slice — a canonical re-emit, equally pure.
+        (
+            "adr:single-node-cache#status",
+            "status: accepted\ndate: 2026-05-23\nschema-version: 2\n",
+        ),
+        // The whole doc — the store's own bytes. `println!` closes the serve with the
+        // newline the stored bytes already end in, so the whole-doc arm is compared
+        // with that one trailing newline named rather than folded away: the claim is
+        // *no footer, no banner*, and a doubled line terminator is neither.
+        ("adr:single-node-cache", &format!("{COMMITTED_ADR}\n")),
+    ] {
+        let out = jigc(repo.path(), home.path(), &["doc", "show", addr], None);
+        assert_ok(&out, "`jigc doc show <addr>`");
+        let stdout = String::from_utf8(out.stdout.clone()).expect("utf-8 stdout");
+        assert_eq!(
+            stdout, expected,
+            "`{addr}` serves the addressed content alone, byte for byte",
+        );
+        assert!(
+            !stdout.contains(FOOTER),
+            "`{addr}` carries no routing footer; got:\n{stdout}",
+        );
+        assert!(
+            out.stderr.is_empty(),
+            "`{addr}` leaves stderr empty; got:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+
+    // The omitting context that makes the guarantee mean something: a **block** on the
+    // same verb DOES carry the footer — on stderr, with stdout empty. Purity is a
+    // property of the served read, not of the verb.
+    let bad = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:single-node-cache#nonesuch"],
+        None,
+    );
+    assert!(!bad.status.success(), "an unresolvable address blocks");
+    assert!(
+        bad.stdout.is_empty(),
+        "a blocked read writes nothing to stdout; got:\n{}",
+        String::from_utf8_lossy(&bad.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        stderr.contains(FOOTER),
+        "the block's diagnostic carries the footer, on stderr; got:\n{stderr}",
+    );
+}
+
 /// A committed changelog at its literal placement home (`CHANGELOG.md`) — the shipped
 /// nested-repeatable singleton, in the exact on-disk shape the writer mints.
 const COMMITTED_CHANGELOG: &str = "\

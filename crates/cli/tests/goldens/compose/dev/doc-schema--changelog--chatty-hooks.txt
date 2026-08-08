@@ -1,7 +1,8 @@
 exit: 0
 --- stdout ---
 doctype: changelog (schema-version 2)
-fields (* = author-required):
+* = author-required
+fields:
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - unreleased-changes: repeatable (add-item: changelog:<slug>#unreleased-changes)

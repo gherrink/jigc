@@ -784,6 +784,121 @@ fn doc_schema_plain_listing_surfaces_write_addresses() {
     );
 }
 
+/// (M47 inc-10 T5 — N16) The plain listing's **`* = author-required` legend is printed
+/// where its markers land, and only when one lands** (`design/surface-contract.md` →
+/// law 1 *nothing lies* + law 2 *nothing hides*). It used to ride the `fields (…)`
+/// header, which was wrong on both faces: the marker is appended to **item leaves under
+/// `sections:`** too — `spec`'s only `*` is on `criteria/<id>`'s title, two levels away
+/// from the header that explained it — and four shipped doctypes carry fields with **no**
+/// author-required leaf anywhere, so the header announced a convention their listing
+/// never used.
+///
+/// The axis is the **marker's location**, and the test iterates it: markers on top-level
+/// fields only, on item leaves only, on both, and on neither.
+#[test]
+fn doc_schema_plain_listing_legends_the_marker_where_it_lands() {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    const LEGEND: &str = "* = author-required";
+    let listing = |doctype: &str| {
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &["doc", "schema", doctype, "--format", "agent"],
+        );
+        assert_ok(&out, "`jigc doc schema <doctype> --format agent`");
+        stdout_of(&out)
+    };
+    // A marked line, wherever it sits in the listing.
+    let marked = |text: &str| -> Vec<String> {
+        text.lines()
+            .filter(|line| line.ends_with(" *"))
+            .map(str::to_owned)
+            .collect()
+    };
+    // The legend leads the body: it sits after the `doctype:` line and before the
+    // first `fields:`/`sections:` header, so it is read before any marker is met.
+    let assert_legended = |text: &str, what: &str| {
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(
+            lines.get(1).copied(),
+            Some(LEGEND),
+            "{what}: the legend leads the listing body; got:\n{text}",
+        );
+        assert_eq!(
+            text.matches(LEGEND).count(),
+            1,
+            "{what}: the legend is stated once; got:\n{text}",
+        );
+    };
+
+    // (1) Markers on ITEM LEAVES ONLY — `spec` marks `criteria/<id>`'s title and
+    //     nothing at top level. The old placement put the legend in a `fields:` header
+    //     whose own lines carry no marker at all.
+    let spec = listing("spec");
+    let spec_marked = marked(&spec);
+    assert_eq!(
+        spec_marked.len(),
+        1,
+        "spec marks exactly its criteria title; got:\n{spec}",
+    );
+    assert!(
+        spec_marked[0].starts_with("    - title:"),
+        "spec's only marker is an item leaf, indented under its repeatable; got:\n{spec}",
+    );
+    assert_legended(&spec, "spec");
+
+    // (2) Markers on BOTH — `commit` marks the top-level `type` field and the two
+    //     `trailers` item leaves; one legend still covers the whole listing.
+    let commit = listing("commit");
+    let commit_marked = marked(&commit);
+    assert!(
+        commit_marked.iter().any(|l| l.starts_with("  - type:"))
+            && commit_marked.iter().any(|l| l.starts_with("    - key:")),
+        "commit marks a top-level field AND item leaves; got:\n{commit}",
+    );
+    assert_legended(&commit, "commit");
+
+    // (3) Markers on TOP-LEVEL FIELDS ONLY — `dogfood-record`'s meta fields are all
+    //     author-required and its one section is a slot.
+    let dogfood = listing("dogfood-record");
+    assert!(
+        marked(&dogfood).iter().all(|l| l.starts_with("  - ")),
+        "dogfood-record marks top-level fields only; got:\n{dogfood}",
+    );
+    assert_legended(&dogfood, "dogfood-record");
+
+    // (4) The OMITTING CONTEXT — NO marker anywhere. `adr` has five top-level fields
+    //     and four sections, none author-required, so the listing states no legend at
+    //     all: a legend for a convention this doctype never uses is a lie about the
+    //     listing the reader is holding. Its `fields:`/`sections:` headers stay.
+    let adr = listing("adr");
+    assert!(
+        marked(&adr).is_empty(),
+        "adr carries no author-required leaf; got:\n{adr}",
+    );
+    assert!(
+        !adr.contains(LEGEND),
+        "no marker renders, so no legend is stated; got:\n{adr}",
+    );
+    assert!(
+        adr.contains("\nfields:\n") && adr.contains("\nsections:\n"),
+        "the section headers are unconditional — only the legend is marker-gated; \
+         got:\n{adr}",
+    );
+
+    // (5) The same omitting context on a doctype whose marker-less listing has a
+    //     DIFFERENT shape — `vision` (methodology): the rule is the marker's absence,
+    //     never one doctype's layout.
+    let vision = listing("vision");
+    assert!(
+        marked(&vision).is_empty() && !vision.contains(LEGEND),
+        "a marker-less methodology listing states no legend either; got:\n{vision}",
+    );
+}
+
 /// `milestone-record` is machine-maintained **whole** — `machine_maintained_guard`
 /// refuses every `jigc doc` write to it (`design/team-ready-state.md` → The record is
 /// not writable through the `jigc doc` verbs) — so its projection advertises **no**

@@ -594,6 +594,117 @@ fn a_task_less_read_of_a_staged_elsewhere_doc_hints_on_stderr() {
     );
 }
 
+/// (M47 inc-10 T5 — D5) **The stale-read note is phrased for a reader who may BE the
+/// staging task** (`design/surface-contract.md` → the style guide;
+/// `design/doc-read-surface.md` → The stale-read hint).
+///
+/// A task-less read carries no task id, so the note cannot know whose task it names —
+/// and in the field the commonest stager is the reader's own open task, where
+/// *"the committed copy served here may be stale"* read as a third-party warning about
+/// someone else's edit (the trial worker reported it as an alarm about their own task).
+/// The note now says which copy this read served, that edits staged in the named task
+/// are not in it, and hands over the staged read under an explicit *if that task is
+/// yours* clause — true whether the stager is the reader or a teammate.
+///
+/// The axis is the **number of staging tasks**, because the sentence branches on it:
+/// one (named, `--task <id>`) and two (listed, the `<task-id>` placeholder).
+#[test]
+fn the_stale_read_note_addresses_a_reader_who_may_be_the_staging_task() {
+    let repo = TempDir::new("stale-self");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // Commit the adr through a first task, which finalize retires.
+    start_task(repo.path(), home.path(), "add rate limiter");
+    stage_cache_strategy_adr(repo.path(), home.path(), "add-rate-limiter");
+    fill_commit(repo.path(), home.path(), "add-rate-limiter");
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["task", "finalize", "add-rate-limiter"],
+            None,
+        ),
+        "`jigc task finalize` — the committed adr",
+    );
+
+    // (1) ONE staging task — the reader's own, the D5 case. It copied the doc in and
+    //     has not diverged from committed, so the note may not assert that it has.
+    start_task(repo.path(), home.path(), "tune rate limiter");
+    set_slot(
+        repo.path(),
+        home.path(),
+        "adr:cache-strategy#decision",
+        "tune-rate-limiter",
+        b"Cache remotely.\n",
+    );
+    let one = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:cache-strategy"],
+        None,
+    );
+    assert_ok(&one, "the task-less read with one staging task");
+    let stderr = stderr_of(&one);
+    assert!(
+        stderr.contains("is also staged in open task tune-rate-limiter"),
+        "the note still names the staging task; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("this read served the committed copy"),
+        "the note says which copy it served, not what the reader should fear; \
+         got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("any edits staged there are not shown"),
+        "the consequence is stated hedged — the check is existence-only, so an \
+         identical staged copy is not asserted to differ; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("if that task is yours, read your staged work:")
+            && stderr.contains("jigc doc show adr:cache-strategy --task tune-rate-limiter"),
+        "the staged read is handed over under an explicit `if that task is yours` \
+         clause, naming the task; got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("may be stale"),
+        "the third-party framing is gone — it read as a warning about someone else; \
+         got:\n{stderr}",
+    );
+
+    // (2) TWO staging tasks — the plural branch: both ids listed, the clause asks
+    //     whether ONE of them is the reader's, and the command carries the shared
+    //     `<task-id>` placeholder (no single id could be right).
+    start_task(repo.path(), home.path(), "trim rate limiter");
+    set_slot(
+        repo.path(),
+        home.path(),
+        "adr:cache-strategy#context",
+        "trim-rate-limiter",
+        b"Traffic doubled.\n",
+    );
+    let two = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:cache-strategy"],
+        None,
+    );
+    assert_ok(&two, "the task-less read with two staging tasks");
+    let stderr = stderr_of(&two);
+    assert!(
+        stderr.contains("open tasks")
+            && stderr.contains("tune-rate-limiter")
+            && stderr.contains("trim-rate-limiter"),
+        "both staging tasks are listed; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("if one of them is yours, read your staged work:")
+            && stderr.contains("jigc doc show adr:cache-strategy --task <task-id>"),
+        "the plural clause asks whether one of them is the reader's, and the command \
+         carries the shared placeholder; got:\n{stderr}",
+    );
+}
+
 /// The read-side **cause** finding, through the real binary (M45 Increment 2 / T3;
 /// `design/validation.md` → The M45 registrations, row 2). A `### Ghost` hand-written
 /// into a staged `spec` criterion's slot prose — the out-of-band arm the write gate

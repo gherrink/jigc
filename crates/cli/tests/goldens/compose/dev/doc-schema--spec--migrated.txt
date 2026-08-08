@@ -1,7 +1,8 @@
 exit: 0
 --- stdout ---
 doctype: spec (schema-version 1)
-fields (* = author-required):
+* = author-required
+fields:
   - derived-from: ref (section: meta) (set-field: spec:<slug>#meta/derived-from)
   - schema-version: int (section: meta) (set: schema-version)
 sections:

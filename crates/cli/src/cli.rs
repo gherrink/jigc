@@ -2662,4 +2662,46 @@ mod cli_parse {
             "the retired task-diff route is gone from the help: {help}"
         );
     }
+
+    /// (M47 inc-10 T5 — C3) The **anchor-is-the-item-id** fact is stated on a **read**
+    /// surface. It shipped at M42 and was stated only on the *write* verbs' long help
+    /// (`add-item` / `retitle-item` / `remove-item`) — nowhere the reader who has just
+    /// rendered an item heading stands — so two trial workers inferred it and one
+    /// distrusted the inference. `doc show --help` now says it: the `{#id}` anchor is
+    /// the `<id>` an address takes, minted from the title rather than equal to it, and
+    /// frozen across a retitle.
+    #[test]
+    fn doc_show_help_names_the_anchor_as_the_item_id() {
+        let help = long_help(&["doc", "show"]);
+        assert!(
+            help.contains("{#id}"),
+            "doc show --help names the rendered anchor: {help}"
+        );
+        for fact in ["id", "address", "frozen"] {
+            assert!(
+                help.contains(fact),
+                "doc show --help connects the anchor to the address id ({fact}): {help}"
+            );
+        }
+    }
+
+    /// (M47 inc-10 T5 — C6) The **stdout-purity** guarantee is stated, not merely
+    /// observed. A trial worker round-tripped a leaf through a shell file
+    /// (`doc show > f` → edit → `set-slot --from-file f`) and had to verify with
+    /// `tail -c` that no routing footer rode along, because the behaviour was
+    /// documented on no surface they are sanctioned to consult. `doc show --help` now
+    /// carries it, with the stream split named.
+    #[test]
+    fn doc_show_help_states_the_stdout_purity_guarantee() {
+        let help = long_help(&["doc", "show"]);
+        assert!(
+            help.contains("Stdout carries the addressed content and nothing else"),
+            "doc show --help states the stdout-purity guarantee: {help}"
+        );
+        assert!(
+            help.contains("no routing footer") && help.contains("stderr"),
+            "the guarantee names the footer it excludes and the stream diagnostics take: \
+             {help}"
+        );
+    }
 }

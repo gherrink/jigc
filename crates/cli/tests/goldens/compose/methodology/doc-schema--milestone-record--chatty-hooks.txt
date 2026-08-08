@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 doctype: milestone-record (schema-version 2)
-fields (* = author-required):
+fields:
   - base: string (section: meta) (set: on-create)
   - status: enum [active|joined|discarded] (section: meta) (set: on-transition)
   - schema-version: int (section: meta) (set: schema-version)

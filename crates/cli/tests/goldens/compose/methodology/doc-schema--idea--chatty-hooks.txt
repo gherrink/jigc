@@ -1,7 +1,8 @@
 exit: 0
 --- stdout ---
 doctype: idea (schema-version 1)
-fields (* = author-required):
+* = author-required
+fields:
   - trigger: string (section: meta) (set-field: idea:<slug>#meta/trigger) *
   - date: date (section: meta) (set: on-create) (set-field: idea:<slug>#meta/date)
   - schema-version: int (section: meta) (set: schema-version)

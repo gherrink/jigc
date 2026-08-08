@@ -1,7 +1,8 @@
 exit: 0
 --- stdout ---
 doctype: commit (schema-version 1)
-fields (* = author-required):
+* = author-required
+fields:
   - type: enum [feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert] (section: header) (set-field: commit:<slug>#header/type) *
   - scope: string (section: header) (set-field: commit:<slug>#header/scope)
   - implements: ref (section: header) (set-field: commit:<slug>#header/implements)

@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 doctype: research (schema-version 1)
-fields (* = author-required):
+fields:
   - date: date (section: meta) (set: on-create) (set-field: research:<slug>#meta/date)
   - schema-version: int (section: meta) (set: schema-version)
 sections:

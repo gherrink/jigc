@@ -250,14 +250,16 @@ fn doc_list_projects_the_store_surface_with_its_registration_state() {
     init_repo(repo.path());
     seed_store(repo.path());
 
-    // (1) Plain — `<id>  <path>  <state>`, sorted by (type, slug). The foreign
-    //     `CHANGELOG.md` is LISTED, flagged `unregistered`: omitting the very file jigc is
-    //     telling the agent to adopt would send it straight to `cat`.
+    // (1) Plain — the column header, then `<id>  <path>  <state>` rows sorted by
+    //     (type, slug). The foreign `CHANGELOG.md` is LISTED, flagged `unregistered`:
+    //     omitting the very file jigc is telling the agent to adopt would send it
+    //     straight to `cat`.
     let plain = jigc(repo.path(), home.path(), &["doc", "list"]);
     assert_ok(&plain, "`jigc doc list`");
     assert_eq!(
         stdout_of(&plain),
-        "adr:single-node-cache  decisions/single-node-cache.md  managed\n\
+        "id  path  state\n\
+         adr:single-node-cache  decisions/single-node-cache.md  managed\n\
          changelog:changelog  CHANGELOG.md  unregistered\n",
         "the listing is the store surface by identity, each row carrying its state",
     );
@@ -275,12 +277,13 @@ fn doc_list_projects_the_store_surface_with_its_registration_state() {
         "the pinned `doc list --format json` shape",
     );
 
-    // (3) The doctype filter — one doctype's instances only.
+    // (3) The doctype filter — one doctype's instances only, under the same header.
     let filtered = jigc(repo.path(), home.path(), &["doc", "list", "adr"]);
     assert_ok(&filtered, "`jigc doc list adr`");
     assert_eq!(
         stdout_of(&filtered),
-        "adr:single-node-cache  decisions/single-node-cache.md  managed\n",
+        "id  path  state\n\
+         adr:single-node-cache  decisions/single-node-cache.md  managed\n",
         "`doc list <doctype>` filters to that doctype",
     );
 
@@ -305,6 +308,84 @@ fn doc_list_projects_the_store_surface_with_its_registration_state() {
         stdout_of(&transient_json).trim_end(),
         "{\n  \"docs\": []\n}",
         "an empty listing is still the pinned object wrapper",
+    );
+}
+
+/// (M47 inc-10 T5 — P4-5/C3) The plain listing **names its columns**
+/// (`design/doc-read-surface.md` → the fourth read surface; `design/surface-contract.md`
+/// → law 2: nothing hides). Three bare columns left the reader to infer what the third
+/// one meant; the header names them in **row order**, in the **pinned json's own key
+/// spelling** (`id` · `path` · `state`), so the plain arm teaches the machine arm's
+/// vocabulary — every header token is a real json key, checked against the json arm of
+/// the same store rather than against a hand-written list.
+///
+/// Two **omitting contexts** ride here, because a header is a per-context claim: an
+/// **empty** listing prints the empty-set line and **no** header (a header above nothing
+/// names nothing), and the **`--format json`** arm carries none (the keys are the shape).
+#[test]
+fn doc_list_plain_names_its_columns_in_row_order() {
+    let repo = TempDir::new("headers");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_store(repo.path());
+
+    // (1) The header is the first line, and every token it names is a real key of the
+    //     pinned json row — the two arms share one vocabulary.
+    let plain = jigc(repo.path(), home.path(), &["doc", "list"]);
+    assert_ok(&plain, "`jigc doc list`");
+    let out = stdout_of(&plain);
+    let (header, rows) = out.split_once('\n').expect("a header line, then the rows");
+    assert_eq!(
+        header, "id  path  state",
+        "the plain listing leads with its column header; got:\n{out}",
+    );
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "--format", "json"],
+    );
+    assert_ok(&json, "`jigc doc list --format json`");
+    let json_out = stdout_of(&json);
+    for column in header.split("  ") {
+        assert!(
+            json_out.contains(&format!("\"{column}\":")),
+            "the header names the pinned json key `{column}`; json:\n{json_out}",
+        );
+    }
+
+    // (2) It names them in ROW order: the first row's three fields line up with the
+    //     three header tokens, positionally.
+    let first = rows.lines().next().expect("at least one row");
+    let cells: Vec<&str> = first.split("  ").collect();
+    assert_eq!(
+        cells,
+        vec![
+            "adr:single-node-cache",
+            "decisions/single-node-cache.md",
+            "managed",
+        ],
+        "the row's cells sit under the header tokens they are named by; got:\n{out}",
+    );
+
+    // (3) Omitting context A — an empty listing prints the empty-set line, no header.
+    let empty_repo = TempDir::new("headers-empty");
+    let empty_home = TempDir::new("home");
+    init_repo(empty_repo.path());
+    let empty = jigc(empty_repo.path(), empty_home.path(), &["doc", "list"]);
+    assert_ok(&empty, "`jigc doc list` over an empty store");
+    assert_eq!(
+        stdout_of(&empty),
+        "jigc doc list — no committed docs\n",
+        "an empty listing carries the empty-set line alone — a header above nothing \
+         names nothing",
+    );
+
+    // (4) Omitting context B — the json arm carries no header line (its keys are the
+    //     shape); the pinned document is unchanged by the plain-arm header.
+    assert_eq!(
+        json_out.trim_end(),
+        STORE_JSON,
+        "the plain-arm header never reaches the pinned json shape",
     );
 }
 

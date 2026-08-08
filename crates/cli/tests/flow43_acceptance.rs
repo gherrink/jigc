@@ -632,12 +632,13 @@ fn a_stock_brownfield_changelog_routes_to_ingest_on_all_three_surfaces() {
     );
 
     // Surface 2 — `doc list`: the file is LISTED (omitting the very file jigc tells the agent
-    // to adopt would send it straight to `cat`), flagged `unregistered`.
+    // to adopt would send it straight to `cat`), flagged `unregistered` — under the column
+    // header that names what that third column is (M47 Inc 10 / T5).
     let listing = jigc(repo.path(), home.path(), &["doc", "list"], None);
     assert_ok(&listing, "`jigc doc list`");
     assert_eq!(
         stdout_of(&listing),
-        "changelog:changelog  CHANGELOG.md  unregistered",
+        "id  path  state\nchangelog:changelog  CHANGELOG.md  unregistered",
         "the store surface names the squatter and its registration state",
     );
 

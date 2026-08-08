@@ -1,7 +1,8 @@
 exit: 0
 --- stdout ---
 doctype: roadmap (schema-version 1)
-fields (* = author-required):
+* = author-required
+fields:
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - milestones: repeatable (add-item: roadmap:<slug>#milestones)

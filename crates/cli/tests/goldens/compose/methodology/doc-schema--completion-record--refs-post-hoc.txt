@@ -1,7 +1,8 @@
 exit: 0
 --- stdout ---
 doctype: completion-record (schema-version 1)
-fields (* = author-required):
+* = author-required
+fields:
   - verdict: enum [green|red] (section: meta) (set-field: completion-record:<slug>#meta/verdict) *
   - owner-artifact: owned-location (section: meta) (set-field: completion-record:<slug>#meta/owner-artifact) *
   - schema-version: int (section: meta) (set: schema-version)

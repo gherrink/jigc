@@ -247,6 +247,17 @@ pub enum DocCommand {
     /// a repeatable section to its item array; a `#section` slice returns that
     /// section's value (item array / slot prose), an `#section/<id>` slice the item
     /// object, an `#section/<id>/<leaf>` slice the leaf.
+    ///
+    /// The `{#id}` anchor on a rendered item heading IS that item's `<id>` — the
+    /// address component every `#section/<id>` slice and every item write verb
+    /// takes. It is minted from the title, never equal to it (a release titled
+    /// `1.0.0` has the id `100`), and it stays frozen across a retitle, so read the
+    /// id off the anchor rather than slugging the title yourself; `--format json`
+    /// carries the same value as each item object's `id` key.
+    ///
+    /// Stdout carries the addressed content and nothing else — no routing footer,
+    /// no banner — so a read redirects or pipes straight into a file. Diagnostics,
+    /// blocks, and the staged-elsewhere note ride stderr.
     Show {
         /// The doc address — `<type>:<slug>`, or a `#section`/item/leaf slice of it.
         addr: String,
@@ -2288,6 +2299,17 @@ fn run_show(
 /// staged-read command is a [`engine::finding::Route::mechanical`], so the route
 /// fence proves it parses; with more than one staging task, the ids are listed and
 /// the command carries the `<task-id>` placeholder (the shared placeholder form).
+///
+/// **Phrased for a reader who may *be* the staging task** (M47 Inc 10 / T5 — D5;
+/// `design/surface-contract.md` → the style guide). A task-less read carries no task
+/// id, so the hint cannot know whose task it names — and the commonest case in the
+/// field is that the only stager is the reader's own open task, which the old
+/// *"the committed copy served here may be stale"* framing read as a third-party
+/// warning about someone else's edit. The wording is true in both readings: it says
+/// which copy this read served, that edits staged in the named task are not in it
+/// (**"any edits"** — the check is existence-only, so a just-copied-in, still
+/// identical staged copy is not asserted to differ), and it hands the reader the
+/// staged read under an explicit *if that task is yours* clause.
 fn stale_read_hint(jigc_home: &Path, address: &Address) {
     let jigc_root = jigc_home.join(".jigc");
     let tasks = jigc_root.join("tasks");
@@ -2309,10 +2331,14 @@ fn stale_read_hint(jigc_home: &Path, address: &Address) {
         [id] => id.as_str(),
         _ => "<task-id>",
     };
+    let (plural, whose) = if staged_in.len() == 1 {
+        ("", "if that task is yours")
+    } else {
+        ("s", "if one of them is yours")
+    };
     eprintln!(
-        "note: `{doc}` is also staged in open task{} {} — the committed copy served here may \
-         be stale; staged read: {}",
-        if staged_in.len() == 1 { "" } else { "s" },
+        "note: `{doc}` is also staged in open task{plural} {} — this read served the committed \
+         copy, so any edits staged there are not shown; {whose}, read your staged work: {}",
         staged_in.join(", "),
         engine::finding::Route::mechanical(
             ["jigc", "doc", "show", addr.as_str(), "--task", task_arg],
@@ -2561,6 +2587,15 @@ fn run_list(cwd: &Path, doctype: Option<&str>, format: Format) -> Result<(), Doc
                     Some(ty) => println!("jigc doc list — no committed `{ty}` docs"),
                     None => println!("jigc doc list — no committed docs"),
                 }
+            } else {
+                // The column header (M47 Inc 10 / T5 — P4-5/C3; `design/surface-contract.md`
+                // → law 2: nothing hides). Three bare columns left the reader to infer what
+                // the third one meant — `managed`/`unregistered` reads as a state only once
+                // something says `state`. The header names the columns in row order, in the
+                // pinned json's own key spelling, so the plain arm teaches the machine arm's
+                // vocabulary. Header-only: it prints where rows do, never over the empty-set
+                // line (a header above nothing names nothing), and never on `--format json`.
+                println!("id  path  state");
             }
             for row in &docs {
                 println!("{}  {}  {}", row.id, row.path, row.state);
@@ -2915,39 +2950,56 @@ fn contract_item<'a>(
 /// (only the `--format json` shape is the pin): the doctype + its version, then
 /// each field (`*` marks author-required) and each section, item leaves indented
 /// under their repeatable.
+///
+/// **The `*` legend is a listing-level line, printed iff a `*` actually renders**
+/// (M47 Inc 10 / T5 — N16; `design/surface-contract.md` → laws 1 + 2). It used to
+/// ride the `fields (…)` header, which got both halves wrong: [`push_field_line`]
+/// marks **item leaves under `sections:`** too, so the legend sat away from most of
+/// its markers (`spec`'s only `*` is on `criteria/<id>`'s title); and four shipped
+/// doctypes — `adr`, `research`, `vision`, `milestone-record` — have fields but
+/// **no** author-required leaf anywhere, so the legend announced a convention the
+/// listing never used. The predicate is read off the **rendered body**, not
+/// recomputed from the contract: `push_field_line` is the only writer of a `" *"`
+/// marker and always closes the line, so `" *\n"` in the body is exactly "a marker
+/// rendered" — a second walk of the contract could drift from what the reader sees.
 fn schema_listing(schema: &Schema, schema_version: Option<u32>) -> String {
     let contract = schema_contract(schema, schema_version);
     let mut out = match contract.schema_version {
         Some(version) => format!("doctype: {} (schema-version {version})\n", contract.ty),
         None => format!("doctype: {}\n", contract.ty),
     };
+    let mut body = String::new();
     if !contract.fields.is_empty() {
-        out.push_str("fields (* = author-required):\n");
+        body.push_str("fields:\n");
         for field in &contract.fields {
-            push_field_line(&mut out, field, 1);
+            push_field_line(&mut body, field, 1);
         }
     }
     if !contract.sections.is_empty() {
-        out.push_str("sections:\n");
+        body.push_str("sections:\n");
         for section in &contract.sections {
-            out.push_str(&format!("  - {}: {}", section.id, section.kind));
+            body.push_str(&format!("  - {}: {}", section.id, section.kind));
             if section.optional {
-                out.push_str(" (optional)");
+                body.push_str(" (optional)");
             }
             // The section's write-verb address, mirrored from the pinned json
             // (non-contractual presentation — only the json shape is the pin).
             if let Some(addr) = &section.set_slot {
-                out.push_str(&format!(" (set-slot: {addr})"));
+                body.push_str(&format!(" (set-slot: {addr})"));
             }
             if let Some(addr) = &section.add_item {
-                out.push_str(&format!(" (add-item: {addr})"));
+                body.push_str(&format!(" (add-item: {addr})"));
             }
-            out.push('\n');
+            body.push('\n');
             if let Some(item) = &section.item {
-                push_item_lines(&mut out, item, 2);
+                push_item_lines(&mut body, item, 2);
             }
         }
     }
+    if body.contains(" *\n") {
+        out.push_str("* = author-required\n");
+    }
+    out.push_str(&body);
     out
 }
 

@@ -1,7 +1,8 @@
 exit: 0
 --- stdout ---
 doctype: deferral-ledger (schema-version 2)
-fields (* = author-required):
+* = author-required
+fields:
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - entries: repeatable (add-item: deferral-ledger:<slug>#entries)

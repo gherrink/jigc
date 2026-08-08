@@ -1,7 +1,8 @@
 exit: 0
 --- stdout ---
 doctype: dogfood-record (schema-version 1)
-fields (* = author-required):
+* = author-required
+fields:
   - case: enum [pilot|existing-docs|greenfield] (section: meta) (set-field: dogfood-record:<slug>#meta/case) *
   - binary-sha: string (section: meta) (set-field: dogfood-record:<slug>#meta/binary-sha) *
   - adapter-writes: int (section: meta) (set-field: dogfood-record:<slug>#meta/adapter-writes) *
