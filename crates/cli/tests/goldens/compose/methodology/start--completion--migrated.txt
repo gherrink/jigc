@@ -74,8 +74,9 @@ jigc doc set-field completion-record:<slug>#findings/<id>/disposition --value <f
 jigc doc set-field completion-record:<slug>#findings/<id>/evidence --value "<the file:line, repro, or trace>" --task sweep-the-compose-surface
 
 Or make it one call — the batch alternative to the whole sequence above (run it
-INSTEAD of the create + per-leaf verbs, never after them — an already-staged doc
-rejects a second create): the batch verb reads one declarative payload from
+instead of the create + per-leaf verbs, or after them — the create it implies
+over a doc this task already staged acks `already existed — copied in for
+update` and changes nothing): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 
@@ -94,8 +95,9 @@ jigc doc add-item decisions-log:decisions-log#entries --title "<the decision>" -
 jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task sweep-the-compose-surface
 
 Or make it one call — the batch alternative to the whole sequence above (run it
-INSTEAD of the create + per-entry verbs, never after them — an already-staged doc
-rejects a second create): the batch verb reads one declarative payload from
+instead of the create + per-entry verbs, or after them — the create it implies
+over a doc this task already staged acks `already existed — copied in for
+update` and changes nothing): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every entry in a single
 write. Over an already-committed log it copies the committed doc in and appends —
 existing entries are untouched; an entry whose title mints an id the log already

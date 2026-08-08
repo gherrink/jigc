@@ -7,6 +7,8 @@ mod support;
 
 #[path = "../author_write_contract.rs"]
 mod author_write_contract;
+#[path = "../batch_author_rerun.rs"]
+mod batch_author_rerun;
 #[path = "../catalog_shape_fence.rs"]
 mod catalog_shape_fence;
 #[path = "../compose_create_gates.rs"]

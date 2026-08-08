@@ -226,18 +226,24 @@ fn doc_set_slot_help_states_the_schema_relative_rule_without_a_depth() {
     );
 }
 
-/// M43 pre-trial surface polish A4 — `doc author --help` states the ordering
-/// hazard: author runs INSTEAD of `create` + the per-leaf verbs, never after
-/// them (an already-staged doc rejects the second create). Previously stated
-/// only in one compose (the decided-task author-decision step).
+/// M43 pre-trial surface polish A4 — `doc author --help` relates the batch verb to
+/// the incremental ones. **Restated at M47 Inc 11 T1**: the ordering *hazard* it used
+/// to state (*"never after them — a doc already staged by `create` rejects the second
+/// create"*) was refuted live (RC-alpha4 B2) — since M45 fork 2's copy-on-write a
+/// `create` over the task's staged copy acks the copy-in — so the help now states the
+/// relation plus what the repeat actually does. The *absence* of any rejection claim
+/// is swept across help and every composed workflow in `batch_author_rerun.rs`; this
+/// pins the positive half, beside the other help-text truths.
 #[test]
-fn doc_author_help_states_instead_of_never_after() {
+fn doc_author_help_relates_the_batch_verb_to_the_incremental_ones() {
     let help = help_stdout(&["doc", "author", "--help"]);
-    for fragment in ["INSTEAD of", "never after", "rejects the second create"] {
+    for fragment in [
+        "instead of those verbs",
+        "already existed — copied in for update",
+    ] {
         assert!(
             help.contains(fragment),
-            "`doc author --help` must state the ordering hazard fragment \
-             `{fragment}`; got:\n{help}"
+            "`doc author --help` must state `{fragment}`; got:\n{help}"
         );
     }
 }

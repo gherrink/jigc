@@ -11,8 +11,9 @@ jigc doc set-field idea:<slug>#trigger --value "<what would resurface it>" --tas
 jigc doc set-slot idea:<slug>#description --from-file - --task {{task.id}}
 
 Or make it one call — the batch alternative to the whole sequence above (run it
-INSTEAD of the create + per-leaf verbs, never after them — an already-staged doc
-rejects a second create): the batch verb reads one declarative payload from
+instead of the create + per-leaf verbs, or after them — the create it implies
+over a doc this task already staged acks `already existed — copied in for
+update` and changes nothing): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 

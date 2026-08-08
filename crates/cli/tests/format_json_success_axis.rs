@@ -586,7 +586,8 @@ fn recipes() -> Vec<Recipe> {
             path: &["doc", "author"],
             base: Base::Fresh,
             drive: |c| {
-                // `author` runs INSTEAD of `create`, so this task stages nothing first.
+                // `author` stands in for `create` here, so this task stages nothing
+                // first — the batch verb's own create is the only one on this path.
                 let task = c.start_workflow("single-task", "harden the cache");
                 json_stdin(
                     c,

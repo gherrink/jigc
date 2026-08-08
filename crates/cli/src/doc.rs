@@ -218,9 +218,9 @@ pub enum DocCommand {
     /// Reach for `author` to write a whole instance in one shot (a migration, or any
     /// many-leaf doc) — it collapses what would be a `create` + N follow-up calls.
     /// Use `create` then `set-slot`/`set-field`/`add-item` for incremental,
-    /// one-leaf-at-a-time authoring instead. Run `author` INSTEAD of those verbs,
-    /// never after them — a doc already staged by `create` rejects the second
-    /// create `author` implies.
+    /// one-leaf-at-a-time authoring instead. Run `author` instead of those verbs, or
+    /// after them — the create `author` implies over a doc this task already staged
+    /// acks `already existed — copied in for update` and changes nothing.
     ///
     /// Over a COMMITTED doc `author` copies the committed body in as the edit base
     /// and writes three ways: a payload item the doc does not hold is **appended**
