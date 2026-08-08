@@ -71,6 +71,6 @@ it in a commit trailer. Add one trailer item, then set its value on the address
 
 jigc doc add-item commit:your-task-id#trailers --title Co-Authored-By --task your-task-id
 jigc doc set-field commit:your-task-id#trailers/<id>/value --value "Name <email>" --task your-task-id
-create-gates: adr
+create-gates: adr   — the doc-types this task is allowed to create; any other type is refused
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

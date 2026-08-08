@@ -648,6 +648,58 @@ thing is for, and when you would reach for it in real work.\n\n";
 // not bytes, and nothing in the sweep replaces it (`describe_real_output_is_...`
 // above already re-runs it over the emitted bytes).
 
+/// M47 Inc 10 / T6 — **the surface stops forbidding a parse it serves.** `jigc
+/// describe --format json` has always emitted a keyed serde object (`render::describe`'s
+/// `Format::Json` arm), while the verb's own help said *"don't parse it"* and
+/// `design/introspection.md`'s format predicate declared the output *"not valid JSON"*.
+/// Both statements were written about the **prose** surface — the one the predicate
+/// above actually holds — so the binary contradicted itself for any driver that ran the
+/// documented global `--format json` (law 1; the Settle routed it as settle-by-doing).
+///
+/// This drives the **emitted bytes** of both surfaces: the json arm parses as a keyed
+/// object, and the help scopes its prohibition to the prose while stating the json arm's
+/// posture — it exists, it is unpinned, and `jigc doc schema` is the versioned structural
+/// read. No surface is added or removed: the arm shipped, only its description changes.
+#[test]
+fn describe_json_parses_and_no_surface_forbids_parsing_it() {
+    let repo = TempDir::new("json-posture");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // (a) the emitted bytes parse — a keyed object a driver can deserialize.
+    let json = describe_json(repo.path(), home.path());
+    assert!(
+        json.as_object()
+            .is_some_and(|map| map.contains_key("definitions")),
+        "`describe --format json` emits a keyed object; got: {json}",
+    );
+
+    // (b) no surface forbids that parse. The help's prohibition is scoped to the prose
+    // surface, and the json arm's posture is stated rather than denied.
+    let help = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["describe", "--help"])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("run the jigc binary");
+    assert!(help.status.success(), "`jigc describe --help` must exit 0");
+    let help = String::from_utf8(help.stdout).expect("utf-8 stdout");
+
+    assert!(
+        !help.contains("don't parse it"),
+        "the blanket prohibition contradicts the shipped json arm; got:\n{help}",
+    );
+    assert!(
+        help.contains("--format json"),
+        "the help must name the arm it is describing; got:\n{help}",
+    );
+    assert!(
+        help.contains("`jigc doc schema`"),
+        "and route a driver that wants a pinned structural read to the versioned \
+         surface; got:\n{help}",
+    );
+}
+
 #[test]
 fn predicate_passes_on_legitimate_colon_bearing_prose() {
     // The predicate must NOT over-reject: legitimate discursive prose that carries

@@ -116,9 +116,16 @@ pub fn orientation_clean(
     // non-empty catalog (there is nothing to preview otherwise, so the omitting context
     // stays inert). Names the M44 `jigc workflow <id> --preview` surface, which shipped
     // with nothing routing to it (findings §69).
+    //
+    // **Scoped to the workflows the verb serves** (M47 Inc 10 / T6, D1): `--preview` is a
+    // mint-free compose of a `creates-task: true` workflow and refuses the rest — correctly,
+    // since for a non-minting member the direct run *is* the preview. The bare `<id>` here
+    // quantified over the whole catalog while nothing in it marks which members mint, so a
+    // reader could not predict which ids the verb would refuse (law 1). The line names the
+    // scope and the fallback for everything outside it.
     if !orientation.workflows.entries().is_empty() {
         out.push_str(
-            "Preview: `jigc workflow <id> --preview`   — read a workflow's step text without minting a task\n",
+            "Preview: `jigc workflow <id> --preview`   — read a task-minting workflow's step text without minting a task; a workflow that mints nothing has no preview — `jigc start --workflow <id>` composes it directly, and mints nothing either\n",
         );
     }
     // The off-catalog next-step verbs — one route-prose line per verb the pack-set
@@ -312,11 +319,26 @@ fn task_state_lines(view: &Composition) -> String {
 /// renders **no bytes at all** — the line is omitted, never printed as `none`: the
 /// omitting context stays inert, and the footer follows the composed text exactly as
 /// before.
+///
+/// **And it says what a gate is** (M47 Inc 10 / T6). M42 moved the *list* off the
+/// refusal; the *noun* stayed on it — no compose, `describe`, or help surface defined
+/// `create-gates:`, so a reader who had never tripped `create.gate-blocked` met a bare
+/// list of doctype ids. The trailing clause carries the refusal's own two facts (what the
+/// gate grants, and that anything else is refused) into the surface that lists them.
+///
+/// It names the **permission**, not the verb: a `jigc doc create …` fragment here would be
+/// a command-shaped string carrying no `--task <id>`, on a surface whose every composed
+/// `jigc doc` line is task-disambiguated by contract (`methodology_pack_compose`'s
+/// every-line assert). A definition that reads as a runnable command is an invitation to
+/// run it, and this one would be missing the argument that decides where the write lands.
 fn create_gates_line(gates: &[String]) -> String {
     if gates.is_empty() {
         return String::new();
     }
-    format!("create-gates: {}\n", gates.join(", "))
+    format!(
+        "create-gates: {}   — the doc-types this task is allowed to create; any other type is refused\n",
+        gates.join(", ")
+    )
 }
 
 /// Render the `--explain` [`ResolutionTree`] to the surface `format` selects:
@@ -897,6 +919,29 @@ fn store_trailer(
     }
 }
 
+/// The store view's one-line lead when an `advisory` row is among the findings (M47 Inc 10 /
+/// T6 — RC-alpha4 D12): **the severity label is this scope's grading, not a verdict
+/// everywhere.** The trial read two identically-labelled `advisory ·` rows in one report and
+/// could not tell the never-gates one from the gates-later one; M47 inc-8 corrected the
+/// trailer's *count*, and this is the residue on the label itself. It leads the rows rather
+/// than following them (law 3 — the reader meets the qualifier before the labels it qualifies)
+/// and hands the reader on to [`store_trailer`], the surface that does carry gate information.
+///
+/// Keyed on an `advisory` row being present: that is the label whose scope-relativity the
+/// finding is about, so a report without one renders no bytes (the omitting-context floor),
+/// and the **task** view never renders it — there the severity token *is* the verdict for the
+/// transaction in hand, so this note would be false rather than merely noisy.
+///
+/// It quotes **neither a command nor the `(gates at finalize)` marker**. The doors belong to
+/// the trailer's own claim, which states them only where a gate exists; and the marker is a
+/// *per-row* label — printing its literal in a lead the sweep emits over reports that carry
+/// no marked row would re-mint, one register up, the false-gate-claim class M42 closed (and
+/// would defeat the whole-stdout proxy `validate_leaves_a_gateless_store_finding_unlabelled`
+/// pins that closure with).
+const SCOPE_RELATIVE_NOTE: &str = "note: severity is scope-relative — `advisory` is this sweep's grading of the row, and the \
+     same break can still gate at a task or milestone door; the trailer below says which, where \
+     a gate exists.\n";
+
 /// Shared body for the validation views: emit one line per finding (or `clean_line`
 /// when the report is empty), then an optional `trailer` (only when findings are present),
 /// followed by the routing footer; JSON is the generic projection with no footer. The
@@ -907,6 +952,9 @@ fn store_trailer(
 /// (gates at finalize) · …` rather than a bare `blocking ·` that exits 0. The **task** view passes
 /// `None` — there the severity token already *is* the verdict (`blocking` blocks the transaction
 /// in hand), so a gate label would be noise, and the surface stays byte-identical.
+///
+/// The same `Some` also leads the store rows with [`SCOPE_RELATIVE_NOTE`] when an `advisory`
+/// row is among them (M47 Inc 10 / T6, D12).
 fn validation_scoped(
     format: Format,
     report: &ValidationReport,
@@ -922,6 +970,14 @@ fn validation_scoped(
                 out.push_str(clean_line);
                 out.push('\n');
             } else {
+                if store_gates.is_some()
+                    && report
+                        .findings
+                        .iter()
+                        .any(|f| matches!(f.severity, Severity::Advisory))
+                {
+                    out.push_str(SCOPE_RELATIVE_NOTE);
+                }
                 for finding in &report.findings {
                     let gates = store_gates.is_some_and(|u| gates_at_finalize(finding, u));
                     out.push_str(&finding_line(finding, gates));
@@ -2970,7 +3026,11 @@ pub fn orientation_unset() -> String {
 /// but that projection
 /// is **not** the surface this command's contract is about (describe's whole point is
 /// not to be JSON-shaped — `introspection.md` → Command surface); it carries no
-/// footer (tooling-consumed).
+/// footer (tooling-consumed). **It parses, and the help says so** (M47 Inc 10 / T6):
+/// the arm is *unpinned*, not *unparseable* — nothing versions it and any pack edit
+/// may move it, which is what non-contractual means here; `jigc doc schema` is the
+/// versioned structural read. The prose-hostility above is the prose arm's lever, and
+/// the help no longer forbids a parse this arm serves.
 ///
 /// The engine has already woven each definition into a full sentence (`X is …. Reach
 /// for it when ….`) and projected each command-ref `hint` verbatim; this renderer
@@ -2999,7 +3059,7 @@ pub fn describe(format: Format, description: &Description) -> String {
 
             if !workflows.is_empty() {
                 out.push_str(
-                    "The workflows you can compose here. To read any one's full step text before you commit to running it, run `jigc workflow <id> --preview`, which composes the steps without minting a task. ",
+                    "The workflows you can compose here. To read a task-minting one's full step text before you commit to running it, run `jigc workflow <id> --preview`, which composes the steps without minting a task; a workflow that mints nothing has no preview, and `jigc start --workflow <id>` composes it directly without minting either. ",
                 );
                 out.push_str(&workflows.join("\n\n"));
                 out.push_str("\n\n");
@@ -3144,6 +3204,59 @@ mod tests {
         );
     }
 
+    /// M47 Inc 10 / T6 (D1) — **both** advertising surfaces scope `--preview` to the
+    /// workflows it actually serves. The verb refuses a `creates-task: false` member
+    /// ("mints no task, so there is nothing to preview — run it directly"), and that
+    /// refusal is *correct*: for such a workflow the direct run **is** the preview
+    /// (it composes and mints nothing). The lie was in the advertising, which
+    /// quantified over the whole catalog — orientation's bare `<id>` and describe's
+    /// *"any one's"* — while nothing in either catalog marks which members mint, so a
+    /// reader could not predict which ids the verb would refuse (law 1; the correctly
+    /// scoped statement existed exactly once, in `jigc workflow --help`). Both lines
+    /// now name the scope **and** the fallback for the members outside it.
+    #[test]
+    fn render_preview_advertising_is_scoped_to_the_minting_workflows() {
+        use engine::introspect::{DefinitionKind, DefinitionProse, Description};
+        use engine::result::SCHEMA_VERSION;
+
+        let orientation = orientation_clean(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            &fixture(),
+            &[],
+        );
+        let describe_out = describe(
+            Format::Agent,
+            &Description {
+                schema_version: SCHEMA_VERSION,
+                definitions: vec![DefinitionProse {
+                    kind: DefinitionKind::Workflow,
+                    id: "single-task".to_string(),
+                    prose: "single-task is one end-to-end scoped change. Reach for it when the work is small enough to hold in your head.".to_string(),
+                }],
+                commands: vec![],
+            },
+        );
+
+        for (surface, text) in [("orientation", &orientation), ("describe", &describe_out)] {
+            assert!(
+                text.contains("task-minting"),
+                "the {surface} preview line must scope the affordance to the workflows \
+                 the verb serves; got:\n{text}",
+            );
+            assert!(
+                text.contains("`jigc start --workflow <id>`"),
+                "and name the direct run as the fallback for a workflow that mints no \
+                 task ({surface}); got:\n{text}",
+            );
+        }
+
+        // describe's unscoped quantifier is gone — it is the exact byte-form of the lie.
+        assert!(
+            !describe_out.contains("any one's"),
+            "describe must not quantify the preview over the whole catalog; got:\n{describe_out}",
+        );
+    }
+
     /// T12 (M45 Inc 10) — orientation names `jigc workflow <id> --preview` as the way
     /// to read a workflow's step text before minting, gated on a non-empty catalog. A
     /// bare-`start` reader — the most common entry — finds the preview surface here
@@ -3215,7 +3328,7 @@ mod tests {
           - project-setup — Set up the development pack on a fresh repo.
 
         Run: `jigc start "<intent>"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it
-        Preview: `jigc workflow <id> --preview`   — read a workflow's step text without minting a task
+        Preview: `jigc workflow <id> --preview`   — read a task-minting workflow's step text without minting a task; a workflow that mints nothing has no preview — `jigc start --workflow <id>` composes it directly, and mints nothing either
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         "#);
 
@@ -3333,7 +3446,10 @@ mod tests {
         assert!(agent.ends_with(ROUTING_FOOTER));
         assert!(agent.contains("Run: `jigc task finalize add-rate-limiter`"));
         assert!(
-            agent.contains("create-gates: adr, changelog\n— jigc"),
+            agent.contains(
+                "create-gates: adr, changelog   — the doc-types this task is allowed to \
+                 create; any other type is refused\n— jigc"
+            ),
             "the gates line sits immediately before the footer; got:\n{agent}",
         );
 
@@ -3358,6 +3474,42 @@ mod tests {
         assert!(!json_out.contains("create-gates"));
         let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, view);
+    }
+
+    /// M47 Inc 10 / T6 — the `create-gates:` line says what a gate **is**. M42 shipped
+    /// the list (`create-gates: adr, changelog`) with the noun defined on no compose,
+    /// `describe`, or help surface: the only place the binary ever explained it was the
+    /// `create.gate-blocked` refusal, i.e. by tripping one (law 2 — the M42 fix moved the
+    /// *list* off the refusal and left the *meaning* on it). The line now carries the one
+    /// clause that defines it, and the gate-less context still renders no bytes.
+    #[test]
+    fn create_gates_line_defines_the_gate_it_lists() {
+        let line = create_gates_line(&["adr".to_string(), "changelog".to_string()]);
+        assert!(
+            line.starts_with("create-gates: adr, changelog   — "),
+            "the list keeps its shape and the definition follows it; got:\n{line}",
+        );
+        assert!(
+            line.contains("this task is allowed to create"),
+            "the clause must say what a gate grants — the in-task create permission; \
+             got:\n{line}",
+        );
+        // …and it stays a *permission*, never a command-shaped fragment: a `jigc doc …`
+        // string here would carry no `--task <id>` on a surface where every composed
+        // `jigc doc` line is task-disambiguated by contract.
+        assert!(
+            !line.contains("jigc doc"),
+            "the definition must not read as a runnable command; got:\n{line}",
+        );
+        assert!(
+            line.contains("refused"),
+            "and what happens outside it (the `create.gate-blocked` half); got:\n{line}",
+        );
+        assert!(line.ends_with('\n'), "one line; got:\n{line}");
+
+        // The omitting context stays inert: a gate-less workflow renders no bytes at all,
+        // definition included — never `create-gates: none`.
+        assert!(create_gates_line(&[]).is_empty());
     }
 
     /// A **work-minting** compose opens agent/human text with the `task minted: <id>`
@@ -3484,7 +3636,8 @@ mod tests {
                  its own `--task`, so you can run them in parallel while their work \
                  stays disjoint; once a sibling task commits a path this one also \
                  touches, resuming or finalizing here blocks and names the overlapping \
-                 paths\ncreate-gates: adr\n— jigc"
+                 paths\ncreate-gates: adr   — the doc-types this task is allowed to \
+                 create; any other type is refused\n— jigc"
             ),
             "the task-state lines sit above the gates line + footer; got:\n{agent}",
         );
@@ -5080,6 +5233,89 @@ mod tests {
         let json_out = validation_store(Format::Json, &rename, &BTreeSet::new());
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["report_only"], serde_json::Value::Bool(false));
+    }
+
+    /// M47 Inc 10 / T6 (D12) — **the severity label says whose grading it is.** The trial
+    /// read two `advisory · …` rows in one store report, one of which the trailer counted
+    /// as gating: the severity vocabulary carries no gate information at all, and the
+    /// trailer was the only discriminator. M47 inc-8 fixed the trailer's *count*; the
+    /// residue is the label itself, and the fix lands **where the label prints** — a
+    /// one-line note above the rows, so the reader meets it before the labels rather than
+    /// inferring the scope-relativity from a trailer three lines down (law 1 + law 3).
+    ///
+    /// Keyed on an `advisory` row being present: `advisory` is the label whose scope the
+    /// finding is about, so a report without one has nothing to clarify and renders no
+    /// bytes (the omitting-context floor). The **task** view never renders it — there the
+    /// severity token *is* the verdict for the transaction in hand.
+    #[test]
+    fn render_validation_store_says_the_severity_label_is_scope_relative() {
+        use engine::finding::{Finding, Location, Severity};
+
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+        let graded = |severity: Severity, code: &str| {
+            Finding::graded(
+                severity,
+                code,
+                format!("a store-scope finding under `{code}`"),
+                Some(Location::addressed("decisions/cache.md", 1, 1)),
+                Some("follow the finding's own route".into()),
+            )
+        };
+
+        let with_advisory = ValidationReport::new(
+            vec![graded(
+                Severity::Advisory,
+                "schema-conformance.repeatable-populated",
+            )],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &with_advisory, &BTreeSet::new());
+        assert!(
+            agent.contains("severity is scope-relative"),
+            "a store report carrying an `advisory` row must state whose grading the label \
+             is; got:\n{agent}",
+        );
+        let note_at = agent
+            .find("severity is scope-relative")
+            .expect("note present");
+        let row_at = agent.find("advisory · ").expect("the advisory row");
+        assert!(
+            note_at < row_at,
+            "the note lands where the label prints — above the rows, not after them; \
+             got:\n{agent}",
+        );
+        assert!(
+            agent.contains("the trailer below says which"),
+            "and hands the reader to the surface that does carry gate information; \
+             got:\n{agent}",
+        );
+        // It quotes neither a command nor the per-row `(gates at finalize)` marker: this
+        // report carries no marked row, and printing the literal in a sweep-wide lead
+        // would re-mint the false-gate-claim class M42 closed.
+        assert!(
+            !agent.contains("(gates at finalize)"),
+            "a report with no gating row must not print the marker at all; got:\n{agent}",
+        );
+
+        // Omitting context 1: a store report with no `advisory` row has no label to
+        // clarify — no bytes, the surface stays byte-identical to before this note.
+        let blocking_only = ValidationReport::new(
+            vec![graded(Severity::Blocking, "doc-code.symbol-exists")],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &blocking_only, &BTreeSet::new());
+        assert!(
+            !agent.contains("scope-relative"),
+            "no advisory row, no note (inert omit-context); got:\n{agent}",
+        );
+
+        // Omitting context 2: the **task** view — the severity token there is the verdict
+        // for the transaction in hand, so the note would be false, not merely noise.
+        let task = validation(Format::Agent, &with_advisory);
+        assert!(
+            !task.contains("scope-relative"),
+            "the task view renders no store-scope note; got:\n{task}",
+        );
     }
 
     /// **The trailer claims a gate only where one exists** (M42 Inc 4 T3; `validation.md` →

@@ -107,6 +107,6 @@ at finalize.
 Then validate and commit:
 
 Run: `jigc task finalize your-task-id`
-create-gates: roadmap
+create-gates: roadmap   — the doc-types this task is allowed to create; any other type is refused
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

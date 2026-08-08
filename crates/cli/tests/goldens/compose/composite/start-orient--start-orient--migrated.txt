@@ -19,7 +19,7 @@ Available workflows:
   - single-task — implement one scoped change end-to-end, recording its decisions as ADRs
 
 Run: `jigc start "<intent>"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it
-Preview: `jigc workflow <id> --preview`   — read a workflow's step text without minting a task
+Preview: `jigc workflow <id> --preview`   — read a task-minting workflow's step text without minting a task; a workflow that mints nothing has no preview — `jigc start --workflow <id>` composes it directly, and mints nothing either
 Run: `jigc start --workflow planning`   — plan a milestone — decompose it into increments and tasks
 Run: `jigc start --workflow ingest-existing`   — bring an existing repo's docs under management
 — jigc · run `jigc start` for orientation; all writes through `jigc`.

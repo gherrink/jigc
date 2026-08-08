@@ -108,6 +108,6 @@ committing anything; the staged set, promotion and the commit itself are decided
 at finalize.
 
 Run: `jigc task finalize your-task-id`
-create-gates: spec
+create-gates: spec   — the doc-types this task is allowed to create; any other type is refused
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

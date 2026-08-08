@@ -276,7 +276,15 @@ pub enum Command {
 
     /// Print a prose tour of what's available — every workflow and doc-type with
     /// their descriptions, plus command-ref hints — reflecting the resolved
-    /// cascade. The output is a human menu, not a stable API; don't parse it.
+    /// cascade.
+    ///
+    /// The prose is a human menu, not a stable API: read it, don't build on its
+    /// wording.
+    ///
+    /// The global `--format json` arm emits the same tour as a keyed object.
+    /// It parses — it is simply as unpinned as the prose, and may change with
+    /// any pack edit. For a structural read you can depend on, reach for
+    /// `jigc doc schema` — the separately versioned contract.
     Describe,
 
     /// Re-check every committed doc's code anchors against the codebase and report

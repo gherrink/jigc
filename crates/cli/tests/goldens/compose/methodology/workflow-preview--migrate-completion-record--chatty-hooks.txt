@@ -125,6 +125,6 @@ at finalize.
 Then validate and commit:
 
 Run: `jigc task finalize your-task-id`
-create-gates: completion-record
+create-gates: completion-record   — the doc-types this task is allowed to create; any other type is refused
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

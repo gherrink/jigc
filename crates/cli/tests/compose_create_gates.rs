@@ -165,12 +165,17 @@ fn a_granting_workflow_names_its_gates_immediately_before_the_footer() {
         footer > 0,
         "the footer is never the first line:\n{composed}"
     );
+    // Re-blessed at M47 Inc 10 / T6 **with** the fix that moved it: the line now carries
+    // the clause defining the noun it lists (the meaning of `create-gates:` had stayed on
+    // the `create.gate-blocked` refusal, learnable only by tripping one). The list and its
+    // position are unchanged — this expectation still pins both.
     assert_eq!(
         lines[footer - 1],
-        "create-gates: adr, changelog",
+        "create-gates: adr, changelog   — the doc-types this task is allowed to create; \
+         any other type is refused",
         "`single-task` grants the adr + changelog create-gates — its composed text must \
-         name them on the line immediately before the routing footer (today no compose \
-         surface names a task's gates at all); got:\n{composed}",
+         name them, and say what a gate is, on the line immediately before the routing \
+         footer; got:\n{composed}",
     );
 }
 
