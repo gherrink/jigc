@@ -36,7 +36,7 @@ Author the whole document in ONE `jigc doc author` batch payload — fill each `
 Pipe the payload on stdin:
 
 jigc doc author adr --from-file - --task your-task-id <<'EOF'
-title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id, capped at the first 5 words / 50 chars
+title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id: space, `_`, `/` and `.` each become `-` (so `v1.1` is two words) and every other non-alphanumeric is dropped; the result is capped at the first 5 words / 50 chars; then a leading or trailing filler word (a/an/the/of/to/in/on/at/by/for) is dropped unless a hyphen glues it to its neighbour
 sections:
   - id: context
     set:

@@ -38,7 +38,7 @@ The `completion-record` schema — each instance a managed file at `docs/complet
 Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Pipe the payload on stdin:
 
 jigc doc author completion-record --from-file - --task your-task-id <<'EOF'
-title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id, capped at the first 5 words / 50 chars
+title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id: space, `_`, `/` and `.` each become `-` (so `v1.1` is two words) and every other non-alphanumeric is dropped; the result is capped at the first 5 words / 50 chars; then a leading or trailing filler word (a/an/the/of/to/in/on/at/by/for) is dropped unless a hyphen glues it to its neighbour
 sections:
   - id: meta
     set:

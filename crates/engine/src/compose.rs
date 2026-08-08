@@ -3889,7 +3889,7 @@ sections:
         Pipe the payload on stdin:
 
         jigc doc author note --from-file - --task emit-four-classes <<'EOF'
-        title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id, capped at the first 5 words / 50 chars
+        title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id: space, `_`, `/` and `.` each become `-` (so `v1.1` is two words) and every other non-alphanumeric is dropped; the result is capped at the first 5 words / 50 chars; then a leading or trailing filler word (a/an/the/of/to/in/on/at/by/for) is dropped unless a hyphen glues it to its neighbour
         sections:
           - id: meta
             set:
@@ -4064,17 +4064,21 @@ sections:
         ctx.schemas.insert("note".to_owned(), note_schema());
         let emitted = emit_step_body("{{ schema:note }}\n", &ctx, &catalog).expect("emits");
 
-        // The slug statement: string equality against format! over the constants.
-        let slug_statement = format!(
-            "the id-source — slugged lowercase-kebab into the doc id, \
-             capped at the first {} words / {} chars",
-            crate::slug::MAX_WORDS,
-            crate::slug::MAX_CHARS
-        );
-        assert_eq!(
-            crate::slug::mint_statement("the doc id"),
-            slug_statement,
-            "the statement source and this test share the cap constants"
+        // The slug statement: the caps clause rebuilt here by format! over the SAME
+        // constants the mint enforces. (The statement's other clauses — the
+        // separator map and the edge-stopword set — are fenced against *their*
+        // enforcing constants at the seam itself, by
+        // `slug::tests::mint_statement_states_the_whole_mint_rule`; restating the
+        // whole sentence here would only pin a copy of it.)
+        let slug_statement = crate::slug::mint_statement("the doc id");
+        assert!(
+            slug_statement.contains(&format!(
+                "first {} words / {} chars",
+                crate::slug::MAX_WORDS,
+                crate::slug::MAX_CHARS
+            )),
+            "the statement source and this test share the cap constants; \
+             got: {slug_statement}"
         );
         assert!(
             emitted.contains(&format!("title: \"<the title>\" # {slug_statement}")),

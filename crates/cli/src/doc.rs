@@ -51,17 +51,34 @@ fn set_slot_long_about() -> String {
 
 /// The `add-item` long help. `add-item` mints an item's `{#id}` anchor from
 /// `--title` the same way `create` mints a doc id, so this second soliciting
-/// surface earns the same stated-at fence: the slug mint caps are stated at the
-/// `--title` they bind (`design/surface-contract.md` → The stated-at fence,
-/// seam-generated tier). The cap sentence is `slug::mint_statement` output —
-/// built from the mint-rule constants, so it can never drift from what the mint
-/// enforces (the doc-level `{{schema:}}` skeleton renders the same generator).
+/// surface earns the same stated-at fence: the slug mint rule is stated at the
+/// `--title` it binds (`design/surface-contract.md` → The stated-at fence,
+/// seam-generated tier). The sentence is `slug::mint_statement` output — built
+/// from the mint-rule constants, so it can never drift from what the mint
+/// enforces (the doc-level `{{schema:}}` skeleton and `create --help` render the
+/// same generator).
 fn add_item_long_about() -> String {
     format!(
         "Mint a repeatable item into a section, id-slugged from `--title`.\n\n\
          The section is addressed `<type>:<slug>#<section>`; the CLI mints the \
          `{{#id}}` anchor + appends the item block. The `--title` is {}.",
         engine::slug::mint_statement("the item `{#id}` anchor"),
+    )
+}
+
+/// The `create` long help. The doc-mint site — the third soliciting surface, and
+/// the one whose statement was hand-typed: it named the two caps and nothing
+/// else, so it described a rule the mint does not implement (B7). It renders the
+/// same `slug::mint_statement` generator as `add-item` and the `{{schema:}}`
+/// projection, so all three mint sites state one rule and none can drift from it.
+fn create_long_about() -> String {
+    format!(
+        "Mint a new managed instance (agent-initiated, create-gated).\n\n\
+         The title the slug is minted from is supplied inline with `--title` — always \
+         literally `--title`, whatever the doctype's `id-from` field is named; the CLI \
+         mints + places per the schema. The `--title` is {} (`--slug` overrides the \
+         mint).",
+        engine::slug::mint_statement("the doc id"),
     )
 }
 
@@ -73,9 +90,9 @@ pub enum DocCommand {
     ///
     /// The title the slug is minted from is supplied inline with `--title` —
     /// always literally `--title`, whatever the doctype's `id-from` field is
-    /// named; the CLI mints + places per the schema. The minted slug is the
-    /// title slugged lowercase-kebab, capped at the first 5 words / 50 chars
-    /// (`--slug` overrides the mint).
+    /// named; the CLI mints + places per the schema (`--slug` overrides the
+    /// mint).
+    #[command(long_about = create_long_about())]
     Create {
         /// The doctype to create (e.g. `adr`).
         r#type: String,

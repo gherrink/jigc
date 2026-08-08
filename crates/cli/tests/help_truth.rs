@@ -257,21 +257,22 @@ fn doc_author_help_shows_the_section_own_slot_form() {
     );
 }
 
-/// M43 pre-trial surface polish A7 — `doc create --help` states the slug
-/// mint caps, drift-pinned against the engine's `slug` constants (the same
-/// numbers the mint enforces).
+/// M43 pre-trial surface polish A7 — `doc create --help` states the slug mint
+/// rule at the `--title` it binds to. **M47 Inc 10 T8 (B7):** it stated the two
+/// caps and nothing else, hand-typed, so it described a rule the mint does not
+/// implement (the renormalization and the edge-stopword drop produce every
+/// reported "except when it isn't"). It now renders the same seam-generated
+/// `slug::mint_statement` the `add-item` help and the `{{schema:}}` projection do,
+/// so the assertion is the whole statement, not a substring of it — all three
+/// mint sites state one rule and none can drift from it.
 #[test]
 fn doc_create_help_states_the_slug_caps() {
     let help = help_stdout(&["doc", "create", "--help"]);
-    let caps = format!(
-        "first {} words / {} chars",
-        engine::slug::MAX_WORDS,
-        engine::slug::MAX_CHARS
-    );
+    let statement = engine::slug::mint_statement("the doc id");
     assert!(
-        help.contains(&caps),
-        "`doc create --help` must state the slug mint caps (`{caps}`) at the \
-         title it binds to; got:\n{help}"
+        help.contains(&statement),
+        "`doc create --help` must carry the seam-generated slug mint statement \
+         (`{statement}`) at the title it binds to; got:\n{help}"
     );
 }
 

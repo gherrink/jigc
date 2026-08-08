@@ -105,22 +105,34 @@ pub const MAX_WORDS: usize = 5;
 /// far below it, so multi-word behaviour is unchanged.
 pub const MAX_CHARS: usize = 50;
 
-/// The **stated-at statement** of the mint-time caps — the sentence a
-/// soliciting surface renders at the id-source it slugs, so the slug word-cap is
-/// stated where it binds, before it can surprise (`design/surface-contract.md` →
-/// The stated-at fence, seam-generated tier; law 3). Built from
-/// [`MAX_WORDS`]/[`MAX_CHARS`] themselves — statement and enforcement share one
-/// source, so drift between them is unrepresentable.
+/// The **stated-at statement** of the mint rule — the sentence a soliciting
+/// surface renders at the id-source it slugs, so the rule is stated where it
+/// binds, before it can surprise (`design/surface-contract.md` → The stated-at
+/// fence, seam-generated tier; law 3). Built from the rule's own constants
+/// ([`MAX_WORDS`]/[`MAX_CHARS`]/[`EDGE_STOPWORDS`]) — statement and enforcement
+/// share one source, so drift between them is unrepresentable.
+///
+/// It states **all four** steps a reader can be surprised by, not only the caps
+/// (B7, the M47 fix): the **renormalization** (a `.` splits a token, so `v1.1` is
+/// two words — the reported "roughly five tokens, except when it isn't" was
+/// entirely this), the strip, the two caps, and the **edge-stopword drop** with
+/// its generation-3 glue condition. Naming the caps alone described a rule the
+/// mint does not implement.
 ///
 /// `minted_into` names *what* the id-source is slugged into, so each surface
 /// stays honest: the `{{schema:<doctype>}}` projection at the `title:` line
-/// passes `"the doc id"`; `jigc doc add-item --help` — the second soliciting
-/// surface, which mints an item's `{#id}` anchor from `--title` the same way —
-/// passes the item anchor. Only the drift-prone cap clause is shared.
+/// passes `"the doc id"`; `jigc doc create --help` and `jigc doc add-item --help`
+/// — the two soliciting help surfaces, the latter minting an item's `{#id}`
+/// anchor from `--title` the same way — pass the doc id and the item anchor. Only
+/// the drift-prone rule clauses are shared.
 pub fn mint_statement(minted_into: &str) -> String {
+    let filler = EDGE_STOPWORDS.join("/");
     format!(
-        "the id-source — slugged lowercase-kebab into {minted_into}, \
-         capped at the first {MAX_WORDS} words / {MAX_CHARS} chars"
+        "the id-source — slugged lowercase-kebab into {minted_into}: space, `_`, `/` and \
+         `.` each become `-` (so `v1.1` is two words) and every other non-alphanumeric is \
+         dropped; the result is capped at the first {MAX_WORDS} words / {MAX_CHARS} chars; \
+         then a leading or trailing filler word ({filler}) is dropped unless a hyphen glues \
+         it to its neighbour"
     )
 }
 
@@ -1074,6 +1086,101 @@ mod tests {
         // supplies the type-name fallback.
         assert_eq!(slugify(&format!("on-{}", "z".repeat(60))), "");
         assert_eq!(slugify("on"), "");
+    }
+
+    /// **B7 (M47) — the mint rule states itself where it mints.** The stated-at
+    /// sentence named only the two *caps*, so the two steps that produce every
+    /// reported "except when it isn't" were stated nowhere: the **renormalization**
+    /// (a `.` splits a token, so `v1.1` is two words — the whole `scope-v1-1`
+    /// surprise) and the **edge-stopword drop** (a leading/trailing filler word is
+    /// dropped, unless a hyphen glues it to its neighbour).
+    ///
+    /// Every clause is checked **against the rule itself**, never against a
+    /// hand-typed mirror — a sentence that lists members by hand is exactly the
+    /// failure mode this fences:
+    ///
+    /// - the stopword members are **parsed back out of the sentence** and compared
+    ///   with [`EDGE_STOPWORDS`], so widening or narrowing the const reddens here
+    ///   until the sentence follows;
+    /// - the separator set is derived from **behaviour** — every printable-ASCII
+    ///   char [`renormalize`] maps to `-` must be named, and every char it does not
+    ///   must not be, so a separator-map fork cannot leave the sentence behind;
+    /// - each listed member is *shown* to drop as a whole source word and to
+    ///   survive hyphen-glued, so the sentence cannot over-claim the set.
+    #[test]
+    fn mint_statement_states_the_whole_mint_rule() {
+        let statement = mint_statement("the doc id");
+
+        // The caps clause (M43), still built from the enforcing constants.
+        assert!(
+            statement.contains(&format!("first {MAX_WORDS} words / {MAX_CHARS} chars")),
+            "the statement must state the mint caps; got: {statement}"
+        );
+
+        // The edge-stopword set, read back out of the sentence and compared with
+        // the const that enforces it.
+        let listed = statement
+            .split_once("filler word (")
+            .and_then(|(_, rest)| rest.split_once(')'))
+            .map(|(list, _)| list)
+            .unwrap_or_else(|| {
+                panic!(
+                    "the statement must name the edge-stopword set as \
+                     `filler word (<members>)`; got: {statement}"
+                )
+            });
+        assert_eq!(
+            listed.split('/').collect::<Vec<_>>(),
+            EDGE_STOPWORDS.to_vec(),
+            "the sentence's filler-word list and EDGE_STOPWORDS disagree"
+        );
+
+        // The separator map, derived from behaviour in both directions. `-` is the
+        // join char, not a separator, and the sentence names it as the target.
+        for byte in b' '..=b'~' {
+            let ch = byte as char;
+            if ch == '-' {
+                continue;
+            }
+            let maps = renormalize(&format!("a{ch}b")) == "a-b";
+            assert_eq!(
+                maps,
+                statement.contains(&statement_rendering(ch)),
+                "the statement and the separator map disagree about {ch:?} \
+                 (maps to `-`: {maps}); got: {statement}"
+            );
+        }
+
+        // Each listed member really is droppable as a whole source word, and really
+        // does survive hyphen-glued — the two halves the sentence claims.
+        for word in EDGE_STOPWORDS {
+            assert_eq!(
+                slugify(&format!("{word} alpha beta")),
+                "alpha-beta",
+                "{word} is listed as filler but does not drop as a whole source word"
+            );
+            assert_eq!(
+                slugify(&format!("{word}-alpha beta")),
+                format!("{word}-alpha-beta"),
+                "{word} is listed as filler but does not survive hyphen-glued"
+            );
+        }
+        assert!(
+            statement.contains("hyphen"),
+            "the statement must name the glue condition on the drop; got: {statement}"
+        );
+    }
+
+    /// How a char is written **in** the mint statement: the space as the word
+    /// `space`, every other char in backticks. Used by
+    /// [`mint_statement_states_the_whole_mint_rule`] to ask the sentence, for an
+    /// arbitrary char, "do you name this one?".
+    fn statement_rendering(ch: char) -> String {
+        if ch == ' ' {
+            "space".to_owned()
+        } else {
+            format!("`{ch}`")
+        }
     }
 
     /// The deterministic collision suffix: the first instance (`nth == 1`) keeps the
