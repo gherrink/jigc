@@ -544,11 +544,29 @@ fn read_spec_criteria(
     })?;
 
     let Some(section) = doc.sections.iter().find(|s| s.id == CRITERIA_SECTION) else {
+        // `add-from-spec` takes any `<type>:<slug>`, so this fires on a real, clean doc
+        // of a doctype that simply declares no `criteria` — a mistyped address, not a
+        // malformed spec. The route hands over a runnable read of the doc actually
+        // addressed and names the sections it does carry, rather than restating the
+        // requirement (M47 inc-10, the P2-6 residue swept over this code's third
+        // producer).
+        let carried: Vec<String> = doc.sections.iter().map(|s| format!("`{}`", s.id)).collect();
         return Err(store_block(
             "store.no-such-section",
             format!("`{spec_addr}` names no `{CRITERIA_SECTION}` section to seed from"),
             spec_addr,
-            format!("the spec must declare a `{CRITERIA_SECTION}` section"),
+            crate::finding::Route::mechanical(
+                ["jigc", "doc", "show", spec_addr],
+                if carried.is_empty() {
+                    " — it carries no sections at all; seeding reads a `criteria` section's items"
+                        .to_string()
+                } else {
+                    format!(
+                        " — it carries {}; seeding reads a `{CRITERIA_SECTION}` section's items",
+                        carried.join(", "),
+                    )
+                },
+            ),
         ));
     };
 
@@ -557,7 +575,12 @@ fn read_spec_criteria(
 
 /// Build a blocking store-shaped finding (the same code/route shape
 /// [`crate::store`] surfaces) for a spec-read failure during seeding.
-fn store_block(code: &str, message: String, address: &str, route: String) -> Finding {
+fn store_block(
+    code: &str,
+    message: String,
+    address: &str,
+    route: impl Into<crate::finding::Route>,
+) -> Finding {
     Finding::graded(
         Severity::Blocking,
         code,
@@ -3012,6 +3035,67 @@ Context without any acceptance criteria.
             !route.contains(&["jigc doc", "types"].join(" ")),
             "route must not name the nonexistent subcommand: {route}"
         );
+    }
+
+    /// (M47 inc-10 T4 · the P2-6 residue, the **third** producer of
+    /// `store.no-such-section`) `add-from-spec` accepts any `<type>:<slug>`, so
+    /// pointing it at a doc whose doctype declares no `criteria` section — a
+    /// committed ADR, parsed clean — reaches this producer in production. Its route
+    /// used to restate the requirement (*"the spec must declare a `criteria`
+    /// section"*) without naming the sections the addressed doc **does** declare or
+    /// handing over a runnable read. It is now a [`Route::mechanical`] read of the
+    /// addressed doc, with the real section ids in the tail.
+    #[test]
+    fn read_spec_criteria_no_criteria_section_route_reads_the_addressed_doc() {
+        use crate::finding::RouteKind;
+
+        let root = TempRoot::new("spec-slice-no-criteria");
+        let path = root.path().join("decisions").join("single-node-cache.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk decisions/");
+        std::fs::write(
+            &path,
+            "\
+---
+status: accepted
+date: 2026-05-23
+---
+
+# Single-node session cache
+
+## Context
+Session lookups must stay sub-millisecond.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+A single in-memory node keeps session lookups sub-millisecond.
+
+## Consequences
+A cold node loses its sessions; clients re-authenticate.
+",
+        )
+        .expect("write committed ADR");
+
+        let err = read_spec_criteria(root.path(), &join_schemas(), "adr:single-node-cache")
+            .expect_err("a doc with no `criteria` section blocks");
+
+        assert_eq!(err.code, "store.no-such-section");
+        let route = err.route.expect("the block carries a route");
+        assert!(
+            matches!(route.kind(), RouteKind::Mechanical { .. }),
+            "the reshaped route is a copy-runnable read, so it buys the parse fence: {route:?}"
+        );
+        assert!(
+            route.starts_with("`jigc doc show adr:single-node-cache`"),
+            "the route leads with the runnable read of the addressed doc: {route}"
+        );
+        for id in ["context", "options", "decision", "consequences"] {
+            assert!(
+                route.contains(&format!("`{id}`")),
+                "the route names the section `{id}` the addressed doc really declares: {route}"
+            );
+        }
     }
 
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");

@@ -1179,32 +1179,32 @@ fn file_location(path: impl std::fmt::Display) -> Location {
 ///   never offers `discard`: `jigc milestone discard` settles the record of an **abandoned**
 ///   milestone, so routing a still-wanted one there tells the operator to destroy the work to
 ///   satisfy a guard.
+///
+/// **One sha form** (M47 inc-10 / N22). Both constructors of this code used to name the
+/// pinned base by its git-abbreviated `short` and HEAD by the full 40-char sha in the same
+/// sentence, so the two identities being compared did not look comparable. The engine is
+/// fed only HEAD's full sha (the planners take `head_sha: &str`), and abbreviating it here
+/// would print a prefix git never minted — so the one form available at this seam, and the
+/// one both sides now render in, is [`BasePin::sha`].
 fn base_mismatch_finding(unit: Unit, base: &BasePin, head_sha: &str) -> Finding {
+    let base_sha = &base.sha;
     let (message, route) = match unit {
         Unit::Task(_) => (
-            format!(
-                "the task was started at base `{}` but HEAD is now `{head_sha}`",
-                base.short
-            ),
-            format!(
-                "switch back to `{}` or discard the task with `jigc task discard`",
-                base.short
-            ),
+            format!("the task was started at base `{base_sha}` but HEAD is now `{head_sha}`"),
+            format!("switch back to `{base_sha}` or discard the task with `jigc task discard`"),
         ),
         Unit::Milestone(_) => (
             format!(
-                "the milestone was pinned to base `{}` but HEAD is now `{head_sha}`, and the \
-                 commits landed since move more than milestone-record bookkeeping — the \
-                 sub-task worktrees were cut from `{}`, so combining them onto HEAD cannot be \
-                 proven sound",
-                base.short, base.short
+                "the milestone was pinned to base `{base_sha}` but HEAD is now `{head_sha}`, and \
+                 the commits landed since move more than milestone-record bookkeeping — the \
+                 sub-task worktrees were cut from `{base_sha}`, so combining them onto HEAD \
+                 cannot be proven sound"
             ),
             format!(
-                "land this milestone's work first (out-of-band git: return HEAD to `{}`, run \
-                 `jigc milestone finalize`, then re-land the newer commits on top), or re-cut \
-                 this milestone's work onto the new base (out-of-band git: re-provision the \
-                 sub-task worktrees from HEAD and re-apply each sub-task's staged changes)",
-                base.short
+                "land this milestone's work first (out-of-band git: return HEAD to `{base_sha}`, \
+                 run `jigc milestone finalize`, then re-land the newer commits on top), or \
+                 re-cut this milestone's work onto the new base (out-of-band git: re-provision \
+                 the sub-task worktrees from HEAD and re-apply each sub-task's staged changes)"
             ),
         ),
     };
@@ -1225,7 +1225,8 @@ fn base_mismatch_finding(unit: Unit, base: &BasePin, head_sha: &str) -> Finding 
 ///
 /// The second constructor of the one `finalize.base-mismatch` code — mutually exclusive with
 /// [`base_mismatch_finding`]'s pin form (one instance per finalize), and
-/// [keyed at the same work unit](Unit::location).
+/// [keyed at the same work unit](Unit::location). It renders the same **one sha form** as
+/// the pin constructor (M47 inc-10 / N22).
 fn base_overlap_finding(
     unit: Unit,
     base: &BasePin,
@@ -1239,7 +1240,7 @@ fn base_overlap_finding(
         format!(
             "the task was started at base `{}` but HEAD is now `{head_sha}`, and the moved \
              history overlaps the task's work on `{paths}`",
-            base.short
+            base.sha
         ),
         Some(unit.location()),
         Some(
@@ -1256,13 +1257,38 @@ fn base_overlap_finding(
 /// validate passed but the staged diff is empty. No empty commits. Its subject is the work
 /// unit that produced nothing, so it [keys at it](Unit::location) — shared by both planners,
 /// so the unit is passed in, never guessed from a path.
+///
+/// **Both exits, and the unit's own verb family** (M47 inc-10 / N17). The shipped route was
+/// *"make a change, then re-run `jigc task finalize`"* — one exit for a block whose other
+/// honest answer is *this task produced nothing; abandon it* (`jigc task discard`, already
+/// the recorded abandon verb on the write path), and the **task** verb served to a blocked
+/// milestone too. That is the same unit-blindness M42 removed from this file's sibling
+/// [`base_mismatch_finding`], swept here: the task arm re-runs `jigc task finalize <id>`, the
+/// milestone arm `jigc milestone finalize <id>`, each with its own abandon verb.
 fn empty_commit_finding(unit: Unit) -> Finding {
+    let (message, route) = match unit {
+        Unit::Task(id) => (
+            "task validated but produced no diff — nothing to finalize".to_string(),
+            format!(
+                "make a change, then re-run `jigc task finalize {id}` — or, if the task is done \
+                 with nothing to show, abandon it with `jigc task discard {id}`"
+            ),
+        ),
+        Unit::Milestone(id) => (
+            "the milestone validated but produced no diff — nothing to finalize".to_string(),
+            format!(
+                "make a change in a sub-task, then re-run `jigc milestone finalize {id}` — or, \
+                 if the milestone is being abandoned, settle its record with \
+                 `jigc milestone discard {id}`"
+            ),
+        ),
+    };
     Finding::graded(
         Severity::Blocking,
         "finalize.empty-commit",
-        "task validated but produced no diff — nothing to finalize",
+        message,
         Some(unit.location()),
-        Some("make a change, then re-run `jigc task finalize`".into()),
+        Some(route.into()),
     )
 }
 
@@ -2852,20 +2878,20 @@ sections:
             err[0].message,
             format!(
                 "the task was started at base `{}` but HEAD is now `{head}`",
-                base().short
+                base().sha
             ),
-            "the task arm's message is unchanged",
+            "the task arm's message names the base and HEAD (in the one sha form N22 settled)",
         );
         assert_eq!(
             err[0].route.as_deref(),
             Some(
                 format!(
                     "switch back to `{}` or discard the task with `jigc task discard`",
-                    base().short
+                    base().sha
                 )
                 .as_str()
             ),
-            "the task arm's route is unchanged",
+            "the task arm's route still offers switch-back-or-discard",
         );
 
         // The milestone arm — the same code, a different unit, a different route.
@@ -2901,7 +2927,7 @@ sections:
             "the milestone arm names the milestone, never \"the task\": {message:?}",
         );
         assert!(
-            message.contains("HEAD is now") && message.contains(&base().short),
+            message.contains("HEAD is now") && message.contains(&base().sha),
             "the milestone arm still names the pinned base and the advanced HEAD: {message:?}",
         );
         assert!(
@@ -2925,6 +2951,184 @@ sections:
             route.contains("out-of-band git"),
             "both options are honestly labelled out-of-band git (there is no verb for either): \
              {route:?}",
+        );
+    }
+
+    /// The backticked sha-shaped tokens of a finding's text, in order — the probe the
+    /// one-sha-form assertion iterates over (M47 inc-10 T4 / N22). A route or message
+    /// renders every sha inside backticks, so splitting on the delimiter and keeping the
+    /// odd (quoted) runs that are all-hex and ≥7 long enumerates exactly the sha forms a
+    /// reader sees.
+    fn sha_tokens(text: &str) -> Vec<&str> {
+        text.split('`')
+            .skip(1)
+            .step_by(2)
+            .filter(|t| t.len() >= 7 && t.chars().all(|c| c.is_ascii_hexdigit()))
+            .collect()
+    }
+
+    /// (M47 inc-10 T4 · N22) `finalize.base-mismatch` renders **one** sha form. It used
+    /// to name the pinned base by its git-abbreviated `short` and HEAD by its full
+    /// 40-char sha in the same sentence, so the two identities being *compared* did not
+    /// look comparable. The sweep runs the code's whole producer axis — the pin form ×
+    /// {task, milestone} and the overlap form — and asserts, per finding, that every
+    /// sha-shaped token in message **and** route is the same width.
+    #[test]
+    fn base_mismatch_renders_one_sha_form_across_both_constructors() {
+        let root = TempRoot::new("one-sha-form");
+        let head = "ffffffffffffffffffffffffffffffffffffffff";
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        // The pin form, task arm.
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+        let schema = stage_filled_commit(&task_dir, "add-rate-limiter");
+        let pin_task = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            head,
+            &clean,
+            true,
+            &schema,
+            "add-rate-limiter",
+            &schemas(),
+        )
+        .expect_err("a base mismatch aborts the task preflight");
+
+        // The pin form, milestone arm.
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged");
+        stage_filled_adr(&staging, "cache-strategy");
+        let pin_milestone = plan_milestone_finalize(
+            "cache-rework",
+            &staging,
+            &base(),
+            head,
+            false,
+            "Finalize milestone cache-rework (1 sub-task)\n".to_string(),
+            true,
+            &schemas(),
+        )
+        .expect_err("a base mismatch aborts the milestone preflight");
+
+        // The overlap form: moved history that touches the task's own dirty footprint.
+        let overlap_dir = root.path().join("tasks").join("overlapping");
+        stage_filled_adr(&overlap_dir, "keep-sessions-in-memory");
+        let overlap = decide_base_repin(
+            "overlapping",
+            &overlap_dir,
+            &base(),
+            head,
+            &["src/limiter.rs".to_string()],
+            &["src/limiter.rs".to_string()],
+            &schemas(),
+        )
+        .expect_err("overlapping moved history blocks");
+
+        for (arm, findings) in [
+            ("pin/task", pin_task),
+            ("pin/milestone", pin_milestone),
+            ("overlap", overlap),
+        ] {
+            let finding = &findings[0];
+            assert_eq!(finding.code, "finalize.base-mismatch", "{arm}");
+            let route = finding.route.as_deref().expect("blocking ⇒ a route");
+            let mut widths: Vec<usize> = sha_tokens(&finding.message)
+                .into_iter()
+                .chain(sha_tokens(route))
+                .map(str::len)
+                .collect();
+            assert!(
+                widths.len() >= 2,
+                "{arm}: the finding names at least the base and HEAD",
+            );
+            widths.dedup();
+            assert_eq!(
+                widths,
+                vec![base().sha.len()],
+                "{arm}: every sha the reader sees is rendered in one form — \
+                 message {:?}, route {route:?}",
+                finding.message,
+            );
+        }
+    }
+
+    /// (M47 inc-10 T4 · N17) `finalize.empty-commit` routes **both** exits, and names
+    /// the verb family of the unit that produced nothing. The shipped route was
+    /// *"make a change, then re-run `jigc task finalize`"* — one exit, no abandon path,
+    /// and the **task** verb served to a blocked milestone too (the same unit-blindness
+    /// M42 fixed on this file's sibling `base-mismatch` route). `jigc task discard` was
+    /// already the recorded abandon verb one file over (`write.rs` → the discard route);
+    /// the block that most needs it never named it.
+    #[test]
+    fn empty_commit_route_names_the_abandon_exit_for_both_units() {
+        let root = TempRoot::new("empty-commit-abandon");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+        let schema = stage_filled_commit(&task_dir, "add-rate-limiter");
+        let err = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            false,
+            &schema,
+            "add-rate-limiter",
+            &schemas(),
+        )
+        .expect_err("an empty diff aborts");
+        assert_eq!(err[0].code, "finalize.empty-commit");
+        let route = err[0].route.as_deref().expect("blocking ⇒ a route");
+        assert!(
+            route.contains("jigc task finalize add-rate-limiter"),
+            "the task arm re-runs the task door, with the id filled in: {route:?}",
+        );
+        assert!(
+            route.contains("jigc task discard add-rate-limiter"),
+            "the task arm names the abandon exit: {route:?}",
+        );
+
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged");
+        stage_filled_adr(&staging, "cache-strategy");
+        let err = plan_milestone_finalize(
+            "cache-rework",
+            &staging,
+            &base(),
+            &base().sha,
+            false,
+            "Finalize milestone cache-rework (1 sub-task)\n".to_string(),
+            false,
+            &schemas(),
+        )
+        .expect_err("an empty diff aborts");
+        assert_eq!(err[0].code, "finalize.empty-commit");
+        assert!(
+            err[0].message.starts_with("the milestone validated"),
+            "the milestone arm names the unit that produced nothing: {:?}",
+            err[0].message,
+        );
+        let route = err[0].route.as_deref().expect("blocking ⇒ a route");
+        assert!(
+            route.contains("jigc milestone finalize cache-rework"),
+            "the milestone arm names the MILESTONE door, never `jigc task finalize`: {route:?}",
+        );
+        assert!(
+            route.contains("jigc milestone discard cache-rework"),
+            "the milestone arm names the milestone abandon exit: {route:?}",
+        );
+        assert!(
+            !route.contains("jigc task "),
+            "no task verb is offered for a milestone (the M42 unit-awareness, swept onto \
+             this code): {route:?}",
         );
     }
 

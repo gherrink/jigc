@@ -23,7 +23,9 @@
 //!
 //! - **near-miss** (under a schema's `location:` dir but fails parse/conformance) →
 //!   re-run the home schema's [`parse_sections`] / [`schema_conformance`] and surface
-//!   the first blocking finding, retargeted with a `reconcile <path>` route.
+//!   the first blocking finding, routed by [`near_miss_route`] — the same runnable
+//!   `jigc migrate <rel> --as <doctype>` the store sweep's sibling already hands over
+//!   when the candidate is un-adopted and its doctype is migratable (M47 / N19).
 //! - **wrong location** (conformant against a schema but outside its `location:`) →
 //!   a synthesized blocking finding routing the human to relocate it (jigc never
 //!   auto-moves — detect-and-route).
@@ -32,7 +34,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use engine::file_state::FileStateRecord;
-use engine::finding::{Finding, Location, Severity};
+use engine::finding::{Finding, Location, Route, Severity};
 use engine::index;
 use engine::ingest::{Verdict, classify};
 use engine::parse::parse_sections;
@@ -193,13 +195,30 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
         .scalar("validation.schema-conformance.repeatable-populated.exempt")
         .unwrap_or("");
 
+    // The migratable doctype set — every `migrate-<doctype>` workflow the composed pack
+    // ships, derived exactly as the store sweep's `unregistered-doc` route derives it
+    // (`cli.rs`), so the two surfaces can only offer `jigc migrate` where it runs.
+    let migratable: std::collections::BTreeSet<String> = pack
+        .list(PackResourceKind::Workflows)
+        .iter()
+        .filter_map(|id| id.as_str().strip_prefix("migrate-").map(str::to_owned))
+        .collect();
+
     let candidates = git_candidates(&jigc_home)?;
     let mut rows = Vec::with_capacity(candidates.len());
     let mut adopted_any = false;
     for rel_path in candidates {
         let bytes = read_candidate_bytes(&jigc_home, &rel_path)?;
         let source = String::from_utf8_lossy(&bytes).into_owned();
-        let mut row = classify_row(&rel_path, &source, &schemas, exempt);
+        let registered = record.get(&rel_path).is_some();
+        let mut row = classify_row(
+            &rel_path,
+            &source,
+            &schemas,
+            exempt,
+            &migratable,
+            registered,
+        );
 
         // Adopt every `adoptable` candidate (schema-gated, register-only). The verdict
         // already named the conformant-at-location type; `adopt` re-gates over the same
@@ -280,7 +299,14 @@ fn git_candidates(jigc_home: &Path) -> Result<Vec<String>> {
 /// needs it). An `adoptable` row additionally re-parses against the matched schema to
 /// compute its adopt-time annotations ([`adopt_annotations`]); `exempt` is the
 /// resolved `…repeatable-populated.exempt` knob value.
-fn classify_row(rel_path: &str, source: &str, schemas: &[Schema], exempt: &str) -> TriageRow {
+fn classify_row(
+    rel_path: &str,
+    source: &str,
+    schemas: &[Schema],
+    exempt: &str,
+    migratable: &std::collections::BTreeSet<String>,
+    registered: bool,
+) -> TriageRow {
     match classify(rel_path, source, schemas) {
         Verdict::Adoptable { ty } => {
             let annotations = schemas
@@ -311,7 +337,7 @@ fn classify_row(rel_path: &str, source: &str, schemas: &[Schema], exempt: &str) 
             // reduction does: a near-miss sits under a schema's location dir; a
             // wrong-location doc conforms to a schema it does not live under.
             if let Some(home) = schemas.iter().find(|s| under_location(rel_path, s)) {
-                let finding = near_miss_finding(rel_path, source, home);
+                let finding = near_miss_finding(rel_path, source, home, migratable, registered);
                 TriageRow {
                     file: rel_path.to_string(),
                     best_match: Some(home.ty.clone()),
@@ -377,12 +403,18 @@ fn adopt_annotations(schema: &Schema, source: &str, exempt: &str) -> Vec<String>
 /// `location:` dir that fails parse/conformance). Surface the first blocking finding
 /// the home schema's parse/conformance produces — its located message names the exact
 /// failure — and route it to reconcile the candidate against its claimed type.
-fn near_miss_finding(rel_path: &str, source: &str, home: &Schema) -> Finding {
+fn near_miss_finding(
+    rel_path: &str,
+    source: &str,
+    home: &Schema,
+    migratable: &std::collections::BTreeSet<String>,
+    registered: bool,
+) -> Finding {
     let detail = match parse_sections(home, source) {
         Err(findings) => findings.into_iter().next(),
         Ok(doc) => schema_conformance(home, source, &doc).into_iter().next(),
     };
-    let route = format!("reconcile {rel_path} against the `{}` schema", home.ty);
+    let route = near_miss_route(rel_path, &home.ty, migratable, registered);
     match detail {
         Some(finding) => {
             // The re-derived finding keeps the **code** the parse/conformance sweep raised, so
@@ -404,7 +436,7 @@ fn near_miss_finding(rel_path: &str, source: &str, home: &Schema) -> Finding {
                         Some(fragment) => Location::addressed(fragment, loc.line, loc.col),
                         None => Location::at(loc.line, loc.col),
                     }),
-                Some(route.into()),
+                Some(route),
             );
             match home_identity(rel_path, home) {
                 Some(identity) => {
@@ -429,8 +461,52 @@ fn near_miss_finding(rel_path: &str, source: &str, home: &Schema) -> Finding {
             "ingest.needs-reconcile",
             format!("`{rel_path}` does not conform to the `{}` schema", home.ty),
             Some(Location::addressed(rel_path, 1, 1)),
-            Some(route.into()),
+            Some(route),
         ),
+    }
+}
+
+/// The repair direction a **near-miss** carries (M47 inc-10 / N19). `jigc validate`'s
+/// store-sweep sibling ([`crate::orphan::unregistered_route`]) has handed over the runnable
+/// `jigc migrate <rel> --as <doctype>` since M40 while this surface, over the very same
+/// file, offered the bare prose *"reconcile `<rel>` against the `<ty>` schema"* — two
+/// surfaces, one repair, only one of them followable. It is the same argv here, and because
+/// the text is a single backticked real command it is built through [`Route::mechanical`],
+/// so the CLI parse fence proves it runs.
+///
+/// **Gated exactly like the sibling, over the whole domain this route reaches.** The sibling
+/// speaks only for the *unregistered* orphan tier; this one fires for every non-conformant
+/// candidate at a managed home, which includes an **already-adopted** doc (a stale
+/// schema-version stamp is the M42 case) — for which adoption is not the repair at all. So
+/// `jigc migrate` is offered only when the candidate is both unregistered **and** its doctype
+/// ships a `migrate-<doctype>` workflow (`jigc migrate --as <doctype>` hard-rejects without
+/// one). Each other arm is a human direction that says which of the two it is: a route that
+/// cannot be run, or one that repairs the wrong thing, is the defect one level down.
+fn near_miss_route(
+    rel_path: &str,
+    ty: &str,
+    migratable: &std::collections::BTreeSet<String>,
+    registered: bool,
+) -> Route {
+    if registered {
+        Route::human(format!(
+            "`{rel_path}` is already managed, so adoption is not the repair — reconcile it \
+             against the `{ty}` schema (a corpus left on an older schema-version migrates with \
+             `jigc migrate-corpus`), then re-run `jigc ingest`"
+        ))
+    } else if migratable.contains(ty) {
+        Route::mechanical(
+            ["jigc", "migrate", rel_path, "--as", ty],
+            format!(
+                " — it opens the `migrate-{ty}` workflow, which rewrites the file to \
+                 conformant shape and adopts it at finalize"
+            ),
+        )
+    } else {
+        Route::human(format!(
+            "reconcile `{rel_path}` against the `{ty}` schema by hand, then re-run \
+             `jigc ingest` — no `migrate-{ty}` workflow ships to rewrite it for you"
+        ))
     }
 }
 
@@ -563,4 +639,147 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
         .ancestors()
         .find(|dir| dir.join(".git").exists())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use engine::finding::RouteKind;
+
+    /// An `adr`-typed schema fixture (the shipped shape minus the pack-declared
+    /// `code-anchor` leaf, which needs the pack's field-type table to resolve) — the
+    /// near-miss route reads only the doctype name and the parse/conformance detail.
+    fn adr_schema() -> Schema {
+        engine::schema::load_schema(
+            b"\
+type: adr
+location: decisions/
+id-from: title
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+  - id: context
+    slot: { hint: Forces. }
+  - id: decision
+    slot: { hint: What was decided. }
+",
+        )
+        .expect("the adr fixture schema loads")
+    }
+
+    /// An ADR-shaped doc sitting at the `adr` home that does **not** conform (its
+    /// `## Decision` section is missing) — the near-miss the triage re-derives a route
+    /// for.
+    const NEAR_MISS_ADR: &str = "\
+---
+status: accepted
+---
+
+# Auth choice
+
+## Context
+Sessions must survive a restart.
+";
+
+    /// (M47 inc-10 T4 · N19) `jigc ingest`'s near-miss route is no weaker than the one
+    /// `jigc validate` already hands over for the same file. The shipped route was the
+    /// bare prose *"reconcile decisions/auth-choice.md against the `adr` schema"* while
+    /// the store sweep's sibling (`orphan::unregistered_route`) has emitted the runnable
+    /// `jigc migrate <rel> --as <doctype>` since M40 — two surfaces, one file, one
+    /// repair, and only one of them followable. Reshaped to that argv it is a single
+    /// backticked real command, so it is constructed through [`Route::mechanical`] and
+    /// buys the CLI parse fence.
+    #[test]
+    fn ingest_near_miss_route_hands_over_the_migrate_argv() {
+        crate::route_fence::install();
+        let migratable = ["adr".to_string()].into_iter().collect();
+
+        let finding = near_miss_finding(
+            "decisions/auth-choice.md",
+            NEAR_MISS_ADR,
+            &adr_schema(),
+            &migratable,
+            false,
+        );
+
+        let route = finding
+            .route
+            .expect("a needs-reconcile row carries a route");
+        assert!(
+            matches!(route.kind(), RouteKind::Mechanical { .. }),
+            "the reshaped route is a copy-runnable command: {route:?}",
+        );
+        assert!(
+            route.starts_with("`jigc migrate decisions/auth-choice.md --as adr`"),
+            "it leads with the same adoption argv the store sweep's sibling emits: {route}",
+        );
+    }
+
+    /// The migratable axis: the sibling route is **gated** on a shipped
+    /// `migrate-<doctype>` workflow, because `jigc migrate --as <doctype>` hard-rejects
+    /// without one. A doctype that ships no migrate workflow therefore keeps a human
+    /// direction that says so — a mechanical route here would be a route that cannot be
+    /// run, which is the defect one level down.
+    #[test]
+    fn ingest_near_miss_route_stays_human_without_a_migrate_workflow() {
+        crate::route_fence::install();
+        let migratable = std::collections::BTreeSet::new();
+
+        let finding = near_miss_finding(
+            "decisions/auth-choice.md",
+            NEAR_MISS_ADR,
+            &adr_schema(),
+            &migratable,
+            false,
+        );
+
+        let route = finding
+            .route
+            .expect("a needs-reconcile row carries a route");
+        assert!(
+            matches!(route.kind(), RouteKind::Human),
+            "no migrate workflow ships, so no command is offered: {route:?}",
+        );
+        assert!(
+            route.contains("migrate-adr") && !route.contains("jigc migrate "),
+            "and the route says why it offers none: {route}",
+        );
+    }
+
+    /// The registration axis — the half of this route's domain the shipped
+    /// `unregistered_route` sibling never reaches. A near-miss can be an **already
+    /// adopted** doc that stopped conforming (the M42 stale-schema-version case), and
+    /// for it adoption is not the repair at all: `jigc migrate` would try to adopt what
+    /// is already managed. That arm therefore stays a human direction and says so.
+    #[test]
+    fn ingest_near_miss_route_offers_no_adoption_for_an_already_managed_doc() {
+        crate::route_fence::install();
+        let migratable = ["adr".to_string()].into_iter().collect();
+
+        let finding = near_miss_finding(
+            "decisions/auth-choice.md",
+            NEAR_MISS_ADR,
+            &adr_schema(),
+            &migratable,
+            true,
+        );
+
+        let route = finding
+            .route
+            .expect("a needs-reconcile row carries a route");
+        assert!(
+            matches!(route.kind(), RouteKind::Human),
+            "an adopted doc is not re-adopted: {route:?}",
+        );
+        assert!(
+            !route.contains("jigc migrate decisions/auth-choice.md"),
+            "the adoption argv is never offered for a managed doc: {route}",
+        );
+        assert!(
+            route.contains("already managed"),
+            "and the route says why: {route}",
+        );
+    }
 }

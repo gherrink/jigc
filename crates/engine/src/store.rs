@@ -383,7 +383,7 @@ fn slice_fragment(
             "store.no-such-section",
             format!("`{address}` names no section `{section_id}`"),
             address,
-            "name a section that exists in the committed doc".to_string(),
+            no_such_section_route(doc, address),
         ));
     };
 
@@ -456,18 +456,31 @@ fn slice_fragment(
         s.id == section_id && matches!(s.body, crate::schema::SectionBody::Repeatable { .. })
     });
     if is_repeatable {
-        let bad = rest
-            .iter()
-            .enumerate()
-            .skip(1)
-            .step_by(2)
-            .find(|(i, _)| write::physical_item_chain(schema, section_id, &rest[..=*i]).is_none())
-            .map_or(rest[rest.len() - 1], |(_, seg)| *seg);
+        let offender =
+            rest.iter().enumerate().skip(1).step_by(2).find(|(i, _)| {
+                write::physical_item_chain(schema, section_id, &rest[..=*i]).is_none()
+            });
+        let bad = offender.map_or(rest[rest.len() - 1], |(_, seg)| *seg);
+        // Name the nested sections declared **at the offending hop's own level** — the
+        // level is known exactly when a nested-section-position hop is what failed, so
+        // the prefix before it is a valid item chain to walk (M47 inc-10 / the P2-6
+        // residue: the miss that should correct the address taught nothing).
+        let declared_nested = offender
+            .map(|(i, _)| declared_nested_sections(schema, section_id, &rest[..i]))
+            .unwrap_or_default();
         return Err(block(
             "store.no-such-section",
             format!("`{address}` names no nested section `{bad}` in section `{section_id}`"),
             address,
-            "qualify nested items with their declared nested-section id (the section-qualified write address)".to_string(),
+            if declared_nested.is_empty() {
+                "qualify nested items with their declared nested-section id (the section-qualified write address)".to_string()
+            } else {
+                format!(
+                    "name a nested section declared at that level — {} — as \
+                     `#<section>/<item-id>/<nested-section>/<nested-item-id>`",
+                    quoted_list(&declared_nested),
+                )
+            },
         ));
     }
     Err(block(
@@ -479,6 +492,76 @@ fn slice_fragment(
         address,
         "name an item that exists in the committed section".to_string(),
     ))
+}
+
+/// Render `ids` as a comma-separated backticked list — the one spelling every route
+/// that enumerates real ids uses, so a reader can copy a name out of any of them.
+fn quoted_list(ids: &[&str]) -> String {
+    ids.iter()
+        .map(|id| format!("`{id}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The route for a **top-level** `store.no-such-section`: the section ids the committed
+/// doc really carries, plus the item-qualified form (M47 inc-10, the project-alpha-4.0 P2-6
+/// residue — the worker guessed the fragment grammar was a bare item id, and the block
+/// that would have corrected it said only *"name a section that exists"*, naming neither
+/// the sections nor the item hop). The enumeration is over the **parsed doc**, not the
+/// schema: the reader is addressing bytes that exist.
+fn no_such_section_route(doc: &Document, address: &str) -> String {
+    let doc_address = address.split_once('#').map_or(address, |(doc, _)| doc);
+    let ids: Vec<&str> = doc.sections.iter().map(|s| s.id.as_str()).collect();
+    if ids.is_empty() {
+        return format!("`{doc_address}` carries no sections to address with a `#fragment`");
+    }
+    format!(
+        "address one of the sections `{doc_address}` carries — {} — and qualify an item as \
+         `#<section>/<item-id>`",
+        quoted_list(&ids),
+    )
+}
+
+/// The **nested-repeatable** ids declared at the level `chain` bottoms out in — the same
+/// schema walk [`write::physical_item_chain`] makes, kept to the ids rather than the
+/// physical chain. `chain` must be a valid, even-length item chain under `section_id`
+/// (the caller passes the prefix before the offending nested-section hop); anything else
+/// yields the empty list and the caller falls back to the generic direction.
+fn declared_nested_sections<'a>(
+    schema: &'a Schema,
+    section_id: &str,
+    chain: &[&str],
+) -> Vec<&'a str> {
+    let Some(section) = schema.sections.iter().find(|s| s.id == section_id) else {
+        return Vec::new();
+    };
+    let crate::schema::SectionBody::Repeatable { repeatable } = &section.body else {
+        return Vec::new();
+    };
+    let mut block = &repeatable.block;
+    // The chain alternates item id → nested-section id; only the nested-section hops
+    // move the scope, so the walk consumes them at the odd positions.
+    for (i, segment) in chain.iter().enumerate() {
+        if i.is_multiple_of(2) {
+            continue;
+        }
+        let Some(nested) = block.iter().find_map(|leaf| match leaf {
+            crate::schema::Leaf::Repeatable { id, repeatable } if id == segment => {
+                Some(&repeatable.block)
+            }
+            _ => None,
+        }) else {
+            return Vec::new();
+        };
+        block = nested;
+    }
+    block
+        .iter()
+        .filter_map(|leaf| match leaf {
+            crate::schema::Leaf::Repeatable { id, .. } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Split a [`Fragment`] into its section id and the remaining navigation hops, as
@@ -1211,6 +1294,64 @@ A cold node loses its sessions; clients re-authenticate.
         assert!(
             err.route.is_some(),
             "the no-such-item block carries a route"
+        );
+    }
+
+    /// (M47 inc-10 T4 · the P2-6 residue) The **top-level** `store.no-such-section`
+    /// route **enumerates the doc's real section ids** and **teaches the
+    /// `#<section>/<item-id>` form**. The project-alpha-4.0 worker guessed the fragment
+    /// grammar would be a bare item id, never ran a read, and declared the capability
+    /// absent — and the one probe that would have corrected the guess said only
+    /// *"name a section that exists in the committed doc"*, which neither names them
+    /// nor teaches the item hop (law 2: a route must be followable).
+    #[test]
+    fn store_no_such_section_route_names_the_real_sections_and_teaches_the_item_form() {
+        let root = TempRoot::new("no-such-section-route");
+        let path = root.path().join("specs").join("gateway-rate-limiting.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&path, COMMITTED_SPEC).expect("write committed spec");
+
+        let address = Address::parse("spec:gateway-rate-limiting#nope").expect("valid");
+        let err =
+            read_slice(root.path(), &schemas(), &address).expect_err("missing section blocks");
+
+        assert_eq!(err.code, "store.no-such-section");
+        let route = err.route.expect("the block carries a route");
+        for id in ["goal", "context", "criteria"] {
+            assert!(
+                route.contains(&format!("`{id}`")),
+                "the route enumerates the doc's real section `{id}`: {route}"
+            );
+        }
+        assert!(
+            route.contains("#<section>/<item-id>"),
+            "the route teaches the item-qualified form: {route}"
+        );
+    }
+
+    /// (M47 inc-10 T4 · the P2-6 residue, the **nested** producer of the same code)
+    /// The nested-hop miss enumerates the nested-section ids **declared at the level
+    /// the offending hop sits on** and spells the full nested address form — the same
+    /// sweep, over the second of `store.no-such-section`'s three producers.
+    #[test]
+    fn store_no_such_nested_section_route_names_the_declared_nested_sections() {
+        let root = TempRoot::new("no-such-nested-section-route");
+        write_committed_changelog(root.path());
+
+        let address =
+            Address::parse("changelog:changelog#releases/1-0-0/typo/added").expect("valid address");
+        let err =
+            read_slice(root.path(), &schemas(), &address).expect_err("a bad nested hop blocks");
+
+        assert_eq!(err.code, "store.no-such-section");
+        let route = err.route.expect("the block carries a route");
+        assert!(
+            route.contains("`changes`"),
+            "the route names the nested section declared at that level: {route}"
+        );
+        assert!(
+            route.contains("#<section>/<item-id>/<nested-section>/<nested-item-id>"),
+            "the route spells the nested address form: {route}"
         );
     }
 

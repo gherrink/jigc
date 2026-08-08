@@ -455,11 +455,19 @@ pub fn collect_repeatable(
                         guard_findings.push(Finding::graded(
                             Severity::Advisory,
                             "doc-code.title-names-symbol",
+                            // Law 1 (`design/surface-contract.md`): state the comparison
+                            // this check made, never the scenario it was built for. The
+                            // check is a pure string scan — the title's compound
+                            // identifiers against the anchored symbol — with no git
+                            // history read and no code resolved, so a message asserting
+                            // a rename/removal narrated an event it never observed and
+                            // sent a project-alpha-4.0 worker hunting a phantom code change
+                            // (M47 inc-10 / D3).
                             format!(
-                                "component title `{}` names symbol(s) {title_symbols:?} \
-                                 but its anchor implements `{symbol}` (`{value}`) — the \
-                                 heading still names a renamed/removed symbol; update the \
-                                 title to match the code",
+                                "component title `{}` carries compound identifier(s) \
+                                 {title_symbols:?}, none of them the symbol its anchor \
+                                 names (`{symbol}` in `{value}`) — a title-vs-anchor \
+                                 string comparison; no code or history is read",
                                 item.title
                             ),
                             Some(Location::addressed(title_address, 1, 1)),
@@ -469,8 +477,8 @@ pub fn collect_repeatable(
                                  `jigc doc retitle-item {ty}:{slug}#{}/{} --title \
                                  \"<new title>\"` within it — `retitle-item` needs an \
                                  active task, and the heading retitles with its `{{#id}}` \
-                                 anchor frozen (a descriptive title that drops the stale \
-                                 symbol also clears this)",
+                                 anchor frozen (a descriptive title carrying no \
+                                 unmatched compound identifier also clears this)",
                                     section.id, item.id
                                 )
                                 .into(),
@@ -697,6 +705,81 @@ sections:
                 .expect("spec fixture loads"),
         );
         m
+    }
+
+    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+
+    /// A committed `arch-doc` whose one component anchors `src/lib.rs#session_store`
+    /// while its heading names the compound identifier `sessionStore` — the shape the
+    /// `title-names-symbol` guard fires on (the shipped-schema canonical rendering).
+    const ARCH_DOC_WITH_MISMATCHED_HEADING: &str = "\
+# Index layer
+
+## Overview
+
+The edge index and target surface.
+
+## Components
+
+### sessionStore  {#sessionstore}
+
+Walks forward refs.
+
+<!-- fields -->
+- implemented-by: src/lib.rs#session_store
+";
+
+    /// (M47 inc-10 T4 · D3) `doc-code.title-names-symbol` states **what it compared**,
+    /// not an event it never observed. The shipped message read *"the heading still
+    /// names a **renamed/removed** symbol; update the title to match the code"* — a
+    /// law-1 lie on a freshly-authored doc in its first task: the check is a pure
+    /// string comparison over the item title and the anchored symbol (this function
+    /// reads no git history and resolves no code), and it sent the project-alpha-4.0
+    /// worker hunting a code change that never happened.
+    ///
+    /// The projection is lifted **verbatim** by the store walk, so one assertion here
+    /// covers the task-scope and store-scope surfaces alike (see this module's head).
+    #[test]
+    fn title_names_symbol_states_the_comparison_it_made_not_a_rename() {
+        let schema = load_schema_with_types(ARCH_DOC_YAML, &dev_pack_field_types())
+            .expect("arch-doc.yaml loads");
+        let mut anchors = Vec::new();
+        let mut guard_findings = Vec::new();
+        collect_from_source(
+            &schema,
+            "arch-doc",
+            "index-layer",
+            ARCH_DOC_WITH_MISMATCHED_HEADING,
+            &mut anchors,
+            &mut guard_findings,
+        );
+
+        let finding = guard_findings
+            .iter()
+            .find(|f| f.code == "doc-code.title-names-symbol")
+            .expect("the mismatched heading raises the stale-heading guard");
+
+        assert!(
+            !finding.message.contains("renamed") && !finding.message.contains("removed"),
+            "the message asserts no history event the check never read: {:?}",
+            finding.message,
+        );
+        assert!(
+            !finding.message.contains("match the code"),
+            "nor that the code diverged — the code was never consulted: {:?}",
+            finding.message,
+        );
+        assert!(
+            finding.message.contains("sessionStore") && finding.message.contains("session_store"),
+            "it names both sides of the comparison it did make: {:?}",
+            finding.message,
+        );
+        assert!(
+            finding.message.contains("compound identifier"),
+            "and names the heuristic — a compound-identifier scan of the title, not a \
+             symbol lookup: {:?}",
+            finding.message,
+        );
     }
 
     /// A `created` ADR staged in the task `docs/` area, carrying a `cites-code`
