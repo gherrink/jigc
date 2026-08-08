@@ -53,11 +53,16 @@ It does these things:
   doc↔code probe resolves next to the binary — written if no sibling is present
   **or** if an existing sibling's bytes differ from the embedded copy, so a
   stale or corrupt probe self-heals; a byte-identical sibling is left untouched); and
-- installs a warn-only `pre-commit` hook that runs `jigc validate` over the
-  committed store and **warns** on doc↔code drift. It never blocks the commit
-  (always exits 0) — a backstop for edits made outside the loop, not a gate.
+- installs a `pre-commit` hook that runs `jigc validate` over the committed
+  store and **warns** on doc↔code drift without blocking the commit — a
+  backstop for edits made outside the loop, not a gate. It refuses exactly one
+  thing: a commit that itself stages an out-of-band managed-doc **rename** (a
+  bare `git mv` of a managed doc, both paths staged), because that silently
+  breaks identity tracking — use `jigc rename` instead. Drift that landed in an
+  earlier commit only warns; it never blocks a later, unrelated one.
 
-`setup` **commits its own install** as a dedicated `chore(jigc): install` commit
+`setup` **commits its own install** as a dedicated
+`chore(jigc): install jigc workspace config` commit
 (only the files above, never your working tree), so the install doesn't land in
 your first feature commit. These edits are idempotent — re-running `jigc setup`
 leaves the files byte-identical (no new commit), so it is safe to run after every
@@ -107,6 +112,15 @@ If validation blocks (a dangling forward reference, a missing required slot, a
 malformed value), finalize makes no commit and surfaces the findings with a
 route for the next action. Fix and re-run.
 
+Your own `pre-commit` / `commit-msg` hooks still run — jigc never passes
+`--no-verify`, they are your policy — so a hook that rejects the commit stops
+the finalize. Nothing is committed, the task survives with your staged set
+still staged, and the message carries the hook's own output verbatim plus the
+line to re-run once its complaint is fixed. Every jigc verb that commits on
+your behalf answers a rejection that way, each stating what *its* rejection
+left behind — the per-door detail is in [MIGRATING.md](MIGRATING.md) →
+Reconciling and backing out.
+
 A landed finalize prints a **manifest** — the file-set the commit carried (the
 git index: what you staged plus the docs jigc promotes), with a distinct
 **left-out** list naming any unstaged or untracked work the commit excluded (so
@@ -119,15 +133,18 @@ with `--carry-staged`.
 Changed your mind? **`jigc task discard <id>`** abandons the task — it removes
 only the working area under `.jigc/tasks/`; no commit is made and the committed
 store is untouched. The full reconcile/back-out ladder (the migration review
-hold, the carryover gate, out-of-band edits) is in
+hold, the carryover gate, the hook rejection above, out-of-band edits) is in
 [MIGRATING.md](MIGRATING.md) → Reconciling and backing out.
 
 **What lands in your repo:** finalize promotes each managed doc under the
 **`docs-root`** parent (default `docs/`) at its doctype's location —
 `docs/decisions/` (ADRs), `docs/specs/`, `docs/prds/`, `docs/architecture/`
-(arch-docs), `docs/changelog/` — as plain, human-reviewable Markdown alongside
-your own `src/`. (The names are chosen for readability, not a uniform `<type>s/`
-rule.) Prefer a different parent, or the old flat repo-root layout? Set
+(arch-docs), `docs/milestone-records/` — as plain, human-reviewable Markdown
+alongside your own `src/`. (The names are chosen for readability, not a uniform
+`<type>s/` rule.) A few doctypes are **placed** rather than located: they live at
+one literal path that `docs-root` does not move — the changelog is your
+repo-root `CHANGELOG.md` ([design/storage.md](design/storage.md) → Placement).
+Prefer a different parent, or the old flat repo-root layout? Set
 `jigc config set docs-root <path>` (`.` or `""` for the old flat layout). Everything else jigc
 writes lives under `.jigc/` (committed config + bootstrap; gitignored caches) —
 see [design/storage.md](design/storage.md) → Repository layout / Config layout. If

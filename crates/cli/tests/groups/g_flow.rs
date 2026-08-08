@@ -41,6 +41,8 @@ mod flow_form_vision_advisory;
 mod flow_park_idea;
 #[path = "../flow_role_binding.rs"]
 mod flow_role_binding;
+#[path = "../foldback_truth.rs"]
+mod foldback_truth;
 #[path = "../format_json_success_axis.rs"]
 mod format_json_success_axis;
 #[path = "../help_truth.rs"]
