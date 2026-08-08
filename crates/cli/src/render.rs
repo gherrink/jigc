@@ -1231,6 +1231,15 @@ fn landed_summary(landed: &Landed) -> String {
 /// buffer after persist). It projects into the JSON ack's `findings[]` (empty on a clean
 /// write); completeness + cross-doc families stay store-scope, so `findings: []` means "no
 /// intrinsic single-doc advisory," not "validated."
+///
+/// The five **edit** verbs additionally carry `copied_in` — `true` when this write was the
+/// task's **first touch** of a base-committed doc, so reading it copied the committed body
+/// into the working area (`doc.rs` → `Task::read_or_copy_in`). It states the same effect
+/// [`DocAck::Created`]'s `existed` states on the create door (M47 Inc 10 T3, RC-alpha4
+/// P4-6: the M43 fix was incomplete over the *verb* axis — the five edit doors stayed
+/// silent, and the trial's worker learned of the staging from the finalize output). It is
+/// an **agent/human-text** note only: the JSON ack shape is unchanged
+/// (`design/command-output-contract.md` §2 → the first-touch copy-in note).
 pub enum DocAck {
     /// A `set-field` landed `value` at `address`/`target`. `value` is the written field
     /// value shaped as `doc show`'s `fields` project it (scalar → string, list → array).
@@ -1239,6 +1248,7 @@ pub enum DocAck {
         target: AckTarget,
         value: serde_json::Value,
         findings: Findings,
+        copied_in: bool,
     },
     /// A `set-field --unset` cleared the field at `address`/`target` (its line/bullet
     /// removed). No `value` key — the effect is the field's absence, read back via `doc show`.
@@ -1246,6 +1256,7 @@ pub enum DocAck {
         address: String,
         target: AckTarget,
         findings: Findings,
+        copied_in: bool,
     },
     /// A `set-slot` spliced `chars` characters of prose at `address`/`target`.
     Slot {
@@ -1253,12 +1264,14 @@ pub enum DocAck {
         target: AckTarget,
         chars: usize,
         findings: Findings,
+        copied_in: bool,
     },
     /// A `remove-item` dropped the item at `address`/`target`.
     RemovedItem {
         address: String,
         target: AckTarget,
         findings: Findings,
+        copied_in: bool,
     },
     /// A `retitle-item` retitled the item at `address`/`target` (anchor frozen) to `title`.
     RetitledItem {
@@ -1266,6 +1279,7 @@ pub enum DocAck {
         target: AckTarget,
         title: String,
         findings: Findings,
+        copied_in: bool,
     },
     /// A `create` minted a whole doc at `address`/`target`. The target is the head only
     /// (`doctype`+`slug`, no fragment); its effect is the whole created doc, read back via
@@ -1287,6 +1301,7 @@ pub enum DocAck {
         address: String,
         target: AckTarget,
         findings: Findings,
+        copied_in: bool,
     },
     /// An `author` authored a whole doc at `address`/`target`. The target is the head only
     /// (`doctype`+`slug`), like [`DocAck::Created`]; its effect is the whole authored doc,
@@ -1390,30 +1405,69 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
                 "op": "author", "target": target, "findings": findings,
             })),
         },
-        Format::Agent | Format::Human => match ack {
-            DocAck::Field { address, value, .. } => {
-                format!("set {address} = {}", ack_value_display(value))
+        Format::Agent | Format::Human => {
+            let line = match ack {
+                DocAck::Field { address, value, .. } => {
+                    format!("set {address} = {}", ack_value_display(value))
+                }
+                DocAck::UnsetField { address, .. } => format!("unset {address}"),
+                DocAck::Slot { address, chars, .. } => {
+                    format!("set slot {address} ({chars} chars)")
+                }
+                DocAck::RemovedItem { address, .. } => format!("removed item {address}"),
+                DocAck::RetitledItem { address, title, .. } => {
+                    format!("retitled item {address} to {title:?} (anchor frozen)")
+                }
+                // Agent-text is the bare address the verbs printed before joining the
+                // envelope (byte-identical): the minted doc address (`create`/`author`) or
+                // the minted item address (`add-item`) — the next address an agent drives.
+                // A copy-in `create` appends the create-or-update note (M43 inc-7 T1) so
+                // the surface states the effect: the committed body was carried in, not
+                // minted fresh.
+                DocAck::Created {
+                    address,
+                    existed: true,
+                    ..
+                } => format!("{address} (already existed — copied in for update)"),
+                DocAck::Created { address, .. }
+                | DocAck::AddedItem { address, .. }
+                | DocAck::Authored { address, .. } => address.clone(),
+            };
+            // The edit doors state the same effect the create door states, once per task:
+            // this write's read copied the committed doc into the working area, so the
+            // task now owns (and at finalize re-promotes) it. Appended in ONE place, so a
+            // verb cannot join the seam and stay silent (M47 Inc 10 T3).
+            match ack.copied_in() {
+                true => format!("{line} {COPY_IN_NOTE}"),
+                false => line,
             }
-            DocAck::UnsetField { address, .. } => format!("unset {address}"),
-            DocAck::Slot { address, chars, .. } => format!("set slot {address} ({chars} chars)"),
-            DocAck::RemovedItem { address, .. } => format!("removed item {address}"),
-            DocAck::RetitledItem { address, title, .. } => {
-                format!("retitled item {address} to {title:?} (anchor frozen)")
-            }
-            // Agent-text is the bare address the verbs printed before joining the envelope
-            // (byte-identical): the minted doc address (`create`/`author`) or the minted
-            // item address (`add-item`) — the next address an agent drives. A copy-in
-            // `create` appends the create-or-update note (M43 inc-7 T1) so the surface
-            // states the effect: the committed body was carried in, not minted fresh.
-            DocAck::Created {
-                address,
-                existed: true,
-                ..
-            } => format!("{address} (already existed — copied in for update)"),
-            DocAck::Created { address, .. }
-            | DocAck::AddedItem { address, .. }
-            | DocAck::Authored { address, .. } => address.clone(),
-        },
+        }
+    }
+}
+
+/// The **first-touch copy-in note** the five edit verbs append to their agent/human ack
+/// — [`DocAck::Created`]'s `(already existed — copied in for update)` in the edit doors'
+/// mold, stating what the write's read did (`design/write-commands.md` →
+/// copy-on-first-touch: the committed body is copied into the working area, carries
+/// `edited-from-base` provenance, and re-promotes as an ordinary update at finalize).
+const COPY_IN_NOTE: &str = "(copied in for update — the committed doc is now this task's staged copy, \
+     re-promoted at finalize)";
+
+impl DocAck {
+    /// Whether this write's read **copied a base-committed doc into the task** (its first
+    /// touch). Only the five edit verbs ride that seam; `create` carries the same fact in
+    /// its own always-present `existed` discriminator, and `author` writes a whole doc
+    /// through the batch create path, so both answer `false` here and keep their own lines.
+    fn copied_in(&self) -> bool {
+        match self {
+            DocAck::Field { copied_in, .. }
+            | DocAck::UnsetField { copied_in, .. }
+            | DocAck::Slot { copied_in, .. }
+            | DocAck::RemovedItem { copied_in, .. }
+            | DocAck::RetitledItem { copied_in, .. }
+            | DocAck::AddedItem { copied_in, .. } => *copied_in,
+            DocAck::Created { .. } | DocAck::Authored { .. } => false,
+        }
     }
 }
 
@@ -3018,6 +3072,7 @@ mod tests {
                 },
                 chars: 12,
                 findings: vec![degenerate].into(),
+                copied_in: false,
             },
         );
     }

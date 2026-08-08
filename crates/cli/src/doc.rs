@@ -476,7 +476,7 @@ fn run_set_field(
         .with_context(|| format!("no field addressed by `{addr}`"))?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // The decomposed ack target (before `target` is consumed by the apply) + the written
     // value shaped through the same scalar/list grammar the read path re-parses it with,
@@ -510,6 +510,7 @@ fn run_set_field(
                 target: ack_target,
                 value: value_json,
                 findings,
+                copied_in,
             },
         )
     );
@@ -609,7 +610,7 @@ fn run_unset_field(
         .with_context(|| format!("no field addressed by `{addr}`"))?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     let ack_target = field_ack_target(&address, &target);
     let edited = apply_unset_target(&schema, &source, target, &uri)
@@ -630,6 +631,7 @@ fn run_unset_field(
                 address: addr.to_string(),
                 target: ack_target,
                 findings,
+                copied_in,
             },
         )
     );
@@ -1008,7 +1010,7 @@ fn run_set_slot(
     let prose = read_handoff(from_file)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // The decomposed ack target, before `target` is consumed by the apply.
     let ack_target = slot_ack_target(&address, &target);
@@ -1033,6 +1035,7 @@ fn run_set_slot(
                 target: ack_target,
                 chars: prose.chars().count(),
                 findings,
+                copied_in,
             },
         )
     );
@@ -1110,7 +1113,7 @@ fn run_add_item(
         add_item_target(&address).with_context(|| format!("no section addressed by `{addr}`"))?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // The decomposed ack target, before `target` is consumed by the apply: `section` +
     // the **minted** leaf-most item id (the new item — contract §2).
@@ -1143,6 +1146,7 @@ fn run_add_item(
                 address: ack_address,
                 target: ack_target,
                 findings,
+                copied_in,
             },
         )
     );
@@ -1442,7 +1446,7 @@ fn run_remove_item(
         remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // The decomposed ack target, before `target` is consumed by the removal match.
     let ack_target = item_ack_target(&address, &target);
@@ -1486,6 +1490,7 @@ fn run_remove_item(
                 address: addr.to_string(),
                 target: ack_target,
                 findings,
+                copied_in,
             },
         )
     );
@@ -1600,7 +1605,7 @@ fn run_retitle_item(
     }
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // **Item presence outranks the id-from refusals** (M47 — the write-verb ×
     // item-id-miss axis), which is why they run after the read rather than before it: an
@@ -1654,6 +1659,7 @@ fn run_retitle_item(
                 target: item_ack_target(&address, &target),
                 title: title.to_string(),
                 findings,
+                copied_in,
             },
         )
     );
@@ -3566,6 +3572,35 @@ fn item_ack_target(address: &Address, target: &RemoveItemTarget) -> render::AckT
     ack_target(address, Some(section), item, None)
 }
 
+/// The staged bytes an edit verb splices into, plus whether reading them **copied a
+/// base-committed doc into the task** — the copy-on-first-touch fact each of the five
+/// edit verbs states on its ack (M47 Inc 10 T3; `design/command-output-contract.md` §2 →
+/// the first-touch copy-in note). Returned by [`ActiveTask::read_or_copy_in`], the only
+/// production caller of `state::copy_in`, so no verb can reach the seam and lose the bit.
+struct EditBase {
+    source: String,
+    copied_in: bool,
+}
+
+impl EditBase {
+    /// The steady-state read: the instance was already staged (or is absent entirely, in
+    /// which case the read itself rejects) — nothing was copied in.
+    fn staged(source: String) -> Self {
+        EditBase {
+            source,
+            copied_in: false,
+        }
+    }
+
+    /// The first touch: the committed body was copied into the working area.
+    fn copied_in(source: String) -> Self {
+        EditBase {
+            source,
+            copied_in: true,
+        }
+    }
+}
+
 /// The active task: its working-area directory + the embedded pack to resolve
 /// schemas and the workflow gate against.
 struct ActiveTask {
@@ -3649,15 +3684,18 @@ impl ActiveTask {
     ///    first production caller of `copy_in`.
     /// 3. **Neither staged nor committed** — reject with the unchanged
     ///    "no staged instance" error (`read_staged`).
+    ///
+    /// The returned [`EditBase`] carries which of those cases ran: case 2 is the one the
+    /// verb's ack states (M47 Inc 10 T3), cases 1 and 3 copy nothing in.
     fn read_or_copy_in(
         &self,
         path: &Path,
         schema: &Schema,
         address: &Address,
         addr: &str,
-    ) -> Result<String, DocFailure> {
+    ) -> Result<EditBase, DocFailure> {
         if path.is_file() {
-            return Ok(read_staged(path, addr)?);
+            return Ok(EditBase::staged(read_staged(path, addr)?));
         }
         // The copy-in trigger predicate: the slug is absent from the area AND its
         // committed `<location>/<slug>.md` exists at base — resolved by the same
@@ -3675,10 +3713,10 @@ impl ActiveTask {
             // revise path resolves `task.<role>` (the `@`-slice and the `<<author:>>`
             // address) without a prior explicit `doc create` (M45 Inc 5 T2).
             self.bind_role_on_copy_in(address)?;
-            return Ok(read_staged(path, addr)?);
+            return Ok(EditBase::copied_in(read_staged(path, addr)?));
         }
         // Neither staged nor committed → the unchanged absent-instance reject.
-        Ok(read_staged(path, addr)?)
+        Ok(EditBase::staged(read_staged(path, addr)?))
     }
 
     /// Bind the workflow's object-form `allows-create` role for `address`'s doctype

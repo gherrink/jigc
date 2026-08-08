@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+#[path = "../copy_in_ack.rs"]
+mod copy_in_ack;
 #[path = "../doc_author.rs"]
 mod doc_author;
 #[path = "../doc_author_help.rs"]
