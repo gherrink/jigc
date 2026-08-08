@@ -77,8 +77,10 @@ fn create_long_about() -> String {
          The title the slug is minted from is supplied inline with `--title` — always \
          literally `--title`, whatever the doctype's `id-from` field is named; the CLI \
          mints + places per the schema. The `--title` is {} (`--slug` overrides the \
-         mint).",
+         mint).\n\n\
+         {}",
         engine::slug::mint_statement("the doc id"),
+        crate::cli::ARGUMENT_CONVENTION,
     )
 }
 

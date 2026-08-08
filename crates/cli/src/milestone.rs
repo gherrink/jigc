@@ -57,13 +57,31 @@ const DEFAULT_SUB_TASK_WORKFLOW: &str = "sub-task";
 /// milestone — `jigc milestone execute <id>`).
 const MILESTONE_EXECUTION_WORKFLOW: &str = "milestone-execution";
 
+/// The `jigc milestone create` long help. The work-unit half of the **argument
+/// convention** — the verb takes its title as a positional where `jigc doc create`
+/// takes a `--title` flag, and until M47 neither help said why, so an agent that had
+/// met one verb read the other as an inconsistency (rc.9 trial, N20). Both sites
+/// render the one [`crate::cli::ARGUMENT_CONVENTION`] statement, so the pair cannot
+/// drift into describing two rules.
+fn create_long_about() -> String {
+    format!(
+        "Mint a milestone work-unit (id = frozen slug from the title), opening its \
+         gitignored area with one shared base pinned at HEAD and an empty task list.\n\n\
+         {}",
+        crate::cli::ARGUMENT_CONVENTION,
+    )
+}
+
 /// The `jigc milestone <verb>` subcommand tree.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum MilestoneCommand {
     /// Mint a milestone work-unit (id = frozen slug from the title), opening its
     /// gitignored area with one shared base pinned at HEAD and an empty task list.
+    #[command(long_about = create_long_about())]
     Create {
-        /// The milestone title — slugged into the `milestone:<slug>` id.
+        /// The milestone title, taken as a positional — the work-unit form of the
+        /// argument convention (`design/write-commands.md` → The argument
+        /// convention). Slugged into the `milestone:<slug>` id.
         title: String,
     },
     /// Mint a sub-task under an existing milestone (pinned to the milestone's

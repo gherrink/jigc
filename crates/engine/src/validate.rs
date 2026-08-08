@@ -6306,7 +6306,7 @@ One sentence.
 
         // The shipped pack-default token list (`knobs.yaml`).
         let resolved = resolved_with_exempt(
-            "changelog#unreleased-changes milestone-record#tasks completion-record#findings",
+            "changelog#unreleased-changes changelog#releases milestone-record#tasks completion-record#findings",
         );
 
         let seen = RefCell::new(Vec::new());

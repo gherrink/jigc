@@ -28,6 +28,19 @@ use anyhow::{Context, Result};
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
 
+/// The **argument convention**, stated once and rendered into both `create` verbs'
+/// long help (`crate::doc::create_long_about`, `crate::milestone::create_long_about`).
+///
+/// The verb surface has taken its id-source in two spellings since M7 — `jigc doc
+/// create --title "…"` beside `jigc milestone create "…"` — and the rule behind the
+/// split was recorded in `design/write-commands.md` → The argument convention at M42
+/// but stated on **neither** help, so an agent that had met one verb read the other as
+/// an inconsistency and guessed (the rc.9 trial's N20). One `const` feeds both sites:
+/// the two surfaces cannot drift into describing two different rules.
+pub const ARGUMENT_CONVENTION: &str = "The argument convention: a doc verb takes its \
+     id-source as the `--title` flag, a work-unit verb takes its id-source as a \
+     positional (`design/write-commands.md` → The argument convention).";
+
 /// The `jigc` CLI — a context compiler for coding agents.
 #[derive(Debug, Parser, PartialEq, Eq)]
 #[command(name = "jigc", version, about)]
@@ -2689,6 +2702,76 @@ mod cli_parse {
             assert!(
                 help.contains(fact),
                 "doc show --help connects the anchor to the address id ({fact}): {help}"
+            );
+        }
+    }
+
+    /// (M47 inc-10 T9 — N20, half 1) Every id-source-taking **mint** verb's own
+    /// usage line names the form that verb takes its id-source in — the mechanical
+    /// half of the argument convention (`design/write-commands.md` → The argument
+    /// convention). The axis is the six mint verbs: the three doc verbs take a
+    /// `--title` flag, the three work-unit verbs take a positional. A positional
+    /// verb's usage must additionally carry **no** `--title`, so a later "helpful"
+    /// alias cannot make the two forms interchangeable behind the convention's back.
+    #[test]
+    fn every_mint_verb_names_its_own_id_source_form() {
+        let usage_of = |path: &[&str]| -> String {
+            let help = long_help(path);
+            help.lines()
+                .find(|l| l.starts_with("Usage:"))
+                .unwrap_or_else(|| panic!("`jigc {}` --help renders a usage line", path.join(" ")))
+                .to_string()
+        };
+
+        for path in [
+            &["doc", "create"][..],
+            &["doc", "add-item"][..],
+            &["doc", "retitle-item"][..],
+        ] {
+            let usage = usage_of(path);
+            assert!(
+                usage.contains("--title <TITLE>"),
+                "`jigc {}` is a doc verb — its usage names the `--title` flag: {usage}",
+                path.join(" "),
+            );
+        }
+
+        for (path, positional) in [
+            (&["start"][..], "[INTENT]"),
+            (&["milestone", "create"][..], "<TITLE>"),
+            (&["milestone", "add-task"][..], "<INTENT>"),
+        ] {
+            let usage = usage_of(path);
+            assert!(
+                usage.contains(positional),
+                "`jigc {}` is a work-unit verb — its usage names the `{positional}` \
+                 positional: {usage}",
+                path.join(" "),
+            );
+            assert!(
+                !usage.contains("--title"),
+                "`jigc {}` must not also offer `--title` — one form per verb is the \
+                 convention: {usage}",
+                path.join(" "),
+            );
+        }
+    }
+
+    /// (M47 inc-10 T9 — N20, half 2) The two `create` verbs **state** the convention
+    /// their forms differ under. `jigc milestone create <TITLE>` beside `jigc doc
+    /// create --title` reads as an inconsistency to an agent that has met only one of
+    /// them — the rule has been stated in `design/write-commands.md` since M42 and on
+    /// neither help, so the surface left the reader to guess (`surface-contract.md` →
+    /// law 2, nothing hides). Both now carry the one shared statement, so they cannot
+    /// drift into describing two rules.
+    #[test]
+    fn both_create_verbs_state_the_argument_convention() {
+        for path in [&["doc", "create"][..], &["milestone", "create"][..]] {
+            let help = long_help(path);
+            assert!(
+                help.contains(ARGUMENT_CONVENTION),
+                "`jigc {}` --help states the argument convention verbatim: {help}",
+                path.join(" "),
             );
         }
     }

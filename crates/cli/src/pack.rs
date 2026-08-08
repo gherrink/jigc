@@ -2282,15 +2282,20 @@ mod tests {
         # clean), so the store sweep + the adopt-time triage annotate it — advisory,
         # never a gate (validation.md → Hollow and surplus adoption). The sibling
         # `.exempt` string knob carries space-separated `doctype#section` tokens where
-        # zero items IS the steady state (the staging area, a valid just-created state,
-        # a clean audit) — a matching token suppresses the finding entirely.
+        # zero items IS the steady state (the staging area, a project before its first
+        # cut release, a valid just-created state, a clean audit) — a matching token
+        # suppresses the finding entirely. `changelog#releases` joined at M47: a young
+        # corpus (unreleased changes staged, no release cut yet) is CORRECT, not hollow,
+        # so the advisory fired on every greenfield project with no action behind it —
+        # and an advisory with no action behind it is what teaches a reader to ignore
+        # the channel (surface-contract.md → law 1).
         validation.schema-conformance.repeatable-populated.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: advisory
         validation.schema-conformance.repeatable-populated.exempt:
           type: string
-          default: "changelog#unreleased-changes milestone-record#tasks completion-record#findings"
+          default: "changelog#unreleased-changes changelog#releases milestone-record#tasks completion-record#findings"
 
         # --- schema-conformance.surplus-sections-absent (1, tunable; advisory — M40) ---
         # Surplus-adoption visibility: body sections map positionally onto H2s and the

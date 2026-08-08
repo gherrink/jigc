@@ -355,7 +355,7 @@ mod tests {
             ),
             (
                 "validation.schema-conformance.repeatable-populated.exempt",
-                "changelog#unreleased-changes milestone-record#tasks completion-record#findings",
+                "changelog#unreleased-changes changelog#releases milestone-record#tasks completion-record#findings",
             ),
             (
                 "validation.schema-conformance.repeatable-populated.severity",
@@ -807,8 +807,10 @@ mod tests {
         );
         assert_eq!(
             knobs.base_scalars().get(exempt).map(String::as_str),
-            Some("changelog#unreleased-changes milestone-record#tasks completion-record#findings"),
-            "the pack-default exempt token list is the pinned three steady-state sections",
+            Some(
+                "changelog#unreleased-changes changelog#releases milestone-record#tasks completion-record#findings"
+            ),
+            "the pack-default exempt token list is the pinned four steady-state sections",
         );
     }
 

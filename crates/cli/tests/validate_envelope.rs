@@ -1243,3 +1243,122 @@ fn a_workflow_ref_break_is_claimed_at_compose_never_at_the_boundary() {
          one criterion; got:\n{text}",
     );
 }
+
+// ───── The young-corpus exemption — `changelog#releases` (M47 inc-10 T9 · N18) ─────
+
+/// A **young** changelog: unreleased changes staged, **no release cut yet**. This is the
+/// correct steady state of every project between its first change and its first release
+/// — not a hollow adoption — and it is what the greenfield trial's corpus looked like
+/// when `schema-conformance.repeatable-populated` cried wolf over the empty `## Releases`.
+const YOUNG_CHANGELOG: &str = "\
+---
+schema-version: 2
+---
+
+# Changelog
+
+## Unreleased Changes
+
+### added  {#added}
+
+- The first change, staged and not yet cut.
+
+## Releases
+";
+
+/// A committed `spec` whose required repeatable `criteria` section holds **zero** items —
+/// the exemption's control. `spec#criteria` carries no exemption token, so the advisory
+/// must still fire here: the fix is one token, never a disarmed check.
+const HOLLOW_SPEC: &str = "\
+---
+schema-version: 1
+---
+
+# Rate limit
+
+## Goal
+
+Bound per-client request volume.
+
+## Context
+
+Downstream services enforced limits ad hoc.
+
+## Criteria
+";
+
+/// Commit `body` at `path` (relative to the repo root), creating parent dirs.
+fn commit_file(repo: &Path, path: &str, body: &str, message: &str) {
+    let target = repo.join(path);
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).expect("create parent dir");
+    }
+    fs::write(&target, body).expect("write the committed doc");
+    git(repo, &["add", path]);
+    git(repo, &["commit", "-q", "-m", message]);
+}
+
+/// Every `repeatable-populated` finding's `key.target` in the store envelope.
+fn hollow_targets(envelope: &serde_json::Value) -> Vec<String> {
+    envelope["findings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the store envelope carries a `findings` array; {envelope}"))
+        .iter()
+        .filter(|f| f["code"] == "schema-conformance.repeatable-populated")
+        .map(|f| {
+            f["key"]["target"]
+                .as_str()
+                .expect("a finding key carries a string target")
+                .to_string()
+        })
+        .collect()
+}
+
+/// **(N18) A young changelog is not a hollow one.** `## Releases` parses zero items until
+/// the project cuts its first release, so `repeatable-populated` fired on every greenfield
+/// corpus — an advisory with no action behind it, which is what teaches a reader to ignore
+/// the advisory channel. `changelog#releases` joins the pack-default
+/// `validation.schema-conformance.repeatable-populated.exempt` token list (the "zero items
+/// IS a valid state" rung), so the sweep stays silent about it.
+#[test]
+fn a_young_changelog_raises_no_hollow_repeatable_advisory() {
+    let repo = TempDir::new("young-changelog");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_file(
+        repo.path(),
+        "CHANGELOG.md",
+        YOUNG_CHANGELOG,
+        "seed a young changelog",
+    );
+
+    let envelope = store_envelope(repo.path(), home.path());
+    assert!(
+        hollow_targets(&envelope).is_empty(),
+        "a young changelog (unreleased changes staged, no release cut) is a correct state — \
+         the sweep must raise NO `repeatable-populated` advisory over it; json:\n{envelope}",
+    );
+}
+
+/// **(N18, the control)** The same sweep over a doctype the token list does **not** name:
+/// a committed spec with zero `criteria` still raises the advisory, at its own
+/// `<type>:<slug>#<section>` target. The exemption is one token wide, not a disarmed check.
+#[test]
+fn a_hollow_unexempted_repeatable_still_raises_the_advisory() {
+    let repo = TempDir::new("hollow-spec");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_file(
+        repo.path(),
+        "docs/specs/rate-limit.md",
+        HOLLOW_SPEC,
+        "seed a hollow spec",
+    );
+
+    let envelope = store_envelope(repo.path(), home.path());
+    assert_eq!(
+        hollow_targets(&envelope),
+        vec!["spec:rate-limit#criteria".to_string()],
+        "an un-exempted zero-item repeatable must still surface the advisory; json:\n{envelope}",
+    );
+}
