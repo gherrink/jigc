@@ -2992,3 +2992,81 @@ $ jigc task validate <next> --format json
 3. **A copy-on-write binds the role in every object-form create-gate pair, and the grounding renders.** The copy-on-write create-gate class, **swept over the registry's object-form `{type, as:}` pairs** (31 today, spanning both symptom shapes — the silent-empty `@`-slice and the slug-less `<<author:>>` address): for *every* pair, a second `doc create` over the already-staged same-identity copy acks `existed` rather than routing away with `create.serial-collision`. The headline symptom is then cured concretely — `form-vision` on the set-field-first (revise) path binds `task.vision`, so its `{{ @task.vision.grounded-in#findings }}` slice renders the grounding research's findings. Red on rc.8: a copy-on-write left the role unbound (the slice resolved empty) and the re-create rejected.
 4. **The natural pre-staged authoring order lands for the owned-location class.** The `owner-artifact` presence gate's members are registry-derived (every doctype declaring an `owned-location` field). The natural order an orchestrator follows — produce the audit artifact, `git add` it *before* minting the recording task, author the completion-record naming it, `finalize` — lands at exit 0: the pre-staged artifact is exempt from the M43 carryover gate (no `finalize.carried-staged`), the presence gate is satisfied (no `owner-artifact.present` finding), and the artifact + the promoted record commit together. Red on rc.8: the pre-mint `git add` tripped `finalize.carried-staged`, whose route said to un-stage, which then tripped the presence gate — a closed route cycle that never named `git add`.
 5. **The dangling baseline is history-gated across the corpus-state axis.** The dangling-baseline severity, **swept over the two poles of the corpus-state axis** distinguished purely by whether HEAD carries history for the path: a `git reset --hard` past a doc's creating commit (history-absent) downgrades to an **advisory** with a `jigc unmanage` prune route and does **not** block (`task validate` exit 0), while a `git rm` + commit (history-present) keeps the same finding **blocking** (exit 3) — a genuine deletion detected and routed, never silently downgraded. One fix, re-derived across the whole axis rather than the single reset-hard repro. Red on rc.8: a history-less dangling baseline blocked every subsequent task, wedging the corpus.
+
+## 47. The M47 rc.10 wave, end-to-end — every surface `jigc` prints about itself is true (M47)
+
+The M47 rc.10 wave answers the final unseeded trial's verified findings ([completions/artifacts/RC-alpha4/findings-verification.md](../completions/artifacts/RC-alpha4/findings-verification.md)) under the settled decomposition — increments 1–10 shipped each fix with its own axis suite; this flow is the **composite acceptance** tying them into six done-picture arms over the real binary (`crates/cli/tests/flow47_acceptance.rs`). **The claim it proves is one claim: every surface `jigc` prints about itself is true, and the ones that carry an agent from a cold start are true *first*.** M43 made the surface contract a law; M45 made a fix complete over its class's axis ([dev-workflow.md](../implementation/dev-workflow.md)); M47 pays both debts on the surfaces a blind agent actually meets — the frame a refused commit prints, the preview a gate promises, the route a reject hands over, the stream a driver binds, the fact a fence claims to have bought, and the paragraph an agent reads before it has run anything. Every arm **enumerates its axis** — from a code-side registry (the committing-door table, the clap tree, the loaded workflow registries, the constraint-token map) or from the class's defining case-set (the previewed row set itself, the write-verb × miss-shape matrix) — rather than pinning the repro the trial reported. The designs of record live elsewhere and are not restated here: the survivable frame and its per-door error identities in [finalize.md](finalize.md) → 6. Commit and [surface-contract.md](surface-contract.md) → The error-code namespace; the preview's scope in [validation.md](validation.md) and [finalize.md](finalize.md); the `write.*` route split in [validation.md](validation.md); stream discipline and the exit-code taxonomy in [command-output-contract.md](command-output-contract.md); the stated-at fence's named-fact tier in [surface-contract.md](surface-contract.md) → The stated-at fence; the preload tier in [assistant-adapter.md](assistant-adapter.md). All arms run in a real-`jigc setup` repo — the `[dev ▸ methodology]` pack-set a dogfooding project ships. Notation illustrative.
+
+**The declared proof split.** The arms below prove the wave's claim at the *done-picture* altitude; each fix's mechanism clauses stay with its own axis suite and are not re-proven here — the rejection frame's unwrapped `git commit` line, its state-truth sentence, and its shell-safe quoting over author-owned prose (`commit_rejected_axis.rs`), the owner-artifact cause-by-cause byte-identity across the two doors (`owner_artifact_cause_axis.rs`), the exhaustive 44-leaf-verb success sweep (`format_json_success_axis.rs`) and its fixture-free reject sibling (`machine_output.rs`), and the methodology-pack seam of the named-fact fence (`stated_at_fence.rs`).
+
+### The walk — six arms, one wave
+
+```text
+# ── Arm 1 · a rejecting hook leaves the repo recoverable at EVERY committing door. ──
+#     (the axis: the code-side COMMITTING_DOORS table — 9 doors, 9 distinct identities)
+$ jigc milestone create Cache-rework          # under a `pre-commit` that refuses everything
+> `git commit` was rejected (no commit was made): …
+> nothing of milestone:cache-rework survives. Fix the hook's complaint, then re-run
+>   `jigc milestone create Cache-rework`.
+# HEAD unmoved · the log's error_code is `milestone-create.commit-rejected`, this door's own
+$ jigc milestone create Cache-rework          # the printed re-run, lifted VERBATIM, hook gone
+> …                                           # exit 0 — the recovery claim is executed
+
+# ── Arm 2 · `task validate` previews the rows finalize enforces, and scopes the rest. ──
+$ jigc task validate close-the-milestone --format json
+> blocking · finalize.carried-staged @ plant.txt
+> blocking · owner-artifact.present  @ completion-record:…#meta/owner-artifact
+# each previewed row is then met at the commit door and peeled, until:
+$ jigc task finalize close-the-milestone      # exit 0 — the preview was the gate
+# …and the one cause it cannot forecast, live:
+$ jigc task validate <untracked-artifact-task>   → exit 0    # staging can still change it
+$ jigc task finalize <untracked-artifact-task>   → exit 3 · owner-artifact.present
+> what's-left: … previews part of the finalize gate: … the staged set, promotion and the
+>   commit surface at finalize                  # the composed line scopes, never promises
+
+# ── Arm 3 · every write miss routes somewhere that ANSWERS. ──
+#     (the axis: write-verb × miss-shape, the verb column bijected against the clap tree)
+$ jigc doc set-field changelog:changelog#releases/9-9-9/link --value … --format json
+> blocking · write.not-present
+>   route: `jigc doc show changelog:changelog#releases --task cut-a-release`
+$ jigc doc show changelog:changelog#releases --task cut-a-release   # the route, VERBATIM
+> ### 1.3.0  {#1-3-0} …                        # exit 0, the section's REAL item ids
+$ jigc doc add-item changelog:changelog#nope --title Z --format json
+> blocking · write.unknown-section
+>   route: `jigc doc schema changelog`          # a shape question, answered by the shape read
+
+# ── Arm 4 · `--format json` is one document, on one stream. ──
+#     (the axis: every leaf verb of the clap tree — 44 today)
+$ jigc <every leaf verb> --format json         # fixture-free: stdout empty, ONE doc on stderr
+$ jigc task diff tune-the-cache --format json  # in a corpus whose foreign hook speaks on stdout
+> { "op": "task-diff", … }                     # exactly one document on stdout …
+# … and the hook chatter git folded onto stderr carries no JSON at all
+
+# ── Arm 5 · a pack that drops a named fact is refused at LOAD. ──
+#     (the axis: the shipped tree's own (step × code × token) triples)
+# (a dev-pack copy whose `author-migration` prose lost the word "overwrites")
+$ JIGC_PACK_DIR=<mutated> jigc workflow single-task --preview
+> pack-load named-fact fence failed: step `author-migration` declares
+>   `create.singleton-copy-in` but its prose never says "overwrites" …
+
+# ── Arm 6 · the cold-start surfaces tell the truth. ──
+$ cat .jigc/AGENT.md
+> A store-scope `jigc validate` is report-only … unless the sweep itself could not be
+> trusted, as when a doc is stamped above this build's schema-version: then it exits
+> non-zero and its closing line says why.
+$ jigc validate                                 # over a corpus carrying an ahead stamp
+> blocking · schema-conformance.schema-version-ahead …   # exit 1 — the preload was true
+$ git config core.hooksPath my-hooks && jigc setup
+>   - pre-commit hook → my-hooks/pre-commit     # the dir git RESOLVED, not `.git/hooks`
+$ jigc doc create adr … → jigc doc author adr … → jigc doc create adr … → jigc doc author adr …
+> already existed — copied in for update        # all four exit 0; no surface says otherwise
+```
+
+### What it asserts (the M47-wave acceptance bar — flow47_acceptance.rs)
+
+1. **A rejecting `pre-commit` hook leaves the repo recoverable at every committing door.** The rejection class, **swept over the code-side `COMMITTING_DOORS` table** — the one list `ERROR_CODE_REGISTRY` is derived from, so a door added there joins the sweep by construction and a door with no fixture is a hard panic, never a skip. Per door: the run exits non-zero, `HEAD` is exactly where it was, the invocation log carries **that door's** identity (the nine pairwise distinct), and the re-run **lifted verbatim out of the frame the door itself printed** exits 0 once the hook is removed — recovery executed, not merely worded. Red on rc.9: eight of nine doors printed a bare error with no recoverability statement and no route, and both `milestone finalize` arms logged the *task* door's `finalize.commit-rejected`, a lying code on the surface built to stop the log lying.
+2. **`jigc task validate` previews the gate rows `finalize` enforces, and scopes what it does not.** The axis is not a hand list of gates: it is **the previewed blocking row set itself**, read off the emitted `--format json`. Each row is then met at the committing door — every finalize refusal's rows must be a subset of the preview's — and peeled one at a time until the finalize **lands**, with every previewed row proven to have blocked a real finalize. The scope statement is then proven true rather than read: the one `owned_location_violation` cause a later stage phase can change (an artifact present but untracked) leaves `task validate` at exit 0 while `task finalize` blocks at exit 3, and the composed `what's-left:` line names what is covered and where the rest is decided. Red on rc.9: `task validate` exited 0 over a plant `finalize` refuses at 3, beneath five surfaces promising it previewed the gate.
+3. **Every write miss routes somewhere that answers, and the answer runs.** The write-verb × miss-shape matrix, whose **verb column is bijected against the clap tree's `jigc doc` leaves** — every leaf either carries a row or is declared item-addressing-free, so a write verb added to the surface reddens this arm until it has cells. Per cell: the write blocks non-zero with its declared code (`write.not-present` for a corpus miss, `write.unknown-section` for a shape miss), the staged bytes are byte-identical across the reject, and the emitted `route` is **lifted out of the JSON finding and run verbatim** — exit 0, revealing what the agent was missing (the section's live item ids, or the doctype's declared sections). Red on rc.9: four cells called an item-id miss a shape question and routed at a schema read that names the shape and never the corpus's real ids.
+4. **Under `--format json` a driver reads exactly one document, off one stream.** The axis is **every leaf verb of the clap tree**, walked from `Cli::command()`: driven fixture-free, each verb leaves stdout empty with exactly one document on stderr, or takes the declared clap carve-out (a usage error clap formats before any jigc code reads `--format` — plain text, no envelope). The success half runs the composite walk's verbs inside the **stream-hostile** chatty-hook corpus, where git folds a foreign hook's stdout onto its own stderr: stdout still parses as exactly one document and stderr carries no JSON at all. Red on rc.9: `task diff` dropped `--format` on the floor and printed plain text at exit 0 — zero bytes of JSON on either stream.
+5. **A pack that drops a named contract fact is refused at pack-load.** The axis is the shipped tree's own **(declaring step × declared code × required token)** triples, enumerated from the pack's steps and the code-side `CONSTRAINT_REQUIRED_TOKENS` map — so a step that starts declaring a fenced code joins by construction. Each token is deleted in turn from a dev-pack copy and the composing run must block, naming step, code and token; the deletion is asserted to bite (so the shipped prose is proven to carry every fact the map claims) and the covered code set must equal the map's (so a tree that silently stopped declaring a code cannot pass by having nothing to sweep). Red on rc.9: the review deleted 590 characters of copy-in contract prose from a migrate step, kept its front-matter code, and every fence stayed green.
+6. **The cold-start surfaces tell the truth.** Three surfaces an agent meets before it has run anything, each checked against the binary rather than read as prose: `.jigc/AGENT.md`'s store-sweep clause carries the exit-flipping exception **and a corpus stamped above this build's schema-version makes `jigc validate` exit non-zero with that same phrase in its closing trailer**, so preload and binary cannot state opposite exits for one condition; `jigc setup` under `core.hooksPath` prints a hook path that **resolves, from the directory setup ran in, to the file the install wrote**; and `create` → `author` → `create` → `author` over one identity on one task all exit 0 with the second create acking the copy-in, while **no composed workflow of either pack** — enumerated from the loaded registries — and neither `doc` help surface claims a repeat is refused. Red on rc.9: the preload stated an unqualified exit-0 its own trailer contradicted, `setup` printed a `.git/hooks/pre-commit` literal naming no file, and fourteen surfaces stated a one-shot rule the binary has never enforced.

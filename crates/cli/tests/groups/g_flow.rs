@@ -23,6 +23,8 @@ mod exit_codes;
 mod flow28_marquee;
 #[path = "../flow33_acceptance.rs"]
 mod flow33_acceptance;
+#[path = "../flow47_acceptance.rs"]
+mod flow47_acceptance;
 #[path = "../flow9_milestone_join.rs"]
 mod flow9_milestone_join;
 #[path = "../flow9_seam.rs"]
