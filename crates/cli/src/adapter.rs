@@ -1090,15 +1090,24 @@ const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the 
 /// [`engine::validate::SCHEMA_VERSION_AHEAD_CODE`] break that **flips** the sweep's
 /// exit — the trial planted exactly that state and read the preload as a lie. The
 /// clause is now scoped to the real predicate
-/// ([`crate::render::validation_store_exit_flips`]): report-only *unless the sweep
-/// itself could not be trusted*, stated as the class rather than as a list, since
-/// four conditions flip it (an unreliable pack probe · an out-of-band rename · an
-/// unmigrated corpus · an above-current stamp) and enumerating them here is content
-/// that rots. The one the agent meets is **named**, in
-/// [`crate::render::AHEAD_STAMP_PHRASE`] — the trailer's own words — and
-/// [`bootstrap_names_the_ahead_exception`] asserts the agreement, so preload and
-/// output cannot say opposite things about the same exit again.
-const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless the sweep itself could not be trusted, as when a doc is stamped above this build's schema-version: then it exits non-zero and its closing line says why.";
+/// ([`crate::render::validation_store_exit_flips`]) — but **not** to a cause class
+/// (the M47 completion audit's correction): the shipped scoping said *unless the
+/// sweep itself could not be trusted*, which is true of three of the four
+/// conditions and **false** of `reconciliation.rename`, where the sweep worked and
+/// is reporting a real structural-identity change. A class that excludes a real
+/// member is the same law-1 lie one tier down. The clause now states only what
+/// holds over the whole axis — *a few conditions flip that exit*, unenumerated
+/// (four items in a preloaded paragraph is content that rots, the rule that retired
+/// the meanings table) — plus the two things that are true of every member: the
+/// **flipped exit** ([`crate::render::STORE_EXIT_FLIP_PHRASE`]) and the **closing
+/// line** that names which condition fired and why. The one the agent actually
+/// meets is still **named**, in [`crate::render::AHEAD_STAMP_PHRASE`] — the
+/// trailer's own words — with [`bootstrap_names_the_ahead_exception`] asserting
+/// that agreement and [`bootstrap_clause_covers_every_store_exit_flip`] holding the
+/// clause true over **every** [`crate::render::STORE_EXIT_FLIPS`] member, so
+/// neither can preload and output say opposite things about one exit, nor can the
+/// clause quietly shrink to the member its author had in mind.
+const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless one of a few conditions flips that exit, such as a doc stamped above this build's schema-version: then it exits non-zero and its closing line names the condition and why.";
 
 /// The machine-output contract stated as the fifth paragraph (M44 Inc 4,
 /// change 1 — RC rc.7 discoverability rerun, 2026-07-20): the preload tier now
@@ -1457,7 +1466,7 @@ mod tests {
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
-        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless the sweep itself could not be trusted, as when a doc is stamped above this build's schema-version: then it exits non-zero and its closing line says why.
+        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless one of a few conditions flips that exit, such as a doc stamped above this build's schema-version: then it exits non-zero and its closing line names the condition and why.
 
         Every verb speaks `--format json` on a successful or validation outcome: pass it and parse the structured result — do not scrape the human-readable lines (a usage error rejected before parsing still prints plain text, not JSON). The composed producers — `jigc start`, `jigc workflow`, `jigc migrate` — return the minted task id at `.task`; read it there, never from the human line.
         "###);
@@ -1495,11 +1504,12 @@ mod tests {
         assert!(
             body.contains("store-scope `jigc validate` is report-only")
                 && body.contains("exits 0 even when it surfaces findings")
-                && body.contains("unless the sweep itself could not be trusted"),
+                && body.contains("unless one of a few conditions flips that exit"),
             "the bootstrap body carries the store-scope-blind clause the qualifier rests \
-             on (M45 Decision 6) — with the exit-flipping exception it is scoped by \
-             (M47 T1, asserted in full by `bootstrap_names_the_ahead_exception`); \
-             got:\n{body}",
+             on (M45 Decision 6) — with the exit-flipping exceptions it is scoped by \
+             (M47 T1, corrected by the M47 completion audit to a class that covers the \
+             whole axis; asserted in full by `bootstrap_names_the_ahead_exception` and \
+             `bootstrap_clause_covers_every_store_exit_flip`); got:\n{body}",
         );
         // (M44 Inc 4, change 1) The machine-output paragraph: every verb speaks
         // `--format json` on a successful/validation outcome (the clap-error
@@ -1587,6 +1597,93 @@ mod tests {
             body.contains("store-scope `jigc validate` is report-only"),
             "the report-only stance the exception qualifies is still stated; got:\n{body}",
         );
+    }
+
+    /// **The axis fence over the exit-flip class** (M47 completion audit): the preload's
+    /// report-only clause is held true against **every** condition that flips the store
+    /// sweep's exit ([`crate::render::STORE_EXIT_FLIPS`]), not against the one member its
+    /// author had in mind.
+    ///
+    /// It shipped narrowed — *"unless the sweep itself could not be trusted"* — which is
+    /// **false** of `reconciliation.rename`: that sweep worked and is reporting a real
+    /// structural-identity change it found (its own trailer says exactly that). One member,
+    /// one fence ([`bootstrap_names_the_ahead_exception`], which checks the ahead stamp), one
+    /// clause that excluded a real member — the incomplete-fix shape the complete-fix
+    /// contract exists to prevent (`implementation/pinning.md`). So this fence iterates the
+    /// axis, derived from the same table [`crate::render::validation_store_exit_flips`]
+    /// decides the exit with, and a fifth condition reddens it rather than silently
+    /// falsifying the preload again:
+    ///
+    /// - every member really flips the exit through the shared predicate, and its **really
+    ///   rendered** closing line delivers what the preload promises — the flipped exit in
+    ///   [`crate::render::STORE_EXIT_FLIP_PHRASE`] plus the words naming which condition
+    ///   fired;
+    /// - the preload states that promise in those same words;
+    /// - and while **any** member is a sweep that worked, the preload may not characterize
+    ///   the class as an untrustworthy sweep — the narrowing that shipped.
+    #[test]
+    fn bootstrap_clause_covers_every_store_exit_flip() {
+        use engine::result::ValidationReport;
+
+        let body = bootstrap_file();
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+        let flip_phrase = crate::render::STORE_EXIT_FLIP_PHRASE;
+
+        for flip in crate::render::STORE_EXIT_FLIPS {
+            let id = flip.id;
+            let report = ValidationReport::new(vec![(flip.witness)()], &resolved);
+            assert!(
+                crate::render::validation_store_exit_flips(&report),
+                "{id}: this axis member must flip the store sweep's exit through the shared \
+                 predicate — otherwise the table and the predicate disagree",
+            );
+            let rendered = crate::render::validation_store(
+                crate::cli::Format::Agent,
+                &report,
+                &std::collections::BTreeSet::new(),
+            );
+            assert!(
+                rendered.contains(flip_phrase),
+                "{id}: the rendered sweep must state the flipped exit in the words the \
+                 preload promises ({flip_phrase:?}); got:\n{rendered}",
+            );
+            assert!(
+                rendered.contains(flip.cause),
+                "{id}: its closing line must name which condition fired ({:?}) — the \
+                 preload sends the agent there for the reason; got:\n{rendered}",
+                flip.cause,
+            );
+        }
+
+        assert!(
+            body.contains(flip_phrase) && body.contains("closing line"),
+            "the preload must state the promise the whole axis delivers — the flipped exit \
+             ({flip_phrase:?}) and the closing line that names the condition; got:\n{body}",
+        );
+
+        // The narrowing guard. `sweep_untrustworthy` is declared per member beside its
+        // matcher, so a new condition answers the question to compile: while any member is a
+        // sweep that *worked* (today `reconciliation.rename`), a clause stating the class as
+        // an untrustworthy sweep excludes it — a law-1 lie on the tier an agent trusts
+        // without re-checking.
+        if let Some(trustworthy) = crate::render::STORE_EXIT_FLIPS
+            .iter()
+            .find(|flip| !flip.sweep_untrustworthy)
+        {
+            for claim in [
+                "could not be trusted",
+                "cannot be trusted",
+                "not trustworthy",
+            ] {
+                assert!(
+                    !body.contains(claim),
+                    "the exit-flip class must not be stated as {claim:?}: `{}` is a sweep \
+                     that worked and is reporting a real event, so the class is wider than \
+                     an untrustworthy sweep; got:\n{body}",
+                    trustworthy.id,
+                );
+            }
+        }
     }
 
     /// `--format` is a **global** clap arg — the structural half of the fact the

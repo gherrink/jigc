@@ -1644,10 +1644,12 @@ fn the_cold_start_surfaces_tell_the_truth() {
         "the preload must still state the report-only stance; got:\n{agent_md}",
     );
     assert!(
-        agent_md.contains("unless the sweep itself could not be trusted")
+        agent_md.contains("unless one of a few conditions flips that exit")
             && agent_md.contains(AHEAD_PHRASE),
-        "the preload must scope the report-only stance by the exit-flipping exception; \
-         got:\n{agent_md}",
+        "the preload must scope the report-only stance by the exit-flipping conditions — \
+         as the class the whole axis is in, not as a cause true of only some members (the \
+         M47 completion audit: `reconciliation.rename` is a sweep that worked, so \
+         \"the sweep itself could not be trusted\" excluded a real member); got:\n{agent_md}",
     );
 
     let decisions = corpus.repo().join("docs").join("decisions");

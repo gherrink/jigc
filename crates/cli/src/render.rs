@@ -15,7 +15,7 @@ use crate::milestone::MilestoneCreated;
 use crate::setup::{InstallCommit, SetupSummary, UninstallSummary};
 use crate::start::Composition;
 use crate::task::TaskListRow;
-use engine::finding::{Finding, Findings, Severity};
+use engine::finding::{Finding, Findings, Route, Severity};
 use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
 use engine::result::{NextStep, Orientation, OrientationView, ResolutionTree, ValidationReport};
@@ -510,33 +510,14 @@ pub fn validation_store(
     report: &ValidationReport,
     unbaselined: &BTreeSet<String>,
 ) -> String {
-    // The three exit-non-zero exceptions (`validation.md` → Exit semantics): a
-    // `pack-probe-integrity.*` meta-finding (the probe could not be trusted, so the sweep
-    // cannot claim a result), a `reconciliation.rename` finding (an out-of-band `git mv`,
-    // a structural-identity event this commit introduced), and — M42 — a version-currency
-    // break (the corpus is below its manifest version, so *every other family* adjudicated
-    // docs against a schema they were never written to: the same untrustworthy-sweep
-    // criterion as the crashed probe; since 2026-07-24 the pair with its above-current
-    // sibling — a future/foreign stamp this build has no schema for). Any of these flips
-    // `report_only` false; the trailer distinguishes the wordings. The exit decision is the shared
-    // [`validation_store_exit_flips`] both this renderer's `report_only` field and
-    // `run_validate_store`'s exit code key on, so all three stay truthful in lockstep.
-    let probe_unreliable = report
-        .findings
-        .iter()
-        .any(|f| f.probe == "pack-probe-integrity");
-    let oob_rename = report
-        .findings
-        .iter()
-        .any(|f| f.code == "reconciliation.rename");
-    let unmigrated_corpus = report
-        .findings
-        .iter()
-        .any(|f| f.code == engine::validate::SCHEMA_VERSION_CURRENT_CODE);
-    let ahead_corpus = report
-        .findings
-        .iter()
-        .any(|f| f.code == engine::validate::SCHEMA_VERSION_AHEAD_CODE);
+    // The exit-non-zero exceptions (`validation.md` → Exit semantics) live in **one**
+    // enumerable table, [`STORE_EXIT_FLIPS`] — the axis, not a set of ad-hoc booleans. The
+    // first member the report matches (table order **is** precedence) both flips
+    // `report_only` false and supplies the closing line; absent a match the report-only
+    // branch renders. The exit decision is the shared [`validation_store_exit_flips`] that
+    // this renderer's `report_only` field, the trailer, and `run_validate_store`'s exit code
+    // all key on, so they stay truthful in lockstep.
+    let flip = first_store_exit_flip(report);
     match format {
         Format::Json => {
             let mut value = serde_json::to_value(report).expect("validation report serializes");
@@ -547,7 +528,7 @@ pub fn validation_store(
                 );
                 object.insert(
                     "report_only".to_string(),
-                    serde_json::Value::Bool(!validation_store_exit_flips(report)),
+                    serde_json::Value::Bool(flip.is_none()),
                 );
                 // Sorted + de-duplicated by construction: a `BTreeSet` over the probe names of
                 // the *blocking* findings only. Severity is the engine's resolved (post-cascade)
@@ -571,14 +552,7 @@ pub fn validation_store(
             json(&value)
         }
         Format::Agent | Format::Human => {
-            let trailer = store_trailer(
-                report,
-                probe_unreliable,
-                oob_rename,
-                unmigrated_corpus,
-                ahead_corpus,
-                unbaselined,
-            );
+            let trailer = store_trailer(report, flip, unbaselined);
             validation_scoped(
                 format,
                 report,
@@ -590,38 +564,155 @@ pub fn validation_store(
     }
 }
 
-/// Whether the store-scope sweep's exit flips non-zero — the **three exit-flipping
-/// exceptions** to the report-only stance (`validation.md` → Exit semantics): a
-/// `pack-probe-integrity.*` meta-finding (the probe could not be trusted), a
-/// `reconciliation.rename` finding (an out-of-band `git mv` — a structural-identity event
-/// this commit introduced), or (M42) an [`engine::validate::SCHEMA_VERSION_CURRENT_CODE`]
-/// break — a **managed** committed instance below its doctype's manifest version, i.e. an
-/// **unmigrated corpus**, where every other family adjudicated docs against a schema they
-/// were never written to. The third exception spans a **code pair** since 2026-07-24: its
-/// above-current sibling [`engine::validate::SCHEMA_VERSION_AHEAD_CODE`] (a future/foreign
-/// stamp — the doc was written to a schema this binary does not know) flips the exit for the
-/// same reason through the same predicate. All of these meet the class's own recorded
-/// criterion: *the sweep
-/// could not produce a trustworthy result*. The report-only rule for **content** findings is
-/// untouched — an invalid enum, a malformed date, a dangling ref keep their codes and their
-/// exit 0.
+/// One **exit-flipping condition** of the store-scope sweep — a member of the axis
+/// `validation.md` → Exit semantics owns, made *enumerable* (M47 completion audit) so every
+/// surface that speaks about the class can be checked against **all** of it, not against the
+/// member its author had in mind. The axis-iterating form of the complete-fix contract
+/// (`implementation/pinning.md`): the preload tier's report-only clause had been narrowed to
+/// "the sweep itself could not be trusted", which is false of [`reconciliation.rename`], and
+/// the fence that was supposed to hold the clause honest checked one member.
 ///
-/// **The "managed arm only" condition needs no extra test here**: `SCHEMA_VERSION_CURRENT_CODE`
-/// is emitted *only* on the managed arm of the fifth family's discriminator (a foreign squatter
-/// at a placement home takes the advisory `schema-conformance.unadopted-instance` instead), so
-/// keying on the code **is** the condition — a stock brownfield repo that has only run `jigc
-/// setup` stays exit-0 (`crates/cli/tests/managed_vs_foreign.rs`, the foreign arm).
+/// Each member carries what a fence needs to drive it end-to-end: a matcher, a **witness**
+/// finding, the closing line it renders, the words that line names the condition with, and
+/// whether the flip means the sweep's own result cannot be trusted. A fifth member cannot
+/// join without supplying all five (the compiler asks), so it joins the fences that iterate
+/// this table in the same motion.
 ///
-/// The single source of truth shared by the dispatcher's exit code ([`crate::cli`]'s
-/// `run_validate_store`), the JSON `report_only` field, and the human/agent trailer, so all
-/// three stay truthful in lockstep.
+/// Four of the five members exist **for** the fences (the renderer needs only `matches` and
+/// `trailer`), so they read as dead code in a non-test build — declared so rather than
+/// dropped: they are the axis's testable surface.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct StoreExitFlip {
+    /// Stable id — fence diagnostics only, never rendered to a surface.
+    pub(crate) id: &'static str,
+    /// Whether this finding **is** the condition.
+    matches: fn(&Finding) -> bool,
+    /// A finding that is this condition — what an axis-iterating fence feeds the real
+    /// renderer, so no member is testable only in principle.
+    pub(crate) witness: fn() -> Finding,
+    /// The closing line this condition renders instead of the report-only sentence.
+    pub(crate) trailer: fn() -> String,
+    /// The words that closing line names **which** condition fired with — the checkable half
+    /// of the preload's promise that the closing line says why.
+    pub(crate) cause: &'static str,
+    /// Whether the flip means *the sweep's own result cannot be trusted*. **False** for a
+    /// condition where the sweep worked and is reporting a real event it found
+    /// (`reconciliation.rename`) — which is exactly why no surface may state the class as an
+    /// untrustworthy sweep while such a member is on the axis.
+    pub(crate) sweep_untrustworthy: bool,
+}
+
+/// The exit-flipping conditions of the store sweep, **in precedence order** — the single
+/// source [`validation_store_exit_flips`], the JSON `report_only` field, [`store_trailer`],
+/// and [`crate::cli`]'s `run_validate_store` exit code all key on, so they stay truthful in
+/// lockstep, and the one place a fence derives the axis from.
+///
+/// Precedence: probe-unreliability dominates (it taints the whole result); the unmigrated
+/// corpus is next (it taints every *content* verdict below it, and clearing it first is right
+/// even when an ahead doc coexists). The report-only rule for **content** findings is
+/// untouched by any of them — an invalid enum, a malformed date, a dangling ref keep their
+/// codes and their exit 0.
+///
+/// **The "managed arm only" condition needs no extra member here**:
+/// `SCHEMA_VERSION_CURRENT_CODE` is emitted *only* on the managed arm of the fifth family's
+/// discriminator (a foreign squatter at a placement home takes the advisory
+/// `schema-conformance.unadopted-instance` instead), so keying on the code **is** the
+/// condition — a stock brownfield repo that has only run `jigc setup` stays exit-0
+/// (`crates/cli/tests/managed_vs_foreign.rs`, the foreign arm).
+pub(crate) const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
+    // A `pack-probe-integrity.*` meta-finding: the probe crashed, so the sweep cannot claim
+    // a result at all.
+    StoreExitFlip {
+        id: "probe-unreliable",
+        matches: |f| f.probe == "pack-probe-integrity",
+        witness: || {
+            Finding::graded(
+                Severity::Blocking,
+                "pack-probe-integrity.probe-failed",
+                "the probe exited non-zero without a report",
+                None,
+                Some(Route::human("repair the probe, then re-validate")),
+            )
+        },
+        trailer: probe_unreliable_trailer,
+        cause: "pack-probe-integrity finding(s) present",
+        sweep_untrustworthy: true,
+    },
+    // An out-of-band `git mv` (M35): a structural-identity change this commit introduced.
+    // The sweep worked — it is reporting a real event — so this member is **not** an
+    // untrustworthy sweep, and the class may not be stated as one.
+    StoreExitFlip {
+        id: "oob-rename",
+        matches: |f| f.code == "reconciliation.rename",
+        witness: || {
+            Finding::graded(
+                Severity::Blocking,
+                "reconciliation.rename",
+                "`decisions/use-sqlite.md` was renamed out of band",
+                None,
+                Some(Route::human(
+                    "revert the `git mv` or adopt it via `jigc rename`",
+                )),
+            )
+        },
+        trailer: oob_rename_trailer,
+        cause: "out-of-band rename detected",
+        sweep_untrustworthy: false,
+    },
+    // (M42) A version-currency break — a **managed** committed instance below its doctype's
+    // manifest version, i.e. an unmigrated corpus, where every other family adjudicated docs
+    // against a schema they were never written to.
+    StoreExitFlip {
+        id: "unmigrated-corpus",
+        matches: |f| f.code == engine::validate::SCHEMA_VERSION_CURRENT_CODE,
+        witness: || {
+            Finding::graded(
+                Severity::Blocking,
+                engine::validate::SCHEMA_VERSION_CURRENT_CODE,
+                "`CHANGELOG.md` is stamped schema-version 1, below the manifest's 2",
+                None,
+                Some(Route::human("run `jigc migrate-corpus`, then re-validate")),
+            )
+        },
+        trailer: unmigrated_corpus_trailer,
+        cause: "the committed corpus is below its schema-version",
+        sweep_untrustworthy: true,
+    },
+    // (2026-07-24) Its above-current sibling: a future/foreign stamp this build has no schema
+    // for, so the sweep could not adjudicate the doc.
+    StoreExitFlip {
+        id: "ahead-corpus",
+        matches: |f| f.code == engine::validate::SCHEMA_VERSION_AHEAD_CODE,
+        witness: || {
+            Finding::graded(
+                Severity::Blocking,
+                engine::validate::SCHEMA_VERSION_AHEAD_CODE,
+                "`CHANGELOG.md` is stamped schema-version 3, above this build's 2",
+                None,
+                Some(Route::human(
+                    "upgrade jigc, or restore the stamp from git history",
+                )),
+            )
+        },
+        trailer: ahead_corpus_trailer,
+        cause: AHEAD_STAMP_PHRASE,
+        sweep_untrustworthy: true,
+    },
+];
+
+/// The first [`STORE_EXIT_FLIPS`] member this report matches — table order **is** precedence
+/// — or `None` when the sweep stays report-only.
+pub(crate) fn first_store_exit_flip(report: &ValidationReport) -> Option<&'static StoreExitFlip> {
+    STORE_EXIT_FLIPS
+        .iter()
+        .find(|flip| report.findings.iter().any(|f| (flip.matches)(f)))
+}
+
+/// Whether the store-scope sweep's exit flips non-zero — the report-only stance's exceptions
+/// (`validation.md` → Exit semantics), asked of the [`STORE_EXIT_FLIPS`] axis rather than of a
+/// hand-repeated disjunction, so the predicate and every fence over it read the same set.
 pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
-    report.findings.iter().any(|f| {
-        f.probe == "pack-probe-integrity"
-            || f.code == "reconciliation.rename"
-            || f.code == engine::validate::SCHEMA_VERSION_CURRENT_CODE
-            || f.code == engine::validate::SCHEMA_VERSION_AHEAD_CODE
-    })
+    first_store_exit_flip(report).is_some()
 }
 
 /// The **store-scope-only** check ids — the findings that gate **nowhere**, and which the
@@ -795,35 +886,62 @@ fn gates_at_compose(finding: &Finding) -> bool {
 /// the trailer said "exits non-zero".
 pub(crate) const AHEAD_STAMP_PHRASE: &str = "stamped above this build's schema-version";
 
+/// The words **every** [`STORE_EXIT_FLIPS`] member's closing line states the flipped exit in
+/// (M47 completion audit) — the one observable the whole axis shares, and therefore the only
+/// honest thing a preloaded surface can promise about the class without enumerating it: *then
+/// it `exits non-zero` and its closing line says which condition and why*. Interpolated into
+/// each trailer below, so a reworded trailer cannot silently stop delivering the promise.
+pub(crate) const STORE_EXIT_FLIP_PHRASE: &str = "exits non-zero";
+
 /// The store trailer's above-current-stamp sentence (2026-07-24), composed from
 /// [`AHEAD_STAMP_PHRASE`] so the condition has one source and the preload tier can be
 /// asserted to agree with it. Byte-identical to the literal it replaced.
 pub(crate) fn ahead_corpus_trailer() -> String {
     format!(
         "a committed doc is {AHEAD_STAMP_PHRASE} — it was written to a schema this jigc \
-         build does not know, so the sweep could not adjudicate it and exits non-zero; \
+         build does not know, so the sweep could not adjudicate it and {STORE_EXIT_FLIP_PHRASE}; \
          upgrade jigc, or restore the stamp from git history, then re-validate.\n"
     )
 }
 
+/// The store trailer for a crashed pack probe: the sweep could not complete, so it claims no
+/// result. Byte-identical to the literal it replaced.
+pub(crate) fn probe_unreliable_trailer() -> String {
+    format!(
+        "pack-probe-integrity finding(s) present — the sweep could not complete and \
+         {STORE_EXIT_FLIP_PHRASE}; the store result is not trustworthy.\n"
+    )
+}
+
+/// The store trailer for an out-of-band rename (M35). Note what it says: the sweep **worked**
+/// and is reporting a real structural-identity change — the axis member that is *not* an
+/// untrustworthy sweep. Byte-identical to the literal it replaced.
+pub(crate) fn oob_rename_trailer() -> String {
+    format!(
+        "out-of-band rename detected — a structural-identity change this commit introduced; \
+         the sweep {STORE_EXIT_FLIP_PHRASE} (revert the `git mv` or adopt it via \
+         `jigc rename`).\n"
+    )
+}
+
+/// The store trailer for a version-currency break (M42): the corpus is unmigrated, so every
+/// other finding above was adjudicated against the wrong schema. Names `jigc migrate-corpus`,
+/// the verb that clears it. Byte-identical to the literal it replaced.
+pub(crate) fn unmigrated_corpus_trailer() -> String {
+    format!(
+        "the committed corpus is below its schema-version — every other finding above was \
+         adjudicated against a schema those docs were never written to, so the sweep \
+         {STORE_EXIT_FLIP_PHRASE}; run `jigc migrate-corpus`, then re-validate.\n"
+    )
+}
+
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
-/// exit-0-with-`blocking`-findings is unambiguous. Five cases, matching the three
-/// exit-flipping exceptions (`validation.md` → Exit semantics; the third is a code *pair*
-/// since 2026-07-24): for the
-/// `pack-probe-integrity.*` exception (`probe_unreliable`) it says the sweep could not
-/// complete and exits non-zero; for a store-scope `reconciliation.rename` (`oob_rename`,
-/// M35) it says an out-of-band rename was detected and the sweep exits non-zero; for a
-/// version-currency break (`unmigrated_corpus`, M42) it says the corpus is unmigrated — so
-/// every other finding in the report was adjudicated against the wrong schema — and names
-/// `jigc migrate-corpus`, the verb that clears it; for its above-current sibling
-/// (`ahead_corpus`, 2026-07-24) it says a doc was written to a schema this build does not
-/// know and names the human repairs (upgrade jigc / restore the stamp — **never**
-/// `jigc migrate-corpus`, which cannot fix a future stamp); otherwise the content findings
-/// are **report-only** at store scope (exit 0) and it names where they actually gate.
-/// Probe-unreliability dominates (it taints the whole result); the unmigrated corpus is next
-/// (it taints every *content* verdict below it, and clearing it first is right even when an
-/// ahead doc coexists). Ends with a newline so the caller appends
-/// the routing footer on its own line.
+/// exit-0-with-`blocking`-findings is unambiguous. Two shapes: an **exit-flipping**
+/// condition renders its own closing line — the [`STORE_EXIT_FLIPS`] member `flip` names,
+/// which owns both the precedence and the wording (`validation.md` → Exit semantics) —
+/// otherwise the content findings are **report-only** at store scope (exit 0) and the line
+/// names where they actually gate. Ends with a newline so the caller appends the routing
+/// footer on its own line.
 ///
 /// **The report-only branch claims a gate only where one exists (M42).** Its blanket sentence
 /// — *"these gate at `jigc task validate` / `jigc task finalize`"* — is **false** for every
@@ -853,29 +971,11 @@ pub(crate) fn ahead_corpus_trailer() -> String {
 /// door list).
 fn store_trailer(
     report: &ValidationReport,
-    probe_unreliable: bool,
-    oob_rename: bool,
-    unmigrated_corpus: bool,
-    ahead_corpus: bool,
+    flip: Option<&'static StoreExitFlip>,
     unbaselined: &BTreeSet<String>,
 ) -> String {
-    if probe_unreliable {
-        "pack-probe-integrity finding(s) present — the sweep could not complete and exits \
-         non-zero; the store result is not trustworthy.\n"
-            .to_string()
-    } else if oob_rename {
-        "out-of-band rename detected — a structural-identity change this commit introduced; \
-         the sweep exits non-zero (revert the `git mv` or adopt it via `jigc rename`).\n"
-            .to_string()
-    } else if unmigrated_corpus {
-        "the committed corpus is below its schema-version — every other finding above was \
-         adjudicated against a schema those docs were never written to, so the sweep exits \
-         non-zero; run `jigc migrate-corpus`, then re-validate.\n"
-            .to_string()
-    } else if ahead_corpus {
-        // The above-current sibling (2026-07-24): honest and Human-shaped — no verb fixes
-        // a future stamp, so the trailer must not name `jigc migrate-corpus` as the repair.
-        ahead_corpus_trailer()
+    if let Some(flip) = flip {
+        (flip.trailer)()
     } else {
         let n = report.findings.len();
         let gating = report
