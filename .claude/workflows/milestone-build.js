@@ -373,10 +373,33 @@ function e2ePrompt() {
 // harness surfaces the underlying error separately in its failures channel, so visibility
 // is not lost. (Bonus: on a later RESUME, attempt 0 replays the cached null but the live
 // retry below then re-runs it — so a transient-failed call self-heals on resume.)
+// RATE-LIMIT CIRCUIT BREAKER. A transient 529 is one agent stumbling; an account-level
+// usage limit (429) kills EVERY agent at once — on 2026-08-09 twelve died inside a
+// six-second window. The retry logic above is exactly wrong for that case: it answers
+// each death by spawning MORE agents into the same wall, so one limit burns three
+// attempts per in-flight call and the run thrashes instead of stopping.
+//
+// Detection is structural, not temporal — the script has no clock (`Date.now()` throws;
+// it would break resume). The discriminator is WHICH calls fail: a genuine blocker fails
+// ONE agent repeatedly (same label, retried in place), while a usage limit fails whatever
+// is spawned next, whoever it is. So: once any call has exhausted its retries, the next
+// exhaustion of a DIFFERENT call trips the breaker, and from then on `agentR` returns null
+// WITHOUT SPAWNING. The run unwinds through the halt paths it already has, prior committed
+// work standing, instead of spending the rest of the limit window failing.
+//
+// Deliberately NOT done here: waiting out the window, or lowering concurrency. A limit is
+// the human's to wait out, and the recovery is cheap — resume with `skipThrough`. Losing
+// one run is survivable; thrashing through a limit window is just waste.
 const TRANSIENT_RETRIES = 2
+let exhaustedLabels = []
+let breakerTripped = false
 async function agentR(prompt, opts) {
   let lastErr
   const lbl = (opts && opts.label) ? opts.label : 'agent'
+  if (breakerTripped) {
+    log('rate-limit breaker is tripped — NOT spawning ' + lbl + '; unwinding the run')
+    return null
+  }
   for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
     // attempt 0 uses the prompt verbatim, so its (prompt, opts) stays cache-key-identical
     // on resume; only live retries carry the reset note (and are inherently uncached).
@@ -403,6 +426,17 @@ async function agentR(prompt, opts) {
   // structured reason and prior committed work stands — instead of throwing (which would
   // crash the run and forfeit every committed increment).
   log('exhausted ' + (TRANSIENT_RETRIES + 1) + ' attempts on ' + lbl + ' — halting cleanly (' + ((lastErr && lastErr.message) || lastErr) + ')')
+  // Trip the breaker on the SECOND distinct call to exhaust: one label failing is a
+  // blocker, two different ones failing back-to-back is the environment.
+  if (!exhaustedLabels.includes(lbl)) exhaustedLabels.push(lbl)
+  if (exhaustedLabels.length >= 2 && !breakerTripped) {
+    breakerTripped = true
+    log('TWO different agents exhausted their retries (' + exhaustedLabels.join(', ') + ') — '
+      + 'this is the shape of an account-level rate limit, not a code fault. Tripping the breaker: '
+      + 'no further agents will be spawned. Confirm by grepping the run transcript dir for '
+      + '\'"error":"rate_limit"\' / apiErrorStatus 429; if so, wait for the window and resume '
+      + 'with args: { milestone, base, skipThrough: <highest built+validated increment> }.')
+  }
   return null
 }
 
@@ -479,22 +513,7 @@ for (const inc of increments) {
     // not a bare boolean — an evidence-less green is treated as not-green (M23: inc-1
     // landed a red gate because the validator claimed green off a scoped/lacon-trimmed run).
     const gateProven = v && v.gate_green && typeof v.gate_evidence === 'string' && /test result:/.test(v.gate_evidence)
-    if (blocking.length === 0 && gateProven) {
-      log('Increment ' + inc.n + ' — validated CLEAN')
-      // PUSH AT THE INCREMENT BOUNDARY. On 2026-08-09 an account-level rate limit killed
-      // 12 concurrent agents inside a 6-second window and the run died with **26 commits
-      // unpushed** — on a machine that had already lost a drive with unpushed work once.
-      // Nothing here can prevent the limit; this bounds the LOSS to one increment. Per
-      // increment, not per commit: the recorded cadence trades CI cost against loss risk.
-      // The script has no shell, so the push is a one-line agent.
-      await agentR(
-        'Run exactly: `git push origin main`. Nothing else — do not commit, stage, amend, rebase or edit any file. '
-        + 'Report the push result verbatim. If it is REJECTED (a non-fast-forward, or the remote moved), do NOT force and do NOT merge: '
-        + 'report the rejection and stop — a diverged remote is the human\'s call, never a subagent\'s.',
-        { label: 'push:after-inc' + inc.n, phase: 'Build increments' },
-      )
-      break
-    }
+    if (blocking.length === 0 && gateProven) { log('Increment ' + inc.n + ' — validated CLEAN'); break }
     if (blocking.length === 0 && v && v.gate_green && !gateProven) { log('Increment ' + inc.n + ' — gate claimed green WITHOUT pasted `test result:` evidence; treating as unverified → fix round') }
     if (round >= 3) { halted = { increment: inc.n, phase: 'validate', reason: blocking.length > 0 ? blocking.length + ' blocking finding(s) remain after 3 fix rounds' : 'gate green could not be verified (no pasted `test result:` evidence from a full unscoped run) after 3 validation rounds — verify the gate by hand', blocking }; break }
     round++
@@ -512,7 +531,9 @@ if (halted) {
   // Transient-infrastructure halts (an agent returned no result after retries) get the
   // nothing-to-fix resume message; genuine blockers keep the resolve-first one.
   const transient = !!(halted.halt && /returned no result/.test(halted.halt.root_cause || ''))
-  const msg = transient
+  const msg = breakerTripped
+    ? builtMilestone + ' build STOPPED by the rate-limit breaker: two different agents exhausted their retries (' + exhaustedLabels.join(', ') + '), so the run stopped spawning rather than thrash through the limit window. THIS IS NOT A CODE FAULT and nothing needs fixing — confirm by grepping the run transcript dir for \'"error":"rate_limit"\' / apiErrorStatus 429. Prior committed work stands (it may be UNPUSHED — push before diagnosing). Wait for the window, then resume with args: { milestone, base, skipThrough: <highest increment that is both built AND validated clean> } — note those are different: an increment whose validator ran before its fixes landed is not validated.'
+    : transient
     ? builtMilestone + ' build HALTED on a transient infrastructure failure (an agent returned no result after retries). Prior committed work stands — if the tree is clean, resume immediately; nothing needs fixing.'
     : builtMilestone + ' build HALTED — human attention needed before continuing. Prior committed work stands.'
   return { status: 'halted', halted, message: msg, resume: resumeLine(builtMilestone, base, transient), milestone: builtMilestone, incrementReports }
