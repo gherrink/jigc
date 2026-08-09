@@ -55,3 +55,5 @@ mod placement_acceptance;
 mod spawn_template_executes;
 #[path = "../staged_snapshot.rs"]
 mod staged_snapshot;
+#[path = "../uninstall_worktree_guard.rs"]
+mod uninstall_worktree_guard;

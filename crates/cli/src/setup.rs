@@ -1220,6 +1220,15 @@ impl RemovedArtifacts {
 /// break `jigc validate` for sibling repos (design-review B2). Machine-global removal
 /// is `cargo uninstall jigc` + manual probe removal, never this per-project verb.
 ///
+/// **It refuses while a fan-out worktree is dirty.** `.jigc/worktrees/<sub-task-id>` is
+/// the *sole copy* of a fanned-out sub-agent's work, and since M47 Inc 3 a live worktree
+/// holding uncommitted code is a **normal, promised-safe** state (the aborted fan-out
+/// finalize leaves it alive for the retry) — so the teardown probes it first and blocks
+/// with `uninstall.dirty-worktree`, naming each path and its porcelain entries, rather
+/// than deleting work no object DB holds ([`dirty_fanout_worktrees`]; the
+/// `jigc milestone discard` sibling guard, `design/team-ready-state.md` → Abandon refuses
+/// on a dirty worktree).
+///
 /// **Idempotent + non-destructive:** each step is independently a clean no-op when its
 /// artifact is already absent — an already-removed `.jigc/`, a `CLAUDE.md` without the
 /// section, an `allow`/`deny` array or `hooks` object without the jigc entry, and an
@@ -1250,8 +1259,18 @@ pub fn run_uninstall(start: &Path) -> Result<UninstallSummary, Finding> {
 /// Reverse the repo-local install against `repo_root` with `profile`, mapping an IO
 /// failure to a blocking `uninstall.*` finding with a route. The testable core of
 /// [`run_uninstall`] (no location step). Each step is independently idempotent, so the
-/// whole teardown is a clean no-op on a re-run.
+/// whole teardown is a clean no-op on a re-run — but it removes nothing at all while a
+/// fan-out worktree under `.jigc/worktrees/` holds uncommitted work
+/// ([`dirty_fanout_worktrees`], step 0).
 fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSummary, Finding> {
+    // 0. The fan-out WIP guard, BEFORE anything is removed: `.jigc/worktrees/<sub-task-id>`
+    //    holds the sole copy of a sub-agent's work, so a dirty worktree refuses the whole
+    //    teardown ([`dirty_fanout_worktrees`]).
+    let dirty = dirty_fanout_worktrees(repo_root)?;
+    if !dirty.is_empty() {
+        return Err(dirty_worktree_finding(&dirty));
+    }
+
     // 1. Remove the whole `.jigc/` tree — the bootstrap `AGENT.md`, the cascade config
     //    layer, the compose marker, and the transient index/state working area, all at
     //    once. An already-absent tree is a clean no-op.
@@ -1334,6 +1353,93 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
         allowlist_file,
         removed,
     })
+}
+
+/// The **registered** fan-out worktrees under `<repo_root>/.jigc/worktrees/` that hold
+/// uncommitted work, each paired with the `git status --porcelain` entries that make it
+/// dirty — [`uninstall`]'s WIP guard, and the exact probe `jigc milestone discard` guards
+/// its own teardown with (`design/team-ready-state.md` → Abandon refuses on a dirty
+/// worktree).
+///
+/// **Why `uninstall` needs it.** The teardown's first step is
+/// `remove_dir_all(<repo>/.jigc)`, and since M31 Inc 4/5 the fan-out worktrees live
+/// **inside** that tree, each the *sole copy* of a sub-agent's code. M47 Inc 3 made
+/// "a provisioned worktree holding uncommitted work" a **normal, promised-safe** state —
+/// an aborted fan-out finalize deliberately leaves the worktrees alive so the re-run can
+/// recover them — so an unguarded removal destroyed exactly the work the tool had just
+/// promised to keep (plus the sub-tasks' authored doc prose in `.jigc/tasks/<id>/docs/`,
+/// which is in no object DB at all), at exit 0.
+///
+/// **Scoped to jigc's own worktrees**: only registered worktrees under
+/// `.jigc/worktrees/` are probed — a human's worktree elsewhere in the repo is none of
+/// this verb's business, and the main checkout is never under that root. An absent
+/// worktrees dir short-circuits before any `git` call, so the no-fan-out teardown (and
+/// the idempotent second run over an already-removed `.jigc/`) pays nothing.
+///
+/// **The probe fails closed**, under the same `uninstall.dirty-worktree` code: an
+/// unreadable `git worktree list` / `git status` leaves the worktrees' safety *unknown*,
+/// and the operator's action is the same either way — make the fan-out worktrees safe,
+/// then re-run. Removing on an unverified probe is the very defect this guard closes.
+fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<(PathBuf, Vec<String>)>, Finding> {
+    let worktrees_root = repo_root.join(".jigc").join("worktrees");
+    if !worktrees_root.is_dir() {
+        return Ok(Vec::new());
+    }
+    // `git worktree list` reports the canonical paths git stored at `add` time (the
+    // `provision_worktrees` convention); keep the raw prefix too, for the case where
+    // canonicalization fails.
+    let canonical_root = worktrees_root
+        .canonicalize()
+        .unwrap_or_else(|_| worktrees_root.clone());
+    let registered =
+        crate::milestone::registered_worktrees(repo_root).map_err(unverified_worktrees_finding)?;
+    let ours: Vec<PathBuf> = registered
+        .into_iter()
+        .filter(|wt| wt.starts_with(&canonical_root) || wt.starts_with(&worktrees_root))
+        .collect();
+    crate::milestone::dirty_worktrees(&ours).map_err(unverified_worktrees_finding)
+}
+
+/// The teardown's refusal: a blocking, route-bearing finding naming every dirty fan-out
+/// worktree and the uncommitted entries inside it — the `milestone.dirty-worktree`
+/// sibling's shape, so the two teardowns read as one family. The route names both honest
+/// exits: get the work out, or abandon the milestone with the already-shipped
+/// `jigc milestone discard <id> --force` — then re-run the teardown.
+fn dirty_worktree_finding(dirty: &[(PathBuf, Vec<String>)]) -> Finding {
+    let listing: Vec<String> = dirty
+        .iter()
+        .map(|(path, entries)| format!("  {}: {}", path.display(), entries.join(", ")))
+        .collect();
+    Finding::block(
+        "uninstall.dirty-worktree",
+        format!(
+            "`.jigc/` holds uncommitted work in {} fan-out sub-task worktree(s) — removing it \
+             would destroy that work:\n{}",
+            dirty.len(),
+            listing.join("\n"),
+        ),
+        "get the work out of those worktrees first (commit, stash, or copy it), then re-run \
+         `jigc uninstall` — or abandon the milestone with `jigc milestone discard \
+         <milestone-id> --force`, which destroys the uncommitted work, and re-run \
+         `jigc uninstall`",
+    )
+}
+
+/// The fail-closed half of [`dirty_fanout_worktrees`]: the probe could not run, so the
+/// teardown refuses rather than remove `.jigc/` with the fan-out worktrees' safety
+/// unknown. Same code as the dirty refusal — the operator's next action is identical.
+fn unverified_worktrees_finding(err: anyhow::Error) -> Finding {
+    Finding::block(
+        "uninstall.dirty-worktree",
+        format!(
+            "cannot check `.jigc/worktrees/` for uncommitted fan-out work, so removing `.jigc/` \
+             could destroy it: {err:#}"
+        ),
+        "make sure `git` is on PATH and the repository is readable, then re-run \
+         `jigc uninstall` — or, once you have confirmed the fan-out worktrees hold nothing \
+         you need, remove them yourself (`git worktree list`, then `git worktree remove`) and \
+         re-run",
+    )
 }
 
 /// The compose-marker key `pack::read_compose_marker` reads from `packs.yaml`.

@@ -1663,7 +1663,12 @@ fn provision_worktrees(
 /// from `git worktree list --porcelain` (each `worktree <path>` line carries the
 /// canonical path git stored at `add` time). The provision reuse check compares against
 /// these.
-fn registered_worktrees(repo_root: &Path) -> Result<Vec<PathBuf>> {
+///
+/// `pub(crate)` for the sibling teardown: `jigc uninstall` removes `<repo>/.jigc/`
+/// wholesale, and the fan-out worktrees live inside it, so it runs the same
+/// registered-then-dirty probe this module's `discard` runs
+/// (`crate::setup::dirty_fanout_worktrees`).
+pub(crate) fn registered_worktrees(repo_root: &Path) -> Result<Vec<PathBuf>> {
     let out = git_worktree(repo_root, &["worktree", "list", "--porcelain"])?;
     Ok(out
         .lines()
@@ -1865,7 +1870,12 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
 /// what the abandon path destroys is **everything** in the worktree: staged, unstaged, and
 /// **untracked** alike (`git worktree remove --force` deletes the checkout). So the guard's probe
 /// is the union `git status --porcelain` reports; an ignored file is not work and never appears.
-fn dirty_worktrees(worktrees: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<String>)>> {
+///
+/// `pub(crate)` for the sibling teardown — `jigc uninstall`'s `remove_dir_all(.jigc)` destroys
+/// exactly the same bytes (the worktrees live under `.jigc/worktrees/`), so it guards on this
+/// same probe rather than growing a second, drifting one
+/// (`crate::setup::dirty_fanout_worktrees`).
+pub(crate) fn dirty_worktrees(worktrees: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<String>)>> {
     let mut dirty = Vec::new();
     for wt in worktrees {
         let out = Command::new("git")
