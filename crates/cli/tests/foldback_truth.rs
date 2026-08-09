@@ -183,21 +183,37 @@ fn claude_md_names_m47_and_claims_only_the_build() {
         );
     }
 
-    // Built, not audited — the bound is stated, not glossed.
+    // **Reconciled 2026-08-09, not retired.** This fence was written during Increment
+    // 11's fold-back to stop the record claiming an audit that had not run: it required
+    // the bound `built, not audited` and *forbade* `VERDICT.md`. The audit has since run,
+    // so leaving it would have fenced the record into a stale transitional truth — it went
+    // red the moment the completion fold-back landed, which is the fence working, not
+    // failing. Its **purpose is unchanged**: the M47 claim must not say more about the
+    // audit than the audit found. Only the direction inverts — it stopped a premature
+    // claim, and now stops an over-claim.
+    //
+    // The audit was **not** clean: 3 LOW findings were raised, reproduced live and fixed
+    // (completions/artifacts/M47/VERDICT.md). So "audited clean" is exactly the overclaim
+    // to forbid, and the honest record names its verdict artifact instead.
     assert!(
-        span.contains("built, not audited"),
-        "the M47 claim must state the bound `built, not audited`; it reads:\n{span}",
+        span.contains("VERDICT"),
+        "a completed audit cites its persisted verdict; the M47 claim names none:\n{span}",
+    );
+    assert!(
+        span.contains("LOW") || span.contains("findings"),
+        "the M47 claim must state what the audit FOUND, not merely that it ran:\n{span}",
     );
     for forbidden in [
+        // The audit raised 3 LOW findings — any of these would overstate it.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // the link a *completed* audit cites — a persisted verdict artifact
-        "VERDICT.md",
+        // The retired transitional bound: true during the build, false after the audit.
+        "built, not audited",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M47 claim must make no audit claim, but contains `{forbidden}`:\n{span}",
+            "the M47 claim must not overstate the audit, but contains `{forbidden}`:\n{span}",
         );
     }
 }
