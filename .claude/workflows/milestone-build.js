@@ -99,6 +99,28 @@
 //      agent-call cache at all. Prefer steps 1–5 (cheaper) once RULE 0 is honored;
 //      this skipThrough path is the reliable fallback if cache-replay still misbehaves.
 //
+//   7. THE RUN DIED WITH THE PROCESS (rate limit, crash, closed shell) — do these IN ORDER,
+//      derived by hand twice on 2026-08-09 and written down so the third time is cheap:
+//      (a) `git push origin main` FIRST, before diagnosing anything. A killed run leaves
+//          committed work unpushed (the 2026-08-09 rate limit stranded 26 commits), and
+//          diagnosis is worthless if the disk dies while you do it.
+//      (b) `git status --porcelain` — a NON-empty tree is a killed agent's in-flight work.
+//          Do NOT assume it is junk and do NOT assume it is finished: run the full gate
+//          over it. Green + coherent => commit it (this recovered a complete fix on
+//          2026-08-09); red or half-written => discard it and let its task re-run.
+//      (c) Establish the last FULLY-BUILT AND VALIDATED increment — the two are different.
+//          `git log --oneline <base>..HEAD` shows the `design(mNN): increment N task
+//          decomposition` markers and the task commits; the run journal
+//          (`<transcriptDir>/journal.jsonl`, one {type:'result'} per agent) shows which
+//          increments a validator actually returned CLEAN for. An increment whose commits
+//          all landed but whose validator never ran, or ran BEFORE its fixes landed, is
+//          NOT validated — validate it with one `increment-validator` before counting it.
+//      (d) Resume with `args: { milestone, base, skipThrough: <that number> }`.
+//      Diagnosing a mass agent death: many agents failing inside a few SECONDS of each
+//      other is an account-level usage limit, not a code fault — grep the transcript dir
+//      for '"error":"rate_limit"' / apiErrorStatus 429. Nothing in the run is wrong; wait
+//      for the window and resume. A genuine blocker fails ONE agent, repeatedly.
+//
 // Usage:  Workflow({ name: 'milestone-build', args: { milestone: 'M3', base: '<sha>' } })
 //   milestone — the roadmap milestone id whose decomposition to build (e.g. 'M3').
 //   base      — the commit immediately before this milestone's first increment,
@@ -457,7 +479,22 @@ for (const inc of increments) {
     // not a bare boolean — an evidence-less green is treated as not-green (M23: inc-1
     // landed a red gate because the validator claimed green off a scoped/lacon-trimmed run).
     const gateProven = v && v.gate_green && typeof v.gate_evidence === 'string' && /test result:/.test(v.gate_evidence)
-    if (blocking.length === 0 && gateProven) { log('Increment ' + inc.n + ' — validated CLEAN'); break }
+    if (blocking.length === 0 && gateProven) {
+      log('Increment ' + inc.n + ' — validated CLEAN')
+      // PUSH AT THE INCREMENT BOUNDARY. On 2026-08-09 an account-level rate limit killed
+      // 12 concurrent agents inside a 6-second window and the run died with **26 commits
+      // unpushed** — on a machine that had already lost a drive with unpushed work once.
+      // Nothing here can prevent the limit; this bounds the LOSS to one increment. Per
+      // increment, not per commit: the recorded cadence trades CI cost against loss risk.
+      // The script has no shell, so the push is a one-line agent.
+      await agentR(
+        'Run exactly: `git push origin main`. Nothing else — do not commit, stage, amend, rebase or edit any file. '
+        + 'Report the push result verbatim. If it is REJECTED (a non-fast-forward, or the remote moved), do NOT force and do NOT merge: '
+        + 'report the rejection and stop — a diverged remote is the human\'s call, never a subagent\'s.',
+        { label: 'push:after-inc' + inc.n, phase: 'Build increments' },
+      )
+      break
+    }
     if (blocking.length === 0 && v && v.gate_green && !gateProven) { log('Increment ' + inc.n + ' — gate claimed green WITHOUT pasted `test result:` evidence; treating as unverified → fix round') }
     if (round >= 3) { halted = { increment: inc.n, phase: 'validate', reason: blocking.length > 0 ? blocking.length + ' blocking finding(s) remain after 3 fix rounds' : 'gate green could not be verified (no pasted `test result:` evidence from a full unscoped run) after 3 validation rounds — verify the gate by hand', blocking }; break }
     round++
