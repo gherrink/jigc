@@ -18,10 +18,13 @@
 //! so it can never repeat however coarse the underlying clock is. It stays a real
 //! timestamp, so a leaked path is still readable in `$TMPDIR` and still sorts by age.
 //!
-//! Two production siblings — `state::temp_sibling` and `validate::store_scratch_path`
-//! — reached the same conclusion independently (M45 Increment 7, Decision 9) and each
-//! carries its own local sequence counter. This module is where a *new* mint takes it
-//! from, so the lesson does not have to be re-learned per site.
+//! Two production siblings — `state::temp_sibling` (the atomic write's temp) and
+//! `validate::store_scratch_path` (the store-sweep snapshot) — reached this conclusion
+//! independently (M45 Increment 7, Decision 9), each with its own local sequence counter.
+//! Both now draw from here, so the property is proven once and the lesson does not have to
+//! be re-learned per site. What they keep is the other axis: each prefixes the value with
+//! [`std::process::id`], which is what separates concurrent *processes* — [`unique_nanos`]
+//! fences only the intra-process collision, the one a coarse clock causes.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};

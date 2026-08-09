@@ -1417,25 +1417,87 @@ fn store_doc_code(
 /// working area to put it in). The caller writes it, drives the probe over it, and removes
 /// it before returning.
 ///
-/// Uniqueness must hold even for **concurrent sweeps in one process**: `pid + nanos` alone
-/// collides when two threads sample the clock in the same nanosecond, and a collision lets
-/// one sweep's `remove_file` delete the other's snapshot mid-flight (a `NotFound` flake). A
-/// per-process monotonic sequence nonce closes that window regardless of clock resolution.
+/// Uniqueness must hold even for **concurrent sweeps in one process**: `pid` plus a *raw*
+/// clock read collides when two threads sample the same instant, and a collision lets one
+/// sweep's `remove_file` delete the other's snapshot mid-flight (a `NotFound` flake). So the
+/// nanos component comes from [`crate::tempname::unique_nanos`], which is strictly increasing
+/// per process and therefore closes that window regardless of clock resolution.
 fn store_scratch_path() -> std::path::PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SCRATCH_SEQ: AtomicU64 = AtomicU64::new(0);
     let mut path = std::env::temp_dir();
     path.push(format!(
-        "jigc-{}-{}-{}-{}",
+        "jigc-{}-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0),
-        SCRATCH_SEQ.fetch_add(1, Ordering::Relaxed),
+        crate::tempname::unique_nanos(),
         STORE_SNAPSHOT_FILE,
     ));
     path
+}
+
+#[cfg(test)]
+mod store_scratch_path_tests {
+    use super::{STORE_SNAPSHOT_FILE, store_scratch_path};
+
+    /// The store-sweep scratch path takes its disambiguator from the **shared**
+    /// [`crate::tempname::unique_nanos`] mint, not a counter private to this module.
+    ///
+    /// Two claims, both load-bearing:
+    ///
+    /// 1. **The shape** is `jigc-<pid>-<nanos>-<snapshot-file>` under
+    ///    [`std::env::temp_dir`] — the `pid` keeps concurrent *processes* apart and the
+    ///    temp dir keeps the task-less sweep out of any managed `location:`. There is no
+    ///    third component before the filename: the private sequence nonce this site used to
+    ///    interpose is exactly what the shared mint replaces.
+    /// 2. **The value comes from the shared counter** — it lies strictly between two
+    ///    readings of `unique_nanos` taken around the call. A private counter reading the
+    ///    raw clock cannot satisfy this on any host whose clock is coarser than a
+    ///    nanosecond (macOS truncates to microseconds), because its reading ties the one
+    ///    before it. Claim 1 is the platform-independent half; claim 2 is the direct one.
+    ///
+    /// Given both sites draw from the one mint, their cross-site distinctness follows from
+    /// the mint's own proven injectivity ([`crate::tempname`] tests) — it is not re-proven
+    /// here.
+    #[test]
+    fn the_store_scratch_path_draws_its_disambiguator_from_the_shared_mint() {
+        let before = crate::tempname::unique_nanos();
+        let scratch = store_scratch_path();
+        let after = crate::tempname::unique_nanos();
+
+        assert_eq!(
+            scratch.parent(),
+            Some(std::env::temp_dir().as_path()),
+            "the task-less sweep's scratch lives in the temp dir, never a managed location",
+        );
+        let name = scratch
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("the scratch path has a UTF-8 filename");
+        let middle = name
+            .strip_prefix("jigc-")
+            .and_then(|rest| rest.strip_suffix(&format!("-{STORE_SNAPSHOT_FILE}")))
+            .unwrap_or_else(|| panic!("{name} is jigc-<pid>-<nanos>-{STORE_SNAPSHOT_FILE}"));
+
+        let parts: Vec<&str> = middle.split('-').collect();
+        assert_eq!(
+            parts.len(),
+            2,
+            "{name} is jigc-<pid>-<nanos>-<file> — the shared mint replaces the private \
+             sequence nonce, so there is no third component",
+        );
+        assert_eq!(
+            parts[0],
+            std::process::id().to_string(),
+            "{name} carries this process's pid, which separates concurrent processes",
+        );
+
+        let nanos: u128 = parts[1]
+            .parse()
+            .unwrap_or_else(|_| panic!("{name} carries a numeric nanos component"));
+        assert!(
+            before < nanos && nanos < after,
+            "the disambiguator {nanos} must come from the shared mint (between \
+             {before} and {after}), not a private clock read",
+        );
+    }
 }
 
 /// The **file portion** of a `code-anchor` value (`<path>#<symbol>` → `<path>`; a bare

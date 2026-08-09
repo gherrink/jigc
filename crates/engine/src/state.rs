@@ -411,29 +411,27 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// The sibling temp path for an atomic write of `path` — its filename with a
-/// **globally-unique** `.<pid>.<nanos>.<seq>.tmp` suffix (same directory, so
-/// `rename` is intra-filesystem and atomic). The disambiguator is what makes
-/// concurrent writers to a *shared* target (e.g. `.jigc/state/file-state.json`,
-/// which is not task-isolated) each own a distinct temp: without it two writers
-/// would share one `<name>.tmp` and interleave their bytes, so a reader could
-/// observe a file that parses as neither writer's record (M45 Increment 7,
-/// Decision 9).
+/// **globally-unique** `.<pid>.<nanos>.tmp` suffix (same directory, so `rename` is
+/// intra-filesystem and atomic). The disambiguator is what makes concurrent writers
+/// to a *shared* target (e.g. `.jigc/state/file-state.json`, which is not
+/// task-isolated) each own a distinct temp: without it two writers would share one
+/// `<name>.tmp` and interleave their bytes, so a reader could observe a file that
+/// parses as neither writer's record (M45 Increment 7, Decision 9).
 ///
-/// `pid + nanos` alone is **not** sufficient: two threads of one process can read
-/// the same clock value (the OS clock resolution is coarser than a nanosecond, and
-/// two calls can race), so they would mint the *same* temp path — writer A's
-/// `rename` consumes it and writer B's then fails `NotFound`. The process-global
-/// monotonic `seq` counter makes every temp path distinct even within one
-/// nanosecond, closing that intra-process collision.
+/// The two components fence the two collision axes. `pid` separates concurrent
+/// *processes*. The raw clock does **not** separate the calls inside one — two
+/// threads routinely read the same value where the OS resolution is coarser than a
+/// nanosecond, mint the same temp path, and then writer A's `rename` consumes it and
+/// writer B's fails `NotFound`. So `nanos` comes from [`crate::tempname::unique_nanos`],
+/// which is strictly increasing per process and therefore never repeats however coarse
+/// the clock is.
 fn temp_sibling(path: &Path) -> PathBuf {
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    name.push(format!(".{}.{}.{}.tmp", std::process::id(), nanos, seq));
+    name.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        crate::tempname::unique_nanos(),
+    ));
     match path.parent() {
         Some(parent) => parent.join(name),
         None => PathBuf::from(name),
@@ -1284,6 +1282,68 @@ fn io_finding(id: &str, doing: &str, err: &std::io::Error) -> Finding {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// The atomic-write temp sibling takes its disambiguator from the **shared**
+    /// [`crate::tempname::unique_nanos`] mint, not a counter private to this module.
+    ///
+    /// Two claims, both load-bearing:
+    ///
+    /// 1. **The shape** is `<filename>.<pid>.<nanos>.tmp` in the target's own directory —
+    ///    the `pid` keeps concurrent *processes* apart, the same-directory rule keeps the
+    ///    `rename` intra-filesystem, and the trailing `.tmp` is the convention. There is no
+    ///    fourth component: the private sequence nonce this site used to append is exactly
+    ///    what the shared mint replaces.
+    /// 2. **The value comes from the shared counter** — it lies strictly between two
+    ///    readings of `unique_nanos` taken around the call. A private counter reading the
+    ///    raw clock cannot satisfy this on any host whose clock is coarser than a
+    ///    nanosecond (macOS truncates to microseconds), because its reading ties the one
+    ///    before it. Claim 1 is the platform-independent half; claim 2 is the direct one.
+    ///
+    /// Given both sites draw from the one mint, their cross-site distinctness follows from
+    /// the mint's own proven injectivity ([`crate::tempname`] tests) — it is not re-proven
+    /// here.
+    #[test]
+    fn the_temp_sibling_draws_its_disambiguator_from_the_shared_mint() {
+        let before = crate::tempname::unique_nanos();
+        let sibling = temp_sibling(Path::new("/parent/dir/file-state.json"));
+        let after = crate::tempname::unique_nanos();
+
+        assert_eq!(
+            sibling.parent(),
+            Some(Path::new("/parent/dir")),
+            "the temp sibling stays in the target's directory so the rename is atomic",
+        );
+        let name = sibling
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("the sibling has a UTF-8 filename");
+        let suffix = name
+            .strip_prefix("file-state.json.")
+            .unwrap_or_else(|| panic!("{name} extends the target filename"));
+
+        let parts: Vec<&str> = suffix.split('.').collect();
+        assert_eq!(
+            parts.len(),
+            3,
+            "{name} is <filename>.<pid>.<nanos>.tmp — the shared mint replaces the \
+             private sequence nonce, so there is no fourth component",
+        );
+        assert_eq!(
+            parts[0],
+            std::process::id().to_string(),
+            "{name} carries this process's pid, which separates concurrent processes",
+        );
+        assert_eq!(parts[2], "tmp", "{name} ends in the .tmp convention");
+
+        let nanos: u128 = parts[1]
+            .parse()
+            .unwrap_or_else(|_| panic!("{name} carries a numeric nanos component"));
+        assert!(
+            before < nanos && nanos < after,
+            "the disambiguator {nanos} must come from the shared mint (between \
+             {before} and {after}), not a private clock read",
+        );
+    }
 
     /// The route-floor seam-sweep, exercised through the real `task.working-area-io` producer
     /// (M43 surface census): the mint I/O fault carries a recovery route and drives cleanly
