@@ -177,8 +177,14 @@ pub enum Command {
     /// Reverse this project's jigc install — removes `.jigc/`, unwires the
     /// `CLAUDE.md` reference, and drops the `Bash(jigc:*)` permit from
     /// `.claude/settings.json`. Leaves the machine-global `doc-code` probe (shared
-    /// across repos) in place. Idempotent and non-destructive: a second run is a
-    /// clean no-op, and your own file content is preserved byte-for-byte.
+    /// across repos) in place. Idempotent and non-destructive on every state it
+    /// accepts: a second run is a clean no-op, and your own file content is
+    /// preserved byte-for-byte. One state it refuses instead of destroying —
+    /// while a fan-out sub-task worktree under `.jigc/worktrees/` holds
+    /// uncommitted work it blocks with `uninstall.dirty-worktree` and removes
+    /// nothing; get that work out (commit, stash, or copy it), or abandon the
+    /// milestone with `jigc milestone discard <milestone-id> --force`, then
+    /// re-run.
     Uninstall,
 
     /// Re-check every recorded config delta against the current pack and report

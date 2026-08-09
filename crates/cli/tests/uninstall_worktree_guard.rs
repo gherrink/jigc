@@ -415,3 +415,59 @@ fn uninstall_still_tears_down_when_every_provisioned_worktree_is_clean() {
         "the teardown must still remove `.jigc/`",
     );
 }
+
+/// The law-1 half of the same guard: the refusal this suite pins is now part of what the
+/// verb *is*, so `jigc uninstall --help` — the surface a reader consults before running a
+/// teardown — must state it. Before this fix the long help still read "Idempotent and
+/// non-destructive: a second run is a clean no-op, …" with no qualification, so a reader
+/// who trusted it was never told that a dirty fan-out worktree blocks the verb, nor how to
+/// proceed ([surface-contract.md](../../design/surface-contract.md) → law 1, nothing lies).
+///
+/// Asserted against the **emitted bytes** (the real `--help` render through the built
+/// binary), not the const the doc comment compiles into, so the pin binds what a reader
+/// actually sees. `--help` needs no repo or pack — clap prints it before dispatch.
+#[test]
+fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["uninstall", "--help"])
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc uninstall --help` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    // clap wraps the long help to the terminal width, so compare on collapsed whitespace.
+    let help = String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    for needle in [
+        // it names the state that refuses …
+        "uninstall.dirty-worktree",
+        ".jigc/worktrees/",
+        // … and the escape hatch the finding's own route names.
+        "jigc milestone discard",
+    ] {
+        assert!(
+            help.contains(needle),
+            "`uninstall --help` must state the refusal — missing {needle:?}; got:\n{help}",
+        );
+    }
+    // The verb is still idempotent and non-destructive *on the states it accepts*; the fix
+    // qualifies that promise, it does not delete it.
+    for needle in ["non-destructive", "byte-for-byte"] {
+        assert!(
+            help.contains(needle),
+            "`uninstall --help` must keep the accepted-state promise — missing {needle:?}; \
+             got:\n{help}",
+        );
+    }
+    // The unqualified sentence is the defect itself: an unconditional "a second run is a
+    // clean no-op" claim with nothing between it and "non-destructive".
+    assert!(
+        !help.contains("Idempotent and non-destructive: a second run"),
+        "`uninstall --help` must not restate the unqualified promise; got:\n{help}",
+    );
+}
