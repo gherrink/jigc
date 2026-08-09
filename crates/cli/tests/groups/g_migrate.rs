@@ -51,6 +51,8 @@ mod registry_seam;
 mod setup;
 #[path = "../test_target_registration.rs"]
 mod test_target_registration;
+#[path = "../verb_suite_coverage.rs"]
+mod verb_suite_coverage;
 #[path = "../version_mismatch_break.rs"]
 mod version_mismatch_break;
 #[path = "../version_stamp_rollback.rs"]
