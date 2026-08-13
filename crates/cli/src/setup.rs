@@ -1220,23 +1220,28 @@ impl RemovedArtifacts {
 /// break `jigc validate` for sibling repos (design-review B2). Machine-global removal
 /// is `cargo uninstall jigc` + manual probe removal, never this per-project verb.
 ///
-/// **It refuses while a fan-out worktree is dirty.** `.jigc/worktrees/<sub-task-id>` is
-/// the *sole copy* of a fanned-out sub-agent's work, and since M47 Inc 3 a live worktree
-/// holding uncommitted code is a **normal, promised-safe** state (the aborted fan-out
-/// finalize leaves it alive for the retry) — so the teardown probes it first and blocks
-/// with `uninstall.dirty-worktree`, naming each path and its porcelain entries, rather
-/// than deleting work no object DB holds ([`dirty_fanout_worktrees`]; the
-/// `jigc milestone discard` sibling guard, `design/team-ready-state.md` → Abandon refuses
-/// on a dirty worktree).
+/// **It refuses over the two things inside `.jigc/` that live nowhere else**, before it
+/// removes anything (`DECISIONS.md` 2026-08-13 → the Settle, F3):
 ///
-/// **Idempotent + non-destructive:** each step is independently a clean no-op when its
-/// artifact is already absent — an already-removed `.jigc/`, a `CLAUDE.md` without the
-/// section, an `allow`/`deny` array or `hooks` object without the jigc entry, and an
-/// absent-or-foreign `pre-commit` hook — so a second `uninstall` exits 0 leaving the
-/// (restored) host files byte-untouched. `Ok(summary)` on a clean teardown;
-/// `Err(finding)` is a single blocking `uninstall.*` finding carrying a route — the
-/// dispatcher renders it and exits non-zero.
-pub fn run_uninstall(start: &Path) -> Result<UninstallSummary, Finding> {
+/// - a **worktree-shaped path under `.jigc/worktrees/` holding content** blocks with
+///   `uninstall.dirty-worktree` ([`dirty_fanout_worktrees`]). Since M47 Inc 3 a live
+///   worktree holding uncommitted code is a **normal, promised-safe** state (the aborted
+///   fan-out finalize leaves it alive for the retry), and the subject is the *path*, not
+///   the registered set — a copied or moved repo's worktrees are registered at the
+///   *source's* path, so a registered-set guard is inert exactly where the live work is;
+/// - an **open task's staged doc prose** in `.jigc/tasks/<id>/docs/*.md` blocks with
+///   `uninstall.staged-prose` ([`staged_task_prose`]) — LLM-authored bytes that are in no
+///   object DB at all, the reproduced pre-1.0.0 loss.
+///
+/// `force` is the operator's consent to delete both. It skips the guards and nothing else.
+///
+/// **Idempotent:** each step is independently a clean no-op when its artifact is already
+/// absent — an already-removed `.jigc/`, a `CLAUDE.md` without the section, an
+/// `allow`/`deny` array or `hooks` object without the jigc entry, and an absent-or-foreign
+/// `pre-commit` hook — so a second `uninstall` exits 0 leaving the (restored) host files
+/// byte-untouched. `Ok(summary)` on a clean teardown; `Err(finding)` is a single blocking
+/// `uninstall.*` finding carrying a route — the dispatcher renders it and exits non-zero.
+pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Finding> {
     let ctx = locate::locate(start).map_err(|err| {
         Finding::block(
             "uninstall.repo-root",
@@ -1253,22 +1258,32 @@ pub fn run_uninstall(start: &Path) -> Result<UninstallSummary, Finding> {
         )
     })?;
 
-    uninstall(&ctx.repo_root, &profile)
+    uninstall(&ctx.repo_root, &profile, force)
 }
 
 /// Reverse the repo-local install against `repo_root` with `profile`, mapping an IO
 /// failure to a blocking `uninstall.*` finding with a route. The testable core of
 /// [`run_uninstall`] (no location step). Each step is independently idempotent, so the
-/// whole teardown is a clean no-op on a re-run — but it removes nothing at all while a
-/// fan-out worktree under `.jigc/worktrees/` holds uncommitted work
-/// ([`dirty_fanout_worktrees`], step 0).
-fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSummary, Finding> {
-    // 0. The fan-out WIP guard, BEFORE anything is removed: `.jigc/worktrees/<sub-task-id>`
-    //    holds the sole copy of a sub-agent's work, so a dirty worktree refuses the whole
-    //    teardown ([`dirty_fanout_worktrees`]).
-    let dirty = dirty_fanout_worktrees(repo_root)?;
-    if !dirty.is_empty() {
-        return Err(dirty_worktree_finding(&dirty));
+/// whole teardown is a clean no-op on a re-run — but unless `force`, it removes nothing at
+/// all while `.jigc/` holds the sole copy of anything: a worktree-shaped path with content
+/// ([`dirty_fanout_worktrees`]) or an open task's authored prose ([`staged_task_prose`]),
+/// both probed in step 0.
+fn uninstall(
+    repo_root: &Path,
+    profile: &AdapterProfile,
+    force: bool,
+) -> Result<UninstallSummary, Finding> {
+    // 0. The WIP guards, BEFORE anything is removed — everything below is `remove_dir_all`
+    //    on a tree that holds the sole copy of two kinds of work.
+    if !force {
+        let dirty = dirty_fanout_worktrees(repo_root)?;
+        if !dirty.is_empty() {
+            return Err(dirty_worktree_finding(&dirty));
+        }
+        let staged = staged_task_prose(repo_root)?;
+        if !staged.is_empty() {
+            return Err(staged_prose_finding(&staged));
+        }
     }
 
     // 1. Remove the whole `.jigc/` tree — the bootstrap `AGENT.md`, the cascade config
@@ -1355,11 +1370,19 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
     })
 }
 
-/// The **registered** fan-out worktrees under `<repo_root>/.jigc/worktrees/` that hold
-/// uncommitted work, each paired with the `git status --porcelain` entries that make it
-/// dirty — [`uninstall`]'s WIP guard, and the exact probe `jigc milestone discard` guards
-/// its own teardown with (`design/team-ready-state.md` → Abandon refuses on a dirty
-/// worktree).
+/// The worktree-shaped paths under `<repo_root>/.jigc/worktrees/` that hold content the
+/// teardown must not take, each paired with what would be destroyed — [`uninstall`]'s
+/// fan-out WIP guard, over the same [`crate::milestone::probe_leftover`] classifier
+/// `jigc milestone provision` and `jigc milestone discard` ask (`design/team-ready-state.md`
+/// → Abandon refuses on a dirty worktree).
+///
+/// **The subject is the path, not the registered set** (`DECISIONS.md` 2026-08-13 → the
+/// Settle, F3). A `cp -R` or `mv` of the repo — how every trial corpus is made — leaves the
+/// copy's live worktrees registered at the **source's** path, so *no* path under the copy's
+/// own `.jigc/worktrees/` is registered and a registered-set guard is inert precisely where
+/// the live work is; `remove_dir_all` then took the lot at exit 0. So every directory under
+/// that root is classified instead: a live worktree of its own answers through the shipped
+/// `git status --porcelain` probe, and a path git cannot vouch for refuses on any content.
 ///
 /// **Why `uninstall` needs it.** The teardown's first step is
 /// `remove_dir_all(<repo>/.jigc)`, and since M31 Inc 4/5 the fan-out worktrees live
@@ -1370,41 +1393,97 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
 /// promised to keep (plus the sub-tasks' authored doc prose in `.jigc/tasks/<id>/docs/`,
 /// which is in no object DB at all), at exit 0.
 ///
-/// **Scoped to jigc's own worktrees**: only registered worktrees under
-/// `.jigc/worktrees/` are probed — a human's worktree elsewhere in the repo is none of
-/// this verb's business, and the main checkout is never under that root. An absent
-/// worktrees dir short-circuits before any `git` call, so the no-fan-out teardown (and
-/// the idempotent second run over an already-removed `.jigc/`) pays nothing.
+/// **Scoped to `.jigc/worktrees/`**: only paths under that root are probed — a human's
+/// worktree elsewhere in the repo is none of this verb's business, and the main checkout is
+/// never under that root. An absent worktrees dir short-circuits before any `git` call, so
+/// the no-fan-out teardown (and the idempotent second run over an already-removed `.jigc/`)
+/// pays nothing.
 ///
 /// **The probe fails closed**, under the same `uninstall.dirty-worktree` code: an
-/// unreadable `git worktree list` / `git status` leaves the worktrees' safety *unknown*,
-/// and the operator's action is the same either way — make the fan-out worktrees safe,
-/// then re-run. Removing on an unverified probe is the very defect this guard closes.
+/// unreadable directory or `git status` leaves the worktrees' safety *unknown*, and the
+/// operator's action is the same either way — make the fan-out worktrees safe, then re-run.
+/// Removing on an unverified probe is the very defect this guard closes.
 fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<(PathBuf, Vec<String>)>, Finding> {
     let worktrees_root = repo_root.join(".jigc").join("worktrees");
     if !worktrees_root.is_dir() {
         return Ok(Vec::new());
     }
-    // `git worktree list` reports the canonical paths git stored at `add` time (the
-    // `provision_worktrees` convention); keep the raw prefix too, for the case where
-    // canonicalization fails.
-    let canonical_root = worktrees_root
-        .canonicalize()
-        .unwrap_or_else(|_| worktrees_root.clone());
-    let registered =
-        crate::milestone::registered_worktrees(repo_root).map_err(unverified_worktrees_finding)?;
-    let ours: Vec<PathBuf> = registered
-        .into_iter()
-        .filter(|wt| wt.starts_with(&canonical_root) || wt.starts_with(&worktrees_root))
-        .collect();
-    crate::milestone::dirty_worktrees(&ours).map_err(unverified_worktrees_finding)
+    let mut paths: Vec<PathBuf> = Vec::new();
+    let entries = std::fs::read_dir(&worktrees_root)
+        .map_err(|err| unverified_worktrees_finding(anyhow::Error::new(err)))?;
+    for entry in entries {
+        let entry = entry.map_err(|err| unverified_worktrees_finding(anyhow::Error::new(err)))?;
+        let path = entry.path();
+        if path.is_dir() {
+            paths.push(path);
+        }
+    }
+    // Sorted, so the refusal's listing does not vary with readdir order.
+    paths.sort();
+
+    let mut holds = Vec::new();
+    for path in paths {
+        if let Some(hold) =
+            crate::milestone::probe_leftover(&path).map_err(unverified_worktrees_finding)?
+        {
+            holds.push((path, hold.entries));
+        }
+    }
+    Ok(holds)
 }
 
-/// The teardown's refusal: a blocking, route-bearing finding naming every dirty fan-out
-/// worktree and the uncommitted entries inside it — the `milestone.dirty-worktree`
-/// sibling's shape, so the two teardowns read as one family. The route names both honest
-/// exits: get the work out, or abandon the milestone with the already-shipped
-/// `jigc milestone discard <id> --force` — then re-run the teardown.
+/// The **open tasks whose authored doc prose exists only in the workbench** — each task id
+/// paired with the sorted `<type>:<slug>` identities staged in its
+/// `.jigc/tasks/<id>/docs/`. [`uninstall`]'s second WIP guard, and the reproduced pre-1.0.0
+/// loss: `setup` → `start` → `doc set-slot` → `uninstall` removed `.jigc/` at exit 0 and the
+/// authored summary was in no object DB (`DECISIONS.md` 2026-08-13 → the Settle, F3).
+///
+/// **The subject is the staged `*.md` set** ([`crate::task::staged_doc_ids`]), never
+/// directory-non-emptiness — `docs/` always also holds `provenance.json` — and it does
+/// **not** filter on the transient mark: the doc destroyed in the reproduced loss is the
+/// task's `commit:<id>`, a transient doctype whose prose is exactly what the operator wrote.
+///
+/// Fail-closed like its sibling: a present-but-unreadable `tasks/` or `docs/` dir refuses
+/// rather than reporting an empty set, because "enumerated nothing" and "there is nothing"
+/// are the same bytes to the caller and only one of them is safe.
+fn staged_task_prose(repo_root: &Path) -> Result<Vec<(String, Vec<String>)>, Finding> {
+    let tasks_root = repo_root.join(".jigc").join("tasks");
+    if !tasks_root.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut staged = Vec::new();
+    let entries = std::fs::read_dir(&tasks_root).map_err(unverified_prose_finding)?;
+    for entry in entries {
+        let entry = entry.map_err(unverified_prose_finding)?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let docs = crate::task::staged_doc_ids(&path.join("docs")).map_err(|err| {
+            unverified_prose_finding(std::io::Error::other(format!(
+                "{}: {err}",
+                path.join("docs").display()
+            )))
+        })?;
+        if !docs.is_empty() {
+            staged.push((entry.file_name().to_string_lossy().into_owned(), docs));
+        }
+    }
+    // Sorted by task id — the refusal's listing is byte-reproducible.
+    staged.sort();
+    Ok(staged)
+}
+
+/// The teardown's refusal: a blocking, route-bearing finding naming every fan-out worktree
+/// path that holds content and what is inside it — the `milestone.dirty-worktree`
+/// sibling's shape, so the doors read as one family. The route names all three honest
+/// exits: get the work out, abandon the milestone with the already-shipped
+/// `jigc milestone discard <id> --force`, or consent to the deletion with `--force` here.
+///
+/// **It claims "content", not "uncommitted work"**: a path git cannot vouch for (the copied
+/// repo's worktree, a plain directory) is listed by its child names, and calling those
+/// bytes *uncommitted work* would be a claim the probe cannot back
+/// ([surface-contract.md](../../design/surface-contract.md) → law 1).
 fn dirty_worktree_finding(dirty: &[(PathBuf, Vec<String>)]) -> Finding {
     let listing: Vec<String> = dirty
         .iter()
@@ -1413,15 +1492,15 @@ fn dirty_worktree_finding(dirty: &[(PathBuf, Vec<String>)]) -> Finding {
     Finding::block(
         "uninstall.dirty-worktree",
         format!(
-            "`.jigc/` holds uncommitted work in {} fan-out sub-task worktree(s) — removing it \
-             would destroy that work:\n{}",
+            "`.jigc/` holds content in {} fan-out sub-task worktree path(s) that removing it \
+             would destroy:\n{}",
             dirty.len(),
             listing.join("\n"),
         ),
         "get the work out of those worktrees first (commit, stash, or copy it), then re-run \
          `jigc uninstall` — or abandon the milestone with `jigc milestone discard \
          <milestone-id> --force`, which destroys the uncommitted work, and re-run \
-         `jigc uninstall`",
+         `jigc uninstall`; `jigc uninstall --force` deletes them with the install",
     )
 }
 
@@ -1439,6 +1518,49 @@ fn unverified_worktrees_finding(err: anyhow::Error) -> Finding {
          `jigc uninstall` — or, once you have confirmed the fan-out worktrees hold nothing \
          you need, remove them yourself (`git worktree list`, then `git worktree remove`) and \
          re-run",
+    )
+}
+
+/// The staged-prose refusal: a blocking, route-bearing finding naming every open task and
+/// the doc identities staged in it. **Its own code**, not the worktree door's —
+/// `uninstall.dirty-worktree` printed over `.jigc/tasks/<id>/docs/` with no worktree in
+/// sight would name the wrong subject
+/// ([surface-contract.md](../../design/surface-contract.md) → law 1).
+///
+/// The listed identities are the addresses `jigc doc show <addr> --task <id>` takes, so the
+/// route's first move — read what you are about to lose — is followable as printed.
+fn staged_prose_finding(staged: &[(String, Vec<String>)]) -> Finding {
+    let listing: Vec<String> = staged
+        .iter()
+        .map(|(task, docs)| format!("  {task}: {}", docs.join(", ")))
+        .collect();
+    Finding::block(
+        "uninstall.staged-prose",
+        format!(
+            "`.jigc/` holds authored doc prose for {} open task(s) that no commit has a copy \
+             of — removing it would destroy that prose:\n{}",
+            staged.len(),
+            listing.join("\n"),
+        ),
+        "land that work with `jigc task finalize <task-id>` (read it first with `jigc doc show \
+         <address> --task <task-id>`), or throw it away with `jigc task discard <task-id>`, \
+         then re-run `jigc uninstall`; `jigc uninstall --force` deletes it with the install",
+    )
+}
+
+/// The fail-closed half of [`staged_task_prose`]: the staged set could not be enumerated,
+/// so the teardown refuses rather than remove `.jigc/` with the authored prose's existence
+/// unknown. Same code as the prose refusal — the operator's next action is identical.
+fn unverified_prose_finding(err: std::io::Error) -> Finding {
+    Finding::block(
+        "uninstall.staged-prose",
+        format!(
+            "cannot check `.jigc/tasks/` for authored doc prose, so removing `.jigc/` could \
+             destroy it: {err}"
+        ),
+        "make sure `.jigc/tasks/` is readable, then re-run `jigc uninstall` — or, once you \
+         have confirmed the open tasks hold nothing you need, `jigc uninstall --force` \
+         deletes them with the install",
     )
 }
 

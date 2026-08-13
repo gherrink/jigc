@@ -177,15 +177,25 @@ pub enum Command {
     /// Reverse this project's jigc install — removes `.jigc/`, unwires the
     /// `CLAUDE.md` reference, and drops the `Bash(jigc:*)` permit from
     /// `.claude/settings.json`. Leaves the machine-global `doc-code` probe (shared
-    /// across repos) in place. Idempotent and non-destructive on every state it
-    /// accepts: a second run is a clean no-op, and your own file content is
-    /// preserved byte-for-byte. One state it refuses instead of destroying —
-    /// while a fan-out sub-task worktree under `.jigc/worktrees/` holds
-    /// uncommitted work it blocks with `uninstall.dirty-worktree` and removes
-    /// nothing; get that work out (commit, stash, or copy it), or abandon the
-    /// milestone with `jigc milestone discard <milestone-id> --force`, then
-    /// re-run.
-    Uninstall,
+    /// across repos) in place. Idempotent: a second run is a clean no-op, and the
+    /// host files it edits (`CLAUDE.md`, `.claude/settings.json`, a wrapped
+    /// `pre-commit` hook) keep your own content byte-for-byte. Two states it
+    /// refuses instead of destroying, because `.jigc/` is their only copy — a
+    /// fan-out sub-task path under `.jigc/worktrees/` that holds content blocks
+    /// with `uninstall.dirty-worktree` (get the work out, or abandon the milestone
+    /// with `jigc milestone discard <milestone-id> --force`), and an open task
+    /// under `.jigc/tasks/` that holds authored doc prose blocks with
+    /// `uninstall.staged-prose` (land it with `jigc task finalize <task-id>`, or
+    /// throw it away with `jigc task discard <task-id>`). Either way it removes
+    /// nothing until you re-run — or pass `--force`, which deletes both with the
+    /// install.
+    Uninstall {
+        /// Remove `.jigc/` even when it holds a fan-out worktree with content or an
+        /// open task's authored doc prose — the explicit consent to destroy work no
+        /// commit has a copy of. Inert when both guards are already clean.
+        #[arg(long)]
+        force: bool,
+    },
 
     /// Re-check every recorded config delta against the current pack and report
     /// what needs attention. Report-and-route only — it changes nothing, and exits
@@ -403,7 +413,7 @@ impl Cli {
             Command::Config { verb } => run_config(self.format, verb),
             Command::Milestone { verb } => run_milestone(self.format, verb),
             Command::Setup => run_setup(self.format),
-            Command::Uninstall => run_uninstall(self.format),
+            Command::Uninstall { force } => run_uninstall(self.format, force),
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
             Command::Migrate { path, r#as, slug } => {
@@ -483,10 +493,10 @@ fn run_setup(format: Format) -> Outcome {
 /// (remove `.jigc/`, unwire the `CLAUDE.md` reference, drop the `Bash(jigc:*)` allowlist
 /// permit — never the machine-global `doc-code` probe), render the outcome through the
 /// selected `format`, and map it to the exit code. Success prints a summary on stdout
-/// and exits 0; a write failure prints a blocking `uninstall.*` finding (with its
-/// route) on stderr and exits non-zero (`design/project-setup.md` → Flow 2 hardening →
-/// Teardown / cleanup (G5), bullet (b)).
-fn run_uninstall(format: Format) -> Outcome {
+/// and exits 0; a write failure — or either WIP guard, unless `force` — prints a blocking
+/// `uninstall.*` finding (with its route) on stderr and exits non-zero
+/// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), bullet (b)).
+fn run_uninstall(format: Format, force: bool) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -494,7 +504,7 @@ fn run_uninstall(format: Format) -> Outcome {
             return Outcome::failure();
         }
     };
-    match setup::run_uninstall(&cwd) {
+    match setup::run_uninstall(&cwd, force) {
         Ok(summary) => {
             println!("{}", render::uninstall_success(format, &summary));
             Outcome::success()
@@ -1578,7 +1588,7 @@ mod cli_parse {
     #[test]
     fn uninstall_parses() {
         let cli = Cli::try_parse_from(["jigc", "uninstall"]).expect("`jigc uninstall` parses");
-        assert_eq!(cli.command, Command::Uninstall);
+        assert_eq!(cli.command, Command::Uninstall { force: false });
     }
 
     #[test]

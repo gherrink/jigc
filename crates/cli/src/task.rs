@@ -448,6 +448,33 @@ fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
     Ok(())
 }
 
+/// The sorted `<type>:<slug>` identities staged in a working area's `docs/` dir — the
+/// `docs/<type>:<slug>.md` set with the suffix stripped, which *is* the address
+/// `jigc doc show <addr> --task <id>` takes.
+///
+/// **The `*.md` set, never directory-non-emptiness**: `docs/` also holds
+/// `provenance.json`, so an emptiness probe over the directory answers "there is prose
+/// here" for every task that ever existed.
+///
+/// `Ok(vec![])` for an absent dir; an unreadable *present* dir is an `Err`, so a caller
+/// that must fail closed can (`crate::setup::staged_task_prose`, the `uninstall` guard —
+/// enumerating nothing must never be indistinguishable from finding nothing). Callers
+/// for whom the list is decoration take `.unwrap_or_default()`.
+pub(crate) fn staged_doc_ids(docs_dir: &Path) -> std::io::Result<Vec<String>> {
+    if !docs_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut ids: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(docs_dir)? {
+        let name = entry?.file_name();
+        if let Some(id) = name.to_string_lossy().strip_suffix(".md") {
+            ids.push(id.to_string());
+        }
+    }
+    ids.sort();
+    Ok(ids)
+}
+
 /// Enumerate the staged docs a `task discard` is about to throw away — the working
 /// area's `docs/<type>:<slug>.md` set, as sorted `<type>:<slug>` identities — so the
 /// ack can state what the removal dropped (B3, 2026-07-17 surface review; the style
@@ -459,17 +486,7 @@ fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
 /// unreadable `docs/` dir yields the empty list and a schema-load failure just
 /// leaves the marks off — enumeration must never block the discard itself.
 fn dropped_staged_docs(task: &TaskArea) -> Vec<render::DroppedStaged> {
-    let mut ids: Vec<String> = std::fs::read_dir(task.dir.join("docs"))
-        .map(|entries| {
-            entries
-                .filter_map(|entry| {
-                    let name = entry.ok()?.file_name().into_string().ok()?;
-                    Some(name.strip_suffix(".md")?.to_string())
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    ids.sort();
+    let ids = staged_doc_ids(&task.dir.join("docs")).unwrap_or_default();
     let schemas = task.schemas().unwrap_or_default();
     ids.into_iter()
         .map(|doc| {

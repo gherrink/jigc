@@ -94,14 +94,19 @@ fn run_milestone(repo: &Path, home: &Path, args: &[&str]) -> std::process::Outpu
         .expect("run the jigc binary")
 }
 
-/// Run `jigc uninstall` with `cwd = repo` and `$HOME = home`.
-fn run_uninstall(repo: &Path, home: &Path) -> std::process::Output {
+/// Run `jigc <args>` with `cwd = repo` and `$HOME = home`.
+fn run_jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
-        .arg("uninstall")
+        .args(args)
         .current_dir(repo)
         .env("HOME", home)
         .output()
         .expect("run the jigc binary")
+}
+
+/// Run `jigc uninstall` with `cwd = repo` and `$HOME = home`.
+fn run_uninstall(repo: &Path, home: &Path) -> std::process::Output {
+    run_jigc(repo, home, &["uninstall"])
 }
 
 /// `.jigc/config/manifest.yaml` opting the project into per-sub-task commits.
@@ -186,10 +191,16 @@ fn install_rejecting_hook(repo: &Path, pattern: &str) {
     }
 }
 
-/// The `squash: false` fan-out fixture: milestone + two sub-tasks, each with a persisted
-/// ADR + its authored commit doc staged in its area, and (unless `dirty` is false) a
-/// provisioned worktree holding that sub-task's **staged** code.
-fn setup_fanout(repo: &Path, home: &Path, dirty: bool) {
+/// The `squash: false` fan-out fixture: milestone + two sub-tasks, (unless `prose` is
+/// false) each with a persisted ADR + its authored commit doc staged in its area, and
+/// (unless `dirty` is false) a provisioned worktree holding that sub-task's **staged**
+/// code.
+///
+/// **`prose` is a separate knob from `dirty`** because the teardown now has two guards
+/// and the clean arm has to isolate one: staged `.jigc/tasks/<id>/docs/*.md` refuses the
+/// teardown on its own (`uninstall.staged-prose`), so a fixture asserting *clean
+/// worktrees still tear down* must stage none.
+fn setup_fanout(repo: &Path, home: &Path, dirty: bool, prose: bool) {
     set_squash_false(repo);
     assert!(
         run_milestone(repo, home, &["create", "Cache rework"])
@@ -205,10 +216,12 @@ fn setup_fanout(repo: &Path, home: &Path, dirty: bool) {
             "add-task `{intent}` must exit 0",
         );
     }
-    stage_doc(repo, "area-low", "adr:low-policy", &adr_plain("Low policy"));
-    stage_subtask_commit(repo, "area-low", "rework the low cache path");
-    stage_doc(repo, "area-zed", "adr:zed-policy", &adr_plain("Zed policy"));
-    stage_subtask_commit(repo, "area-zed", "rework the zed cache path");
+    if prose {
+        stage_doc(repo, "area-low", "adr:low-policy", &adr_plain("Low policy"));
+        stage_subtask_commit(repo, "area-low", "rework the low cache path");
+        stage_doc(repo, "area-zed", "adr:zed-policy", &adr_plain("Zed policy"));
+        stage_subtask_commit(repo, "area-zed", "rework the zed cache path");
+    }
 
     let provisioned = run_milestone(repo, home, &["provision", "cache-rework"]);
     assert!(
@@ -272,7 +285,7 @@ fn uninstall_refuses_while_an_aborted_fan_outs_worktrees_hold_uncommitted_work()
         init_repo(repo.path());
         let home = TempDir::new("home");
 
-        setup_fanout(repo.path(), home.path(), true);
+        setup_fanout(repo.path(), home.path(), true, true);
         cause.install(repo.path());
 
         // The boundary refuses, leaving the worktrees alive with the sole copy of the
@@ -395,9 +408,9 @@ fn uninstall_still_tears_down_when_every_provisioned_worktree_is_clean() {
     init_repo(repo.path());
     let home = TempDir::new("home");
 
-    // Provisioned worktrees, none of them holding uncommitted work — nothing is lost by
-    // removing them, so the guard must stay silent.
-    setup_fanout(repo.path(), home.path(), false);
+    // Provisioned worktrees, none of them holding uncommitted work, and no staged sub-task
+    // prose — nothing is lost by removing them, so both guards must stay silent.
+    setup_fanout(repo.path(), home.path(), false, false);
     assert!(
         worktree_dir(repo.path(), "area-low").is_dir(),
         "the fixture must provision the fan-out worktrees",
@@ -416,12 +429,231 @@ fn uninstall_still_tears_down_when_every_provisioned_worktree_is_clean() {
     );
 }
 
-/// The law-1 half of the same guard: the refusal this suite pins is now part of what the
+/// The **reproduced loss** (the pre-1.0.0 trial, live on `1.0.0-rc.10`): the ordinary
+/// single-task loop — `setup` → `start` → `doc set-slot` — leaves LLM-authored prose in
+/// `.jigc/tasks/<id>/docs/*.md` that **no object DB has a copy of**, and the teardown
+/// removed `.jigc/` wholesale at exit 0, reporting only `- removed .jigc/`.
+///
+/// The registered-worktree probe structurally cannot see this: no worktree is involved at
+/// all. So the teardown carries a **second** guard over the staged-`*.md` set, under its
+/// own `uninstall.staged-prose` identity — the same door, a different subject, because
+/// `uninstall.dirty-worktree` printed over a path with no worktree in it would be a law-1
+/// lie ([surface-contract.md](../../design/surface-contract.md) → law 1).
+///
+/// **The subject is the staged `*.md` set, never directory-non-emptiness** — `docs/` always
+/// also holds `provenance.json` — and it does **not** filter on the transient mark: the doc
+/// destroyed in the reproduced loss is `commit:<task>`, a transient doctype whose prose is
+/// exactly what the operator typed.
+#[test]
+fn uninstall_refuses_while_an_open_tasks_authored_prose_lives_only_in_the_workbench() {
+    let repo = TempDir::new("prose");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let installed = run_jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        installed.status.success(),
+        "`jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&installed.stderr),
+    );
+    let minted = run_jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "quick-fix", "fix the typo"],
+    );
+    assert!(
+        minted.status.success(),
+        "the quick-fix mint must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&minted.stderr),
+    );
+    let task = "fix-the-typo";
+    let prose = "Fix the typo in the gateway header.";
+    let authored = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args([
+            "doc",
+            "set-slot",
+            &format!("commit:{task}#summary"),
+            "--from-file",
+            "-",
+        ])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child
+                .stdin
+                .as_mut()
+                .expect("stdin pipe")
+                .write_all(prose.as_bytes())?;
+            child.wait_with_output()
+        })
+        .expect("run `jigc doc set-slot`");
+    assert!(
+        authored.status.success(),
+        "`jigc doc set-slot` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&authored.stderr),
+    );
+
+    let staged = repo
+        .path()
+        .join(".jigc/tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("commit:{task}.md"));
+    let before = fs::read(&staged).expect("the staged commit doc exists after the write");
+    assert!(
+        String::from_utf8_lossy(&before).contains(prose),
+        "the fixture must have landed the authored prose in the staged doc",
+    );
+
+    // (1) The teardown refuses — non-zero, routed finding on stderr.
+    let refused = run_uninstall(repo.path(), home.path());
+    let stderr = String::from_utf8(refused.stderr).expect("utf-8 stderr");
+    let stdout = String::from_utf8(refused.stdout).expect("utf-8 stdout");
+    assert!(
+        !refused.status.success(),
+        "`jigc uninstall` must refuse while an open task holds authored prose; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("uninstall.staged-prose"),
+        "the refusal must carry its own `uninstall.staged-prose` code; stderr:\n{stderr}",
+    );
+
+    // (2) It names the doc identity that would be destroyed — the address `jigc doc show
+    //     <addr> --task <id>` reads back, not a bare filename.
+    assert!(
+        stderr.contains(&format!("commit:{task}")),
+        "the refusal must name `commit:{task}`; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(task),
+        "the refusal must name the open task; stderr:\n{stderr}",
+    );
+
+    // (3) The route names the honest exits and the consent flag.
+    assert!(
+        stderr.contains("jigc task finalize") || stderr.contains("jigc task discard"),
+        "the route must name what to do with the open task; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("--force"),
+        "the route must name the consent flag; stderr:\n{stderr}",
+    );
+
+    // (4) NOTHING was removed, and the prose is byte-intact.
+    assert!(
+        repo.path().join(".jigc").is_dir(),
+        "`.jigc/` must survive the refusal",
+    );
+    assert_eq!(
+        fs::read(&staged).expect("the staged doc survives"),
+        before,
+        "the authored prose must survive the refusal byte-for-byte",
+    );
+
+    // (5) `--force` is the operator's consent: the teardown completes.
+    let forced = run_jigc(repo.path(), home.path(), &["uninstall", "--force"]);
+    assert!(
+        forced.status.success(),
+        "`jigc uninstall --force` must complete the teardown; stderr:\n{}",
+        String::from_utf8_lossy(&forced.stderr),
+    );
+    assert!(
+        !repo.path().join(".jigc").exists(),
+        "`--force` must remove `.jigc/`",
+    );
+}
+
+/// The cell the registered-worktree probe **structurally cannot see**: a non-empty,
+/// worktree-shaped path under `.jigc/worktrees/` that is registered nowhere. It is the
+/// ordinary `cp -R` / `mv` shape (a copy's worktree admin record names the *source*, so
+/// nothing under the copy's own `.jigc/worktrees/` is registered there) reduced to its
+/// essence — and under the old registered-set subject the guard was inert over it and
+/// `remove_dir_all` took the lot at exit 0.
+///
+/// So the subject is now the **path**, classified fail-closed by the shared
+/// `probe_leftover`: git can vouch for nothing here, and a directory holding content the
+/// binary cannot place refuses.
+#[test]
+fn uninstall_refuses_a_non_empty_worktree_path_no_registered_probe_can_see() {
+    let repo = TempDir::new("unregistered");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    let ghost = worktree_dir(repo.path(), "area-ghost");
+    fs::create_dir_all(&ghost).expect("mk the unregistered worktree-shaped path");
+    let precious = ghost.join("precious.txt");
+    fs::write(&precious, "work that is in no object DB\n").expect("plant the content");
+    let before = fs::read(&precious).expect("read the planted bytes");
+
+    let refused = run_uninstall(repo.path(), home.path());
+    let stderr = String::from_utf8(refused.stderr).expect("utf-8 stderr");
+    let stdout = String::from_utf8(refused.stdout).expect("utf-8 stdout");
+    assert!(
+        !refused.status.success(),
+        "`jigc uninstall` must refuse over a non-empty path under `.jigc/worktrees/` that is \
+         registered nowhere; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("uninstall.dirty-worktree"),
+        "the refusal must carry the `uninstall.dirty-worktree` code; stderr:\n{stderr}",
+    );
+    let shown = ghost
+        .canonicalize()
+        .unwrap_or(ghost.clone())
+        .display()
+        .to_string()
+        .replace("/private/", "/");
+    assert!(
+        stderr.replace("/private/", "/").contains(&shown),
+        "the refusal must name the path `{shown}`; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("precious.txt"),
+        "the refusal must name what would be deleted; stderr:\n{stderr}",
+    );
+    assert!(
+        repo.path().join(".jigc").is_dir() && precious.is_file(),
+        "the refusal must remove nothing",
+    );
+    assert_eq!(
+        fs::read(&precious).expect("the planted bytes survive"),
+        before,
+        "the planted bytes must survive byte-for-byte",
+    );
+
+    let forced = run_jigc(repo.path(), home.path(), &["uninstall", "--force"]);
+    assert!(
+        forced.status.success(),
+        "`jigc uninstall --force` must complete the teardown; stderr:\n{}",
+        String::from_utf8_lossy(&forced.stderr),
+    );
+    assert!(
+        !repo.path().join(".jigc").exists(),
+        "`--force` must remove `.jigc/`",
+    );
+}
+
+/// The law-1 half of the same guard: the refusals this suite pins are part of what the
 /// verb *is*, so `jigc uninstall --help` — the surface a reader consults before running a
-/// teardown — must state it. Before this fix the long help still read "Idempotent and
-/// non-destructive: a second run is a clean no-op, …" with no qualification, so a reader
-/// who trusted it was never told that a dirty fan-out worktree blocks the verb, nor how to
-/// proceed ([surface-contract.md](../../design/surface-contract.md) → law 1, nothing lies).
+/// teardown — must state them. Before the M47 fix the long help read "Idempotent and
+/// non-destructive: a second run is a clean no-op, …" with no qualification; the fix
+/// qualified it with the worktree refusal, and this wave falsified it twice more — the
+/// staged-prose refusal is a **second** refused state (the help claimed "One state"), and
+/// `--force` makes the verb destructive on demand (the help promised your own file content
+/// "preserved byte-for-byte" unconditionally)
+/// ([surface-contract.md](../../design/surface-contract.md) → law 1, nothing lies).
 ///
 /// Asserted against the **emitted bytes** (the real `--help` render through the built
 /// binary), not the const the doc comment compiles into, so the pin binds what a reader
@@ -444,30 +676,42 @@ fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
         .join(" ");
 
     for needle in [
-        // it names the state that refuses …
+        // it names BOTH states that refuse, each by the code its refusal carries …
         "uninstall.dirty-worktree",
         ".jigc/worktrees/",
-        // … and the escape hatch the finding's own route names.
+        "uninstall.staged-prose",
+        ".jigc/tasks/",
+        // … the escape hatches the findings' own routes name …
         "jigc milestone discard",
+        "jigc task finalize",
+        // … and the one flag that turns the refusal into a deletion.
+        "--force",
     ] {
         assert!(
             help.contains(needle),
-            "`uninstall --help` must state the refusal — missing {needle:?}; got:\n{help}",
+            "`uninstall --help` must state both refusals and the consent flag — missing \
+             {needle:?}; got:\n{help}",
         );
     }
-    // The verb is still idempotent and non-destructive *on the states it accepts*; the fix
-    // qualifies that promise, it does not delete it.
-    for needle in ["non-destructive", "byte-for-byte"] {
+    // The verb is still idempotent, and still leaves the host files it edits byte-for-byte
+    // — that half of the promise survives, scoped to what is actually true of it.
+    for needle in ["Idempotent", "byte-for-byte"] {
         assert!(
             help.contains(needle),
             "`uninstall --help` must keep the accepted-state promise — missing {needle:?}; \
              got:\n{help}",
         );
     }
-    // The unqualified sentence is the defect itself: an unconditional "a second run is a
-    // clean no-op" claim with nothing between it and "non-destructive".
-    assert!(
-        !help.contains("Idempotent and non-destructive: a second run"),
-        "`uninstall --help` must not restate the unqualified promise; got:\n{help}",
-    );
+    // The two falsified claims are the defect itself: an unqualified "non-destructive"
+    // (`--force` deletes on demand) and a refusal set of exactly "One state" (there are two).
+    for banned in [
+        "Idempotent and non-destructive: a second run",
+        "non-destructive on every state it accepts",
+        "One state it refuses",
+    ] {
+        assert!(
+            !help.contains(banned),
+            "`uninstall --help` must not restate the falsified promise {banned:?}; got:\n{help}",
+        );
+    }
 }
