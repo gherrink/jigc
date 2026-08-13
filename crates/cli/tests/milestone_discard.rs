@@ -498,6 +498,75 @@ fn a_non_registered_leftover_at_a_subtask_worktree_path_refuses_the_discard() {
     );
 }
 
+/// (RED-ix, M48 Inc 1) The law-1 half of RED-viii's widening: `jigc milestone discard --help` —
+/// the surface a reader consults **before** running a teardown — must state the refusal the door
+/// actually performs and what `--force` actually costs.
+///
+/// Red before this fix: T3 replaced the guard's subject (the registered set ∩ the task list) with
+/// the *path* probe, so the door refuses over content that is entirely **committed** — while the
+/// long help still promised refusal only "when any sub-task worktree holds uncommitted work", and
+/// the flag still promised `--force` "destroy[s] it" over a path the teardown provably **leaves on
+/// disk** (RED-viii's own closing assertion). Two law-1 lies, introduced by the widening that made
+/// them false (`design/surface-contract.md` → law 1; the *widen a guard's trigger, re-derive its
+/// response* rule in `implementation/dev-workflow.md`).
+///
+/// Asserted against the **emitted bytes** (the real `--help` render through the built binary), not
+/// the const the doc comment compiles into, so the pin binds what a reader actually sees — the
+/// `uninstall_long_help_states_the_refusal_and_names_its_escape_hatch` idiom for the sibling door.
+/// `--help` needs no repo or pack: clap prints it before dispatch.
+#[test]
+fn discard_long_help_states_the_widened_refusal_and_what_force_really_does() {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["milestone", "discard", "--help"])
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc milestone discard --help` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    // clap wraps the long help to the terminal width, so compare on collapsed whitespace.
+    let help = String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    for needle in [
+        // the refusal, by the code it carries and the paths it probes …
+        DISCARD_DOOR.code,
+        ".jigc/worktrees/",
+        // … its real subject: any content the door cannot prove disposable, committed included,
+        // and the ordinary way an unregistered path gets there …
+        "content nothing can prove is disposable",
+        "has not registered as a worktree",
+        // … and what `--force` really does, per disposition (RED-viii asserts both halves live).
+        "--force",
+        "removed with everything uncommitted in it",
+        "orphaned on disk",
+    ] {
+        assert!(
+            help.contains(needle),
+            "`milestone discard --help` must state the widened refusal and `--force`'s real \
+             cost — missing {needle:?}; got:\n{help}",
+        );
+    }
+    // The two falsified promises are the defect itself: a refusal scoped to *uncommitted* work
+    // (the door refuses over committed content too), and a `--force` that "destroys" the content
+    // it in fact leaves behind on a path this repo never registered.
+    for banned in [
+        "Refuses when any sub-task worktree holds uncommitted work",
+        "Discard even when a sub-task worktree holds uncommitted work",
+        "the explicit consent to destroy it",
+        "without this, a dirty worktree refuses the abandon",
+    ] {
+        assert!(
+            !help.contains(banned),
+            "`milestone discard --help` must not restate the falsified promise {banned:?}; \
+             got:\n{help}",
+        );
+    }
+}
+
 /// (RED-ii) `--force` settles the record (the header and every in-flight sub-task to `discarded`)
 /// in EXACTLY ONE record-only commit — unrelated staged and untracked WIP untouched — and tears
 /// the whole workbench down.

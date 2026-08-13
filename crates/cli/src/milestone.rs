@@ -167,13 +167,21 @@ pub enum MilestoneCommand {
     /// Abandon the milestone: settle its committed record to the `discarded` terminal
     /// (a genuinely **joined** sub-task stays `joined` — it really did land) in one
     /// record-only commit, then tear the workbench down (the sub-task areas, the
-    /// registered fan-out worktrees, and `.jigc/milestones/<id>/`). Refuses when any
-    /// sub-task worktree holds uncommitted work, unless `--force`.
+    /// registered fan-out worktrees, and `.jigc/milestones/<id>/`). Refuses with
+    /// `milestone.dirty-worktree` when any sub-task's path under `.jigc/worktrees/`
+    /// holds content nothing can prove is disposable — a live worktree carrying
+    /// uncommitted work, and equally a path this repository has not registered as a
+    /// worktree (a `cp -R` or `mv` of the repo leaves the copy's worktrees registered
+    /// at the source's path), whose contents no git here vouches for, committed or
+    /// not. Get that content out and re-run, or pass `--force`.
     Discard {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
-        /// Discard even when a sub-task worktree holds uncommitted work — the explicit
-        /// consent to destroy it (without this, a dirty worktree refuses the abandon).
+        /// Settle the record and tear the workbench down even when a sub-task worktree
+        /// path holds content — the explicit consent, and what it costs differs by
+        /// path: a worktree this repository has registered is removed with everything
+        /// uncommitted in it, while a path registered nowhere is left orphaned on disk
+        /// for you to deal with. Inert when the guard is already clean.
         #[arg(long)]
         force: bool,
     },
