@@ -390,3 +390,38 @@ now would pin it as expected output.
 **The confirmed set stays open, and it is the gate.** F1–F16 are uniformly `UNPINNED` because the
 trial ran under *no mid-trial fixes* — no fix exists, so no red test can carry them. The 1.0.0 call
 is not taken until this table is closed.
+
+---
+
+## Process changes for the next trial
+
+Recorded here rather than in this trial's `protocol.md`, following the RC-alpha3 precedent
+(*process change 7*, which is how the environment-matrix discipline reached this trial): a per-trial
+protocol is disposable, so a convention that should outlive it lives with the verdicts and is cited
+forward by the next protocol.
+
+1. **Back-date the plant's commit, not just its body.** The G3 foreign-ADR plant carried
+   `Date: 2026-08-04` in its body while being committed mid-session, and the worker opened its report
+   by naming exactly that mismatch. The catch itself was unweakened — everything that mattered
+   concerned the ADR's *content* — but a worker that notices a back-dated file can infer it is being
+   tested, which is the contamination the unseeded protocol exists to prevent. Set
+   `GIT_AUTHOR_DATE` / `GIT_COMMITTER_DATE` on the plant commit, or drop the body date. Free, and it
+   removes the tell.
+2. **Keep a contemporaneous `operator-log.md`.** New this trial: every operator utterance into a
+   blind session, logged verbatim with its justification *as it happened*, plus the record-side
+   observations riding on that exchange. It is what let the record's purity statement be written from
+   notes rather than recall — the weakness every prior trial's honesty statement carried. It also
+   forced the honest classification of a **pre-registered trap versus an accident** in real time: the
+   prose-vs-code contradiction two sessions found independently was the observer's own, and logging
+   it at the moment of discovery is what stopped it becoming a "caught trap" in the write-up.
+3. **Commit an operator plant with an explicit pathspec.** `git commit -m … -- <path>` rather than
+   `git add <path> && git commit`, so a worker's in-flight index can never be swept into the
+   operator's commit. Verified before and after on this trial's plant; the bare form would have been
+   a silent contamination with no trace.
+4. **Stage the shipped guides outside the corpus.** `jigc setup` installs a bootstrap `CLAUDE.md`,
+   an allowlist and hooks — but ships **neither `QUICKSTART.md` nor `MIGRATING.md`** into the repo, so
+   a blind worker has no path to the docs the charter requires it to read. Copying both to a sibling
+   directory named in the prompt keeps them reachable without polluting the ingest funnel (a tracked
+   `.md` inside the corpus becomes an ingest candidate). Declare it as operator seeding, and expect
+   their in-repo relative links to dangle from that location — if a worker is stranded following one,
+   that is a finding, not a prep defect.

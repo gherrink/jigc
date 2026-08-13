@@ -1,0 +1,8 @@
+# __PRODUCT__
+
+__TAGLINE__
+
+```sh
+npm test     # node --test, no install needed
+npm start
+```

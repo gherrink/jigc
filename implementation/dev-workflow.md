@@ -17,6 +17,16 @@ The loop is shaped as named, ordered steps on purpose: each maps onto a future j
    - `cargo test`
    - `cargo build`
 
+   **Measure the gate unpiped — `cmd | tail` reports *tail's* exit status, not the command's** (2026-08-13, the pre-1.0.0 trial session, where this one habit produced **four** near-misses in a day). A pipeline's `$?` is its *last* stage, so `cargo test 2>&1 | tail -40` exits 0 over a failing suite, and `cargo fmt --check | tail -3` exits 0 over a real diff — both were nearly recorded as green, and a `tail` also silently discarded the per-target counts that would have shown the run was never measured at all. The same shape produced two *false findings* against the product in the same session (`jigc validate`'s exit code read through a pipe; an authored item "missing" because `head -8` cut the render before it), both caught only by re-measuring and both recorded as died-in-verification in [the trial's verification](../completions/artifacts/RC-pre-1.0/findings-verification.md).
+
+   **So: redirect, capture `$?` directly, then inspect the file.**
+
+   ```sh
+   cargo test > /tmp/gate.log 2>&1; echo "EXIT=$?"   # then grep the log
+   ```
+
+   The general form is the one this doc already legislates elsewhere: **a green that means "nothing was measured" is indistinguishable from "nothing was wrong."** It is the vacuous-pass family — a filter that matches no test, a snapshot that cannot witness an invariant, a fixture reachable only by the defect — arriving through the shell instead of through the test. **Pack-shape: step prose in `step:gate`**, beside the no-masking rule: *"Did you read the command's own exit code, or a pipe's? Did the run report the counts you expected, or zero?"*
+
    **The gate is still FULL and UNSCOPED** — the `--bin jigc` pack/describe goldens live in a target a scoped run silently misses (M23: an increment landed a red gate off a scoped run). What changed at M47 is only *how many binaries* that costs: the ~250 suite files under `crates/cli/tests/` are compiled into **twelve `[[test]]` group targets**, not one target each — a macOS Gatekeeper assessment per freshly-linked binary was charging ~44 s × 252 on every gate run. **A new suite file must be registered in exactly one group root** under `crates/cli/tests/groups/` (`#[path = "../<name>.rs"] mod <name>;`) — `autotests = false` means an unregistered file compiles nowhere and silently never runs, which `tests/test_target_registration.rs` fences. To run one suite: `cargo test -p cli <suite_name>::` (the suite is now a *module* inside its group, so `--test <file>` no longer addresses it). **Two group roots are `g_solo_*` and must stay at one suite each** — they mutate process-global env vars, which only stays sound while nothing else shares their process; the same guard enforces that.
 
    **A green gate does not prove a proptest-guarded invariant holds** (see *A proptest is not a gate*, below). If your change touches behavior an existing property test guards, **pin the invariant with a deterministic case in the same commit** — and if you mean to *retire* an invariant, reconcile its proptest explicitly and state a rationale you have actually checked.
