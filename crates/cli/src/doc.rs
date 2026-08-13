@@ -2266,9 +2266,12 @@ fn run_doc_rename(
 /// shipped *"you are changing identity through a verb that cannot"* member (its other
 /// producer is `retitle-item` under an enum `id-from`):
 ///
-/// * a **`placement` / `display-title` singleton** — its slug IS the type id and its H1
-///   is the schema's `display-title` (`design/storage.md` → Placement), which is exactly
-///   why `jigc rename` calls a reslug **undefined** there rather than merely blocked;
+/// * a **singleton** ([`Schema::fixed_title`] — the one home of this rule, keyed on
+///   `singleton:` itself and never re-derived from the knobs a shipped singleton happens
+///   to carry): its slug IS the type id and its H1 is the schema's, which is exactly why
+///   `jigc rename` calls a reslug **undefined** there rather than merely blocked. It is
+///   the same predicate the create/author door refuses on (`write.title-ignored`), so the
+///   two doors cannot disagree about which doctypes own their title;
 /// * a **transient sink** (no `location`, no `placement`, no doc-level `id-from` — today
 ///   `commit`): it never lands as a repo file, and its slug IS the task id, so moving it
 ///   would sever the doc from the task whose finalize renders it.
@@ -2277,11 +2280,11 @@ fn run_doc_rename(
 /// command this doc's agent can re-run.
 fn fixed_identity_refusal(schema: &Schema, uri: &str) -> Option<Finding> {
     let ty = &schema.ty;
-    let (what, route) = if schema.placement.is_some() || schema.display_title.is_some() {
+    let (what, route) = if let Some(fixed) = schema.fixed_title() {
         (
             format!(
-                "`{ty}` is a singleton — its slug IS the type id and its `# H1` is the \
-                 schema's own `display-title`, so it carries no author-owned title or slug"
+                "`{ty}` is a singleton — its slug IS the type id and its `# H1` is supplied \
+                 by the schema (`{fixed}`), so it carries no author-owned title or slug"
             ),
             format!(
                 "nothing to rename: the name is part of the `{ty}` schema, so a genuinely \

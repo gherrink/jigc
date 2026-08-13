@@ -13,9 +13,11 @@
 //! Every shipped doctype falls into exactly one of three partitions, keyed on the same
 //! code-side predicates the verb branches on:
 //!
-//!   * **fixed identity** — `placement.is_some() || display_title.is_some()`: the slug
-//!     IS the type id and the `# H1` is the schema's `display-title`, so there is
-//!     neither a title nor a slug to change → **refuse**;
+//!   * **fixed identity** — `Schema::fixed_title().is_some()`, i.e. `singleton: true`:
+//!     the slug IS the type id and the `# H1` is the schema's, so there is neither a
+//!     title nor a slug to change → **refuse**. Keyed on the rule, not on the
+//!     `placement:` / `display-title:` knobs every *shipped* singleton happens to carry
+//!     as well — the cell no shipped doctype occupies gets a fixture arm of its own;
 //!   * **slug identity** — `location.is_some()`: the title mints the slug, so the verb
 //!     applies → re-slug freely while the identity is uncommitted, retitle-only once it
 //!     is committed (`milestone-record` is refused above all of it, by the shipped
@@ -45,7 +47,8 @@ use support::trial_corpus::{State, TrialCorpus};
 /// order the verb evaluates them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Cell {
-    /// `placement.is_some() || display_title.is_some()` — the singleton set.
+    /// `Schema::fixed_title().is_some()` — the `singleton:` set, keyed on the code-side
+    /// rule itself rather than on the knobs a shipped singleton happens to declare.
     FixedIdentity,
     /// `location.is_some()` — the slug-identity set (the verb's subject).
     SlugIdentity,
@@ -72,7 +75,7 @@ fn census() -> BTreeMap<String, (Schema, Cell)> {
             .read(PackResourceKind::Schemas, &id)
             .expect("a listed schema reads back");
         let schema = cli::pack::load_pack_schema(&pack, &bytes).expect("a shipped schema parses");
-        let cell = if schema.placement.is_some() || schema.display_title.is_some() {
+        let cell = if schema.fixed_title().is_some() {
             Cell::FixedIdentity
         } else if schema.location.is_some() {
             Cell::SlugIdentity
@@ -230,13 +233,23 @@ fn the_rename_census_partitions_the_whole_doctype_registry() {
         );
     }
 
-    // The two knobs of the fixed-identity predicate never disagree on a shipped
-    // doctype (the census's own claim), so the cell has one predicate, not two.
+    // The cell IS the `singleton:` set — the rule `Schema::fixed_title` owns and all
+    // three seams read — and **every shipped singleton also carries both knobs**, which
+    // is exactly why a refusal re-derived from `placement || display-title` stays green
+    // over this whole registry while missing the rule. The shipped set cannot catch that
+    // divergence, so `a_location_bearing_singleton_refuses_the_rename` drives the cell
+    // no shipped doctype occupies.
     for (ty, (schema, cell)) in &census {
+        assert_eq!(
+            *cell == Cell::FixedIdentity,
+            schema.singleton,
+            "`{ty}`'s cell must be its `singleton:` flag — the fixed-identity rule"
+        );
         if *cell == Cell::FixedIdentity {
             assert!(
                 schema.placement.is_some() && schema.display_title.is_some(),
-                "`{ty}` is fixed-identity through only one knob — the census claims both"
+                "`{ty}` is a shipped singleton missing a knob — the coincidence this \
+                 census records (and the fixture arm covers) has changed shape"
             );
         }
     }
@@ -696,6 +709,131 @@ fn the_milestone_record_refuses_through_the_shipped_machine_maintained_guard() {
                 "`{ty}` must pass the doctype gate and fail on the absent instance:\n{stderr}"
             );
         }
+    }
+}
+
+// ───── arm F — the fixed-identity axis, past the shipped-pack knob coincidence ─────
+
+/// Seed a **listed fixture pack** carrying a `singleton: true` doctype that declares
+/// `location:` and *neither* `placement:` nor `display-title:` — the shape
+/// `singleton_running_doc.rs` has driven through the real binary since M16, and the one
+/// cell no shipped doctype occupies. The pack lives outside the repo and is named in the
+/// in-repo `.jigc/config/packs.yaml`, so it UNIONs with the embedded packs (the flow-18
+/// listed-pack seam): the base supplies `commit` + knobs, the fixture the singleton and a
+/// `creates-task: true` workflow whose create-gate admits it.
+fn seed_location_singleton_pack(corpus: &TrialCorpus) {
+    let pack = corpus
+        .repo()
+        .parent()
+        .expect("the corpus root")
+        .join("pack");
+    for sub in ["schemas", "workflows", "steps", "config"] {
+        fs::create_dir_all(pack.join(sub)).expect("mk fixture pack subdir");
+    }
+    fs::write(
+        pack.join("schemas/runlog.yaml"),
+        "type: runlog\n\
+         singleton: true\n\
+         location: runlog/\n\
+         description: A fixture running log maintained as a singleton over time.\n\
+         usage: the fixture cell no shipped doctype occupies — a singleton with a location.\n\
+         sections:\n\
+         \x20 - id: overview\n\
+         \x20   slot: {}\n",
+    )
+    .expect("seed the runlog schema");
+    fs::write(
+        pack.join("workflows/keep-runlog.yaml"),
+        "---\n\
+         when: maintain the fixture running log\n\
+         description: A fixture workflow that creates-or-updates the runlog singleton.\n\
+         usage: proving the fixed-identity refusal over a location-bearing singleton.\n\
+         creates-task: true\n\
+         allows-create: [{type: runlog, as: log}]\n\
+         ---\n\
+         {{ include: step:keep }}\n",
+    )
+    .expect("seed the keep-runlog workflow");
+    fs::write(
+        pack.join("steps/keep.yaml"),
+        "Maintain the running log for the following intent:\n\n{{ task.intent }}\n",
+    )
+    .expect("seed the keep step");
+    fs::write(pack.join("config/commands.yaml"), "commands: []\n").expect("seed empty catalog");
+
+    fs::write(
+        corpus.repo().join(".jigc/config/packs.yaml"),
+        format!("packs:\n  - {}\n", pack.display()),
+    )
+    .expect("write packs.yaml naming the fixture pack");
+}
+
+/// **The axis, not the shipped instance.** Every singleton in either shipped pack
+/// happens to carry `placement:` *and* `display-title:`, so a refusal keyed on those two
+/// knobs stays green over the whole registry while missing the rule it claims to enforce.
+/// The rule is [`Schema::fixed_title`] — **`singleton: true`**: the slug IS the type id,
+/// whatever knobs the schema declares. Unrefused on the location-bearing cell, `doc
+/// rename` re-slugs the singleton, rebinds the task's role to the new identity, and
+/// finalize promotes it OFF its canonical path at exit 0 — after which the next `doc
+/// create <ty>` mints a *second* document at the canonical one and `jigc validate`
+/// reports the fork clean. The same doctype is refused correctly at the create door
+/// (`write.title-ignored`), which is the divergence this arm closes.
+#[test]
+fn a_location_bearing_singleton_refuses_the_rename() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    seed_location_singleton_pack(&corpus);
+    let task = corpus.start_workflow("keep-runlog", "keep the log");
+    corpus.jigc_ok(&[
+        "doc", "create", "runlog", "--title", "runlog", "--task", &task,
+    ]);
+
+    let (ok, stdout, stderr) = json(
+        &corpus,
+        &[
+            "doc",
+            "rename",
+            "runlog:runlog",
+            "--to",
+            "Something Else",
+            "--task",
+            &task,
+        ],
+    );
+    assert!(
+        !ok,
+        "`doc rename runlog:runlog` must refuse — a singleton's slug IS its type id, \
+         whether it homes at a `placement` literal or under a `location`; stdout:\n{stdout}"
+    );
+    let finding = blocking_finding(&stderr, "location-bearing singleton refusal");
+    assert_eq!(
+        finding["code"], "write.identity-change",
+        "the location-bearing singleton joins the shipped refusal, same code:\n{stderr}"
+    );
+    assert!(
+        finding["route"].as_str().is_some_and(|r| !r.is_empty()),
+        "the refusal names a route (the route floor):\n{stderr}"
+    );
+    // Law 1 over the cell that has no `display-title:` — the sentence may not attribute
+    // the `# H1` to a knob this schema never declares.
+    let message = finding["message"].as_str().unwrap_or_default();
+    assert!(
+        !message.contains("display-title"),
+        "a singleton without `display-title:` must not be told its H1 comes from one:\n{stderr}"
+    );
+
+    // The identity did not move: the task still binds the canonical address and the
+    // staged file still sits at the canonical slug.
+    let task_dir = corpus.repo().join(".jigc/tasks").join(&task);
+    let roles = fs::read_to_string(task_dir.join("roles.json")).expect("the task's bound roles");
+    assert!(
+        roles.contains("runlog:runlog"),
+        "the refused rename left the role bound to the canonical identity; got:\n{roles}"
+    );
+    for (path, _) in files_under(&task_dir) {
+        assert!(
+            !path.contains("something-else"),
+            "the refused rename staged nothing under the new slug: {path}"
+        );
     }
 }
 
