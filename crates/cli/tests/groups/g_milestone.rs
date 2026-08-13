@@ -51,6 +51,8 @@ mod milestone_zero_contribution;
 mod pinned_facts;
 #[path = "../placement_acceptance.rs"]
 mod placement_acceptance;
+#[path = "../provision_leftover_guard.rs"]
+mod provision_leftover_guard;
 #[path = "../spawn_template_executes.rs"]
 mod spawn_template_executes;
 #[path = "../staged_snapshot.rs"]

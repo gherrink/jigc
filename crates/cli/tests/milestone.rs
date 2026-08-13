@@ -2126,13 +2126,34 @@ fn milestone_provision_creates_detached_base_pin_worktrees_idempotently() {
 
     let wt_root = repo.path().join(".jigc").join("worktrees");
 
-    // Inject a STALE, non-registered leftover dir at one worktree path (a crashed-run
-    // remnant): provision must clear it and still succeed (the stale-leftover idempotency).
+    // Inject a non-registered leftover dir at one worktree path. Until M48 Inc 1 this
+    // asserted the leftover was CLEARED and the run exited 0 — which pinned data loss as
+    // expected output: `junk.txt` passes only because the test author knows it is junk, and
+    // the binary cannot tell it from `precious.txt` (`DECISIONS.md` 2026-08-13 → the Settle,
+    // F3). A leftover holding anything now REFUSES; the guard's own axis (every verdict ×
+    // `--force`) lives in `provision_leftover_guard.rs`, so this arm pins only the fact that
+    // the shipped idempotency path no longer walks over content.
     let stale = wt_root.join("area-low");
     fs::create_dir_all(&stale).expect("mk stale leftover dir");
     fs::write(stale.join("junk.txt"), "leftover\n").expect("write junk");
 
-    // Provision #1 — over the stale leftover.
+    let refused = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+    assert!(
+        !refused.status.success(),
+        "a leftover holding content must REFUSE the provision; got {:?}\nstdout:\n{}",
+        refused.status,
+        String::from_utf8_lossy(&refused.stdout),
+    );
+    assert!(
+        fs::read_to_string(stale.join("junk.txt")).expect("the leftover survives") == "leftover\n",
+        "the refused provision must leave the leftover's bytes untouched",
+    );
+
+    // Emptied — an EMPTY leftover is provably safe, so the crashed-run idempotency the rest
+    // of this test asserts still holds.
+    fs::remove_file(stale.join("junk.txt")).expect("empty the leftover");
+
+    // Provision #1 — over the (now empty) stale leftover.
     let provisioned = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
     assert!(
         provisioned.status.success(),

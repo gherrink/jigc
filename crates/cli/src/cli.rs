@@ -2126,6 +2126,7 @@ mod cli_parse {
             Command::Milestone {
                 verb: MilestoneCommand::Provision {
                     milestone_id: "cache-rework".to_string(),
+                    force: false,
                 },
             }
         );

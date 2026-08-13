@@ -118,12 +118,20 @@ pub enum MilestoneCommand {
     /// Provision the milestone's fan-out worktrees: add one **detached** `git
     /// worktree` per sub-task at the milestone's recorded **base pin** under the
     /// gitignored `.jigc/worktrees/<sub-task-id>` path, so each fanned sub-agent gets
-    /// an isolated code checkout. Idempotent — reuses a live worktree, clears a stale
-    /// leftover from a crashed run. Run as a `Run:` step before the fan-out
+    /// an isolated code checkout. Idempotent — reuses a live worktree untouched, and
+    /// clears an **empty** leftover directory. A leftover that holds anything
+    /// **refuses**: nothing can prove those bytes are disposable (a copied or moved
+    /// repo's live worktrees land here), so the refusal names what would be deleted and
+    /// `--force` is the consent to delete it. Run as a `Run:` step before the fan-out
     /// (`design/storage.md` → repository layout).
     Provision {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
+        /// Delete a leftover directory at a sub-task's worktree path even when it holds
+        /// content — the explicit consent to destroy it (without this, a non-empty
+        /// leftover refuses). Inert when every path is empty or a live worktree.
+        #[arg(long)]
+        force: bool,
     },
     /// Compose the `milestone-execution` workflow over the milestone, feeding its
     /// id-sorted sub-task list into `{{milestone.tasks}}` so the `fan-out` step
@@ -223,9 +231,10 @@ impl MilestoneCommand {
             MilestoneCommand::ListTasks { milestone_id } => {
                 run_list_tasks(cwd, &milestone_id).map(|summary| (summary, String::new()))
             }
-            MilestoneCommand::Provision { milestone_id } => {
-                run_provision(cwd, &milestone_id).map(|summary| (summary, String::new()))
-            }
+            MilestoneCommand::Provision {
+                milestone_id,
+                force,
+            } => run_provision(cwd, &milestone_id, force).map(|summary| (summary, String::new())),
             MilestoneCommand::Discard {
                 milestone_id,
                 force,
@@ -1558,10 +1567,11 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
 /// The CLI does the git I/O: HEAD never enters here (the base is the milestone's
 /// **stored** pin), but the worktree shell-outs run on the main checkout `repo_root`
 /// while the `.jigc/worktrees/` parent binds to jigc_home (the M31 WF3 split — outside
-/// a worktree the two coincide). **Idempotent**: a re-run reuses a live worktree, and a
-/// stale leftover dir from a crashed run is pruned/cleared before the add. An unknown
-/// milestone (no area) surfaces as a context-wrapped error.
-fn run_provision(cwd: &Path, milestone_id: &str) -> Result<String> {
+/// a worktree the two coincide). **Idempotent**: a re-run reuses a live worktree, and an
+/// **empty** leftover dir is pruned/cleared before the add; a leftover holding anything
+/// refuses unless `force` ([`probe_leftover`]). An unknown milestone (no area) surfaces as
+/// a context-wrapped error.
+fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
@@ -1594,7 +1604,7 @@ fn run_provision(cwd: &Path, milestone_id: &str) -> Result<String> {
     // Id-sorted ids — the deterministic order the fan-out spawns its sub-agents.
     let ids = list.enumerate();
 
-    let paths = provision_worktrees(&repo_root, &jigc_home, &base.sha, &ids)?;
+    let paths = provision_worktrees(&repo_root, &jigc_home, milestone_id, &base.sha, &ids, force)?;
     Ok(format!(
         "provisioned {} worktree(s) for milestone:{milestone_id} at base {} ({})",
         paths.len(),
@@ -1608,14 +1618,25 @@ fn run_provision(cwd: &Path, milestone_id: &str) -> Result<String> {
 /// created first (git makes only the leaf), then `git worktree prune` drops admin
 /// records for any worktree whose dir was deleted by a crashed run. For each sub-task:
 /// a worktree already registered at the exact path is reused (the crashed run's
-/// worktree, or a prior provision — left untouched); otherwise a stale non-registered
-/// leftover dir is cleared and `git worktree add --detach` lands a fresh one. Returns
-/// the absolute worktree paths in the input (id-sorted) order.
+/// worktree, or a prior provision — left untouched); otherwise the leftover directory at
+/// that path is **probed** ([`probe_leftover`]) and cleared only when nothing there needs
+/// keeping, before `git worktree add --detach` lands a fresh one. Returns the absolute
+/// worktree paths in the input (id-sorted) order.
+///
+/// **A leftover holding anything refuses the whole provision** (`DECISIONS.md` 2026-08-13 →
+/// the Settle, F3), naming the path and what would be deleted; `force` is the operator's
+/// consent to delete it. The old unconditional `remove_dir_all` here was M47's declared
+/// undischarged bound, and the pre-1.0.0 trial confirmed it destroys a copied repo's live,
+/// uncommitted sub-agent work at exit 0 — the registered set cannot see it, because a copy's
+/// admin record names the source's path. The refusal fires **before any removal or add**, so
+/// a refused provision leaves every path exactly as it found it.
 fn provision_worktrees(
     repo_root: &Path,
     jigc_home: &Path,
+    milestone_id: &str,
     base_sha: &str,
     sub_ids: &[String],
+    force: bool,
 ) -> Result<Vec<PathBuf>> {
     // Canonicalize jigc_home so the per-id paths match `git worktree list`'s canonical
     // absolute paths (git resolves symlinks at `add` time) — the reuse comparison below.
@@ -1641,9 +1662,13 @@ fn provision_worktrees(
             paths.push(path);
             continue;
         }
-        // A stale, non-registered leftover dir would make `git worktree add` fail
-        // ("already exists"); clear it first.
+        // A non-registered leftover dir would make `git worktree add` fail ("already
+        // exists"), so it has to go — but only once the probe can prove it holds nothing
+        // (or `--force` says so): the binary cannot tell `junk.txt` from `precious.txt`.
         if path.exists() {
+            if !force && let Some(hold) = probe_leftover(&path)? {
+                return Err(finding_to_err(leftover_finding(milestone_id, &path, &hold)));
+            }
             std::fs::remove_dir_all(&path)
                 .with_context(|| format!("could not clear the stale worktree dir {path:?}"))?;
         }
@@ -1675,6 +1700,217 @@ pub(crate) fn registered_worktrees(repo_root: &Path) -> Result<Vec<PathBuf>> {
         .filter_map(|line| line.strip_prefix("worktree "))
         .map(PathBuf::from)
         .collect())
+}
+
+/// What `git` can prove about a **worktree-shaped path under `.jigc/worktrees/`** that a
+/// destroying door is about to remove — the three classes
+/// `git -C <path> rev-parse --show-toplevel` separates (`DECISIONS.md` 2026-08-13 → the
+/// Settle, F3).
+///
+/// **These are linkage classes, not directory shapes**, and the guard's question is *"can I
+/// prove this path holds nothing precious?"* — never *"is this path ours?"*. A plain
+/// directory with no `.git` at all is indistinguishable here from a worktree whose admin
+/// record was pruned: git walks up and answers for the **enclosing** repo. Which is why the
+/// two non-worktree verdicts share one **fail-closed** policy: the binary cannot tell
+/// `junk.txt` from `precious.txt`, so a non-empty directory it cannot vouch for refuses.
+///
+/// The registered set is deliberately **not** the subject. The ordinary trigger is a `cp -R`
+/// or `mv` of the whole repo (how every RC trial corpus is made): the copy's worktree admin
+/// record names the **source's** path, so no path under the copy's own `.jigc/worktrees/` is
+/// registered, `git worktree prune` removes nothing, and a registered-set guard is inert
+/// exactly where the live work is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeftoverVerdict {
+    /// `rev-parse` exited non-zero — git can say **nothing** about the path (the
+    /// copy-then-move-the-source shape: the worktree's `.git` file points at an admin
+    /// directory that no longer exists). Refuses on any non-empty directory.
+    Unverifiable,
+    /// `rev-parse` printed **this path** — it is a live linked worktree of its own,
+    /// registered here or not, and git reads its dirt correctly. The shipped
+    /// [`dirty_worktrees`] probe decides: dirty refuses, clean clears.
+    OwnWorktree,
+    /// `rev-parse` printed **another** path (the enclosing repository's root) — the path
+    /// carries no linkage of its own. Refuses on any non-empty directory.
+    NoOwnLinkage,
+}
+
+/// The verdict axis, enumerated code-side so an acceptance suite **iterates** it instead of
+/// hand-listing repros ([pinning.md](../../../implementation/pinning.md) → the enumeration
+/// seam): a fourth verdict cannot be added without the guard's suite failing to compile.
+pub const LEFTOVER_VERDICTS: [LeftoverVerdict; 3] = [
+    LeftoverVerdict::Unverifiable,
+    LeftoverVerdict::OwnWorktree,
+    LeftoverVerdict::NoOwnLinkage,
+];
+
+/// A **destroying door**: a verb that removes a worktree-shaped path under
+/// `.jigc/worktrees/` from disk, and therefore asks [`probe_leftover`] before it does.
+pub struct DestroyingDoor {
+    /// The verb line the refusal names — the door the reader is standing at.
+    pub verb: &'static str,
+    /// The **door-scoped** blocking finding code its refusal carries, so a reader can tell
+    /// which door refused without parsing prose.
+    pub code: &'static str,
+}
+
+/// `jigc milestone provision`'s door — it deletes a leftover at each sub-task's worktree
+/// path before `git worktree add`.
+pub const PROVISION_DOOR: DestroyingDoor = DestroyingDoor {
+    verb: "jigc milestone provision",
+    code: "milestone.leftover-holds-work",
+};
+
+/// `jigc milestone discard`'s door — the abandon teardown removes the fan-out worktrees.
+pub const DISCARD_DOOR: DestroyingDoor = DestroyingDoor {
+    verb: "jigc milestone discard",
+    code: "milestone.dirty-worktree",
+};
+
+/// `jigc uninstall`'s door — `remove_dir_all(<repo>/.jigc)` takes the worktrees with it.
+pub const UNINSTALL_DOOR: DestroyingDoor = DestroyingDoor {
+    verb: "jigc uninstall",
+    code: "uninstall.dirty-worktree",
+};
+
+/// The destroying-door axis — the three verbs that remove a worktree-shaped path, minted
+/// code-side beside the verdicts they ask about so the acceptance iterates the door × verdict
+/// matrix rather than a hand-written cell list.
+pub const DESTROYING_DOORS: [&DestroyingDoor; 3] =
+    [&PROVISION_DOOR, &DISCARD_DOOR, &UNINSTALL_DOOR];
+
+/// Which [`LeftoverVerdict`] `path` falls in — one `git rev-parse --show-toplevel` run
+/// **inside** it.
+///
+/// **The comparison canonicalizes both sides.** git prints realpaths (`/private/tmp/…` for a
+/// `/tmp/…` argument on macOS), so a raw `PathBuf` compare misfiles a live worktree under a
+/// symlinked temp root as [`LeftoverVerdict::NoOwnLinkage`] — the wrong policy, though still
+/// a fail-closed one.
+fn classify_leftover(path: &Path) -> LeftoverVerdict {
+    let out = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(path)
+        .output();
+    let Ok(out) = out else {
+        // git is unrunnable (absent, or `path` is not a directory) — nothing is provable.
+        return LeftoverVerdict::Unverifiable;
+    };
+    if !out.status.success() {
+        return LeftoverVerdict::Unverifiable;
+    }
+    let printed = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim().to_string());
+    let toplevel = printed.canonicalize().unwrap_or(printed);
+    let own = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if toplevel == own {
+        LeftoverVerdict::OwnWorktree
+    } else {
+        LeftoverVerdict::NoOwnLinkage
+    }
+}
+
+/// What a destroying door found at a path it was about to remove.
+pub struct LeftoverHold {
+    /// The linkage class git returned — what the refusal can honestly claim.
+    pub verdict: LeftoverVerdict,
+    /// What the removal would destroy: the `git status --porcelain` entries under
+    /// [`LeftoverVerdict::OwnWorktree`], the directory's own child names (sorted, so the
+    /// refusal is byte-reproducible) otherwise.
+    pub entries: Vec<String>,
+}
+
+/// The **fail-closed leftover guard**: `Ok(None)` when `path` is provably safe to delete
+/// (absent, empty, or a clean worktree of its own), `Ok(Some(hold))` when it holds bytes the
+/// door must not take. An unreadable directory or an unreadable `git status` is an `Err` —
+/// the door refuses on it, because removing on an unverified probe is the defect this guard
+/// closes.
+///
+/// `pub(crate)` for its sibling doors: [`DESTROYING_DOORS`] all remove worktree-shaped paths
+/// under `.jigc/worktrees/`, and they ask one probe rather than growing three that drift.
+pub(crate) fn probe_leftover(path: &Path) -> Result<Option<LeftoverHold>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let verdict = classify_leftover(path);
+    let entries = match verdict {
+        // git can read this worktree's dirt — so ask the shipped probe, and let a clean
+        // worktree clear (the idempotent re-provision every fan-out depends on).
+        LeftoverVerdict::OwnWorktree => {
+            let one = [path.to_path_buf()];
+            dirty_worktrees(&one)?
+                .into_iter()
+                .next()
+                .map(|(_, entries)| entries)
+                .unwrap_or_default()
+        }
+        // Nothing can vouch for these bytes, so *any* content refuses — ignored files
+        // included: an ignored file is not work to git, but the binary is not the one who
+        // gets to decide that about a directory it cannot even place.
+        LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => child_names(path)?,
+    };
+    if entries.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(LeftoverHold { verdict, entries }))
+    }
+}
+
+/// [`PROVISION_DOOR`]'s refusal: a blocking, route-bearing finding naming the leftover path,
+/// what would be deleted, and **why nothing can vouch for it** — the [`dirty_worktree_finding`]
+/// mold, door-scoped so a reader can tell which door refused.
+///
+/// The route is the mechanical `--force` re-run (the M43 route fence checks that argv against
+/// the real CLI at construction). Its tail carries the honest first move: the refusal is not a
+/// puzzle to solve, it is a directory to look inside.
+fn leftover_finding(milestone_id: &str, path: &Path, hold: &LeftoverHold) -> Finding {
+    let because = match hold.verdict {
+        LeftoverVerdict::OwnWorktree => {
+            "it is a live git worktree holding uncommitted work, registered here or not"
+        }
+        LeftoverVerdict::NoOwnLinkage => {
+            "git reports no worktree of its own there, so nothing can say those bytes are disposable"
+        }
+        LeftoverVerdict::Unverifiable => {
+            "git cannot read a repository there, so nothing can say those bytes are disposable"
+        }
+    };
+    let listing: Vec<String> = hold
+        .entries
+        .iter()
+        .map(|entry| format!("  {entry}"))
+        .collect();
+    let address = path.display().to_string();
+    Finding::graded(
+        Severity::Blocking,
+        PROVISION_DOOR.code,
+        format!(
+            "milestone:{milestone_id}: `{address}` already holds {} item(s) that `{}` would \
+             delete — {because}:\n{}",
+            hold.entries.len(),
+            PROVISION_DOOR.verb,
+            listing.join("\n"),
+        ),
+        Some(Location::addressed(&address, 1, 1)),
+        Some(engine::finding::Route::mechanical(
+            ["jigc", "milestone", "provision", milestone_id, "--force"],
+            " — but look inside that directory first and move out anything you need; the \
+             removal is permanent",
+        )),
+    )
+}
+
+/// The sorted immediate child names of `path` — the "what would be deleted" listing for the
+/// two verdicts with no git to ask. Sorted, so the refusal text does not vary with readdir
+/// order.
+fn child_names(path: &Path) -> Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(path)
+        .with_context(|| format!("could not read the leftover directory {path:?}"))?
+    {
+        let entry =
+            entry.with_context(|| format!("could not read an entry of the directory {path:?}"))?;
+        names.push(entry.file_name().to_string_lossy().into_owned());
+    }
+    names.sort();
+    Ok(names)
 }
 
 /// The id-ordered paths of the milestone's still-provisioned fan-out worktrees — each
