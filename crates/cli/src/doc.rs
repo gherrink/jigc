@@ -2601,15 +2601,23 @@ fn title_pre_check(
     if let Some(path) = &incumbent.incumbent {
         let source = std::fs::read_to_string(path)
             .with_context(|| format!("could not read the existing `{}`", incumbent.address))?;
+        // Compare the **title text**, not the bytes around it. The guard's claim is that
+        // the supplied title will not become the doc's `# H1`, so its two sides must be
+        // exactly what the mint would render (`engine::write::render` — `# {title.trim()}`)
+        // and what the incumbent's H1 already says ([`crate::rename::read_h1`] — BOM- and
+        // EOL-tolerant, because humans own these bytes). Otherwise a supported checkout
+        // shape (a CRLF clone) or the tool's own trimming refuses a byte-identical title
+        // and prints the same string on both sides of the refusal — a `design/surface-
+        // contract.md` law-1 self-contradiction.
         if let Some(current) = crate::rename::read_h1(&source)
-            && current != title
+            && current.trim() != title.trim()
         {
             let staged = path.starts_with(&task.dir);
             return Err(DocFailure::block(title_ignored_refusal(
                 task,
                 verb,
                 &incumbent.address,
-                current,
+                current.trim(),
                 title,
                 staged,
             )));

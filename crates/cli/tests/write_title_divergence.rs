@@ -488,6 +488,225 @@ fn every_fixed_title_doctype_refuses_a_title_it_would_drop() {
     }
 }
 
+// ─────────────────── the input axis: incumbent bytes × supplied title ───────────────────
+
+/// The guard compares a **supplied title** against the **incumbent's on-disk H1**, and it
+/// owns neither input: the agent writes the `--title` / payload `title:`, and *humans* own
+/// the committed file (`design/storage.md` — reviewed and edited through git). So the class
+/// is swept over both messy axes rather than over the one canonical cell the cells above
+/// drive:
+///
+///   * **the incumbent's bytes** — every checkout shape the engine already supports
+///     (`implementation/parsing.md` → "preserve the file's existing EOL … never globally
+///     normalize"; `engine::write::first_touch_canonicalize` strips a leading BOM): LF ·
+///     CRLF · BOM + a human YAML comment in the front matter;
+///   * **the supplied title** — padded, because the mint renders `# {title.trim()}`
+///     (`engine::write::render`), so a title the guard reads as divergent can be the very
+///     one the doc already carries.
+///
+/// Each row asserts **both faces**: the legitimate write still lands (a false block is the
+/// defect this row exists for), *and* a genuinely divergent title on the same shape still
+/// blocks naming the doc's real H1 (a guard neutered to fix the false block is the other
+/// defect).
+const COMMITTED_TITLE: &str = "Legacy Choice Revisited";
+
+/// The human YAML comment the BOM row plants in the front matter — metadata, never the
+/// document's title, and named here so the assertion that no refusal quotes it is the same
+/// string the fixture writes.
+const FRONT_MATTER_COMMENT: &str = "a human-added yaml comment";
+
+/// A corpus holding one **committed** `adr` titled [`COMMITTED_TITLE`], with the slug the
+/// binary emitted and the doc's repo-relative path.
+fn committed_adr() -> (TrialCorpus, String, String) {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = corpus.start_workflow("record-decision", "legacy choice revisited");
+    let address = corpus
+        .jigc_ok(&[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            COMMITTED_TITLE,
+            "--task",
+            &task,
+        ])
+        .trim()
+        .to_string();
+    let slug = address
+        .strip_prefix("adr:")
+        .expect("the create acks `adr:<slug>`")
+        .to_string();
+    corpus.jigc_stdin_ok(
+        &["doc", "author", "adr", "--from-file", "-", "--task", &task],
+        &adr_payload(COMMITTED_TITLE),
+    );
+    corpus.finalize(&task, "decisions", "record the legacy choice", false);
+    let path = format!("docs/decisions/{slug}.md");
+    assert!(
+        corpus.repo().join(&path).is_file(),
+        "the ADR landed at its canonical home; got no `{path}`"
+    );
+    (corpus, slug, path)
+}
+
+/// Rewrite the committed doc's bytes out of band and commit them — the checkout a Windows
+/// clone or a BOM-writing editor hands the tool, absorbed into the baseline exactly as a
+/// real one is.
+fn reshape_committed(corpus: &TrialCorpus, path: &str, reshape: impl Fn(&str) -> String) {
+    let file = corpus.repo().join(path);
+    let source = fs::read_to_string(&file).expect("read the committed doc");
+    fs::write(&file, reshape(&source)).expect("rewrite the committed doc");
+    corpus.git(&["add", path]);
+    corpus.git(&["commit", "-m", "an out-of-band checkout shape"]);
+}
+
+/// Both faces over one committed-byte shape: the identical title still lands, and a
+/// divergent title still blocks naming the doc's real H1. Returns the task, so a caller
+/// whose shape is otherwise conformant can drive the sibling write verb over it too.
+fn assert_committed_shape_holds(corpus: &TrialCorpus, slug: &str, shape: &str) -> String {
+    let task = corpus.start_workflow("record-decision", &format!("revisit under {shape}"));
+
+    let ack = corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        COMMITTED_TITLE,
+        "--slug",
+        slug,
+        "--task",
+        &task,
+    ]);
+    assert!(
+        ack.contains("already existed — copied in for update"),
+        "{shape}: a create under the doc's own title must still copy it in, not block on \
+         bytes the engine supports; got:\n{ack}"
+    );
+
+    let (ok, stdout, stderr) = json(
+        corpus,
+        &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Adopt Valkey",
+            "--slug",
+            slug,
+            "--task",
+            &task,
+        ],
+        None,
+    );
+    assert!(
+        !ok,
+        "{shape}: a genuinely divergent title must still block; stdout:\n{stdout}\n\
+         stderr:\n{stderr}"
+    );
+    let finding = blocking_finding(&stderr, shape);
+    assert_eq!(
+        finding["code"], "write.title-ignored",
+        "{shape}: the divergent title carries the shipped code; got:\n{stderr}"
+    );
+    let message = finding["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains(COMMITTED_TITLE),
+        "{shape}: the refusal names the H1 the doc actually carries; got:\n{message}"
+    );
+    assert!(
+        !message.contains(FRONT_MATTER_COMMENT),
+        "{shape}: the refusal never quotes a front-matter line as the doc's title; \
+         got:\n{message}"
+    );
+    task
+}
+
+/// **CRLF** — a Windows checkout. The H1 line ends `\r\n`, so a raw byte compare reads the
+/// title as `Legacy Choice Revisited\r` and refuses a write whose supplied title is
+/// byte-identical to the one on disk (and prints both sides as the same string — a
+/// `design/surface-contract.md` law-1 self-contradiction).
+#[test]
+fn a_crlf_committed_incumbent_takes_its_own_title_and_still_gates_a_divergent_one() {
+    let (corpus, slug, path) = committed_adr();
+    reshape_committed(&corpus, &path, |source| source.replace('\n', "\r\n"));
+    let task = assert_committed_shape_holds(&corpus, &slug, "CRLF");
+    // The verb axis: the pre-check is one seam, and `doc author` sends its title through
+    // the same one. A CRLF checkout is conformant end to end, so the whole write lands.
+    corpus.jigc_stdin_ok(
+        &["doc", "author", "adr", "--from-file", "-", "--task", &task],
+        &adr_payload(COMMITTED_TITLE),
+    );
+}
+
+/// **BOM + a human YAML comment in the front matter.** The BOM defeats a `starts_with("---")`
+/// front-matter detection, so the metadata block is scanned as body and a human's `# ` comment
+/// is read as the document's H1 — the refusal then names a YAML comment as the title the doc
+/// "would keep". (This row drives `create` only: a colon-less YAML comment is not a
+/// conformant field block, so `doc author` over it rightly rejects `write.non-reparseable`
+/// — a different gate, and not this guard's to pre-empt with a lie about the H1.)
+#[test]
+fn a_bom_committed_incumbent_never_reads_its_front_matter_as_the_h1() {
+    let (corpus, slug, path) = committed_adr();
+    reshape_committed(&corpus, &path, |source| {
+        format!(
+            "\u{feff}{}",
+            source.replacen("---\n", &format!("---\n# {FRONT_MATTER_COMMENT}\n"), 1)
+        )
+    });
+    assert_committed_shape_holds(&corpus, &slug, "BOM + front-matter comment");
+}
+
+/// **A padded supplied title**, over a *staged* incumbent — no out-of-band edit needed at
+/// all, because the mint's own render trims (`# {title.trim()}`) while a raw compare does
+/// not. The first create writes `# Leading Space`; the second, sent the identical argv, is
+/// refused for a divergence the tool itself created.
+#[test]
+fn a_padded_title_matches_the_trimmed_h1_the_mint_wrote() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = corpus.start_workflow("record-decision", "leading space");
+    let padded = "  Leading Space ";
+    let address = corpus
+        .jigc_ok(&["doc", "create", "adr", "--title", padded, "--task", &task])
+        .trim()
+        .to_string();
+
+    let ack = corpus.jigc_ok(&["doc", "create", "adr", "--title", padded, "--task", &task]);
+    assert!(
+        ack.contains("already existed — copied in for update"),
+        "the identical argv must be idempotent — the mint trimmed the title it wrote, so \
+         the guard must compare it trimmed; got:\n{ack}"
+    );
+
+    let shown = corpus.jigc_ok(&["doc", "show", &address, "--task", &task]);
+    assert!(
+        shown.contains("# Leading Space\n"),
+        "the H1 stays the trimmed title the mint rendered; got:\n{shown}"
+    );
+
+    // The other face: a title that differs by more than padding still blocks.
+    let (ok, _, stderr) = json(
+        &corpus,
+        &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "  Leading Space!  ",
+            "--slug",
+            address.strip_prefix("adr:").expect("`adr:<slug>`"),
+            "--task",
+            &task,
+        ],
+        None,
+    );
+    assert!(!ok, "a genuinely divergent padded title still blocks");
+    assert_eq!(
+        blocking_finding(&stderr, "padded divergent title")["code"],
+        "write.title-ignored",
+        "…and carries the shipped code; got:\n{stderr}"
+    );
+}
+
 // ───────────────────────────── the counter-arms ─────────────────────────────
 
 /// A **first** create and a **first** author still land — the guard has nothing to

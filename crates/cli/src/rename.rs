@@ -612,18 +612,30 @@ pub(crate) fn read_h1(source: &str) -> Option<&str> {
 /// The byte range of the H1's title text — everything after the `# ` marker up to (not
 /// including) the line's newline. `None` when the doc carries no H1.
 fn h1_span(source: &str) -> Option<std::ops::Range<usize>> {
+    // A leading BOM is not document content — `engine::write::first_touch_canonicalize`
+    // strips it — but it *is* bytes, so scan past it and keep every returned span an offset
+    // into the caller's own source. Left in place, it defeats the front-matter detection
+    // below (the block opens on the document's *first* line) and the metadata is scanned as
+    // body.
+    let bom = if source.starts_with('\u{feff}') {
+        '\u{feff}'.len_utf8()
+    } else {
+        0
+    };
+    let scanned = &source[bom..];
     let mut in_fence = false;
-    let mut offset = 0usize;
+    let mut offset = bom;
     // The leading `---`-fenced YAML front-matter block (if present) is metadata, not the
     // document body — a human-authored `# ` YAML comment there must never be taken for the
     // H1. Copy it through verbatim and only scan for the H1 past its closing fence. Mirrors
     // the engine's metadata-block detection (`engine::parse::scan_blocks`, pulldown
     // YAML-style metadata): the block opens only when `---` is the document's first line
     // and closes on a `---`/`...` line.
-    let mut in_front_matter = source.starts_with("---\n") || source == "---";
+    let mut in_front_matter =
+        line_body(scanned.split_inclusive('\n').next().unwrap_or("")) == "---";
     let mut opening_fence = in_front_matter;
-    for line in source.split_inclusive('\n') {
-        let body = line.strip_suffix('\n').unwrap_or(line);
+    for line in scanned.split_inclusive('\n') {
+        let body = line_body(line);
         if in_front_matter {
             if opening_fence {
                 opening_fence = false;
@@ -642,6 +654,15 @@ fn h1_span(source: &str) -> Option<std::ops::Range<usize>> {
         offset += line.len();
     }
     None
+}
+
+/// One line's content — its EOL stripped, **CRLF and LF alike**. A managed doc's EOL is
+/// matched, never globally normalized (`implementation/parsing.md` → "preserve the file's
+/// existing EOL"), so a CRLF checkout's `\r` is a line terminator here and never part of
+/// the H1's title text.
+fn line_body(line: &str) -> &str {
+    let body = line.strip_suffix('\n').unwrap_or(line);
+    body.strip_suffix('\r').unwrap_or(body)
 }
 
 #[cfg(test)]
@@ -678,6 +699,41 @@ mod tests {
             out,
             "---\nstatus: accepted\n# a human-added yaml comment\ndate: 2026-01-01\n---\n\n# Distributed cache\n\n## Context\n\nProse.\n"
         );
+    }
+
+    /// The **checkout-shape axis** of the H1 primitive. Both halves read bytes a *human*
+    /// owns — managed docs are reviewed and edited through git (`design/storage.md`) — so
+    /// every shape the engine's own writer already supports (`engine::write::
+    /// first_touch_canonicalize`: a leading BOM is stripped, an EOL is *matched*, never
+    /// globally normalized) must resolve to the same H1 text and splice back byte-faithful.
+    /// Iterated over the shapes rather than pinned at one, so a shape is a row here, not a
+    /// rediscovered defect.
+    #[test]
+    fn the_h1_resolves_across_every_supported_checkout_shape() {
+        let lf = "---\nstatus: accepted\n# a human-added yaml comment\ndate: 2026-01-01\n---\n\n# Single node cache\n\n## Context\n\nProse.\n";
+        let shapes = [
+            ("LF", lf.to_string()),
+            ("CRLF", lf.replace('\n', "\r\n")),
+            ("BOM + LF", format!("\u{feff}{lf}")),
+            (
+                "BOM + CRLF",
+                format!("\u{feff}{}", lf.replace('\n', "\r\n")),
+            ),
+        ];
+        for (shape, source) in &shapes {
+            assert_eq!(
+                read_h1(source),
+                Some("Single node cache"),
+                "{shape}: the H1 text is the body heading — never the front matter's YAML \
+                 comment, and never carrying the line's EOL",
+            );
+            assert_eq!(
+                rewrite_h1(source, "Distributed cache").expect("{shape}: an H1 is present"),
+                source.replace("Single node cache", "Distributed cache"),
+                "{shape}: the splice replaces the title text and nothing else — the BOM, \
+                 the front matter and every EOL survive verbatim",
+            );
+        }
     }
 
     #[test]
