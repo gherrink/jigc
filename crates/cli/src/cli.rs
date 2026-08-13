@@ -182,8 +182,9 @@ pub enum Command {
     /// `pre-commit` hook) keep your own content byte-for-byte. Two states it
     /// refuses instead of destroying, because `.jigc/` is their only copy — a
     /// fan-out sub-task path under `.jigc/worktrees/` that holds content blocks
-    /// with `uninstall.dirty-worktree` (get the work out, or abandon the milestone
-    /// with `jigc milestone discard <milestone-id> --force`), and an open task
+    /// with `uninstall.dirty-worktree` (get the work out — or, for a path this
+    /// repository has registered as a worktree, abandon the milestone with
+    /// `jigc milestone discard <milestone-id> --force`), and an open task
     /// under `.jigc/tasks/` holding a staged doc no commit has a copy of blocks
     /// with `uninstall.staged-prose` (throw the task away with `jigc task discard
     /// <task-id>`, or land it with `jigc task finalize <task-id>` once its doc is

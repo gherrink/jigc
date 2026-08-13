@@ -1404,7 +1404,16 @@ fn uninstall(
 /// unreadable directory or `git status` leaves the worktrees' safety *unknown*, and the
 /// operator's action is the same either way — make the fan-out worktrees safe, then re-run.
 /// Removing on an unverified probe is the very defect this guard closes.
-fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<(PathBuf, Vec<String>)>, Finding> {
+///
+/// **Each hold also carries whether *this* repo registered the path** — the fact the
+/// refusal's route rests on, not decoration. Widening the *subject* to the path widened the
+/// guard's domain past what its response was written for: the milestone teardown removes
+/// **registered** worktrees and skips everything else (`crate::milestone::remove_worktrees`'
+/// contract, stated verbatim by `discard`'s own refusal), so on a path registered nowhere the
+/// abandon arm the route used to name unconditionally sends the operator through an
+/// irreversible, committed `discard --force` that clears nothing. Only the registered set can
+/// tell the two apart, so it is read here and answered in [`dirty_worktree_finding`].
+fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Finding> {
     let worktrees_root = repo_root.join(".jigc").join("worktrees");
     if !worktrees_root.is_dir() {
         return Ok(Vec::new());
@@ -1422,15 +1431,55 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<(PathBuf, Vec<String>)
     // Sorted, so the refusal's listing does not vary with readdir order.
     paths.sort();
 
-    let mut holds = Vec::new();
+    let mut holds: Vec<HeldWorktreePath> = Vec::new();
     for path in paths {
         if let Some(hold) =
             crate::milestone::probe_leftover(&path).map_err(unverified_worktrees_finding)?
         {
-            holds.push((path, hold.entries));
+            holds.push(HeldWorktreePath {
+                path,
+                entries: hold.entries,
+                registered: None,
+            });
+        }
+    }
+    if holds.is_empty() {
+        // The clean teardown pays for no extra `git` call — nothing is going to be routed.
+        return Ok(holds);
+    }
+    // git stores canonical paths at `worktree add` time, so both sides canonicalize (the
+    // `held_subtask_worktrees` convention: on macOS `/tmp/…` lists as `/private/tmp/…`).
+    if let Ok(registered) = crate::milestone::registered_worktrees(repo_root) {
+        let registered: Vec<PathBuf> = registered
+            .into_iter()
+            .map(|w| w.canonicalize().unwrap_or(w))
+            .collect();
+        for hold in &mut holds {
+            let canonical = hold
+                .path
+                .canonicalize()
+                .unwrap_or_else(|_| hold.path.clone());
+            hold.registered = Some(registered.iter().any(|w| w == &canonical));
         }
     }
     Ok(holds)
+}
+
+/// One worktree-shaped path [`uninstall`] would destroy, and what git can say about it —
+/// [`dirty_fanout_worktrees`]' element, and everything [`dirty_worktree_finding`] needs to
+/// name an exit that is actually reachable from this path.
+struct HeldWorktreePath {
+    /// The `<repo>/.jigc/worktrees/<name>` path, as read (the refusal prints it).
+    path: PathBuf,
+    /// What removing it would destroy — `git status --porcelain` entries for a worktree of
+    /// its own, the directory's sorted child names otherwise
+    /// ([`crate::milestone::LeftoverHold`]).
+    entries: Vec<String>,
+    /// Whether **this** repository has the path registered as a worktree, and therefore
+    /// whether a milestone teardown reaches it at all. `None` when `git worktree list` could
+    /// not be read: the route then claims nothing either way rather than guessing — the same
+    /// fail-closed stance the probe itself takes.
+    registered: Option<bool>,
 }
 
 /// The **open tasks whose staged docs exist only in the workbench** — each task id paired
@@ -1483,20 +1532,65 @@ fn staged_task_prose(repo_root: &Path) -> Result<Vec<(String, Vec<String>)>, Fin
 }
 
 /// The teardown's refusal: a blocking, route-bearing finding naming every fan-out worktree
-/// path that holds content and what is inside it — the `milestone.dirty-worktree`
-/// sibling's shape, so the doors read as one family. The route names all three honest
-/// exits: get the work out, abandon the milestone with the already-shipped
-/// `jigc milestone discard <id> --force`, or consent to the deletion with `--force` here.
+/// path that holds content, what is inside it, and — where git could tell — whether this
+/// repository has it registered. The `milestone.dirty-worktree` sibling's shape, so the
+/// doors read as one family.
 ///
 /// **It claims "content", not "uncommitted work"**: a path git cannot vouch for (the copied
 /// repo's worktree, a plain directory) is listed by its child names, and calling those
 /// bytes *uncommitted work* would be a claim the probe cannot back
 /// ([surface-contract.md](../../design/surface-contract.md) → law 1).
-fn dirty_worktree_finding(dirty: &[(PathBuf, Vec<String>)]) -> Finding {
+///
+/// **The abandon arm is conditional on the same fact, for the same law.** A milestone
+/// teardown removes the worktrees this repo **registered** and leaves every other path on
+/// disk (`crate::milestone::remove_worktrees`; `discard`'s own refusal states it per path),
+/// so naming `jigc milestone discard <id> --force` over a path registered nowhere routes the
+/// operator through an irreversible, committed abandon that provably leaves this very
+/// finding blocking the re-run — the exact shape the guard's path-subject exists to cover
+/// (`cp -R` of a repo registers nothing under the copy's own `.jigc/worktrees/`). So the arm
+/// appears only when some listed path is registered here, says what it leaves behind when
+/// only some are, and is replaced by the plain statement that no abandon reaches them when
+/// none is. Unknown registrations (`git worktree list` unreadable) promise neither.
+fn dirty_worktree_finding(dirty: &[HeldWorktreePath]) -> Finding {
     let listing: Vec<String> = dirty
         .iter()
-        .map(|(path, entries)| format!("  {}: {}", path.display(), entries.join(", ")))
+        .map(|held| {
+            let fate = match held.registered {
+                Some(true) => " — registered as a worktree of this repository",
+                Some(false) => " — registered as a worktree nowhere in this repository",
+                None => "",
+            };
+            format!(
+                "  {}: {}{fate}",
+                held.path.display(),
+                held.entries.join(", ")
+            )
+        })
         .collect();
+    let any_registered = dirty.iter().any(|held| held.registered == Some(true));
+    let any_unregistered = dirty.iter().any(|held| held.registered == Some(false));
+    let mut route = String::from(
+        "get the work out of those worktrees first (commit, stash, or copy it), then re-run \
+         `jigc uninstall`",
+    );
+    if any_registered {
+        route.push_str(
+            " — or abandon the milestone with `jigc milestone discard <milestone-id> --force`, \
+             which destroys the uncommitted work in the path(s) registered here",
+        );
+        if any_unregistered {
+            route.push_str(
+                " (the path(s) registered nowhere are left on disk and still block the teardown)",
+            );
+        }
+        route.push_str(", and re-run `jigc uninstall`");
+    } else if any_unregistered {
+        route.push_str(
+            " — abandoning the milestone will not clear them: a milestone teardown removes only \
+             the worktrees this repository has registered, and none of these paths is",
+        );
+    }
+    route.push_str("; `jigc uninstall --force` deletes them with the install");
     Finding::block(
         "uninstall.dirty-worktree",
         format!(
@@ -1505,10 +1599,7 @@ fn dirty_worktree_finding(dirty: &[(PathBuf, Vec<String>)]) -> Finding {
             dirty.len(),
             listing.join("\n"),
         ),
-        "get the work out of those worktrees first (commit, stash, or copy it), then re-run \
-         `jigc uninstall` — or abandon the milestone with `jigc milestone discard \
-         <milestone-id> --force`, which destroys the uncommitted work, and re-run \
-         `jigc uninstall`; `jigc uninstall --force` deletes them with the install",
+        route,
     )
 }
 

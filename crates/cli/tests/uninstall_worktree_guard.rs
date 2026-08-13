@@ -808,7 +808,11 @@ fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
         ".jigc/worktrees/",
         "uninstall.staged-prose",
         ".jigc/tasks/",
-        // … the escape hatches the findings' own routes name …
+        // … the escape hatches the findings' own routes name, the abandon one carrying the
+        // condition that makes it reachable (a milestone teardown removes the worktrees this
+        // repo registered and skips every other path, so an unqualified offer is a law-1 lie
+        // over the `cp -R` shape) …
+        "has registered as a worktree",
         "jigc milestone discard",
         "jigc task discard",
         "jigc task finalize",
@@ -845,6 +849,214 @@ fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
         assert!(
             !help.contains(banned),
             "`uninstall --help` must not restate the falsified promise {banned:?}; got:\n{help}",
+        );
+    }
+}
+
+/// Recursively copy `src` into `dst` — the `cp -R` shape every trial corpus is made with.
+/// A copied repo's worktree admin records still name the **source's** paths, so nothing
+/// under the copy's own `.jigc/worktrees/` is registered there (the fixtures hold no
+/// symlinks, so a plain file/dir walk is the whole job).
+fn copy_tree(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).expect("mk the copy root");
+    for entry in fs::read_dir(src).expect("read the source dir") {
+        let entry = entry.expect("source dir entry");
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type().expect("file type").is_dir() {
+            copy_tree(&from, &to);
+        } else {
+            fs::copy(&from, &to).expect("copy a file");
+        }
+    }
+}
+
+/// Move a blocking worktree path out of `.jigc/` — the route's **first** arm ("get the work
+/// out of those worktrees first … then re-run"), followed mechanically.
+fn take_the_work_out(repo: &Path, stash: &Path, sub: &str) {
+    let from = worktree_dir(repo, sub);
+    let to = stash.join(sub);
+    fs::create_dir_all(stash).expect("mk the stash root");
+    fs::rename(&from, &to).expect("move the worktree path out of `.jigc/`");
+}
+
+/// The **route's own claim**, followed: the refusal names exits, and an exit that provably
+/// does not clear the block is a law-1 lie ([surface-contract.md](../../design/surface-contract.md)).
+///
+/// The cell this test owns is the one the M48 widening added: a worktree path holding
+/// content that **this repository has registered nowhere** — the ordinary `cp -R` shape,
+/// and the whole reason the guard's subject moved off the registered set. The teardown the
+/// route used to name (`jigc milestone discard <id> --force`) removes **registered**
+/// worktrees and skips everything else, so on this cell following it burns an irreversible,
+/// committed abandon and leaves `uninstall` blocked by the identical finding. That premise
+/// is **measured here, not assumed**: the discard is run and its non-effect asserted.
+#[test]
+fn uninstall_route_offers_no_abandon_arm_where_no_abandon_can_clear_the_block() {
+    let src = TempDir::new("copysrc");
+    init_repo(src.path());
+    let home = TempDir::new("home");
+    // Dirty worktrees, no staged prose — so the worktree door is the only one in play.
+    setup_fanout(src.path(), home.path(), true, false);
+
+    let copy = TempDir::new("copydst");
+    let copied = copy.path().join("repo");
+    copy_tree(src.path(), &copied);
+    let planted = worktree_dir(&copied, "area-low").join("wip.txt");
+    fs::write(&planted, "live sub-agent bytes\n").expect("plant the live bytes");
+    let before = fs::read(&planted).expect("read the planted bytes");
+
+    // (1) The copy's teardown refuses — the guard sees the path, registered or not.
+    let refused = run_uninstall(&copied, home.path());
+    let stderr = String::from_utf8(refused.stderr).expect("utf-8 stderr");
+    let stdout = String::from_utf8(refused.stdout).expect("utf-8 stdout");
+    assert!(
+        !refused.status.success(),
+        "the copy's teardown must refuse; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("uninstall.dirty-worktree"),
+        "the refusal must carry the `uninstall.dirty-worktree` code; stderr:\n{stderr}",
+    );
+
+    // (2) …and it names NO abandon command, because no abandon reaches these paths.
+    assert!(
+        !stderr.contains("jigc milestone discard"),
+        "the route must not name an abandon that cannot clear the block; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("jigc uninstall --force"),
+        "the route must still name the consent flag; stderr:\n{stderr}",
+    );
+
+    // (3) The premise, measured: the abandon the route used to name settles the record
+    //     irreversibly at exit 0 and clears nothing here.
+    let discarded = run_milestone(
+        &copied,
+        home.path(),
+        &["discard", "cache-rework", "--force"],
+    );
+    assert!(
+        discarded.status.success(),
+        "the premise: `milestone discard --force` succeeds on the copy; stderr:\n{}",
+        String::from_utf8_lossy(&discarded.stderr),
+    );
+    assert_eq!(
+        fs::read(&planted).expect("the planted bytes survive the abandon"),
+        before,
+        "the premise: the abandon leaves an unregistered path's content on disk",
+    );
+    let still = run_uninstall(&copied, home.path());
+    let still_err = String::from_utf8(still.stderr).expect("utf-8 stderr");
+    assert!(
+        !still.status.success() && still_err.contains("uninstall.dirty-worktree"),
+        "the premise: after the abandon the teardown is blocked by the identical finding; \
+         stderr:\n{still_err}",
+    );
+
+    // (4) The arm the route DOES name clears it: take the work out, re-run.
+    let stash = copy.path().join("rescued");
+    for sub in ["area-low", "area-zed"] {
+        take_the_work_out(&copied, &stash, sub);
+    }
+    let cleared = run_uninstall(&copied, home.path());
+    assert!(
+        cleared.status.success(),
+        "following the emitted route must clear the block; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&cleared.stdout),
+        String::from_utf8_lossy(&cleared.stderr),
+    );
+    assert!(
+        !copied.join(".jigc").exists(),
+        "the followed route must complete the teardown",
+    );
+    assert_eq!(
+        fs::read(stash.join("area-low").join("wip.txt")).expect("the rescued bytes"),
+        before,
+        "the rescued work must be byte-intact",
+    );
+}
+
+/// The other two cells of the same axis — the ones where this repository **did** register
+/// the path — pinned by following the emitted arm rather than trusting it:
+///
+/// - **all registered**: the abandon arm is named, and running it clears the block;
+/// - **mixed**: the abandon arm is named *and* says what it leaves behind, and running it
+///   leaves exactly that — the unregistered path, still blocking, named on its own.
+#[test]
+fn uninstall_route_keeps_the_abandon_arm_where_this_repo_registered_the_path() {
+    for ghost in [false, true] {
+        let label = if ghost { "mixed" } else { "all-registered" };
+        let repo = TempDir::new(if ghost { "mixed" } else { "registered" });
+        init_repo(repo.path());
+        let home = TempDir::new("home");
+        setup_fanout(repo.path(), home.path(), true, false);
+        let ghost_dir = worktree_dir(repo.path(), "area-ghost");
+        if ghost {
+            fs::create_dir_all(&ghost_dir).expect("mk the unregistered path");
+            fs::write(ghost_dir.join("precious.txt"), "in no object DB\n")
+                .expect("plant the content");
+        }
+
+        let refused = run_uninstall(repo.path(), home.path());
+        let stderr = String::from_utf8(refused.stderr).expect("utf-8 stderr");
+        assert!(
+            !refused.status.success() && stderr.contains("uninstall.dirty-worktree"),
+            "[{label}] the teardown must refuse; stderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains("jigc milestone discard") && stderr.contains("--force"),
+            "[{label}] the route must name the abandon arm that does reach these paths; \
+             stderr:\n{stderr}",
+        );
+        if ghost {
+            assert!(
+                stderr.contains("still block"),
+                "[{label}] the route must say the unregistered path is not cleared by the \
+                 abandon; stderr:\n{stderr}",
+            );
+        }
+
+        // Follow it.
+        let discarded = run_milestone(
+            repo.path(),
+            home.path(),
+            &["discard", "cache-rework", "--force"],
+        );
+        assert!(
+            discarded.status.success(),
+            "[{label}] the named abandon must run; stderr:\n{}",
+            String::from_utf8_lossy(&discarded.stderr),
+        );
+        let after = run_uninstall(repo.path(), home.path());
+        let after_err = String::from_utf8(after.stderr).expect("utf-8 stderr");
+        if ghost {
+            // The route said the unregistered path survives and still blocks — it does, and
+            // it is now the only path named.
+            assert!(
+                !after.status.success() && after_err.contains("uninstall.dirty-worktree"),
+                "[{label}] the unregistered path must still block; stderr:\n{after_err}",
+            );
+            assert!(
+                after_err.contains("precious.txt") && !after_err.contains("area-low"),
+                "[{label}] the refusal must now name only the path the abandon left; \
+                 stderr:\n{after_err}",
+            );
+            take_the_work_out(repo.path(), &repo.path().join("rescued"), "area-ghost");
+            let cleared = run_uninstall(repo.path(), home.path());
+            assert!(
+                cleared.status.success(),
+                "[{label}] taking the leftover out must clear the block; stderr:\n{}",
+                String::from_utf8_lossy(&cleared.stderr),
+            );
+        } else {
+            assert!(
+                after.status.success(),
+                "[{label}] following the abandon arm must clear the block; stderr:\n{after_err}",
+            );
+        }
+        assert!(
+            !repo.path().join(".jigc").exists(),
+            "[{label}] the teardown must complete once the route is followed",
         );
     }
 }
