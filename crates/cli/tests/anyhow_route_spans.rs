@@ -289,7 +289,7 @@ fn absent_staged_instance_names_the_full_create_form() {
     assert_error_bytes(
         &out,
         "no staged instance for `adr:ghost#options` — provision it first (`jigc start` / \
-         `jigc doc create <type> --title \"X\"`). Note: `jigc doc create <type> --title \"X\"` \
+         `jigc doc create <type> --title 'X'`). Note: `jigc doc create <type> --title 'X'` \
          derives the id from the title (`X` → slug), not the task id — address writes at \
          that title-derived id\n",
     );

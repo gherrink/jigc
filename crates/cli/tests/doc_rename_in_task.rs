@@ -125,36 +125,13 @@ fn backticked<'a>(route: &'a str, what: &str) -> &'a str {
         .unwrap_or_else(|| panic!("`{what}`: the route carries a backticked command; got: {route}"))
 }
 
-/// Split an emitted command into argv the way a shell would — honouring the double
-/// quotes a route puts around a title, so the **emitted bytes** are the ones run
-/// rather than a test-side reconstruction of them.
-fn shell_split(cmd: &str) -> Vec<String> {
-    let mut argv = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    let mut started = false;
-    for ch in cmd.chars() {
-        match ch {
-            '"' => {
-                in_quotes = !in_quotes;
-                started = true;
-            }
-            c if c.is_whitespace() && !in_quotes => {
-                if started {
-                    argv.push(std::mem::take(&mut current));
-                    started = false;
-                }
-            }
-            c => {
-                current.push(c);
-                started = true;
-            }
-        }
-    }
-    if started {
-        argv.push(current);
-    }
-    argv
+/// Split an emitted command into argv **through a real `sh`**, so the bytes an agent
+/// would paste are parsed by the thing that will actually parse them — a hand-rolled
+/// splitter understands one quoting form and expands nothing, which is exactly how a
+/// route that rewrites its own title in a terminal passes a suite
+/// (`support::shell_words`).
+fn shell_split(corpus: &TrialCorpus, cmd: &str) -> Vec<String> {
+    support::shell_words(cmd, &corpus.repo(), &corpus.home())
 }
 
 /// Every file under `dir`, as `(display path, contents)`.
@@ -600,7 +577,7 @@ fn a_committed_doc_is_retitle_only_and_a_reslug_routes_at_jigc_rename() {
 
     // Run it **verbatim** — after the precondition the route's own tail states.
     corpus.jigc_ok(&["task", "discard", &second]);
-    let argv = shell_split(&cmd);
+    let argv = shell_split(&corpus, &cmd);
     let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
     corpus.jigc_ok(&args);
     assert!(
@@ -609,6 +586,170 @@ fn a_committed_doc_is_retitle_only_and_a_reslug_routes_at_jigc_rename() {
             .join("docs/decisions/adopt-valkey.md")
             .is_file(),
         "the emitted route, run verbatim, performs the identity move"
+    );
+}
+
+// ─────────── the metachar axis — a route is bytes a shell will parse ───────────
+
+/// The title the two metachar arms below carry. A title is **author-owned prose**, so a
+/// `$` and a command substitution are input these doors are designed to receive — and
+/// both are live inside the double quotes the pre-M47 rendering form emits, which is how
+/// a route can rename a document to something nobody authored *at exit 0*. (The backtick
+/// form of substitution is deliberately absent: a route renders its argv inside a
+/// backticked code span, so a backticked title cannot be lifted back out of the emitted
+/// text at all — a presentation question of its own, not one shell-quoting answers.)
+const METACHAR_TITLE: &str = "Cache $HOME $(touch PWNED) rework";
+
+/// The file the embedded command creates if a real shell parses the emitted route.
+const PWNED: &str = "PWNED";
+
+/// **The argument-shape reject's route is shell bytes** (`jigc doc rename <addr>#<hop>`).
+/// The reject hands back the same call with the fragment dropped, `--to <title>` and all
+/// — so the title it re-emits has to survive `sh`. Run through a real shell, the route
+/// must land the title that was asked for, byte for byte, and run nothing else.
+#[test]
+fn the_fragment_reject_route_survives_a_real_shell() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = corpus.start_workflow("single-task", "pick the cache");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "Adopt Redis",
+        "--task",
+        &task,
+    ]);
+
+    let out = corpus.jigc(&[
+        "doc",
+        "rename",
+        "adr:adopt-redis#context",
+        "--to",
+        METACHAR_TITLE,
+        "--task",
+        &task,
+    ]);
+    assert!(
+        !out.status.success(),
+        "a fragment address at a whole-doc verb is refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let route = stderr
+        .split("route: run ")
+        .nth(1)
+        .unwrap_or_else(|| panic!("the reject carries a route; got:\n{stderr}"));
+    let cmd = backticked(route.trim(), "fragment reject").to_string();
+
+    let argv = shell_split(&corpus, &cmd);
+    let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    corpus.jigc_ok(&args);
+
+    // Read the staged doc back off the working area rather than at a reconstructed
+    // address: the rename re-slugs an uncommitted identity, and the slug is derived from
+    // the very title under test.
+    let staged = files_under(&corpus.repo().join(".jigc/tasks").join(&task).join("docs"));
+    let adrs: Vec<&(String, String)> = staged
+        .iter()
+        .filter(|(path, _)| path.contains("/adr:"))
+        .collect();
+    assert_eq!(
+        adrs.len(),
+        1,
+        "the task stages exactly one adr; got: {adrs:?}"
+    );
+    assert!(
+        adrs[0].1.contains(&format!("# {METACHAR_TITLE}\n")),
+        "the emitted route, parsed by a real shell, must land the title that was asked \
+         for — not one the shell rewrote; got:\n{}",
+        adrs[0].1
+    );
+    assert!(
+        !corpus.repo().join(PWNED).exists(),
+        "the emitted route must not execute a command embedded in the title"
+    );
+}
+
+/// **The committed-re-slug refusal's route is shell bytes too** — and this one is a
+/// `jigc rename`, i.e. a **self-committing store op**: a shell-rewritten title there
+/// lands a wrong `# H1` and a wrong path in the repo's history, repointing every
+/// referrer at it.
+#[test]
+fn the_committed_reslug_route_survives_a_real_shell() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let first = corpus.start_workflow("single-task", "pick the cache");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "Adopt Redis",
+        "--task",
+        &first,
+    ]);
+    for (section, prose) in [
+        ("context", "Reads are hot."),
+        ("decision", "Use Redis."),
+        ("consequences", "One more service."),
+    ] {
+        corpus.jigc_stdin_ok(
+            &[
+                "doc",
+                "set-slot",
+                &format!("adr:adopt-redis#{section}"),
+                "--from-file",
+                "-",
+                "--task",
+                &first,
+            ],
+            prose,
+        );
+    }
+    corpus.finalize(&first, "cache", "pick the cache", false);
+
+    let second = corpus.start_workflow("single-task", "revisit the cache");
+    let (ok, _stdout, stderr) = json(
+        &corpus,
+        &[
+            "doc",
+            "rename",
+            "adr:adopt-redis",
+            "--to",
+            METACHAR_TITLE,
+            "--task",
+            &second,
+        ],
+    );
+    assert!(!ok, "a re-slug of a committed identity blocks");
+    let finding = blocking_finding(&stderr, "committed re-slug, metachar title");
+    let route = finding["route"]
+        .as_str()
+        .expect("the blocking finding carries a route")
+        .to_string();
+    let cmd = backticked(&route, "committed re-slug, metachar title").to_string();
+
+    // The route's own stated precondition, then the emitted bytes through a real shell.
+    corpus.jigc_ok(&["task", "discard", &second]);
+    let argv = shell_split(&corpus, &cmd);
+    let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    corpus.jigc_ok(&args);
+
+    let decisions = files_under(&corpus.repo().join("docs/decisions"));
+    assert_eq!(
+        decisions.len(),
+        1,
+        "the store holds exactly one decision — the moved one; got: {:?}",
+        decisions.iter().map(|(p, _)| p).collect::<Vec<_>>()
+    );
+    assert!(
+        decisions[0].1.contains(&format!("# {METACHAR_TITLE}\n")),
+        "the emitted route, parsed by a real shell, must commit the title that was asked \
+         for; got:\n{}",
+        decisions[0].1
+    );
+    assert!(
+        !corpus.repo().join(PWNED).exists(),
+        "the emitted route must not execute a command embedded in the title"
     );
 }
 
@@ -909,7 +1050,7 @@ fn the_retitle_only_ack_names_the_cell_it_is_in() {
     );
 
     // Run the emitted bytes verbatim and read the ack the agent actually sees.
-    let argv = shell_split(&cmd);
+    let argv = shell_split(&corpus, &cmd);
     let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
     let line = corpus.jigc_ok(&args).trim().to_string();
     assert!(

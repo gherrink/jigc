@@ -32,7 +32,7 @@ const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[
     // closing paragraph): the milestone id a wrong-id reject routes through
     // (`jigc milestone list-tasks <milestone-id>`), the foreign-source path + target
     // doctype of the `jigc migrate` rejects, and the doctype positional of the
-    // provision hint's `jigc doc create <type> --title "X"` form (named `<type>`
+    // provision hint's `jigc doc create <type> --title 'X'` form (named `<type>`
     // after the verb's own usage line, distinct from the write-reject `<doctype>`).
     ("<milestone-id>", "dummy-milestone-id"),
     ("<path>", "CHANGELOG.md"),
@@ -41,6 +41,11 @@ const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[
     // advisory's from-knowledge alternative, `jigc start --workflow record-decision
     // <intent>`): a free-text intent an agent fills in with the decision it settled.
     ("<intent>", "a decision I settled"),
+    // The milestone-title positional of the `jigc milestone create "<title>"` route. It
+    // reaches the fence in the **quoted-span** form, which until the quoting half landed
+    // was not recognized as a placeholder at all — so it skipped this table and the
+    // derivability verdict beside it (`milestone.rs` → the unknown-milestone route).
+    ("<title>", "A Milestone Title"),
 ];
 
 /// Install the parse fence into the engine's `Route::mechanical` constructor hook.
@@ -52,14 +57,25 @@ pub fn install() {
 
 /// Whether `argv` is a copy-runnable `jigc` command line: it must lead with `jigc` (clap
 /// ignores argv\[0\], but the composed route text does not — a route missing the binary name
-/// is broken even if the rest parses) and parse via `Cli::try_parse_from`, with
-/// `<PLACEHOLDER>`-class args substituted from [`DUMMY_SUBSTITUTIONS`].
+/// is broken even if the rest parses), every token must be **shell-safe as emitted**
+/// ([`shell_safe`]), and it must parse via `Cli::try_parse_from`, with `<PLACEHOLDER>`-class
+/// args substituted from [`DUMMY_SUBSTITUTIONS`].
 fn validate_mechanical_argv(argv: &[String]) -> Result<(), String> {
     if argv.first().map(String::as_str) != Some("jigc") {
         return Err("a mechanical route's argv must lead with `jigc`".to_owned());
     }
     let mut substituted: Vec<&str> = Vec::with_capacity(argv.len());
     for arg in argv {
+        // A placeholder reaches the fence in two emitted forms: bare (`<task-id>`) and as a
+        // **quoted span** (`"<intent>"` — the milestone `next:` lines, which quote it to show
+        // the prose that replaces it is one argument). Both are the agent's to fill, and both
+        // must be declared: matching only the bare form let the quoted one skip the table
+        // *and* the derivability verdict beside it.
+        let arg = arg
+            .strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+            .filter(|inner| inner.starts_with('<') && inner.ends_with('>'))
+            .unwrap_or(arg);
         if arg.starts_with('<') && arg.ends_with('>') {
             let dummy = DUMMY_SUBSTITUTIONS
                 .iter()
@@ -73,12 +89,56 @@ fn validate_mechanical_argv(argv: &[String]) -> Result<(), String> {
                 })?;
             substituted.push(dummy);
         } else {
+            if !shell_safe(arg) {
+                return Err(format!(
+                    "token `{arg}` is not shell-safe as emitted — a route's text is \
+                     `argv.join(\" \")`, i.e. bytes an agent pastes into a shell, so an \
+                     author-owned prose token (a title, an intent) must be rendered \
+                     through `crate::task::shell_token`"
+                ));
+            }
             substituted.push(arg);
         }
     }
     crate::cli::Cli::try_parse_from(&substituted)
         .map(|_| ())
         .map_err(|err| err.to_string())
+}
+
+/// Whether one emitted argv token survives a real shell as **exactly itself** — the
+/// quoting half of the route fence (M48 inc-2 triage).
+///
+/// The parse fence above proves a route's argv is a real command; it cannot prove the
+/// *text* an agent pastes splits back into that argv, because the text is
+/// `argv.join(" ")` and a shell re-lexes it. A token holding author-owned prose is where
+/// the two diverge: rendered with Rust's `Debug` (the double-quoted form), `Cache $HOME
+/// rework` re-runs as a **different** title and `Cache $(touch PWNED) rework` runs a
+/// second command — both at exit 0, which is a silently wrong outcome on the success
+/// path rather than a visible break.
+///
+/// Two accepted shapes, and nothing else:
+///
+///   * **bare** — every byte in the shell-inert charset `[A-Za-z0-9._:#/=@+-]`, the set
+///     `engine::compose`'s `Run:`-line renderer already declares (ids, slugs, addresses
+///     incl. a `#fragment`, flags, `-` for stdin). Nothing in it expands or splits;
+///   * **POSIX single-quoted** — the one form under which a shell expands nothing, with
+///     an embedded `'` written `'\''` (what `crate::task::shell_token` emits).
+///
+/// The fence is debug-posture like its parse sibling: it rides the suite, never a
+/// release-build panic.
+fn shell_safe(token: &str) -> bool {
+    let inert = |c: char| c.is_ascii_alphanumeric() || "._:#/=@+-".contains(c);
+    if !token.is_empty() && token.chars().all(inert) {
+        return true;
+    }
+    let Some(inner) = token
+        .strip_prefix('\'')
+        .and_then(|rest| rest.strip_suffix('\''))
+    else {
+        return false;
+    };
+    // Inside the quotes, a `'` may appear only as the close-escape-reopen splice.
+    !inner.split(r"'\''").any(|span| span.contains('\''))
 }
 
 #[cfg(test)]
@@ -140,6 +200,64 @@ mod tests {
              names a legal route placeholder (crates/cli/src/route_fence.rs → \
              DUMMY_SUBSTITUTIONS; engine `finding::ROUTE_PLACEHOLDERS`)",
         );
+    }
+
+    /// **The quoting half of the fence** (M48 inc-2 triage): a route that embeds an
+    /// author-owned title the double-quoted (`Debug`) way cannot be constructed — those
+    /// bytes, pasted into a shell, expand `$HOME` and run `$( … )`, so the route silently
+    /// recovers something other than what it names.
+    #[test]
+    #[should_panic(expected = "is not shell-safe as emitted")]
+    fn mechanical_route_with_a_double_quoted_prose_token_fires_the_fence() {
+        install();
+        let title = "Cache $HOME rework";
+        let _ = Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "rename",
+                "adr:x",
+                "--to",
+                &format!("{title:?}"),
+            ],
+            "",
+        );
+    }
+
+    /// The shape the fence exists to admit: the same prose through
+    /// [`crate::task::shell_token`] — POSIX single-quoted, its own `'` spliced — plus the
+    /// bare tokens (ids, addresses with a `#fragment`, flags) that need no quoting at all.
+    #[test]
+    fn shell_safe_admits_the_bare_and_the_single_quoted_forms_only() {
+        for bare in [
+            "jigc",
+            "doc",
+            "--to",
+            "adr:pick-a-db#context",
+            "docs/decisions/alpha.md",
+            "-",
+        ] {
+            assert!(shell_safe(bare), "`{bare}` is shell-inert");
+        }
+        for prose in [
+            "Cache $HOME rework",
+            "Cache $(touch PWNED) rework",
+            "Cache `touch PWNED` rework",
+            "Cache 'quoted' rework",
+            "Adopt Redis",
+            "",
+        ] {
+            let token = crate::task::shell_token(prose);
+            assert!(
+                shell_safe(&token),
+                "`shell_token` output must pass the fence; got `{token}` for {prose:?}"
+            );
+            assert!(
+                !shell_safe(&format!("{prose:?}")),
+                "the double-quoted `Debug` form of {prose:?} is the defect this fence \
+                 refuses — a shell expands inside it"
+            );
+        }
     }
 
     /// The validator's own contract, exercised directly: a real verb line parses; a route

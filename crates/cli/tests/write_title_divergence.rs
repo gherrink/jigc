@@ -89,12 +89,13 @@ fn backticked<'a>(route: &'a str, what: &str) -> &'a str {
 }
 
 /// The route of a blocking finding, as the argv a shell would run — the **emitted
-/// bytes**, split on the route's own quoting so a multi-word title survives.
-fn route_argv(finding: &Value, what: &str) -> Vec<String> {
+/// bytes**, split by a **real `sh`** (`support::shell_words`) so the route's own quoting
+/// is adjudicated by the thing that will actually parse it, expansions included.
+fn route_argv(corpus: &TrialCorpus, finding: &Value, what: &str) -> Vec<String> {
     let route = finding["route"]
         .as_str()
         .unwrap_or_else(|| panic!("`{what}`: the reject carries a route; got:\n{finding:#}"));
-    let argv = support::shell_split(backticked(route, what));
+    let argv = support::shell_words(backticked(route, what), &corpus.repo(), &corpus.home());
     assert_eq!(
         argv.first().map(String::as_str),
         Some("jigc"),
@@ -183,20 +184,19 @@ struct Base {
 
 impl Base {
     fn build() -> Self {
+        Self::titled("Adopt Redis")
+    }
+
+    /// The same base under an arbitrary incumbent `title` — the metachar axis needs an
+    /// incumbent whose *own* title carries the shell-special bytes, so a same-slug
+    /// divergence over it is reachable at all.
+    fn titled(title: &str) -> Self {
         let corpus = TrialCorpus::build(State::Fresh);
         let task = corpus.start_workflow("record-decision", "adopt redis");
-        corpus.jigc_ok(&[
-            "doc",
-            "create",
-            "adr",
-            "--title",
-            "Adopt Redis",
-            "--task",
-            &task,
-        ]);
+        corpus.jigc_ok(&["doc", "create", "adr", "--title", title, "--task", &task]);
         corpus.jigc_stdin_ok(
             &["doc", "author", "adr", "--from-file", "-", "--task", &task],
-            &adr_payload("Adopt Redis"),
+            &adr_payload(title),
         );
         Base { corpus, task }
     }
@@ -229,7 +229,7 @@ fn reject(base: &Base, what: &str, code: &str, args: &[&str], stdin: Option<&str
         after, before,
         "`{what}`: the staged bytes are unchanged — a rejected write persists nothing"
     );
-    let argv = route_argv(&finding, what);
+    let argv = route_argv(&base.corpus, &finding, what);
     run_route(&base.corpus, &argv, what);
     finding
 }
@@ -378,6 +378,131 @@ fn cell_c_a_slug_override_over_a_staged_doc_blocks_instead_of_minting_a_third() 
     );
 }
 
+// ─────────────── the metachar axis — a route is bytes a shell will parse ───────────────
+
+/// The **metachar axis** these two arms iterate. A title is author-owned prose — LLM-
+/// written by the determinism boundary — so `$`, a backtick, `$( … )` and a quote are
+/// input this door is *designed* to receive, and each one is live inside the double
+/// quotes the pre-M47 rendering form emits:
+///
+///   * `$HOME` — parameter expansion: the route renames to a *different* title at exit 0;
+///   * `$(touch PWNED)` — command substitution: the emitted route **executes** the
+///     embedded command, and the title loses the substituted span;
+///   * `'quoted'` — the counter-member: nothing expands, but the POSIX single-quoting the
+///     fix emits has to survive its own `'` (`'\''`), so a fix that quotes naively
+///     reddens here rather than in production.
+///
+/// The backtick form of substitution is **deliberately absent**: a route renders its
+/// argv inside a backticked code span, so a title carrying a backtick cannot be lifted
+/// back out of the emitted text by any reader — a presentation question of its own, and
+/// not one a shell-quoting fix answers. `$( … )` is the same hazard, liftable.
+const METACHAR_TITLES: &[&str] = &[
+    "Cache $HOME rework",
+    "Cache $(touch PWNED) rework",
+    "Cache 'quoted' rework",
+];
+
+/// The file a command-substituted title creates if the emitted route is parsed by a real
+/// shell — the observable half of "the route ran a second command".
+const PWNED: &str = "PWNED";
+
+/// The single staged `adr:<slug>` identity of a task, as its **address** — read off the
+/// working area rather than re-derived from the title, so no test-side copy of the slug
+/// rule can paper over a divergence.
+fn sole_staged_adr(repo: &Path, task: &str) -> String {
+    let mut adrs = staged_adrs(repo, task);
+    assert_eq!(
+        adrs.len(),
+        1,
+        "the task stages exactly one adr; got: {adrs:?}"
+    );
+    let name = adrs.remove(0);
+    name.strip_suffix(".md")
+        .expect("a staged doc is a `.md`")
+        .to_string()
+}
+
+/// **The identity-divergence route is shell bytes.** The reject's route is a `jigc doc
+/// rename … --to <title>` an agent pastes into a shell, and [`reject`] runs it through a
+/// real `sh`. So the claim under test is the increment's own Proves — *no title
+/// correction mints a document nobody authored*: after the route, the task holds exactly
+/// one ADR whose `# H1` is the title that was asked for, **byte for byte**, and no
+/// embedded command has run.
+#[test]
+fn the_identity_divergence_route_survives_a_real_shell_over_the_metachar_axis() {
+    for title in METACHAR_TITLES {
+        let arm = Base::titled("Adopt Redis");
+        let payload = adr_payload(title);
+        let what = format!("identity divergence to {title:?}");
+        reject(
+            &arm,
+            &what,
+            "write.identity-change",
+            &[
+                "doc",
+                "author",
+                "adr",
+                "--from-file",
+                "-",
+                "--task",
+                &arm.task,
+            ],
+            Some(&payload),
+        );
+        let repo = arm.corpus.repo();
+        let address = sole_staged_adr(&repo, &arm.task);
+        let shown = arm
+            .corpus
+            .jigc_ok(&["doc", "show", &address, "--task", &arm.task]);
+        assert!(
+            shown.contains(&format!("# {title}\n")),
+            "`{what}`: the emitted route, parsed by a real shell, must land the title \
+             that was asked for — not one the shell rewrote; got:\n{shown}"
+        );
+        assert!(
+            !repo.join(PWNED).exists(),
+            "`{what}`: the emitted route must not execute a command embedded in the title"
+        );
+    }
+}
+
+/// **The title-ignored route is shell bytes too.** Same claim at the sibling code: the
+/// incumbent itself carries the metachars, and the divergence is a trailing `!` — which
+/// the slug rule strips, so the call lands on the *same* identity and earns
+/// `write.title-ignored`. Its route is the same in-task rename, and it must land the
+/// requested title rather than a shell-rewritten one.
+#[test]
+fn the_title_ignored_route_survives_a_real_shell_over_the_metachar_axis() {
+    for title in METACHAR_TITLES {
+        let arm = Base::titled(title);
+        let divergent = format!("{title}!");
+        let what = format!("dropped title {divergent:?}");
+        reject(
+            &arm,
+            &what,
+            "write.title-ignored",
+            &[
+                "doc", "create", "adr", "--title", &divergent, "--task", &arm.task,
+            ],
+            None,
+        );
+        let repo = arm.corpus.repo();
+        let address = sole_staged_adr(&repo, &arm.task);
+        let shown = arm
+            .corpus
+            .jigc_ok(&["doc", "show", &address, "--task", &arm.task]);
+        assert!(
+            shown.contains(&format!("# {divergent}\n")),
+            "`{what}`: the emitted route, parsed by a real shell, must land the title \
+             that was asked for; got:\n{shown}"
+        );
+        assert!(
+            !repo.join(PWNED).exists(),
+            "`{what}`: the emitted route must not execute a command embedded in the title"
+        );
+    }
+}
+
 // ───────────────────── the singleton arm, enumerated from the census ─────────────────
 
 /// The production pack composition, built the **CWD-free** way: `[dev ▸ methodology]`.
@@ -472,7 +597,7 @@ fn every_fixed_title_doctype_refuses_a_title_it_would_drop() {
                 .is_some_and(|m| m.contains(&fixed)),
             "`{ty}`'s refusal names the title the doc WILL carry:\n{stderr}"
         );
-        let argv = route_argv(&finding, &what);
+        let argv = route_argv(&corpus, &finding, &what);
         run_route(&corpus, &argv, &what);
 
         // The complement, in the same loop: the guard refuses the dropped title and

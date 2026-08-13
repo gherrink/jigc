@@ -346,6 +346,13 @@ pub const ROUTE_PLACEHOLDERS: &[RoutePlaceholder] = &[
         derivable: false,
         reason: "free-text task intent — the agent's to write",
     },
+    RoutePlaceholder {
+        token: "<title>",
+        derivable: false,
+        reason: "free-text milestone title — the agent's to write; a title is author-owned \
+                 prose, and no address determines it (the quoted-span form `\"<title>\"`, \
+                 declared here since the CLI-seam fence learned to read it)",
+    },
 ];
 
 /// Whether `token` is a placeholder a finding's own `key.target` determines

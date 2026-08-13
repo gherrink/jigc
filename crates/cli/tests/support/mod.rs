@@ -39,35 +39,43 @@ pub fn create_title(doctype: &str, otherwise: &str) -> String {
         .unwrap_or_else(|| otherwise.to_string())
 }
 
-/// Split an emitted command into argv the way a shell would — honouring the double
-/// quotes a route puts around a multi-word value (a title, an intent), so a suite that
-/// runs a route **verbatim** runs the *emitted bytes* rather than a whitespace-split
-/// approximation of them (`design/surface-contract.md` → law 2: a route is followable).
-pub fn shell_split(cmd: &str) -> Vec<String> {
-    let mut argv = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    let mut started = false;
-    for ch in cmd.chars() {
-        match ch {
-            '"' => {
-                in_quotes = !in_quotes;
-                started = true;
-            }
-            c if c.is_whitespace() && !in_quotes => {
-                if started {
-                    argv.push(std::mem::take(&mut current));
-                    started = false;
-                }
-            }
-            c => {
-                current.push(c);
-                started = true;
-            }
-        }
-    }
-    if started {
-        argv.push(current);
-    }
-    argv
+/// Split an emitted command line into argv **through a real shell**, so a suite that
+/// claims to run a route "verbatim" runs the bytes an agent would paste
+/// (`design/surface-contract.md` → law 2: a route is followable).
+///
+/// **The splitter is `sh` itself, and that is the whole point.** The hand-rolled
+/// splitters this replaces understood one quoting form and performed no expansion, so
+/// every emitted `$`, backtick or `;` was inert *in test* while live in a terminal — a
+/// route quoted the pre-M47 way passed the suite and, run for real, renamed a document to
+/// something nobody authored (M48 inc-2 triage). `set --` is the shell's own word
+/// splitter: whatever `sh` makes of the emitted bytes — expansions, command substitutions
+/// and all — is exactly what the caller then executes, so a route that only *looks*
+/// followable reddens here.
+///
+/// `cwd` / `home` are the corpus's, so an expansion that does leak is the corpus's own
+/// `$HOME` and a command substitution's side effect lands inside the throwaway repo where
+/// the caller can assert on it — never in the developer's tree.
+pub fn shell_words(cmd: &str, cwd: &std::path::Path, home: &std::path::Path) -> Vec<String> {
+    let script = format!("set -- {cmd}\nfor w in \"$@\"; do printf '%s\\0' \"$w\"; done");
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .output()
+        .expect("spawn sh");
+    assert!(
+        out.status.success(),
+        "the emitted command line must parse as shell words; got `{cmd}`\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let mut words: Vec<String> = out
+        .stdout
+        .split(|b| *b == 0)
+        .map(|w| String::from_utf8_lossy(w).into_owned())
+        .collect();
+    // The trailing NUL of the last word yields one empty tail element — an *emitted*
+    // empty word keeps its own element.
+    words.pop();
+    words
 }

@@ -296,7 +296,7 @@ impl Fixture {
     /// Run a route's emitted command **verbatim** (shell-split, the leading `jigc`
     /// dropped), returning its trimmed stdout — the followability proof.
     fn run_route(&self, cmd: &str, what: &str) -> String {
-        let argv = shell_split(cmd);
+        let argv = shell_split(cmd, self.repo.path(), self.home.path());
         assert_eq!(
             argv.first().map(String::as_str),
             Some("jigc"),
@@ -307,38 +307,34 @@ impl Fixture {
     }
 }
 
-/// Split an emitted command into argv the way a shell would — honouring the double
-/// quotes a route puts around a multi-word title, so the route is run as the **emitted
-/// bytes** rather than a whitespace-split approximation. (Kept local: this suite's group
-/// root carries no `support` module, and pulling one in for twenty lines would compile
-/// the whole shared fixture substrate into this target.)
-fn shell_split(cmd: &str) -> Vec<String> {
-    let mut argv = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    let mut started = false;
-    for ch in cmd.chars() {
-        match ch {
-            '"' => {
-                in_quotes = !in_quotes;
-                started = true;
-            }
-            c if c.is_whitespace() && !in_quotes => {
-                if started {
-                    argv.push(std::mem::take(&mut current));
-                    started = false;
-                }
-            }
-            c => {
-                current.push(c);
-                started = true;
-            }
-        }
-    }
-    if started {
-        argv.push(current);
-    }
-    argv
+/// Split an emitted command into argv **through a real `sh`** — the bytes an agent pastes
+/// are parsed by the thing that will actually parse them, expansions included. A
+/// hand-rolled splitter understands one quoting form and expands nothing, which is exactly
+/// how a route carrying live `$` or `$( … )` in a title passes a suite and rewrites the
+/// document in a terminal (M48 inc-2 triage). `set --` is the shell's own word splitter.
+/// (Kept local: this suite's group root carries no `support` module, and pulling one in
+/// would compile the whole shared fixture substrate into this target.)
+fn shell_split(cmd: &str, cwd: &Path, home: &Path) -> Vec<String> {
+    let script = format!("set -- {cmd}\nfor w in \"$@\"; do printf '%s\\0' \"$w\"; done");
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .output()
+        .expect("spawn sh");
+    assert!(
+        out.status.success(),
+        "the emitted command line must parse as shell words; got `{cmd}`\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let mut words: Vec<String> = out
+        .stdout
+        .split(|b| *b == 0)
+        .map(|w| String::from_utf8_lossy(w).into_owned())
+        .collect();
+    words.pop(); // the trailing NUL of the last word yields one empty tail element
+    words
 }
 
 /// The task id `jigc start "log the release"` mints — the id the enriched route must
@@ -755,7 +751,7 @@ const CELLS: &[Cell] = &[
         stdin: None,
         code: "write.identity-change",
         route: RouteCheck::MutatingWrite(
-            "jigc doc rename {addr} --to \"Release Log\" --task log-the-release",
+            "jigc doc rename {addr} --to 'Release Log' --task log-the-release",
         ),
     },
     Cell {
@@ -764,7 +760,7 @@ const CELLS: &[Cell] = &[
         stdin: None,
         code: "write.title-ignored",
         route: RouteCheck::MutatingWrite(
-            "jigc doc rename {addr} --to \"Changelog!\" --task log-the-release",
+            "jigc doc rename {addr} --to 'Changelog!' --task log-the-release",
         ),
     },
 ];

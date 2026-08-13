@@ -2190,7 +2190,14 @@ fn run_doc_rename(
              (its `# H1`, and its slug while the identity is uncommitted); a repeatable \
              item is retitled with `jigc doc retitle-item`\n  route: run {}",
             engine::finding::Route::mechanical(
-                ["jigc", "doc", "rename", &doc, "--to", &format!("{to:?}")],
+                [
+                    "jigc",
+                    "doc",
+                    "rename",
+                    &doc,
+                    "--to",
+                    &crate::task::shell_token(to),
+                ],
                 "",
             ),
         )));
@@ -2335,7 +2342,7 @@ fn committed_reslug_refusal(
         "rename".to_string(),
         uri.to_string(),
         "--to".to_string(),
-        format!("{to:?}"),
+        crate::task::shell_token(to),
     ];
     if let Some(slug) = slug_override {
         argv.push("--slug".to_string());
@@ -2652,7 +2659,7 @@ fn fixed_title_refusal(
                 "create",
                 ty,
                 "--title",
-                &format!("{fixed:?}"),
+                &crate::task::shell_token(fixed),
                 "--task",
                 &task.id,
             ],
@@ -2704,7 +2711,7 @@ fn identity_divergence_refusal(
         "rename".to_string(),
         bound.to_string(),
         "--to".to_string(),
-        format!("{title:?}"),
+        crate::task::shell_token(title),
     ];
     if let Some(slug) = slug_override {
         argv.push("--slug".to_string());
@@ -2764,7 +2771,7 @@ fn title_ignored_refusal(
                 "rename",
                 address,
                 "--to",
-                &format!("{title:?}"),
+                &crate::task::shell_token(title),
                 "--task",
                 &task.id,
             ],
@@ -4814,8 +4821,12 @@ fn read_staged(path: &Path, addr: &str) -> Result<String> {
         let start = engine::finding::Route::mechanical(["jigc", "start"], "");
         // The full, parseable form — the old bare `jigc doc create` span never parsed
         // (required args short), which the T7 parse fence surfaced and forces honest.
+        // The sample title is **single**-quoted, the one form a shell expands nothing
+        // inside — the route fence's quoting half refuses the double-quoted span, because
+        // a reader who substitutes their own prose into a `"…"` span pastes live `$` and
+        // command substitution (M48 inc-2 triage).
         let create = engine::finding::Route::mechanical(
-            ["jigc", "doc", "create", "<type>", "--title", "\"X\""],
+            ["jigc", "doc", "create", "<type>", "--title", "'X'"],
             "",
         );
         anyhow!(
