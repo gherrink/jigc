@@ -569,6 +569,133 @@ fn uninstall_refuses_while_an_open_tasks_authored_prose_lives_only_in_the_workbe
     );
 }
 
+/// The **dominant cell of the same guard**, and the one the suite above never reached: a
+/// task that was `start`ed and nothing more. `start` auto-creates the workflow's transient
+/// `commit:<task>` doc, so `.jigc/tasks/<id>/docs/` holds a machine-written *skeleton* with
+/// zero authored bytes — and the probe, by its own design note, "can no more distinguish a
+/// pristine skeleton from authored prose" than it can read minds. It therefore refuses here
+/// too (correct — refusing is the honest answer when the binary cannot prove the bytes are
+/// disposable), but the refusal must not **claim** what it cannot back: saying `.jigc/`
+/// "holds authored doc prose … removing it would destroy that prose" over a skeleton nobody
+/// typed into is a law-1 lie ([surface-contract.md](../../design/surface-contract.md) → law
+/// 1), the exact repair this door's *sibling* message already took ("content", not
+/// "uncommitted work").
+///
+/// The route compounds it: over this cell `jigc task finalize <id>` **cannot succeed** —
+/// the empty skeleton fails `schema-conformance` — so the reachable exit (`jigc task
+/// discard`) has to be named first. This test pins the unreachability rather than assuming
+/// it, so the ordering claim rests on a measured fact.
+#[test]
+fn uninstall_refuses_a_pristine_skeleton_without_claiming_prose_it_cannot_see() {
+    let repo = TempDir::new("skeleton");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let installed = run_jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        installed.status.success(),
+        "`jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&installed.stderr),
+    );
+    let minted = run_jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "quick-fix", "add a widget"],
+    );
+    assert!(
+        minted.status.success(),
+        "the quick-fix mint must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&minted.stderr),
+    );
+    let task = "add-a-widget";
+
+    // The fixture IS the pristine cell: the auto-created doc exists and carries no authored
+    // bytes at all — every slot is empty. (Asserted, so the test cannot silently drift into
+    // the authored case the suite above already covers.)
+    let staged = repo
+        .path()
+        .join(".jigc/tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("commit:{task}.md"));
+    let skeleton = fs::read_to_string(&staged).expect("`start` auto-creates the commit doc");
+    assert!(
+        skeleton.contains("## Summary"),
+        "the fixture must be the auto-created skeleton; got:\n{skeleton}",
+    );
+    for line in skeleton.lines() {
+        let line = line.trim();
+        assert!(
+            line.is_empty()
+                || line.starts_with('#')
+                || line.starts_with("---")
+                || line.ends_with(':'),
+            "the fixture must hold ZERO authored bytes — `{line}` is content; got:\n{skeleton}",
+        );
+    }
+
+    // (1) The teardown still refuses — the guard is right to fire; it cannot prove these
+    //     bytes are disposable.
+    let refused = run_uninstall(repo.path(), home.path());
+    let stderr = String::from_utf8(refused.stderr).expect("utf-8 stderr");
+    let stdout = String::from_utf8(refused.stdout).expect("utf-8 stdout");
+    assert!(
+        !refused.status.success(),
+        "`jigc uninstall` must still refuse over an open task's staged doc; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("uninstall.staged-prose") && stderr.contains(&format!("commit:{task}")),
+        "the refusal must carry its code and name the doc; stderr:\n{stderr}",
+    );
+
+    // (2) …and it claims only what the probe can back: a staged doc no commit has a copy
+    //     of. Not authored prose — nobody authored anything here.
+    for banned in ["authored", "doc prose", "prose for", "that prose"] {
+        assert!(
+            !stderr.contains(banned),
+            "the refusal must not claim prose the probe cannot see — found {banned:?}; \
+             stderr:\n{stderr}",
+        );
+    }
+
+    // (3) The route names the reachable exit first. `finalize` is not reachable from this
+    //     state — measured here, not assumed.
+    let finalized = run_jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    assert!(
+        !finalized.status.success(),
+        "the premise: `jigc task finalize` cannot land an untouched skeleton; stderr:\n{}",
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+    let discard_at = stderr
+        .find("jigc task discard")
+        .unwrap_or_else(|| panic!("the route must name `jigc task discard`; stderr:\n{stderr}"));
+    let finalize_at = stderr
+        .find("jigc task finalize")
+        .unwrap_or_else(|| panic!("the route must name `jigc task finalize`; stderr:\n{stderr}"));
+    assert!(
+        discard_at < finalize_at,
+        "the route must name the reachable exit (`jigc task discard`) before the one this \
+         state cannot reach; stderr:\n{stderr}",
+    );
+
+    // (4) Nothing was removed, and `--force` is still the consent that completes it.
+    assert!(
+        repo.path().join(".jigc").is_dir(),
+        "`.jigc/` must survive the refusal",
+    );
+    let forced = run_jigc(repo.path(), home.path(), &["uninstall", "--force"]);
+    assert!(
+        forced.status.success(),
+        "`jigc uninstall --force` must complete the teardown; stderr:\n{}",
+        String::from_utf8_lossy(&forced.stderr),
+    );
+    assert!(
+        !repo.path().join(".jigc").exists(),
+        "`--force` must remove `.jigc/`",
+    );
+}
+
 /// The cell the registered-worktree probe **structurally cannot see**: a non-empty,
 /// worktree-shaped path under `.jigc/worktrees/` that is registered nowhere. It is the
 /// ordinary `cp -R` / `mv` shape (a copy's worktree admin record names the *source*, so
@@ -683,6 +810,7 @@ fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
         ".jigc/tasks/",
         // … the escape hatches the findings' own routes name …
         "jigc milestone discard",
+        "jigc task discard",
         "jigc task finalize",
         // … and the one flag that turns the refusal into a deletion.
         "--force",
@@ -704,10 +832,15 @@ fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
     }
     // The two falsified claims are the defect itself: an unqualified "non-destructive"
     // (`--force` deletes on demand) and a refusal set of exactly "One state" (there are two).
+    // A third falsified claim, same law: the help described the staged-doc refusal as
+    // firing on "authored doc prose", which the probe cannot see — `start` alone trips it
+    // (see `uninstall_refuses_a_pristine_skeleton_without_claiming_prose_it_cannot_see`).
     for banned in [
         "Idempotent and non-destructive: a second run",
         "non-destructive on every state it accepts",
         "One state it refuses",
+        "holds authored doc prose",
+        "authored doc prose blocks",
     ] {
         assert!(
             !help.contains(banned),

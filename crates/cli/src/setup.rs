@@ -1229,9 +1229,10 @@ impl RemovedArtifacts {
 ///   fan-out finalize leaves it alive for the retry), and the subject is the *path*, not
 ///   the registered set — a copied or moved repo's worktrees are registered at the
 ///   *source's* path, so a registered-set guard is inert exactly where the live work is;
-/// - an **open task's staged doc prose** in `.jigc/tasks/<id>/docs/*.md` blocks with
-///   `uninstall.staged-prose` ([`staged_task_prose`]) — LLM-authored bytes that are in no
-///   object DB at all, the reproduced pre-1.0.0 loss.
+/// - an **open task's staged doc** in `.jigc/tasks/<id>/docs/*.md` blocks with
+///   `uninstall.staged-prose` ([`staged_task_prose`]) — bytes that are in no object DB at
+///   all (the reproduced pre-1.0.0 loss authored them; the mint's own skeleton is refused
+///   on the same footing, since neither is provably disposable).
 ///
 /// `force` is the operator's consent to delete both. It skips the guards and nothing else.
 ///
@@ -1266,7 +1267,7 @@ pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Find
 /// [`run_uninstall`] (no location step). Each step is independently idempotent, so the
 /// whole teardown is a clean no-op on a re-run — but unless `force`, it removes nothing at
 /// all while `.jigc/` holds the sole copy of anything: a worktree-shaped path with content
-/// ([`dirty_fanout_worktrees`]) or an open task's authored prose ([`staged_task_prose`]),
+/// ([`dirty_fanout_worktrees`]) or an open task's staged docs ([`staged_task_prose`]),
 /// both probed in step 0.
 fn uninstall(
     repo_root: &Path,
@@ -1390,8 +1391,8 @@ fn uninstall(
 /// "a provisioned worktree holding uncommitted work" a **normal, promised-safe** state —
 /// an aborted fan-out finalize deliberately leaves the worktrees alive so the re-run can
 /// recover them — so an unguarded removal destroyed exactly the work the tool had just
-/// promised to keep (plus the sub-tasks' authored doc prose in `.jigc/tasks/<id>/docs/`,
-/// which is in no object DB at all), at exit 0.
+/// promised to keep (plus the sub-tasks' staged docs in `.jigc/tasks/<id>/docs/`, which are
+/// in no object DB at all), at exit 0.
 ///
 /// **Scoped to `.jigc/worktrees/`**: only paths under that root are probed — a human's
 /// worktree elsewhere in the repo is none of this verb's business, and the main checkout is
@@ -1432,11 +1433,18 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<(PathBuf, Vec<String>)
     Ok(holds)
 }
 
-/// The **open tasks whose authored doc prose exists only in the workbench** — each task id
-/// paired with the sorted `<type>:<slug>` identities staged in its
-/// `.jigc/tasks/<id>/docs/`. [`uninstall`]'s second WIP guard, and the reproduced pre-1.0.0
-/// loss: `setup` → `start` → `doc set-slot` → `uninstall` removed `.jigc/` at exit 0 and the
-/// authored summary was in no object DB (`DECISIONS.md` 2026-08-13 → the Settle, F3).
+/// The **open tasks whose staged docs exist only in the workbench** — each task id paired
+/// with the sorted `<type>:<slug>` identities staged in its `.jigc/tasks/<id>/docs/`.
+/// [`uninstall`]'s second WIP guard, and the reproduced pre-1.0.0 loss: `setup` → `start` →
+/// `doc set-slot` → `uninstall` removed `.jigc/` at exit 0 and the authored summary was in
+/// no object DB (`DECISIONS.md` 2026-08-13 → the Settle, F3).
+///
+/// **It measures staging, not authorship.** A staged `*.md` is a doc no commit has a copy
+/// of; whether a human or the mint wrote its bytes is not something this probe (or any
+/// other) can tell, and the guard deliberately fires either way — the pristine skeleton
+/// `jigc start` leaves behind is refused exactly like typed prose, because "the binary
+/// cannot prove these bytes are disposable" is the whole basis of the refusal. What the
+/// probe cannot distinguish, its findings must not claim ([`staged_prose_finding`]).
 ///
 /// **The subject is the staged `*.md` set** ([`crate::task::staged_doc_ids`]), never
 /// directory-non-emptiness — `docs/` always also holds `provenance.json` — and it does
@@ -1521,42 +1529,57 @@ fn unverified_worktrees_finding(err: anyhow::Error) -> Finding {
     )
 }
 
-/// The staged-prose refusal: a blocking, route-bearing finding naming every open task and
+/// The staged-doc refusal: a blocking, route-bearing finding naming every open task and
 /// the doc identities staged in it. **Its own code**, not the worktree door's —
 /// `uninstall.dirty-worktree` printed over `.jigc/tasks/<id>/docs/` with no worktree in
 /// sight would name the wrong subject
-/// ([surface-contract.md](../../design/surface-contract.md) → law 1).
+/// ([surface-contract.md](../../design/surface-contract.md) → law 1). The code is the
+/// door's stable identity and stays `uninstall.staged-prose`; what moved is the *claim*.
 ///
-/// The listed identities are the addresses `jigc doc show <addr> --task <id>` takes, so the
-/// route's first move — read what you are about to lose — is followable as printed.
+/// **It claims "staged doc(s)", not "authored prose"** — the sibling repair, applied to the
+/// arm that shipped without it. [`staged_task_prose`] cannot distinguish a pristine
+/// machine-written skeleton from prose someone typed, and the **dominant** cell is the
+/// skeleton: `jigc start` alone auto-creates `commit:<task>` with every slot empty and
+/// trips this guard. Calling those bytes *authored doc prose* is a claim the probe cannot
+/// back (law 1) — that the doc is **staged and in no commit** is exactly what it measured.
+///
+/// **The route names the reachable exit first.** Over that same dominant cell `jigc task
+/// finalize` cannot succeed (the empty skeleton fails `schema-conformance`), so `jigc task
+/// discard` leads and `finalize` follows with the condition that makes it available. The
+/// listed identities are the addresses `jigc doc show <addr> --task <id>` takes, so reading
+/// what you are about to lose is followable as printed.
 fn staged_prose_finding(staged: &[(String, Vec<String>)]) -> Finding {
     let listing: Vec<String> = staged
         .iter()
         .map(|(task, docs)| format!("  {task}: {}", docs.join(", ")))
         .collect();
+    let docs: usize = staged.iter().map(|(_, docs)| docs.len()).sum();
     Finding::block(
         "uninstall.staged-prose",
         format!(
-            "`.jigc/` holds authored doc prose for {} open task(s) that no commit has a copy \
-             of — removing it would destroy that prose:\n{}",
+            "`.jigc/` holds {docs} staged doc(s) for {} open task(s) that no commit has a copy \
+             of — removing `.jigc/` would destroy them:\n{}",
             staged.len(),
             listing.join("\n"),
         ),
-        "land that work with `jigc task finalize <task-id>` (read it first with `jigc doc show \
-         <address> --task <task-id>`), or throw it away with `jigc task discard <task-id>`, \
-         then re-run `jigc uninstall`; `jigc uninstall --force` deletes it with the install",
+        "read what is in them with `jigc doc show <address> --task <task-id>`, then throw the \
+         task away with `jigc task discard <task-id>` — or, once its doc is complete, land it \
+         with `jigc task finalize <task-id>` (which refuses while a required slot is empty) — \
+         then re-run `jigc uninstall`; `jigc uninstall --force` deletes them with the install",
     )
 }
 
 /// The fail-closed half of [`staged_task_prose`]: the staged set could not be enumerated,
-/// so the teardown refuses rather than remove `.jigc/` with the authored prose's existence
-/// unknown. Same code as the prose refusal — the operator's next action is identical.
+/// so the teardown refuses rather than remove `.jigc/` with the staged docs' existence
+/// unknown. Same code as the refusal above — the operator's next action is identical, and
+/// the same claim discipline binds: the probe never ran, so it can name only what it was
+/// looking for (staged docs), never what they contain.
 fn unverified_prose_finding(err: std::io::Error) -> Finding {
     Finding::block(
         "uninstall.staged-prose",
         format!(
-            "cannot check `.jigc/tasks/` for authored doc prose, so removing `.jigc/` could \
-             destroy it: {err}"
+            "cannot check `.jigc/tasks/` for open tasks' staged docs, so removing `.jigc/` \
+             could destroy work no commit has a copy of: {err}"
         ),
         "make sure `.jigc/tasks/` is readable, then re-run `jigc uninstall` — or, once you \
          have confirmed the open tasks hold nothing you need, `jigc uninstall --force` \

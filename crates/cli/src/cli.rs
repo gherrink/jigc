@@ -184,14 +184,14 @@ pub enum Command {
     /// fan-out sub-task path under `.jigc/worktrees/` that holds content blocks
     /// with `uninstall.dirty-worktree` (get the work out, or abandon the milestone
     /// with `jigc milestone discard <milestone-id> --force`), and an open task
-    /// under `.jigc/tasks/` that holds authored doc prose blocks with
-    /// `uninstall.staged-prose` (land it with `jigc task finalize <task-id>`, or
-    /// throw it away with `jigc task discard <task-id>`). Either way it removes
-    /// nothing until you re-run — or pass `--force`, which deletes both with the
-    /// install.
+    /// under `.jigc/tasks/` holding a staged doc no commit has a copy of blocks
+    /// with `uninstall.staged-prose` (throw the task away with `jigc task discard
+    /// <task-id>`, or land it with `jigc task finalize <task-id>` once its doc is
+    /// complete). Either way it removes nothing until you re-run — or pass
+    /// `--force`, which deletes both with the install.
     Uninstall {
         /// Remove `.jigc/` even when it holds a fan-out worktree with content or an
-        /// open task's authored doc prose — the explicit consent to destroy work no
+        /// open task's staged docs — the explicit consent to destroy work no
         /// commit has a copy of. Inert when both guards are already clean.
         #[arg(long)]
         force: bool,
