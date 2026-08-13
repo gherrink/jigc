@@ -230,8 +230,9 @@ pub enum DocCommand {
         #[arg(long)]
         to: String,
         /// Override the re-slug's minted id, decoupling it from the title. Taken
-        /// **verbatim** and validated as a well-formed slug. Inert on a retitle-only
-        /// (a committed identity keeps its slug).
+        /// **verbatim** and validated as a well-formed slug. A committed identity
+        /// cannot re-slug here at all: a value that would move it is refused and
+        /// routed at `jigc rename`.
         #[arg(long)]
         slug: Option<String>,
         /// The active task to scope the write to. Optional: explicit wins; else the
@@ -2252,6 +2253,7 @@ fn run_doc_rename(
                 title: to.to_string(),
                 from: uri,
                 reslugged,
+                committed_identity,
                 findings,
                 copied_in,
             },

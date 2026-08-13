@@ -1430,17 +1430,26 @@ pub enum DocAck {
         copied_in: bool,
     },
     /// A `doc rename` retitled the doc now at `address`/`target` to `title`, `from` its
-    /// prior address. `reslugged` is the **always-present** discriminator between the two
-    /// cells the verb splits on: `true` when the identity moved (a never-committed doc —
-    /// `address != from`), `false` on a retitle-only (a committed identity keeps its slug,
-    /// so `address == from`). Both keys ride the envelope because the agent-text line
-    /// names both facts, and the contract withholds nothing the text prints.
+    /// prior address. `reslugged` is the **always-present** discriminator of the effect:
+    /// `true` when the identity moved (`address != from`), `false` on a retitle-only
+    /// (`address == from`). Both keys ride the envelope because the agent-text line names
+    /// both facts, and the contract withholds nothing the text prints.
+    ///
+    /// `committed_identity` is the doc's **provenance** cell ([`state::Provenance::
+    /// EditedFromBase`](engine::state::Provenance) — copied in from the committed store),
+    /// which is *why* a retitle-only kept the id, not *that* it did: a committed slug is
+    /// the committed path and is frozen here, while a never-committed doc simply landed on
+    /// the id it already had. The rendered sentence states the cell it is actually in — a
+    /// retitle-only is reached from **both** (`design/surface-contract.md` law 1). It is
+    /// rendering input only, and adds no envelope key: the effect a driver deserializes is
+    /// `reslugged`, unchanged.
     Renamed {
         address: String,
         target: AckTarget,
         title: String,
         from: String,
         reslugged: bool,
+        committed_identity: bool,
         findings: Findings,
         copied_in: bool,
     },
@@ -1610,10 +1619,21 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
                     reslugged: true,
                     ..
                 } => format!("{address} (renamed to {title:?} from {from})"),
+                // A retitle-only, stating the cell it is in rather than one cell's reason
+                // over both: a committed identity's slug is the committed path (moving it
+                // is `jigc rename`'s task-less, referrer-repointing job), while a
+                // never-committed doc — the cell the `write.title-ignored` guard routes
+                // here — simply landed on the id it already had.
+                DocAck::Renamed {
+                    address,
+                    title,
+                    committed_identity: true,
+                    ..
+                } => format!(
+                    "{address} (retitled {title:?} — the committed identity keeps its slug)"
+                ),
                 DocAck::Renamed { address, title, .. } => {
-                    format!(
-                        "{address} (retitled {title:?} — the committed identity keeps its slug)"
-                    )
+                    format!("{address} (retitled {title:?} — the id is unchanged)")
                 }
                 // Agent-text is the bare address the verbs printed before joining the
                 // envelope (byte-identical): the minted doc address (`create`/`author`) or

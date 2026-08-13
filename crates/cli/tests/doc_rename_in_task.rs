@@ -837,6 +837,156 @@ fn a_location_bearing_singleton_refuses_the_rename() {
     }
 }
 
+// ─── arm G — the retitle-only ack names the cell it is in, over both provenances ───
+
+/// **The retitle-only sentence, swept over the provenance axis.** `reslugged: false`
+/// is reached from **both** cells of the split the verb makes, not just the committed
+/// one:
+///
+///   * `EditedFromBase` — a committed doc copied in for edit, whose slug is frozen
+///     because it is the committed path (arm B);
+///   * `Created` (or no provenance record at all) — a doc this task minted, where the
+///     `--to` simply lands on the id the doc already has. This is the **primary route
+///     path** of the increment's own `write.title-ignored` guard: a punctuation-only
+///     correction routes here, and the doc it corrects was never committed.
+///
+/// One ack sentence served both, claiming "the committed identity keeps its slug"
+/// over a doc with no committed identity — `design/surface-contract.md` law 1, on the
+/// route the guard emits. So the assertion is per cell, and the never-committed cell
+/// is driven **through the emitted route, run verbatim**, not a reconstruction of it.
+#[test]
+fn the_retitle_only_ack_names_the_cell_it_is_in() {
+    let corpus = TrialCorpus::build(State::Fresh);
+
+    // ── cell 1: never committed — reached through the title guard's own route ──
+    let minting = corpus.start_workflow("single-task", "pick the queue");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "Adopt Kafka",
+        "--task",
+        &minting,
+    ]);
+    let (ok, _stdout, stderr) = json(
+        &corpus,
+        &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Adopt Kafka!",
+            "--task",
+            &minting,
+        ],
+    );
+    assert!(!ok, "the punctuation-only re-create is refused");
+    let finding = blocking_finding(&stderr, "title ignored");
+    assert_eq!(
+        finding["code"], "write.title-ignored",
+        "the guard whose route this arm runs:\n{stderr}"
+    );
+    let route = finding["route"]
+        .as_str()
+        .expect("the blocking finding carries a route")
+        .to_string();
+    let cmd = backticked(&route, "title ignored").to_string();
+
+    // The cell's precondition, read off the task's own provenance manifest and the
+    // committed store — the doc the route is about was never committed.
+    let task_dir = corpus.repo().join(".jigc/tasks").join(&minting);
+    let provenance = fs::read_to_string(task_dir.join("docs/provenance.json"))
+        .expect("read the staged-doc provenance");
+    let recorded: Value = serde_json::from_str(&provenance).expect("the manifest is JSON");
+    assert_eq!(
+        recorded["docs"]["adr:adopt-kafka"], "created",
+        "the cell's precondition: this task minted the doc:\n{provenance}"
+    );
+    assert!(
+        !corpus.repo().join("docs/decisions/adopt-kafka.md").exists(),
+        "the cell's precondition: nothing is committed at the doc's home"
+    );
+
+    // Run the emitted bytes verbatim and read the ack the agent actually sees.
+    let argv = shell_split(&cmd);
+    let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    let line = corpus.jigc_ok(&args).trim().to_string();
+    assert!(
+        line.starts_with("adr:adopt-kafka (retitled \"Adopt Kafka!\""),
+        "the retitle-only ack leads with the address and the new title; got:\n{line}"
+    );
+    assert!(
+        !line.contains("committed"),
+        "law 1: the ack may not claim a committed identity over a doc this task minted \
+         and never committed; got:\n{line}"
+    );
+    assert!(
+        line.contains("the id is unchanged"),
+        "the ack states the reason this cell actually has — the id did not move; got:\n{line}"
+    );
+
+    // ── cell 2: a committed identity — the frozen-slug sentence still fires ──
+    for (section, prose) in [
+        ("context", "Fan-out is growing."),
+        ("decision", "Use Kafka."),
+        ("consequences", "One more broker to run."),
+    ] {
+        corpus.jigc_stdin_ok(
+            &[
+                "doc",
+                "set-slot",
+                &format!("adr:adopt-kafka#{section}"),
+                "--from-file",
+                "-",
+                "--task",
+                &minting,
+            ],
+            prose,
+        );
+    }
+    corpus.finalize(&minting, "queue", "pick the queue", false);
+    assert!(
+        corpus
+            .repo()
+            .join("docs/decisions/adopt-kafka.md")
+            .is_file(),
+        "the second cell's precondition: the ADR is committed"
+    );
+
+    let editing = corpus.start_workflow("single-task", "revisit the queue");
+    let line = corpus
+        .jigc_ok(&[
+            "doc",
+            "rename",
+            "adr:adopt-kafka",
+            "--to",
+            "Adopt Kafka?",
+            "--task",
+            &editing,
+        ])
+        .trim()
+        .to_string();
+    let provenance = fs::read_to_string(
+        corpus
+            .repo()
+            .join(".jigc/tasks")
+            .join(&editing)
+            .join("docs/provenance.json"),
+    )
+    .expect("read the editing task's provenance");
+    let recorded: Value = serde_json::from_str(&provenance).expect("the manifest is JSON");
+    assert_eq!(
+        recorded["docs"]["adr:adopt-kafka"], "edited-from-base",
+        "the second cell's precondition: the doc was copied in from the committed store:\n{provenance}"
+    );
+    assert!(
+        line.starts_with("adr:adopt-kafka (retitled \"Adopt Kafka?\"")
+            && line.contains("the committed identity keeps its slug"),
+        "a committed identity still states why its slug is frozen; got:\n{line}"
+    );
+}
+
 /// **Cell E, unchanged.** The item-level identity refusal the doc-level verb owes
 /// nothing but a regression arm: `retitle-item` on an **enum** `id-from` (a
 /// changelog change-group's `category`) still refuses with `write.identity-change`.
