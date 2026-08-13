@@ -279,6 +279,206 @@ fn describe_routes_to_workflow_preview() {
     );
 }
 
+/// The dev pack tree on disk — the same bytes `include_dir!` embeds, selectable as
+/// the **base** pack via `JIGC_PACK_DIR`.
+fn dev_pack() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+}
+
+/// The methodology pack tree on disk — the same bytes `include_dir!` embeds,
+/// selectable as the **highest-precedence listed** pack via `packs.yaml`.
+fn methodology_pack() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("packs")
+        .join("methodology")
+}
+
+/// The `doc show` command-ref a shipped pack's catalog carries, as `(id, hint)` —
+/// **derived** from that pack's `config/commands.yaml` on disk, never a hand-typed
+/// id or hint (F1: *the fence iterates the derivation, never a hand-copied list*;
+/// a receipt outlives what it stands for). The entry is identified **structurally**
+/// — its first two `args` are the literals `doc` and `show` — so renaming the entry
+/// or rewording its hint keeps the arm honest, while deleting the read-back
+/// command-ref reddens it. `None` when the catalog carries no such entry.
+fn catalog_doc_show_entry(pack_root: &Path) -> Option<(String, String)> {
+    let path = pack_root.join("config").join("commands.yaml");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).expect("the command catalog parses as YAML");
+    let commands = value["commands"]
+        .as_sequence()
+        .expect("the catalog carries a `commands:` list");
+
+    let mut found: Vec<(String, String)> = Vec::new();
+    for entry in commands {
+        let Some(args) = entry["args"].as_sequence() else {
+            continue;
+        };
+        let leading: Vec<&str> = args.iter().take(2).filter_map(|a| a.as_str()).collect();
+        if leading != ["doc", "show"] {
+            continue;
+        }
+        let id = entry["id"]
+            .as_str()
+            .expect("a catalog entry carries an id")
+            .to_owned();
+        let hint = entry["hint"].as_str().unwrap_or_default().to_owned();
+        found.push((id, hint));
+    }
+    assert!(
+        found.len() <= 1,
+        "{} declares {} `doc show` command-refs; the catalog is keyed by id, so the \
+         read-back surface earns exactly one",
+        path.display(),
+        found.len(),
+    );
+    found.into_iter().next()
+}
+
+/// Run `jigc describe` with the shipped pack at `pack_root` selected as the **base**
+/// pack (`JIGC_PACK_DIR`), i.e. loaded **alone**: no listed pack, no compose marker.
+fn describe_over_base_pack(tag: &str, pack_root: &Path) -> String {
+    let repo = TempDir::new(tag);
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("describe")
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .env("JIGC_PACK_DIR", pack_root)
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc describe` over {} must exit 0; got {:?}\nstderr:\n{}",
+        pack_root.display(),
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout).expect("utf-8 stdout")
+}
+
+/// Run `jigc describe` with the shipped pack at `pack_root` **listed** in
+/// `packs.yaml` — highest-precedence, over the embedded base. `CompositePack::read`
+/// is winner-take-all whole-file for `config/commands`, so the projected catalog is
+/// this pack's alone (`design/multi-pack.md` → The pack-set) — the methodology-alone
+/// catalog path, which is where the methodology entry is visible.
+fn describe_over_listed_pack(tag: &str, pack_root: &Path) -> String {
+    let repo = TempDir::new(tag);
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack_root.display()),
+    )
+    .expect("write the pack list");
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("describe")
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc describe` over the listed pack {} must exit 0; got {:?}\nstderr:\n{}",
+        pack_root.display(),
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout).expect("utf-8 stdout")
+}
+
+/// M48 Increment 3, T1 — **`jigc doc show` joins both packs' command catalogs.**
+///
+/// Six consecutive trials landed the discoverability lens, and the pre-1.0.0 trial
+/// made it countable: all three blind sessions went to the filesystem to read their
+/// own in-flight work while `jigc doc show --task <id>` has shipped since M43. The
+/// menu is where a capability stops hiding (`surface-contract.md` → law 2), and the
+/// menu projects the **command catalog** — which carried no read verb at all in
+/// either shipped pack.
+///
+/// Driven over the **emitted bytes** of the real binary, per shipped pack **loaded
+/// alone** (dev as the `JIGC_PACK_DIR` base, methodology as the highest-precedence
+/// listed pack — `config/commands` resolves winner-take-all, so each arm projects
+/// exactly one catalog), with the expectation **derived from the loaded catalog**
+/// rather than a hand-typed string.
+#[test]
+fn describe_names_doc_show_in_both_shipped_catalogs() {
+    let dev = dev_pack();
+    let methodology = methodology_pack();
+
+    for (label, pack_root, out) in [
+        (
+            "dev",
+            dev.as_path(),
+            describe_over_base_pack("readback-dev", &dev),
+        ),
+        (
+            "methodology",
+            methodology.as_path(),
+            describe_over_listed_pack("readback-methodology", &methodology),
+        ),
+    ] {
+        let (id, hint) = catalog_doc_show_entry(pack_root).unwrap_or_else(|| {
+            panic!(
+                "the {label} pack's catalog must carry a `jigc doc show` command-ref — the \
+                 read-back of an in-flight write is the capability six trials went to the \
+                 filesystem for; {}/config/commands.yaml declares none",
+                pack_root.display(),
+            )
+        });
+        assert!(
+            !hint.trim().is_empty(),
+            "the {label} pack's `{id}` command-ref must carry a non-empty hint — the hint IS \
+             what describe projects",
+        );
+        assert!(
+            out.contains(&format!("{id} {hint}")),
+            "`jigc describe` over the {label} pack alone must name its `{id}` command-ref and \
+             its authored hint; got:\n{out}",
+        );
+        // The new entry must not cost the surface its posture — describe stays a menu,
+        // not a table (`introspection.md` → The operational format contract).
+        assert_non_contractual_prose(&out).unwrap_or_else(|why| {
+            panic!(
+                "the {label} projection must stay hostile-to-parsing: {why}\n--- output ---\n{out}"
+            )
+        });
+    }
+}
+
+/// The composite arm of the same claim: the `[dev ▸ methodology]` composition an
+/// ordinary `jigc setup` project runs under still names the read-back surface. The
+/// declared bound, neither opened nor closed here: `CompositePack::read` is
+/// winner-take-all whole-file for `config/commands`, so the composite projects the
+/// **dev** catalog only — hence the dev entry is the one this arm derives and the
+/// methodology entry rides the methodology-alone arm above.
+#[test]
+fn describe_names_doc_show_on_the_composite_path() {
+    let repo = TempDir::new("readback-composite");
+    set_up_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write the compose marker");
+    let home = TempDir::new("home");
+
+    let dev = dev_pack();
+    let (id, hint) = catalog_doc_show_entry(&dev)
+        .expect("the dev catalog must carry the `jigc doc show` command-ref");
+
+    let out = describe_stdout(repo.path(), home.path());
+    assert!(
+        out.contains(&format!("{id} {hint}")),
+        "the composite `[dev ▸ methodology]` projection must name the dev catalog's `{id}` \
+         command-ref; got:\n{out}",
+    );
+}
+
 #[test]
 fn describe_carries_the_arch_doc_doctype_and_workflow() {
     // M13 Increment 4, T3 — the M11 describe surface for the new doctype + workflow.

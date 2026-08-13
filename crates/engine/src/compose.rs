@@ -5219,6 +5219,33 @@ A failed charge retries with exponential backoff, capped at five attempts.
               ],
               "hint": "Set the required Conventional-Commits type."
             },
+            "show-doc": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "doc"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "show"
+                },
+                {
+                  "kind": "agent",
+                  "agent": "address",
+                  "hint": "the doc address to read — `<type>:<slug>`, or a `#section`/item/leaf slice of it"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
+                }
+              ],
+              "hint": "Read a managed doc, or an addressed slice of it — with `--task`, the staged copy of your own in-flight write."
+            },
             "validate-task": {
               "command": "jigc",
               "args": [

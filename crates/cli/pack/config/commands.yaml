@@ -140,3 +140,20 @@ commands:
     command: jigc
     args: ["ingest"]
     hint: "Scan the repo, classify candidate docs, and report the triage verdicts."
+
+  # The read-back command-ref (M48 inc-3 / T1). The ONLY read verb in the catalog:
+  # every other entry writes. `jigc doc show` has shipped since M43 and six
+  # consecutive trials still went to the filesystem to read in-flight work, so the
+  # menu `describe` projects is where it stops hiding (`surface-contract.md` → law 2).
+  # `--task` is the point of the entry, not a formality — it serves the task's STAGED
+  # copy through the identical parse/slice path, which is the read-back of a write the
+  # agent has just made and the committed store does not carry yet.
+  - id: show-doc
+    command: jigc
+    args:
+      - "doc"
+      - "show"
+      - { agent: address, hint: "the doc address to read — `<type>:<slug>`, or a `#section`/item/leaf slice of it" }
+      - "--task"
+      - { from: "task.id" }
+    hint: "Read a managed doc, or an addressed slice of it — with `--task`, the staged copy of your own in-flight write."

@@ -169,3 +169,21 @@ commands:
     command: jigc
     args: ["doc", "create", "vision", "--title", "Vision", "--task", { from: "task.id" }]
     hint: "Create-or-update the running vision singleton in the current task."
+
+  # The read-back command-ref (M48 inc-3 / T1). The ONLY read verb in this catalog:
+  # every other entry writes. `jigc doc show` has shipped since M43 and six consecutive
+  # trials still went to the filesystem to read in-flight work, so the menu `describe`
+  # projects is where it stops hiding (`surface-contract.md` → law 2). `--task` is the
+  # point of the entry, not a formality — the methodology work-docs are appended to
+  # across a long task (roadmap, decisions-log, milestone-record), so what the author
+  # needs to re-read is almost always the STAGED copy the committed store does not
+  # carry yet, served through the identical parse/slice path.
+  - id: show-doc
+    command: jigc
+    args:
+      - "doc"
+      - "show"
+      - { agent: address, hint: "the doc address to read — `<type>:<slug>`, or a `#section`/item/leaf slice of it" }
+      - "--task"
+      - { from: "task.id" }
+    hint: "Read a managed doc back — the committed copy, or with `--task` the staged copy of your own in-flight write."
