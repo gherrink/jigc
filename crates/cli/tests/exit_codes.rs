@@ -591,6 +591,23 @@ const REJECTED_WRITES: &[RejectedWrite] = &[
         stdin: Some(AUTHOR_DEPTH_PAYLOAD),
         finding: "write.slot-heading-depth",
     },
+    RejectedWrite {
+        verb: "rename",
+        // The transient sink: a `commit` doc's slug IS the task id its finalize
+        // renders the message for, so there is no author-owned title to move
+        // (M48 — `design/write-commands.md` → `jigc doc rename`).
+        args: &[
+            "doc",
+            "rename",
+            "commit:add-a-widget",
+            "--to",
+            "Something Else",
+            "--task",
+            "add-a-widget",
+        ],
+        stdin: None,
+        finding: "write.identity-change",
+    },
 ];
 
 #[test]

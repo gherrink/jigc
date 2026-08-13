@@ -84,6 +84,28 @@ fn create_long_about() -> String {
     )
 }
 
+/// The `doc rename` long help. The fourth soliciting surface that mints a slug, so
+/// it earns the same stated-at fence as `create` / `add-item` / the `{{schema:}}`
+/// projection: the mint rule is stated at the flag it binds, rendered from the same
+/// `slug::mint_statement` generator so none of the four can drift
+/// (`design/surface-contract.md` → The stated-at fence, seam-generated tier).
+fn rename_long_about() -> String {
+    format!(
+        "Retitle a staged doc — and re-slug it while its identity is uncommitted.\n\n\
+         The doc is addressed `<type>:<slug>` (whole-doc only — retitle a repeatable \
+         item with `jigc doc retitle-item`). When this task MINTED the doc, `--to` \
+         rewrites its `# H1` and re-slugs it, moving the staged file and every \
+         reference to it inside the task area. When the doc was copied in from the \
+         COMMITTED store it is retitle-only: the `# H1` is corrected in place, and a \
+         `--to` that would move the slug is refused and routed at `jigc rename`, the \
+         task-less op that moves a committed identity and repoints its referrers. The \
+         `--to` title is {} (`--slug` overrides the mint).\n\n\
+         {}",
+        engine::slug::mint_statement("the re-slugged doc id"),
+        crate::cli::ARGUMENT_CONVENTION,
+    )
+}
+
 /// The `jigc doc <verb>` subcommand tree. Each verb addresses a managed doc in
 /// the active task's working area.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -162,6 +184,39 @@ pub enum DocCommand {
         /// The new heading title (the item's `{#id}` anchor stays frozen).
         #[arg(long)]
         title: String,
+        /// The active task to scope the write to. Optional: explicit wins; else the
+        /// single active task; else (zero / more-than-one) the write rejects.
+        #[arg(long)]
+        task: Option<String>,
+    },
+    /// Retitle a staged doc — and re-slug it while its identity is uncommitted.
+    ///
+    /// The in-task sibling of the top-level `jigc rename` (which is task-less and
+    /// self-committing, and refuses outright while any task is in flight). It splits
+    /// on **committed-store identity**: a doc this task minted has no committed
+    /// referrers by construction, so `--to` rewrites its `# H1` **and** re-slugs it,
+    /// moving the staged file and every reference to it inside the task area; a doc
+    /// copied in from the committed store is **retitle-only** — its `# H1` is
+    /// corrected in place and a divergent `--to` is refused, routed at `jigc rename`,
+    /// which moves a committed identity transactionally and repoints its referrers.
+    /// A doctype whose identity the CLI supplies — a `placement` / `display-title`
+    /// singleton, or a transient sink like `commit` (whose slug IS the task id) —
+    /// refuses: there is no author-owned title or slug to change.
+    #[command(long_about = rename_long_about())]
+    Rename {
+        /// The doc address — `<type>:<slug>` (a singleton doctype may be named bare).
+        /// Whole-doc only: retitle a repeatable item with `jigc doc retitle-item`.
+        addr: String,
+        /// The new title — the doc's `# H1`, and (while the identity is uncommitted)
+        /// the source the new slug is minted from
+        /// (`design/write-commands.md` → The argument convention).
+        #[arg(long)]
+        to: String,
+        /// Override the re-slug's minted id, decoupling it from the title. Taken
+        /// **verbatim** and validated as a well-formed slug. Inert on a retitle-only
+        /// (a committed identity keeps its slug).
+        #[arg(long)]
+        slug: Option<String>,
         /// The active task to scope the write to. Optional: explicit wins; else the
         /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
@@ -394,6 +449,12 @@ impl DocCommand {
             DocCommand::RetitleItem { addr, title, task } => {
                 run_retitle_item(cwd, &addr, &title, task.as_deref(), format)
             }
+            DocCommand::Rename {
+                addr,
+                to,
+                slug,
+                task,
+            } => run_doc_rename(cwd, &addr, &to, slug.as_deref(), task.as_deref(), format),
             DocCommand::SetField {
                 addr,
                 value,
@@ -2047,6 +2108,388 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32; // [1, 12]
     (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// `jigc doc rename <addr> --to "<New Title>"` (optional `--slug`) — the **in-task
+/// doc-level title change**, the staged sibling of the top-level [`crate::rename`]
+/// (`design/write-commands.md` → `jigc doc rename`; `design/storage.md` → Identity).
+///
+/// The split is **committed-store identity**, which is the identity model's own subject
+/// (*"identity is the path"*): a doc this task minted has no committed referrers **by
+/// construction**, so re-slugging it is the same act as minting it correctly and the
+/// whole referrer set is the CLI-owned task area; a doc **copied in** from the committed
+/// store has referrers this verb cannot see and a path other clones already hold, so it
+/// is retitle-only and a genuine re-slug routes at `jigc rename` — task-less,
+/// transactional, referrer-repointing.
+///
+/// **The discriminator is the persisted provenance**, not a fresh `canonical_path`
+/// probe: `docs/provenance.json` records the outcome of `state::create`'s *own* copy-in
+/// predicate at stage time ([`state::Provenance::EditedFromBase`] iff the committed body
+/// was carried in), **including its in-location-squatter exception** — a migration whose
+/// source path IS the doctype's canonical destination stages `created` over a *foreign*
+/// file, and a bare `canonical_path(..).is_file()` would read that squatter as a
+/// committed managed identity and hand back a `jigc rename` route that blocks on a doc
+/// it cannot find. Same predicate, read where it was already answered.
+///
+/// Ranking (M47 — the write-verb miss axis): the **argument-shape** reject (a `#fragment`
+/// at a whole-doc verb) and the **doctype-wide** refusals run before any read — they
+/// claim nothing about the addressed instance — while the identity split runs after it,
+/// because it is a question about the corpus.
+fn run_doc_rename(
+    cwd: &Path,
+    addr: &str,
+    to: &str,
+    slug_override: Option<&str>,
+    task_id: Option<&str>,
+    format: Format,
+) -> Result<(), DocFailure> {
+    if let Some(slug) = slug_override
+        && !engine::slug::is_slug(slug)
+    {
+        return Err(DocFailure::Orchestration(anyhow!(
+            "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
+        )));
+    }
+    let task = ActiveTask::resolve(cwd, task_id)?;
+    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    // Argument shape, above everything: `rename` addresses a whole doc. Without this the
+    // trailing hop would be silently dropped and the verb would ack a rename of the
+    // container the agent did not name — the exact "success over a silent no-op" shape
+    // this increment exists to close.
+    if address.fragment.is_some() {
+        let doc = format!("{}:{}", address.r#type.as_str(), address.slug.as_str());
+        return Err(DocFailure::Orchestration(anyhow!(
+            "`{addr}` addresses part of a doc — `jigc doc rename` renames the whole doc \
+             (its `# H1`, and its slug while the identity is uncommitted); a repeatable \
+             item is retitled with `jigc doc retitle-item`\n  route: run {}",
+            engine::finding::Route::mechanical(
+                ["jigc", "doc", "rename", &doc, "--to", &format!("{to:?}")],
+                "",
+            ),
+        )));
+    }
+    let uri = address.to_string();
+    machine_maintained_guard(address.r#type.as_str(), "rename", &uri)?;
+    let schema = task.schema(address.r#type.as_str())?;
+    // The doctype-wide refusals: a doctype whose id and `# H1` the CLI supplies has no
+    // author-owned title to move, whether or not an instance is staged.
+    if let Some(finding) = fixed_identity_refusal(&schema, &uri) {
+        return Err(DocFailure::block(finding));
+    }
+
+    let new_slug = match slug_override {
+        Some(slug) => slug.to_string(),
+        None => engine::slug::slugify(to),
+    };
+    if new_slug.is_empty() {
+        return Err(DocFailure::Orchestration(anyhow!(
+            "`--to {to:?}` slugs to nothing — pass an explicit `--slug <slug>`"
+        )));
+    }
+
+    let path = staged_path(&task.dir, &address, &task.id)?;
+    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let committed_identity = matches!(
+        state::ProvenanceRecord::load(&task.dir)
+            .context("could not read the task's staged-doc provenance")?
+            .get(&uri),
+        Some(state::Provenance::EditedFromBase)
+    );
+    let reslugged = new_slug != address.slug.as_str();
+    if committed_identity && reslugged {
+        return Err(DocFailure::block(committed_reslug_refusal(
+            &uri,
+            &new_slug,
+            to,
+            slug_override,
+        )));
+    }
+
+    let retitled = crate::rename::rewrite_h1(&source, to)
+        .ok_or_else(|| anyhow!("the staged doc `{uri}` carries no `# H1` to retitle"))?;
+    persist(&path, &retitled)?;
+
+    let new_uri = format!("{}:{new_slug}", address.r#type.as_str());
+    if reslugged {
+        move_staged_identity(&task, &address, &path, &new_slug, &new_uri)?;
+    }
+
+    let target = whole_doc_ack_target(&new_uri)?;
+    let findings = write_ack_findings(&schema, &retitled, &target.doctype, &target.slug);
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::Renamed {
+                address: new_uri,
+                target,
+                title: to.to_string(),
+                from: uri,
+                reslugged,
+                findings,
+                copied_in,
+            },
+        )
+    );
+    Ok(())
+}
+
+/// The **fixed-identity refusal**: a doctype whose id *and* `# H1` the CLI supplies has
+/// no author-owned title for `doc rename` to move, so the verb refuses by **doctype**,
+/// above any instance question. Two shapes, one code — `write.identity-change`, the
+/// shipped *"you are changing identity through a verb that cannot"* member (its other
+/// producer is `retitle-item` under an enum `id-from`):
+///
+/// * a **`placement` / `display-title` singleton** — its slug IS the type id and its H1
+///   is the schema's `display-title` (`design/storage.md` → Placement), which is exactly
+///   why `jigc rename` calls a reslug **undefined** there rather than merely blocked;
+/// * a **transient sink** (no `location`, no `placement`, no doc-level `id-from` — today
+///   `commit`): it never lands as a repo file, and its slug IS the task id, so moving it
+///   would sever the doc from the task whose finalize renders it.
+///
+/// Both routes are `Human`: the correction is a schema edit or a different verb, never a
+/// command this doc's agent can re-run.
+fn fixed_identity_refusal(schema: &Schema, uri: &str) -> Option<Finding> {
+    let ty = &schema.ty;
+    let (what, route) = if schema.placement.is_some() || schema.display_title.is_some() {
+        (
+            format!(
+                "`{ty}` is a singleton — its slug IS the type id and its `# H1` is the \
+                 schema's own `display-title`, so it carries no author-owned title or slug"
+            ),
+            format!(
+                "nothing to rename: the name is part of the `{ty}` schema, so a genuinely \
+                 wrong one is a pack change, not a write; edit the doc's prose with \
+                 `jigc doc set-slot`"
+            ),
+        )
+    } else if schema.location.is_none() {
+        (
+            format!(
+                "`{ty}` is a transient doctype — it never lands as a repo file, and its \
+                 slug IS the task id it is rendered for"
+            ),
+            format!(
+                "nothing to rename: a `{ty}` doc is addressed by its task id for the life \
+                 of that task; write its content with `jigc doc set-slot` / `jigc doc \
+                 set-field`"
+            ),
+        )
+    } else {
+        return None;
+    };
+    Some(Finding::graded(
+        Severity::Blocking,
+        "write.identity-change",
+        format!("rename rejected: {what}"),
+        Some(Location::addressed(uri, 1, 1)),
+        Some(route.into()),
+    ))
+}
+
+/// The **committed-identity refusal**: the addressed doc was copied in from the committed
+/// store, so its path is its identity everywhere outside this task — referrers in other
+/// docs, other clones' history, `git log --follow`. Moving it is `jigc rename`'s job, and
+/// the route is that verb, argv-complete (the `--slug` override carried through when the
+/// agent supplied one), with the precondition stated: `rename` is task-less and
+/// self-committing, so it runs once this task is out of flight.
+fn committed_reslug_refusal(
+    uri: &str,
+    new_slug: &str,
+    to: &str,
+    slug_override: Option<&str>,
+) -> Finding {
+    let mut argv = vec![
+        "jigc".to_string(),
+        "rename".to_string(),
+        uri.to_string(),
+        "--to".to_string(),
+        format!("{to:?}"),
+    ];
+    if let Some(slug) = slug_override {
+        argv.push("--slug".to_string());
+        argv.push(slug.to_string());
+    }
+    Finding::graded(
+        Severity::Blocking,
+        "write.identity-change",
+        format!(
+            "rename rejected: `{uri}` is committed, so `--to {to:?}` would move its \
+             identity to `{new_slug}` — a committed doc's path IS its identity, and \
+             referrers outside this task point at the old one. A same-slug retitle of \
+             the staged copy is supported; a re-slug is not"
+        ),
+        Some(Location::addressed(uri, 1, 1)),
+        Some(engine::finding::Route::mechanical(
+            argv,
+            " moves it for real — repointing every committed referrer in one \
+                 transaction — once this task is finalized or discarded (it is a \
+                 task-less, self-committing store op)",
+        )),
+    )
+}
+
+/// Move a **never-committed** staged doc's identity within the task working area: the
+/// staged body, and every in-task reference to it. The set is **derived, never hand
+/// listed** — the whole point of confining the re-slug to the uncommitted case is that
+/// the CLI owns every referrer there:
+///
+/// 1. the staged `docs/<type>:<slug>.md` body (through the same write-time barrier the
+///    other verbs stage through, so a `--slug` can no more escape the area than an
+///    address can);
+/// 2. the `docs/provenance.json` entry, re-keyed with its recorded provenance intact
+///    (the join classifies by it, so losing it would change the clash rule);
+/// 3. every `roles.json` binding pointing at the old address;
+/// 4. every **staged doc's** `ref` fields — including the task's own transient `commit`
+///    doc, which `jigc rename` can only *report* on because there it is not a file, and
+///    which here is simply another doc in the area;
+/// 5. a migration task's recorded `slug-override`, when it held the old slug — the id the
+///    author path re-mints from, which would otherwise re-create the doc at the old id.
+///
+/// A destination already occupied by another staged doc **blocks** rather than
+/// clobbering it (the working-area sibling of `rename`'s collision guard).
+fn move_staged_identity(
+    task: &ActiveTask,
+    address: &Address,
+    old_path: &Path,
+    new_slug: &str,
+    new_uri: &str,
+) -> Result<(), DocFailure> {
+    let old_uri = address.to_string();
+    let new_address = parse_addr(new_uri)?;
+    let new_path = staged_path(&task.dir, &new_address, &task.id)?;
+    if new_path.exists() {
+        return Err(DocFailure::block(Finding::graded(
+            Severity::Blocking,
+            "write.already-present",
+            format!(
+                "rename rejected: this task already stages `{new_uri}` — a rename onto it \
+                 would discard that doc's authored content"
+            ),
+            Some(Location::addressed(new_uri, 1, 1)),
+            Some(
+                format!(
+                    "pick a free id (`--slug <other>`), or remove the staged `{new_uri}` \
+                     first if it was minted by mistake"
+                )
+                .into(),
+            ),
+        )));
+    }
+    std::fs::rename(old_path, &new_path)
+        .with_context(|| format!("could not move the staged `{old_uri}` to `{new_uri}`"))?;
+
+    // 2. the provenance manifest — re-keyed, the recorded value preserved.
+    let mut provenance = state::ProvenanceRecord::load(&task.dir)
+        .context("could not read the task's staged-doc provenance")?;
+    if let Some(recorded) = provenance.docs.remove(&old_uri) {
+        provenance.docs.insert(new_uri.to_string(), recorded);
+        state::persist(
+            &state::ProvenanceRecord::path_in(&task.dir),
+            provenance.to_bytes().as_bytes(),
+        )
+        .context("could not record the renamed doc's provenance")?;
+    }
+
+    // 3. the bound context roles.
+    let mut roles =
+        state::RolesRecord::load(&task.dir).context("could not read the bound roles")?;
+    let rebound: Vec<String> = roles
+        .roles
+        .iter()
+        .filter(|(_, bound)| bound.as_str() == old_uri)
+        .map(|(role, _)| role.clone())
+        .collect();
+    if !rebound.is_empty() {
+        for role in rebound {
+            roles.bind(role, new_uri.to_string());
+        }
+        roles
+            .save(&task.dir)
+            .context("could not re-bind the renamed doc's context roles")?;
+    }
+
+    // 4. every staged doc's `ref` fields (the renamed doc included — a self-reference is
+    //    still a reference). `repoint_ref` answers `NotPresent` for a relation the doc
+    //    does not carry the old id in, which is the no-op case, not a failure.
+    let schemas = task.schemas()?;
+    for (staged_path, staged_uri) in staged_instances(&task.dir)? {
+        let Some(doc_schema) = staged_uri
+            .split_once(':')
+            .and_then(|(ty, _)| schemas.get(ty))
+        else {
+            continue;
+        };
+        let mut source = std::fs::read_to_string(&staged_path)
+            .with_context(|| format!("could not read the staged `{staged_uri}`"))?;
+        let mut touched = false;
+        for relation in ref_relations(doc_schema) {
+            if let Ok(edited) =
+                engine::write::repoint_ref(doc_schema, &source, &relation, &old_uri, new_uri)
+            {
+                source = edited;
+                touched = true;
+            }
+        }
+        if touched {
+            persist(&staged_path, &source)?;
+        }
+    }
+
+    // 5. a migration task's recorded slug override, when it named the old id.
+    let override_path = task.dir.join(state::SLUG_OVERRIDE_FILE);
+    if state::read_slug_override(&task.dir)
+        .context("could not read the task's migration slug override")?
+        .as_deref()
+        == Some(address.slug.as_str())
+    {
+        state::persist(&override_path, new_slug.as_bytes())
+            .context("could not move the task's migration slug override")?;
+    }
+    Ok(())
+}
+
+/// Every staged instance in a task's `docs/` area as `(path, <type>:<slug>)`, sorted —
+/// the working-area walk `finalize`'s owner-artifact scan performs, kept local because
+/// this one needs the address, not the parsed document.
+fn staged_instances(task_dir: &Path) -> Result<Vec<(PathBuf, String)>> {
+    let docs = state::instance_path(task_dir, "_", "_")
+        .parent()
+        .expect("a staged instance path has a `docs/` parent")
+        .to_path_buf();
+    let entries = match std::fs::read_dir(&docs) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err).with_context(|| format!("reading staged docs in {docs:?}")),
+    };
+    let mut out: Vec<(PathBuf, String)> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|x| x.to_str()) == Some("md"))
+        .filter_map(|path| {
+            let stem = path.file_stem()?.to_str()?.to_string();
+            stem.contains(':').then_some((path, stem))
+        })
+        .collect();
+    out.sort();
+    Ok(out)
+}
+
+/// The ids of a schema's doc-level `ref` fields — the relations [`engine::write::repoint_ref`]
+/// can rewrite (it locates a `ref` on a *simple* section; no shipped doctype declares a
+/// `ref` inside a repeatable item block, the same bound `jigc rename` carries).
+fn ref_relations(schema: &Schema) -> Vec<String> {
+    schema
+        .sections
+        .iter()
+        .filter_map(|section| match &section.body {
+            SectionBody::Simple { fields, .. } => Some(fields),
+            _ => None,
+        })
+        .flatten()
+        .filter(|field| field.ty == FieldType::Ref)
+        .map(|field| field.id.clone())
+        .collect()
 }
 
 /// `jigc doc create <type> --title <…>` (optional `--slug`) — agent-initiated,

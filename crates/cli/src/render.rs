@@ -1429,6 +1429,21 @@ pub enum DocAck {
         findings: Findings,
         copied_in: bool,
     },
+    /// A `doc rename` retitled the doc now at `address`/`target` to `title`, `from` its
+    /// prior address. `reslugged` is the **always-present** discriminator between the two
+    /// cells the verb splits on: `true` when the identity moved (a never-committed doc —
+    /// `address != from`), `false` on a retitle-only (a committed identity keeps its slug,
+    /// so `address == from`). Both keys ride the envelope because the agent-text line
+    /// names both facts, and the contract withholds nothing the text prints.
+    Renamed {
+        address: String,
+        target: AckTarget,
+        title: String,
+        from: String,
+        reslugged: bool,
+        findings: Findings,
+        copied_in: bool,
+    },
     /// A `retitle-item` retitled the item at `address`/`target` (anchor frozen) to `title`.
     RetitledItem {
         address: String,
@@ -1538,6 +1553,17 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             } => json(&serde_json::json!({
                 "op": "retitle-item", "target": target, "title": title, "findings": findings,
             })),
+            DocAck::Renamed {
+                target,
+                title,
+                from,
+                reslugged,
+                findings,
+                ..
+            } => json(&serde_json::json!({
+                "op": "rename", "target": target, "title": title, "from": from,
+                "reslugged": reslugged, "findings": findings,
+            })),
             // `create` / `add-item` / `author` join the envelope: `op` + the decomposed
             // `target` + `findings`. No per-op effect key — their effect is the whole
             // doc / the new item, read back via `doc show` (contract §2). `create`
@@ -1573,6 +1599,21 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
                 DocAck::RemovedItem { address, .. } => format!("removed item {address}"),
                 DocAck::RetitledItem { address, title, .. } => {
                     format!("retitled item {address} to {title:?} (anchor frozen)")
+                }
+                // The renamed doc's **new** address leads — the one every follow-up write
+                // lands at — with the cell the verb took stated after it, so a retitle-only
+                // never reads as a move that did not happen.
+                DocAck::Renamed {
+                    address,
+                    title,
+                    from,
+                    reslugged: true,
+                    ..
+                } => format!("{address} (renamed to {title:?} from {from})"),
+                DocAck::Renamed { address, title, .. } => {
+                    format!(
+                        "{address} (retitled {title:?} — the committed identity keeps its slug)"
+                    )
                 }
                 // Agent-text is the bare address the verbs printed before joining the
                 // envelope (byte-identical): the minted doc address (`create`/`author`) or
@@ -1621,6 +1662,7 @@ impl DocAck {
             | DocAck::Slot { copied_in, .. }
             | DocAck::RemovedItem { copied_in, .. }
             | DocAck::RetitledItem { copied_in, .. }
+            | DocAck::Renamed { copied_in, .. }
             | DocAck::AddedItem { copied_in, .. } => *copied_in,
             DocAck::Created { .. } | DocAck::Authored { .. } => false,
         }

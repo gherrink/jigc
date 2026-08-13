@@ -25,6 +25,8 @@ mod doc_list;
 mod doc_read_surface;
 #[path = "../doc_remove_item.rs"]
 mod doc_remove_item;
+#[path = "../doc_rename_in_task.rs"]
+mod doc_rename_in_task;
 #[path = "../doc_schema.rs"]
 mod doc_schema;
 #[path = "../doc_show.rs"]

@@ -1077,7 +1077,12 @@ const CELLS: &[Cell] = &[
 /// The `jigc doc` leaf verbs that address **no** item and therefore have no cell in
 /// the matrix — declared, so a *new* `doc` verb reddens the bijection below rather
 /// than joining this set silently.
-const NON_ITEM_ADDRESSING_DOC_VERBS: &[&str] = &["create", "author", "show", "schema", "list"];
+///
+/// `rename` (M48) joins the declaration rather than the matrix: it addresses a **doc**
+/// and refuses a `#fragment` outright, so it has no item-miss to make. Its own axis —
+/// the doctype census it splits on — is swept in `crates/cli/tests/doc_rename_in_task.rs`.
+const NON_ITEM_ADDRESSING_DOC_VERBS: &[&str] =
+    &["create", "author", "show", "schema", "list", "rename"];
 
 /// Every leaf verb under `jigc doc`, walked from the clap `Command` tree.
 fn doc_leaf_verbs() -> BTreeSet<String> {

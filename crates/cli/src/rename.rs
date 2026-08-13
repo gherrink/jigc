@@ -585,7 +585,12 @@ fn doc_path(schema_map: &BTreeMap<String, Schema>, ty: &str, slug: &str) -> Resu
 /// H1 is the first ATX level-1 heading (`# `) outside a fenced code block and outside the
 /// leading front-matter block (the document title the writer renders from `id-from`).
 /// Returns `None` if the doc has no H1.
-fn rewrite_h1(source: &str, new_title: &str) -> Option<String> {
+///
+/// **Shared with the in-task sibling** (`crate::doc`'s `jigc doc rename`): the two
+/// verbs differ in *what identity they may move*, never in how a title reaches the
+/// bytes, so one H1 primitive serves both and neither can drift from the other
+/// (`design/write-commands.md` → `jigc doc rename`).
+pub(crate) fn rewrite_h1(source: &str, new_title: &str) -> Option<String> {
     let mut out = String::with_capacity(source.len());
     let mut in_fence = false;
     let mut done = false;

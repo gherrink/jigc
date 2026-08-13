@@ -544,6 +544,26 @@ fn recipes() -> Vec<Recipe> {
             },
         },
         Recipe {
+            path: &["doc", "rename"],
+            base: Base::Fresh,
+            // A doc this task minted has no committed identity, so the rename re-slugs.
+            drive: |c| {
+                let task = live_adr_task(c);
+                json(
+                    c,
+                    &[
+                        "doc",
+                        "rename",
+                        "adr:cache-strategy",
+                        "--to",
+                        "Cache policy",
+                        "--task",
+                        &task,
+                    ],
+                )
+            },
+        },
+        Recipe {
             path: &["doc", "set-field"],
             base: Base::Fresh,
             drive: |c| {
