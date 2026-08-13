@@ -311,7 +311,7 @@ fn append_decision(repo: &Path, home: &Path, title: &str, why: &[u8]) {
         &jigc_doc(
             repo,
             home,
-            &["create", "decisions-log", "--title", "Decisions-Log"],
+            &["create", "decisions-log", "--title", "Decisions Log"],
             None,
         ),
         "`doc create decisions-log`",

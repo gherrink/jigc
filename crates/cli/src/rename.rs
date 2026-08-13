@@ -591,9 +591,29 @@ fn doc_path(schema_map: &BTreeMap<String, Schema>, ty: &str, slug: &str) -> Resu
 /// bytes, so one H1 primitive serves both and neither can drift from the other
 /// (`design/write-commands.md` → `jigc doc rename`).
 pub(crate) fn rewrite_h1(source: &str, new_title: &str) -> Option<String> {
-    let mut out = String::with_capacity(source.len());
+    let title = h1_span(source)?;
+    let mut out = String::with_capacity(source.len() + new_title.len());
+    out.push_str(&source[..title.start]);
+    out.push_str(new_title);
+    out.push_str(&source[title.end..]);
+    Some(out)
+}
+
+/// The document's `# H1` **title text** — the reader half of the H1 primitive.
+///
+/// The write-path title pre-check (`crate::doc` — `design/write-commands.md` → The
+/// four-way write over a committed doc) must compare a supplied title against exactly
+/// the bytes [`rewrite_h1`] would change, so both are spans of the same scan: the reader
+/// cannot drift from the writer because the writer *is* the reader plus a splice.
+pub(crate) fn read_h1(source: &str) -> Option<&str> {
+    h1_span(source).map(|span| &source[span])
+}
+
+/// The byte range of the H1's title text — everything after the `# ` marker up to (not
+/// including) the line's newline. `None` when the doc carries no H1.
+fn h1_span(source: &str) -> Option<std::ops::Range<usize>> {
     let mut in_fence = false;
-    let mut done = false;
+    let mut offset = 0usize;
     // The leading `---`-fenced YAML front-matter block (if present) is metadata, not the
     // document body — a human-authored `# ` YAML comment there must never be taken for the
     // H1. Copy it through verbatim and only scan for the H1 past its closing fence. Mirrors
@@ -610,22 +630,18 @@ pub(crate) fn rewrite_h1(source: &str, new_title: &str) -> Option<String> {
             } else if body == "---" || body == "..." {
                 in_front_matter = false;
             }
-            out.push_str(line);
+            offset += line.len();
             continue;
         }
-        if !done {
-            if body.starts_with("```") || body.starts_with("~~~") {
-                in_fence = !in_fence;
-            } else if !in_fence && body.starts_with("# ") {
-                let nl = if line.ends_with('\n') { "\n" } else { "" };
-                out.push_str(&format!("# {new_title}{nl}"));
-                done = true;
-                continue;
-            }
+        if body.starts_with("```") || body.starts_with("~~~") {
+            in_fence = !in_fence;
+        } else if !in_fence && let Some(title) = body.strip_prefix("# ") {
+            let start = offset + (body.len() - title.len());
+            return Some(start..start + title.len());
         }
-        out.push_str(line);
+        offset += line.len();
     }
-    done.then_some(out)
+    None
 }
 
 #[cfg(test)]

@@ -175,17 +175,15 @@ fn target(finding: &serde_json::Value) -> &str {
 #[test]
 fn the_doc_scoped_write_verbs_key_at_the_uri_they_name() {
     let (repo, home) = started_repo("single-task", "add rate limiter");
-    for title in ["Cache strategy", "Retry policy"] {
-        assert_ok(
-            &jigc(
-                repo.path(),
-                home.path(),
-                &["doc", "create", "adr", "--title", title],
-                None,
-            ),
-            &format!("`jigc doc create adr --title {title:?}`"),
-        );
-    }
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["doc", "create", "adr", "--title", "Cache strategy"],
+            None,
+        ),
+        "`jigc doc create adr --title \"Cache strategy\"`",
+    );
 
     // `set-field` — a value outside the enum's members blocks at the field it named.
     let cache_field = blocked(
@@ -223,7 +221,45 @@ fn the_doc_scoped_write_verbs_key_at_the_uri_they_name() {
         "a blocked `set-slot` keys at the slot's URI; got:\n{cache_slot:#}"
     );
 
-    // The collision the key exists to prevent: the SAME code, two docs, two keys.
+    // The collision the key exists to prevent: the SAME code, two docs, two keys. The
+    // sibling doc is minted in its **own task** — since M48 a second `adr` beside the one
+    // this task's `decision` role already binds is refused as a second document rather
+    // than a correction (`write.identity-change`), and "its own task" is what that
+    // reject's message names (`design/write-commands.md` → The four-way write). The key
+    // property under test is untouched: two docs, one code, two keys.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "start",
+                "--workflow",
+                "single-task",
+                "add retries",
+                "--slug",
+                "retry-task",
+            ],
+            None,
+        ),
+        "`jigc start` for the sibling doc's own task",
+    );
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "create",
+                "adr",
+                "--title",
+                "Retry policy",
+                "--task",
+                "retry-task",
+            ],
+            None,
+        ),
+        "`jigc doc create adr --title \"Retry policy\"`",
+    );
     let retry_field = blocked(
         repo.path(),
         home.path(),
@@ -232,6 +268,8 @@ fn the_doc_scoped_write_verbs_key_at_the_uri_they_name() {
             "adr:retry-policy#status/status",
             "--value",
             "notastatus",
+            "--task",
+            "retry-task",
         ],
         None,
     );

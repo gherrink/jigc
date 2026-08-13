@@ -281,8 +281,11 @@ fn every_shipped_item_context_derives_its_own_ceiling() {
 // The shipped-verb sweep (M45 Inc 2 T7)
 // ---------------------------------------------------------------------------
 
-/// The doc title every swept instance is created under. Singleton doctypes ignore
-/// it (`changelog` pins its H1 via `display-title`); the rest slug it into the id.
+/// The doc title every swept instance is created under — for the doctypes whose title
+/// is the author's. A singleton's `# H1` is the schema's own (`changelog` pins its via
+/// `display-title`), and since M48 a divergent `--title` there is **refused** rather
+/// than silently dropped (`write.title-ignored`), so the sweep resolves each doctype's
+/// title through [`support::create_title`] instead of passing this to all of them.
 const DOC_TITLE: &str = "Axis Sweep";
 
 /// The item title used wherever the level's `id-from` is a free string.
@@ -474,7 +477,13 @@ fn every_item_slot_context_is_gated_at_every_reserved_depth_through_the_shipped_
         );
         let doc_id = corpus
             .jigc_ok(&[
-                "doc", "create", doctype, "--title", DOC_TITLE, "--task", &task,
+                "doc",
+                "create",
+                doctype,
+                "--title",
+                &support::create_title(doctype, DOC_TITLE),
+                "--task",
+                &task,
             ])
             .trim()
             .to_string();

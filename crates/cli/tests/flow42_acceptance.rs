@@ -766,7 +766,7 @@ fn migrate_corpus_remaps_deferral_ledger_byte_faithful() {
                 "create",
                 "deferral-ledger",
                 "--title",
-                "Deferral-Ledger",
+                "Deferral Ledger",
             ],
             None,
         ),

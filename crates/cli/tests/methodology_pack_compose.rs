@@ -127,6 +127,40 @@ fn run_jigc_stdin(
 /// Extract the backtick-quoted body of the *unique* `Run:` line containing `needle`,
 /// so the assertion runs over the **emitted bytes** the agent would copy — never a
 /// reconstruction. Panics with the full stdout if absent or ambiguous.
+/// Split an emitted command into argv the way a shell would — honouring the single
+/// quotes `engine::compose::shell_quote` puts around a multi-word argument, so a `Run:`
+/// line is executed as the **emitted bytes** rather than a whitespace-split
+/// approximation of them. (Kept local: this suite's group root carries no `support`
+/// module.)
+fn shell_split(cmd: &str) -> Vec<String> {
+    let mut argv = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut started = false;
+    for ch in cmd.chars() {
+        match ch {
+            '\'' => {
+                in_quotes = !in_quotes;
+                started = true;
+            }
+            c if c.is_whitespace() && !in_quotes => {
+                if started {
+                    argv.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            c => {
+                current.push(c);
+                started = true;
+            }
+        }
+    }
+    if started {
+        argv.push(current);
+    }
+    argv
+}
+
 fn emitted_run_line<'a>(stdout: &'a str, needle: &str) -> &'a str {
     let mut matches = stdout.lines().filter(|l| {
         let t = l.trim_start();
@@ -334,11 +368,11 @@ fn planning_composes_the_settle_checkpoint_and_the_three_doctype_authoring_lines
     );
     assert_eq!(
         emitted_run_line(&stdout, "doc create deferral-ledger"),
-        "jigc doc create deferral-ledger --title Deferral-Ledger --task m99",
+        "jigc doc create deferral-ledger --title 'Deferral Ledger' --task m99",
     );
     assert_eq!(
         emitted_run_line(&stdout, "doc create decisions-log"),
-        "jigc doc create decisions-log --title Decisions-Log --task m99",
+        "jigc doc create decisions-log --title 'Decisions Log' --task m99",
     );
 
     // The per-entry authoring lines (add-item + set-slot/set-field on the singleton's
@@ -617,7 +651,7 @@ fn decided_task_composes_the_dev_spine_plus_the_decision_recording_step() {
     // create-ref renders verbatim on the EMITTED bytes (the planning precedent).
     assert_eq!(
         emitted_run_line(&stdout, "doc create decisions-log"),
-        "jigc doc create decisions-log --title Decisions-Log --task add-cache",
+        "jigc doc create decisions-log --title 'Decisions Log' --task add-cache",
     );
     for needle in [
         "jigc doc add-item decisions-log:decisions-log#entries",
@@ -787,7 +821,7 @@ fn completion_composes_the_checkpoints_and_the_completion_record_authoring_lines
     // decisions. Assert the reused command-ref + per-entry authoring compose.
     assert_eq!(
         emitted_run_line(&stdout, "doc create decisions-log"),
-        "jigc doc create decisions-log --title Decisions-Log --task m99",
+        "jigc doc create decisions-log --title 'Decisions Log' --task m99",
     );
     for needle in [
         "jigc doc add-item decisions-log:decisions-log#entries",
@@ -1101,6 +1135,39 @@ fn composed_authoring_commands_carry_the_minted_task_id_with_two_active_tasks() 
         "the verbatim create must land the roadmap in the planning task's working area \
          ({staged:?}); stdout of the create:\n{}",
         String::from_utf8_lossy(&executed.stdout),
+    );
+
+    // Execute the composed **deferral-ledger** create line VERBATIM too (M48). Its
+    // `--title` is the schema's `display-title:` — two words — because a divergent title
+    // on a singleton is now refused rather than silently dropped
+    // (`design/write-commands.md` → The four-way write), so the emitted line carries a
+    // shell-quoted argument for the first time. Running the emitted bytes is the only
+    // way that quoting is proven: a whitespace-split reconstruction would pass while the
+    // line an agent actually pastes broke.
+    let ledger = emitted_run_line(&stdout, "doc create deferral-ledger");
+    assert!(
+        ledger.contains("--title 'Deferral Ledger'"),
+        "the composed create carries the schema's own title, shell-quoted: {ledger:?}",
+    );
+    let ledger_argv = shell_split(ledger);
+    assert_eq!(
+        ledger_argv.first().map(String::as_str),
+        Some("jigc"),
+        "the emitted command invokes jigc: {ledger:?}"
+    );
+    let ledger_args: Vec<&str> = ledger_argv.iter().skip(1).map(String::as_str).collect();
+    let ledger_out = run_jigc(repo.path(), home.path(), &pack, &ledger_args);
+    assert!(
+        ledger_out.status.success(),
+        "the composed ledger line `{ledger}` must run verbatim; got {:?}\nstderr:\n{}",
+        ledger_out.status,
+        String::from_utf8_lossy(&ledger_out.stderr),
+    );
+    assert!(
+        repo.path()
+            .join(".jigc/tasks/m99/docs/deferral-ledger:deferral-ledger.md")
+            .is_file(),
+        "the verbatim ledger create lands in the planning task's working area",
     );
 
     // Execute ONE composed commit-fill line VERBATIM: the summary set-slot

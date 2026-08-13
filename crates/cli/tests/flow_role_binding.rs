@@ -27,6 +27,8 @@
 //! No external test crates: the `jigc` path is `CARGO_BIN_EXE_jigc`, the temp repo is a
 //! real `git init`, and self-cleaning `TempDir`s keep the developer's repo clean.
 
+use crate::support;
+
 use cli::pack::{CompositePack, EmbeddedPack};
 use engine::compose::load_workflow_def;
 use engine::packsource::{PackResourceKind, PackSource};
@@ -382,13 +384,17 @@ fn every_object_form_pair_acks_existed_on_recreate() {
         init_repo(repo.path());
 
         let task = start(repo.path(), home.path(), &workflow, "sweep the class");
+        // The mint title: a singleton's `# H1` is the schema's own, so a divergent one is
+        // refused since M48 (`write.title-ignored`) — the sweep asks the schema rather
+        // than assuming one label fits every doctype.
+        let title = support::create_title(&doctype, "Sweep");
         // First create stages the instance (and binds the role — existing behavior).
         assert_ok(
             &jigc(
                 repo.path(),
                 home.path(),
                 &[
-                    "doc", "create", &doctype, "--title", "Sweep", "--task", &task,
+                    "doc", "create", &doctype, "--title", &title, "--task", &task,
                 ],
                 None,
             ),
@@ -399,7 +405,7 @@ fn every_object_form_pair_acks_existed_on_recreate() {
             repo.path(),
             home.path(),
             &[
-                "doc", "create", &doctype, "--title", "Sweep", "--task", &task,
+                "doc", "create", &doctype, "--title", &title, "--task", &task,
             ],
             None,
         );

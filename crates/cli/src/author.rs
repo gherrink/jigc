@@ -258,14 +258,16 @@ pub fn parse_author_payload(schema: Option<&Schema>, payload: &str) -> Result<Au
     let parsed: AuthorPayload =
         serde_yaml_ng::from_str(payload).context("malformed `doc author` payload")?;
     // A singleton's slug is fixed to the type id — `create_gated` ignores the id-source
-    // — so a title-less singleton payload defaults its plan title to the type id and
-    // succeeds. A title-less non-singleton (or unknown-schema) payload is rejected with
-    // an enriched message naming `title:`, never the raw `missing field` serde error
-    // (M45 Inc 10 T10 — findings §95 E).
+    // — so a title-less singleton payload defaults its plan title to the title the
+    // schema fixes ([`Schema::fixed_title`], the same value the `{{schema:}}` skeleton
+    // renders literally and the mint writes as the `# H1`) and succeeds. A title-less
+    // non-singleton (or unknown-schema) payload is rejected with an enriched message
+    // naming `title:`, never the raw `missing field` serde error (M45 Inc 10 T10 —
+    // findings §95 E).
     let title = match parsed.title {
         Some(title) => title,
-        None => match schema {
-            Some(schema) if schema.singleton => schema.ty.clone(),
+        None => match schema.and_then(|schema| schema.fixed_title()) {
+            Some(fixed) => fixed,
             _ => bail!(
                 "doc author payload: missing required `title:` — the create id-source \
                  (the top-level `title:` line naming the instance)"
@@ -591,7 +593,12 @@ sections:
     #[test]
     fn title_less_singleton_defaults_non_singleton_error_is_enriched() {
         // `changelog` is a shipped singleton (type id `changelog`): a title-less payload
-        // succeeds, the plan title defaulting to the fixed type-id slug.
+        // succeeds, the plan title defaulting to the title the schema **fixes** —
+        // `Schema::fixed_title`, i.e. the `display-title:` when declared, else the type
+        // id. The default must be that value, not the raw type id, because the create
+        // path's title pre-check compares the plan title against the `# H1` the mint will
+        // write (M48; `design/write-commands.md` → The four-way write), and a title-less
+        // payload must land rather than fail a comparison against a title it never chose.
         let singleton_payload = "\
 sections:
   - id: releases
@@ -607,8 +614,16 @@ sections:
         let plan = parse_author_payload(Some(&changelog_schema()), singleton_payload)
             .expect("a title-less singleton payload succeeds against the fixed slug");
         assert_eq!(
-            plan.title, "changelog",
-            "the plan title defaults to the singleton's fixed type-id slug",
+            plan.title,
+            changelog_schema()
+                .fixed_title()
+                .expect("the shipped changelog is a singleton"),
+            "the plan title defaults to the title the singleton's schema fixes",
+        );
+        assert_eq!(
+            plan.title, "Changelog",
+            "and that title is the declared `display-title:`, not the type id — the value \
+             the `{{schema:}}` skeleton renders and the mint writes as the `# H1`",
         );
 
         // `commit` is non-singleton: a title-less payload fails with an enriched message

@@ -288,6 +288,12 @@ fn doc_create_slug_override_mints_and_recreate_acks_existed() {
     // A second create with the same --slug is the agent-initiated create-gate over a
     // same-identity staged copy: it acks `existed` and binds the role (copied-in for
     // update), never rejects — the repairing action stays open (M45 Inc 5 T2).
+    //
+    // It carries the **same** `--title`, which is what a re-create of one identity means
+    // since M48: the create-or-update hands the staged body back and does not rewrite its
+    // `# H1`, so a divergent title there is refused rather than dropped
+    // (`write.title-ignored`; `design/write-commands.md` → The four-way write). The fact
+    // under test is unchanged — the re-create acks `existed` and never routes away.
     let dup = jigc(
         repo.path(),
         home.path(),
@@ -296,7 +302,7 @@ fn doc_create_slug_override_mints_and_recreate_acks_existed() {
             "create",
             "adr",
             "--title",
-            "Another",
+            "Some Long Decision Title Here",
             "--slug",
             "my-adr",
             "--task",

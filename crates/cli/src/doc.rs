@@ -78,11 +78,28 @@ fn create_long_about() -> String {
          literally `--title`, whatever the doctype's `id-from` field is named; the CLI \
          mints + places per the schema. The `--title` is {} (`--slug` overrides the \
          mint).\n\n\
+         {}\n\n\
          {}",
         engine::slug::mint_statement("the doc id"),
+        TITLE_CONTRACT,
         crate::cli::ARGUMENT_CONVENTION,
     )
 }
+
+/// **The title contract, stated before the write** — the law-3 ambush repair M47 made for
+/// `write.already-present`, applied to its M48 sibling (`design/surface-contract.md` →
+/// law 3, the ambush class; `design/write-commands.md` → The three-way write over a
+/// committed doc). Both minting verbs render it, because both make the same two misses.
+const TITLE_CONTRACT: &str = "\
+A create over a doc this task ALREADY holds — the same id re-created, or a committed one \
+copied in for update — is a create-or-update: it hands that body back and does NOT \
+rewrite its `# H1`. So a title that would be silently dropped is refused \
+(`write.title-ignored`), as is a singleton's, whose `# H1` is the schema's own \
+`display-title`. And a title (or `--slug`) that would mint a DIFFERENT identity beside \
+the one this task's create-gate role already binds is refused as well \
+(`write.identity-change`) — that is a second document, not a correction. Both refusals \
+route at `jigc doc rename`, the in-task title change; a genuinely separate second \
+document is its own task.";
 
 /// The `doc rename` long help. The fourth soliciting surface that mints a slug, so
 /// it earns the same stated-at fence as `create` / `add-item` / the `{{schema:}}`
@@ -284,6 +301,15 @@ pub enum DocCommand {
     /// the doc ALREADY holds is refused (`write.already-present`) with the whole
     /// payload rejected and nothing staged — edit that item in place with
     /// `set-slot`/`set-field` instead of re-authoring it here.
+    ///
+    /// The fourth thing it does NOT do is rewrite the doc's title. The payload's
+    /// `title:` is the create id-source; over a doc this task already holds (or a
+    /// committed one copied in) the `# H1` stays as it is, so a `title:` that would be
+    /// silently dropped is refused (`write.title-ignored`) — as is a singleton's, whose
+    /// `# H1` is the schema's own `display-title`. A `title:` that mints a DIFFERENT id
+    /// is refused too (`write.identity-change`): that is a second document, not a
+    /// correction. Both reject the whole payload with nothing staged, and both route at
+    /// `jigc doc rename`, the in-task title change.
     ///
     /// Payload shape (YAML; `--from-file`), mirroring the document's structure:
     ///
@@ -2492,6 +2518,248 @@ fn ref_relations(schema: &Schema) -> Vec<String> {
         .collect()
 }
 
+/// **The title pre-check** — the one seam `jigc doc create` and `jigc doc author` share,
+/// closing the write path's *"success over a title that never landed"* class
+/// (`design/write-commands.md` → The four-way write over a committed doc, the **fourth**
+/// member; `DECISIONS.md` → 2026-08-13 the Settle, F2). It runs **before either verb
+/// persists anything** — `run_create` calls it ahead of `create_gated`, `run_author`
+/// ahead of the same call, so the whole payload is rejected with nothing staged and no
+/// rollback to perform.
+///
+/// Two shapes, and they are **not** the same defect:
+///
+/// * **identity divergence** — the workflow gate entry's `as:` role is already bound to
+///   `<type>:<slug>` and this call would mint or re-point a *different* identity. That is
+///   an identity change made through a verb that only mints, so it converges on the
+///   shipped **`write.identity-change`** (its other producers: `retitle-item` under an
+///   enum `id-from`, and `doc rename`'s two refusals).
+/// * **the silent no-op** — the call lands on the identity the task already holds (or on
+///   a committed doc it would copy in), so the create hands that body back **as found**
+///   and the supplied title is never written. This is *not* an identity change:
+///   `design/storage.md` → Identity calls an ordinary retitle identity-**stable**, so
+///   firing `write.identity-change` here would be a law-1 lie. It earns its own member,
+///   **`write.title-ignored`** — *the title you supplied will not become this doc's
+///   `# H1`* — true of exactly the cells it fires on, and keyed at a different target
+///   than the divergence shape.
+///
+/// A **fixed-title doctype** ([`Schema::fixed_title`] — a `placement` / `display-title`
+/// singleton) is the no-op shape one rank higher: its `# H1` is the schema's, so a
+/// divergent `--title` is dropped whatever the corpus holds. It is adjudicated from the
+/// **doctype alone**, before any instance is read, and then returns — the two instance
+/// arms below are inert for it (its slug is fixed, so it cannot diverge) and arm 3 would
+/// route at `jigc doc rename`, which refuses a singleton outright (a dead end).
+///
+/// **Ranking:** doctype admission (unknown / gate-blocked, [`state::create_admission`])
+/// outranks all of it — a title complaint about a doctype this workflow cannot create is
+/// a misdirection — and the payload-shape parse outranks that, unchanged.
+fn title_pre_check(
+    task: &ActiveTask,
+    schema: &Schema,
+    entry: &engine::compose::AllowsCreate,
+    verb: &str,
+    title: &str,
+    slug_override: Option<&str>,
+) -> Result<(), DocFailure> {
+    let ty = schema.ty.as_str();
+    // Rank 1 — the doctype-wide refusal: a singleton's `# H1` is the schema's own.
+    if let Some(fixed) = schema.fixed_title() {
+        if title != fixed {
+            return Err(DocFailure::block(fixed_title_refusal(
+                task, ty, verb, title, &fixed,
+            )));
+        }
+        return Ok(());
+    }
+
+    let incumbent =
+        state::create_incumbent(&task.dir, schema, ty, title, slug_override, &task.jigc_home)
+            .map_err(|f| block(&f, verb, ty))?;
+
+    // Rank 2 — identity divergence. The bound role is the identity this task **holds**;
+    // a call that would mint another one is a second document, not a correction. A
+    // binding naming a different doctype is another entry's role and is not ours to read.
+    if !entry.as_role.is_empty() {
+        let roles =
+            state::RolesRecord::load(&task.dir).context("could not read the task's bound roles")?;
+        if let Some(bound) = roles.get(&entry.as_role)
+            && bound.starts_with(&format!("{ty}:"))
+            && bound != incumbent.address
+        {
+            return Err(DocFailure::block(identity_divergence_refusal(
+                task,
+                verb,
+                bound,
+                &incumbent.address,
+                &entry.as_role,
+                title,
+                slug_override,
+            )));
+        }
+    }
+
+    // Rank 3 — the silent no-op: an incumbent body means the create writes no title.
+    if let Some(path) = &incumbent.incumbent {
+        let source = std::fs::read_to_string(path)
+            .with_context(|| format!("could not read the existing `{}`", incumbent.address))?;
+        if let Some(current) = crate::rename::read_h1(&source)
+            && current != title
+        {
+            let staged = path.starts_with(&task.dir);
+            return Err(DocFailure::block(title_ignored_refusal(
+                task,
+                verb,
+                &incumbent.address,
+                current,
+                title,
+                staged,
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The **fixed-title refusal**: a `placement` / `display-title` singleton carries the
+/// schema's own `# H1`, so a divergent supplied title is dropped on the floor. The route
+/// differs by verb because the correction does: `create` takes its title on the command
+/// line, so the fix is one runnable command; `author` takes it from a payload file, so a
+/// mechanical route would promise a re-run that fixes nothing.
+fn fixed_title_refusal(
+    task: &ActiveTask,
+    ty: &str,
+    verb: &str,
+    title: &str,
+    fixed: &str,
+) -> Finding {
+    let uri = format!("{ty}:{ty}");
+    let route = if verb == "create" {
+        engine::finding::Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "create",
+                ty,
+                "--title",
+                &format!("{fixed:?}"),
+                "--task",
+                &task.id,
+            ],
+            " mints it under the title the schema fixes; a genuinely wrong name there is \
+             a pack change, not a write",
+        )
+    } else {
+        engine::finding::Route::human(format!(
+            "set the payload's `title:` to `{fixed}` (or drop the line — a `{ty}` payload \
+             defaults to the title its schema fixes) and re-run the same `jigc doc author \
+             {ty} --from-file <payload> --task {}`",
+            task.id,
+        ))
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "write.title-ignored",
+        format!(
+            "{verb} rejected: `{ty}` is a singleton — its `# H1` is supplied by the schema \
+             (`{fixed}`), never by the author, so `{title}` would be dropped silently and \
+             the doc would still read `# {fixed}`"
+        ),
+        Some(Location::addressed(&uri, 1, 1)),
+        Some(route),
+    )
+}
+
+/// The **identity-divergence refusal**: this task's `<role>` already names a doc, and the
+/// call would mint a different one beside it rather than correct it. The route is the
+/// in-task title change (M48's `jigc doc rename`), argv-complete — carrying the `--slug`
+/// through when the agent supplied one, so the correction that runs is the one asked for.
+///
+/// The tail states the **declared behaviour change** rather than ambushing with it: every
+/// shipped workflow is one doc per role by its own prose, so a hand-driven second mint is
+/// what stops working here, and the message says where a genuinely separate second
+/// document goes.
+fn identity_divergence_refusal(
+    task: &ActiveTask,
+    verb: &str,
+    bound: &str,
+    minted: &str,
+    role: &str,
+    title: &str,
+    slug_override: Option<&str>,
+) -> Finding {
+    let mut argv = vec![
+        "jigc".to_string(),
+        "doc".to_string(),
+        "rename".to_string(),
+        bound.to_string(),
+        "--to".to_string(),
+        format!("{title:?}"),
+    ];
+    if let Some(slug) = slug_override {
+        argv.push("--slug".to_string());
+        argv.push(slug.to_string());
+    }
+    argv.push("--task".to_string());
+    argv.push(task.id.clone());
+    Finding::graded(
+        Severity::Blocking,
+        "write.identity-change",
+        format!(
+            "{verb} rejected: this task's `{role}` is already `{bound}`, and this call \
+             would mint `{minted}` instead — a second document beside the first, not a \
+             correction of it"
+        ),
+        Some(Location::addressed(bound, 1, 1)),
+        Some(engine::finding::Route::mechanical(
+            argv,
+            " moves the doc this task already holds onto the title (and id) you asked \
+             for; a genuinely separate second document is its own task — finalize or \
+             discard this one first",
+        )),
+    )
+}
+
+/// The **silent-no-op refusal**: the call lands on an identity that already has a body,
+/// so the create hands that body back and the supplied title is never written. Not an
+/// identity change (the id does not move — `design/storage.md` → Identity), hence its own
+/// code; the route is the verb that *does* move a staged doc's title, after which this
+/// very write re-runs unchanged.
+fn title_ignored_refusal(
+    task: &ActiveTask,
+    verb: &str,
+    address: &str,
+    current: &str,
+    title: &str,
+    staged: bool,
+) -> Finding {
+    let held = if staged {
+        "is already staged in this task"
+    } else {
+        "is already committed and would be copied in for update"
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "write.title-ignored",
+        format!(
+            "{verb} rejected: `{address}` {held} as `# {current}`, and this call mints the \
+             same id — so `{title}` would never become its `# H1` and the write would ack \
+             a retitle that did not happen"
+        ),
+        Some(Location::addressed(address, 1, 1)),
+        Some(engine::finding::Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "rename",
+                address,
+                "--to",
+                &format!("{title:?}"),
+                "--task",
+                &task.id,
+            ],
+            " retitles the doc in place; then re-run this write unchanged",
+        )),
+    )
+}
+
 /// `jigc doc create <type> --title <…>` (optional `--slug`) — agent-initiated,
 /// create-gated mint. A `--slug` override drives the minted doc id verbatim
 /// (decoupled from the title); it is validated here as a well-formed slug and
@@ -2517,6 +2785,12 @@ fn run_create(
     let task = ActiveTask::resolve(cwd, task_id)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
+    // Admission (unknown doctype / the create-gate) first, then the title pre-check —
+    // both **before** `create_gated` persists, so a rejected create stages nothing and
+    // has nothing to roll back.
+    let (schema, entry) = state::create_admission(&schemas, &gate.allows_create, type_name)
+        .map_err(|f| block(&f, "create", type_name))?;
+    title_pre_check(&task, schema, entry, "create", title, slug_override)?;
     // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
     // (clock-side CLI work) so the created instance carries them before render. In
     // migration mode the `set: on-create` date is suppressed (no fabricated history).
@@ -2612,6 +2886,20 @@ fn run_author(
     // title-derived slug, byte-identical to before.
     let slug_override = state::read_slug_override(&task.dir)
         .context("could not read the task's migration slug override")?;
+    // Admission then the title pre-check — the same seam `run_create` lowers through,
+    // reached **before** `create_gated` persists the empty doc, so a rejected payload
+    // stages nothing at all (there is no `CreatedDoc` to roll back yet). Ranked below the
+    // payload parse above: an unparseable payload is an argument-shape defect.
+    let (schema, entry) = state::create_admission(&schemas, &gate.allows_create, doctype)
+        .map_err(|f| block(&f, "author", doctype))?;
+    title_pre_check(
+        &task,
+        schema,
+        entry,
+        "author",
+        &plan.title,
+        slug_override.as_deref(),
+    )?;
     // The create persists the empty doc through the gated path (gate + squatter seams).
     let created = state::create_gated(
         &task.dir,
@@ -2624,11 +2912,6 @@ fn run_author(
         slug_override.as_deref(),
     )
     .map_err(|f| block(&f, "author", doctype))?;
-    // `create_gated` admitted the doctype, so it is in the loaded set — resolve the
-    // schema from there rather than re-reading the pack.
-    let schema = schemas
-        .get(doctype)
-        .expect("create_gated admitted the doctype, so it is in the schema set");
 
     // Chain every leaf over the single in-memory buffer, no persist between leaves.
     // Atomicity (`design/auto-migration.md` → Hardening #1): `create_gated` already

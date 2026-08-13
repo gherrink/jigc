@@ -163,7 +163,9 @@ fn create_instance(corpus: &TrialCorpus, ty: &str) -> (String, String) {
             "create",
             ty,
             "--title",
-            &format!("Probe {ty}"),
+            // A singleton's `# H1` is the schema's own, so a divergent `--title` is
+            // refused since M48 (`write.title-ignored`) — the sweep asks the schema.
+            &support::create_title(ty, &format!("Probe {ty}")),
             "--task",
             &task,
         ])

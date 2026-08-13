@@ -193,9 +193,15 @@ fn fresh_doc_create_mints_the_title_cased_h1_for_each_running_singleton() {
     // (`# Roadmap` / `# Decisions Log` / `# Deferral Ledger`), never the lowercase
     // slug. Mint-only: `display-title` has no validate consumer, so committed
     // lowercase-H1 corpora stay conformant. Proven over the real binary — the
-    // asserted bytes are the exact staged file `doc create` emitted, and the
-    // deliberately mismatched `--title` pins that the schema knob (never the
-    // explicit title) drives a singleton's H1 (engine `state.rs` mint rule).
+    // asserted bytes are the exact staged file `doc create` emitted.
+    //
+    // **The decoy premise is revised, not dropped (M48).** This test used to pass a
+    // deliberately mismatched `--title` and assert the schema knob won anyway — which was
+    // the *silent* half of that fact, and is exactly the write acking success over a title
+    // it dropped. Since M48 a divergent `--title` on a singleton is **refused**
+    // (`write.title-ignored`; `design/write-commands.md` → The four-way write), so the same
+    // fact is pinned harder: the mint carries the schema's H1 under the schema's own title,
+    // and the decoy is rejected rather than swallowed.
     let repo = TempDir::new("display-title");
     init_repo(repo.path());
     let home = TempDir::new("display-title-home");
@@ -226,11 +232,30 @@ fn fresh_doc_create_mints_the_title_cased_h1_for_each_running_singleton() {
         ("decisions-log", "Decisions Log"),
         ("deferral-ledger", "Deferral Ledger"),
     ] {
-        let out = run_jigc(
+        // The decoy is refused, not swallowed — nothing is staged by it.
+        let decoy = run_jigc(
             repo.path(),
             home.path(),
             &pack,
             &["doc", "create", ty, "--title", "Decoy Title"],
+        );
+        assert!(
+            !decoy.status.success(),
+            "`jigc doc create {ty} --title \"Decoy Title\"` must be refused — the title is \
+             the schema's, not the author's; stdout:\n{}",
+            String::from_utf8_lossy(&decoy.stdout),
+        );
+        assert!(
+            String::from_utf8_lossy(&decoy.stderr).contains("write.title-ignored"),
+            "the refusal names the dropped title; got:\n{}",
+            String::from_utf8_lossy(&decoy.stderr),
+        );
+
+        let out = run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["doc", "create", ty, "--title", display],
         );
         assert!(
             out.status.success(),

@@ -292,11 +292,14 @@ fn cold_create_promotes_the_singleton_byte_stable() {
     start_keep_runlog(repo.path(), home.path(), "open the running log", task);
 
     // The fixed-slug mint: the created address is `runlog:runlog` (slug == type id),
-    // never a title-slugged id.
+    // never a title-slugged id. The `--title` is the one the schema fixes — a singleton
+    // with no `display-title:` fixes it to the type id — because since M48 a divergent
+    // one is refused rather than silently dropped (`write.title-ignored`;
+    // `design/write-commands.md` → The four-way write).
     let create = jigc_doc(
         repo.path(),
         home.path(),
-        &["create", "runlog", "--title", "Ignored Title"],
+        &["create", "runlog", "--title", "runlog"],
         None,
     );
     assert_ok(&create, "`jigc doc create runlog` (cold)");
@@ -364,7 +367,7 @@ fn warm_recreate_copies_in_appends_and_repromotes_byte_stable() {
         &jigc_doc(
             repo.path(),
             home.path(),
-            &["create", "runlog", "--title", "Ignored"],
+            &["create", "runlog", "--title", "runlog"],
             None,
         ),
         "`doc create runlog` (warm/run1 cold)",
@@ -393,7 +396,7 @@ fn warm_recreate_copies_in_appends_and_repromotes_byte_stable() {
     let recreate = jigc_doc(
         repo.path(),
         home.path(),
-        &["create", "runlog", "--title", "Ignored Again"],
+        &["create", "runlog", "--title", "runlog"],
         None,
     );
     assert_ok(&recreate, "`doc create runlog` (warm/run2)");
@@ -510,7 +513,7 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
         &jigc_doc(
             repo.path(),
             home.path(),
-            &["create", "runlog", "--title", "Ignored"],
+            &["create", "runlog", "--title", "runlog"],
             None,
         ),
         "`doc create runlog` (drift/run1 cold)",
@@ -560,7 +563,7 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
         &jigc_doc(
             repo.path(),
             home.path(),
-            &["create", "runlog", "--title", "Ignored"],
+            &["create", "runlog", "--title", "runlog"],
             None,
         ),
         "`doc create runlog` (drift/run2 warm copy-in)",

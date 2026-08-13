@@ -893,11 +893,12 @@ fn mint_instance(
     };
     // The `# H1` display text — the **human** id-source verbatim (`Use MySQL`, not the
     // `use-mysql` slug), so the committed artifact reads as a title, not a filename. A
-    // `singleton` has no free title, so its H1 is the fixed type id (= slug) unless the
-    // schema declares a `display-title:` knob (`vision` → `# Vision`). An id-source that
-    // slugs empty keeps H1 == slug — the type-name fallback fired, so the slug stands in.
-    let title = if schema.singleton {
-        schema.display_title.clone().unwrap_or_else(|| slug.clone())
+    // `singleton` has no free title, so its H1 is the schema's [`Schema::fixed_title`]
+    // (the `display-title:` knob when declared — `vision` → `# Vision` — else the fixed
+    // type id, which is the slug). An id-source that slugs empty keeps H1 == slug — the
+    // type-name fallback fired, so the slug stands in.
+    let title = if let Some(fixed) = schema.fixed_title() {
+        fixed
     } else if crate::slug::slugify(id_source).is_empty() {
         slug.clone()
     } else {
@@ -1063,14 +1064,9 @@ pub fn create_gated(
     on_create: &[crate::field_block::Field],
     slug_override: Option<&str>,
 ) -> Result<CreatedDoc, Finding> {
-    // Step 3: unknown doctype rejects before the gate is consulted.
-    let Some(schema) = schemas.get(type_name) else {
-        return Err(unknown_doctype_finding(type_name, schemas));
-    };
-    // Step 5: a known-but-disallowed doctype is gate-blocked.
-    let Some(entry) = gate.iter().find(|e| e.doc_type == type_name) else {
-        return Err(gate_blocked_finding(type_name, gate));
-    };
+    // Steps 3 + 5: unknown doctype, then the gate — asked through the shared probe, so a
+    // caller that must not out-rank them asks the identical question.
+    let (schema, entry) = create_admission(schemas, gate, type_name)?;
     // Step 4: admitted → mint + provision (or copy-in a committed instance) — the
     // `slug_override` (the front door's `--slug`) drives the minted id verbatim. But
     // first probe for a same-identity **staged** copy: if the minted slug's working-area
@@ -1119,6 +1115,85 @@ pub fn create_gated(
             .map_err(|err| io_finding(&created.address, "record the bound role", &err))?;
     }
     Ok(created)
+}
+
+/// **The create's two admission checks**, as a standalone probe: an *unknown* doctype
+/// rejects before the gate is consulted (step 3), then a *known-but-disallowed* one is
+/// gate-blocked (step 5) — `design/write-commands.md` → The create-gate.
+///
+/// Extracted because [`create_gated`] is not the only caller that has to ask: a
+/// **pre-check** the CLI runs before the create persists must not out-rank these two —
+/// telling an agent its `--title` is wrong for a doctype this workflow cannot create at
+/// all is a misdirection, and the adjudication order is admission → title. One
+/// implementation, so the pre-check and the create can never disagree about which
+/// question fires first (M48 Increment 2, T2).
+pub fn create_admission<'a>(
+    schemas: &'a std::collections::BTreeMap<String, Schema>,
+    gate: &'a [crate::compose::AllowsCreate],
+    type_name: &str,
+) -> Result<(&'a Schema, &'a crate::compose::AllowsCreate), Finding> {
+    let Some(schema) = schemas.get(type_name) else {
+        return Err(unknown_doctype_finding(type_name, schemas));
+    };
+    let Some(entry) = gate.iter().find(|e| e.doc_type == type_name) else {
+        return Err(gate_blocked_finding(type_name, gate));
+    };
+    Ok((schema, entry))
+}
+
+/// What a [`create`] / [`create_gated`] call would **find** at the identity it is about
+/// to mint — the probe the CLI's title pre-check reads, answered by the same predicates
+/// `create` itself keys on rather than by a second copy of them.
+pub struct CreateIncumbent {
+    /// The identity the call mints (`<type>:<slug>`), from the shared [`mint_instance`]
+    /// derivation — so the pre-check can never name a different doc than the create does.
+    pub address: String,
+    /// The existing body the call would hand back (a **staged** working copy) or copy in
+    /// (a **committed** instance). `Some` means the supplied title will *not* become the
+    /// doc's `# H1`: the create writes no title over an incumbent body. `None` — the call
+    /// mints fresh and the title lands.
+    pub incumbent: Option<PathBuf>,
+}
+
+/// Probe the identity a create is about to mint — see [`CreateIncumbent`]. Writes
+/// nothing.
+///
+/// The committed arm reproduces [`create`]'s copy-in branch **including its
+/// in-location-squatter exception**: a migration whose recorded `source-path` IS this
+/// slug's canonical destination seeds **blank** over that foreign file, so the supplied
+/// title *does* land there and reporting an incumbent would be a lie about the very case
+/// the exception exists for (`design/auto-migration.md` → Hardening #8).
+pub fn create_incumbent(
+    task_dir: &Path,
+    schema: &Schema,
+    type_name: &str,
+    id_source: &str,
+    slug_override: Option<&str>,
+    repo_root: &Path,
+) -> Result<CreateIncumbent, Finding> {
+    let MintedInstance {
+        slug,
+        address,
+        path,
+        ..
+    } = mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
+    if path.exists() {
+        return Ok(CreateIncumbent {
+            address,
+            incumbent: Some(path),
+        });
+    }
+    let squatter = migration_targets_canonical_destination(task_dir, schema, &slug)
+        .map_err(|err| io_finding(&address, "read the migration source path", &err))?;
+    let committed = if squatter {
+        None
+    } else {
+        crate::store::canonical_path(repo_root, schema, &slug).filter(|path| path.is_file())
+    };
+    Ok(CreateIncumbent {
+        address,
+        incumbent: committed,
+    })
 }
 
 /// Does a **migration** task target this slug's own canonical destination? — the

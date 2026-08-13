@@ -77,12 +77,12 @@ commands:
 
   - id: create-ledger
     command: jigc
-    args: ["doc", "create", "deferral-ledger", "--title", "Deferral-Ledger", "--task", { from: "task.id" }]
+    args: ["doc", "create", "deferral-ledger", "--title", "Deferral Ledger", "--task", { from: "task.id" }]
     hint: "Create-or-update the running deferral-ledger singleton in the current task."
 
   - id: create-log
     command: jigc
-    args: ["doc", "create", "decisions-log", "--title", "Decisions-Log", "--task", { from: "task.id" }]
+    args: ["doc", "create", "decisions-log", "--title", "Decisions Log", "--task", { from: "task.id" }]
     hint: "Create-or-update the running decisions-log singleton in the current task."
 
   # The completion workflow's create-fresh command-ref (M16 inc-5 / T2). The

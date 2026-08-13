@@ -71,6 +71,17 @@
 //! predicate (`engine::write::section_undeclared`, rank 1 of shape → presence → leaf)
 //! opening every item-addressing door.
 //!
+//! **M48 adds the title-miss column.** Every column above is an *address* miss; a
+//! **doc-minting** verb (`create` / `author`) can miss one hop earlier — on the title it
+//! was handed — and until M48 neither shape was a miss at all: both exited 0, one of them
+//! committing a second document nobody authored. The two rows split on whether the
+//! identity moves, because the recovery does not: a call that would mint a **different**
+//! identity beside the one the gate's `as:` role already binds is `write.identity-change`
+//! (a second document, not a correction), while a call landing on the **same** identity
+//! that merely drops the title is identity-**stable** (`design/storage.md` → Identity)
+//! and earns `write.title-ignored`. Both route at `jigc doc rename` — a route that is
+//! itself a write, so it is run verbatim against a **private** fixture in the same state.
+//!
 //! **Declared bound.** The two *section-level* address forms — `set-slot` / `set-field` at
 //! `#<undeclared-section>` with no item hop — are **not** cells of this matrix: the CLI
 //! address resolver refuses to resolve a slot/field target inside an undeclared section and
@@ -140,8 +151,15 @@ fn copy_tree(from: &Path, to: &Path) {
 /// `category` blocks are enums (`crates/cli/pack/schemas/changelog.yaml`), and a
 /// single-level `staged` repeatable mirrors the pack's `unreleased-changes` so the
 /// **top-level** enum id-from is on the axis too, not only the nested one.
+///
+/// It declares a **`location:`** for the same class of reason (M48): the title-miss rows
+/// route at `jigc doc rename`, which refuses a doctype with no committed home as a
+/// *transient sink* — so a home-less fixture would emit a route it cannot follow, and the
+/// new column would green on a dead end. The nine shipped slug-identity doctypes those
+/// rows model all declare one.
 const CHANGELOG_SCHEMA: &str = "\
 type: changelog
+location: changelogs/
 id-from: title
 sections:
   - id: overview
@@ -275,18 +293,52 @@ impl Fixture {
             .join(format!("changelog:{}.md", self.slug))
     }
 
-    /// Run a route's emitted command **verbatim** (split on whitespace, the leading
-    /// `jigc` dropped), returning its trimmed stdout — the followability proof.
+    /// Run a route's emitted command **verbatim** (shell-split, the leading `jigc`
+    /// dropped), returning its trimmed stdout — the followability proof.
     fn run_route(&self, cmd: &str, what: &str) -> String {
-        let mut parts = cmd.split_whitespace();
+        let argv = shell_split(cmd);
         assert_eq!(
-            parts.next(),
+            argv.first().map(String::as_str),
             Some("jigc"),
             "`{what}`: the route leads `jigc`"
         );
-        let args: Vec<&str> = parts.collect();
+        let args: Vec<&str> = argv.iter().skip(1).map(String::as_str).collect();
         ok_stdout(self.run(&args, None), what)
     }
+}
+
+/// Split an emitted command into argv the way a shell would — honouring the double
+/// quotes a route puts around a multi-word title, so the route is run as the **emitted
+/// bytes** rather than a whitespace-split approximation. (Kept local: this suite's group
+/// root carries no `support` module, and pulling one in for twenty lines would compile
+/// the whole shared fixture substrate into this target.)
+fn shell_split(cmd: &str) -> Vec<String> {
+    let mut argv = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut started = false;
+    for ch in cmd.chars() {
+        match ch {
+            '"' => {
+                in_quotes = !in_quotes;
+                started = true;
+            }
+            c if c.is_whitespace() && !in_quotes => {
+                if started {
+                    argv.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            c => {
+                current.push(c);
+                started = true;
+            }
+        }
+    }
+    if started {
+        argv.push(current);
+    }
+    argv
 }
 
 /// The task id `jigc start "log the release"` mints — the id the enriched route must
@@ -405,11 +457,23 @@ struct Cell {
     stdin: Option<&'static [u8]>,
     /// The finding `code` the reject must carry.
     code: &'static str,
-    /// For an **item-id miss**: the top showable section the emitted route must show
-    /// (`jigc doc show <type>:<slug>#<section> --task <id>`, run verbatim here). `None`
-    /// for the two non-item-miss cells, whose route stays the schema's — they *are*
-    /// questions the schema answers.
-    route_section: Option<&'static str>,
+    /// How the emitted route is adjudicated — see [`RouteCheck`].
+    route: RouteCheck,
+}
+
+/// What a cell's emitted route must be, and how it is proven followable.
+enum RouteCheck {
+    /// An **item-id miss**: the top showable section the route must show
+    /// (`jigc doc show <type>:<slug>#<section> --task <id>`), run verbatim on the shared
+    /// fixture — a read moves nothing.
+    Show(&'static str),
+    /// A **shape / declaredness** question, which the schema answers: `jigc doc schema
+    /// <doctype>`, run verbatim on the shared fixture.
+    Schema,
+    /// A route that is itself a **write** (`{addr}` substituted): proven followable on a
+    /// **private** fixture in the same state, because running it on the shared one would
+    /// move the very bytes the next row diffs against.
+    MutatingWrite(&'static str),
 }
 
 /// The item [`provision`] mints in each showable section — what the emitted route, run
@@ -437,14 +501,14 @@ const CELLS: &[Cell] = &[
         ],
         stdin: Some(b"A summary.\n"),
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         what: "remove-item at a nonexistent item",
         args: &["doc", "remove-item", "{addr}#releases/9-9-9"],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         what: "set-field --value at a nonexistent item",
@@ -457,21 +521,21 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         what: "set-field --unset at a nonexistent item, declared field",
         args: &["doc", "set-field", "{addr}#releases/9-9-9/link", "--unset"],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         what: "set-field --unset at a nonexistent item, undeclared field",
         args: &["doc", "set-field", "{addr}#releases/9-9-9/bogus", "--unset"],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         what: "retitle-item at a nonexistent item",
@@ -484,7 +548,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         what: "nested add-item under an absent parent item",
@@ -497,7 +561,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         // The **deep** strip at one of the newly-enriched verbs: a real parent release
@@ -513,7 +577,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     // ---- The **id-from leaf** strip (M47 Increment 6, T3). Two CLI-side, schema-only
     // pre-checks sit in front of the engine's presence adjudication at two of the six
@@ -533,7 +597,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         what: "set-field --value at a nonexistent item's enum id-from leaf",
@@ -546,7 +610,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("staged"),
+        route: RouteCheck::Show("staged"),
     },
     Cell {
         what: "set-field --value at a nonexistent nested item's enum id-from leaf",
@@ -559,7 +623,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("releases"),
+        route: RouteCheck::Show("releases"),
     },
     Cell {
         what: "retitle-item at a nonexistent item under an enum id-from",
@@ -572,7 +636,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.not-present",
-        route_section: Some("staged"),
+        route: RouteCheck::Show("staged"),
     },
     // ---- The **undeclared-section** column. The row below (`add-item` at a bare
     // undeclared section) was for a long time the column's only cell, so the matrix had
@@ -596,14 +660,14 @@ const CELLS: &[Cell] = &[
         ],
         stdin: Some(b"A summary.\n"),
         code: "write.unknown-section",
-        route_section: None,
+        route: RouteCheck::Schema,
     },
     Cell {
         what: "remove-item at an item in an undeclared section",
         args: &["doc", "remove-item", "{addr}#no-such-section/9-9-9"],
         stdin: None,
         code: "write.unknown-section",
-        route_section: None,
+        route: RouteCheck::Schema,
     },
     Cell {
         what: "set-field --value at an item in an undeclared section",
@@ -616,7 +680,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.unknown-section",
-        route_section: None,
+        route: RouteCheck::Schema,
     },
     Cell {
         what: "set-field --unset at an item in an undeclared section",
@@ -628,7 +692,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.unknown-section",
-        route_section: None,
+        route: RouteCheck::Schema,
     },
     Cell {
         what: "retitle-item at an item in an undeclared section",
@@ -641,7 +705,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.unknown-section",
-        route_section: None,
+        route: RouteCheck::Schema,
     },
     Cell {
         what: "nested add-item under an item in an undeclared section",
@@ -654,7 +718,7 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.unknown-section",
-        route_section: None,
+        route: RouteCheck::Schema,
     },
     Cell {
         what: "add-item into an undeclared section",
@@ -667,14 +731,41 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.unknown-section",
-        route_section: None,
+        route: RouteCheck::Schema,
     },
     Cell {
         what: "add-item into a non-repeatable section (the genuine shape question)",
         args: &["doc", "add-item", "{addr}#overview", "--title", "Added"],
         stdin: None,
         code: "write.wrong-shape",
-        route_section: None,
+        route: RouteCheck::Schema,
+    },
+    // ---- The **title-miss** column (M48 Increment 2, T2). The matrix's other columns are
+    // all *address* misses; these two are the miss a **doc-minting** verb can make, and
+    // until M48 neither was a miss at all — both exited 0. They split on whether the
+    // identity moves, because the recovery does not: a call that would mint a DIFFERENT
+    // identity beside the one this task holds is `write.identity-change` (a second
+    // document, not a correction), while a call that lands on the SAME identity and
+    // merely drops the title is identity-**stable** (`design/storage.md` → Identity) and
+    // earns `write.title-ignored`. Both route at `jigc doc rename`, the in-task title
+    // change — a route that is itself a write, hence `MutatingWrite`.
+    Cell {
+        what: "create a second identity while the gate's role is already bound",
+        args: &["doc", "create", "changelog", "--title", "Release Log"],
+        stdin: None,
+        code: "write.identity-change",
+        route: RouteCheck::MutatingWrite(
+            "jigc doc rename {addr} --to \"Release Log\" --task log-the-release",
+        ),
+    },
+    Cell {
+        what: "create at the held identity with a title that would be dropped",
+        args: &["doc", "create", "changelog", "--title", "Changelog!"],
+        stdin: None,
+        code: "write.title-ignored",
+        route: RouteCheck::MutatingWrite(
+            "jigc doc rename {addr} --to \"Changelog!\" --task log-the-release",
+        ),
     },
 ];
 
@@ -728,54 +819,58 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
         // this axis exists to close. Only adjudicated once the cell named its own miss:
         // a wrong-code cell has already been recorded, and its foreign route shape must
         // not panic the run and hide the rest of the matrix.
-        if let Some(section) = cell.route_section.filter(|_| named_its_miss) {
+        //
+        // The complement of the item-id column: a **shape** cell must route at the schema
+        // read that answers a shape question — never at a `jigc doc show` of the very
+        // section the address got wrong, which is the un-followable route (it exits 1) an
+        // unranked declaredness check hands back. The CLI seam resolves the `<doctype>`
+        // placeholder, so that route is run **verbatim** too: it must exit 0 and name the
+        // doctype's real sections. And a **title-miss** cell's route is itself a write, so
+        // it is proven followable on a private fixture in the same state (running it here
+        // would move the bytes the next row diffs against).
+        if named_its_miss {
             let route = report["findings"][0]["route"]
                 .as_str()
                 .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", cell.what));
             let cmd = backticked(route, cell.what);
-            let expected = format!("jigc doc show {addr}#{section} --task {TASK_ID}");
+            let expected = match cell.route {
+                RouteCheck::Show(section) => {
+                    format!("jigc doc show {addr}#{section} --task {TASK_ID}")
+                }
+                RouteCheck::Schema => "jigc doc schema changelog".to_owned(),
+                RouteCheck::MutatingWrite(argv) => argv.replace("{addr}", &addr),
+            };
             if cmd != expected {
                 broken.push(format!(
                     "  {}: expected route `{}`, got `{}`",
                     cell.what, expected, cmd
                 ));
             } else {
-                // Followability: the emitted argv, run **verbatim**, must exit 0 and print
-                // the section's live item ids — the address the agent should have used.
-                let shown = fx.run_route(cmd, cell.what);
-                let live = live_item(section);
-                assert!(
-                    shown.contains(live),
-                    "`{}`: the emitted route reveals the section's live item ids; got:\n{shown}",
-                    cell.what,
-                );
-            }
-        }
-
-        // The complement: a **shape** cell must route at the schema read that answers a
-        // shape question — never at a `jigc doc show` of the very section the address got
-        // wrong, which is the un-followable route (it exits 1) an unranked declaredness
-        // check hands back. The CLI seam resolves the `<doctype>` placeholder, so this
-        // route is run **verbatim** too: it must exit 0 and name the doctype's real
-        // sections — the declared shape the agent addressed past.
-        if cell.route_section.is_none() && named_its_miss {
-            let route = report["findings"][0]["route"]
-                .as_str()
-                .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", cell.what));
-            let cmd = backticked(route, cell.what);
-            let expected = "jigc doc schema changelog";
-            if cmd != expected {
-                broken.push(format!(
-                    "  {}: expected route `{}`, got `{}`",
-                    cell.what, expected, cmd
-                ));
-            } else {
-                let shown = fx.run_route(cmd, cell.what);
-                assert!(
-                    shown.contains("releases"),
-                    "`{}`: the emitted route reveals the doctype's declared sections; got:\n{shown}",
-                    cell.what,
-                );
+                match cell.route {
+                    RouteCheck::Show(section) => {
+                        // Followability: the emitted argv, run **verbatim**, must exit 0
+                        // and print the section's live item ids — the address the agent
+                        // should have used.
+                        let shown = fx.run_route(cmd, cell.what);
+                        let live = live_item(section);
+                        assert!(
+                            shown.contains(live),
+                            "`{}`: the emitted route reveals the section's live item ids; got:\n{shown}",
+                            cell.what,
+                        );
+                    }
+                    RouteCheck::Schema => {
+                        let shown = fx.run_route(cmd, cell.what);
+                        assert!(
+                            shown.contains("releases"),
+                            "`{}`: the emitted route reveals the doctype's declared sections; got:\n{shown}",
+                            cell.what,
+                        );
+                    }
+                    RouteCheck::MutatingWrite(_) => {
+                        provision().run_route(cmd, cell.what);
+                    }
+                }
             }
         }
 

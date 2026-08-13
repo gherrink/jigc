@@ -147,7 +147,7 @@ fn free_text_item_titles_mint_word_aware_anchors() {
             "create",
             "deferral-ledger",
             "--title",
-            "Deferral-Ledger",
+            "Deferral Ledger",
         ],
     );
     assert!(

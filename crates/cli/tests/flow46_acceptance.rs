@@ -63,6 +63,8 @@
 //!
 //! [`implementation/dev-workflow.md`]: ../../../implementation/dev-workflow.md
 
+use crate::support;
+
 use cli::pack::{CompositePack, EmbeddedPack, load_pack_schema};
 use engine::compose::load_workflow_def;
 use engine::packsource::{PackResourceKind, PackSource};
@@ -382,7 +384,9 @@ fn create_doc(repo: &Path, home: &Path, doctype: &str, task: &str) -> String {
             "create",
             doctype,
             "--title",
-            "Axis Sweep",
+            // A singleton's `# H1` is the schema's own, so a divergent `--title` is
+            // refused since M48 (`write.title-ignored`) — ask the schema.
+            &support::create_title(doctype, "Axis Sweep"),
             "--task",
             task,
         ],
@@ -741,14 +745,14 @@ fn copy_on_write_binds_the_role_over_every_object_form_pair() {
             workflow,
             &format!("sweep create gate pair {index}"),
         );
+        // The mint title: a singleton's is the schema's own since M48, so ask.
+        let title = support::create_title(doctype, "Sweep");
         // First create stages the instance and binds the role.
         assert_ok(
             &jigc(
                 repo,
                 home,
-                &[
-                    "doc", "create", doctype, "--title", "Sweep", "--task", &task,
-                ],
+                &["doc", "create", doctype, "--title", &title, "--task", &task],
                 None,
             ),
             &format!("first `doc create {doctype}` under `{workflow}`"),
@@ -757,9 +761,7 @@ fn copy_on_write_binds_the_role_over_every_object_form_pair() {
         let again = jigc(
             repo,
             home,
-            &[
-                "doc", "create", doctype, "--title", "Sweep", "--task", &task,
-            ],
+            &["doc", "create", doctype, "--title", &title, "--task", &task],
             None,
         );
         assert!(

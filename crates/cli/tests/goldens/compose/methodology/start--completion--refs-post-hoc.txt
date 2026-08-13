@@ -86,7 +86,7 @@ Record each decision Settle made on the running decisions log. Create-or-update 
 log singleton — safe whether or not it already exists (an existing committed log is
 copied in for append):
 
-Run: `jigc doc create decisions-log --title Decisions-Log --task sweep-the-compose-surface`
+Run: `jigc doc create decisions-log --title 'Decisions Log' --task sweep-the-compose-surface`
 
 Then, for each decision made, mint an entry and author its `why` — the reasoning,
 in a sentence or two. The `date` is CLI-set on create:

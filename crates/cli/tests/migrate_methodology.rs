@@ -678,7 +678,7 @@ Not enough users to justify it. No date was ever recorded.
 /// The canonical rewrite: the dated entry TRANSCRIBES its historic date verbatim in a
 /// per-entry `date` key; the dateless entry OMITS the key entirely (in migration the
 /// CLI does not stamp today, so it renders dateless — no false history).
-const PAYLOAD_DECISIONS: &str = r#"title: Decisions-Log
+const PAYLOAD_DECISIONS: &str = r#"title: Decisions Log
 sections:
   - id: entries
     items:

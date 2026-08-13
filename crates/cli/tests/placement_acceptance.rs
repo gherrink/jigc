@@ -284,11 +284,14 @@ fn placement_singletons_round_trip_to_their_literal_homes() {
     let task = "author-the-placement-pages";
 
     // create → the emitted address is EXACTLY `<type>:<type>` (fixed slug = type id,
-    // never a `--title` slug) — the addressable proof.
+    // never a `--title` slug) — the addressable proof. The `--title` is the one the
+    // schema fixes (this fixture declares no `display-title:`, so that is the type id):
+    // since M48 a divergent one is refused rather than silently dropped
+    // (`write.title-ignored`; `design/write-commands.md` → The four-way write).
     let create_foo = run_jigc(
         repo,
         home,
-        &["doc", "create", "foo", "--title", "Root Page"],
+        &["doc", "create", "foo", "--title", "foo"],
         None,
     );
     assert_ok(&create_foo, "`jigc doc create foo`");
@@ -300,7 +303,7 @@ fn placement_singletons_round_trip_to_their_literal_homes() {
     let create_bar = run_jigc(
         repo,
         home,
-        &["doc", "create", "bar", "--title", "Docs Page"],
+        &["doc", "create", "bar", "--title", "bar"],
         None,
     );
     assert_ok(&create_bar, "`jigc doc create bar`");
@@ -503,7 +506,7 @@ fn author_and_finalize_foo(repo: &Path, home: &Path) {
     let create = run_jigc(
         repo,
         home,
-        &["doc", "create", "foo", "--title", "Root Page"],
+        &["doc", "create", "foo", "--title", "foo"],
         None,
     );
     assert_ok(&create, "`jigc doc create foo`");
@@ -676,7 +679,7 @@ fn foreign_file_at_placement_path_blocks_finalize_with_clobber_guard() {
     let create = run_jigc(
         repo,
         home,
-        &["doc", "create", "foo", "--title", "Root Page"],
+        &["doc", "create", "foo", "--title", "foo"],
         None,
     );
     assert_ok(&create, "`jigc doc create foo`");

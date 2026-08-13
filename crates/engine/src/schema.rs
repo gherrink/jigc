@@ -102,6 +102,28 @@ pub struct Schema {
     pub sections: Vec<Section>,
 }
 
+impl Schema {
+    /// The `# H1` this doctype **fixes** — `Some` iff the title belongs to the CLI
+    /// rather than to the author. A `singleton`'s slug *is* its type id, so it has no
+    /// id-source to derive a title from: its H1 is the declared `display-title:` when
+    /// there is one, else the fixed slug (= the type id). `None` for a per-instance
+    /// doctype, whose H1 is the author's supplied title verbatim.
+    ///
+    /// **One home for a rule three seams read**: the mint
+    /// ([`crate::state::create`]'s `mint_instance`), the `{{schema:<doctype>}}` payload
+    /// skeleton ([`crate::compose`]'s `projection_title_value` — which is why the
+    /// generated payload already carries the fixed title literally), and the write-path
+    /// title pre-check that refuses a title the mint would silently drop
+    /// (`design/write-commands.md` → The three-way write over a committed doc).
+    pub fn fixed_title(&self) -> Option<String> {
+        self.singleton.then(|| {
+            self.display_title
+                .clone()
+                .unwrap_or_else(|| self.ty.clone())
+        })
+    }
+}
+
 /// A doctype's **literal-file placement**: the one exact repo-root-relative path
 /// its single managed instance lives at.
 ///

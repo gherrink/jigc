@@ -17,3 +17,57 @@
 
 pub mod goldens;
 pub mod trial_corpus;
+
+/// The `--title` a `jigc doc create <doctype>` must carry against the **shipped** packs.
+///
+/// A `placement` / `display-title` singleton's `# H1` is the schema's own, so since M48 a
+/// divergent `--title` is **refused** rather than silently dropped (`write.title-ignored`;
+/// `design/write-commands.md` → The four-way write). A sweep that mints many doctypes
+/// under one label therefore has to ask the schema rather than assume — and asking keeps
+/// the sweep correct when a doctype joins either pack. Every doctype whose title is the
+/// author's returns `otherwise`, unchanged.
+pub fn create_title(doctype: &str, otherwise: &str) -> String {
+    use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+    let pack = cli::pack::CompositePack::new(vec![
+        Box::new(cli::pack::EmbeddedPack::new()),
+        Box::new(cli::pack::EmbeddedPack::methodology()),
+    ]);
+    pack.read(PackResourceKind::Schemas, &ResourceId::from(doctype))
+        .ok()
+        .and_then(|bytes| cli::pack::load_pack_schema(&pack, &bytes).ok())
+        .and_then(|schema| schema.fixed_title())
+        .unwrap_or_else(|| otherwise.to_string())
+}
+
+/// Split an emitted command into argv the way a shell would — honouring the double
+/// quotes a route puts around a multi-word value (a title, an intent), so a suite that
+/// runs a route **verbatim** runs the *emitted bytes* rather than a whitespace-split
+/// approximation of them (`design/surface-contract.md` → law 2: a route is followable).
+pub fn shell_split(cmd: &str) -> Vec<String> {
+    let mut argv = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut started = false;
+    for ch in cmd.chars() {
+        match ch {
+            '"' => {
+                in_quotes = !in_quotes;
+                started = true;
+            }
+            c if c.is_whitespace() && !in_quotes => {
+                if started {
+                    argv.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            c => {
+                current.push(c);
+                started = true;
+            }
+        }
+    }
+    if started {
+        argv.push(current);
+    }
+    argv
+}

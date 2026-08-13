@@ -557,11 +557,14 @@ fn arch_doc_author_accepts_multi_element_cites_bracket_list() {
 
     // The green is not hollow: validation runs element-wise on the real cites field —
     // a wrong-type element blocks at the write verb (not deferred to a finalize dangle).
+    // The re-author carries the SAME title, so it revises the doc this task holds rather
+    // than minting a second one beside it (M48 — `write.identity-change`); the claim under
+    // test is the element-wise `cites` adjudication, which is what must fire.
     let bad = jigc_doc(
         repo.path(),
         home.path(),
         &["author", "arch-doc", "--from-file", "-"],
-        Some(b"title: Bad overview\nsections:\n  - id: meta\n    set:\n      cites: \"[adr:a, spec:b]\"\n"),
+        Some(b"title: Queue overview\nsections:\n  - id: meta\n    set:\n      cites: \"[adr:a, spec:b]\"\n"),
     );
     assert!(
         !bad.status.success(),

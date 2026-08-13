@@ -392,7 +392,7 @@ fn probe_1_upgrade_blocks_dry_runs_self_commits_and_greens() {
                 "create",
                 "deferral-ledger",
                 "--title",
-                "Deferral-Ledger",
+                "Deferral Ledger",
             ],
             None,
         ),

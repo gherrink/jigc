@@ -245,7 +245,7 @@ fn migrate_corpus_remaps_the_deferral_ledger_kind_byte_faithful() {
         &jigc_doc(
             repo.path(),
             home.path(),
-            &["create", "deferral-ledger", "--title", "Deferral-Ledger"],
+            &["create", "deferral-ledger", "--title", "Deferral Ledger"],
             None,
         ),
         "`doc create deferral-ledger`",

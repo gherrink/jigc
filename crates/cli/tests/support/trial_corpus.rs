@@ -467,7 +467,7 @@ impl TrialCorpus {
             "create",
             "decisions-log",
             "--title",
-            "Decisions-Log",
+            "Decisions Log",
             "--task",
             &plan,
         ]);

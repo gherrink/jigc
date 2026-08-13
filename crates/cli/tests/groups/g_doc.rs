@@ -59,3 +59,5 @@ mod roundtrip_registry_fence;
 mod uninstall;
 #[path = "../unknown_subcommand_tip.rs"]
 mod unknown_subcommand_tip;
+#[path = "../write_title_divergence.rs"]
+mod write_title_divergence;

@@ -386,9 +386,9 @@ fn flow19_two_run_cold_create_then_warm_append_repromotes_byte_stable() {
         repo.path(),
         home.path(),
         "deferral-ledger",
-        "Deferral-Ledger",
+        "Deferral Ledger",
     );
-    create_singleton(repo.path(), home.path(), "decisions-log", "Decisions-Log");
+    create_singleton(repo.path(), home.path(), "decisions-log", "Decisions Log");
     author_roadmap_entry(
         repo.path(),
         home.path(),
@@ -487,7 +487,7 @@ fn flow19_two_run_cold_create_then_warm_append_repromotes_byte_stable() {
         repo.path(),
         home.path(),
         "deferral-ledger",
-        "Deferral-Ledger",
+        "Deferral Ledger",
     );
     author_ledger_entry(
         repo.path(),
@@ -497,7 +497,7 @@ fn flow19_two_run_cold_create_then_warm_append_repromotes_byte_stable() {
         "M-Gamma",
         b"The beta idea is parked for M-Gamma.\n",
     );
-    create_singleton(repo.path(), home.path(), "decisions-log", "Decisions-Log");
+    create_singleton(repo.path(), home.path(), "decisions-log", "Decisions Log");
     author_decisions_entry(
         repo.path(),
         home.path(),

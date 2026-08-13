@@ -390,3 +390,34 @@ fn doc_author_help_states_the_three_way_write_contract() {
         );
     }
 }
+
+/// M48 Increment 2, T2 — the closed set's **fourth** member, stated at **both** minting
+/// verbs before the write. A create/author over a doc the task already holds does not
+/// rewrite its `# H1`, and one that mints a different id is a second document — two
+/// refusals an agent otherwise meets only after the fact
+/// (`design/surface-contract.md` → law 3, the ambush class;
+/// `design/write-commands.md` → The four-way write over a committed doc).
+///
+/// The two helps are fenced by the **same** token set, which is what keeps the two
+/// surfaces (a generated `long_about` on `create`, a doc comment on `author`) from
+/// drifting into two different rules.
+#[test]
+fn both_minting_verbs_state_the_title_contract_before_the_write() {
+    for verb in ["create", "author"] {
+        let help = help_stdout(&["doc", verb, "--help"]);
+        for fact in [
+            "write.title-ignored",
+            "write.identity-change",
+            "jigc doc rename",
+            "second document",
+        ] {
+            assert!(
+                help.contains(fact),
+                "`doc {verb} --help` must state \"{fact}\" — the title contract (a title \
+                 that would be silently dropped is refused · one that mints a different \
+                 identity is a second document, not a correction · both route at the \
+                 in-task title change); got:\n{help}"
+            );
+        }
+    }
+}

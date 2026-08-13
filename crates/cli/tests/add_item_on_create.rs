@@ -144,7 +144,7 @@ fn add_item_materializes_an_on_create_date_on_the_deferral_ledger_entry() {
             "create",
             "deferral-ledger",
             "--title",
-            "Deferral-Ledger",
+            "Deferral Ledger",
         ],
     );
     assert!(
