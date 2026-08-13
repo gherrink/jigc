@@ -1,0 +1,13 @@
+{"timestamp":"2026-08-12T21:35:47Z","argv":["milestone","--help"],"exit_code":0,"duration_ms":5,"finding_codes":[],"output_bytes":3137,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:35:52Z","argv":["milestone","create","--title","Durable sample tier"],"exit_code":2,"duration_ms":6,"finding_codes":[],"output_bytes":183,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:35:56Z","argv":["validate","--format","json"],"exit_code":0,"duration_ms":20,"finding_codes":["file-state.un-baselined"],"output_bytes":742,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:35:56Z","argv":["milestone","create","Durable sample tier"],"exit_code":0,"duration_ms":177,"finding_codes":[],"output_bytes":444,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:35:56Z","argv":["validate","--format","json"],"exit_code":0,"duration_ms":19,"finding_codes":["file-state.hash-matches"],"output_bytes":804,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:35:56Z","argv":["milestone","add-task","durable-sample-tier","add a write-ahead log to the store"],"exit_code":0,"duration_ms":106,"finding_codes":[],"output_bytes":139,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:35:56Z","argv":["validate","--format","json"],"exit_code":0,"duration_ms":20,"finding_codes":["file-state.hash-matches"],"output_bytes":804,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:35:56Z","argv":["milestone","add-task","durable-sample-tier","replay the log on startup"],"exit_code":0,"duration_ms":106,"finding_codes":[],"output_bytes":143,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:35:56Z","argv":["milestone","list-tasks","durable-sample-tier"],"exit_code":0,"duration_ms":8,"finding_codes":[],"output_bytes":163,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:36:00Z","argv":["milestone","provision","durable-sample-tier"],"exit_code":0,"duration_ms":99,"finding_codes":[],"output_bytes":200,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:36:16Z","argv":["milestone","provision","durable-sample-tier"],"exit_code":0,"duration_ms":79,"finding_codes":[],"output_bytes":200,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:36:42Z","argv":["milestone","discard","durable-sample-tier"],"exit_code":1,"duration_ms":54,"finding_codes":[],"output_bytes":477,"binary_version":"1.0.0-rc.10","error_code":null}
+{"timestamp":"2026-08-12T21:36:42Z","argv":["uninstall"],"exit_code":1,"duration_ms":48,"finding_codes":[],"output_bytes":570,"binary_version":"1.0.0-rc.10","error_code":null}
