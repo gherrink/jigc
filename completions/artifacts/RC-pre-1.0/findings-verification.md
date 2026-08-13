@@ -367,5 +367,26 @@ fixes*, so no fix and therefore no red test exists yet.
 | F8 | confirmed | red test: read-shaped near-miss routes to a read verb |
 | F9 | confirmed | the generated statement names the literal hyphen (fix and fence are one change) |
 | F10–F16 | confirmed | red tests per item; F15/F16 may route to M46 rather than a fix |
-| R1, R2, R3 | **refuted** | `pinned_facts/` standing tests — the refuting fact is what drifts |
-| R4 | refuted (operator) | none — a measurement error, not a fact about the product |
+| R1 | **refuted — CLOSED** | `pinned-by: doc_schema::doc_schema_json_is_the_pinned_contract` · `::doc_schema_plain_listing_surfaces_write_addresses` |
+| R2 | **refuted — CLOSED** | `pinned-by: doc_list::doc_list_projects_the_store_surface_with_its_registration_state` |
+| R3 | **refuted — CLOSED** | `pinned-by: doc_show_staged::staged_read_serves_plain_json_and_slice` |
+| R4 | refuted (operator) | none owed — a measurement error, not a fact about the product |
+
+**The refuted set is closed, and closed without minting a test** (2026-08-13). Each of the three
+product refutations is a **shipped capability the sessions did not find** — M40's `doc schema`, M42's
+`doc list`, M43's `doc show --task` — and each already carries a dedicated contract suite, so the
+fact cannot drift silently. §3's obligation is that a refuted fact **has** a standing test, not that a
+duplicate is minted (the `pinned_facts.rs` B3 precedent). Every citation above was verified **by test
+content, not by test name**, per that module's own honesty note: `doc_schema` drives `doc schema adr`
+in both formats; `doc_list` asserts the exact row set *and* the `managed`/`unregistered` split;
+`doc_show_staged::staged_read_serves_plain_json_and_slice` drives `doc show <addr> --task <id>` over
+uncommitted bytes and asserts the staged bytes serve.
+
+**What that leaves unpinned is reachability, not capability.** The capabilities are fenced; what
+nothing fences is that an agent can *find* them — F1's countable property (1 of 69 pack step files
+names `doc show`, and it is not an authoring step). That fence lands with F1's fix. Pinning the gap
+now would pin it as expected output.
+
+**The confirmed set stays open, and it is the gate.** F1–F16 are uniformly `UNPINNED` because the
+trial ran under *no mid-trial fixes* — no fix exists, so no red test can carry them. The 1.0.0 call
+is not taken until this table is closed.

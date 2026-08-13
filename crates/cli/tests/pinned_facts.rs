@@ -191,6 +191,50 @@
 //! | 7 · P3-2 narrows — the append prose is accurate; the defect is the collision case | Inc 10 T7 — `author_write_contract.rs` |
 //! | 8 · the golden count is 612 on disk, and `pinning.md` contradicts itself | Inc 11 T2 — the whole-tree regeneration measured the fixed point and corrected the doc |
 
+//! ───────────────────────────────────────────────────────────────────────────────
+//! ## The RC-pre-1.0 ledger (the pre-1.0.0 trial, 2026-08-13) — disposition of the refuted set
+//!
+//! The acceptance trial for M47
+//! ([RC-pre-1.0/findings-verification.md](../../../completions/artifacts/RC-pre-1.0/findings-verification.md);
+//! 16 CONFIRMED · 4 REFUTED, every verdict with a repro block) refuted four claims.
+//! **Not one of them mints a test here, and that is the conversion, not a shortcut** —
+//! §3's obligation is that a refuted fact **has** a standing test, not that a duplicate
+//! is minted (the B3 precedent above). Each row below was checked **by test content,
+//! not by test name**, because the module doc's own honesty note says the checkable
+//! half (a name exists) is not the load-bearing half (the content pins the claim).
+//!
+//! | row | refuted claim | pinned-by (already standing) | checked |
+//! |---|---|---|---|
+//! | R1 | "nothing lets you ask a doctype's schema; adr slots must be read off workflow prose" | `doc_schema::doc_schema_json_is_the_pinned_contract` · `::doc_schema_plain_listing_surfaces_write_addresses` | drives `doc schema adr` in **both** formats |
+//! | R2 | "no verb inventories what jigc manages" (`find docs VISION.md` used instead) | `doc_list::doc_list_projects_the_store_surface_with_its_registration_state` | asserts the exact row set **and** the `managed`/`unregistered` split |
+//! | R3 | "`doc show` is committed-only by design, so in-flight authoring cannot be reviewed" | `doc_show_staged::staged_read_serves_plain_json_and_slice` | drives `doc show <addr> --task <id>` over **uncommitted** bytes and asserts the staged bytes serve |
+//! | R4 | "`doc show` never rendered my authored changelog item" | — | **No pin, and none owed:** the operator's own measurement error (`head -8` truncated the render), not a fact about the product. Recorded so the near-miss is auditable |
+//!
+//! ### Why the refuted set needed no new pin, and what that means
+//!
+//! All three product refutations are **shipped capabilities the sessions did not find**
+//! — M40's `doc schema`, M42's `doc list`, M43's `doc show --task`. Each already
+//! carries a dedicated contract suite, so the fact cannot drift silently. **What is
+//! unpinned is not the capability but its reachability**: of 69 pack step files exactly
+//! one names `doc show`, and it is not an authoring step (F1). That is a *fix*, and its
+//! fence — a pack-load assert that an authoring step soliciting a write also states the
+//! read-back — lands with the fix, not here. Pinning the gap now would pin the gap as
+//! expected output, the anti-pattern the RC-alpha4 ledger's ordering rule names.
+//!
+//! ### The CONFIRMED set — UNPINNED, with the reason stated once
+//!
+//! All 16 confirmed rows (F1–F16) are **UNPINNED**, and uniformly so: the trial ran
+//! under *no mid-trial fixes*, so no fix and therefore no red test exists to carry
+//! them. Their conversion table lives with the verdicts
+//! ([findings-verification.md](../../../completions/artifacts/RC-pre-1.0/findings-verification.md)
+//! → The conversion ledger), and **the 1.0.0 call is gated on it closing**
+//! ([decisions-pending.md](../../../implementation/decisions-pending.md) → Acceptance).
+//! Two of them are axis gaps in M47's own work and name the sibling that *is* fenced:
+//! F3 (`provision` destroys a leftover's uncommitted work, while `milestone_discard.rs`
+//! and `uninstall_worktree_guard.rs` fence the same destruction at two other doors) and
+//! F6 (a same-slug **same-H1** rename, whose same-slug/**different**-H1 sibling is
+//! fenced at `flow37_rename::placement_same_slug_retitle_succeeds`).
+
 // This file only aggregates; the `support` module it used to declare is now declared
 // once by the group root, and each repro block below reaches it as `crate::support`.
 
