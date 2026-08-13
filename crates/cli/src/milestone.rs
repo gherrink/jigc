@@ -1990,10 +1990,11 @@ fn git_worktree(repo_root: &Path, args: &[&str]) -> Result<String> {
 ///
 /// The op order is the settled one: (1) the **reconcile preflight** — the record settle is a
 /// `set: on-transition` overwrite, so an out-of-band edit conflict-blocks rather than being
-/// silently clobbered ([`reconcile_record_preflight`]); (2) the **dirty-worktree guard** — the
+/// silently clobbered ([`reconcile_record_preflight`]); (2) the **held-worktree guard** — the
 /// teardown's `git worktree remove --force` is safe at *finalize* (the commit lands first) but on
-/// the abandon path the sub-agents' work is **by definition uncommitted**, so a dirty worktree
-/// refuses the abandon unless `--force` names the consent to destroy it; (3) the record settle
+/// the abandon path the sub-agents' work is **by definition uncommitted**, so a sub-task worktree
+/// path holding content refuses the abandon unless `--force` names the consent
+/// ([`held_subtask_worktrees`] — the subject is the path, not the registered set); (3) the record settle
 /// ([`engine::milestone::discard_record`] — a genuinely **joined** sub-task stays `joined`);
 /// (4) a **record-only** commit carrying a CLI-synthesized structural subject (never sweeping the
 /// agent's in-flight WIP); (5) the teardown — the sub-task areas, the registered fan-out
@@ -2040,19 +2041,18 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
 
-    // (2) The dirty-worktree guard — the abandon path's WIP safety
+    // (2) The held-worktree guard — the abandon path's WIP safety
     // (`design/team-ready-state.md` → Abandon refuses on a dirty worktree). The teardown's
     // [`remove_worktrees`] runs `git worktree remove --force`, which is safe at *finalize* (the
     // commit lands first, so every byte the worktree held is already in git) and **destroys
     // uncommitted work** here, where the sub-agents' work is by definition uncommitted. So a
-    // dirty worktree REFUSES the abandon, naming the paths; `--force` is the human's explicit
-    // consent to destroy the work — on the one path whose premise is "throw this away", that
+    // sub-task worktree path holding content REFUSES the abandon, naming the paths; `--force` is
+    // the human's explicit consent — on the one path whose premise is "throw this away", that
     // intent is exactly what must be confirmed rather than assumed.
     if !force {
-        let worktrees = provisioned_worktrees(&repo_root, &jigc_home, &list);
-        let dirty = dirty_worktrees(&worktrees)?;
-        if !dirty.is_empty() {
-            return Err(finding_to_err(dirty_worktree_finding(milestone_id, &dirty)));
+        let held = held_subtask_worktrees(&repo_root, &jigc_home, &list)?;
+        if !held.is_empty() {
+            return Err(finding_to_err(dirty_worktree_finding(milestone_id, &held)));
         }
     }
 
@@ -2137,31 +2137,106 @@ pub(crate) fn dirty_worktrees(worktrees: &[PathBuf]) -> Result<Vec<(PathBuf, Vec
     Ok(dirty)
 }
 
-/// A blocking, route-bearing finding naming every dirty sub-task worktree and the uncommitted
-/// entries inside it — the abandon's refusal. The route names both honest exits: get the work out
-/// (commit / stash / copy it), or re-run with `--force` to say the work is genuinely being thrown
-/// away (the [`crate::combine::detect_code_collision`] finding idiom).
-fn dirty_worktree_finding(milestone_id: &str, dirty: &[(PathBuf, Vec<String>)]) -> Finding {
-    let listing: Vec<String> = dirty
+/// What a sub-task's worktree-shaped path holds, and what [`remove_worktrees`] would actually do
+/// with it — the two halves [`dirty_worktree_finding`] needs to refuse without lying.
+struct HeldWorktree {
+    /// The `.jigc/worktrees/<sub-task-id>` path, canonical (the [`registered_worktrees`] convention).
+    path: PathBuf,
+    /// What the probe found there — `git status --porcelain` entries for a worktree of its own,
+    /// the directory's child names otherwise ([`LeftoverHold`]).
+    entries: Vec<String>,
+    /// Whether the teardown reaches this path at all: it removes **registered** worktrees and
+    /// skips everything else, so an unregistered path is *orphaned*, never deleted.
+    registered: bool,
+}
+
+/// Every sub-task worktree path of `list` that holds content the abandon must not step past —
+/// [`DISCARD_DOOR`]'s guard set (`DECISIONS.md` 2026-08-13 → the Settle, F3).
+///
+/// **The subject is the path, not the registered set.** The retired subject was
+/// [`provisioned_worktrees`] (the task list ∩ the *registered* worktrees), which is structurally
+/// blind to the ordinary trigger: a `cp -R` or `mv` of the repo leaves the copy's worktrees
+/// registered at the **source's** path, so nothing under the copy's own `.jigc/worktrees/` is
+/// registered there and the guard saw nothing exactly where the live work was. Every sub-task's
+/// path is now probed by the shared fail-closed [`probe_leftover`] — the same classifier
+/// [`PROVISION_DOOR`] and [`UNINSTALL_DOOR`] ask — so a live worktree still clears when clean, and
+/// a path git cannot vouch for refuses on any content.
+///
+/// Fail-closed: an unreadable directory or `git status` propagates rather than reporting an empty
+/// set, because *"found nothing"* and *"there is nothing"* are the same bytes to the caller and
+/// only one of them is safe to abandon on.
+fn held_subtask_worktrees(
+    repo_root: &Path,
+    jigc_home: &Path,
+    list: &engine::milestone::TaskList,
+) -> Result<Vec<HeldWorktree>> {
+    let registered = registered_worktrees(repo_root).unwrap_or_default();
+    // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
+    // `add` time); fall back to the raw path if canonicalization fails — the probe still runs,
+    // and nothing matches the registered set, which is the fail-closed side.
+    let canonical_home = jigc_home
+        .canonicalize()
+        .unwrap_or_else(|_| jigc_home.to_path_buf());
+    let mut held = Vec::new();
+    for sub_id in list.enumerate() {
+        let path = canonical_home.join(worktree_path(&sub_id));
+        if let Some(hold) = probe_leftover(&path)? {
+            held.push(HeldWorktree {
+                registered: registered.iter().any(|w| w == &path),
+                path,
+                entries: hold.entries,
+            });
+        }
+    }
+    Ok(held)
+}
+
+/// [`DISCARD_DOOR`]'s refusal: a blocking, route-bearing finding naming every sub-task worktree
+/// path that holds content, what is in it, and **what the abandon would do to it**.
+///
+/// The per-path disposition is not decoration — it is law 1 (`design/surface-contract.md`). The
+/// teardown removes a **registered** worktree and skips everything else, so claiming a removal for
+/// a path [`remove_worktrees`] never reaches would be a lie, and so would calling a plain
+/// directory's child names *uncommitted work* when no git vouched for them. Each line says only
+/// what is true of that path.
+///
+/// The route names both honest exits — get the content out, or `--force` to abandon anyway (the
+/// [`crate::combine::detect_code_collision`] finding idiom) — and states what `--force` really
+/// costs on each disposition, since on the orphaning one it costs nothing on disk.
+fn dirty_worktree_finding(milestone_id: &str, held: &[HeldWorktree]) -> Finding {
+    let listing: Vec<String> = held
         .iter()
-        .map(|(path, entries)| format!("  {}: {}", path.display(), entries.join(", ")))
+        .map(|w| {
+            let fate = if w.registered {
+                "registered here, so the teardown removes it and this content is destroyed"
+            } else {
+                "not registered here, so the teardown leaves it on disk with no milestone naming it"
+            };
+            format!("  {}: {} — {fate}", w.path.display(), w.entries.join(", "))
+        })
         .collect();
-    let address = dirty[0].0.display().to_string();
+    let address = held[0].path.display().to_string();
     Finding::graded(
         Severity::Blocking,
-        "milestone.dirty-worktree",
+        DISCARD_DOOR.code,
         format!(
-            "milestone:{milestone_id} has uncommitted work in {} sub-task worktree(s) — \
-             discarding it would destroy that work:\n{}",
-            dirty.len(),
+            "milestone:{milestone_id}: {} sub-task worktree path(s) hold content, and `{}` would \
+             settle the record and tear the workbench down over them:\n{}",
+            held.len(),
+            DISCARD_DOOR.verb,
             listing.join("\n"),
         ),
         Some(Location::addressed(&address, 1, 1)),
-        Some(format!(
-            "get the work out of those worktrees first (commit, stash, or copy it), then re-run \
-             `jigc milestone discard {milestone_id}` — or re-run with `--force` to abandon the \
-             milestone and destroy the uncommitted work"
-        ).into()),
+        Some(
+            format!(
+                "look inside those paths and get out what you need (commit or stash what a live \
+             worktree holds), then re-run `jigc milestone discard {milestone_id}` — or re-run \
+             with `--force` to abandon the milestone anyway: a registered worktree is removed \
+             with everything uncommitted in it, and a path nothing vouches for is left behind \
+             on disk for you to deal with"
+            )
+            .into(),
+        ),
     )
 }
 

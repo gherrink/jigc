@@ -43,7 +43,20 @@
 //!   (RED-vii) **`create` refuses an id a committed record already owns** — the mint's collision
 //!             check reads the *workbench*, which a terminal op has just removed, so re-creating a
 //!             settled milestone's title **overwrote its committed record** at exit 0.
+//!
+//! And the one M48 Increment 1 adds — **the guard's subject is the path, not the registered set**
+//! (`DECISIONS.md` 2026-08-13 → the Settle, F3):
+//!
+//!   (RED-viii) **A non-registered, non-empty sub-task worktree path refuses too.** RED-i's guard
+//!              only ever looked at worktrees *registered here*, which is structurally blind to
+//!              the ordinary trigger (a `cp -R` or `mv` of the repo registers the copy's
+//!              worktrees at the **source's** path), so the abandon settled the record and tore
+//!              the workbench down at exit 0 over content nothing could vouch for. `--force`
+//!              still settles and tears down exactly as before — and leaves the non-registered
+//!              path **orphaned on disk**, which is what the teardown has always done and what
+//!              the refusal must therefore say.
 
+use cli::milestone::DISCARD_DOOR;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -94,6 +107,8 @@ const SUBS: [&str; 3] = [
 ];
 /// The sub-task whose worktree carries the abandon path's uncommitted WIP.
 const ACTIVE_SUB: &str = "purge-stale-keys";
+/// The bytes planted in the non-registered leftover — a refusal must leave them exactly this.
+const PRECIOUS: &str = "precious, uncommitted, in no object DB\n";
 
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
 fn git(repo: &Path, args: &[&str]) -> String {
@@ -242,12 +257,11 @@ fn item_status(body: &str, sub: &str) -> String {
         })
 }
 
-/// A **live, mid-flight** milestone, built entirely through the production verbs on a
-/// `[dev ▸ methodology]` repo: create → add-task ×3 → provision (one worktree per sub-task). The
-/// committed record reads `active` on the header and on every item, and the workbench (the
-/// milestone area, the sub-task areas, three registered worktrees) is live — the state the abandon
-/// path exists for, and the state every terminal test below settles *from*.
-fn setup_live_milestone(repo: &Path, home: &Path) {
+/// The milestone and its three sub-tasks, minted through the production verbs — **without**
+/// `provision`, so nothing under `.jigc/worktrees/` is registered. The un-provisioned half of
+/// [`setup_live_milestone`], reused by the non-registered-leftover arm below (which needs exactly
+/// this state: a milestone whose sub-task worktree paths this repo has no registration for).
+fn mint_milestone(repo: &Path, home: &Path) {
     assert_ok(
         &run_milestone(repo, home, &["create", "Cache rework"]),
         "`jigc milestone create`",
@@ -262,6 +276,15 @@ fn setup_live_milestone(repo: &Path, home: &Path) {
             &format!("add-task `{sub}`"),
         );
     }
+}
+
+/// A **live, mid-flight** milestone, built entirely through the production verbs on a
+/// `[dev ▸ methodology]` repo: create → add-task ×3 → provision (one worktree per sub-task). The
+/// committed record reads `active` on the header and on every item, and the workbench (the
+/// milestone area, the sub-task areas, three registered worktrees) is live — the state the abandon
+/// path exists for, and the state every terminal test below settles *from*.
+fn setup_live_milestone(repo: &Path, home: &Path) {
+    mint_milestone(repo, home);
     assert_ok(
         &run_milestone(repo, home, &["provision", MILESTONE]),
         "`jigc milestone provision`",
@@ -358,6 +381,120 @@ fn a_dirty_subtask_worktree_refuses_the_discard() {
         commit_count(repo.path()),
         pre_count,
         "the refused discard commits nothing",
+    );
+}
+
+/// (RED-viii, M48 Inc 1 T3) A **non-registered, non-empty** directory at a sub-task's worktree
+/// path refuses the discard too — the guard's subject is the *path*, not the registered set.
+///
+/// Red before the swap: `provisioned_worktrees` intersects the task list with the *registered*
+/// worktrees, so an unregistered leftover was invisible and the discard settled the record and
+/// tore the workbench down at exit 0 — abandoning the milestone that was the only remaining
+/// handle on those bytes. The ordinary way to reach this state is a `cp -R` or `mv` of the repo
+/// (the copy's admin records name the source's paths), reduced here to what the guard actually
+/// sees: a path this repo has no registration for, holding content nothing can vouch for.
+///
+/// **The refusal must not claim a removal the door does not perform.** `remove_worktrees` skips a
+/// non-registered path, so `--force` settles the record and tears the workbench down exactly as
+/// before and the leftover is left **orphaned on disk** — the composed-doors property, asserted
+/// here so the refusal's wording stays checkable rather than decorative.
+#[test]
+fn a_non_registered_leftover_at_a_subtask_worktree_path_refuses_the_discard() {
+    let repo = TempDir::new("leftover");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+    mint_milestone(repo.path(), home.path());
+
+    let leftover = worktree_dir(repo.path(), ACTIVE_SUB);
+    fs::create_dir_all(&leftover).expect("mk the leftover dir");
+    let planted = leftover.join("precious.txt");
+    fs::write(&planted, PRECIOUS).expect("plant the precious file");
+    assert!(
+        registered_fanout_worktrees(repo.path()).is_empty(),
+        "the fixture's premise: this repo has NO registration for that path",
+    );
+
+    let before = read_record(repo.path());
+    let pre_count = commit_count(repo.path());
+
+    let out = run_milestone(repo.path(), home.path(), &["discard", MILESTONE]);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        !out.status.success(),
+        "a non-registered leftover holding content must REFUSE the discard; got exit 0\nstdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains(DISCARD_DOOR.code),
+        "the refusal carries the door-scoped code `{}`; stderr:\n{stderr}",
+        DISCARD_DOOR.code,
+    );
+    assert!(
+        stderr.contains(&leftover.display().to_string()),
+        "the refusal names the leftover path `{}`; stderr:\n{stderr}",
+        leftover.display(),
+    );
+    assert!(
+        stderr.contains("precious.txt"),
+        "the refusal names what it found there; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("--force"),
+        "the refusal routes at the consent flag; stderr:\n{stderr}",
+    );
+
+    // Nothing moved: the planted bytes, the record, the history, the workbench.
+    assert_eq!(
+        fs::read_to_string(&planted).expect("the planted file survives the refusal"),
+        PRECIOUS,
+        "the refused discard leaves the leftover byte-intact",
+    );
+    assert_eq!(
+        read_record(repo.path()),
+        before,
+        "the refused discard leaves the committed record byte-identical",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        pre_count,
+        "the refused discard commits nothing",
+    );
+    assert!(milestone_area(repo.path()).is_dir(), "the area survives");
+    assert!(
+        subtask_area(repo.path(), ACTIVE_SUB).is_dir(),
+        "the sub-task area survives",
+    );
+
+    // `--force` is the consent: the record settles and the workbench goes, exactly as before.
+    let forced = run_milestone(repo.path(), home.path(), &["discard", MILESTONE, "--force"]);
+    assert_ok(&forced, "`jigc milestone discard --force`");
+    let after = read_record(repo.path());
+    assert_eq!(
+        header_status(&after),
+        "discarded",
+        "`--force` settles the record:\n{after}",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        pre_count + 1,
+        "`--force` lands exactly one record-only commit; stderr:\n{}",
+        String::from_utf8_lossy(&forced.stderr),
+    );
+    assert!(
+        !milestone_area(repo.path()).exists(),
+        "`--force` removes `.jigc/milestones/<id>/`",
+    );
+    assert!(
+        !subtask_area(repo.path(), ACTIVE_SUB).exists(),
+        "`--force` removes the sub-task working areas",
+    );
+    // And the leftover is ORPHANED, not deleted — the teardown never reached a path it has no
+    // registration for, before this change or after it. The refusal said so; here it is.
+    assert_eq!(
+        fs::read_to_string(&planted).expect("the leftover survives the forced discard"),
+        PRECIOUS,
+        "the teardown leaves a non-registered path on disk — the doors compose",
     );
 }
 
