@@ -41,6 +41,8 @@ mod prd_batch_author;
 mod prd_inverse_cardinality;
 #[path = "../precommit_hook_acceptance.rs"]
 mod precommit_hook_acceptance;
+#[path = "../relocate.rs"]
+mod relocate;
 #[path = "../schema_conformance_routing.rs"]
 mod schema_conformance_routing;
 #[path = "../schema_projection.rs"]
