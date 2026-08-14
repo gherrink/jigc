@@ -101,6 +101,43 @@ pub(crate) fn recorded_delta_count(cwd: &Path) -> Result<usize> {
     Ok(structural.len() + slot_fills.len() + forks.len() + layer.scalar_set_keys().count())
 }
 
+/// The **adapter-owned guide artifact**'s upgrade-time reading (M48 Increment 10 / T2):
+/// the repo-relative path of the artifact this sweep read — `None` when the profile
+/// declares no guide target or none is installed — plus the advisory when what sits there
+/// is no longer jigc's own.
+///
+/// `jigc upgrade` is the artifact's **reading** door. It is a `VerbKind::Read` and this
+/// module writes nothing (`design/overrides.md` → The `jigc upgrade` command:
+/// report-and-route only), so a user-modified copy is reported and routed here and
+/// *replaced* nowhere — the replacement door is a post-upgrade `jigc setup`, which is what
+/// the advisory's route names. [`crate::setup::guide_ownership`] is a pure read, so
+/// consulting it costs the report-only property nothing.
+///
+/// Every failure to *reach* the question — no repo, no embedded profile, no declared guide
+/// target — is `(None, None)`: the omitting context is **inert**, never an error, and the
+/// clean line must not claim a check it could not run.
+pub(crate) fn adapter_guide_reading(
+    cwd: &Path,
+) -> (Option<String>, Option<engine::finding::Finding>) {
+    let Ok(ctx) = crate::locate::locate(cwd) else {
+        return (None, None);
+    };
+    let Ok(profile) = crate::adapter::load_profile(crate::setup::SETUP_ASSISTANT) else {
+        return (None, None);
+    };
+    let Some(guide) = profile.guide() else {
+        return (None, None);
+    };
+    match crate::setup::guide_ownership(&ctx.repo_root, guide) {
+        crate::setup::GuideOwnership::Absent => (None, None),
+        crate::setup::GuideOwnership::Owned => (Some(guide.file.clone()), None),
+        crate::setup::GuideOwnership::UserModified => (
+            Some(guide.file.clone()),
+            Some(crate::setup::guide_modified_finding(&guide.file)),
+        ),
+    }
+}
+
 /// Locate the repo root and its `.jigc/config/` project layer — the same preamble
 /// the `jigc config` verbs use (`config.rs`'s `require_project_layer`), replicated
 /// here so the upgrade seam has no cross-module private dependency. Errors with the

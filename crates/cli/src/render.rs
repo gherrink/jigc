@@ -480,17 +480,31 @@ pub fn validation(format: Format, report: &ValidationReport) -> String {
 /// envelope could not tell *"nothing to check"* from *"everything checks out"* — the fact the
 /// text arm has always distinguished in prose. Additive under the pre-1.0 window, in the
 /// shape [`validation_store`]'s `scope` / `report_only` set.
-pub fn validation_upgrade(format: Format, report: &ValidationReport, checked: usize) -> String {
+///
+/// **The clean line widens with the sweep (M48 Increment 10 / T2).** `upgrade` now also reads
+/// the adapter's **owned guide artifact** — reporting, never replacing, because this verb
+/// writes nothing (`design/overrides.md` → The `jigc upgrade` command). `guide` is the
+/// repo-relative path of the artifact the sweep actually read, or `None` when there is none
+/// installed to read; naming it is the same round-2 D4 honesty the delta count carries, and
+/// a sweep that widened in silence would understate its own scope. Its value is keyed
+/// beside `checked` for the same reason.
+pub fn validation_upgrade(
+    format: Format,
+    report: &ValidationReport,
+    checked: usize,
+    guide: Option<&str>,
+) -> String {
     match format {
         Format::Json => {
             let mut value = serde_json::to_value(report).expect("validation report serializes");
             if let Some(object) = value.as_object_mut() {
                 object.insert("checked".to_string(), serde_json::Value::from(checked));
+                object.insert("guide".to_string(), serde_json::Value::from(guide));
             }
             json(&value)
         }
         Format::Agent | Format::Human => {
-            let clean = if checked == 0 {
+            let mut clean = if checked == 0 {
                 "no findings — no recorded config deltas to check against the current pack"
                     .to_string()
             } else {
@@ -498,6 +512,13 @@ pub fn validation_upgrade(format: Format, report: &ValidationReport, checked: us
                     "no findings — {checked} recorded config delta(s) re-apply clean against the current pack"
                 )
             };
+            // Reached only when the report is empty, i.e. when the artifact was read and
+            // found to be jigc's own — so the clause states that, not merely "checked".
+            if let Some(guide) = guide {
+                clean.push_str(&format!(
+                    ", and the adapter's guide artifact `{guide}` is still jigc's own"
+                ));
+            }
             validation_scoped(format, report, &clean, None, None)
         }
     }
@@ -2348,6 +2369,12 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
                 // additive key inside the still-open pre-1.0 window
                 // (`design/command-output-contract.md` → Evolution posture).
                 "guide_file": summary.guide_file,
+                // The install's non-blocking findings (M48 Increment 10 / T2) — today the
+                // user-modified guide advisory. Findings-as-data on the success path
+                // (`design/command-output-contract.md` → findings-as-data): a driver reads
+                // the advisory and its route as a value, never by grepping the summary
+                // prose. `[]` on an ordinary install.
+                "findings": summary.findings,
                 "install_commit": install_commit,
             }))
         }
@@ -2385,6 +2412,16 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
                 out.push_str("  - install commit → ");
                 out.push_str(sha);
                 out.push_str("   (setup's install files are committed on their own, off your first feature commit)\n");
+            }
+            // The install's non-blocking findings (M48 Increment 10 / T2) — an artifact jigc
+            // declined to overwrite is *said*, never silently skipped, and it reads exactly
+            // like every other agent-text finding (`advisory · <code> — <message>` + its
+            // `route:` line) through the house [`finding_line`].
+            if !summary.findings.is_empty() {
+                out.push('\n');
+                for finding in &summary.findings {
+                    out.push_str(&finding_line(finding, false));
+                }
             }
             out.push_str(ROUTING_FOOTER);
             out
@@ -5378,6 +5415,7 @@ mod tests {
             // really landed. The prior hardcoded literal pinned that lie here.
             hook_file: "my-hooks/pre-commit".to_string(),
             guide_file: Some(".claude/skills/jigc/SKILL.md".to_string()),
+            findings: Vec::new().into(),
             install_commit: InstallCommit::Skipped,
         };
 

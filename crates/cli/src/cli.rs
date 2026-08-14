@@ -608,13 +608,29 @@ fn run_upgrade(format: Format) -> Outcome {
             return Outcome::failure();
         }
     };
+    // The adapter's **owned guide artifact**, read before the classifier runs (M48
+    // Increment 10 / T2): a copy the user has edited is reported here with its route and
+    // replaced nowhere — this verb writes nothing. `None`/`None` when there is no artifact
+    // to read, so the clean line claims no check it did not run.
+    let (guide, guide_finding) = upgrade::adapter_guide_reading(&cwd);
     match upgrade::upgrade_in_repo(&cwd) {
-        Ok(report) => {
+        Ok(mut report) => {
+            // Appended after the classifier's own report, the shipped un-keyed-advisory
+            // idiom (`store-version.binary-mismatch` at the store sweep): it is not a
+            // `CHECK_INVENTORY` row, so the severity post-pass leaves it advisory and the
+            // exit stays 0.
+            if let Some(finding) = guide_finding {
+                report.findings.push(finding);
+            }
             // The clean line names what the sweep checked (round-2 D4): the recorded
-            // config deltas re-applied against the current pack — a separate count
-            // read so the report seam stays report-and-route only.
+            // config deltas re-applied against the current pack, and — since M48 — the
+            // adapter artifact it read. A separate count read so the report seam stays
+            // report-and-route only.
             let checked = upgrade::recorded_delta_count(&cwd).unwrap_or(0);
-            println!("{}", render::validation_upgrade(format, &report, checked));
+            println!(
+                "{}",
+                render::validation_upgrade(format, &report, checked, guide.as_deref())
+            );
             let code = if report.has_blocking() { 1 } else { 0 };
             Outcome::with_findings(code, &report.findings)
         }

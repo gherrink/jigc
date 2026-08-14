@@ -102,11 +102,13 @@ enum Tier {
 /// unclassified member would be the "census that decides nothing" the Settle's window is
 /// meant to end.
 enum Disposition {
-    /// The census found a gap and **this wave closed it**: the envelope key that joined,
-    /// and the check that proves it on the rendered bytes.
+    /// The census found a gap and **this wave closed it**: the envelope key(s) that joined,
+    /// and the check that proves them on the rendered bytes.
     Closed {
-        /// The key that joined the envelope.
-        key: &'static str,
+        /// The keys that joined the envelope — a slice because one member's text can print
+        /// more than one withheld fact (`upgrade`'s delta count and, since Increment 10,
+        /// the adapter artifact its clean line names).
+        keys: &'static [&'static str],
         /// The check that drives the real renderer in both surfaces.
         proof: fn(),
     },
@@ -152,16 +154,19 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (
         &["upgrade"],
         Tier::Judgment(
-            "the upgrade validation report — prose findings + a checked count",
+            "the upgrade validation report — prose findings + a checked count + the adapter \
+             artifact the sweep read",
             // The census's second close. `checked` is read by the dispatch
             // (`upgrade::recorded_delta_count`) and printed by the clean line — "no findings —
             // N recorded config delta(s) re-apply clean" — while the envelope carried the
             // report alone. It is not re-derivable from `findings[]` (a clean sweep over zero
             // recorded deltas and a clean sweep over twelve serialize identically), so a driver
             // could not tell "nothing to check" from "everything checks out": the gap shape the
-            // window exists to close.
+            // window exists to close. `guide` joins it at Increment 10, for the same reason and
+            // in the same line: the sweep widened to read the adapter's owned artifact, so the
+            // clean line names it — and a fact printed there is owed to the wire too.
             Disposition::Closed {
-                key: "checked",
+                keys: &["checked", "guide"],
                 proof: upgrade_checked_close,
             },
         ),
@@ -213,7 +218,7 @@ const REGISTRY: &[(&[&str], Tier)] = &[
             // surface whose prose is deliberately non-contractual, so the substring was never
             // a promise. The key joins the envelope; the prose tier is untouched.
             Disposition::Closed {
-                key: "router_hidden",
+                keys: &["router_hidden"],
                 proof: describe_router_hidden_close,
             },
         ),
@@ -480,48 +485,74 @@ fn text_prints(text: &str, value: &str, label: &str, field_name: &str) {
 
 // ─────────────────────────────── the fenced checks ───────────────────────────────
 
-/// `jigc setup` — the install summary. Five fields, five keys (`hook_file` is M48's own
-/// close, T2; `guide_file` the adapter-owned guide artifact of Increment 10), plus the
-/// constant `installed` discriminator.
+/// `jigc setup` — the install summary. Six fields, six keys (`hook_file` is M48's own
+/// close, T2 of Increment 7; `guide_file` + `findings` the adapter-owned guide artifact of
+/// Increment 10), plus the constant `installed` discriminator.
 ///
-/// `guide_file` is an `Option`: the witness declares one, because a profile omitting the
-/// guide target has no fact to carry and so no gap to close — that omitting context is
-/// asserted through the real binary in `adapter_artifact.rs`, where it belongs.
+/// **Two witnesses, because the summary has two shapes and each withholds what the other
+/// prints.** The ordinary install writes the artifact and reports nothing; the refused
+/// install leaves a **user-modified** copy alone, so it prints an advisory and prints *no*
+/// installed-guide line (`guide_file: None` — the line it would print says "stamped with
+/// this build", which of a user's copy would be a lie). A single-witness fence would leave
+/// whichever half it omitted unchecked.
 fn setup_success_parity() {
-    let summary = SetupSummary {
+    let guide = ".claude/skills/jigc/SKILL.md";
+    let installed = SetupSummary {
         line_file: "CLAUDE.md".to_owned(),
         allowlist_file: ".claude/settings.json".to_owned(),
         hook_file: ".git/hooks/pre-commit".to_owned(),
-        guide_file: Some(".claude/skills/jigc/SKILL.md".to_owned()),
+        guide_file: Some(guide.to_owned()),
+        findings: Vec::new().into(),
         install_commit: InstallCommit::Committed("a1b2c3d".to_owned()),
     };
-    // Exhaustive — no `..`: a sixth field fails to compile here.
-    let SetupSummary {
-        line_file,
-        allowlist_file,
-        hook_file,
-        guide_file,
-        install_commit,
-    } = &summary;
-    let guide_file = guide_file.as_ref().expect("the witness declares a guide");
-
-    let text = setup_success(Format::Agent, &summary);
-    let doc = envelope(&setup_success(Format::Json, &summary), "jigc setup");
-
-    for (field_name, value) in [
-        ("line_file", line_file),
-        ("allowlist_file", allowlist_file),
-        ("hook_file", hook_file),
-        ("guide_file", guide_file),
-    ] {
-        text_prints(&text, value, "jigc setup", field_name);
-        carries(&doc, field_name, value, "jigc setup", field_name);
-    }
-    let InstallCommit::Committed(sha) = install_commit else {
-        unreachable!("the witness commits")
+    let refused = SetupSummary {
+        line_file: "CLAUDE.md".to_owned(),
+        allowlist_file: ".claude/settings.json".to_owned(),
+        hook_file: ".git/hooks/pre-commit".to_owned(),
+        guide_file: None,
+        findings: vec![cli::setup::guide_modified_finding(guide)].into(),
+        install_commit: InstallCommit::Committed("a1b2c3d".to_owned()),
     };
-    text_prints(&text, sha, "jigc setup", "install_commit");
-    carries(&doc, "install_commit", sha, "jigc setup", "install_commit");
+
+    for summary in [&installed, &refused] {
+        // Exhaustive — no `..`: a seventh field fails to compile here.
+        let SetupSummary {
+            line_file,
+            allowlist_file,
+            hook_file,
+            guide_file,
+            findings,
+            install_commit,
+        } = summary;
+
+        let text = setup_success(Format::Agent, summary);
+        let doc = envelope(&setup_success(Format::Json, summary), "jigc setup");
+
+        for (field_name, value) in [
+            ("line_file", line_file),
+            ("allowlist_file", allowlist_file),
+            ("hook_file", hook_file),
+        ] {
+            text_prints(&text, value, "jigc setup", field_name);
+            carries(&doc, field_name, value, "jigc setup", field_name);
+        }
+        // Carried either way — a `null` is the honest answer when this run installed none.
+        if let Some(guide_file) = guide_file {
+            text_prints(&text, guide_file, "jigc setup", "guide_file");
+        }
+        carries(&doc, "guide_file", guide_file, "jigc setup", "guide_file");
+        // Findings-as-data: every advisory the summary prints rides the wire whole.
+        for finding in findings {
+            text_prints(&text, &finding.message, "jigc setup", "findings[].message");
+        }
+        carries(&doc, "findings", findings, "jigc setup", "findings");
+
+        let InstallCommit::Committed(sha) = install_commit else {
+            unreachable!("both witnesses commit")
+        };
+        text_prints(&text, sha, "jigc setup", "install_commit");
+        carries(&doc, "install_commit", sha, "jigc setup", "install_commit");
+    }
 }
 
 /// `jigc uninstall` — the teardown summary. The six-flag removal ledger rides the wire
@@ -1379,27 +1410,45 @@ fn describe_router_hidden_close() {
 /// **The `upgrade` close.** The delta count the clean line names — *"N recorded config
 /// delta(s) re-apply clean"* — reaches the envelope as `checked`, on a clean sweep (where
 /// the text prints it) and with findings present alike (where a driver still needs to know
-/// how wide the sweep was).
+/// how wide the sweep was). Since Increment 10 the same clean line also names the adapter's
+/// **owned guide artifact** the sweep read, and that path reaches the envelope as `guide`.
 fn upgrade_checked_close() {
     let resolved = no_delta_resolved();
     let report = engine::result::ValidationReport::new(Vec::new(), &resolved);
     let checked = 3usize;
+    let guide = ".claude/skills/jigc/SKILL.md";
 
-    let text = validation_upgrade(Format::Agent, &report, checked);
+    let text = validation_upgrade(Format::Agent, &report, checked, Some(guide));
     let doc = envelope(
-        &validation_upgrade(Format::Json, &report, checked),
+        &validation_upgrade(Format::Json, &report, checked, Some(guide)),
         "jigc upgrade",
     );
     text_prints(&text, "3", "jigc upgrade", "checked");
     carries(&doc, "checked", &checked, "jigc upgrade", "checked");
+    text_prints(&text, guide, "jigc upgrade", "guide");
+    carries(&doc, "guide", &guide, "jigc upgrade", "guide");
 
     // The zero case is the one a driver most needs: "no recorded deltas to check" and
     // "twelve deltas re-apply clean" carry identical `findings: []`.
     let none = envelope(
-        &validation_upgrade(Format::Json, &report, 0),
+        &validation_upgrade(Format::Json, &report, 0, None),
         "jigc upgrade",
     );
     carries(&none, "checked", &0usize, "jigc upgrade", "checked");
+    // The omitting context: no artifact read, so the key is `null` and the clean line
+    // claims nothing about one (the fence's own inert-on-omission arm).
+    carries(
+        &none,
+        "guide",
+        &Option::<&str>::None,
+        "jigc upgrade",
+        "guide",
+    );
+    let bare = validation_upgrade(Format::Agent, &report, 0, None);
+    assert!(
+        !bare.contains("guide artifact"),
+        "with no artifact read the clean line must claim no guide check; got:\n{bare}",
+    );
 }
 
 /// **The `validate` member's census entry, DERIVED from the code-side registry.** Its
@@ -1525,8 +1574,12 @@ fn every_judgment_member_states_a_disposition_the_census_can_stand_on() {
              field↔key correspondence; got {reason:?}",
         );
         match disposition {
-            Disposition::Closed { key, proof } => {
-                eprintln!("census close: jigc {verb} → {key}");
+            Disposition::Closed { keys, proof } => {
+                assert!(
+                    !keys.is_empty(),
+                    "`jigc {verb}` claims a close, so it must name the key(s) that joined",
+                );
+                eprintln!("census close: jigc {verb} → {}", keys.join(", "));
                 proof();
                 closed += 1;
             }

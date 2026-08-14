@@ -221,6 +221,11 @@ pub struct FindingKey {
 ///   one code can never coexist in one output. Declared at the M43 completion audit,
 ///   where the family gained its route: seam-admissible by decision, not by the accident
 ///   of every caller rendering through `finding_to_err`.
+/// - `adapter-guide.user-modified` — its subject is **the adapter's owned artifact**, and a
+///   profile declares at most one (`AdapterProfile.guide` is a single optional target), so
+///   both doors that raise it (`jigc setup`, `jigc upgrade`) can emit at most one instance
+///   per invocation. Its address is a repo path, not a managed-doc identity, so there is no
+///   URI-normal-form target to carry either — the path rides the message and the route.
 /// - `overrides.project-step-missing` — recorded into `CascadeStepSource`'s **one-slot**
 ///   error sink (`Option<Finding>`, last write wins) and drained as the verb's single
 ///   located error, so at most one instance reaches an output. Declared with the route
@@ -230,6 +235,7 @@ pub struct FindingKey {
 /// [`debug_assert_targets_declared`] says so at the seam.
 pub fn is_declared_singleton(code: &str) -> bool {
     code == "store-version.binary-mismatch"
+        || code == "adapter-guide.user-modified"
         || code.starts_with("setup.")
         || code.starts_with("uninstall.")
         || code.starts_with("structural-target.")

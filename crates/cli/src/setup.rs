@@ -168,13 +168,107 @@ pub fn guide_artifact(guide: &adapter::GuideTarget) -> String {
     )
 }
 
+/// Whether the file sitting at the guide target is **still jigc's own** — the question that
+/// makes "replace what jigc wrote, never what the user wrote" decidable from the file alone
+/// (`design/assistant-adapter.md` → The adapter's owned artifacts).
+///
+/// The artifact keeps no side record: it carries the digest of its own body, so a later run
+/// can recompute that digest and compare. Anything that does not match — a body edited under
+/// jigc's header, a file with no front matter at all, a front matter without jigc's stamp —
+/// is **not** jigc's, and the one safe action over it is to leave it alone and say so.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GuideOwnership {
+    /// Nothing at the declared path — the ordinary first install.
+    Absent,
+    /// jigc's own bytes: the recorded `jigc-body-blake3:` **is** this body's digest, so
+    /// rewriting the file destroys nothing a human authored.
+    Owned,
+    /// Not jigc's (any more). Replacing it would clobber the user's own edits.
+    UserModified,
+}
+
+/// The [`GuideOwnership`] of the artifact at `<repo_root>/<guide.file>`.
+///
+/// A read-only probe: it opens the file and computes a hash, and writes nothing — which is
+/// what lets the read-only `jigc upgrade` door consult it (`design/overrides.md` → The
+/// `jigc upgrade` command: report-and-route only).
+pub fn guide_ownership(repo_root: &Path, guide: &adapter::GuideTarget) -> GuideOwnership {
+    let Ok(text) = std::fs::read_to_string(repo_root.join(&guide.file)) else {
+        // Unreadable is treated as absent on purpose: the *write* then fails loudly with
+        // the routed `setup.write-guide` block, rather than this probe guessing at a cause.
+        return GuideOwnership::Absent;
+    };
+    match recorded_body_digest(&text) {
+        Some((recorded, body)) if recorded == engine::file_state::hash_bytes(body.as_bytes()) => {
+            GuideOwnership::Owned
+        }
+        _ => GuideOwnership::UserModified,
+    }
+}
+
+/// An artifact's recorded body digest and the body it claims to describe, or `None` when the
+/// file carries no jigc-shaped front matter at all — the inverse of [`guide_artifact`]'s
+/// assembly, kept lexical so a hand-mangled header reads as *not jigc's* rather than as an
+/// error.
+fn recorded_body_digest(text: &str) -> Option<(&str, &str)> {
+    let rest = text.strip_prefix("---\n")?;
+    let close = rest.find("\n---\n\n")?;
+    let front = &rest[..close + 1];
+    let body = &rest[close + "\n---\n\n".len()..];
+    let recorded = front
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(GUIDE_HASH_KEY))?
+        .trim();
+    Some((recorded, body))
+}
+
+/// The finding code both doors raise over a user-modified artifact. **Un-keyed** — not a
+/// `CHECK_INVENTORY` row — so the engine's severity post-pass leaves it advisory and it
+/// gates nothing, the shipped `store-version.binary-mismatch` mold.
+pub const GUIDE_MODIFIED_CODE: &str = "adapter-guide.user-modified";
+
+/// The **advisory** a user-modified guide artifact raises, at `jigc setup` and at
+/// `jigc upgrade` alike (`completions/artifacts/M48/settle-record.md` → the check-scope pin:
+/// advisory + route, never blocking).
+///
+/// Advisory by decision, not by omission: blocking an install because one guide file was
+/// edited would be hostile, and an install that stops there is worse than one that leaves
+/// the file alone and names it. The route is the other half — a detector with no way back is
+/// the dead end the route floor exists to forbid — and it states **both** admissible
+/// answers, because keeping the edited copy is a legitimate choice, not a defect to repair.
+///
+/// **Declared deviation from principle #5** (*every customization is a recorded delta
+/// against a known base version, never an untracked fork*): this is an untracked-fork
+/// *detector* with no delta. Recorded with its own trigger — a **second** adapter-owned
+/// artifact — in `implementation/decisions-pending.md` → *No firm trigger yet*.
+pub fn guide_modified_finding(path: &str) -> Finding {
+    let running = env!("CARGO_PKG_VERSION");
+    Finding::graded(
+        Severity::Advisory,
+        GUIDE_MODIFIED_CODE,
+        format!(
+            "`{path}` no longer carries the bytes jigc wrote, so jigc left it untouched \
+             rather than clobber your edits — it is no longer version-matched to jigc {running}"
+        ),
+        None,
+        Some(
+            format!(
+                "keep your copy and jigc will keep leaving it alone, or delete `{path}` and \
+                 re-run `jigc setup` to reinstall jigc's own copy stamped at {running}"
+            )
+            .into(),
+        ),
+    )
+}
+
 /// Write the guide artifact to `<repo_root>/<guide.file>`, creating its parent dirs.
 ///
 /// Rewritten **whole** on every `setup`, on the `.jigc/AGENT.md` mold: the file is wholly
 /// CLI-owned, so it needs no in-file idempotency markers and a re-run over the same binary
 /// is byte-identical. A copy stamped at an older version is therefore *replaced* — which is
 /// what "regenerated on upgrade" means for an artifact only `setup` writes
-/// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
+/// (`design/assistant-adapter.md` → Generated, minimal, regenerated). The caller gates this
+/// on [`guide_ownership`]: only [`GuideOwnership::Owned`] and `Absent` reach here.
 fn write_guide_artifact(repo_root: &Path, guide: &adapter::GuideTarget) -> std::io::Result<()> {
     let target = repo_root.join(&guide.file);
     if let Some(parent) = target.parent() {
@@ -822,7 +916,7 @@ fn seed_secrets_gitignore(repo_root: &Path) -> std::io::Result<bool> {
 /// The assistant whose embedded profile MVP `setup` installs. Single-assistant in
 /// the MVP (Claude Code); a `--assistant` selector is post-MVP
 /// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
-const SETUP_ASSISTANT: &str = "claude-code";
+pub(crate) const SETUP_ASSISTANT: &str = "claude-code";
 
 /// The result of a `jigc setup` install: the located repo root and the profile's
 /// two host targets, so the dispatcher can render a precise success summary.
@@ -837,10 +931,18 @@ pub struct SetupSummary {
     /// repo-root-relative inside the repo, absolute when the hooks dir lives outside it
     /// (`core.hooksPath`, or a linked worktree's common hooks dir).
     pub hook_file: String,
-    /// The repo-root-relative path of the adapter's **owned guide artifact**, or `None`
-    /// when the profile declares no guide target (the omitting context — inert, never an
-    /// error). M48 Increment 10.
+    /// The repo-root-relative path of the adapter's **owned guide artifact** *this run
+    /// wrote*, or `None` when the profile declares no guide target (the omitting context —
+    /// inert, never an error) **or** when a user-modified copy was found and left alone.
+    /// It names what setup installed, never merely where a file sits: the summary line it
+    /// feeds says "stamped with this build", which of a user's own copy would be a lie.
+    /// M48 Increment 10.
     pub guide_file: Option<String>,
+    /// The install's **non-blocking** findings — advisories the run reports without failing
+    /// (today: the user-modified guide artifact, [`guide_modified_finding`]). Empty on an
+    /// ordinary install. A blocking outcome is not here: it is `install`'s `Err` arm, which
+    /// still carries exactly one finding (M48 Increment 10 / T2).
+    pub findings: engine::finding::Findings,
     /// The outcome of committing setup's own install files as a dedicated commit
     /// (M26 shakedown — see [`commit_install`]).
     pub install_commit: InstallCommit,
@@ -1069,7 +1171,21 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     //     the guides at all. Rewritten whole each `setup` on the `.jigc/AGENT.md` mold, so
     //     a re-run is byte-identical and a copy from an older build is replaced. Inert for
     //     a profile that declares no guide target.
+    //
+    //     **And it replaces only what jigc wrote** (M48 Increment 10 / T2). Ownership is
+    //     decided from the file itself ([`guide_ownership`]) before any write: a copy whose
+    //     recorded digest no longer describes its body — or that carries no jigc stamp at
+    //     all — is the *user's*, so it is left byte-identical and reported as an advisory
+    //     with a route (never blocking: stopping an install over an edited guide file would
+    //     be hostile). It is also dropped from `guide_file`, so neither the summary's
+    //     installed list nor the install commit's pathspec claims a file this run did not
+    //     write — the user's edit stays their business, unstaged.
+    let mut findings: Vec<Finding> = Vec::new();
     let guide_file = match profile.guide() {
+        Some(guide) if guide_ownership(repo_root, guide) == GuideOwnership::UserModified => {
+            findings.push(guide_modified_finding(&guide.file));
+            None
+        }
         Some(guide) => {
             write_guide_artifact(repo_root, guide).map_err(|err| {
                 Finding::block(
@@ -1163,6 +1279,7 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         allowlist_file,
         hook_file,
         guide_file,
+        findings: findings.into(),
         install_commit,
     })
 }
