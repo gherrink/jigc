@@ -29,6 +29,10 @@
 //! clobber what the *user* wrote, at both doors the Settle pinned (`setup`, the writing
 //! door; `jigc upgrade`, the reading one). Its arms live under their own banner below.
 //!
+//! **T3 closes the artifact's life-cycle** — jigc wrote it, so jigc takes it back out, and
+//! on the *same* ownership question: `jigc uninstall` removes its own copy and leaves a
+//! user-modified one. Its arms live under their own banner at the foot of the file.
+//!
 //! No external test crates: the binary comes from `CARGO_BIN_EXE_jigc`, the temp repo is
 //! built with `std::fs`, and a self-cleaning `TempDir` keeps this off the real repo.
 
@@ -297,6 +301,24 @@ fn the_install_commit_carries_the_guide_artifact() {
     );
 }
 
+/// An adapters dir holding the shipped profile **minus** its `guide:` block, everything else
+/// byte-faithful — so the omitting-context fixtures track the profile as it evolves rather
+/// than re-typing it. Used by both doors' omitting arms (`setup` below, `uninstall` at the
+/// foot of the file).
+fn guide_less_adapters(tag: &str) -> TempDir {
+    let shipped = include_str!("../adapters/claude-code.yaml");
+    let (head, _) = shipped
+        .split_once("\nguide:")
+        .expect("the shipped profile declares a `guide:` block");
+    let adapters = TempDir::new(tag);
+    fs::write(
+        adapters.path().join("claude-code.yaml"),
+        format!("{head}\n"),
+    )
+    .expect("write the guide-less profile");
+    adapters
+}
+
 /// (e) The omitting-context arm: a profile declaring **no** guide target installs nothing
 /// at that path and exits 0. The target is optional by design — an assistant with no place
 /// to put a guide must be *inert* here, never an install error — and a green pass over the
@@ -307,18 +329,7 @@ fn a_profile_with_no_guide_target_installs_nothing_and_exits_zero() {
     mark_repo(repo.path());
     let home = TempDir::new("omit-home");
 
-    // The shipped profile minus its `guide:` block, everything else byte-faithful — so
-    // this fixture tracks the profile as it evolves rather than re-typing it.
-    let shipped = include_str!("../adapters/claude-code.yaml");
-    let (head, _) = shipped
-        .split_once("\nguide:")
-        .expect("the shipped profile declares a `guide:` block");
-    let adapters = TempDir::new("omit-adapters");
-    fs::write(
-        adapters.path().join("claude-code.yaml"),
-        format!("{head}\n"),
-    )
-    .expect("write the guide-less profile");
+    let adapters = guide_less_adapters("omit-adapters");
 
     let out = run_setup(repo.path(), home.path(), Some(adapters.path()));
     assert_clean(&out, "guide-less setup");
@@ -728,5 +739,244 @@ fn upgrade_with_no_installed_guide_claims_no_guide_check() {
         doc.get("guide"),
         Some(&serde_json::Value::Null),
         "the envelope says `null`, never a path it did not read:\n{doc:#}",
+    );
+}
+
+// ───────────── T3: `uninstall` takes the artifact back out, and only when it is still jigc's ─────────────
+//
+// The artifact is a repo-local file `setup` created, so it joins `uninstall`'s **enumerated**
+// removal set (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5): the
+// set is what `setup` writes) — jigc wrote it, jigc takes it back out, and the ledger gains a
+// seventh flag so the teardown summary keeps reporting the *real* removal set rather than a
+// fixed list.
+//
+// The one condition on it is T2's detector, asked again at the closing door: jigc removes
+// **its own** copy and leaves a copy the user has edited, because a door that deletes
+// authored bytes at exit 0 is exactly the class Increment 1 closed at this very verb. The way
+// past it is `--force`, `uninstall`'s already-shipped operator-consent hatch — the destruction
+// is asked for, never assumed.
+
+/// Run `jigc uninstall` in `repo`, with `args` appended (`--force`, `--format json`, …).
+fn run_uninstall(
+    repo: &Path,
+    home: &Path,
+    adapters_dir: Option<&Path>,
+    args: &[&str],
+) -> std::process::Output {
+    let mut argv = vec!["uninstall"];
+    argv.extend_from_slice(args);
+    run_jigc(repo, home, adapters_dir, &argv)
+}
+
+/// Assert a teardown exited 0 and return its `--format json` envelope.
+fn teardown_envelope(out: &std::process::Output, label: &str) -> serde_json::Value {
+    assert!(
+        out.status.success(),
+        "{label}: `jigc uninstall` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    envelope(out)
+}
+
+/// The teardown ledger's seventh flag, as a driver reads it.
+fn removed_guide(doc: &serde_json::Value) -> bool {
+    doc.get("removed")
+        .and_then(|removed| removed.get("guide"))
+        .unwrap_or_else(|| panic!("`jigc uninstall`'s removal ledger withholds `guide`:\n{doc:#}"))
+        .as_bool()
+        .unwrap_or_else(|| panic!("`removed.guide` is a flag, not {doc:#}"))
+}
+
+/// **jigc's own copy comes out** — with the directory jigc created to hold it, and *not* with
+/// the user's own `.claude/`, which holds their settings. A second teardown then claims
+/// nothing: the ledger reports what this run removed, so an already-absent artifact reads
+/// `false` rather than riding the "we removed it" bullet a second time.
+#[test]
+fn uninstall_removes_a_pristine_guide_and_a_second_run_claims_nothing() {
+    let repo = TempDir::new("teardown");
+    mark_repo(repo.path());
+    let home = TempDir::new("teardown-home");
+    assert_clean(&run_setup(repo.path(), home.path(), None), "setup");
+    assert!(
+        repo.path().join(GUIDE_PATH).is_file(),
+        "the fixture's premise: `setup` installed the artifact this teardown takes out",
+    );
+
+    let doc = teardown_envelope(
+        &run_uninstall(repo.path(), home.path(), None, &["--format", "json"]),
+        "over a pristine artifact",
+    );
+    assert!(
+        removed_guide(&doc),
+        "the teardown must report removing the artifact it installed:\n{doc:#}",
+    );
+    assert!(
+        !repo.path().join(GUIDE_PATH).exists(),
+        "`jigc uninstall` must remove jigc's own guide artifact",
+    );
+    assert!(
+        !repo.path().join(".claude/skills").exists(),
+        "the directory jigc created for the artifact goes with it once it empties",
+    );
+    // …but never the user's own `.claude/`, nor the settings file uninstall just edited
+    // surgically — taking a directory jigc merely wrote *into* is the clobber this whole
+    // artifact is careful about, one level up.
+    assert!(
+        repo.path().join(".claude").is_dir(),
+        "`.claude/` is the user's own directory — the teardown must leave it standing",
+    );
+    assert!(
+        repo.path().join(".claude/settings.json").is_file(),
+        "the settings file must survive the artifact's removal",
+    );
+
+    let again = teardown_envelope(
+        &run_uninstall(repo.path(), home.path(), None, &["--format", "json"]),
+        "a second teardown",
+    );
+    assert!(
+        !removed_guide(&again),
+        "a second `jigc uninstall` removed nothing and must claim nothing:\n{again:#}",
+    );
+}
+
+/// **A copy the user edited survives the teardown** — at exit 0, byte-identical, and *said*:
+/// the same advisory and route both writing doors raise, because a teardown that deletes
+/// authored bytes and exits 0 is the class this verb's own guards close. The rest of the
+/// install still comes out; refusing the file is not refusing the teardown.
+#[test]
+fn uninstall_keeps_a_user_modified_guide_and_reports_it() {
+    let repo = TempDir::new("teardown-modified");
+    mark_repo(repo.path());
+    let home = TempDir::new("teardown-modified-home");
+    let edited = install_then_edit(repo.path(), home.path());
+
+    let out = run_uninstall(repo.path(), home.path(), None, &[]);
+    assert!(
+        out.status.success(),
+        "an advisory never gates: the teardown must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join(GUIDE_PATH)).expect("still there"),
+        edited,
+        "`jigc uninstall` must leave a user-modified artifact byte-identical",
+    );
+    let stdout = stdout_of(&out);
+    assert!(
+        stdout.contains(&format!("advisory · {MODIFIED_CODE}")) && stdout.contains(GUIDE_PATH),
+        "the teardown must NAME the artifact it left behind; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("  route: "),
+        "the advisory carries a route at this door too — a file left behind with no way to \
+         finish the teardown is a dead end; got:\n{stdout}",
+    );
+    assert!(
+        !repo.path().join(".jigc").exists(),
+        "refusing the one file must not refuse the teardown — the rest of the install goes",
+    );
+
+    // The same fact, keyed: the flag says jigc removed nothing, and the advisory rides
+    // `findings[]` so a driver reads *why* rather than grepping the prose.
+    let doc = teardown_envelope(
+        &run_uninstall(repo.path(), home.path(), None, &["--format", "json"]),
+        "the keyed teardown",
+    );
+    assert!(
+        !removed_guide(&doc),
+        "the ledger must not claim a removal jigc refused to make:\n{doc:#}",
+    );
+    assert!(
+        doc["findings"]
+            .as_array()
+            .is_some_and(|f| f.iter().any(|f| f["code"] == MODIFIED_CODE)),
+        "the advisory rides `findings[]` at the teardown door too:\n{doc:#}",
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join(GUIDE_PATH)).expect("still there"),
+        edited,
+        "the keyed run must leave the artifact byte-identical too",
+    );
+}
+
+/// **`--force` removes it either way** — `uninstall`'s already-shipped operator-consent
+/// hatch, not a new one: the same flag that consents to deleting a dirty worktree consents
+/// to deleting an edited guide. The consent is what makes the deletion asked-for.
+#[test]
+fn force_removes_a_user_modified_guide_with_the_rest_of_the_install() {
+    let repo = TempDir::new("teardown-force");
+    mark_repo(repo.path());
+    let home = TempDir::new("teardown-force-home");
+    install_then_edit(repo.path(), home.path());
+
+    let doc = teardown_envelope(
+        &run_uninstall(
+            repo.path(),
+            home.path(),
+            None,
+            &["--force", "--format", "json"],
+        ),
+        "the forced teardown",
+    );
+    assert!(
+        removed_guide(&doc),
+        "`--force` is the operator's consent to delete: the ledger must report it:\n{doc:#}",
+    );
+    assert!(
+        !repo.path().join(GUIDE_PATH).exists(),
+        "`jigc uninstall --force` must remove a user-modified artifact too",
+    );
+    assert!(
+        repo.path().join(".claude/settings.json").is_file(),
+        "consent to delete the artifact is not consent to delete the user's settings",
+    );
+}
+
+/// **The omitting context** (`implementation/increment-workflow.md` → hardening #5). A
+/// profile declaring **no** guide target has no artifact to take out, so the teardown must be
+/// *inert* there — exit 0, the flag `false`, nothing claimed — never an error and never a
+/// probe of a path no profile declared. A green pass over the one composing profile would
+/// hide a required-target regression in every omitting one.
+#[test]
+fn uninstall_with_no_guide_target_is_inert() {
+    let repo = TempDir::new("teardown-omit");
+    mark_repo(repo.path());
+    let home = TempDir::new("teardown-omit-home");
+    let adapters = guide_less_adapters("teardown-omit-adapters");
+    assert_clean(
+        &run_setup(repo.path(), home.path(), Some(adapters.path())),
+        "guide-less setup",
+    );
+
+    let doc = teardown_envelope(
+        &run_uninstall(
+            repo.path(),
+            home.path(),
+            Some(adapters.path()),
+            &["--format", "json"],
+        ),
+        "the guide-less teardown",
+    );
+    assert!(
+        !removed_guide(&doc),
+        "with no guide target declared there is nothing to remove:\n{doc:#}",
+    );
+    assert!(
+        !repo.path().join(".claude/skills").exists(),
+        "the guide-less teardown must not create — or claim — a skill tree",
+    );
+    assert!(
+        doc["findings"]
+            .as_array()
+            .is_none_or(|f| f.iter().all(|f| f["code"] != MODIFIED_CODE)),
+        "inert means silent: no artifact, no advisory:\n{doc:#}",
+    );
+    // The rest of the teardown ran as it always does.
+    assert!(
+        !repo.path().join(".jigc").exists(),
+        "the guide-less teardown must still reverse the rest of the install",
     );
 }

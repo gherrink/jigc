@@ -261,6 +261,36 @@ pub fn guide_modified_finding(path: &str) -> Finding {
     )
 }
 
+/// The **advisory** the teardown raises over a user-modified artifact it left standing —
+/// [`guide_modified_finding`]'s sibling at the closing door, and the same detector answering
+/// the same question, so it carries the same code. Only the register differs: `setup` refused
+/// to *overwrite* the file, `uninstall` refuses to *delete* it, so they route at different
+/// exits (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5)).
+///
+/// Advisory, never blocking, for the same reason and one stronger: a teardown that stops
+/// because one file was edited leaves the install half-removed, and the state it is reporting
+/// is not damage — it is a file that is now the user's. The route states both admissible
+/// answers, the second being `uninstall`'s **already-shipped** consent hatch rather than a new
+/// one: `--force` deletes it, so the deletion is asked for rather than assumed.
+pub fn guide_kept_finding(path: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        GUIDE_MODIFIED_CODE,
+        format!(
+            "`{path}` no longer carries the bytes jigc wrote, so the teardown left it in place \
+             rather than delete your edits — it is yours now, not part of jigc's install"
+        ),
+        None,
+        Some(
+            format!(
+                "keep it, or delete `{path}` yourself — or re-run `jigc uninstall --force` to \
+                 remove it with the rest of the install"
+            )
+            .into(),
+        ),
+    )
+}
+
 /// Write the guide artifact to `<repo_root>/<guide.file>`, creating its parent dirs.
 ///
 /// Rewritten **whole** on every `setup`, on the `.jigc/AGENT.md` mold: the file is wholly
@@ -1766,11 +1796,16 @@ pub struct UninstallSummary {
     pub line_file: String,
     /// The repo-root-relative settings file the allowlist permit was removed from.
     pub allowlist_file: String,
-    /// Which of the six repo-local artifacts were **actually** present and removed —
+    /// Which of the seven repo-local artifacts were **actually** present and removed —
     /// so the teardown summary reports the real removal set and never claims to have
     /// removed an already-absent artifact (M36 completion honesty fix; the runtime
     /// mirror of the `project-setup.md` G5 "exactly the enumerated set" correction).
     pub removed: RemovedArtifacts,
+    /// The teardown's **non-blocking** findings — what it declined to remove and why (today:
+    /// a user-modified guide artifact, [`guide_kept_finding`]). Empty on an ordinary
+    /// teardown. A blocking outcome is not here: it is [`uninstall`]'s `Err` arm, which
+    /// removes nothing at all (M48 Increment 10 / T3).
+    pub findings: engine::finding::Findings,
 }
 
 /// The per-artifact removal ledger [`uninstall`] fills — one flag per repo-local
@@ -1790,6 +1825,11 @@ pub struct RemovedArtifacts {
     pub deny: bool,
     /// The jigc-managed `pre-commit` hook was removed or unwrapped.
     pub precommit: bool,
+    /// The adapter's owned guide artifact was present, **still jigc's own** (or `--force`
+    /// was given), and removed. `false` also covers the artifact this teardown deliberately
+    /// left standing — a user-modified copy — which the summary reports as a finding rather
+    /// than as a removal it did not make (M48 Increment 10).
+    pub guide: bool,
 }
 
 impl RemovedArtifacts {
@@ -1802,7 +1842,8 @@ impl RemovedArtifacts {
             || self.allowlist
             || self.hook
             || self.deny
-            || self.precommit)
+            || self.precommit
+            || self.guide)
     }
 }
 
@@ -1815,8 +1856,15 @@ impl RemovedArtifacts {
 /// (`hooks.SessionStart`), and the `deny` safety floor (`permissions.deny`) — and prune
 /// the git `pre-commit` hook (the M36 symmetry fix: both hooks must come out, or they
 /// fire against a removed install; `design/project-setup.md` → Flow 2 hardening →
-/// Teardown / cleanup (G5), bullet (b)). Every settings removal is **surgical**: a
-/// foreign permit / hook / deny entry sharing the file survives.
+/// Teardown / cleanup (G5), bullet (b)) — **and the adapter's owned guide artifact**, the
+/// seventh member, because the set is what `setup` writes rather than a fixed list (M48
+/// Increment 10). Every settings removal is **surgical**: a foreign permit / hook / deny
+/// entry sharing the file survives.
+///
+/// **The guide artifact comes out only while it is still jigc's** ([`guide_ownership`]): a
+/// copy the user has edited is left byte-identical and reported as the
+/// [`guide_kept_finding`] advisory, since deleting authored bytes at exit 0 is the class
+/// the guards below close. `force` removes it either way.
 ///
 /// **Explicitly NOT** the machine-global `doc-code` probe sibling beside the `jigc`
 /// binary — it is shared across every jigc repo on the machine, so deleting it would
@@ -1837,12 +1885,15 @@ impl RemovedArtifacts {
 ///   all (the reproduced pre-1.0.0 loss authored them; the mint's own skeleton is refused
 ///   on the same footing, since neither is provably disposable).
 ///
-/// `force` is the operator's consent to delete both. It skips the guards and nothing else.
+/// `force` is the operator's consent to delete. It skips the two guards, and — the one
+/// other thing this teardown refuses on its own — takes the adapter's owned guide artifact
+/// even when the user has edited it.
 ///
 /// **Idempotent:** each step is independently a clean no-op when its artifact is already
 /// absent — an already-removed `.jigc/`, a `CLAUDE.md` without the section, an
-/// `allow`/`deny` array or `hooks` object without the jigc entry, and an absent-or-foreign
-/// `pre-commit` hook — so a second `uninstall` exits 0 leaving the (restored) host files
+/// `allow`/`deny` array or `hooks` object without the jigc entry, an absent-or-foreign
+/// `pre-commit` hook, and an absent guide artifact — so a second `uninstall` exits 0
+/// leaving the (restored) host files
 /// byte-untouched. `Ok(summary)` on a clean teardown; `Err(finding)` is a single blocking
 /// `uninstall.*` finding carrying a route — the dispatcher renders it and exits non-zero.
 pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Finding> {
@@ -1963,6 +2014,56 @@ fn uninstall(
         )
     })?;
 
+    // 7. Remove the adapter's **owned guide artifact** — the seventh repo-local file
+    //    `setup` writes, and an ordinary member of this set because the set is *what setup
+    //    wrote*, not a fixed list (`design/project-setup.md` → Teardown / cleanup (G5)).
+    //
+    //    Removed on the **same ownership question the writing door asks**: jigc takes back
+    //    what jigc wrote ([`GuideOwnership::Owned`]) and leaves a copy the user has edited
+    //    standing, reporting it rather than deleting it — a door that destroys authored
+    //    bytes at exit 0 is precisely the class step 0's guards close, and this file is not
+    //    exempt from it. `force` is the operator's consent, the same flag that consents to
+    //    those two, so it removes the artifact whoever wrote it.
+    //
+    //    An invalid guide target is skipped: `install` gates the same target before any
+    //    write ([`adapter::validate_guide_target`]), so nothing jigc wrote can be sitting
+    //    behind one — and a teardown must not follow a path the install refused to take.
+    let mut findings: Vec<Finding> = Vec::new();
+    if let Some(guide) = profile
+        .guide()
+        .filter(|guide| adapter::validate_guide_target(guide).is_ok())
+    {
+        let target = repo_root.join(&guide.file);
+        if target.is_file() {
+            if force || guide_ownership(repo_root, guide) == GuideOwnership::Owned {
+                std::fs::remove_file(&target).map_err(|err| {
+                    Finding::block(
+                        "uninstall.remove-guide",
+                        format!(
+                            "cannot remove the adapter guide artifact `{}`: {err}",
+                            guide.file
+                        ),
+                        format!(
+                            "ensure `{}` is writable, then re-run `jigc uninstall`",
+                            guide.file
+                        ),
+                    )
+                })?;
+                // The directories jigc created to hold it go with it once they empty —
+                // but never one that houses another host file (`.claude/` holds the
+                // settings file this teardown just edited *surgically*).
+                let keep: Vec<PathBuf> = [line_file.as_str(), allowlist_file.as_str()]
+                    .iter()
+                    .filter_map(|file| repo_root.join(file).parent().map(Path::to_path_buf))
+                    .collect();
+                prune_empty_dirs(repo_root, &target, &keep);
+                removed.guide = true;
+            } else {
+                findings.push(guide_kept_finding(&guide.file));
+            }
+        }
+    }
+
     // The machine-global `doc-code` probe sibling is deliberately left in place (B2):
     // it is shared across every jigc repo on the machine, so this per-project verb must
     // not delete it.
@@ -1971,7 +2072,36 @@ fn uninstall(
         line_file,
         allowlist_file,
         removed,
+        findings: findings.into(),
     })
+}
+
+/// Remove the now-empty directories that held `artifact`, walking outward from its own
+/// parent and stopping at the first directory that is **not** jigc's to take: one that still
+/// holds something, one that houses another of the profile's host files (`keep`), the repo
+/// root, or anything outside it. `setup` creates this chain for the artifact
+/// ([`write_guide_artifact`]); leaving an empty `.claude/skills/jigc/` behind would leave the
+/// teardown visibly unfinished.
+///
+/// **Best-effort by design.** The artifact is what the teardown promised to remove; an empty
+/// directory that resists removal is residue, not a failed teardown, so a stubborn `rmdir`
+/// ends the walk instead of failing the verb (and instead of a finding: an empty directory
+/// is not a fact a user needs routed).
+fn prune_empty_dirs(repo_root: &Path, artifact: &Path, keep: &[PathBuf]) {
+    let mut dir = artifact.parent();
+    while let Some(current) = dir {
+        if current == repo_root
+            || !current.starts_with(repo_root)
+            || keep.iter().any(|kept| kept == current)
+        {
+            return;
+        }
+        let empty = std::fs::read_dir(current).is_ok_and(|mut entries| entries.next().is_none());
+        if !empty || std::fs::remove_dir(current).is_err() {
+            return;
+        }
+        dir = current.parent();
+    }
 }
 
 /// The worktree-shaped paths under `<repo_root>/.jigc/worktrees/` that hold content the

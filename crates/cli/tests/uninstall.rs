@@ -31,6 +31,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The adapter's owned guide artifact — a repo-local file `setup` created (M48 Increment
+/// 10), so it is an ordinary member of the enumerated set this teardown reverses. The
+/// ownership question it is removed *under* (jigc's own copy goes, a user-modified one
+/// stays) is driven over its whole axis by `tests/adapter_artifact.rs`; here it is one more
+/// artifact the summary must report honestly.
+const GUIDE_PATH: &str = ".claude/skills/jigc/SKILL.md";
+
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
 
@@ -187,6 +194,10 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         "setup wires the @.jigc/AGENT.md import; got:\n{claude_after_setup}",
     );
     let probe_bytes = fs::read(&probe).expect("read the extracted probe");
+    assert!(
+        repo.path().join(GUIDE_PATH).is_file(),
+        "setup installs the adapter's owned guide artifact",
+    );
 
     // Uninstall.
     let out = run(&jigc, repo.path(), home.path(), "uninstall");
@@ -207,6 +218,9 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         "SessionStart hook",
         "deny safety floor",
         "pre-commit hook",
+        // The seventh artifact (M48 Increment 10): setup wrote it, so the teardown takes
+        // it out and — by the same honesty rule — says so on the text surface too.
+        "removed jigc guide artifact",
     ] {
         assert!(
             summary.contains(needle),
@@ -279,6 +293,23 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         "the foreign SessionStart hook must survive uninstall; got:\n{settings_raw}",
     );
 
+    // (iii-d) The adapter's owned guide artifact is torn down, and the directory jigc
+    //         created to hold it goes with it once it empties — but `.claude/` itself is
+    //         the user's own directory (it holds the settings file uninstall just edited
+    //         surgically), so it stays standing.
+    assert!(
+        !repo.path().join(GUIDE_PATH).exists(),
+        "uninstall must remove the adapter's owned guide artifact",
+    );
+    assert!(
+        !repo.path().join(".claude/skills").exists(),
+        "the skill directory jigc created goes with the artifact once it empties",
+    );
+    assert!(
+        repo.path().join(".claude").is_dir() && repo.path().join(".claude/settings.json").is_file(),
+        "uninstall must never take `.claude/` itself — it is the user's own directory",
+    );
+
     // (iii-c) The jigc-managed pre-commit hook is torn down: this repo had no
     //         pre-existing hook, so setup wrote a standalone jigc hook and uninstall
     //         removes it entirely — no residue firing against a removed install.
@@ -324,7 +355,9 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
     //       wasn't there"): a no-op reports a clean "nothing to remove" state.
     let summary2 = String::from_utf8_lossy(&out2.stdout);
     assert!(
-        !summary2.contains("removed .jigc/") && !summary2.contains("pre-commit hook"),
+        !summary2.contains("removed .jigc/")
+            && !summary2.contains("pre-commit hook")
+            && !summary2.contains("guide artifact"),
         "a no-op uninstall must not claim removals it did not make; got:\n{summary2}",
     );
 }

@@ -555,10 +555,18 @@ fn setup_success_parity() {
     }
 }
 
-/// `jigc uninstall` — the teardown summary. The six-flag removal ledger rides the wire
-/// whole under `removed`, so every flag the text turns into a bullet reaches a driver.
+/// `jigc uninstall` — the teardown summary. The **seven**-flag removal ledger rides the wire
+/// whole under `removed` (the seventh is the adapter's owned guide artifact, M48 Increment
+/// 10), so every flag the text turns into a bullet reaches a driver.
+///
+/// **Two witnesses, because the teardown has two shapes over that seventh artifact** — the
+/// same split `setup` carries. The full teardown removes it and reports nothing; a teardown
+/// that met a **user-modified** copy leaves it in place, so it removes nothing there and
+/// prints an advisory instead. A single-witness fence would leave whichever half it omitted
+/// unchecked — and the `findings` half is exactly where a refusal becomes visible.
 fn uninstall_success_parity() {
-    let summary = UninstallSummary {
+    let guide = ".claude/skills/jigc/SKILL.md";
+    let torn_down = UninstallSummary {
         line_file: "CLAUDE.md".to_owned(),
         allowlist_file: ".claude/settings.json".to_owned(),
         removed: RemovedArtifacts {
@@ -568,54 +576,84 @@ fn uninstall_success_parity() {
             hook: true,
             deny: true,
             precommit: true,
+            guide: true,
         },
+        findings: Vec::new().into(),
     };
-    let UninstallSummary {
-        line_file,
-        allowlist_file,
-        removed,
-    } = &summary;
-    let RemovedArtifacts {
-        jigc_dir,
-        reference,
-        allowlist,
-        hook,
-        deny,
-        precommit,
-    } = removed;
+    let kept = UninstallSummary {
+        line_file: "CLAUDE.md".to_owned(),
+        allowlist_file: ".claude/settings.json".to_owned(),
+        removed: RemovedArtifacts {
+            guide: false,
+            ..torn_down.removed
+        },
+        findings: vec![cli::setup::guide_kept_finding(guide)].into(),
+    };
 
-    let text = uninstall_success(Format::Agent, &summary);
-    let doc = envelope(&uninstall_success(Format::Json, &summary), "jigc uninstall");
+    for summary in [&torn_down, &kept] {
+        // Exhaustive — no `..`: a fourth field fails to compile here.
+        let UninstallSummary {
+            line_file,
+            allowlist_file,
+            removed,
+            findings,
+        } = summary;
+        let RemovedArtifacts {
+            jigc_dir,
+            reference,
+            allowlist,
+            hook,
+            deny,
+            precommit,
+            guide,
+        } = removed;
 
-    text_prints(&text, line_file, "jigc uninstall", "line_file");
-    carries(&doc, "line_file", line_file, "jigc uninstall", "line_file");
-    text_prints(&text, allowlist_file, "jigc uninstall", "allowlist_file");
-    carries(
-        &doc,
-        "allowlist_file",
-        allowlist_file,
-        "jigc uninstall",
-        "allowlist_file",
-    );
+        let text = uninstall_success(Format::Agent, summary);
+        let doc = envelope(&uninstall_success(Format::Json, summary), "jigc uninstall");
 
-    let removed_doc = doc
-        .get("removed")
-        .unwrap_or_else(|| panic!("`jigc uninstall`'s envelope withholds `removed`:\n{doc:#}"));
-    for (field_name, flag) in [
-        ("jigc_dir", jigc_dir),
-        ("reference", reference),
-        ("allowlist", allowlist),
-        ("hook", hook),
-        ("deny", deny),
-        ("precommit", precommit),
-    ] {
+        text_prints(&text, line_file, "jigc uninstall", "line_file");
+        carries(&doc, "line_file", line_file, "jigc uninstall", "line_file");
+        text_prints(&text, allowlist_file, "jigc uninstall", "allowlist_file");
         carries(
-            removed_doc,
-            field_name,
-            flag,
+            &doc,
+            "allowlist_file",
+            allowlist_file,
             "jigc uninstall",
-            &format!("removed.{field_name}"),
+            "allowlist_file",
         );
+
+        let removed_doc = doc
+            .get("removed")
+            .unwrap_or_else(|| panic!("`jigc uninstall`'s envelope withholds `removed`:\n{doc:#}"));
+        for (field_name, flag) in [
+            ("jigc_dir", jigc_dir),
+            ("reference", reference),
+            ("allowlist", allowlist),
+            ("hook", hook),
+            ("deny", deny),
+            ("precommit", precommit),
+            ("guide", guide),
+        ] {
+            carries(
+                removed_doc,
+                field_name,
+                flag,
+                "jigc uninstall",
+                &format!("removed.{field_name}"),
+            );
+        }
+
+        // Findings-as-data: an artifact the teardown declined to take is *said* on both
+        // surfaces — the text prints it, and a driver reads it rather than grepping prose.
+        for finding in findings {
+            text_prints(
+                &text,
+                &finding.message,
+                "jigc uninstall",
+                "findings[].message",
+            );
+        }
+        carries(&doc, "findings", findings, "jigc uninstall", "findings");
     }
 }
 

@@ -2458,6 +2458,10 @@ pub fn setup_block(format: Format, finding: &Finding) -> String {
 /// emits a generic object naming the two host targets plus the per-artifact `removed`
 /// flags, with no footer (tooling-consumed). The machine-global `doc-code` probe is
 /// left in place — B2.
+///
+/// Both surfaces also carry what the teardown **declined** to remove: a user-modified guide
+/// artifact is left standing, so it is neither a removal bullet nor a silence — it rides
+/// `findings` as an advisory with its route (M48 Increment 10 / T3).
 pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
     let removed = &summary.removed;
     match format {
@@ -2474,7 +2478,17 @@ pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
                 "hook": removed.hook,
                 "deny": removed.deny,
                 "precommit": removed.precommit,
+                // The adapter's owned guide artifact (M48 Increment 10) — `false` also
+                // covers the copy this teardown deliberately left standing, which the
+                // `findings` below say in full. An additive key inside the still-open
+                // pre-1.0 window (`design/command-output-contract.md` → Evolution posture).
+                "guide": removed.guide,
             },
+            // The teardown's non-blocking findings — what it declined to remove and why.
+            // Findings-as-data on the success path: a driver reads the advisory and its
+            // route as a value, never by grepping the summary prose. `[]` on an ordinary
+            // teardown.
+            "findings": summary.findings,
         })),
         Format::Agent | Format::Human => {
             let mut out = String::from("jigc uninstall — repo-local install removed\n\n");
@@ -2509,6 +2523,18 @@ pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
                 }
                 if removed.precommit {
                     out.push_str("  - removed pre-commit hook\n");
+                }
+                if removed.guide {
+                    out.push_str("  - removed jigc guide artifact\n");
+                }
+            }
+            // What the teardown declined to remove, and why (M48 Increment 10 / T3) — a
+            // file left standing is *said*, never silently skipped, and it reads exactly
+            // like every other agent-text finding through the house [`finding_line`].
+            if !summary.findings.is_empty() {
+                out.push('\n');
+                for finding in &summary.findings {
+                    out.push_str(&finding_line(finding, false));
                 }
             }
             out.push_str(ROUTING_FOOTER);
