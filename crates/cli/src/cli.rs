@@ -153,8 +153,9 @@ pub enum Command {
         verb: TaskCommand,
     },
 
-    /// The cascade-authoring surface — `jigc config <verb>` records deltas into
-    /// the project layer (`.jigc/config/`).
+    /// The cascade surface — `jigc config <verb>` reads what the knobs currently
+    /// resolve to (`get` / `list`) and records deltas into the project layer
+    /// (`.jigc/config/`).
     Config {
         #[command(subcommand)]
         verb: ConfigCommand,

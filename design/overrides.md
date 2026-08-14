@@ -154,6 +154,19 @@ Deltas may be authored two co-equal ways: **by hand** (edit `manifest.yaml` + dr
 
 **`tracked-fork` hash basis (pinned now; read in M5).** The recorded `base-hash` is the **blake3** ([decisions-pending.md](../implementation/decisions-pending.md) → Hashing) of the **resolved native step/section file bytes** — the post-shadow, pre-expansion body, the exact bytes phase 2 would load. A fork addressed `workflow:single-task#validate` shadows the **step file** `validate` (`steps/validate.yaml`), not the workflow; the workflow `#<step-id>` form just names which unit to copy. M4 records this; only the (M5) reconciliation compares it — but the basis is pinned in M4 so M5's stateless compare (`v2 hash ≠ recorded hash`) can't silently break on a basis mismatch.
 
+## Reading the resolved cascade — `jigc config get` / `jigc config list` (M48)
+
+The verb family above is the *authoring* rung; it has a **read rung** beside it, because until M48 the only way to learn what a knob resolved to — or which knobs existed at all — was to fail a write against the closed surface (the enumeration lived inside `config set`'s rejection message and nowhere else).
+
+| verb | reads |
+|---|---|
+| `jigc config get <key>` | one declared knob's **resolved value**, the **layer that won it** (`pack-default` / `team` / `project`), and any `scalar-set` for the key the knob's `floor` [soft-rejected](#scalar-knobs-are-config-level-fields) — the attempted value and the floor it ranked below |
+| `jigc config list` | the same reading for **every** declared knob, in key order — the closed surface a `scalar-set` may target |
+
+Both are pure projections of what resolution already computes ([Resolution algorithm](#resolution-algorithm)): the declared key set from the pack's `config/knobs.yaml`, the value and provenance from the resolved cascade. Neither reads or writes a delta.
+
+The soft-rejected set is on the reading deliberately. A below-floor `scalar-set` is *dropped* and resolution continues as if it were absent — the delta sits in the manifest, the value is unchanged, and without this field nothing on any surface says why. An **undeclared** key is the same closed-surface rejection the write rung raises (`config.undeclared-key`), routed to `jigc config list`: a read intent lands on a read verb.
+
 **Write-time vs resolve-time split.** A verb does the *cheap, local* checks at write time (key declared, type valid, anchor present **in the resolution as of this edit** — a snapshot) so the human gets an immediate error; the *whole-cascade* consequences (cycles a delta introduces, a later same-manifest delta orphaning an earlier one — e.g. a `remove-step` that drops the anchor a later `insert-step --after` needs) depend on the *full delta set*, so they surface at **resolution time** through `workflow-refs`, consistent with the within-layer manifest order ([Resolution algorithm](#within-layer-manifest-order)). This mirrors the document write path: `set-field` adjudicates the value at write time; cross-doc integrity waits for `validate`/`finalize`. The verbs write **only** the project (or, with a flag, team) layer's `manifest.yaml` + native files — never a base definition, never an untracked fork.
 
 ## Resolution algorithm

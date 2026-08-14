@@ -264,8 +264,8 @@ fn every_leaf_verb_is_named_by_at_least_one_integration_suite() {
     let map = coverage_map(&suites);
 
     assert!(
-        map.len() >= 44,
-        "the clap tree must still enumerate the whole verb surface (>= 44 leaf verbs); \
+        map.len() >= 46,
+        "the clap tree must still enumerate the whole verb surface (>= 46 leaf verbs); \
          got {}. A shrinking axis is how a sweep silently stops sweeping.\n{}",
         map.len(),
         render_map(&map, Some(4)),

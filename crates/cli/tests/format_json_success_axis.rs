@@ -6,7 +6,7 @@
 //! 0, stdout parses as *exactly one* JSON document, stderr carries *no* JSON document.
 //! Its sibling `machine_output.rs` sweeps the same axis on the **reject** surface
 //! (fixture-free, where no verb can succeed) and pins one real success arm; this suite
-//! is the missing half — it drives **all 44** leaf verbs to a genuine success.
+//! is the missing half — it drives **all 46** leaf verbs to a genuine success.
 //!
 //! **Why the sweep, and not the structural fence.** `adapter.rs`'s
 //! `format_is_a_global_arg` asserts that `--format` *is* a global clap arg, which is a
@@ -22,7 +22,7 @@
 //! established), and [`recipes`] must cover that set **exactly** — no missing member,
 //! no stale extra. A verb added anywhere in the tree therefore reddens this suite
 //! until someone drives it to a real success, and a verb deleted reddens it until the
-//! dead recipe goes. The `>= 44` floor sits beneath the bijection so a *simultaneous*
+//! dead recipe goes. The `>= 46` floor sits beneath the bijection so a *simultaneous*
 //! delete-and-drop stays visible rather than shrinking both sides in silence.
 //!
 //! **Every recipe has a shipped precedent** — the driving sequence is lifted from the
@@ -688,6 +688,18 @@ fn recipes() -> Vec<Recipe> {
         },
         // ── config ──────────────────────────────────────────────────────────────
         Recipe {
+            path: &["config", "get"],
+            base: Base::Fresh,
+            // The read rung over an untouched knob — a `setup` repo resolves every
+            // declared knob, so no state has to be built first (`config_read.rs`).
+            drive: |c| json(c, &["config", "get", "docs-root"]),
+        },
+        Recipe {
+            path: &["config", "list"],
+            base: Base::Fresh,
+            drive: |c| json(c, &["config", "list"]),
+        },
+        Recipe {
             path: &["config", "set"],
             base: Base::Fresh,
             drive: |c| json(c, &["config", "set", "invocation-log", "true"]),
@@ -861,7 +873,7 @@ fn write_native_step(corpus: &TrialCorpus) {
 // ───────────────────────────────── the sweep ─────────────────────────────────
 
 /// **The bijection.** The hand-written [`recipes`] set and the clap tree's leaf verbs
-/// are the *same* set — no verb unswept, no recipe stale — with a `>= 44` floor beneath
+/// are the *same* set — no verb unswept, no recipe stale — with a `>= 46` floor beneath
 /// it so a simultaneous delete on both sides stays visible instead of silently
 /// shrinking the axis.
 ///
@@ -878,8 +890,8 @@ fn the_success_recipes_are_a_bijection_with_the_clap_leaf_verbs() {
     from_recipes.sort();
 
     assert!(
-        from_clap.len() >= 44,
-        "the clap tree must still enumerate the whole verb surface (>= 44 leaf verbs); \
+        from_clap.len() >= 46,
+        "the clap tree must still enumerate the whole verb surface (>= 46 leaf verbs); \
          got {}: {from_clap:?}",
         from_clap.len(),
     );

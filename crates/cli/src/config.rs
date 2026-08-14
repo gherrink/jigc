@@ -24,14 +24,15 @@
 
 use crate::invocation_log::Outcome;
 use crate::pack::make_pack;
-use crate::render::ConfigAck;
+use crate::render::{ConfigAck, KnobReading, RejectedSet};
 use anyhow::{Context, Result, bail};
 use engine::cascade::{
-    Anchor, SlotFillTarget, StructuralDelta, StructuralTarget, TrackedForkDelta,
+    Anchor, LayerKind, SlotFillTarget, StructuralDelta, StructuralTarget, TrackedForkDelta,
 };
 use engine::field_block::Value;
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The `jigc config <verb>` subcommand tree — `set`, the structural-op verbs
@@ -115,6 +116,23 @@ pub enum ConfigCommand {
         from_file: String,
     },
 
+    /// Read one declared knob's resolved value, naming the cascade layer that won it
+    /// (`pack-default` / `team` / `project`) and — when a `scalar-set` for the key was
+    /// dropped by the knob's demotion-lock `floor` — the value that was attempted and
+    /// the floor it ranked below. An undeclared key is rejected non-zero and routed to
+    /// `jigc config list`, which enumerates the closed surface.
+    Get {
+        /// The knob key to read — one of the pack's declared `config/knobs.yaml` keys
+        /// (`jigc config list` prints them all).
+        key: String,
+    },
+
+    /// List every declared knob with its resolved value and winning layer — the closed
+    /// surface a `scalar-set` may target, read from the pack's `config/knobs.yaml`
+    /// rather than a curated excerpt. A knob whose `scalar-set` was dropped by its
+    /// floor carries that drop on its row.
+    List,
+
     /// Copy a resolved step's body into a native file that shadows it, recording the
     /// pinned ancestor (`base-version` + the blake3 `base-hash` of the copied bytes),
     /// addressed `workflow:<id>#<step-id>`. The body bytes are copied verbatim to
@@ -131,28 +149,47 @@ pub enum ConfigCommand {
 impl ConfigCommand {
     /// Dispatch the parsed `config` verb against `cwd`, mapping the result to a
     /// process exit code. A blocking adjudication finding surfaces on stderr (with
-    /// its route) through the shared operational-error funnel — `{"error": …}`
+    /// its key + route) through the shared operational-error funnel — `{"error": …}`
     /// under `--format json`, the plain `{err:#}` bytes otherwise — and exits
-    /// non-zero; a clean write exits 0.
+    /// non-zero; a clean run exits 0 after printing its surface on stdout.
+    ///
+    /// Each arm renders its own surface before the shared funnel: the six authoring
+    /// verbs share the [`ConfigAck`] write-confirmation, the two read verbs their
+    /// knob-reading views — so both rungs of the family exit through one place.
     pub fn dispatch(self, cwd: &Path, format: crate::cli::Format) -> Outcome {
         let result = match self {
-            ConfigCommand::Set { key, value } => run_set(cwd, &key, &value),
+            ConfigCommand::Get { key } => {
+                run_get(cwd, &key).map(|reading| crate::render::config_get(format, &reading))
+            }
+            ConfigCommand::List => {
+                run_list(cwd).map(|readings| crate::render::config_list(format, &readings))
+            }
+            // Every config write states its effect (Law 1 "acks state the effect"; the M43
+            // surface census) — the positive ack the six verbs mapped to silence before.
+            ConfigCommand::Set { key, value } => {
+                run_set(cwd, &key, &value).map(|ack| crate::render::config_ack(format, &ack))
+            }
             ConfigCommand::InsertStep {
                 workflow,
                 after,
                 before,
                 file,
-            } => run_insert_step(cwd, &workflow, after.as_deref(), before.as_deref(), &file),
-            ConfigCommand::ReplaceStep { target, file } => run_replace_step(cwd, &target, &file),
-            ConfigCommand::RemoveStep { target } => run_remove_step(cwd, &target),
-            ConfigCommand::Fill { target, from_file } => run_fill(cwd, &target, &from_file),
-            ConfigCommand::Fork { target } => run_fork(cwd, &target),
+            } => run_insert_step(cwd, &workflow, after.as_deref(), before.as_deref(), &file)
+                .map(|ack| crate::render::config_ack(format, &ack)),
+            ConfigCommand::ReplaceStep { target, file } => run_replace_step(cwd, &target, &file)
+                .map(|ack| crate::render::config_ack(format, &ack)),
+            ConfigCommand::RemoveStep { target } => {
+                run_remove_step(cwd, &target).map(|ack| crate::render::config_ack(format, &ack))
+            }
+            ConfigCommand::Fill { target, from_file } => run_fill(cwd, &target, &from_file)
+                .map(|ack| crate::render::config_ack(format, &ack)),
+            ConfigCommand::Fork { target } => {
+                run_fork(cwd, &target).map(|ack| crate::render::config_ack(format, &ack))
+            }
         };
         match result {
-            // Every config write states its effect (Law 1 "acks state the effect"; the M43
-            // surface census) — the positive ack the six verbs mapped to silence before.
-            Ok(ack) => {
-                println!("{}", crate::render::config_ack(format, &ack));
+            Ok(surface) => {
+                println!("{surface}");
                 Outcome::success()
             }
             Err(err) => {
@@ -161,6 +198,97 @@ impl ConfigCommand {
             }
         }
     }
+}
+
+/// Read the whole declared knob surface as resolved readings — the one read the two
+/// read verbs share (`design/overrides.md` → Reading the resolved cascade).
+///
+/// The enumeration is the pack's **declared** knob set (`config/knobs.yaml` via
+/// [`engine::knobs::load_knobs`]) — the same closed surface `run_set` adjudicates
+/// against, never a curated excerpt — and each key's value/provenance comes from the
+/// already-shipped resolution path ([`crate::start::resolve_severity_cascade`]): the
+/// resolved value from [`engine::cascade::Resolved::scalar`], the winning layer from
+/// `scalar_overrides` (absent = the pack-default base), and any dropped `scalar-set`
+/// from `rejected_scalar_sets`. No engine change: this rung only *projects* what
+/// resolution already computes.
+///
+/// Rows come out in declared key order (`load_knobs` reads a `BTreeMap`), so both
+/// verbs' output is stable.
+fn read_knobs(cwd: &Path) -> Result<Vec<KnobReading>> {
+    let project_config = require_project_layer(cwd)?;
+    let pack = make_pack()?;
+    let knobs_bytes = pack
+        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
+        .context("the embedded pack is missing `config/knobs`")?;
+    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
+    let declared: Vec<String> = knobs.keys().map(str::to_owned).collect();
+
+    let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    let layers: BTreeMap<&str, LayerKind> = resolved
+        .scalar_overrides()
+        .map(|(key, _value, layer)| (key, layer))
+        .collect();
+    let mut rejected: BTreeMap<&str, RejectedSet> = resolved
+        .rejected_scalar_sets()
+        .map(|(key, attempted, floor, layer)| {
+            (
+                key,
+                RejectedSet {
+                    attempted: attempted.to_owned(),
+                    floor: floor.to_owned(),
+                    layer: layer.label(),
+                },
+            )
+        })
+        .collect();
+
+    Ok(declared
+        .iter()
+        .map(|key| KnobReading {
+            value: resolved.scalar(key).unwrap_or_default().to_owned(),
+            layer: layers
+                .get(key.as_str())
+                .copied()
+                .unwrap_or(LayerKind::PackDefault)
+                .label(),
+            rejected: rejected.remove(key.as_str()),
+            key: key.clone(),
+        })
+        .collect())
+}
+
+/// `jigc config get <key>` — one declared knob's resolved reading (value + winning
+/// layer + any soft-rejected set). An undeclared key is the same closed-surface
+/// rejection `config set` raises ([`undeclared_key_finding`]) — the surface is closed
+/// for reads exactly as it is for writes, so a typo answers rather than resolving to
+/// nothing.
+fn run_get(cwd: &Path, key: &str) -> Result<KnobReading> {
+    read_knobs(cwd)?
+        .into_iter()
+        .find(|reading| reading.key == key)
+        .ok_or_else(|| finding_to_err(undeclared_key_finding(key)))
+}
+
+/// `jigc config list` — every declared knob with its resolved reading, in declared key
+/// order. The enumeration of the closed surface, and the verb every
+/// `config.undeclared-key` rejection routes to.
+fn run_list(cwd: &Path) -> Result<Vec<KnobReading>> {
+    read_knobs(cwd)
+}
+
+/// The closed-surface rejection both read (`config get`) and write (`config set`)
+/// raise for a key the pack does not declare — one finding, one code, one route.
+///
+/// The route names `jigc config list`, the verb that enumerates the surface: a read
+/// intent lands on a read verb, never on the write verb that happens to share the
+/// rejection (`design/surface-contract.md` → law 2, the recovery must lead to the fix).
+fn undeclared_key_finding(key: &str) -> Finding {
+    Finding::block(
+        "config.undeclared-key",
+        format!("`{key}` is not a declared knob — the cascade surface is closed"),
+        "run `jigc config list` to see every declared knob with its resolved value and \
+         winning layer, then re-run with one of those keys",
+    )
 }
 
 /// `jigc config set <key> <value>` — record a `scalar-set` in the project layer.
@@ -194,29 +322,13 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
         .context("the embedded pack is missing `config/knobs`")?;
     let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
     let Some(field) = knobs.field(key) else {
-        // Name the closed surface *in the error itself* — no other command enumerates the
-        // settable knobs (bare `jigc start` lists none; `--explain` shows only resolved/set
-        // ones), so a route pointing elsewhere is a dead end (M43 surface census, F3 — Law 2:
-        // the recovery must lead to the fix). The declared set is loaded right here at
-        // adjudication. The `validation.<probe>.<check>.severity` per-check family is a large,
-        // regular cascade surface (its own tuning concern), so it is characterized + counted
-        // rather than spelled out — the primary knobs are named in full.
-        let declared: Vec<&str> = knobs.keys().collect();
-        let primary: Vec<&str> = declared
-            .iter()
-            .copied()
-            .filter(|k| !k.starts_with("validation."))
-            .collect();
-        let validation_count = declared.len() - primary.len();
-        return Err(finding_to_err(Finding::block(
-            "config.undeclared-key",
-            format!("`{key}` is not a settable knob — the cascade surface is closed"),
-            format!(
-                "set one of the declared knobs: {} — plus {} `validation.<probe>.<check>.severity` per-check cascade keys",
-                primary.join(", "),
-                validation_count,
-            ),
-        )));
+        // The closed surface now has a verb of its own to name (M48 Inc 6): `jigc config
+        // list` prints every declared knob with its resolved value and winning layer, so
+        // the route leads to the fix (Law 2) without this message having to *be* the
+        // enumeration. The inline listing it replaces was the only enumeration in the
+        // binary — which is why it had to characterize-and-count the large
+        // `validation.<probe>.<check>.severity` family rather than print it.
+        return Err(finding_to_err(undeclared_key_finding(key)));
     };
 
     // Step 2 — the value must pass the same `check_value` the doc write path uses.
@@ -1111,12 +1223,25 @@ fn at_step(target: &StructuralTarget) -> String {
     }
 }
 
-/// Map an engine [`Finding`] to an `anyhow` error carrying its message + route —
-/// the same envelope `crate::start` / `crate::task` use for a blocking finding.
+/// Map an engine [`Finding`] to an `anyhow` error carrying its **key** + message +
+/// route — the `severity · code — message` line shape the findings envelope prints,
+/// the discipline `crate::milestone`'s funnel already applies (round-2 D6h: a finding
+/// surfaced through the operational-error funnel used to drop its stable `(code,
+/// target)` key, leaving it undiscriminable to a driver).
+///
+/// The `config` family needed it at M48 Inc 6: `config.undeclared-key` is now raised
+/// from **two** verbs (`get` and `set`), so the code is what tells a driver which
+/// rejection it met — and it costs nothing to carry it for the family's other codes.
 fn finding_to_err(finding: Finding) -> anyhow::Error {
+    let severity = match finding.severity {
+        engine::finding::Severity::Blocking => "blocking",
+        engine::finding::Severity::Warning => "warning",
+        engine::finding::Severity::Advisory => "advisory",
+    };
+    let head = format!("{severity} · {} — {}", finding.code, finding.message);
     match finding.route {
-        Some(route) => anyhow::anyhow!("{}\n  route: {route}", finding.message),
-        None => anyhow::anyhow!("{}", finding.message),
+        Some(route) => anyhow::anyhow!("{head}\n  route: {route}"),
+        None => anyhow::anyhow!("{head}"),
     }
 }
 
@@ -1270,21 +1395,26 @@ mod tests {
         }
     }
 
-    /// F3 (M43 surface census, Law 2) — an undeclared `config set <key>` names the settable
-    /// knobs *in the error*, since no other command reveals them. The route lists real
-    /// declared keys (`docs-root` among them), not a dead-end pointer.
+    /// F3 (M43 surface census, Law 2) — an undeclared `config set <key>` routes to the
+    /// **verb that reveals the closed surface**. Until M48 Inc 6 the route had to *be*
+    /// the enumeration, because nothing else in the binary enumerated the knobs; now
+    /// `jigc config list` does, so the recovery is a command the reader can run rather
+    /// than a knob list wedged into an error message.
+    ///
+    /// The rejection also carries its stable key — one finding, raised from two verbs
+    /// (`get` and `set`), so the `code` is what tells a driver which one it met.
     #[test]
-    fn undeclared_key_route_names_the_declared_knobs() {
+    fn undeclared_key_route_names_the_read_verb_that_enumerates_the_surface() {
         let (repo, _cfg) = repo_with_layer("undeclared");
         let err = run_set(repo.path(), "not-a-knob", "x").expect_err("an undeclared key rejects");
         let msg = format!("{err:#}");
         assert!(
-            msg.contains("set one of the declared knobs:"),
-            "the route enumerates the settable knobs; got:\n{msg}"
+            msg.contains("config.undeclared-key"),
+            "the rejection carries its stable key; got:\n{msg}"
         );
         assert!(
-            msg.contains("docs-root") && msg.contains("default-workflow"),
-            "the enumerated set names real declared knobs; got:\n{msg}"
+            msg.contains("route: run `jigc config list`"),
+            "the route names the verb that enumerates the closed surface; got:\n{msg}"
         );
     }
 

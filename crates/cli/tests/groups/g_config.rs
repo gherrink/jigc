@@ -20,6 +20,8 @@ mod config_fork;
 mod config_fork_compose;
 #[path = "../config_insert_step.rs"]
 mod config_insert_step;
+#[path = "../config_read.rs"]
+mod config_read;
 #[path = "../config_replace_remove_step.rs"]
 mod config_replace_remove_step;
 #[path = "../flow13_acceptance.rs"]

@@ -1991,6 +1991,108 @@ pub fn config_ack(format: Format, ack: &ConfigAck) -> String {
     }
 }
 
+/// One declared knob's **resolved reading** — the row `jigc config get` prints for one
+/// key and `jigc config list` prints for the whole closed surface
+/// (`design/overrides.md` → Reading the resolved cascade).
+///
+/// The three facts a reader needs to explain a resolved value: the value itself, the
+/// **layer that won it** (`pack-default` / `team` / `project` — [`LayerKind::label`]),
+/// and, when a `scalar-set` for this key was **soft-rejected** by the knob's `floor`,
+/// the [`RejectedSet`] that was dropped. Without that last field a floored demotion is
+/// invisible from the read side: the delta is in the manifest, the value is unchanged,
+/// and nothing says why (`overrides.md` → Soft-rejection, not abort).
+///
+/// [`LayerKind::label`]: engine::cascade::LayerKind::label
+#[derive(Debug)]
+pub struct KnobReading {
+    /// The declared knob key.
+    pub key: String,
+    /// Its resolved value after the cascade folds every applied `scalar-set`.
+    pub value: String,
+    /// The layer that won the resolved value (`pack-default` when none overrode it).
+    pub layer: &'static str,
+    /// The `scalar-set` this key's `floor` dropped, if any.
+    pub rejected: Option<RejectedSet>,
+}
+
+/// One soft-rejected `scalar-set` as the read rung reports it: the value a layer
+/// attempted, the `floor` it ranked below, and the layer that attempted it — the
+/// [`engine::cascade::Resolved::rejected_scalar_sets`] record, rendered.
+#[derive(Debug)]
+pub struct RejectedSet {
+    /// The value the layer tried to set.
+    pub attempted: String,
+    /// The knob's demotion-lock floor the attempt ranked below.
+    pub floor: String,
+    /// The layer that attempted the dropped set.
+    pub layer: &'static str,
+}
+
+/// One `key = value  (layer)` reading line, plus an indented `dropped:` line when a
+/// `scalar-set` for the key was soft-rejected — the shared agent/human row shape of
+/// both read verbs, so a one-key `get` and a whole-surface `list` read identically.
+fn knob_reading_line(reading: &KnobReading) -> String {
+    let mut line = format!("{} = {}  ({})\n", reading.key, reading.value, reading.layer);
+    if let Some(rejected) = &reading.rejected {
+        line.push_str(&format!(
+            "  dropped: `{}` set in {} ranks below this knob's `{}` floor, so it was not applied\n",
+            rejected.attempted, rejected.layer, rejected.floor,
+        ));
+    }
+    line
+}
+
+/// The JSON projection of one [`KnobReading`] — the row shape both read envelopes
+/// carry, so a driver parses `get` and `list` with one reader.
+fn knob_reading_json(reading: &KnobReading) -> serde_json::Value {
+    serde_json::json!({
+        "key": reading.key,
+        "value": reading.value,
+        "layer": reading.layer,
+        "rejected": reading.rejected.as_ref().map(|r| serde_json::json!({
+            "attempted": r.attempted,
+            "floor": r.floor,
+            "layer": r.layer,
+        })),
+    })
+}
+
+/// Render `jigc config get <key>` — one knob's resolved reading. `agent` / `human`
+/// emit the shared `key = value  (layer)` line (plus the `dropped:` line when a
+/// below-floor set was soft-rejected); `json` emits the row object under `op:
+/// config-get`. No routing footer — a knob read is not a composed reading surface,
+/// the same posture [`config_ack`] takes.
+pub fn config_get(format: Format, reading: &KnobReading) -> String {
+    match format {
+        Format::Json => {
+            let mut doc = knob_reading_json(reading);
+            doc["op"] = serde_json::Value::String("config-get".to_owned());
+            json(&doc)
+        }
+        Format::Agent | Format::Human => knob_reading_line(reading).trim_end().to_owned(),
+    }
+}
+
+/// Render `jigc config list` — every declared knob with its resolved reading, in the
+/// declared (sorted) key order. `agent` / `human` emit one [`knob_reading_line`] per
+/// knob; `json` emits them as the `knobs` array under `op: config-list`. This is the
+/// **closed surface** the cascade will accept a `scalar-set` against, so it is
+/// enumerated from the pack's declared knobs and never from a curated excerpt.
+pub fn config_list(format: Format, readings: &[KnobReading]) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({
+            "op": "config-list",
+            "knobs": readings.iter().map(knob_reading_json).collect::<Vec<_>>(),
+        })),
+        Format::Agent | Format::Human => readings
+            .iter()
+            .map(knob_reading_line)
+            .collect::<String>()
+            .trim_end()
+            .to_owned(),
+    }
+}
+
 /// One agent-text finding line: `<severity> · <code> — <message>`, plus an indented
 /// `route:` line when the finding carries a repair direction (the settled
 /// block-payload envelope — a hard block is a blocking finding carrying a route).

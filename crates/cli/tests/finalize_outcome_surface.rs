@@ -640,8 +640,10 @@ fn config_operational_error_honors_json() {
         .as_str()
         .unwrap_or_else(|| panic!("`error` carries the anyhow chain as a string; got:\n{stderr}"));
     assert!(
-        chain.contains("not a settable knob"),
-        "the chain carries the undeclared-knob rejection; got:\n{chain}",
+        chain.contains("config.undeclared-key"),
+        "the chain carries the undeclared-knob rejection, keyed by its stable code (M48 \
+         Inc 6: the code is what discriminates the rejection now that `config get` and \
+         `config set` both raise it); got:\n{chain}",
     );
 
     // ── agent (default): today's plain text, byte-unchanged ──────────────────────
@@ -656,13 +658,16 @@ fn config_operational_error_honors_json() {
         "a config operational error stays exit 1 under the agent default; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
+    // The property is the *relationship*, not the wording: the agent surface is the
+    // plain `{err:#}` bytes, which is exactly what the JSON envelope wraps. Asserted
+    // against the chain lifted from the envelope above rather than a re-typed literal,
+    // so a reworded rejection cannot pass on one surface and fail on the other (M48
+    // Inc 6 re-routed this very message at `jigc config list`).
     assert_eq!(
         String::from_utf8(out.stderr).expect("utf-8 stderr"),
-        "`bogus-knob` is not a settable knob — the cascade surface is closed\n  \
-         route: set one of the declared knobs: default-workflow, docs-root, \
-         finalize.fan-out.squash, invocation-log — plus 37 \
-         `validation.<probe>.<check>.severity` per-check cascade keys\n",
-        "the agent-format config operational error stays the plain `{{err:#}}` bytes",
+        format!("{chain}\n"),
+        "the agent-format config operational error stays the plain `{{err:#}}` bytes — \
+         the same chain the JSON envelope carries",
     );
 }
 
