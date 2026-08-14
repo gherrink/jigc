@@ -1015,6 +1015,26 @@ fn migrate_corpus_re_run_after_a_rejected_commit_lands_the_migration() {
             && out.contains("an earlier run's migration was written but never landed"),
         "the recovery commit names itself rather than claiming this run migrated; stdout:\n{out}",
     );
+    // **F11 (M48 Inc 9 T4)** — and the HEADLINE says the same thing the trailing line does.
+    // It used to describe the *scan* (`0 migrated, 2 already current`) while the action sat in
+    // the trailing commit line — the F13 class through this door. A doc `HEAD` is still missing
+    // is **not** already current: this run LANDED it, at both render sites.
+    assert!(
+        out.starts_with(
+            "corpus migration: 0 migrated, 2 recovered from an earlier run, 0 already current, \
+             0 blocked\n"
+        ),
+        "the headline names the landed recovery, not an already-current scan; stdout:\n{out}",
+    );
+    assert!(
+        out.contains("  recovered  CHANGELOG.md\n")
+            && out.contains("  recovered  docs/decisions/alpha-decision.md\n"),
+        "each recovered doc is listed as recovered — both candidate shapes; stdout:\n{out}",
+    );
+    assert!(
+        !out.contains("  current    "),
+        "no recovered doc is listed `current` — the second render site (F11); stdout:\n{out}",
+    );
 
     // The migration LANDED — one commit, carrying both halves of the relocation move and the
     // in-place stamp.
@@ -1058,6 +1078,157 @@ fn migrate_corpus_re_run_after_a_rejected_commit_lands_the_migration() {
             && !clone.path().join("docs/changelog/changelog.md").exists(),
         "the fresh clone holds the relocated changelog ONCE, at its placement home",
     );
+}
+
+/// One cell of the **run-mode axis** — the flags a `jigc migrate-corpus` run can carry, crossed
+/// with the corpus state that makes the run a *recovery*.
+struct RunModeCell {
+    /// The flags after `migrate-corpus` (`&[]` is the applying, committing run). `--dry-run`
+    /// implies no commit, so `--dry-run --no-commit` is not a distinct mode.
+    flags: &'static [&'static str],
+    /// Whether an earlier `--no-commit` run already wrote the migration `HEAD` is still
+    /// missing — the state a rejected commit leaves behind, reachable without a hook.
+    unlanded: bool,
+    /// The whole first line the run must print, byte-exact.
+    headline: &'static str,
+    /// The per-doc line the one candidate must be listed under — the report's *second* render
+    /// site, which carried the same word as the headline count and so told the same lie.
+    doc_line: &'static str,
+    /// Whether the run **lands** what it reports (`HEAD` moves).
+    lands: bool,
+}
+
+/// **F11 (M48 Inc 9 T4) — the headline states the run mode, over the whole run-mode axis.**
+///
+/// The reported repro is one cell of this table: a run that **landed** an earlier run's
+/// migration announced `0 migrated, 1 already current` and listed the doc it had just committed
+/// as `current`, while the only true sentence sat in the trailing commit line. That is the F13
+/// class through a third door — *the headline describes the scan while the action sits below it*
+/// — so the fix is swept over the axis the class lives on rather than pinned to the repro: the
+/// three run modes × the two corpus states, each cell's headline **byte-exact and true**.
+///
+/// The response is re-derived across the whole widened domain, not just the cell that motivated
+/// it: a doc whose migrated form `HEAD` is missing is never `already current`, but only a run
+/// that **commits** may call it *recovered* — under `--dry-run` and `--no-commit` nothing lands,
+/// so those cells say *unlanded* and the arm proves it by asserting `HEAD` did not move.
+///
+/// `--no-commit` is the second, hook-free path into the unlanded state (the render's own
+/// recovery comment names both), so the fixture is not built by the defect it tests.
+#[test]
+fn migrate_corpus_headline_states_its_run_mode_over_the_whole_axis() {
+    const CELLS: &[RunModeCell] = &[
+        // A plain unmigrated corpus — no earlier run, no recovery clause anywhere.
+        RunModeCell {
+            flags: &["--dry-run"],
+            unlanded: false,
+            headline: "corpus migration (dry run — nothing written): 1 would migrate, \
+                       0 already current, 0 blocked",
+            doc_line: "  would migrate docs/decisions/alpha-decision.md",
+            lands: false,
+        },
+        RunModeCell {
+            flags: &[],
+            unlanded: false,
+            headline: "corpus migration: 1 migrated, 0 already current, 0 blocked",
+            doc_line: "  migrated   docs/decisions/alpha-decision.md",
+            lands: true,
+        },
+        RunModeCell {
+            flags: &["--no-commit"],
+            unlanded: false,
+            headline: "corpus migration: 1 migrated, 0 already current, 0 blocked",
+            doc_line: "  migrated   docs/decisions/alpha-decision.md",
+            lands: false,
+        },
+        // The same three modes over a corpus carrying an earlier run's unlanded migration.
+        RunModeCell {
+            flags: &["--dry-run"],
+            unlanded: true,
+            headline: "corpus migration (dry run — nothing written): 0 would migrate, \
+                       1 unlanded from an earlier run, 0 already current, 0 blocked",
+            doc_line: "  unlanded   docs/decisions/alpha-decision.md",
+            lands: false,
+        },
+        RunModeCell {
+            flags: &[],
+            unlanded: true,
+            headline: "corpus migration: 0 migrated, 1 recovered from an earlier run, \
+                       0 already current, 0 blocked",
+            doc_line: "  recovered  docs/decisions/alpha-decision.md",
+            lands: true,
+        },
+        RunModeCell {
+            flags: &["--no-commit"],
+            unlanded: true,
+            headline: "corpus migration: 0 migrated, 1 unlanded from an earlier run, \
+                       0 already current, 0 blocked",
+            doc_line: "  unlanded   docs/decisions/alpha-decision.md",
+            lands: false,
+        },
+    ];
+
+    for cell in CELLS {
+        let tag = format!(
+            "{}{}",
+            if cell.flags.is_empty() {
+                "applying"
+            } else {
+                cell.flags[0].trim_start_matches("--")
+            },
+            if cell.unlanded { "-recovery" } else { "" },
+        );
+        let repo = TempDir::new(&tag);
+        let home = TempDir::new("home");
+        setup_repo(repo.path(), home.path());
+        commit_adr(repo.path(), "alpha-decision", "Alpha decision", None);
+        if cell.unlanded {
+            // Write the migration and land nothing — the state a rejected commit also leaves.
+            let prep = jigc(repo.path(), home.path(), &["migrate-corpus", "--no-commit"]);
+            assert_ok(&prep, "the `--no-commit` prep run");
+        }
+        let base = head(repo.path());
+
+        let mut argv = vec!["migrate-corpus"];
+        argv.extend(cell.flags);
+        let run = jigc(repo.path(), home.path(), &argv);
+        let out = String::from_utf8_lossy(&run.stdout);
+        assert_ok(&run, &format!("`jigc {}`", argv.join(" ")));
+
+        assert_eq!(
+            out.lines().next().unwrap_or_default(),
+            cell.headline,
+            "the `{tag}` cell's headline states its run mode; stdout:\n{out}",
+        );
+        assert!(
+            out.contains(&format!("{}\n", cell.doc_line)),
+            "the `{tag}` cell lists its doc under the same word its headline counts; \
+             stdout:\n{out}",
+        );
+        // Truth, not just distinctness: the corpus really is where the headline says it is.
+        assert_eq!(
+            head(repo.path()) != base,
+            cell.lands,
+            "the `{tag}` cell's headline may only claim what the run landed; stdout:\n{out}",
+        );
+        if cell.unlanded {
+            assert!(
+                !out.contains("  current    "),
+                "the `{tag}` cell never lists an unlanded doc as already current; stdout:\n{out}",
+            );
+        }
+    }
+
+    // Byte-distinct where the mode changes what the headline must say: each mode's recovery
+    // cell differs from its own plain cell. (`--no-commit` and the applying run share a
+    // headline over a plain corpus by F2's recorded design — they migrate the same docs, and
+    // what differs is what they did with the writes, which is the trailing sentence's job.)
+    for mode in [0usize, 1, 2] {
+        assert_ne!(
+            CELLS[mode].headline,
+            CELLS[mode + 3].headline,
+            "a run that meets an earlier run's unlanded migration says so",
+        );
+    }
 }
 
 /// **The recovery rule's omitting context** — the corpus with no unlanded migration in it.

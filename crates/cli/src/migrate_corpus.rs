@@ -152,6 +152,24 @@ pub struct CorpusMigrationReport {
     /// commit boundary, so it stays out of the report's serialized surface.
     #[serde(skip)]
     touched: Vec<String>,
+    /// The docs whose migrated form is **written but not in `HEAD`** — an earlier run's
+    /// migration whose commit was rejected, or a `--no-commit` run's writes ([`unlanded_paths`]),
+    /// narrowed to the paths this run's walk found at the current version on disk. Sorted.
+    ///
+    /// They are current *on disk*, which is exactly why the pre-F11 report counted them
+    /// `already current` (M48 Inc 9 T4) — a run that **landed** them announced `0 migrated,
+    /// N already current` and listed each one `current`, while the only true sentence sat in the
+    /// trailing commit line. That is the *headline describes the scan, the action sits below it*
+    /// class through this door. They are held out of [`Self::already_current`] because `HEAD` is
+    /// still behind, which is precisely what a fresh clone sees — the per-clone split N2 closed.
+    ///
+    /// **Text-only, like [`Self::no_commit`]**, and for the same reason: the envelope already
+    /// discriminates the recovery (`dry_run: false` + `commit: <sha>` + `migrated: []`), and
+    /// `commit` names the sha whose tree carries exactly these paths — re-derivable, not a
+    /// withheld value (`design/command-output-contract.md` → the parity rule, whose fence is
+    /// `crates/cli/tests/text_json_parity_axis.rs`).
+    #[serde(skip)]
+    pub(crate) unlanded: Vec<String>,
     /// `--dry-run` — the run **suppressed the write** (nothing on disk changed). Threaded into
     /// the report so both surfaces say what the run *is*: the render frames every migrated path
     /// as *"would migrate"* under a *"dry run — nothing written"* header (past-tense
@@ -532,6 +550,7 @@ pub(crate) fn migrate_committed_corpus(
         commit: None,
         hook_output: String::new(),
         touched: Vec::new(),
+        unlanded: Vec::new(),
         dry_run: options.dry_run,
         no_commit: options.no_commit,
     };
@@ -568,8 +587,12 @@ pub(crate) fn migrate_committed_corpus(
         let v0_from = v0_prior_shape(pack, dt, &to_diff);
         // THE UNLANDED PATHSPEC (N2): what `HEAD` is still missing because an earlier run wrote
         // the migration and its commit was rejected. Computed **before** the fold applies this
-        // run's writes, so it names only the *earlier* run's residue.
-        report.touched.extend(unlanded_paths(pack, repo_root, dt));
+        // run's writes, so it names only the *earlier* run's residue. It is both the recovery's
+        // commit pathspec and — narrowed to the docs the walk below reports current — the set
+        // the report must NOT call `already current` (F11).
+        let unlanded = unlanded_paths(pack, repo_root, dt);
+        report.unlanded.extend(unlanded.iter().cloned());
+        report.touched.extend(unlanded);
         // Each candidate is `(source, destination)` — the FROM home the walk found the
         // committed instance at, and the path the gated bytes land at
         // (`design/corpus-migration.md` → Relocation: the walk keys on the from home).
@@ -850,6 +873,23 @@ pub(crate) fn migrate_committed_corpus(
 
     report.migrated.sort();
     report.already_current.sort();
+    // F11 — a doc whose migrated form `HEAD` is still missing is **not** `already current`; it is
+    // an earlier run's unlanded migration, which a committing run lands. Partitioned off a SET,
+    // so the split never depends on the order the doctype walk contributed its paths in, and the
+    // two lists stay path-sorted (`already_current` is sorted just above, and a filter preserves
+    // that). The unlanded pathspec's other members — a relocation's removed source — name no doc
+    // the walk reports, so intersecting with `already_current` is what narrows it to documents.
+    let unlanded: std::collections::BTreeSet<String> =
+        std::mem::take(&mut report.unlanded).into_iter().collect();
+    report.unlanded = report
+        .already_current
+        .iter()
+        .filter(|path| unlanded.contains(*path))
+        .cloned()
+        .collect();
+    report
+        .already_current
+        .retain(|path| !unlanded.contains(path));
     // Sorted by the stable target (the doc's path) — the findings collection is the seam, so
     // it is re-wrapped rather than sorted in place.
     let mut blocked = std::mem::take(&mut report.blocked).into_vec();

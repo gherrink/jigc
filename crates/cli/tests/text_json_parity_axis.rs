@@ -185,14 +185,18 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (
         &["migrate-corpus"],
         Tier::Judgment(
-            "the corpus-migration report — its three run-mode sentences (dry-run / committed / \
-             `--no-commit`) are prose, and the report type carries a crate-private \
-             commit-boundary field, so no witness exists outside the crate",
+            "the corpus-migration report — its run-mode sentences (dry-run / committed / \
+             `--no-commit`) and its recovery clause (M48 F11 — the headline and the per-doc \
+             line a run that LANDS an earlier run's unlanded migration prints) are prose, and \
+             the report type carries crate-private commit-boundary fields, so no witness \
+             exists outside the crate",
             Disposition::DeclaredOut(
-                "the whole report serializes (`json(report)`), and the one text-only field is \
-                 `no_commit` — declared `#[serde(skip)]` at the field itself, with the recorded \
-                 reason that the envelope already discriminates the run mode by `dry_run: \
-                 false` + `commit: null`. Re-derivable, and recorded where it is skipped",
+                "the whole report serializes (`json(report)`), and the two text-only fields are \
+                 `no_commit` and `unlanded` — each declared `#[serde(skip)]` at the field \
+                 itself, with its recorded reason: the envelope already discriminates the run \
+                 mode by `dry_run: false` + `commit: null`, and the recovery by `dry_run: \
+                 false` + `commit: <sha>` + `migrated: []` — whose sha names the tree carrying \
+                 exactly the recovered paths. Re-derivable, and recorded where they are skipped",
             ),
         ),
     ),

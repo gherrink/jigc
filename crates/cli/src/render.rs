@@ -2710,8 +2710,9 @@ pub fn rename(format: Format, report: &crate::rename::RenameReport) -> String {
 }
 
 /// Render a `jigc migrate-corpus` outcome to the surface `format` selects: `agent` /
-/// `human` emit a per-doc summary — one `migrated`/`already current` line per doc plus, for
-/// each blocked doc, its Framing-A route — then the **landed commit** (the verb commits its
+/// `human` emit a per-doc summary — one `migrated` / `recovered`-or-`unlanded` / `already
+/// current` line per doc plus, for each blocked doc, its Framing-A route — then the **landed
+/// commit** (the verb commits its
 /// own migration; absent when nothing was committed) and the routing footer; `json` emits the
 /// generic projection of the report (tooling-consumed, no footer), whose `commit` field
 /// carries the same sha (`null` when nothing was committed). The verb writes the migrated
@@ -2724,20 +2725,38 @@ pub fn corpus_migration(
     match format {
         Format::Json => json(report),
         Format::Agent | Format::Human => {
+            // THE RECOVERY CLAUSE (M48 Inc 9, F11 — Law 1 "the headline states what the run
+            // did"). An earlier run's migration that was written and never landed (its commit
+            // rejected, or `--no-commit`) is current *on disk* and absent from `HEAD`, so the
+            // pre-F11 headline counted it `already current` and listed it `current` — a run that
+            // **landed** it described the scan instead, while the only true sentence sat in the
+            // trailing commit line. Whether it *is* landed is the run mode's answer, not the
+            // corpus's: a committing run recovers those paths (the commit below names the sha),
+            // a `--dry-run` / `--no-commit` run leaves them exactly as unlanded as it found them.
+            // Absent entirely when there is nothing unlanded, so an ordinary run's bytes are
+            // unchanged.
+            let landed = report.commit.is_some();
+            let recovery = if report.unlanded.is_empty() {
+                String::new()
+            } else if landed {
+                format!("{} recovered from an earlier run, ", report.unlanded.len())
+            } else {
+                format!("{} unlanded from an earlier run, ", report.unlanded.len())
+            };
             // A `--dry-run` suppressed the write, so it must not speak in the past tense: the
             // header says what the run IS (nothing written) and every migrated path is framed
             // `would migrate` — byte-distinct from an applying run, which the pre-F2 renderer
             // was not (M43 surface census, F2 — Law 1 "acks state the effect").
             let mut out = if report.dry_run {
                 format!(
-                    "corpus migration (dry run — nothing written): {} would migrate, {} already current, {} blocked\n",
+                    "corpus migration (dry run — nothing written): {} would migrate, {recovery}{} already current, {} blocked\n",
                     report.migrated.len(),
                     report.already_current.len(),
                     report.blocked.len(),
                 )
             } else {
                 format!(
-                    "corpus migration: {} migrated, {} already current, {} blocked\n",
+                    "corpus migration: {} migrated, {recovery}{} already current, {} blocked\n",
                     report.migrated.len(),
                     report.already_current.len(),
                     report.blocked.len(),
@@ -2748,6 +2767,15 @@ pub fn corpus_migration(
                     out.push_str(&format!("  would migrate {path}\n"));
                 } else {
                     out.push_str(&format!("  migrated   {path}\n"));
+                }
+            }
+            // The second render site the headline's word must agree with — it carried `current`
+            // for a doc the run had just committed (F11).
+            for path in &report.unlanded {
+                if landed {
+                    out.push_str(&format!("  recovered  {path}\n"));
+                } else {
+                    out.push_str(&format!("  unlanded   {path}\n"));
                 }
             }
             for path in &report.already_current {
