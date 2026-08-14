@@ -70,9 +70,13 @@ never your working tree — so two of the things above are *not* in that commit:
 `.git/hooks/`, a `core.hooksPath` pointing elsewhere, or a linked worktree's shared
 hooks dir — because git cannot track a file there. If your repo keeps hooks *in* the
 tree (an in-repo `core.hooksPath`), the hook is an ordinary tracked file and `setup`
-commits it with the rest — unless that hooks dir belongs to **another** repository
-(shared hooks vendored as a submodule, or an embedded repo), where it is that repo's
-file to commit, not yours; note that a committed hook carries **this** machine's `jigc`
+commits it with the rest — unless git will not take that path from your repo, in which
+case `setup` leaves the hook out of its commit and commits the rest normally. That
+covers a hooks dir belonging to **another** repository (shared hooks vendored as a
+submodule — checked out or not — or an embedded repo), where it is that repo's file to
+commit, not yours, and a hooks dir your **sparse-checkout** excludes. Either way the
+hook is installed and works locally, it just isn't in the commit; note that a committed
+hook carries **this** machine's `jigc`
 path, so in someone else's clone it stays silent until they run `jigc setup`
 themselves. These edits are idempotent — re-running `jigc setup` leaves the files
 byte-identical (no new commit), so it is safe to run after every upgrade to re-apply

@@ -1006,12 +1006,15 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
 /// by the rule instead of re-opening the hole. The hook **file** is named, never the
 /// hooks **dir**: a `core.hooksPath` directory may hold the user's own other hooks, and
 /// `git add <dir>` would sweep them.
+///
+/// `hook` is [`committable_hook_path`]'s already-resolved answer rather than the hook
+/// file, so [`commit_install`] holds the one entry it may have to **drop** (the
+/// soft-member retry) without asking git the same question twice.
 fn install_tracked_paths(
-    repo_root: &Path,
     line_file: &str,
     allowlist_file: &str,
     seeded_gitignore: bool,
-    hook_file: &Path,
+    hook: Option<&str>,
 ) -> Vec<String> {
     let mut paths = vec![
         line_file.to_string(),      // CLAUDE.md (the bootstrap reference host)
@@ -1029,8 +1032,8 @@ fn install_tracked_paths(
         paths.push(".gitignore".to_string());
     }
     // The `pre-commit` hook, iff git can track it from this working tree.
-    if let Some(hook) = committable_hook_path(repo_root, hook_file) {
-        paths.push(hook);
+    if let Some(hook) = hook {
+        paths.push(hook.to_string());
     }
     paths
 }
@@ -1057,8 +1060,22 @@ fn install_tracked_paths(
 ///     submodule `git add` refuses with `Pathspec '…' is in submodule '…'` (exit 128),
 ///     and inside an embedded repo `git add` stages nothing at exit 0 while the
 ///     pathspec-limited `git commit` then dies on `did not match any file(s) known to
-///     git`. Asking the ownership question refuses both, and the un-enumerated third
-///     shape with them.
+///     git`.
+///   - **not under a gitlink in the *index*** — the same ownership question asked of the
+///     index, because the filesystem cannot answer it alone. A submodule that is
+///     registered but **not checked out** — a plain `git clone` without `--recursive`, or
+///     a `git submodule deinit` — leaves an *empty directory* with no `.git` inside it,
+///     so `rev-parse --show-toplevel` from the hook's own dir answers **this** root and
+///     the filesystem test says "mine". The index still holds the `160000` gitlink at the
+///     submodule's path, and `git add` refuses the hook fatally exactly as it does when
+///     the submodule *is* checked out. This is the common shape, not the exotic one: a
+///     clone without `--recursive` is the default clone.
+///
+/// The two ownership halves cover the shapes we know; **neither can promise git will
+/// accept the path** (a sparse-checkout excluding the hooks dir refuses it while every
+/// test here says "committable"), which is why [`commit_install`] treats the hook as a
+/// **soft** member of the pathspec. This function keeps the pathspec honest; it is not
+/// the only thing standing between an unusual hooks dir and a failed install.
 ///
 /// Deliberately *not* keyed on [`display_hook_path`]'s printed value: that renders the
 /// default `.git/hooks/pre-commit` **relative** (it strips the canonicalized repo root,
@@ -1105,7 +1122,62 @@ fn committable_hook_path(repo_root: &Path, hook_file: &Path) -> Option<String> {
         return None;
     }
 
+    // …and the same question of the index, which is the only side that can see a
+    // registered-but-absent submodule (the un-`--recursive` clone).
+    if index_gitlink_covers(repo_root, &relative) {
+        return None;
+    }
+
     Some(relative)
+}
+
+/// Whether the index holds a **gitlink** (mode `160000`) at any ancestor directory of
+/// `relative` — i.e. whether the path lies inside a submodule as far as *this* index is
+/// concerned, checked out or not.
+///
+/// Asks about the ancestors rather than the path itself, because a pathspec *inside* a
+/// submodule matches nothing (that is the whole problem). The gitlink's own reported path
+/// is then checked to be a proper ancestor: a sibling submodule under a shared parent
+/// (`my-hooks/vendored` beside `my-hooks/pre-commit`) matches the ancestor pathspec but
+/// does not contain the hook, and refusing on it would drop a perfectly committable hook.
+/// `-z` so paths arrive unquoted whatever `core.quotePath` says. Conservative on failure:
+/// if git cannot be asked, the entry keeps whatever the other tests granted it — the
+/// soft-member retry in [`commit_install`] is the backstop, not this.
+fn index_gitlink_covers(repo_root: &Path, relative: &str) -> bool {
+    let mut ancestors: Vec<String> = Vec::new();
+    let mut prefix = String::new();
+    // Every proper ancestor DIRECTORY of the hook file (its own component dropped).
+    let mut components: Vec<&str> = relative.split('/').collect();
+    components.pop();
+    for component in components {
+        if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        prefix.push_str(component);
+        ancestors.push(prefix.clone());
+    }
+    if ancestors.is_empty() {
+        return false;
+    }
+
+    let mut args: Vec<String> = vec![
+        "ls-files".into(),
+        "--stage".into(),
+        "-z".into(),
+        "--".into(),
+    ];
+    args.extend(ancestors);
+    let Some(out) = git_output(repo_root, args) else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .split('\0')
+        .filter_map(|entry| entry.strip_prefix("160000 "))
+        .filter_map(|entry| entry.split_once('\t'))
+        .any(|(_, path)| relative.starts_with(&format!("{path}/")))
 }
 
 /// A git step of the install commit that **ran and refused** — the loud half of
@@ -1191,7 +1263,23 @@ fn is_git_identity_rejection(git_err: &str) -> bool {
 /// `user.email`/`user.name`, a held index lock, a pathspec this index cannot take) —
 /// means the install is not in any commit, so it returns
 /// `Err(`[`InstallCommitRejection`]`)` for [`install`] to surface as a loud blocking
-/// finding rather than a silent skip behind a success banner. Uses `--no-verify`: the
+/// finding rather than a silent skip behind a success banner.
+///
+/// **The `pre-commit` hook is a *soft* member of the pathspec.** Six of the seven entries
+/// are files setup wrote at paths setup chose; the seventh is the hook, whose home the
+/// *user's* `core.hooksPath` chose, and no test [`committable_hook_path`] can run
+/// *promises* git will accept it (a registered-but-absent submodule looked committable to
+/// the filesystem until the index was asked; a sparse-checkout excluding the hooks dir
+/// still refuses one that passes every test). So a `git add` refusal the hook entry is
+/// responsible for costs **the hook's membership**, not the whole install commit: drop it
+/// and ask git again. Attribution is **behavioural, never a string match on git's
+/// message** — if the retry succeeds, the hook was the cause; if it refuses again, it was
+/// not, and *that* refusal (over the reduced pathspec, naming what actually still blocks)
+/// is the one surfaced. Falling back leaves the already-declared bound — a hook this repo
+/// cannot track is installed, reported, and left as the containing repo's file — instead
+/// of an install that cannot be completed at all.
+///
+/// Uses `--no-verify`: the
 /// only hook present is the warn-only `pre-commit` setup just installed, and running the
 /// doc↔code backstop against this commit is pointless (it carries install artifacts, not
 /// managed docs) — and the hook must not self-trigger on the very commit that installs
@@ -1219,32 +1307,43 @@ fn commit_install(
     }
 
     // Only the files setup itself wrote, and only those present + not gitignored.
-    let paths: Vec<String> = install_tracked_paths(
-        repo_root,
-        line_file,
-        allowlist_file,
-        seeded_gitignore,
-        hook_file,
-    )
-    .into_iter()
-    .filter(|p| repo_root.join(p).exists())
-    .filter(|p| !git_path_ignored(repo_root, p))
-    .collect();
+    let hook = committable_hook_path(repo_root, hook_file);
+    let mut paths: Vec<String> =
+        install_tracked_paths(line_file, allowlist_file, seeded_gitignore, hook.as_deref())
+            .into_iter()
+            .filter(|p| repo_root.join(p).exists())
+            .filter(|p| !git_path_ignored(repo_root, p))
+            .collect();
     if paths.is_empty() {
         return Ok(InstallCommit::Skipped);
     }
 
     // Stage exactly those paths — never a blanket `git add -A`.
-    let mut add: Vec<&str> = vec!["add", "--"];
-    add.extend(paths.iter().map(String::as_str));
-    match git_output(repo_root, add) {
-        Some(out) if out.status.success() => {}
-        // git ran and REFUSED to stage. Nothing lands from here on, so this must not
-        // degrade to a silent skip behind the success banner — the same loudness the
-        // commit step below gets, for the same reason.
-        Some(out) => return Err(InstallCommitRejection::Stage(git_said(&out))),
+    match stage_paths(repo_root, &paths) {
+        StageOutcome::Staged => {}
         // git could not be spawned at all — benign skip (the writes still succeeded).
-        None => return Ok(InstallCommit::Skipped),
+        StageOutcome::GitUnavailable => return Ok(InstallCommit::Skipped),
+        // git ran and REFUSED to stage. Retry without the hook — the one soft member —
+        // before deciding the install commit is lost (see this function's doc comment);
+        // an entry that is not there cannot be the cause, so a pathspec that never
+        // carried the hook goes straight to the loud finding.
+        StageOutcome::Refused(git) => {
+            let dropped = hook.as_deref().filter(|h| paths.iter().any(|p| p == h));
+            let Some(dropped) = dropped else {
+                return Err(InstallCommitRejection::Stage(git));
+            };
+            paths.retain(|p| p != dropped);
+            if paths.is_empty() {
+                return Ok(InstallCommit::Skipped);
+            }
+            match stage_paths(repo_root, &paths) {
+                StageOutcome::Staged => {}
+                StageOutcome::GitUnavailable => return Ok(InstallCommit::Skipped),
+                // The hook was not the cause: surface the refusal over the reduced
+                // pathspec, which names what actually still blocks.
+                StageOutcome::Refused(git) => return Err(InstallCommitRejection::Stage(git)),
+            }
+        }
     }
 
     // Nothing staged among our paths (a re-run over an unchanged install) → clean no-op.
@@ -1286,6 +1385,31 @@ fn commit_install(
             }
         }
         _ => Ok(InstallCommit::Skipped),
+    }
+}
+
+/// What one `git add -- <paths>` did, with git-could-not-be-spawned kept distinct from
+/// git-ran-and-refused: the first is a benign skip, the second is fatal to the install
+/// commit — and the two must not collapse (that collapse is how `jigc setup` once printed
+/// a full success banner over an install it had not committed).
+enum StageOutcome {
+    /// git staged the pathspec.
+    Staged,
+    /// git could not be spawned at all — the writes still succeeded.
+    GitUnavailable,
+    /// git ran and refused, carrying its own words.
+    Refused(String),
+}
+
+/// Stage exactly `paths` — never a blanket `git add -A`. Its own function because
+/// [`commit_install`] runs it **twice** on the refusal path (the soft-member retry).
+fn stage_paths(repo_root: &Path, paths: &[String]) -> StageOutcome {
+    let mut add: Vec<&str> = vec!["add", "--"];
+    add.extend(paths.iter().map(String::as_str));
+    match git_output(repo_root, add) {
+        Some(out) if out.status.success() => StageOutcome::Staged,
+        Some(out) => StageOutcome::Refused(git_said(&out)),
+        None => StageOutcome::GitUnavailable,
     }
 }
 
@@ -2909,6 +3033,145 @@ mod tests {
             committable_hook_path(host.path(), &hook),
             None,
             "a hooks dir inside an embedded repo belongs to that repo, not this index",
+        );
+
+        // (7) The same submodule as (5), **registered but not checked out** — a plain
+        //     `git clone` without `--recursive`, reproduced here by `submodule deinit`
+        //     (identical shape: a gitlink in the index over an empty directory). The
+        //     filesystem cannot answer the ownership question at all: there is no `.git`
+        //     inside, so `rev-parse --show-toplevel` from the hook's dir answers THIS
+        //     root. Only the index knows, and `git add` still refuses fatally.
+        git(
+            outer.path(),
+            &["submodule", "deinit", "-f", "--", "shared-hooks"],
+        );
+        // The fixture's premise, asserted rather than assumed: an empty directory whose
+        // path the index holds as a gitlink.
+        assert!(
+            !outer.path().join("shared-hooks/.git").exists(),
+            "the deinit'd submodule must have no `.git` — that is what blinds the \
+             filesystem test",
+        );
+        assert!(
+            git_str(outer.path(), &["ls-files", "--stage", "--", "shared-hooks"])
+                .starts_with("160000 "),
+            "the index must still hold the submodule's gitlink",
+        );
+        let hook = install_precommit_hook(outer.path(), jigc).expect("install");
+        assert_eq!(
+            committable_hook_path(outer.path(), &hook),
+            None,
+            "a hooks dir inside a NOT-CHECKED-OUT submodule is still the submodule's — \
+             the index says so even though the filesystem cannot",
+        );
+
+        // …and a submodule that is merely a SIBLING under a shared parent must not drag
+        // an otherwise committable hook down with it: the ancestor pathspec matches the
+        // gitlink, but the gitlink does not contain the hook.
+        let sibling = TempDir::new();
+        git(sibling.path(), &["init", "-q"]);
+        git_identity(sibling.path());
+        git(
+            sibling.path(),
+            &["commit", "-q", "--allow-empty", "-m", "init"],
+        );
+        git(sibling.path(), &["config", "core.hooksPath", "my-hooks"]);
+        std::fs::create_dir_all(sibling.path().join("my-hooks"))
+            .expect("create the in-tree hooks dir");
+        git(
+            sibling.path(),
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-q",
+                source.path().to_str().expect("utf-8 temp path"),
+                "my-hooks/vendored",
+            ],
+        );
+        let hook = install_precommit_hook(sibling.path(), jigc).expect("install");
+        assert_eq!(
+            committable_hook_path(sibling.path(), &hook).as_deref(),
+            Some("my-hooks/pre-commit"),
+            "a submodule BESIDE the hook is not an ancestor of it — the hook stays \
+             committable",
+        );
+    }
+
+    /// The `pre-commit` hook is a **soft** member of the install pathspec: a `git add`
+    /// refusal the hook entry is responsible for costs the hook's membership, not the
+    /// whole install commit — and when the hook is *not* the cause, the refusal is still
+    /// loud (the fallback must not swallow a real one).
+    ///
+    /// Forced with a **sparse-checkout** that excludes the in-tree hooks dir: a real,
+    /// un-enumerated shape that no location or index test catches — `committable_hook_path`
+    /// says "committable", and `git add` refuses anyway (verified live, git 2.53). That is
+    /// exactly the case the soft membership exists for, so it is what pins it.
+    #[test]
+    fn a_refused_hook_entry_costs_the_hook_not_the_install_commit() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        git_identity(dir.path());
+        git(dir.path(), &["commit", "-q", "--allow-empty", "-m", "init"]);
+        git(dir.path(), &["config", "core.hooksPath", "my-hooks"]);
+        std::fs::write(dir.path().join("CLAUDE.md"), "x\n").expect("write an install file");
+        let hook = install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("install");
+        // Everything but the hooks dir is in the sparse cone.
+        git(dir.path(), &["sparse-checkout", "init", "--cone"]);
+        git(dir.path(), &["sparse-checkout", "set", ".claude"]);
+        // The premise: the discriminator admits the hook, and git refuses it anyway.
+        assert_eq!(
+            committable_hook_path(dir.path(), &hook).as_deref(),
+            Some("my-hooks/pre-commit"),
+            "the fixture's premise: every committability test says yes",
+        );
+        assert!(
+            matches!(
+                stage_paths(dir.path(), &["my-hooks/pre-commit".to_string()]),
+                StageOutcome::Refused(_),
+            ),
+            "the fixture's premise: git refuses the hook anyway",
+        );
+
+        let outcome = commit_install(
+            dir.path(),
+            "CLAUDE.md",
+            ".claude/settings.json",
+            false,
+            &hook,
+        )
+        .expect("a refusal the hook caused must not sink the install commit");
+
+        assert!(
+            matches!(outcome, InstallCommit::Committed(_)),
+            "the install must still be committed; got {outcome:?}",
+        );
+        let committed = git_str(dir.path(), &["show", "--name-only", "--format=", "HEAD"]);
+        assert!(
+            committed.lines().any(|p| p == "CLAUDE.md"),
+            "the install files must be in the commit; got:\n{committed}",
+        );
+        assert!(
+            !committed.lines().any(|p| p == "my-hooks/pre-commit"),
+            "the dropped hook must not be in the commit; got:\n{committed}",
+        );
+
+        // The fallback is a retry, not a swallow: a refusal that survives dropping the
+        // hook is still surfaced loudly.
+        std::fs::write(dir.path().join(".git/index.lock"), "").expect("hold the index lock");
+        std::fs::write(dir.path().join("CLAUDE.md"), "y\n").expect("dirty an install file");
+        let rejection = commit_install(
+            dir.path(),
+            "CLAUDE.md",
+            ".claude/settings.json",
+            false,
+            &hook,
+        )
+        .expect_err("a refusal the hook did NOT cause must stay loud");
+        assert!(
+            matches!(rejection, InstallCommitRejection::Stage(_)),
+            "the surviving refusal is the staging one; got {rejection:?}",
         );
     }
 

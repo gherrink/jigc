@@ -1017,6 +1017,18 @@ enum HooksDirShape {
     /// ownership question with no `.gitmodules` entry: `git add` stages nothing at exit 0
     /// and the pathspec-limited `git commit` then fails on a path git does not know.
     EmbeddedRepo,
+    /// (7) the same submodule as (5), **registered in the index but not checked out** —
+    /// what a plain `git clone` (no `--recursive`) leaves behind, and the *common* shape:
+    /// an empty directory with no `.git` inside, so the filesystem's ownership answer is
+    /// "this repo" while the index still holds the `160000` gitlink and `git add` refuses
+    /// the hook exactly as fatally as in (5).
+    SubmoduleNotCheckedOut,
+    /// (8) an in-worktree `core.hooksPath` **excluded by a sparse-checkout** — a hook that
+    /// every location and ownership test calls committable and that `git add` refuses
+    /// anyway. No test can promise git will take a path, so this cell is what pins the
+    /// hook's **soft** membership: the refusal costs the hook's place in the pathspec,
+    /// never the install commit.
+    SparseCheckoutExcluded,
 }
 
 /// The install commit's footprint apart from the `pre-commit` hook: the seven paths
@@ -1075,12 +1087,20 @@ fn repo_relative(root: &Path, path: &Path) -> Option<String> {
 /// is left **tracked** in the working tree, and a second `jigc setup` mints no second
 /// commit (idempotency survives the widened pathspec).
 ///
-/// The axis has two halves, and the second is not about *location*: a hooks dir can sit
-/// under the root, outside git's own dirs, and still belong to **another** repository
-/// (shapes (5)/(6)). Declared bound, stated rather than engineered around: such a hook is
-/// installed and reported but not committable *here*, so the working tree keeps it as the
-/// containing repo's business — which is why the untracked-hook clause below is asserted
-/// exactly where the hook is committable.
+/// The axis has three halves, and only the first is about *location*. **Ownership:** a
+/// hooks dir can sit under the root, outside git's own dirs, and still belong to
+/// **another** repository — checked out (shapes (5)/(6)) or, the common case, *not*
+/// (shape (7), what a plain `git clone` leaves), where only the index can answer.
+/// **Acceptance:** even ownership settled, no test promises git will take the path
+/// (shape (8), a sparse-checkout excluding the hooks dir) — so the hook is a **soft**
+/// member of the pathspec and a refusal it causes costs the hook, never the install
+/// commit. Every non-committable cell therefore asserts the same thing the committable
+/// ones do: `jigc setup` exits 0 and the seven jigc-owned paths land in one commit.
+///
+/// Declared bound, stated rather than engineered around: such a hook is installed and
+/// reported but not committable *here*, so the working tree keeps it as the containing
+/// repo's business — which is why the untracked-hook clause below is asserted exactly
+/// where the hook is committable.
 #[test]
 fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
     for shape in [
@@ -1090,6 +1110,8 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
         HooksDirShape::LinkedWorktree,
         HooksDirShape::Submodule,
         HooksDirShape::EmbeddedRepo,
+        HooksDirShape::SubmoduleNotCheckedOut,
+        HooksDirShape::SparseCheckoutExcluded,
     ] {
         let home = TempDir::new("home");
         let repo = TempDir::new("hook-axis");
@@ -1196,6 +1218,70 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
                 (
                     repo.path().to_path_buf(),
                     repo.path().join("nested/hooks/pre-commit"),
+                    true,
+                    false,
+                )
+            }
+            HooksDirShape::SubmoduleNotCheckedOut => {
+                // Shape (5), then de-checked-out. `submodule deinit` leaves exactly what a
+                // `git clone` without `--recursive` leaves — an empty directory over a
+                // gitlink in the index — without needing a second clone to build it.
+                mark_repo(hooks_source.path());
+                fs::create_dir_all(hooks_source.path().join("hooks"))
+                    .expect("create the source hooks dir");
+                fs::write(hooks_source.path().join("hooks/keep"), "x\n")
+                    .expect("seed the source hooks dir");
+                git(hooks_source.path(), &["add", "-A"]);
+                git(hooks_source.path(), &["commit", "-q", "-m", "hooks"]);
+                git(
+                    repo.path(),
+                    &[
+                        "-c",
+                        "protocol.file.allow=always",
+                        "submodule",
+                        "add",
+                        "-q",
+                        hooks_source.path().to_str().expect("utf-8 temp path"),
+                        "shared-hooks",
+                    ],
+                );
+                git(repo.path(), &["commit", "-q", "-m", "add submodule"]);
+                git(
+                    repo.path(),
+                    &["submodule", "deinit", "-f", "--", "shared-hooks"],
+                );
+                // The premise, asserted: no `.git` for the filesystem to see, a gitlink
+                // the index still holds. Blind the first and this cell is (5) again.
+                assert!(
+                    !repo.path().join("shared-hooks/.git").exists(),
+                    "the deinit'd submodule must have no `.git`",
+                );
+                assert!(
+                    git_capture(repo.path(), &["ls-files", "--stage", "--", "shared-hooks"])
+                        .starts_with("160000 "),
+                    "the index must still hold the submodule's gitlink",
+                );
+                git(
+                    repo.path(),
+                    &["config", "core.hooksPath", "shared-hooks/hooks"],
+                );
+                (
+                    repo.path().to_path_buf(),
+                    repo.path().join("shared-hooks/hooks/pre-commit"),
+                    true,
+                    false,
+                )
+            }
+            HooksDirShape::SparseCheckoutExcluded => {
+                git(repo.path(), &["config", "core.hooksPath", "my-hooks"]);
+                // Cone mode always keeps root files (`CLAUDE.md`), so naming `.claude`
+                // keeps the rest of the install footprint in the cone and leaves exactly
+                // `my-hooks/` outside it.
+                git(repo.path(), &["sparse-checkout", "init", "--cone"]);
+                git(repo.path(), &["sparse-checkout", "set", ".claude", ".jigc"]);
+                (
+                    repo.path().to_path_buf(),
+                    repo.path().join("my-hooks/pre-commit"),
                     true,
                     false,
                 )
