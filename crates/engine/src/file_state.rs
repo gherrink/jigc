@@ -220,8 +220,10 @@ impl ConflictBlock {
 ///   [`crate::validate::AdoptionInputs::unadopted`]): a **never-adopted foreign** squatter
 ///   converges on the store family's `schema-conformance.unadopted-instance` with the
 ///   adoption route naming its own path, a **managed** doc keeps
-///   `reconciliation.conformance-block`. Neither is recorded, so either re-fires until the
-///   human resolves it.
+///   `reconciliation.conformance-block` — routed on **its schema-version stamp** (T2): the
+///   hand-repair sanction when it is at the current version, the corpus-migration route when
+///   it is stale, unstamped or ahead. Neither is recorded, so either re-fires until the human
+///   resolves it.
 /// - **`IN_SYNC`** (recorded hash matches) → no finding (clean / task-only change —
 ///   the working-area writes are reconciled elsewhere, not here).
 /// - **`DRIFTED + TOUCHED`** (`task_touched`) → **conflict-block**: both sides moved.
@@ -268,8 +270,10 @@ pub fn reconcile_committed(
         // bytes, carrying a route that names no verb and no path. A foreign file converges
         // here on the shipped `schema-conformance.unadopted-instance` and its adoption
         // route; everything the discriminator adjudicates **managed** (the commonest case,
-        // and every doc of an unversioned doctype) keeps `conformance_advisory_finding`
-        // unchanged. Neither branch records.
+        // and every doc of an unversioned doctype) keeps `conformance_advisory_finding` —
+        // whose route, since T2, is decided by the doc's own schema-version stamp rather
+        // than by adoption prose that is now wrong for its whole population. Neither
+        // branch records.
         None => match conformance_gate(schema, bytes) {
             Ok(_) => {
                 record.record(path, current);
@@ -279,7 +283,12 @@ pub fn reconcile_committed(
                 let source = String::from_utf8_lossy(bytes);
                 match adoption.unadopted(&schema.ty, schema, &source, path) {
                     Some(finding) => vec![finding],
-                    None => vec![conformance_advisory_finding(path, cause)],
+                    None => vec![conformance_advisory_finding(
+                        path,
+                        cause,
+                        &source,
+                        adoption.current(&schema.ty),
+                    )],
                 }
             }
         },
@@ -1065,6 +1074,22 @@ fn absorb_finding(path: &str) -> Finding {
     )
 }
 
+/// The **hand-repair sanction** — the route over a **managed** doc that is at the schema-version
+/// this binary knows and still does not conform (round-2 D7): the adapter rule bans hand-editing
+/// managed files, but out-of-band damage is repaired where it happened, so this is the one case
+/// the file is explicitly yours to hand-repair.
+///
+/// **One source, two producers** (M48 Inc 4 / T2). The blocking `DRIFTED` twin
+/// ([`conformance_block_finding`]) and the advisory `UNKNOWN` arm
+/// ([`conformance_advisory_finding`]) say the same thing about the same fact — an at-version
+/// managed doc that does not conform — and a second inline copy of these words is a drift
+/// waiting to happen: the acceptance suite lifts one producer's emitted route and compares it
+/// to the other's, which proves they *agree*, not that they come from the same place. This
+/// const is what makes them the same place.
+const HAND_REPAIR_SANCTION: &str = "fix the file to restore conformance, or revert the edit — \
+     this is the one case a managed file is yours to hand-edit: the damage was made \
+     out-of-band, so it is repaired where it happened";
+
 /// The blocking **conformance-block** finding (`reconciliation.md` → OOB edit →
 /// conformance-block: "a precise conformance error — file, line, expected shape"). The
 /// underlying parse/schema `cause` (re-located onto the file) names exactly what is
@@ -1082,27 +1107,43 @@ fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
         "reconciliation.conformance-block",
         format!("nonconformant edit on `{path}`: {detail}"),
         Some(Location::addressed(path, line, 1)),
-        // The sanctioning clause (round-2 D7): the adapter rule bans hand-editing
-        // managed files, but out-of-band damage is repaired where it happened — this
-        // is the one case the file is explicitly yours to hand-repair.
-        Some(
-            "fix the file to restore conformance, or revert the edit — this is the one \
-             case a managed file is yours to hand-edit: the damage was made out-of-band, \
-             so it is repaired where it happened"
-                .into(),
-        ),
+        Some(HAND_REPAIR_SANCTION.into()),
     )
 }
 
 /// The **advisory** conformance-block finding for the G4 baseline-adopt gate (M21;
-/// `project-setup.md` → Flow 2 hardening → G4 conformance gate). A foreign
-/// non-conformant `.md` squatting in a `location:` dir is **routed, not recorded** — so
+/// `project-setup.md` → Flow 2 hardening → G4 conformance gate). A non-conformant `.md`
+/// sitting in a `location:` dir with no recorded baseline is **routed, not recorded** — so
 /// it re-fires every sweep until the human resolves it. Reuses the existing
 /// `reconciliation.conformance-block` check id at [`Severity::Advisory`] (the M21 "no new
-/// check ids" invariant; the id is not knob-remapped, so Advisory stays advisory) and
-/// names the corrective verb in its route. The underlying parse/schema `cause` (re-located
-/// onto the file) names exactly what is wrong.
-fn conformance_advisory_finding(path: &str, cause: Option<Finding>) -> Finding {
+/// check ids" invariant; the id is not knob-remapped, so Advisory stays advisory). The
+/// underlying parse/schema `cause` (re-located onto the file) names exactly what is wrong.
+///
+/// **The route reads the doc's schema-version stamp** (M48 Inc 4 / T2). Until T1 this arm
+/// served foreign ∪ managed and routed *"ingest, migrate, or move `<path>` out of the managed
+/// location"* — advice that was right for the foreign majority. T1 sent every file the
+/// discriminator adjudicates **foreign** to the adoption advisory, so what is left here is
+/// **jigc's own doc**, and adoption-or-removal advice about it is wrong for the whole
+/// population. What is right depends on one fact — which schema the doc was written against —
+/// and both answers are already shipped strings:
+///
+/// - **at-version** (or an **unversioned** doctype, where `current` is `None` and the question
+///   does not arise) ⇒ [`HAND_REPAIR_SANCTION`], the blocking twin's route: nothing to migrate,
+///   so the file really is yours to hand-repair;
+/// - **below-version**, **stamp-absent** (the v0-era corpus) or **above-current** ⇒
+///   [`crate::validate::route_schema_conformance`]'s version-aware route, the same one the store
+///   door labels this doc's findings with. Hand-repair advice over a **stale** doc is itself
+///   wrong: it tells the operator to hand-fix what `jigc migrate-corpus` must rewrite.
+///
+/// The sanction is the **default**, overridden only where the stamp says otherwise — so a
+/// doctype the caller supplies no manifest version for keeps the pre-M48 blocking-twin wording
+/// by construction, never by a second branch.
+fn conformance_advisory_finding(
+    path: &str,
+    cause: Option<Finding>,
+    source: &str,
+    current: Option<u32>,
+) -> Finding {
     let (detail, line) = match &cause {
         Some(f) => (
             f.message.clone(),
@@ -1110,16 +1151,26 @@ fn conformance_advisory_finding(path: &str, cause: Option<Finding>) -> Finding {
         ),
         None => ("the file is not schema-conformant".to_string(), 1),
     };
-    Finding::graded(
+    let mut finding = Finding::graded(
         Severity::Advisory,
         "reconciliation.conformance-block",
         format!("unvetted file `{path}` in a managed location is not schema-conformant: {detail}"),
         Some(Location::addressed(path, line, 1)),
-        Some(
-            format!("ingest, migrate, or move `{path}` out of the managed location to resolve it")
-                .into(),
-        ),
-    )
+        Some(HAND_REPAIR_SANCTION.into()),
+    );
+    // Read the stamp from the RAW front matter, exactly as the discriminator does: a
+    // below-version doc of a structurally-changed doctype does not parse under the current
+    // schema — which is why it is in this arm at all.
+    let stamp = crate::validate::schema_version_from_front_matter(source);
+    if stamp != current {
+        crate::validate::route_schema_conformance(
+            std::slice::from_mut(&mut finding),
+            stamp,
+            current,
+            path,
+        );
+    }
+    finding
 }
 
 /// The blocking **conflict-block** finding (`reconciliation.md` → Conflict — block at
@@ -1509,6 +1560,40 @@ Referrers must point at the new decision.
             !f.message.contains("this task's staged writes")
                 && !route.as_str().contains("jigc task discard"),
             "the classifier contributes no task language of its own: {f:?}"
+        );
+    }
+
+    /// The **at-version advisory and its blocking twin read one shared sanction** (M48 Inc 4 /
+    /// T2). The two producers sit side by side and once carried the clause as **two inline
+    /// literals** — a drift the acceptance suite could not catch, because a suite that lifts one
+    /// producer's bytes and compares them to the other's stays green only while both come from
+    /// the same place. Pinned here at the seam: same route, character for character, and no
+    /// migration verb over a doc that is already at the current schema-version.
+    #[test]
+    fn the_at_version_advisory_and_its_blocking_twin_share_one_sanction() {
+        let path = "docs/decisions/cache-sessions-in-memory.md";
+        let at_version = conformance_advisory_finding(
+            path,
+            None,
+            "---\nschema-version: 2\n---\n\n# Cache sessions in memory\n",
+            Some(2),
+        );
+        let blocking = conformance_block_finding(path, None);
+
+        assert_eq!(
+            at_version.route, blocking.route,
+            "the at-version advisory serves the blocking twin's hand-repair sanction from ONE \
+             source — not a second copy of the same words"
+        );
+        let route = at_version.route.as_deref().expect("the advisory routes");
+        assert!(
+            !route.contains("migrate"),
+            "and a doc at the current schema-version is never told to migrate itself: {route}"
+        );
+        assert_eq!(
+            at_version.severity,
+            Severity::Advisory,
+            "the un-baselined arm stays advisory — only the route moves"
         );
     }
 

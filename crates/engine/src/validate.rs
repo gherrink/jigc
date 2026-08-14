@@ -1059,6 +1059,18 @@ impl<'a> AdoptionInputs<'a> {
         is_unadopted_foreign(ty, schema, source, self.versions, self.priors)
             .then(|| unadopted_instance(ty, rel_key, self.migratable.contains(ty)))
     }
+
+    /// The doctype's **manifest schema-version**, or `None` for an **unversioned** doctype
+    /// (M48 Inc 4 / T2) — the second thing the task-scope reconciler needs from this bundle,
+    /// and the same map [`is_unadopted_foreign`]'s precondition keys on.
+    ///
+    /// `None` is what makes the unversioned population correct **by construction** rather than
+    /// by a second branch: [`route_schema_conformance`] returns early on `None`, so a doctype
+    /// with no notion of "below version" keeps the hand-repair sanction — and that is exactly
+    /// the population the discriminator itself never classifies.
+    pub(crate) fn current(&self, ty: &str) -> Option<u32> {
+        self.versions.get(ty).copied()
+    }
 }
 
 #[cfg(test)]
@@ -1299,7 +1311,10 @@ fn read_schema_version_stamp(doc: &Document) -> Option<u32> {
 /// its stamp from the raw front matter. A doc with no leading fence, or no integer
 /// `schema-version:` line, yields `None` — the v0 corpus state the routing treats as
 /// below-version.
-fn schema_version_from_front_matter(source: &str) -> Option<u32> {
+///
+/// `pub(crate)` since M48 Inc 4 / T2: the task-scope reconciler's advisory routes on the same
+/// stamp, read the same way, so the two doors cannot disagree about what a doc is stamped.
+pub(crate) fn schema_version_from_front_matter(source: &str) -> Option<u32> {
     let body = source.strip_prefix("---\n")?;
     let end = body.find("\n---")?;
     body[..end].lines().find_map(|line| {
@@ -1437,7 +1452,13 @@ fn ahead_route(stamp: u32, current: u32, rel_key: &str) -> String {
 /// is `Some`): a doctype outside the versioned/frozen set has no notion of "below version",
 /// so its findings stay un-routed (reported, never mislabeled). No new check id or knob — the
 /// route rides the existing finding (M33 store-family pattern).
-fn route_schema_conformance(
+///
+/// `pub(crate)` since M48 Inc 4 / T2: the **task-scope** reconciler's un-baselined advisory
+/// ([`crate::file_state`] → `conformance_advisory_finding`) labels itself through this same
+/// function, so *stale* is *stale* at both doors. That caller starts from the hand-repair
+/// sanction and lets this override it, which is why the **at-version** arm — the one case the
+/// sanction is the true advice — is the only arm it does not take.
+pub(crate) fn route_schema_conformance(
     findings: &mut [Finding],
     stamp: Option<u32>,
     current: Option<u32>,

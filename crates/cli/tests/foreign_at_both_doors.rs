@@ -1,5 +1,6 @@
 //! Acceptance — **one foreign file, one code, one route at both doors** (M48 Increment 4,
-//! T1; `design/validation.md` → The managed-vs-foreign discriminator).
+//! T1) and **the managed cell routes on its stamp** (T2); `design/validation.md` → The
+//! managed-vs-foreign discriminator.
 //!
 //! M42 shipped the managed-vs-foreign discriminator and swept it through the **store**
 //! family: a committed file squatting at a managed home that jigc never wrote draws the
@@ -29,6 +30,15 @@
 //!
 //! The route is **lifted from the store report and compared verbatim** — the emitted bytes
 //! are the contract, never a route rebuilt in test code.
+//!
+//! The **stamp axis** (T2) is the second test below: T1 split the *code* and left the
+//! *route*, which was written when this arm served foreign ∪ managed. With the foreign half
+//! gone, *"ingest, migrate, or move it out of the managed location"* is adoption-or-removal
+//! advice about a doc jigc wrote and owns — wrong for 100% of what is left. The route now
+//! reads the doc's **schema-version stamp**, and the four stamp states are iterated end to
+//! end: at-version ⇒ the blocking twin's hand-repair sanction (lifted from a `DRIFTED`
+//! finding in the same run), below-version and stamp-absent ⇒ the corpus-migration route,
+//! above-current ⇒ the `ahead` route that names no verb which would block it.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -190,6 +200,148 @@ A distributed cache was weighed and rejected on latency.
 ## Decision
 
 Keep sessions in a single in-memory node.
+";
+
+// The **stamp axis**, cell by cell — one un-baselined, non-conformant **managed** ADR per
+// stamp state, so the advisory's route is proven over the whole axis and not over one repro
+// (M45's complete-fix contract; M48 Inc 4 / T2).
+//
+// Each body is genuinely non-conformant under the current (v2) `adr` shape, so every cell
+// lands in `reconcile_committed`'s `UNKNOWN` + non-conformant arm — the *only* thing that
+// varies across the four is the schema-version stamp the route must read.
+
+/// **At-version** — v2-stamped, `## Consequences` removed. The doc is at the schema this
+/// binary knows: nothing to migrate, so the route is the blocking twin's hand-repair sanction.
+/// (`MANAGED_ADR` above is this cell; the axis reuses it rather than minting a second copy.)
+const AT_VERSION: &str = MANAGED_ADR;
+
+/// **Below-version** — the shipped **prior (v1)** shape, stamped `schema-version: 1` while the
+/// `adr` manifest is at 2: the commonest stale doc in a real corpus. It does not parse under
+/// v2 (the optional `## Options` slot makes `## Decision` read as a renamed section), and
+/// hand-repairing it would be repairing what `jigc migrate-corpus` must rewrite.
+const BELOW_VERSION: &str = "docs/decisions/queue-writes-behind-a-buffer.md";
+const BELOW_VERSION_BODY: &str = "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 1
+---
+
+# Queue writes behind a buffer
+
+## Context
+
+Write bursts overwhelm the primary.
+
+## Decision
+
+Buffer writes and drain them on a timer.
+
+## Consequences
+
+A crash loses the un-drained tail.
+";
+
+/// **Stamp-absent** — the v0-era corpus state: the prior (v1) shape with **no** stamp at all.
+/// It parses against the shipped `adr.v1` snapshot, so the discriminator adjudicates it
+/// **managed** (never foreign), and its route is the stamp-absent corpus-migration one.
+const STAMP_ABSENT: &str = "docs/decisions/retry-with-backoff.md";
+const STAMP_ABSENT_BODY: &str = "\
+---
+status: accepted
+date: 2026-06-25
+---
+
+# Retry with backoff
+
+## Context
+
+A flapping upstream turns one failure into a thundering herd.
+
+## Decision
+
+Retry with exponential backoff and jitter.
+
+## Consequences
+
+A slow upstream is held open longer.
+";
+
+/// **Above-current** — stamped `schema-version: 3` while the manifest is at 2, with
+/// `## Consequences` removed. No verb in this binary can fix a future stamp, so the route must
+/// name none that would block it.
+const AHEAD: &str = "docs/decisions/shard-the-index.md";
+const AHEAD_BODY: &str = "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 3
+---
+
+# Shard the index
+
+## Context
+
+One index node cannot hold the corpus.
+
+## Options
+
+A bigger node was weighed and rejected on cost.
+
+## Decision
+
+Shard the index by tenant.
+";
+
+/// The **baselined** ADR the axis lifts its sanction from: conformant v2 when jigc baselines
+/// it, then broken out of band so the reconciler's `DRIFTED + UNTOUCHED` arm mints the
+/// **blocking** twin whose route the at-version cell must match byte for byte.
+const BASELINED: &str = "docs/decisions/rate-limit-the-api.md";
+const BASELINED_CONFORMANT: &str = "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 2
+---
+
+# Rate limit the API
+
+## Context
+
+A single client can saturate the edge.
+
+## Options
+
+Per-IP throttling was weighed and rejected as too coarse.
+
+## Decision
+
+Rate limit per API key.
+
+## Consequences
+
+A burst-heavy client sees 429s.
+";
+const BASELINED_DRIFTED: &str = "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 2
+---
+
+# Rate limit the API
+
+## Context
+
+A single client can saturate the edge.
+
+## Options
+
+Per-IP throttling was weighed and rejected as too coarse.
+
+## Decision
+
+Rate limit per API key.
 ";
 
 /// The findings array of a `--format json` envelope.
@@ -414,4 +566,219 @@ fn a_foreign_file_answers_one_code_and_one_route_at_every_door() {
         store_route,
         "the advisory re-fires unchanged, never silently absorbed; got:\n{again:#?}",
     );
+}
+
+/// **The stamp axis** (M48 Increment 4, T2) — the managed cell stops telling a stamped doc to
+/// migrate itself.
+///
+/// T1 split the *code*: a foreign squatter converges on `schema-conformance.unadopted-instance`,
+/// a managed non-conformant doc keeps `reconciliation.conformance-block`. It left the **route**
+/// — *"ingest, migrate, or move `<path>` out of the managed location"* — which was written when
+/// the arm served foreign ∪ managed and the advice was right for the foreign majority. After
+/// the split the arm serves **managed only**, so every clause of it is adoption-or-removal
+/// advice about a doc jigc wrote and owns: wrong for 100% of its remaining population.
+///
+/// The route now reads the doc's **schema-version stamp**, reusing two already-shipped strings
+/// and minting no new check id — and the four stamp states **are** the class axis, iterated
+/// end to end through the real binary over one un-baselined, non-conformant managed ADR each:
+///
+/// | stamp | route |
+/// |---|---|
+/// | **at-version** (2) | the blocking twin's **hand-repair sanction**, byte for byte |
+/// | **below-version** (1) | `route_schema_conformance`'s below-version corpus-migration route |
+/// | **stamp-absent** (v0-era, parses against `adr.v1`) | its stamp-absent corpus-migration route |
+/// | **above-current** (3) | the `ahead` route — no verb named that would block it |
+///
+/// The at-version route is **lifted from a `DRIFTED`-arm finding produced in this same run**,
+/// never re-typed: the sanction is one shared source, and a test that re-typed it would keep
+/// passing after the two producers drifted apart. Every cell keeps code
+/// `reconciliation.conformance-block` at **advisory** severity — the split is about what the
+/// finding *says*, not about what it is — and T1's foreign cell is re-asserted unchanged in the
+/// same report, so the two adjudications cannot blur into each other.
+#[test]
+fn the_managed_advisory_routes_on_the_stamp_never_at_adoption() {
+    let repo = TempDir::new("stamp-axis");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    let decisions = repo.path().join("docs").join("decisions");
+    fs::create_dir_all(&decisions).expect("mk docs/decisions/");
+
+    // ── seed the sanction's source: a conformant ADR jigc really baselines ───────────
+    fs::write(repo.path().join(BASELINED), BASELINED_CONFORMANT).expect("write the conformant adr");
+    git(repo.path(), &["add", "docs"]);
+    git(repo.path(), &["commit", "-q", "-m", "seed the baseline"]);
+    let seed = "seed-the-baseline";
+    stage_commit_only(repo.path(), home.path(), seed, "seed the baseline");
+    assert_ok(
+        &jigc(repo.path(), home.path(), &["task", "finalize", seed]),
+        "`jigc task finalize` (baselining the conformant adr)",
+    );
+
+    // ── the axis, plus the drift the sanction is lifted from, plus T1's foreign cell ──
+    fs::write(repo.path().join(BASELINED), BASELINED_DRIFTED).expect("break the baselined adr");
+    fs::write(repo.path().join(AT_VERSION), MANAGED_ADR_BODY).expect("write the at-version cell");
+    fs::write(repo.path().join(BELOW_VERSION), BELOW_VERSION_BODY).expect("write the below cell");
+    fs::write(repo.path().join(STAMP_ABSENT), STAMP_ABSENT_BODY).expect("write the absent cell");
+    fs::write(repo.path().join(AHEAD), AHEAD_BODY).expect("write the ahead cell");
+    fs::write(repo.path().join(NOTES), NOTES_BODY).expect("write the foreign notes");
+    git(repo.path(), &["add", "docs"]);
+    git(repo.path(), &["commit", "-q", "-m", "the stamp axis"]);
+
+    // One report, every cell — so the split is proven per *file*, not per run.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "single-task", "walk the stamp axis"],
+        ),
+        "`jigc start`",
+    );
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "task",
+            "validate",
+            "walk-the-stamp-axis",
+            "--format",
+            "json",
+        ],
+    );
+    let findings = envelope_findings(&out, "task validate");
+    let door = "task validate";
+
+    // ── the sanction, lifted from the DRIFTED arm in this very report ────────────────
+    let drifted = one_at(&findings, CONFORMANCE_BLOCK, BASELINED, door);
+    assert_eq!(
+        drifted["severity"].as_str(),
+        Some("blocking"),
+        "the baselined-and-drifted doc is the BLOCKING twin — the arm the sanction belongs to; \
+         got:\n{drifted:#?}",
+    );
+    let sanction = route_of(drifted, door);
+    assert!(
+        sanction.contains("yours to hand-edit"),
+        "and its route is the hand-repair sanction; got:\n{sanction}",
+    );
+
+    // ── (a) at-version ⇒ the sanction, byte for byte ─────────────────────────────────
+    let at_version = one_at(&findings, CONFORMANCE_BLOCK, AT_VERSION, door);
+    assert_eq!(
+        at_version["severity"].as_str(),
+        Some("advisory"),
+        "the un-baselined managed doc stays advisory (routed, not recorded); got:\n{at_version:#?}",
+    );
+    let at_version_route = route_of(at_version, door);
+    assert_eq!(
+        at_version_route, sanction,
+        "a doc at the CURRENT schema-version has nothing to migrate, so the advisory serves its \
+         blocking twin's sanction byte for byte — one shared source, lifted here, never re-typed; \
+         got:\n{at_version_route}",
+    );
+    assert!(
+        !at_version_route.contains("migrate"),
+        "and it names no migration verb over a doc that is already current; got:\n\
+         {at_version_route}",
+    );
+
+    // ── (b) below-version ⇒ the corpus-migration route, naming both versions ─────────
+    let below = one_at(&findings, CONFORMANCE_BLOCK, BELOW_VERSION, door);
+    assert_eq!(
+        below["severity"].as_str(),
+        Some("advisory"),
+        "still advisory — only the route moves; got:\n{below:#?}",
+    );
+    let below_route = route_of(below, door);
+    assert!(
+        below_route.starts_with("migrate — "),
+        "a STALE managed doc routes at the corpus migration, not at hand-repair — hand-fixing it \
+         would repair what `jigc migrate-corpus` must rewrite; got:\n{below_route}",
+    );
+    assert!(
+        below_route.contains("stamped schema-version 1") && below_route.contains("current 2"),
+        "and it names both the doc's stamp and the current schema-version; got:\n{below_route}",
+    );
+    assert!(
+        below_route.contains("run the corpus migration"),
+        "naming the repair; got:\n{below_route}",
+    );
+    assert!(
+        !below_route.contains("yours to hand-edit"),
+        "and never the at-version sanction; got:\n{below_route}",
+    );
+
+    // ── (c) stamp-absent (the v0-era corpus) ⇒ the stamp-absent migration route ──────
+    let absent = one_at(&findings, CONFORMANCE_BLOCK, STAMP_ABSENT, door);
+    assert_eq!(
+        absent["severity"].as_str(),
+        Some("advisory"),
+        "still advisory; got:\n{absent:#?}",
+    );
+    let absent_route = route_of(absent, door);
+    assert!(
+        absent_route.starts_with("migrate — ")
+            && absent_route.contains("carries no schema-version stamp"),
+        "a v0-era doc — unstamped, but parsing against the shipped `adr.v1` snapshot, so MANAGED — \
+         routes at the corpus migration that stamps it; got:\n{absent_route}",
+    );
+    assert!(
+        absent_route.contains("schema-version 2"),
+        "naming the version it is upgraded to; got:\n{absent_route}",
+    );
+    assert!(
+        by_key(&findings, UNADOPTED, STAMP_ABSENT).is_empty(),
+        "and the unstamped v0-era doc is never adjudicated foreign — the parse-against-a-prior \
+         arm is what keeps a managed doc off the adoption path; got:\n{findings:#?}",
+    );
+
+    // ── (d) above-current ⇒ the ahead route, naming no verb that would block it ──────
+    let ahead = one_at(&findings, CONFORMANCE_BLOCK, AHEAD, door);
+    assert_eq!(
+        ahead["severity"].as_str(),
+        Some("advisory"),
+        "still advisory; got:\n{ahead:#?}",
+    );
+    let ahead_route = route_of(ahead, door);
+    assert!(
+        ahead_route.starts_with("ahead — ") && ahead_route.contains("stamped schema-version 3"),
+        "a FUTURE stamp is a third fact: the doc was written to a schema this build does not \
+         know; got:\n{ahead_route}",
+    );
+    assert!(
+        ahead_route.contains("upgrade jigc")
+            && ahead_route.contains("`jigc migrate-corpus` cannot fix a future stamp"),
+        "so the route names the human repairs and says outright that the corpus migration is not \
+         one of them; got:\n{ahead_route}",
+    );
+    assert!(
+        !ahead_route.contains("run `jigc migrate-corpus`")
+            && !ahead_route.contains("run the corpus migration"),
+        "it must never COMMAND a verb that would block it; got:\n{ahead_route}",
+    );
+
+    // ── T1's foreign cell, re-asserted unchanged in the same report ──────────────────
+    let foreign = one_at(&findings, UNADOPTED, NOTES, door);
+    assert_eq!(
+        foreign["severity"].as_str(),
+        Some("advisory"),
+        "the adoption advisory is unchanged by the stamp split; got:\n{foreign:#?}",
+    );
+    let foreign_route = route_of(foreign, door);
+    assert!(
+        foreign_route.starts_with("adopt — ") && foreign_route.contains("jigc ingest"),
+        "a never-adopted foreign file still routes at ADOPTION — the stamp axis governs the \
+         managed cell only; got:\n{foreign_route}",
+    );
+    assert!(
+        by_key(&findings, CONFORMANCE_BLOCK, NOTES).is_empty(),
+        "and it draws no conformance block at all — one file, one code; got:\n{findings:#?}",
+    );
+
+    // ── no managed cell is ever told to adopt itself ─────────────────────────────────
+    for cell in [AT_VERSION, BELOW_VERSION, AHEAD, BASELINED] {
+        assert!(
+            by_key(&findings, UNADOPTED, cell).is_empty(),
+            "`{cell}` is jigc's own doc and is never routed at adoption; got:\n{findings:#?}",
+        );
+    }
 }
