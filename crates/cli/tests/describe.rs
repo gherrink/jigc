@@ -71,15 +71,23 @@ fn set_up_repo(root: &Path) {
 /// Run the built `jigc describe` binary with `cwd = repo` and `$HOME = home`,
 /// returning its captured stdout. Asserts a clean (exit 0) run.
 fn describe_stdout(repo: &Path, home: &Path) -> String {
+    describe_stdout_with(repo, home, &[])
+}
+
+/// [`describe_stdout`] with `extra` argv appended — the kind-filter arms run the same
+/// binary with `--workflows` / `--doctypes` / `--commands` selected.
+fn describe_stdout_with(repo: &Path, home: &Path, extra: &[&str]) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
         .arg("describe")
+        .args(extra)
         .current_dir(repo)
         .env("HOME", home)
         .output()
         .expect("run the jigc binary");
     assert!(
         out.status.success(),
-        "`jigc describe` must exit 0; got {:?}\nstderr:\n{}",
+        "`jigc describe {}` must exit 0; got {:?}\nstderr:\n{}",
+        extra.join(" "),
         out.status,
         String::from_utf8_lossy(&out.stderr),
     );
@@ -91,15 +99,23 @@ fn describe_stdout(repo: &Path, home: &Path) -> String {
 /// derive the expected definition count from the real pack rather than hard-coding
 /// it (the pack grows every wave).
 fn describe_json(repo: &Path, home: &Path) -> serde_json::Value {
+    describe_json_with(repo, home, &[])
+}
+
+/// [`describe_json`] with `extra` argv appended — the envelope half of the kind-filter
+/// arms (the filter must select the same membership in the JSON envelope as in prose).
+fn describe_json_with(repo: &Path, home: &Path, extra: &[&str]) -> serde_json::Value {
     let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(["describe", "--format", "json"])
+        .args(extra)
         .current_dir(repo)
         .env("HOME", home)
         .output()
         .expect("run the jigc binary");
     assert!(
         out.status.success(),
-        "`jigc describe --format json` must exit 0; got {:?}\nstderr:\n{}",
+        "`jigc describe --format json {}` must exit 0; got {:?}\nstderr:\n{}",
+        extra.join(" "),
         out.status,
         String::from_utf8_lossy(&out.stderr),
     );
@@ -993,4 +1009,217 @@ fn describe_json_carries_the_router_hidden_suppression_as_a_key() {
          proves nothing; got {} definitions",
         definitions.len(),
     );
+}
+
+/// M48 Inc 8 / T3 — **the menu can be asked for the part it needs.**
+///
+/// `jigc describe` is the whole menu: 33 workflows (18 of them narrating "hidden from
+/// the router catalog", 12 of them `migrate-*`) plus every doctype plus all 17
+/// command-refs on one 1,167-char line — 24kB an agent reads to find one kind of thing
+/// (DECISIONS → 2026-08-13 the Settle, `describe` — the filter only, not the positional
+/// form). `--workflows` / `--doctypes` / `--commands` select **which entries** the menu
+/// returns; they are combinable, and **no flag is the whole menu** (today's behaviour,
+/// byte-unchanged).
+///
+/// The arm pins **membership only** — which ids the surface returns and which it
+/// withholds — never what any entry *says*: `describe`'s prose tier is fenced
+/// non-contractual by design (`introspection.md` → The operational format contract), so
+/// every filtered arm additionally re-runs [`assert_non_contractual_prose`]. The
+/// expectation is **derived** from the binary's own unfiltered inventory rather than a
+/// hand-typed id list — the packs grow every wave.
+///
+/// The axis is the **whole subset lattice** (all 2³ flag combinations, the empty one
+/// included), driven through the emitted bytes of both format arms: a filter that
+/// selected in prose while the envelope kept serving the whole menu — or the reverse —
+/// would pass a single happy-path arm and fail here.
+#[test]
+fn describe_kind_filter_selects_which_entries_the_menu_returns() {
+    // The three selectable kinds: the flag that selects it, and the prose transition
+    // that leads its group (present iff the kind is selected).
+    const KINDS: [(&str, &str); 3] = [
+        ("--workflows", "The workflows you can compose here."),
+        ("--doctypes", "The doc-types you can author."),
+        (
+            "--commands",
+            "And the commands jigc hands you along the way.",
+        ),
+    ];
+
+    let repo = TempDir::new("kind-filter");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // The whole menu, derived from the binary itself — `(id, the text the prose surface
+    // carries for that entry)` per kind.
+    let whole = describe_json(repo.path(), home.path());
+    let definitions = whole["definitions"]
+        .as_array()
+        .expect("the projection carries a definitions array");
+    let of_kind = |kind: &str| -> Vec<(String, String)> {
+        definitions
+            .iter()
+            .filter(|d| d["kind"].as_str() == Some(kind))
+            .map(|d| {
+                (
+                    d["id"].as_str().expect("a definition id").to_owned(),
+                    d["prose"].as_str().expect("a definition prose").to_owned(),
+                )
+            })
+            .collect()
+    };
+    let workflows = of_kind("workflow");
+    let doctypes = of_kind("doctype");
+    let commands: Vec<(String, String)> = whole["commands"]
+        .as_array()
+        .expect("the projection carries a commands array")
+        .iter()
+        .map(|c| {
+            let id = c["id"].as_str().expect("a command-ref id");
+            let hint = c["hint"].as_str().expect("a command-ref hint");
+            (id.to_owned(), format!("{id} {hint}"))
+        })
+        .collect();
+    let menu = [&workflows, &doctypes, &commands];
+
+    for (kind, entries) in KINDS.iter().zip(menu) {
+        assert!(
+            !entries.is_empty(),
+            "the shipped packs must narrate at least one `{}` entry, or this arm proves nothing",
+            kind.0,
+        );
+    }
+
+    for mask in 0u8..8 {
+        let selected: Vec<&str> = KINDS
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| mask & (1 << i) != 0)
+            .map(|(_, (flag, _))| *flag)
+            .collect();
+        // No flag selects nothing — it selects everything (the whole menu is the default).
+        let want: [bool; 3] = if mask == 0 {
+            [true; 3]
+        } else {
+            [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0]
+        };
+        let shown = format!("jigc describe {}", selected.join(" "));
+
+        // ── the envelope half ────────────────────────────────────────────────────
+        let json = describe_json_with(repo.path(), home.path(), &selected);
+        let got = json["definitions"]
+            .as_array()
+            .expect("the filtered projection still carries a definitions array");
+        for (i, kind) in ["workflow", "doctype"].iter().enumerate() {
+            let got_ids: Vec<&str> = got
+                .iter()
+                .filter(|d| d["kind"].as_str() == Some(kind))
+                .map(|d| d["id"].as_str().expect("a definition id"))
+                .collect();
+            let want_ids: Vec<&str> = if want[i] {
+                menu[i].iter().map(|(id, _)| id.as_str()).collect()
+            } else {
+                Vec::new()
+            };
+            assert_eq!(
+                got_ids, want_ids,
+                "`{shown} --format json` must return exactly the selected {kind} membership",
+            );
+        }
+        let got_command_ids: Vec<&str> = json["commands"]
+            .as_array()
+            .expect("the filtered projection still carries a commands array")
+            .iter()
+            .map(|c| c["id"].as_str().expect("a command-ref id"))
+            .collect();
+        let want_command_ids: Vec<&str> = if want[2] {
+            commands.iter().map(|(id, _)| id.as_str()).collect()
+        } else {
+            Vec::new()
+        };
+        assert_eq!(
+            got_command_ids, want_command_ids,
+            "`{shown} --format json` must return exactly the selected command-ref membership",
+        );
+
+        // ── the prose half ───────────────────────────────────────────────────────
+        let out = describe_stdout_with(repo.path(), home.path(), &selected);
+
+        // Membership, by entry: every selected entry's text is carried, every
+        // withheld one's is gone. An entry whose text a *selected* kind also carries
+        // is skipped rather than asserted absent (ids are unique within a kind, not
+        // across kinds — the derivation stays honest if that ever collides).
+        let included: Vec<&str> = KINDS
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| want[*i])
+            .flat_map(|(i, _)| menu[i].iter().map(|(_, text)| text.as_str()))
+            .collect();
+        for (i, (flag, lead)) in KINDS.iter().enumerate() {
+            for (id, text) in menu[i] {
+                if want[i] {
+                    assert!(
+                        out.contains(text.as_str()),
+                        "`{shown}` selects `{flag}`, so `{id}`'s entry must be returned; got:\n{out}",
+                    );
+                } else if !included.contains(&text.as_str()) {
+                    assert!(
+                        !out.contains(text.as_str()),
+                        "`{shown}` does not select `{flag}`, so `{id}`'s entry must be withheld; got:\n{out}",
+                    );
+                }
+            }
+            assert_eq!(
+                out.contains(lead),
+                want[i],
+                "`{shown}`: the `{flag}` group transition must appear iff the kind is selected; got:\n{out}",
+            );
+        }
+
+        // The footer rides every arm, and the prose tier stays fenced non-contractual —
+        // the filter pins membership, never prose.
+        assert!(
+            out.trim_end().ends_with(ROUTING_FOOTER),
+            "`{shown}` must still carry the routing footer; got:\n{out}",
+        );
+        assert_non_contractual_prose(&out).unwrap_or_else(|why| {
+            panic!("`{shown}` must stay hostile-to-parsing: {why}\n--- output ---\n{out}")
+        });
+    }
+}
+
+/// The foreclosure **stands**: a filter still returns the menu, so it does not cross the
+/// `describe` / `--explain` boundary `design/introspection.md` → Command surface draws —
+/// and the single-item positional form it forecloses (`jigc describe <id>`) is still
+/// refused, filter flags or not (DECISIONS → 2026-08-13 the Settle, `describe` — the
+/// filter only, not the positional form). Driven through the emitted bytes: the run
+/// fails and prints no menu.
+#[test]
+fn describe_still_refuses_a_positional_argument() {
+    let repo = TempDir::new("no-positional");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    for argv in [
+        vec!["describe", "single-task"],
+        vec!["describe", "--workflows", "single-task"],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(&argv)
+            .current_dir(repo.path())
+            .env("HOME", home.path())
+            .output()
+            .expect("run the jigc binary");
+        assert!(
+            !out.status.success(),
+            "`jigc {}` must be refused — the single-item form is not built; got {:?}",
+            argv.join(" "),
+            out.status,
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "a refused `jigc {}` must print no menu; got:\n{}",
+            argv.join(" "),
+            String::from_utf8_lossy(&out.stdout),
+        );
+    }
 }

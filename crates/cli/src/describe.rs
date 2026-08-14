@@ -23,20 +23,79 @@ use std::path::{Path, PathBuf};
 
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::finding::Finding;
-use engine::introspect::Description;
+use engine::introspect::{DefinitionKind, Description};
 use engine::packsource::{PackResourceKind, PackSource};
 use engine::schema::Schema;
 
 use crate::pack::make_pack;
 use crate::start::{CascadeDefs, load_catalog, resolve_severity_cascade};
 
-/// Assemble the whole-menu [`Description`] projection for the repo `describe` is run
-/// from — **through the resolved cascade**. Locates the repo + project layer (the
-/// setup gate), resolves the cascade, reads the unfiltered workflows + all doctypes
-/// **layer-aware** (a project whole-file shadow wins) + the command catalog, and runs
-/// the engine's [`Description::assemble`]. Presentation-free — the dispatch maps the
-/// result to the free-prose surface via `Format → render`.
-pub(crate) fn run(cwd: &Path) -> Result<Description> {
+/// Which **kinds of entry** the menu returns — the `--workflows` / `--doctypes` /
+/// `--commands` selection (`design/introspection.md` → Command surface).
+///
+/// The filter selects **membership**, never prose: describe's prose tier is fenced
+/// non-contractual by design, so a selected entry reads exactly as it reads in the
+/// whole menu, and an unselected one is simply absent. It is applied to the assembled
+/// projection, so the prose surface and the `--format json` envelope return the same
+/// membership by construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Kinds {
+    /// Return the workflow entries.
+    workflows: bool,
+    /// Return the doctype entries.
+    doctypes: bool,
+    /// Return the command-ref entries.
+    commands: bool,
+}
+
+impl Kinds {
+    /// The selection the three flags express. **No flag selects everything** — the
+    /// whole menu stays the default, so `jigc describe` is byte-unchanged; a flag
+    /// narrows, it never turns a full tour into an empty one.
+    pub(crate) fn from_flags(workflows: bool, doctypes: bool, commands: bool) -> Self {
+        if !(workflows || doctypes || commands) {
+            return Self {
+                workflows: true,
+                doctypes: true,
+                commands: true,
+            };
+        }
+        Self {
+            workflows,
+            doctypes,
+            commands,
+        }
+    }
+
+    /// Keep only the selected entries of an assembled projection.
+    fn select(self, description: Description) -> Description {
+        let Description {
+            schema_version,
+            mut definitions,
+            mut commands,
+        } = description;
+        definitions.retain(|definition| match definition.kind {
+            DefinitionKind::Workflow => self.workflows,
+            DefinitionKind::Doctype => self.doctypes,
+        });
+        if !self.commands {
+            commands.clear();
+        }
+        Description {
+            schema_version,
+            definitions,
+            commands,
+        }
+    }
+}
+
+/// Assemble the [`Description`] projection for the repo `describe` is run from —
+/// **through the resolved cascade**, narrowed to the requested [`Kinds`]. Locates the
+/// repo + project layer (the setup gate), resolves the cascade, reads the unfiltered
+/// workflows + all doctypes **layer-aware** (a project whole-file shadow wins) + the
+/// command catalog, and runs the engine's [`Description::assemble`]. Presentation-free
+/// — the dispatch maps the result to the free-prose surface via `Format → render`.
+pub(crate) fn run(cwd: &Path, kinds: Kinds) -> Result<Description> {
     let repo_root = require_project_layer(cwd)?;
     let project_config = repo_root.join(".jigc").join("config");
     let pack = make_pack()?;
@@ -57,11 +116,11 @@ pub(crate) fn run(cwd: &Path) -> Result<Description> {
     let schemas: Vec<Schema> = load_schemas(pack, &defs)?;
     let catalog = load_catalog(pack)?;
 
-    Ok(Description::assemble(
+    Ok(kinds.select(Description::assemble(
         workflows.iter().map(|(id, def)| (id.as_str(), def)),
         schemas.iter(),
         &catalog,
-    ))
+    )))
 }
 
 /// Load every workflow definition through the cascade — the **unfiltered** set (every
@@ -190,7 +249,8 @@ mod tests {
         )
         .expect("write workflow shadow");
 
-        let description = run(repo.path()).expect("describe runs over the shadowed cascade");
+        let description = run(repo.path(), Kinds::from_flags(false, false, false))
+            .expect("describe runs over the shadowed cascade");
 
         let single_task = prose_for(&description, "single-task")
             .expect("single-task is still narrated through the cascade");
@@ -235,7 +295,8 @@ mod tests {
         )
         .expect("write hidden workflow shadow");
 
-        let description = run(repo.path()).expect("describe runs over the hidden shadow");
+        let description = run(repo.path(), Kinds::from_flags(false, false, false))
+            .expect("describe runs over the hidden shadow");
 
         let single_task = prose_for(&description, "single-task")
             .expect("the hidden workflow is still narrated (describe is the unfiltered set)");
@@ -276,7 +337,8 @@ mod tests {
         )
         .expect("write field-stripped shadow");
 
-        let description = run(repo.path()).expect("describe runs over the stripped shadow");
+        let description = run(repo.path(), Kinds::from_flags(false, false, false))
+            .expect("describe runs over the stripped shadow");
 
         assert!(
             prose_for(&description, "single-task").is_none(),

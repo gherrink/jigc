@@ -312,11 +312,28 @@ pub enum Command {
     /// The prose is a human menu, not a stable API: read it, don't build on its
     /// wording.
     ///
+    /// `--workflows` / `--doctypes` / `--commands` select which kinds of entry the
+    /// menu returns; they combine, and passing none returns the whole tour. The
+    /// single-item form (`jigc describe <id>`) is not built — describe is the menu;
+    /// `jigc start --explain` is the resolution trace.
+    ///
     /// The global `--format json` arm emits the same tour as a keyed object.
     /// It parses — it is simply as unpinned as the prose, and may change with
     /// any pack edit. For a structural read you can depend on, reach for
     /// `jigc doc schema` — the separately versioned contract.
-    Describe,
+    Describe {
+        /// Return the workflow entries.
+        #[arg(long)]
+        workflows: bool,
+
+        /// Return the doc-type entries.
+        #[arg(long)]
+        doctypes: bool,
+
+        /// Return the command-ref entries.
+        #[arg(long)]
+        commands: bool,
+    },
 
     /// Re-check every committed doc's code anchors against the codebase and report
     /// drift — `jigc validate` is the store-wide, read-only sweep (distinct from
@@ -429,7 +446,14 @@ impl Cli {
                 run_rename(self.format, &old_slug, &to, slug.as_deref())
             }
             Command::Relocate { r#type, from } => run_relocate(self.format, &r#type, &from),
-            Command::Describe => run_describe(self.format),
+            Command::Describe {
+                workflows,
+                doctypes,
+                commands,
+            } => run_describe(
+                self.format,
+                describe::Kinds::from_flags(workflows, doctypes, commands),
+            ),
             Command::Validate => run_validate_store(self.format),
         }
     }
@@ -438,11 +462,12 @@ impl Cli {
 /// Run `jigc describe` against the current working directory: locate the repo +
 /// project layer, build the **pack-only** resolved definitions (the unfiltered
 /// workflow set + the full doctype set + the command catalog), assemble the
-/// whole-menu projection, render it through the selected `format`, and print it. A
-/// clean run exits 0; a locator error (no repo / no project layer) routes to stderr
-/// and exits non-zero (`design/introspection.md` → Command surface). Reads-only —
-/// it composes nothing and writes nothing.
-fn run_describe(format: Format) -> Outcome {
+/// whole-menu projection, keep the `kinds` the caller asked for, render it through
+/// the selected `format`, and print it. A clean run exits 0; a locator error (no repo
+/// / no project layer) routes to stderr and exits non-zero
+/// (`design/introspection.md` → Command surface). Reads-only — it composes nothing
+/// and writes nothing.
+fn run_describe(format: Format, kinds: describe::Kinds) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -450,7 +475,7 @@ fn run_describe(format: Format) -> Outcome {
             return Outcome::failure();
         }
     };
-    match describe::run(&cwd) {
+    match describe::run(&cwd, kinds) {
         Ok(description) => {
             println!("{}", render::describe(format, &description));
             Outcome::success()
@@ -2441,7 +2466,16 @@ mod cli_parse {
     #[test]
     fn describe_parses() {
         let cli = Cli::try_parse_from(["jigc", "describe"]).expect("`jigc describe` parses");
-        assert_eq!(cli.command, Command::Describe);
+        // Bare `describe` selects no kind — `Kinds::from_flags` reads that as the whole
+        // menu, so the default tour is unchanged.
+        assert_eq!(
+            cli.command,
+            Command::Describe {
+                workflows: false,
+                doctypes: false,
+                commands: false,
+            }
+        );
     }
 
     #[test]
@@ -2449,7 +2483,30 @@ mod cli_parse {
         let cli = Cli::try_parse_from(["jigc", "describe", "--format", "json"])
             .expect("`jigc describe --format json` parses");
         assert_eq!(cli.format, Format::Json);
-        assert_eq!(cli.command, Command::Describe);
+        assert_eq!(
+            cli.command,
+            Command::Describe {
+                workflows: false,
+                doctypes: false,
+                commands: false,
+            }
+        );
+    }
+
+    #[test]
+    fn describe_kind_flags_combine() {
+        // The filter is a selection, not a mode: the three flags combine freely
+        // (`design/introspection.md` → Command surface).
+        let cli = Cli::try_parse_from(["jigc", "describe", "--workflows", "--commands"])
+            .expect("`jigc describe --workflows --commands` parses");
+        assert_eq!(
+            cli.command,
+            Command::Describe {
+                workflows: true,
+                doctypes: false,
+                commands: true,
+            }
+        );
     }
 
     #[test]
