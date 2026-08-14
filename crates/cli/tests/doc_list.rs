@@ -16,6 +16,11 @@
 //! `{"docs":[{"id","path","state"}]}`, an object wrapper (a bare array can never take an
 //! additive key), sorted by (type, slug).
 //!
+//! **M48 Increment 3 / T3 — a task has a surface too.** `--task <id>` lists what that
+//! task **stages** (the same identity/path/state/item-count row shape, staged-only), and
+//! a task-less listing served while an open task stages docs routes at it on **stderr**
+//! — the `stale_read_hint` mold, stdout byte-identical.
+//!
 //! Everything is asserted on the EMITTED bytes of the real binary (`CARGO_BIN_EXE_jigc`).
 //! No external test crates.
 
@@ -116,6 +121,31 @@ fn assert_ok(out: &std::process::Output, what: &str) {
 /// The stdout of an invocation.
 fn stdout_of(out: &std::process::Output) -> String {
     String::from_utf8(out.stdout.clone()).expect("utf-8 stdout")
+}
+
+/// The stderr of an invocation — where every advisory this verb emits rides.
+fn stderr_of(out: &std::process::Output) -> String {
+    String::from_utf8(out.stderr.clone()).expect("utf-8 stderr")
+}
+
+/// Start a `single-task` task with `intent`, asserting success. The task id is the
+/// slugified intent, which the caller names.
+fn start_task(repo: &Path, home: &Path, intent: &str) {
+    assert_ok(
+        &jigc(repo, home, &["start", "--workflow", "single-task", intent]),
+        "`jigc start --workflow single-task`",
+    );
+}
+
+/// Lift the **emitted** backtick-quoted command out of an advisory line — the bytes an
+/// agent would copy — so the route is run verbatim rather than reconstructed in test code.
+fn lift_route(stderr: &str) -> Vec<String> {
+    let start = stderr
+        .find("`jigc ")
+        .expect("the advisory carries a backtick-quoted `jigc …` command");
+    let rest = &stderr[start + 1..];
+    let end = rest.find('`').expect("the quoted command closes");
+    rest[..end].split_whitespace().map(str::to_string).collect()
 }
 
 /// A canonical committed ADR — jigc's own doc: **stamped** at the adr's frozen
@@ -476,5 +506,371 @@ fn doc_list_blocks_an_unknown_doctype_routed_at_describe() {
     assert!(
         stderr.contains("jigc describe"),
         "the block routes at `jigc describe`; got:\n{stderr}",
+    );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// M48 Increment 3 / T3 — a task has a surface too
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// The pinned `--format json` shape of the **staged** listing (`design/doc-read-surface.md`
+/// → the fourth read surface, the staged arm). The row shape is the committed arm's,
+/// key-for-key — the `--task` arm adds none:
+///
+/// - **`state`** is `managed` on every row: a staged working copy is jigc-written by
+///   construction, never a foreign squatter (the same reason `doc show --task` runs no
+///   adoption reroute);
+/// - **`path`** is where the instance **promotes to at finalize** — the M43 A14 staged
+///   display rule, so a printed path is repo-real rather than a working-area fiction;
+///   a **transient** doctype (`commit:<task-id>`, sink = the git message) has no
+///   committed home and therefore lists at its typed `<type>:<slug>` identity.
+const STAGED_JSON: &str = r#"{
+  "docs": [
+    {
+      "id": "adr:cache-eviction",
+      "path": "decisions/cache-eviction.md",
+      "state": "managed",
+      "item-count": 0
+    },
+    {
+      "id": "adr:single-node-cache",
+      "path": "decisions/single-node-cache.md",
+      "state": "managed",
+      "item-count": 0
+    },
+    {
+      "id": "commit:harden-the-cache",
+      "path": "commit:harden-the-cache",
+      "state": "managed",
+      "item-count": 0
+    }
+  ]
+}"#;
+
+/// (M48 inc-3 T3) **`jigc doc list --task <id>` lists what the task stages** — the
+/// fourth read surface learns that a task has a surface too
+/// (`design/doc-read-surface.md` → the fourth read surface, the staged arm;
+/// `design/surface-contract.md` → law 2: nothing hides).
+///
+/// Six consecutive trials went to the filesystem to read their own in-flight work. `doc
+/// show --task <id>` has served the staged copy since M43 — but it presupposes you know
+/// the address, and the *index* read was committed-only, so nothing answered *"which
+/// docs does my task hold"*. Red at HEAD: `--task` died at clap with a bare parse error.
+///
+/// Staged-**only**, matching `doc show --task` (which blocks `store.not-staged` rather
+/// than falling back to committed): the foreign `CHANGELOG.md` the committed listing
+/// flags `unregistered` is absent here, because the task does not stage it.
+#[test]
+fn doc_list_task_lists_what_the_task_stages() {
+    let repo = TempDir::new("staged");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_store(repo.path());
+
+    start_task(repo.path(), home.path(), "harden the cache");
+    let created = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Cache eviction",
+            "--task",
+            "harden-the-cache",
+        ],
+    );
+    assert_ok(&created, "`jigc doc create adr`");
+    // A committed doc **copied in** by a staged write — it must be listed ONCE, from the
+    // staged surface, never twice (the two views are not merged).
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-field",
+                "adr:single-node-cache#status",
+                "--value",
+                "superseded",
+                "--task",
+                "harden-the-cache",
+            ],
+        ),
+        "`jigc doc set-field` — the copy-in",
+    );
+
+    // (1) Plain — the same header, then the staged rows: the created adr, the copied-in
+    //     committed adr (once), and the `start`-provisioned transient commit skeleton.
+    let plain = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "--task", "harden-the-cache"],
+    );
+    assert_ok(&plain, "`jigc doc list --task harden-the-cache`");
+    assert_eq!(
+        stdout_of(&plain),
+        "id  path  state\n\
+         adr:cache-eviction  decisions/cache-eviction.md  managed\n\
+         adr:single-node-cache  decisions/single-node-cache.md  managed\n\
+         commit:harden-the-cache  commit:harden-the-cache  managed\n",
+        "the staged listing carries the task's staged docs, each once",
+    );
+    assert!(
+        !stdout_of(&plain).contains("CHANGELOG"),
+        "the staged arm is staged-ONLY — the committed store's foreign squatter is not \
+         in it; got:\n{}",
+        stdout_of(&plain),
+    );
+
+    // (2) `--format json` — the row shape key-for-key, the `--task` arm adding none.
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "list",
+            "--task",
+            "harden-the-cache",
+            "--format",
+            "json",
+        ],
+    );
+    assert_ok(&json, "`jigc doc list --task … --format json`");
+    assert_eq!(
+        stdout_of(&json).trim_end(),
+        STAGED_JSON,
+        "the staged listing's pinned shape",
+    );
+
+    // (3) The doctype positional narrows the staged listing exactly as it narrows the
+    //     committed one — the transient commit skeleton drops out.
+    let narrowed = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "adr", "--task", "harden-the-cache"],
+    );
+    assert_ok(&narrowed, "`jigc doc list adr --task harden-the-cache`");
+    assert_eq!(
+        stdout_of(&narrowed),
+        "id  path  state\n\
+         adr:cache-eviction  decisions/cache-eviction.md  managed\n\
+         adr:single-node-cache  decisions/single-node-cache.md  managed\n",
+        "`doc list <doctype> --task <id>` filters the staged surface",
+    );
+
+    // (4) The **omitting context**: a doctype the task stages nothing of. Not an error
+    //     and not zero bytes — the empty-set line, naming both the scope and the task.
+    let empty = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "prd", "--task", "harden-the-cache"],
+    );
+    assert_ok(&empty, "`jigc doc list prd --task harden-the-cache`");
+    assert_eq!(
+        stdout_of(&empty),
+        "jigc doc list — no `prd` docs staged in task harden-the-cache\n",
+        "an empty staged listing states its empty set, naming the doctype and the task",
+    );
+    let empty_json = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "list",
+            "prd",
+            "--task",
+            "harden-the-cache",
+            "--format",
+            "json",
+        ],
+    );
+    assert_ok(&empty_json, "`jigc doc list prd --task … --format json`");
+    assert_eq!(
+        stdout_of(&empty_json).trim_end(),
+        "{\n  \"docs\": []\n}",
+        "an empty staged listing is still the pinned object wrapper",
+    );
+
+    // (5) An unknown task id gets the shared wrong-id route, exactly like `doc show
+    //     --task` — never a bare clap parse error (the HEAD behaviour this closes).
+    let bad = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "--task", "no-such-task"],
+    );
+    assert!(
+        !bad.status.success(),
+        "an unknown task id must not succeed; stdout:\n{}",
+        stdout_of(&bad),
+    );
+    let stderr = stderr_of(&bad);
+    assert!(
+        stderr.contains("no-such-task") && stderr.contains("jigc task list"),
+        "the unknown task id routes at `jigc task list`; got:\n{stderr}",
+    );
+}
+
+/// (M48 inc-3 T3) **The task-less listing routes at the staged read** — the
+/// `stale_read_hint` mold applied to the index read (`design/doc-read-surface.md` → the
+/// fourth read surface, the staged arm; `design/surface-contract.md` → the route floor).
+///
+/// The committed listing is the honest answer to *"which docs exist"*, and it stays
+/// **byte-identical**: the advisory rides **stderr** on both the empty and the non-empty
+/// listing, so no second key and no second line reaches the pin. The route is **lifted
+/// out of the emitted bytes and run verbatim**.
+///
+/// The **omitting context** rides here too: with nothing staged anywhere, there is no
+/// advisory at all — an unconditional note would be noise on every read of a store with
+/// no open work.
+#[test]
+fn a_task_less_listing_routes_at_the_staged_read() {
+    let repo = TempDir::new("route");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_store(repo.path());
+
+    // (1) Omitting context — nothing staged, so nothing to route to: stderr is silent.
+    let quiet = jigc(repo.path(), home.path(), &["doc", "list"]);
+    assert_ok(&quiet, "`jigc doc list` with no open task");
+    assert_eq!(
+        stderr_of(&quiet),
+        "",
+        "with nothing staged the listing carries no advisory at all",
+    );
+
+    start_task(repo.path(), home.path(), "harden the cache");
+
+    // (2) The non-empty listing — stdout byte-identical to the pre-change bytes (the
+    //     shape the committed arms above pin), the advisory on stderr.
+    let plain = jigc(repo.path(), home.path(), &["doc", "list"]);
+    assert_ok(&plain, "`jigc doc list` with an open staging task");
+    assert_eq!(
+        stdout_of(&plain),
+        "id  path  state\n\
+         adr:single-node-cache  decisions/single-node-cache.md  managed\n\
+         changelog:changelog  CHANGELOG.md  unregistered\n",
+        "the advisory never reaches stdout — the committed listing is byte-identical",
+    );
+    let stderr = stderr_of(&plain);
+    assert!(
+        stderr.contains("staged in open task harden-the-cache"),
+        "the advisory names the staging task; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("this listing is the committed store"),
+        "it says which surface this listing was, not what the reader should fear; \
+         got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("if that task is yours, list what it stages:"),
+        "the staged listing is handed over under an explicit `if that task is yours` \
+         clause; got:\n{stderr}",
+    );
+
+    // (3) The pinned json is untouched too — the advisory rides stderr on both arms.
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "--format", "json"],
+    );
+    assert_ok(
+        &json,
+        "`jigc doc list --format json` with an open staging task",
+    );
+    assert_eq!(
+        stdout_of(&json).trim_end(),
+        STORE_JSON,
+        "the pinned json shape is byte-identical with an open staging task",
+    );
+    assert!(
+        stderr_of(&json).contains("harden-the-cache"),
+        "the json arm carries the same stderr advisory; got:\n{}",
+        stderr_of(&json),
+    );
+
+    // (4) The EMITTED route, lifted and run verbatim — it must exit 0 and answer.
+    let argv = lift_route(&stderr);
+    assert_eq!(
+        argv,
+        vec!["jigc", "doc", "list", "--task", "harden-the-cache"],
+        "the route is the staged listing of the named task",
+    );
+    let run: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    let followed = jigc(repo.path(), home.path(), &run);
+    assert_ok(&followed, "the emitted route, run verbatim");
+    assert!(
+        stdout_of(&followed).contains("commit:harden-the-cache"),
+        "following the route lands on the task's staged surface; got:\n{}",
+        stdout_of(&followed),
+    );
+
+    // (5) The EMPTY committed listing routes too — the case the finding is sharpest in:
+    //     a store with nothing committed yet, while the reader's task holds staged work.
+    let fresh = TempDir::new("route-empty");
+    let fresh_home = TempDir::new("home");
+    init_repo(fresh.path());
+    start_task(fresh.path(), fresh_home.path(), "harden the cache");
+    let empty = jigc(fresh.path(), fresh_home.path(), &["doc", "list"]);
+    assert_ok(
+        &empty,
+        "`jigc doc list` over an empty store with an open task",
+    );
+    assert_eq!(
+        stdout_of(&empty),
+        "jigc doc list — no committed docs\n",
+        "the empty-set line is byte-identical — the route rides stderr beside it",
+    );
+    let empty_route = lift_route(&stderr_of(&empty));
+    let run: Vec<&str> = empty_route[1..].iter().map(String::as_str).collect();
+    assert_ok(
+        &jigc(fresh.path(), fresh_home.path(), &run),
+        "the empty listing's emitted route, run verbatim",
+    );
+
+    // (6) The doctype scope the reader asked for survives into the route — a narrowed
+    //     listing routes at the narrowed staged listing, not a wider one.
+    let narrowed = jigc(repo.path(), home.path(), &["doc", "list", "adr"]);
+    assert_ok(&narrowed, "`jigc doc list adr` with an open staging task");
+    assert_eq!(
+        lift_route(&stderr_of(&narrowed)),
+        vec!["jigc", "doc", "list", "adr", "--task", "harden-the-cache"],
+        "the route carries the doctype the reader scoped the listing to",
+    );
+}
+
+/// (M48 inc-3 T3) The advisory's **plural branch** — two open tasks staging docs. Both
+/// ids are listed, the clause asks whether *one of them* is the reader's, and the route
+/// carries the shared `<task-id>` placeholder (no single id could be right). The axis is
+/// the number of staging tasks, because the sentence branches on it — the same axis the
+/// `doc show` stale-read note is swept over.
+#[test]
+fn the_listing_advisory_branches_on_the_number_of_staging_tasks() {
+    let repo = TempDir::new("plural");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_store(repo.path());
+
+    start_task(repo.path(), home.path(), "harden the cache");
+    start_task(repo.path(), home.path(), "trim the cache");
+
+    let out = jigc(repo.path(), home.path(), &["doc", "list"]);
+    assert_ok(&out, "`jigc doc list` with two open staging tasks");
+    let stderr = stderr_of(&out);
+    assert!(
+        stderr.contains("open tasks")
+            && stderr.contains("harden-the-cache")
+            && stderr.contains("trim-the-cache"),
+        "both staging tasks are listed; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("if one of them is yours, list what it stages:"),
+        "the plural clause asks whether one of them is the reader's; got:\n{stderr}",
+    );
+    assert_eq!(
+        lift_route(&stderr),
+        vec!["jigc", "doc", "list", "--task", "<task-id>"],
+        "the plural route carries the shared placeholder — no single id could be right",
     );
 }

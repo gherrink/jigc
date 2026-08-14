@@ -423,7 +423,7 @@ pub enum DocCommand {
         /// The doctype whose resolved schema to project (e.g. `adr`).
         doctype: String,
     },
-    /// List the **committed** store surface by identity, slug-sorted.
+    /// List the store surface by identity, slug-sorted — **committed by default**.
     ///
     /// The fourth read surface, next to `describe` (the menu), `doc show` (the
     /// content read) and `doc schema` (the schema read). Every instance of one
@@ -432,12 +432,23 @@ pub enum DocCommand {
     /// `managed` (jigc's own doc) or `unregistered` (a file at a managed home
     /// jigc never adopted — adopt it with `jigc ingest` / `jigc migrate <path>
     /// --as <doctype>`). `--format json` is the pinned shape
-    /// `{"docs":[{id, path, state}]}` (no in-band version integer —
-    /// `design/doc-read-surface.md` → the fourth read surface). Task-less: it
-    /// reads the committed store, never an open task's staged buffer.
+    /// `{"docs":[{id, path, state, item-count}]}` (no in-band version integer —
+    /// `design/doc-read-surface.md` → the fourth read surface).
+    ///
+    /// **`--task <id>` lists what that task stages instead** — staged-only, the two
+    /// views are never merged. Every staged row is `managed` (a staged working copy
+    /// is jigc-written by construction), and its `path` is where the instance
+    /// promotes to at finalize; a transient doctype (`commit:<task-id>`, sink = the
+    /// git message) has no committed home, so it lists at its `<type>:<slug>`
+    /// identity. A task-less listing served while an open task stages docs says so
+    /// on **stderr** and hands over the staged listing; stdout is unchanged.
     List {
         /// The doctype to list (optional — omit to list every persisted doctype).
         doctype: Option<String>,
+        /// List this open task's **staged** working copies instead of the committed
+        /// store (same rows, staged-only).
+        #[arg(long)]
+        task: Option<String>,
     },
 }
 
@@ -545,7 +556,9 @@ impl DocCommand {
             } => run_author(cwd, &doctype, &from_file, task.as_deref(), format),
             DocCommand::Show { addr, task } => run_show(cwd, &addr, task.as_deref(), format),
             DocCommand::Schema { doctype } => run_schema(cwd, &doctype, format),
-            DocCommand::List { doctype } => run_list(cwd, doctype.as_deref(), format),
+            DocCommand::List { doctype, task } => {
+                run_list(cwd, doctype.as_deref(), task.as_deref(), format)
+            }
         };
         match result {
             Ok(()) => Outcome::success(),
@@ -3325,20 +3338,25 @@ fn run_schema(cwd: &Path, doctype: &str, format: Format) -> Result<(), DocFailur
 /// stamp/parse) or `unregistered` (a foreign file squatting at a managed home, the brownfield
 /// `CHANGELOG.md` — route: adoption). A second rule here would be a second story about one
 /// file; there is exactly one.
-fn run_list(cwd: &Path, doctype: Option<&str>, format: Format) -> Result<(), DocFailure> {
+///
+/// **`--task <id>` lists the task's staged surface instead** ([`run_list_staged`]) — the
+/// index read's counterpart to `doc show --task`, always an explicit id, never inferred.
+fn run_list(
+    cwd: &Path,
+    doctype: Option<&str>,
+    task_id: Option<&str>,
+    format: Format,
+) -> Result<(), DocFailure> {
+    if let Some(task_id) = task_id {
+        return run_list_staged(cwd, doctype, task_id, format);
+    }
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
     let pack = make_pack()?;
     let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
     if let Some(ty) = doctype
         && !schemas.contains_key(ty)
     {
-        return Err(DocFailure::block(Finding::graded(
-            Severity::Blocking,
-            "store.unknown-type",
-            format!("unknown doctype `{ty}`"),
-            Some(Location::addressed(ty, 1, 1)),
-            Some("list the available doctypes with `jigc describe`".into()),
-        )));
+        return Err(unknown_doctype_block(ty));
     }
     // The discriminator's two inputs — the manifest version map (its precondition: it answers
     // only for a doctype the CLI stamps) and the shipped prior-version shapes its parse arm
@@ -3383,35 +3401,192 @@ fn run_list(cwd: &Path, doctype: Option<&str>, format: Format) -> Result<(), Doc
             });
         }
     }
+    // The empty-set line (M43 Inc 7 / T5; `design/surface-contract.md` → the style
+    // guide) — zero rows print a stated empty set, never zero bytes (the `task list`
+    // empty-roster mold), naming the filtered doctype when one scoped the listing.
+    // Exit 0: an empty store is a legitimate state, not an error.
+    let empty_line = match doctype {
+        Some(ty) => format!("jigc doc list — no committed `{ty}` docs"),
+        None => "jigc doc list — no committed docs".to_string(),
+    };
+    render_listing(format, &docs, &empty_line);
+    staged_listing_hint(&jigc_home, doctype);
+    Ok(())
+}
+
+/// The **staged arm** of `jigc doc list` — `--task <id>` lists what that task stages
+/// (`design/doc-read-surface.md` → the fourth read surface, the staged arm). The index
+/// read's counterpart to [`run_show_staged`]: same row shape, same doctype narrowing,
+/// and **staged-only** — a committed doc the task has not copied in is not in it, the
+/// same non-merging the staged content read makes (`store::read_slice_staged` blocks
+/// rather than falling back). The task resolves via [`ActiveTask::resolve`], so a bad
+/// id gets the shared `jigc task list` route.
+///
+/// Three row facts the staged arm settles, each reusing a shipped rule rather than
+/// minting one:
+///
+/// - **`state` is `managed` on every row.** A staged working copy is jigc-written by
+///   construction, never a foreign squatter — the same reason the staged content read
+///   runs no [`reroute_unadopted`]. The managed-vs-foreign discriminator adjudicates
+///   the *committed* store, and is not consulted here.
+/// - **`path` is where the instance promotes to at finalize** ([`engine::store::canonical_path`],
+///   the one owner of the committed layout, rooted at the empty path so the placement
+///   branch is included) — the M43 A14 staged display rule: a printed path is repo-real
+///   or a typed identity, never the working-area fiction. A **transient** doctype
+///   (`commit:<task-id>`, sink = the git message) and a type the resolved cascade no
+///   longer defines have no committed home, so they list at their `<type>:<slug>`
+///   identity — the second of law 1's two legal forms.
+/// - **`item-count` is the same best-effort parse** the committed arm makes; an
+///   unknown-type instance has no schema to parse against and counts 0.
+fn run_list_staged(
+    cwd: &Path,
+    doctype: Option<&str>,
+    task_id: &str,
+    format: Format,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, Some(task_id))?;
+    let schemas = committed_schemas(task.pack.as_ref(), &task.jigc_home)?;
+    if let Some(ty) = doctype
+        && !schemas.contains_key(ty)
+    {
+        return Err(unknown_doctype_block(ty));
+    }
+    // The staged `docs/<type>:<slug>.md` set as sorted `<type>:<slug>` identities — the
+    // CLI's one staged-doc enumerator, shared with `task discard`'s dropped-doc ack and
+    // the `uninstall` prose guard. Filename-sorted ⇒ (type, slug)-sorted, matching the
+    // committed arm's order by construction.
+    let staged = crate::task::staged_doc_ids(&task.dir.join("docs"))
+        .with_context(|| format!("listing the docs staged in task `{}`", task.id))?;
+    let mut docs = Vec::new();
+    for id in staged {
+        let Some((ty, slug)) = id.split_once(':') else {
+            continue; // not the `<type>:<slug>` layout: nothing this projection can key on.
+        };
+        if doctype.is_some_and(|want| want != ty) {
+            continue;
+        }
+        let schema = schemas.get(ty);
+        let path = schema
+            .and_then(|schema| engine::store::canonical_path(Path::new(""), schema, slug))
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| id.clone());
+        let mut count = 0;
+        if let Some(schema) = schema {
+            let file = state::instance_path(&task.dir, ty, slug);
+            let bytes = std::fs::read(&file)
+                .with_context(|| format!("reading the staged doc at {file:?}"))?;
+            let source = String::from_utf8_lossy(&bytes);
+            count = engine::parse::parse_sections(schema, &source)
+                .map(|doc| item_count(&doc))
+                .unwrap_or(0);
+        }
+        docs.push(DocRow {
+            id,
+            path,
+            state: "managed",
+            item_count: count,
+        });
+    }
+    let empty_line = match doctype {
+        Some(ty) => format!("jigc doc list — no `{ty}` docs staged in task {}", task.id),
+        None => format!("jigc doc list — no docs staged in task {}", task.id),
+    };
+    render_listing(format, &docs, &empty_line);
+    Ok(())
+}
+
+/// Render one listing — the **shared** renderer both arms print through, so the committed
+/// and staged surfaces can never grow two column vocabularies (the same one-primitive rule
+/// the enumeration side already obeys). Only the empty-set line differs, and the caller
+/// supplies it because only the caller knows what set was empty.
+///
+/// The column header (M47 Inc 10 / T5 — P4-5/C3; `design/surface-contract.md` → law 2:
+/// nothing hides): three bare columns left the reader to infer what the third one meant —
+/// `managed`/`unregistered` reads as a state only once something says `state`. It names the
+/// columns in row order, in the pinned json's own key spelling, so the plain arm teaches the
+/// machine arm's vocabulary. **Row-gated**: it prints where rows do, never over the empty-set
+/// line (a header above nothing names nothing), and never on `--format json`, whose keys
+/// *are* the shape.
+fn render_listing(format: Format, docs: &[DocRow], empty_line: &str) {
     match format {
-        Format::Json => println!("{}", render::json(&DocListing { docs: &docs })),
+        Format::Json => println!("{}", render::json(&DocListing { docs })),
         Format::Agent | Format::Human => {
             if docs.is_empty() {
-                // The empty-set line (M43 Inc 7 / T5; `design/surface-contract.md` →
-                // the style guide) — zero rows print a stated empty set, never zero
-                // bytes (the `task list` empty-roster mold), naming the filtered
-                // doctype when one scoped the listing. Exit 0: an empty store is a
-                // legitimate state, not an error. JSON keeps the pinned wrapper.
-                match doctype {
-                    Some(ty) => println!("jigc doc list — no committed `{ty}` docs"),
-                    None => println!("jigc doc list — no committed docs"),
-                }
+                println!("{empty_line}");
             } else {
-                // The column header (M47 Inc 10 / T5 — P4-5/C3; `design/surface-contract.md`
-                // → law 2: nothing hides). Three bare columns left the reader to infer what
-                // the third one meant — `managed`/`unregistered` reads as a state only once
-                // something says `state`. The header names the columns in row order, in the
-                // pinned json's own key spelling, so the plain arm teaches the machine arm's
-                // vocabulary. Header-only: it prints where rows do, never over the empty-set
-                // line (a header above nothing names nothing), and never on `--format json`.
                 println!("id  path  state");
             }
-            for row in &docs {
+            for row in docs {
                 println!("{}  {}  {}", row.id, row.path, row.state);
             }
         }
     }
-    Ok(())
+}
+
+/// The shared `store.unknown-type` block both `doc list` arms raise — the same routed
+/// refusal the read-side `doc show` / `doc schema` raise, so a doctype the cascade does
+/// not define gets one answer whichever surface asked.
+fn unknown_doctype_block(doctype: &str) -> DocFailure {
+    DocFailure::block(Finding::graded(
+        Severity::Blocking,
+        "store.unknown-type",
+        format!("unknown doctype `{doctype}`"),
+        Some(Location::addressed(doctype, 1, 1)),
+        Some("list the available doctypes with `jigc describe`".into()),
+    ))
+}
+
+/// The **staged-listing hint** — the index read's counterpart to [`stale_read_hint`]
+/// (`design/doc-read-surface.md` → the fourth read surface, the staged arm;
+/// `design/surface-contract.md` → the route floor). A task-less `doc list` answers *"which
+/// docs are committed"*, which is a different question from *"which docs does my task
+/// hold"* — and six consecutive trials went to the filesystem to read their own in-flight
+/// work rather than ask the second one. So when an open task stages docs, the listing says
+/// which surface it just served and hands over the staged listing.
+///
+/// **Stdout is untouched**: the note rides **stderr**, so the pinned json and the plain
+/// listing — empty-set line included — are byte-identical with and without an open task.
+/// Existence check only, over [`state::list_active_task_ids`] (the single task enumeration
+/// source) + the CLI's one staged-doc enumerator: no doc is parsed and no content is read,
+/// so the note claims only that the task stages *something*.
+///
+/// **The reader's scope survives into the route** — a `doc list <doctype>` routes at the
+/// same doctype's staged listing, never a wider one — and the sentence is phrased for a
+/// reader who may *be* the staging task (the M47 D5 revision applied to its sibling): a
+/// task-less listing carries no task id, so it says *if that task is yours* rather than
+/// warning about someone else's edit. With more than one staging task the ids are listed
+/// and the command carries the shared `<task-id>` placeholder.
+fn staged_listing_hint(jigc_home: &Path, doctype: Option<&str>) {
+    let jigc_root = jigc_home.join(".jigc");
+    let tasks = jigc_root.join("tasks");
+    let staging: Vec<String> = state::list_active_task_ids(&jigc_root)
+        .into_iter()
+        .filter(|id| {
+            crate::task::staged_doc_ids(&tasks.join(id).join("docs"))
+                .is_ok_and(|staged| !staged.is_empty())
+        })
+        .collect();
+    let task_arg = match staging.as_slice() {
+        [] => return,
+        [id] => id.as_str(),
+        _ => "<task-id>",
+    };
+    let (plural, whose) = if staging.len() == 1 {
+        ("", "if that task is yours")
+    } else {
+        ("s", "if one of them is yours")
+    };
+    let mut argv = vec!["jigc", "doc", "list"];
+    if let Some(ty) = doctype {
+        argv.push(ty);
+    }
+    argv.extend(["--task", task_arg]);
+    eprintln!(
+        "note: docs are also staged in open task{plural} {} — this listing is the committed \
+         store; {whose}, list what it stages: {}",
+        staging.join(", "),
+        engine::finding::Route::mechanical(argv, ""),
+    );
 }
 
 /// The `jigc doc list --format json` shape — **pinned at ship** with its posture declared
