@@ -3889,7 +3889,7 @@ sections:
         Pipe the payload on stdin:
 
         jigc doc author note --from-file - --task emit-four-classes <<'EOF'
-        title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id: space, `_`, `/` and `.` each become `-` (so `v1.1` is two words) and every other non-alphanumeric is dropped; the result is capped at the first 5 words / 50 chars; then a leading or trailing filler word (a/an/the/of/to/in/on/at/by/for) is dropped unless a hyphen glues it to its neighbour
+        title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id: space, `_`, `/`, `.` and `-` each mark a word boundary and render as `-` (so `v1.1` and `in-memory` are each two words) and every other non-alphanumeric is dropped; the result is capped at the first 5 words / 50 chars; then a leading or trailing filler word (a/an/the/of/to/in/on/at/by/for) is dropped unless a hyphen glues it to its neighbour
         sections:
           - id: meta
             set:

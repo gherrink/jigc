@@ -119,6 +119,17 @@ pub const MAX_CHARS: usize = 50;
 /// its generation-3 glue condition. Naming the caps alone described a rule the
 /// mint does not implement.
 ///
+/// The boundary clause names **two properties of a literal `-`, not one** (F9, the
+/// M48 fix): it marks a word boundary like the separators do — so `in-memory` is
+/// two words against [`MAX_WORDS`], the split that turned the trial's *"Keep the
+/// sample store in-memory"* into `keep-the-sample-store` — *and* it still glues,
+/// which is the exception the trailing filler clause states. Enumerating only
+/// space/`_`/`/`/`.` while the next clause said hyphens glue read as "a hyphen
+/// binds", which is true of the drop and false of the cap. The two properties are
+/// consistent because [`Word::glue_before`] narrows the **edge-stopword drop**
+/// alone and never the tokenizer ([design/storage.md](../../../design/storage.md)
+/// → Identity → generation 3).
+///
 /// `minted_into` names *what* the id-source is slugged into, so each surface
 /// stays honest: the `{{schema:<doctype>}}` projection at the `title:` line
 /// passes `"the doc id"`; `jigc doc create --help` and `jigc doc add-item --help`
@@ -128,11 +139,11 @@ pub const MAX_CHARS: usize = 50;
 pub fn mint_statement(minted_into: &str) -> String {
     let filler = EDGE_STOPWORDS.join("/");
     format!(
-        "the id-source — slugged lowercase-kebab into {minted_into}: space, `_`, `/` and \
-         `.` each become `-` (so `v1.1` is two words) and every other non-alphanumeric is \
-         dropped; the result is capped at the first {MAX_WORDS} words / {MAX_CHARS} chars; \
-         then a leading or trailing filler word ({filler}) is dropped unless a hyphen glues \
-         it to its neighbour"
+        "the id-source — slugged lowercase-kebab into {minted_into}: space, `_`, `/`, `.` \
+         and `-` each mark a word boundary and render as `-` (so `v1.1` and `in-memory` are \
+         each two words) and every other non-alphanumeric is dropped; the result is capped \
+         at the first {MAX_WORDS} words / {MAX_CHARS} chars; then a leading or trailing \
+         filler word ({filler}) is dropped unless a hyphen glues it to its neighbour"
     )
 }
 
@@ -1088,6 +1099,29 @@ mod tests {
         assert_eq!(slugify("on"), "");
     }
 
+    /// **F9 (M48) — a literal `-` is a word boundary the cap counts.** The
+    /// behaviour the stated-at sentence has to describe, pinned as its own case:
+    /// `glue_before` narrows the *edge-stopword drop*, never the tokenizer, so a
+    /// hyphenated compound is two words toward [`MAX_WORDS`] — which is how the
+    /// trial's `"Keep the sample store in-memory"` spent its fifth word on `in`,
+    /// then dropped it as a whole separator-delimited trailing filler word.
+    ///
+    /// The behaviour is correct and stays put: a "fix" here is slug-rule
+    /// generation 4, re-pinning both manifests, and no transform kind can re-mint
+    /// an id — so the corpus, permanently, would carry two id generations
+    /// ([`SLUG_RULE_VERSION`]).
+    #[test]
+    fn a_literal_hyphen_costs_a_word_at_the_cap() {
+        // The trial repro, verbatim (RC-pre-1.0 findings-verification → F9).
+        assert_eq!(
+            slugify("Keep the sample store in-memory"),
+            "keep-the-sample-store"
+        );
+        // …and the same compound below the cap keeps both of its words, so the
+        // case above is the *cap* counting the hyphen, not the drop eating it.
+        assert_eq!(slugify("Keep in-memory"), "keep-in-memory");
+    }
+
     /// **B7 (M47) — the mint rule states itself where it mints.** The stated-at
     /// sentence named only the two *caps*, so the two steps that produce every
     /// reported "except when it isn't" were stated nowhere: the **renormalization**
@@ -1135,19 +1169,57 @@ mod tests {
             "the sentence's filler-word list and EDGE_STOPWORDS disagree"
         );
 
-        // The separator map, derived from behaviour in both directions. `-` is the
-        // join char, not a separator, and the sentence names it as the target.
-        for byte in b' '..=b'~' {
-            let ch = byte as char;
-            if ch == '-' {
-                continue;
-            }
-            let maps = renormalize(&format!("a{ch}b")) == "a-b";
+        // The **word-boundary set**: parsed back out of the sentence exactly as the
+        // filler list is, and compared with the set derived from behaviour over
+        // every printable ASCII char — **no char exempted**.
+        //
+        // F9 (M48) is why this is a parse-back and not a `contains` sweep. The
+        // sweep exempted `-` ("the join char, not a separator") and could not have
+        // done otherwise: `-` is the map's *target*, so the sentence names it
+        // whatever it claims about it, and `contains` reads that mention as a
+        // statement. Meanwhile a literal `-` **does** split words for the cap
+        // (`in-memory` is two of the five), so the sentence that enumerated only
+        // space/`_`/`/`/`.` under-described the rule at the surface M47 made a
+        // one-way door precisely so it could not drift. Reading the enumeration
+        // back and comparing it as a *set* fences both directions — an omitted
+        // boundary and an over-claimed one.
+        let enumeration = statement
+            .split_once(": ")
+            .and_then(|(_, rest)| rest.split_once(" each "))
+            .map(|(list, _)| list)
+            .unwrap_or_else(|| {
+                panic!(
+                    "the statement must name the word-boundary set as \
+                     `: <members> each …`; got: {statement}"
+                )
+            });
+        let listed: std::collections::BTreeSet<String> = enumeration
+            .replace(" and ", ", ")
+            .split(", ")
+            .map(|member| member.trim().to_owned())
+            .collect();
+        let boundaries: Vec<char> = (b' '..=b'~')
+            .map(char::from)
+            .filter(|ch| renormalize(&format!("a{ch}b")) == "a-b")
+            .collect();
+        assert_eq!(
+            listed,
+            boundaries
+                .iter()
+                .map(|ch| statement_rendering(*ch))
+                .collect::<std::collections::BTreeSet<_>>(),
+            "the statement's word-boundary list and the behaviour of `renormalize` \
+             disagree; got: {statement}"
+        );
+
+        // …and every boundary the sentence names really does cost a word against
+        // the word cap — the property the F9 report walked into, checked for each
+        // named member rather than for the four the sentence used to list.
+        for ch in &boundaries {
             assert_eq!(
-                maps,
-                statement.contains(&statement_rendering(ch)),
-                "the statement and the separator map disagree about {ch:?} \
-                 (maps to `-`: {maps}); got: {statement}"
+                slugify(&format!("alpha{ch}beta gamma delta epsilon zeta")),
+                "alpha-beta-gamma-delta-epsilon",
+                "{ch:?} is named as a word boundary but does not cost a word at the cap"
             );
         }
 
