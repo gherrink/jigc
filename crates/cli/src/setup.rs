@@ -966,10 +966,11 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     // 7. Commit setup's own install files as a dedicated commit (M26 shakedown), so the
     //    user's first `jigc finalize` doesn't sweep the scaffolding into their first
     //    feature commit. Idempotent; benign skips (no repo / unborn HEAD / git absent)
-    //    degrade gracefully — but a genuine commit *rejection* (e.g. no git identity)
-    //    leaves the install staged-but-uncommitted, so it fails loudly with an actionable
-    //    finding rather than masquerading as a clean success (mirrors `finalize`'s
-    //    identical git-identity failure).
+    //    degrade gracefully — but a genuine *rejection* of either git step (e.g. no git
+    //    identity) means the install is in no commit, so it fails loudly with a finding
+    //    routed on git's own cause ([`InstallCommitRejection::finding`]) rather than
+    //    masquerading as a clean success (mirrors `finalize`'s identical git-identity
+    //    failure).
     let install_commit = commit_install(
         repo_root,
         &line_file,
@@ -977,18 +978,7 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         seeded_gitignore,
         &hook_path,
     )
-    .map_err(|git_err| {
-        Finding::block(
-            "setup.install-commit",
-            format!(
-                "the jigc install files were written and staged, but `git commit` was rejected \
-                 (no install commit was made):\n{git_err}"
-            ),
-            "tell git who you are — set `git config user.email \"you@example.com\"` and \
-             `git config user.name \"Your Name\"` — then re-run `jigc setup` to commit the \
-             staged install files",
-        )
-    })?;
+    .map_err(|rejection| rejection.finding())?;
 
     Ok(SetupSummary {
         line_file,
@@ -1059,6 +1049,16 @@ fn install_tracked_paths(
 ///     rejected by anything upstream either: it is not gitignored (`git check-ignore`
 ///     exits 1 on it) and `git add -- .git/hooks/pre-commit` exits **0** while staging
 ///     nothing — an inert entry that would look green.
+///   - **owned by *this* repository** — location is not trackability. A hooks dir under
+///     the root can belong to **another** repo: a submodule (shared hooks vendored as
+///     one) or a plain embedded repo. Git is asked which repo owns the hook's own
+///     directory (`rev-parse --show-toplevel` from inside it), because both shapes are
+///     otherwise fatal to the *whole* install commit and in opposite ways — inside a
+///     submodule `git add` refuses with `Pathspec '…' is in submodule '…'` (exit 128),
+///     and inside an embedded repo `git add` stages nothing at exit 0 while the
+///     pathspec-limited `git commit` then dies on `did not match any file(s) known to
+///     git`. Asking the ownership question refuses both, and the un-enumerated third
+///     shape with them.
 ///
 /// Deliberately *not* keyed on [`display_hook_path`]'s printed value: that renders the
 /// default `.git/hooks/pre-commit` **relative** (it strips the canonicalized repo root,
@@ -1091,7 +1091,85 @@ fn committable_hook_path(repo_root: &Path, hook_file: &Path) -> Option<String> {
             return None;
         }
     }
+
+    // Ownership: the repo git reports from inside the hook's own directory must be the
+    // one we are committing in. A submodule / embedded repo answers with its own
+    // toplevel, and that path is not this index's to take.
+    let hook_dir = hook.parent()?;
+    let owner = git_output(hook_dir, ["rev-parse", "--show-toplevel"])?;
+    if !owner.status.success() {
+        return None;
+    }
+    let owner = String::from_utf8_lossy(&owner.stdout).trim().to_string();
+    if std::fs::canonicalize(owner).ok()? != root {
+        return None;
+    }
+
     Some(relative)
+}
+
+/// A git step of the install commit that **ran and refused** — the loud half of
+/// [`commit_install`]'s contract, carrying git's own words and which step spoke them.
+///
+/// Both halves are here on purpose: a refusal on the **staging** half is as fatal to the
+/// install commit as one on the commit half (nothing lands either way), and collapsing it
+/// into `Ok(`[`InstallCommit::Skipped`]`)` is exactly how `jigc setup` once listed a full
+/// install it had not committed. The variant decides what the finding may claim — a
+/// refused `git add` staged nothing, so the "left staged for a re-run" recovery is true
+/// only of [`Self::Commit`].
+#[derive(Debug)]
+enum InstallCommitRejection {
+    /// `git add` refused: nothing was staged, no install commit was made.
+    Stage(String),
+    /// `git commit` refused: the install files are staged, so a re-run commits them.
+    Commit(String),
+}
+
+impl InstallCommitRejection {
+    /// The blocking finding this refusal surfaces as — message and route both derived
+    /// from **git's actual rejection**, never from the one cause the route was first
+    /// written for (surface-contract law 1: a route that names `user.email` when git
+    /// refused a pathspec sends the reader to fix something that is not broken, and the
+    /// re-run fails identically).
+    fn finding(&self) -> Finding {
+        let (step, git, staged) = match self {
+            Self::Stage(git) => ("git add", git, false),
+            Self::Commit(git) => ("git commit", git, true),
+        };
+        let message = if staged {
+            format!(
+                "the jigc install files were written and staged, but `{step}` was rejected \
+                 (no install commit was made):\n{git}"
+            )
+        } else {
+            format!(
+                "the jigc install files were written, but `{step}` was rejected — nothing was \
+                 added to the index and no install commit was made:\n{git}"
+            )
+        };
+        let route = if is_git_identity_rejection(git) {
+            "tell git who you are — set `git config user.email \"you@example.com\"` and \
+             `git config user.name \"Your Name\"` — then re-run `jigc setup` to commit the \
+             staged install files"
+                .to_string()
+        } else {
+            format!(
+                "resolve the refusal `{step}` reports above — it names the path or setting git \
+                 declined — then re-run `jigc setup`"
+            )
+        };
+        Finding::block("setup.install-commit", message, route)
+    }
+}
+
+/// Whether git's rejection text is the **missing-identity** one — the single cause the
+/// install-commit route was originally hardcoded to, now a test rather than an
+/// assumption. Matches git's own wording on both arms it prints it with.
+fn is_git_identity_rejection(git_err: &str) -> bool {
+    let text = git_err.to_ascii_lowercase();
+    text.contains("tell me who you are")
+        || text.contains("unable to auto-detect email address")
+        || text.contains("empty ident name")
 }
 
 /// Commit `jigc setup`'s own install files as a dedicated commit, so they don't land in
@@ -1108,10 +1186,11 @@ fn committable_hook_path(repo_root: &Path, hook_file: &Path) -> Option<String> {
 /// its own install regardless of HEAD state, since the first `finalize` now stages only
 /// the task's change-set). **Graceful skip** for the benign cases — not-a-git-repo or a
 /// git that could not be spawned → `Ok(`[`InstallCommit::Skipped`]`)` (nothing was
-/// staged-but-orphaned; the commit is a convenience there). But a genuine commit
-/// **rejection** (git ran and declined — e.g.
-/// no `user.email`/`user.name`) leaves the install files staged-but-uncommitted, so it
-/// returns `Err(<git's rejection>)` for [`install`] to surface as a loud blocking
+/// staged-but-orphaned; the commit is a convenience there). But a genuine **rejection**
+/// — git ran and declined, on *either* the staging or the commit step (no
+/// `user.email`/`user.name`, a held index lock, a pathspec this index cannot take) —
+/// means the install is not in any commit, so it returns
+/// `Err(`[`InstallCommitRejection`]`)` for [`install`] to surface as a loud blocking
 /// finding rather than a silent skip behind a success banner. Uses `--no-verify`: the
 /// only hook present is the warn-only `pre-commit` setup just installed, and running the
 /// doc↔code backstop against this commit is pointless (it carries install artifacts, not
@@ -1124,7 +1203,7 @@ fn commit_install(
     allowlist_file: &str,
     seeded_gitignore: bool,
     hook_file: &Path,
-) -> Result<InstallCommit, String> {
+) -> Result<InstallCommit, InstallCommitRejection> {
     // Require a git work tree — but DO mint on an **unborn HEAD** (a brand-new repo with
     // no commits). Setup owns committing its own install footprint regardless of HEAD
     // state (M30 audit finding 1): on a cold-start repo the first `finalize` since M30
@@ -1160,7 +1239,12 @@ fn commit_install(
     add.extend(paths.iter().map(String::as_str));
     match git_output(repo_root, add) {
         Some(out) if out.status.success() => {}
-        _ => return Ok(InstallCommit::Skipped),
+        // git ran and REFUSED to stage. Nothing lands from here on, so this must not
+        // degrade to a silent skip behind the success banner — the same loudness the
+        // commit step below gets, for the same reason.
+        Some(out) => return Err(InstallCommitRejection::Stage(git_said(&out))),
+        // git could not be spawned at all — benign skip (the writes still succeeded).
+        None => return Ok(InstallCommit::Skipped),
     }
 
     // Nothing staged among our paths (a re-run over an unchanged install) → clean no-op.
@@ -1186,11 +1270,7 @@ fn commit_install(
         // are now staged-but-uncommitted — unlike the benign skips above, this must not
         // hide behind a success banner. Surface git's own rejection (its "tell me who you
         // are" guidance) for `install` to turn into a loud blocking finding.
-        Some(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            return Err(format!("{}{}", stdout.trim(), stderr.trim()));
-        }
+        Some(out) => return Err(InstallCommitRejection::Commit(git_said(&out))),
         // git could not be spawned at all — benign skip (the writes still succeeded).
         None => return Ok(InstallCommit::Skipped),
     }
@@ -1207,6 +1287,14 @@ fn commit_install(
         }
         _ => Ok(InstallCommit::Skipped),
     }
+}
+
+/// What git said when it refused — stdout + stderr, trimmed, quoted verbatim into the
+/// finding so the reader sees git's own words rather than a paraphrase of them.
+fn git_said(out: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    format!("{}{}", stdout.trim(), stderr.trim())
 }
 
 /// Whether `path` (repo-relative) is gitignored in `repo_root` (`git check-ignore -q`):
@@ -2293,6 +2381,69 @@ mod tests {
         );
     }
 
+    /// A git step that **ran and refused** on the install-commit path is never absorbed
+    /// into a silent success — on the **staging** half as much as on the commit half —
+    /// and the finding it surfaces routes on git's own cause, never at the git identity
+    /// by default (surface-contract law 1).
+    ///
+    /// The refusal is forced with a held `index.lock`, the one cause that makes `git add`
+    /// decline for a reason that has nothing to do with `user.email`: before this, that
+    /// branch returned `Ok(Skipped)`, so the whole install commit vanished behind the
+    /// success banner while `jigc setup` listed everything as installed.
+    #[test]
+    fn a_refused_install_stage_is_loud_and_routes_on_gits_own_cause() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        git_identity(dir.path());
+        git(dir.path(), &["commit", "-q", "--allow-empty", "-m", "init"]);
+        std::fs::write(dir.path().join("CLAUDE.md"), "x\n").expect("write an install file");
+        std::fs::write(dir.path().join(".git/index.lock"), "").expect("hold the index lock");
+
+        let rejection = commit_install(
+            dir.path(),
+            "CLAUDE.md",
+            ".claude/settings.json",
+            false,
+            Path::new("/nonexistent/hooks/pre-commit"),
+        )
+        .expect_err("a git step that ran and refused must not degrade to a silent skip");
+
+        let finding = rejection.finding();
+        assert_eq!(finding.code, "setup.install-commit");
+        assert!(
+            finding.message.contains("git add"),
+            "the message must name the step git refused; got:\n{}",
+            finding.message,
+        );
+        assert!(
+            !finding.message.contains("staged"),
+            "a refused `git add` staged nothing — the message must not claim it did; got:\n{}",
+            finding.message,
+        );
+        let route = finding
+            .route
+            .expect("a blocking finding carries a route")
+            .to_string();
+        assert!(
+            !route.contains("user.email"),
+            "the identity route is a lie for a cause that is not the identity; got: {route}",
+        );
+
+        // …and the identity cause still gets the identity route (the widening keeps the
+        // case the route was written for).
+        let identity = InstallCommitRejection::Commit(
+            "Author identity unknown\n*** Please tell me who you are.\n\
+             fatal: unable to auto-detect email address (got 'u@h.(none)')"
+                .to_string(),
+        )
+        .finding();
+        let identity_route = identity.route.expect("a blocking finding carries a route");
+        assert!(
+            identity_route.to_string().contains("user.email"),
+            "an identity rejection must still route at the git identity; got: {identity_route}",
+        );
+    }
+
     /// Give the repo at `dir` a committable identity + disabled signing, so the real
     /// install path's `git commit` lands in CI / on a signing-enabled dev machine.
     fn git_identity(dir: &Path) {
@@ -2613,11 +2764,19 @@ mod tests {
         );
     }
 
-    /// [`committable_hook_path`] admits the hook **iff** it is a working-tree file, over
-    /// the whole hooks-dir axis — and in particular refuses the default
+    /// [`committable_hook_path`] admits the hook **iff** it is a working-tree file **of
+    /// this repo**, over the whole hooks-dir axis — and in particular refuses the default
     /// `.git/hooks/pre-commit`, which *is* under the repo root. A `.git`-internal
     /// pathspec entry is inert (`git add` on it stages nothing and exits 0), so it cannot
     /// be caught downstream by the committed set: the refusal has to be pinned here.
+    ///
+    /// Cells (5) and (6) are the **ownership** half of the rule, on the same axis: a
+    /// hooks dir sitting under the root and outside git's own dirs may still belong to
+    /// **another** repository — a submodule (the common shared-hooks pattern) or a plain
+    /// embedded repo — and this index cannot take that path (`git add` is a fatal refusal
+    /// on the first shape, and `git commit -- <path>` a "did not match any file(s) known
+    /// to git" on the second). Both are refused by asking git which repo owns the hook's
+    /// own directory, which is why an un-enumerated seventh shape is refused too.
     #[test]
     fn committable_hook_path_admits_only_working_tree_hooks() {
         let jigc = Path::new("/abs/bin/jigc");
@@ -2689,6 +2848,67 @@ mod tests {
             committable_hook_path(&linked, &hook),
             None,
             "the common hooks dir a linked worktree resolves to is outside its tree",
+        );
+
+        // (5) A `core.hooksPath` inside a **submodule** — shared hooks vendored as a
+        //     submodule, a live pattern. Under the root, outside git's dirs, and still
+        //     not this index's to take: `git add` refuses it fatally, which would take
+        //     the WHOLE install commit down with it.
+        let source = TempDir::new();
+        git(source.path(), &["init", "-q"]);
+        git_identity(source.path());
+        std::fs::create_dir_all(source.path().join("hooks")).expect("create the source hooks dir");
+        std::fs::write(source.path().join("hooks/keep"), "x\n").expect("seed the hooks dir");
+        git(source.path(), &["add", "-A"]);
+        git(source.path(), &["commit", "-q", "-m", "hooks"]);
+        let outer = TempDir::new();
+        git(outer.path(), &["init", "-q"]);
+        git_identity(outer.path());
+        git(
+            outer.path(),
+            &["commit", "-q", "--allow-empty", "-m", "init"],
+        );
+        git(
+            outer.path(),
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-q",
+                source.path().to_str().expect("utf-8 temp path"),
+                "shared-hooks",
+            ],
+        );
+        git(
+            outer.path(),
+            &["config", "core.hooksPath", "shared-hooks/hooks"],
+        );
+        let hook = install_precommit_hook(outer.path(), jigc).expect("install");
+        assert_eq!(
+            committable_hook_path(outer.path(), &hook),
+            None,
+            "a hooks dir inside a submodule belongs to the submodule's index, not this one",
+        );
+
+        // (6) A `core.hooksPath` inside an **embedded, unregistered** git repo — the same
+        //     ownership question with no `.gitmodules` entry. Here `git add` exits 0 while
+        //     staging nothing, and the pathspec-limited `git commit` then fails with
+        //     "did not match any file(s) known to git".
+        let host = TempDir::new();
+        git(host.path(), &["init", "-q"]);
+        git_identity(host.path());
+        git(
+            host.path(),
+            &["commit", "-q", "--allow-empty", "-m", "init"],
+        );
+        git(host.path(), &["init", "-q", "nested"]);
+        git(host.path(), &["config", "core.hooksPath", "nested/hooks"]);
+        let hook = install_precommit_hook(host.path(), jigc).expect("install");
+        assert_eq!(
+            committable_hook_path(host.path(), &hook),
+            None,
+            "a hooks dir inside an embedded repo belongs to that repo, not this index",
         );
     }
 

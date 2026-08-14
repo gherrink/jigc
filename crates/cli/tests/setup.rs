@@ -1009,6 +1009,14 @@ enum HooksDirShape {
     /// (4) a linked worktree, whose hooks resolve to the main checkout's **common** dir —
     /// outside the worktree git commits from.
     LinkedWorktree,
+    /// (5) a `core.hooksPath` inside a **submodule** (shared hooks vendored as one) —
+    /// under the root, outside git's dirs, and owned by the submodule's index: `git add`
+    /// refuses it fatally, taking the whole install commit down with it.
+    Submodule,
+    /// (6) a `core.hooksPath` inside an **embedded, unregistered** git repo — the same
+    /// ownership question with no `.gitmodules` entry: `git add` stages nothing at exit 0
+    /// and the pathspec-limited `git commit` then fails on a path git does not know.
+    EmbeddedRepo,
 }
 
 /// The install commit's footprint apart from the `pre-commit` hook: the seven paths
@@ -1062,9 +1070,17 @@ fn repo_relative(root: &Path, path: &Path) -> Option<String> {
 ///
 /// For each shape: the resolved hook's membership in the install commit equals its
 /// committability, nothing from inside git's control dir is ever staged, the rest of the
-/// commit is exactly [`INSTALL_COMMIT_BASE_PATHS`], no hook is left **untracked** in the
-/// working tree, and a second `jigc setup` mints no second commit (idempotency survives
-/// the widened pathspec).
+/// commit is exactly [`INSTALL_COMMIT_BASE_PATHS`] — so the seven jigc-owned paths land
+/// in **one** install commit whatever the hooks dir turns out to be — a committable hook
+/// is left **tracked** in the working tree, and a second `jigc setup` mints no second
+/// commit (idempotency survives the widened pathspec).
+///
+/// The axis has two halves, and the second is not about *location*: a hooks dir can sit
+/// under the root, outside git's own dirs, and still belong to **another** repository
+/// (shapes (5)/(6)). Declared bound, stated rather than engineered around: such a hook is
+/// installed and reported but not committable *here*, so the working tree keeps it as the
+/// containing repo's business — which is why the untracked-hook clause below is asserted
+/// exactly where the hook is committable.
 #[test]
 fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
     for shape in [
@@ -1072,10 +1088,13 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
         HooksDirShape::InWorktreeRelative,
         HooksDirShape::OutsideRepo,
         HooksDirShape::LinkedWorktree,
+        HooksDirShape::Submodule,
+        HooksDirShape::EmbeddedRepo,
     ] {
         let home = TempDir::new("home");
         let repo = TempDir::new("hook-axis");
         let outside = TempDir::new("outside-hooks");
+        let hooks_source = TempDir::new("hooks-source");
         mark_repo(repo.path());
         git(
             repo.path(),
@@ -1135,6 +1154,49 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
                     linked,
                     repo.path().join(".git/hooks/pre-commit"),
                     false,
+                    false,
+                )
+            }
+            HooksDirShape::Submodule => {
+                // A tiny repo with a `hooks/` dir, vendored into the repo as a submodule.
+                mark_repo(hooks_source.path());
+                fs::create_dir_all(hooks_source.path().join("hooks"))
+                    .expect("create the source hooks dir");
+                fs::write(hooks_source.path().join("hooks/keep"), "x\n")
+                    .expect("seed the source hooks dir");
+                git(hooks_source.path(), &["add", "-A"]);
+                git(hooks_source.path(), &["commit", "-q", "-m", "hooks"]);
+                git(
+                    repo.path(),
+                    &[
+                        "-c",
+                        "protocol.file.allow=always",
+                        "submodule",
+                        "add",
+                        "-q",
+                        hooks_source.path().to_str().expect("utf-8 temp path"),
+                        "shared-hooks",
+                    ],
+                );
+                git(repo.path(), &["commit", "-q", "-m", "add submodule"]);
+                git(
+                    repo.path(),
+                    &["config", "core.hooksPath", "shared-hooks/hooks"],
+                );
+                (
+                    repo.path().to_path_buf(),
+                    repo.path().join("shared-hooks/hooks/pre-commit"),
+                    true,
+                    false,
+                )
+            }
+            HooksDirShape::EmbeddedRepo => {
+                git(repo.path(), &["init", "-q", "nested"]);
+                git(repo.path(), &["config", "core.hooksPath", "nested/hooks"]);
+                (
+                    repo.path().to_path_buf(),
+                    repo.path().join("nested/hooks/pre-commit"),
+                    true,
                     false,
                 )
             }
@@ -1210,12 +1272,15 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
             "{shape:?}: the install commit must carry exactly the install footprint",
         );
 
-        // No hook is left behind in the working tree (RED at HEAD for shape (2), where
-        // `git status --porcelain` reports the collapsed `?? my-hooks/`). Compared as a
-        // path PREFIX, precisely because git collapses a wholly-untracked directory to
-        // its name — matching the full `my-hooks/pre-commit` would miss the defect.
+        // No COMMITTABLE hook is left behind in the working tree (RED before the fix for
+        // shape (2), where `git status --porcelain` reports the collapsed `?? my-hooks/`).
+        // Compared as a path PREFIX, precisely because git collapses a wholly-untracked
+        // directory to its name — matching the full `my-hooks/pre-commit` would miss the
+        // defect. Asserted where the hook is committable: shapes (5)/(6) install a hook
+        // this repo *cannot* track, and status honestly reports the containing submodule /
+        // embedded repo — the declared bound, not a defect to assert away.
         let porcelain = git_capture(&cwd, &["status", "--porcelain"]);
-        if let Some(relative) = relative_hook.as_deref() {
+        if let Some(relative) = relative_hook.as_deref().filter(|_| committable) {
             // A `.git`-internal hook is never reported by `status` at all; an in-worktree
             // one must be tracked and clean.
             let covering = porcelain
