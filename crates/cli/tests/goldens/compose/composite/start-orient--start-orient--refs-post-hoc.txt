@@ -16,7 +16,7 @@ Available workflows:
   - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
   - quick-fix — apply a small commit-only fix that touches no documented code (code a managed doc names) and records no decision
   - record-decision — capture a choice you have settled, preserving its rationale with no code to write
-  - single-task — implement one scoped change end-to-end, recording its decisions as ADRs
+  - single-task — implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog
 
 Run: `jigc start "<intent>"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it
 Preview: `jigc workflow <id> --preview`   — read a task-minting workflow's step text without minting a task; a workflow that mints nothing has no preview — `jigc start --workflow <id>` composes it directly, and mints nothing either

@@ -101,7 +101,7 @@ fn clean_no_task_json_is_valid_state_tagged_and_carries_no_footer() {
     assert_eq!(
         single_task["when"],
         serde_json::json!(
-            "implement one scoped change end-to-end, recording its decisions as ADRs"
+            "implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog"
         ),
         "got:\n{stdout}",
     );
@@ -179,6 +179,120 @@ fn clean_no_task_prints_header_catalog_and_routing_footer() {
         stdout.contains("— jigc · run `jigc start` for orientation; all writes through `jigc`."),
         "agent-text output must end with the routing footer; got:\n{stdout}",
     );
+}
+
+/// M48 Increment 9 / T5 (RC-pre-1.0 **F14**) — **a granted gate is named where the
+/// pick is made.** `single-task` bundles the `changelog` create-gate with the ADR
+/// one, so a change with no user-facing effect finalizes with
+/// `changelog-recording.gate-granted-unused` — which the trial met as an ambush,
+/// because neither routing surface said the changelog was in the bundle. Both must
+/// name it: the composed `jigc start` catalog line (all the router shows, one line
+/// per workflow) and the `jigc describe` projection (the fuller `description:` +
+/// `usage:` story). Naming the gate is the style guide's routing-surface rule —
+/// `when:` names the *discriminating trigger axes*, and "does it record a
+/// user-facing change?" is one (`design/surface-contract.md` → The surface style
+/// guide).
+///
+/// The member set is **derived from the pack's own `allows-create:`**, never
+/// hard-coded, so a future selectable work-workflow that bundles the changelog gate
+/// joins the axis with no edit here — and the assertions run over the **emitted**
+/// catalog line / describe paragraph, not a reconstruction of them.
+#[test]
+fn every_selectable_changelog_granting_workflow_names_the_gate_on_both_routing_surfaces() {
+    let granting = selectable_workflows_granting_the_changelog_gate();
+    assert!(
+        !granting.is_empty(),
+        "the axis must be non-empty — the dev pack ships at least one selectable \
+         work-workflow granting the `changelog` create-gate",
+    );
+
+    let repo = TempDir::new("changelog-gate");
+    mark_repo(repo.path());
+    fs::create_dir_all(repo.path().join(".jigc").join("config"))
+        .expect("create .jigc/config project layer");
+    let home = TempDir::new("home");
+
+    let catalog = String::from_utf8(run_start(repo.path(), home.path()).stdout)
+        .expect("utf-8 stdout from `jigc start`");
+    let described = String::from_utf8(run_describe_workflows(repo.path(), home.path()).stdout)
+        .expect("utf-8 stdout from `jigc describe --workflows`");
+
+    for id in &granting {
+        let line = catalog_line(&catalog, id);
+        assert!(
+            line.contains("changelog"),
+            "`{id}` grants the changelog create-gate, so its catalog line must name it \
+             (else `changelog-recording.gate-granted-unused` ambushes at finalize); got:\n{line}",
+        );
+        let paragraph = describe_paragraph(&described, id);
+        assert!(
+            paragraph.contains("changelog"),
+            "`{id}` grants the changelog create-gate, so its `describe` prose must name it; \
+             got:\n{paragraph}",
+        );
+    }
+}
+
+/// Every **selectable work-workflow** of the embedded dev pack whose
+/// `allows-create:` admits a `changelog` — the axis
+/// `changelog-recording.gate-granted-unused` can fire over from a router pick,
+/// read out of the shipped pack rather than listed here.
+fn selectable_workflows_granting_the_changelog_gate() -> Vec<String> {
+    use engine::packsource::{PackResourceKind, PackSource};
+
+    let pack = cli::pack::EmbeddedPack::new();
+    let mut ids: Vec<String> = pack
+        .list(PackResourceKind::Workflows)
+        .into_iter()
+        .filter(|id| {
+            let bytes = pack
+                .read(PackResourceKind::Workflows, id)
+                .unwrap_or_else(|e| panic!("workflow `{id}` must read back: {e}"));
+            let def = engine::compose::load_workflow_def(&bytes)
+                .unwrap_or_else(|f| panic!("workflow `{id}` must load: {f:?}"));
+            def.selectable
+                && def.creates_task
+                && def.allows_create.iter().any(|g| g.doc_type == "changelog")
+        })
+        .map(|id| id.as_str().to_string())
+        .collect();
+    ids.sort();
+    ids
+}
+
+/// The emitted catalog row for `id` (`- <id> — <when>`), panicking if the catalog
+/// carries none — the assertion reads the bytes the router prints.
+fn catalog_line<'a>(catalog: &'a str, id: &str) -> &'a str {
+    let prefix = format!("- {id} — ");
+    catalog
+        .lines()
+        .map(str::trim_start)
+        .find(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("the catalog must carry a row for `{id}`; got:\n{catalog}"))
+}
+
+/// The emitted `describe` paragraph for `id` (it opens `<id> is …` and runs to the
+/// next blank line), panicking if the projection carries none.
+fn describe_paragraph<'a>(described: &'a str, id: &'a str) -> &'a str {
+    let opener = format!("{id} is ");
+    let start = described
+        .find(&opener)
+        .unwrap_or_else(|| panic!("`describe` must narrate `{id}`; got:\n{described}"));
+    let rest = &described[start..];
+    match rest.find("\n\n") {
+        Some(end) => &rest[..end],
+        None => rest,
+    }
+}
+
+/// Run `jigc describe --workflows` with `cwd = repo` and `$HOME = home`.
+fn run_describe_workflows(repo: &Path, home: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["describe", "--workflows"])
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
 }
 
 /// T12 (M45 Inc 10) — the real bare-`start` orientation routes to the preview

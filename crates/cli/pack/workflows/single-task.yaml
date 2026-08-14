@@ -1,7 +1,7 @@
 ---
-when: implement one scoped change end-to-end, recording its decisions as ADRs
-description: An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task.
-usage: the work is one coherent change you can hold in your head and carry from intent to commit in a single pass. Also the pick when the change touches documented code (a symbol a managed doc names, renamed or reshaped) — its doc gates cover the update, where quick-fix's commit-only path does not.
+when: implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog
+description: An end-to-end scoped change — locate, implement, optionally record a decision and a changelog entry, and commit, all as one task.
+usage: the work is one coherent change you can hold in your head and carry from intent to commit in a single pass. Also the pick when the change touches documented code (a symbol a managed doc names, renamed or reshaped) — its doc gates cover the update, where quick-fix's commit-only path does not. It grants the changelog gate alongside the ADR one, so a user-facing change is recorded as it lands; when the change is internal, author no entry — finalize notes the unused gate as an advisory and commits anyway.
 creates-task: true
 allows-create: [{type: adr, as: decision}, {type: changelog, as: change}]
 ---

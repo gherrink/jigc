@@ -96,7 +96,7 @@ These are the selectable work-workflows, each with the situation it fits:
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
 - quick-fix — apply a small commit-only fix that touches no documented code (code a managed doc names) and records no decision
 - record-decision — capture a choice you have settled, preserving its rationale with no code to write
-- single-task — implement one scoped change end-to-end, recording its decisions as ADRs
+- single-task — implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog
 
 Pick the workflow whose situation best fits the intent, then re-run with that
 choice and the original intent:

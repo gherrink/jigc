@@ -63,7 +63,7 @@ These are the selectable work-workflows, each with the situation it fits:
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
 - quick-fix — apply a small commit-only fix that touches no documented code (code a managed doc names) and records no decision
 - record-decision — capture a choice you have settled, preserving its rationale with no code to write
-- single-task — implement one scoped change end-to-end, recording its decisions as ADRs
+- single-task — implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog
 
 Pick the workflow whose situation best fits the intent, then re-run with that
 choice and the original intent:
@@ -459,7 +459,7 @@ fn listed_pack_resource_resolves_through_the_cwd_discovered_pack_set() {
     );
     // The base (embedded) pack's `single-task` still lists — the union, base last.
     assert!(
-        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs"),
+        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog"),
         "the base pack's single-task must still list alongside the listed pack's workflow \
          (the union read); got:\n{stdout}",
     );
@@ -494,7 +494,7 @@ fn bare_intent_composes_the_router_without_minting() {
     // The router lists the selectable (`creates-task: true`) work-workflows, each as
     // a `- <id> — <when>` option line, and carries the agent-substitution re-run.
     assert!(
-        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs"),
+        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog"),
         "the router must list single-task as a `- <id> — <when>` option; got:\n{stdout}",
     );
     assert!(
@@ -1534,7 +1534,7 @@ fn bare_intent_router_lists_architecture_documentation_with_its_when() {
         "the router must list architecture-documentation as a `- <id> — <when>` option; got:\n{stdout}",
     );
     assert!(
-        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs"),
+        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog"),
         "the router must still list the existing single-task option; got:\n{stdout}",
     );
 }
@@ -1742,7 +1742,7 @@ fn form_d_router_lists_selectable_workflows_and_re_run_without_minting() {
     // The catalog interpolated to one `- <id> — <when>` line per selectable
     // work-workflow: both `single-task` and `quick-fix`, with their `when` hints.
     assert!(
-        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs"),
+        stdout.contains("- single-task — implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog"),
         "the router must list single-task as a `- <id> — <when>` option; got:\n{stdout}",
     );
     assert!(
