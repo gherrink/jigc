@@ -905,7 +905,13 @@ fn resolve_printed(cwd: &Path, printed: &str) -> PathBuf {
 /// D4 / P1-7 contract: `jigc setup` names the hooks dir git resolved, not the assumed
 /// `.git/hooks` literal. `expected` is where the hook really landed.
 fn assert_names_installed_hook(stdout: &str, cwd: &Path, expected: &Path) {
-    let printed = printed_hook_path(stdout);
+    assert_named_hook_is_installed(printed_hook_path(stdout), cwd, expected);
+}
+
+/// The shared half of the hook-path contract, over whichever surface emitted `named`:
+/// the path a reader resolves from the emitted bytes must be the hook the install
+/// actually wrote. Text and JSON make the same promise, so they assert through one body.
+fn assert_named_hook_is_installed(printed: &str, cwd: &Path, expected: &Path) {
     let named = resolve_printed(cwd, printed);
     assert!(
         named.exists(),
@@ -993,6 +999,93 @@ fn setup_names_the_worktree_common_hooks_dir() {
         "the worktree has no `.git/hooks` — the literal names nothing",
     );
     assert_names_installed_hook(&stdout, &linked, &installed);
+}
+
+/// Run the built `jigc setup` under the machine surface — `--format json`, `cwd = repo`,
+/// `$HOME = home`.
+fn run_setup_json(repo: &Path, home: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["--format", "json", "setup"])
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// The path the `--format json` install envelope names for the `pre-commit` hook — read
+/// out of the emitted envelope itself, so the assertion drives the bytes a driver
+/// deserializes and never a reconstruction of them.
+fn json_hook_path(stdout: &str) -> String {
+    let value: serde_json::Value = serde_json::from_str(stdout).unwrap_or_else(|err| {
+        panic!("`jigc setup --format json` must emit one JSON object ({err}); got:\n{stdout}")
+    });
+    let hook = value.get("hook_file").unwrap_or_else(|| {
+        panic!(
+            "the install envelope must carry `hook_file` — the value the agent text \
+             already names is computed and withheld from the driver; got:\n{stdout}",
+        )
+    });
+    hook.as_str()
+        .unwrap_or_else(|| panic!("`hook_file` must be a string; got:\n{stdout}"))
+        .to_string()
+}
+
+/// The JSON twin of [`setup_names_the_core_hookspath_hook`]'s sibling text arm, on the
+/// **default** hooks dir: the machine envelope names the hook the install wrote, so a
+/// driver reads the same fact the agent text prints.
+#[test]
+fn setup_json_names_the_installed_hook() {
+    let repo = TempDir::new("json-hook-default");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_setup_json(repo.path(), home.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "`jigc setup --format json` must exit 0; stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let installed = repo.path().join(".git/hooks/pre-commit");
+    assert!(
+        installed.exists(),
+        "the default install writes the hook into `.git/hooks`",
+    );
+    assert_named_hook_is_installed(&json_hook_path(&stdout), repo.path(), &installed);
+}
+
+/// The JSON twin on the **`core.hooksPath`** shape — the shape that makes the `.git/hooks`
+/// literal a lie. The envelope names that dir's `pre-commit`, exactly as the text does.
+#[test]
+fn setup_json_names_the_core_hookspath_hook() {
+    let repo = TempDir::new("json-hook-hookspath");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+    let hooks = repo.path().join("my-hooks");
+    git(
+        repo.path(),
+        &["config", "core.hooksPath", hooks.to_str().unwrap()],
+    );
+
+    let out = run_setup_json(repo.path(), home.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "`jigc setup --format json` must exit 0; stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let installed = hooks.join("pre-commit");
+    assert!(
+        installed.exists(),
+        "the install must write the hook into the core.hooksPath dir",
+    );
+    assert!(
+        !repo.path().join(".git/hooks/pre-commit").exists(),
+        "with core.hooksPath set nothing lands in .git/hooks — the literal names nothing",
+    );
+    assert_named_hook_is_installed(&json_hook_path(&stdout), repo.path(), &installed);
 }
 
 /// The hooks-dir shapes the install commit's pathspec must be correct over — the axis,

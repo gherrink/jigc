@@ -2,6 +2,14 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-08-14 — M48 Increment 7, T2: the install envelope says where the hook landed
+
+`jigc setup --format json` gains **`hook_file`** (`crates/cli/src/render.rs` → `setup_success`), the path of the `pre-commit` hook the install wrote — the fourth fact beside `installed`/`line_file`/`allowlist_file`, and the one the agent text has named since M47 while the envelope dropped it. Design of record: **the pre-1.0 additive-key window** (DECISIONS → 2026-08-13 the Settle); [command-output-contract.md](design/command-output-contract.md) → Evolution posture gains the declaration, in the shape M43's `carried-over` and M45's `hook_output` set. This **delivers** M46 ledger entry 12 (absorbed at the Settle; recording that entry's disposition is Increment 12's scope). Three elaborations worth pinning:
+
+- **Computed, printed, and withheld — the enumeration rule's own words, on the value hardest to reconstruct.** `SetupSummary.hook_file` already fed the agent line, so nothing new is computed and nothing moves; the driver was simply reading a shape that dropped it. And it is the one setup fact a driver **cannot** re-derive: under a `core.hooksPath` or from a linked worktree the `.git/hooks` literal names nothing, which is exactly why M47 put the resolved dir in the text.
+- **Both hooks-dir shapes, because one of them is the shape that makes the literal a lie.** The new arms twin the shipped text arms over the axis, not the reported cell: default `.git/hooks` **and** `core.hooksPath` (whose arm also asserts `.git/hooks/pre-commit` does *not* exist), each resolving the emitted path the way its reader would and comparing it canonicalized against the file the install actually wrote. Text and JSON now assert through **one** body (`assert_named_hook_is_installed`), so the two surfaces cannot make different promises about the same value.
+- **The assertion drives the emitted envelope, never a reconstruction.** `json_hook_path` parses the bytes the binary printed and reads the key out of them — a test that rebuilt the summary in test code would pass over an envelope that never carried it, which is the defect itself.
+
 ## 2026-08-14 — M48 Increment 7, T1: the id-source names the key its value is written under
 
 The `doc schema` projection's id-source entries gain **`write-key`** (`crates/cli/src/doc.rs` → `ID_SOURCE_WRITE_KEY` / `ContractField`), and `contract-version` bumps **4→5**. Design of record: **F12** (DECISIONS → 2026-08-13 the Settle, the pre-1.0 additive-key window); [doc-read-surface.md](design/doc-read-surface.md) → *The id-source names its write key*. Four elaborations worth pinning:

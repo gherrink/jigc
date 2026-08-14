@@ -2150,6 +2150,13 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
                 "installed": true,
                 "line_file": summary.line_file,
                 "allowlist_file": summary.allowlist_file,
+                // The hooks dir git **resolved** (D4), the same value the agent text
+                // names — a driver that has to find the installed hook reads it here
+                // rather than assuming the `.git/hooks` literal a `core.hooksPath` or a
+                // linked worktree makes a lie. An additive key inside the still-open
+                // pre-1.0 window (`design/command-output-contract.md` → Evolution
+                // posture, the M48 additive key).
+                "hook_file": summary.hook_file,
                 "install_commit": install_commit,
             }))
         }
@@ -5079,8 +5086,8 @@ mod tests {
 
     /// The successful-setup summary names each installed target **and what it is for**
     /// (#9c — less-terse setup output), ending with the routing footer; the JSON shape
-    /// is unchanged (the `installed`/`line_file`/`allowlist_file` keys, no explanatory
-    /// prose — regression watch).
+    /// carries the same facts as keys (`installed`/`line_file`/`allowlist_file`/
+    /// `hook_file`), with none of the explanatory prose — regression watch.
     #[test]
     fn render_setup_success_names_what_was_installed() {
         let summary = SetupSummary {
@@ -5108,7 +5115,9 @@ mod tests {
         // Human renders identically to agent in the MVP.
         assert_eq!(setup_success(Format::Human, &summary), agent);
 
-        // JSON is unchanged: the three stable keys, none of the explanatory prose.
+        // JSON carries the stable keys and none of the explanatory prose — including
+        // `hook_file`, which the agent line above names and the envelope used to
+        // withhold (M48 Inc 7 / T2).
         let json_out = setup_success(Format::Json, &summary);
         assert!(!json_out.contains(ROUTING_FOOTER));
         assert!(!json_out.contains("wired into this project"));
@@ -5116,6 +5125,7 @@ mod tests {
         assert!(json_out.contains("\"installed\": true"));
         assert!(json_out.contains("\"line_file\": \"CLAUDE.md\""));
         assert!(json_out.contains("\"allowlist_file\": \".claude/settings.json\""));
+        assert!(json_out.contains("\"hook_file\": \"my-hooks/pre-commit\""));
     }
 
     /// The free-prose `describe` renderer frames the engine's woven definition
