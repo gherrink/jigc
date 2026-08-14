@@ -472,15 +472,35 @@ pub fn validation(format: Format, report: &ValidationReport) -> String {
 /// against the current pack — never the task-scoped wording (round-2 D4: `upgrade`
 /// checks config deltas, not a task, and "no recorded deltas" is a different clean
 /// state than "N deltas re-apply clean").
+///
+/// The JSON arm carries that same width as **`checked`** beside the report (M48 Inc 7 T5 —
+/// the judgment-tier census's second close; `design/command-output-contract.md` → Evolution
+/// posture). It is not re-derivable from `findings[]`: a clean sweep over **zero** recorded
+/// deltas and a clean sweep over twelve serialize identically, so a driver reading the
+/// envelope could not tell *"nothing to check"* from *"everything checks out"* — the fact the
+/// text arm has always distinguished in prose. Additive under the pre-1.0 window, in the
+/// shape [`validation_store`]'s `scope` / `report_only` set.
 pub fn validation_upgrade(format: Format, report: &ValidationReport, checked: usize) -> String {
-    let clean = if checked == 0 {
-        "no findings — no recorded config deltas to check against the current pack".to_string()
-    } else {
-        format!(
-            "no findings — {checked} recorded config delta(s) re-apply clean against the current pack"
-        )
-    };
-    validation_scoped(format, report, &clean, None, None)
+    match format {
+        Format::Json => {
+            let mut value = serde_json::to_value(report).expect("validation report serializes");
+            if let Some(object) = value.as_object_mut() {
+                object.insert("checked".to_string(), serde_json::Value::from(checked));
+            }
+            json(&value)
+        }
+        Format::Agent | Format::Human => {
+            let clean = if checked == 0 {
+                "no findings — no recorded config deltas to check against the current pack"
+                    .to_string()
+            } else {
+                format!(
+                    "no findings — {checked} recorded config delta(s) re-apply clean against the current pack"
+                )
+            };
+            validation_scoped(format, report, &clean, None, None)
+        }
+    }
 }
 
 /// Render a [`ValidationReport`] for the **store-scope** sweep (`jigc validate`): like
@@ -579,27 +599,37 @@ pub fn validation_store(
 /// this table in the same motion.
 ///
 /// Four of the five members exist **for** the fences (the renderer needs only `matches` and
-/// `trailer`), so they read as dead code in a non-test build — declared so rather than
-/// dropped: they are the axis's testable surface.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) struct StoreExitFlip {
+/// `trailer`) — declared as the axis's testable surface rather than dropped.
+///
+/// **Public since M48 Inc 7 / T5**, together with the table below: the judgment-tier census
+/// derives the `jigc validate` member's entry from *this* registry rather than hand-listing
+/// four conditions (`crates/cli/tests/text_json_parity_axis.rs` →
+/// `validate_census_entry`), which an integration suite outside the crate can only do
+/// against a `pub` surface. The promotion is read-only reach: `matches` stays private, so
+/// the table remains the single place a condition can be declared.
+pub struct StoreExitFlip {
     /// Stable id — fence diagnostics only, never rendered to a surface.
-    pub(crate) id: &'static str,
+    pub id: &'static str,
     /// Whether this finding **is** the condition.
     matches: fn(&Finding) -> bool,
     /// A finding that is this condition — what an axis-iterating fence feeds the real
     /// renderer, so no member is testable only in principle.
-    pub(crate) witness: fn() -> Finding,
+    ///
+    /// It carries its **production target** (M48 Inc 7 T5): the membership seam refuses to
+    /// serialize a target-less finding, so a witness without one is drivable through the
+    /// agent arm and *never* through `--format json` — testable-in-principle on half the
+    /// surface, which is the shape this table exists to prevent.
+    pub witness: fn() -> Finding,
     /// The closing line this condition renders instead of the report-only sentence.
-    pub(crate) trailer: fn() -> String,
+    pub trailer: fn() -> String,
     /// The words that closing line names **which** condition fired with — the checkable half
     /// of the preload's promise that the closing line says why.
-    pub(crate) cause: &'static str,
+    pub cause: &'static str,
     /// Whether the flip means *the sweep's own result cannot be trusted*. **False** for a
     /// condition where the sweep worked and is reporting a real event it found
     /// (`reconciliation.rename`) — which is exactly why no surface may state the class as an
     /// untrustworthy sweep while such a member is on the axis.
-    pub(crate) sweep_untrustworthy: bool,
+    pub sweep_untrustworthy: bool,
 }
 
 /// The exit-flipping conditions of the store sweep, **in precedence order** — the single
@@ -619,18 +649,24 @@ pub(crate) struct StoreExitFlip {
 /// `schema-conformance.unadopted-instance` instead), so keying on the code **is** the
 /// condition — a stock brownfield repo that has only run `jigc setup` stays exit-0
 /// (`crates/cli/tests/managed_vs_foreign.rs`, the foreign arm).
-pub(crate) const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
+///
+/// **Public since M48 Inc 7 / T5** — see [`StoreExitFlip`] for why: a census entry derived
+/// from the registry cannot fall behind it, where a hand-list can.
+pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
     // A `pack-probe-integrity.*` meta-finding: the probe crashed, so the sweep cannot claim
     // a result at all.
     StoreExitFlip {
         id: "probe-unreliable",
+        // The witness carries the **production** code and target (M48 Inc 7 T5):
+        // `engine::probe::meta_finding` emits `probe-failure` located at the offending probe's
+        // id — the pack-resource target form.
         matches: |f| f.probe == "pack-probe-integrity",
         witness: || {
             Finding::graded(
                 Severity::Blocking,
-                "pack-probe-integrity.probe-failed",
+                "pack-probe-integrity.probe-failure",
                 "the probe exited non-zero without a report",
-                None,
+                Some(engine::finding::Location::addressed("doc-code", 1, 1)),
                 Some(Route::human("repair the probe, then re-validate")),
             )
         },
@@ -649,7 +685,11 @@ pub(crate) const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
                 Severity::Blocking,
                 "reconciliation.rename",
                 "`decisions/use-sqlite.md` was renamed out of band",
-                None,
+                Some(engine::finding::Location::addressed(
+                    "decisions/use-sqlite.md",
+                    1,
+                    1,
+                )),
                 Some(Route::human(
                     "revert the `git mv` or adopt it via `jigc rename`",
                 )),
@@ -670,7 +710,7 @@ pub(crate) const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
                 Severity::Blocking,
                 engine::validate::SCHEMA_VERSION_CURRENT_CODE,
                 "`CHANGELOG.md` is stamped schema-version 1, below the manifest's 2",
-                None,
+                Some(engine::finding::Location::addressed("CHANGELOG.md", 1, 1)),
                 Some(Route::human("run `jigc migrate-corpus`, then re-validate")),
             )
         },
@@ -688,7 +728,7 @@ pub(crate) const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
                 Severity::Blocking,
                 engine::validate::SCHEMA_VERSION_AHEAD_CODE,
                 "`CHANGELOG.md` is stamped schema-version 3, above this build's 2",
-                None,
+                Some(engine::finding::Location::addressed("CHANGELOG.md", 1, 1)),
                 Some(Route::human(
                     "upgrade jigc, or restore the stamp from git history",
                 )),
@@ -3631,6 +3671,7 @@ mod tests {
                 kind: DefinitionKind::Workflow,
                 id: "single-task".to_string(),
                 prose: "single-task is one end-to-end scoped change. Reach for it when the work is small enough to hold in your head.".to_string(),
+                router_hidden: None,
             }],
             commands: vec![],
         };
@@ -3648,6 +3689,7 @@ mod tests {
                 kind: DefinitionKind::Doctype,
                 id: "adr".to_string(),
                 prose: "adr is a dated architectural decision record. Reach for it when a choice is worth preserving.".to_string(),
+                router_hidden: None,
             }],
             commands: vec![],
         };
@@ -3686,6 +3728,7 @@ mod tests {
                     kind: DefinitionKind::Workflow,
                     id: "single-task".to_string(),
                     prose: "single-task is one end-to-end scoped change. Reach for it when the work is small enough to hold in your head.".to_string(),
+                    router_hidden: None,
                 }],
                 commands: vec![],
             },
@@ -5316,11 +5359,13 @@ mod tests {
                     kind: DefinitionKind::Workflow,
                     id: "single-task".to_string(),
                     prose: "single-task is one end-to-end scoped change. Reach for it when the work is one coherent change you can hold in your head.".to_string(),
+                    router_hidden: None,
                 },
                 DefinitionProse {
                     kind: DefinitionKind::Doctype,
                     id: "adr".to_string(),
                     prose: "adr is a dated architectural decision record. Reach for it when a choice is worth preserving with its rationale.".to_string(),
+                    router_hidden: None,
                 },
             ],
             commands: vec![CommandHint {

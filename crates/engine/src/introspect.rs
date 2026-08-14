@@ -38,8 +38,9 @@ pub enum DefinitionKind {
     Doctype,
 }
 
-/// One narrated definition: its stable `id`, its `kind`, and the woven prose
-/// sentence assembled from the authored `description:` / `usage:` fields.
+/// One narrated definition: its stable `id`, its `kind`, the woven prose sentence
+/// assembled from the authored `description:` / `usage:` fields, and — for a hidden
+/// workflow — the router-suppression the prose narrates, carried structurally.
 ///
 /// Only definitions that carry at least one of the two fields produce a
 /// `DefinitionProse` (skip-on-absent); `prose` is therefore always a non-empty
@@ -52,6 +53,22 @@ pub struct DefinitionProse {
     pub id: String,
     /// The woven prose sentence (the `description:` / `usage:` weave).
     pub prose: String,
+    /// `Some(reason)` when this definition is **hidden from the router catalog** —
+    /// the declared `suppressed.reason` [`weave_workflow`] narrates in prose; `None`
+    /// when it is not hidden (every doctype, and every selectable workflow).
+    ///
+    /// The **shape** half of a fact the prose has stated since M43's suppression
+    /// fence (`surface-contract.md` → The suppression fence): the narration reads
+    /// "… It is hidden from the router catalog: `<reason>`.", so a driver could
+    /// recover the state only by substring-matching a sentence — on the one surface
+    /// whose prose is deliberately non-contractual, which made the substring a
+    /// promise nobody had made. Carried here so `describe --format json` states it
+    /// structurally (M48 Inc 7 / T5, the judgment-tier census's close under the
+    /// pre-1.0 additive-key window). The engine still **assembles, never generates**:
+    /// the reason is the pack-authored string, carried verbatim exactly as
+    /// `description:` / `usage:` are.
+    #[serde(default)]
+    pub router_hidden: Option<String>,
 }
 
 /// One command-ref's projected `hint` — the command's `{{cli.<id>}}` id and its
@@ -108,6 +125,9 @@ impl Description {
                     kind: DefinitionKind::Workflow,
                     id: id.to_owned(),
                     prose,
+                    // The same reason, read through the same predicate the narration uses,
+                    // so the prose clause and the structured key cannot disagree.
+                    router_hidden: suppression_reason(def).map(str::to_owned),
                 })
             })
             .collect();
@@ -125,6 +145,8 @@ impl Description {
                     kind: DefinitionKind::Doctype,
                     id: schema.ty.clone(),
                     prose,
+                    // A doctype has no router catalog to be hidden from.
+                    router_hidden: None,
                 })
             })
             .collect();
@@ -172,11 +194,7 @@ impl Description {
 /// the assembler stays graceful on hand-built defs).
 fn weave_workflow(id: &str, def: &WorkflowDef) -> Option<String> {
     let base = weave(id, def.description.as_deref(), def.usage.as_deref());
-    let reason = def
-        .suppressed
-        .as_ref()
-        .map(|s| s.reason.trim())
-        .filter(|r| !r.is_empty());
+    let reason = suppression_reason(def);
     match (base, reason) {
         (Some(base), Some(reason)) => {
             let base = base.strip_suffix('.').unwrap_or(&base);
@@ -191,6 +209,18 @@ fn weave_workflow(id: &str, def: &WorkflowDef) -> Option<String> {
         }
         (base, None) => base,
     }
+}
+
+/// The declared router-suppression reason of a workflow, or `None` when it is not
+/// hidden — the **one** predicate both the prose clause ([`weave_workflow`]) and the
+/// structured [`DefinitionProse::router_hidden`] key read, so the two renderings of
+/// the same fact cannot drift. A blank reason counts as absent (the loader rejects
+/// one on a shipped pack; the assembler stays graceful on hand-built defs).
+fn suppression_reason(def: &WorkflowDef) -> Option<&str> {
+    def.suppressed
+        .as_ref()
+        .map(|s| s.reason.trim())
+        .filter(|reason| !reason.is_empty())
 }
 
 /// Weave one definition's authored `description:` / `usage:` into a structured

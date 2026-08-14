@@ -34,15 +34,32 @@
 //!     field↔key correspondence exists to check mechanically, so these get the one-time
 //!     enumerated census instead; each member below carries the reason it is there.
 //!
+//! **The judgment tier's census (M48 Inc 7 / T5).** The census is the judgment tier's own
+//! deliverable, and a census that only *classifies* decides nothing — so every judgment
+//! member additionally carries a stated [`Disposition`]: the gap this wave **closed** (with
+//! the check that proves the key on the rendered bytes), or the reason it is **declared
+//! out** of the window. Two closes, both under the enumeration rule: `describe`'s
+//! router-hidden suppression (structured key, not a substring of `prose`) and `upgrade`'s
+//! `checked` delta count (printed in the clean line, absent from the envelope). One
+//! disposition is **derived rather than hand-listed** — `validate`'s, which is a claim about
+//! *every* exit-flipping condition and so is built from `cli::render::STORE_EXIT_FLIPS`
+//! itself (promoted `pub` for exactly this), with the claim re-proven per member against the
+//! real renderer, so a fifth condition joins the entry the day it joins the table.
+//!
 //! **Declared bound, carried from the Settle:** this fence does **not** cover the prose
 //! tier, and a key whose value nothing computes is **not** a gap ("re-derivable state,
 //! counts, internal identifiers never rendered" — adding those is inventing contract
-//! surface, not closing a gap).
+//! surface, not closing a gap). The judgment tier stays a census by that same Settle: its
+//! members get *stated dispositions*, not mechanical per-field checks — the closes' arms and
+//! the derivation are the only behaviour asserted here.
 //!
 //! **Proven non-vacuous by applied mutation** (M48 Inc 7 T4, recorded in `DECISIONS.md`):
 //! deleting the shipped `"hook_file"` key from `render::setup_success`'s JSON arm reddens
 //! [`every_fenced_renderer_carries_on_the_wire_what_its_text_prints`] with
-//! *"`jigc setup`'s envelope withholds `hook_file`"*; restoring it greens.
+//! *"`jigc setup`'s envelope withholds `hook_file`"*; restoring it greens. The census's
+//! derivation is non-vacuous the same way (M48 Inc 7 T5): blanking one
+//! `STORE_EXIT_FLIPS` member's `cause` reddens
+//! [`the_validate_census_entry_is_derived_from_the_exit_flip_table`] on that member.
 
 use clap::CommandFactory;
 use cli::cli::{Cli, Format};
@@ -52,18 +69,20 @@ use cli::rename::RenameReport;
 use cli::render::{
     AckTarget, ConfigAck, DiscardState, DiscardedWork, DocAck, DroppedStaged, KnobReading,
     ManifestEntry, ManifestKind, MilestoneLanded, RejectedSet, StagedDoc, SubTaskContribution,
-    TaskAck, TaskDiffView, config_ack, config_get, config_list, doc_ack, freeze_exempt_relocation,
-    ingest, milestone_finalized, milestone_join, rename, setup_success, task_ack, task_diff,
-    task_list, uninstall_success, unmanage,
+    TaskAck, TaskDiffView, config_ack, config_get, config_list, describe, doc_ack,
+    freeze_exempt_relocation, ingest, milestone_finalized, milestone_join, rename, setup_success,
+    task_ack, task_diff, task_list, uninstall_success, unmanage, validation_upgrade,
 };
 use cli::setup::{InstallCommit, RemovedArtifacts, SetupSummary, UninstallSummary};
 use cli::task::TaskListRow;
 use cli::unmanage::UnmanageReport;
+use engine::compose::{CommandCatalog, Suppressed, WorkflowDef};
 use engine::finding::Findings;
+use engine::introspect::Description;
 use engine::milestone::JoinOutcome;
 use engine::state::BasePin;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 // ─────────────────────────────── the registry ───────────────────────────────
 
@@ -72,9 +91,31 @@ enum Tier {
     /// The text renders from a structured Rust value: the named renderer's check
     /// destructures it exhaustively and asserts each field reaches the wire.
     Fenced(&'static str),
-    /// The text is composed prose: no mechanical field↔key correspondence. The reason
-    /// is recorded here; the enumerated census is the judgment tier's own deliverable.
-    Judgment(&'static str),
+    /// The text is composed prose: no mechanical field↔key correspondence. The reason is
+    /// recorded here, together with the census's stated [`Disposition`] — the judgment
+    /// tier's own deliverable (T5).
+    Judgment(&'static str, Disposition),
+}
+
+/// **What the census decided about one judgment-tier member** (M48 Inc 7 / T5). A member
+/// is either a gap this wave closed or a gap declared out with its reason: an
+/// unclassified member would be the "census that decides nothing" the Settle's window is
+/// meant to end.
+enum Disposition {
+    /// The census found a gap and **this wave closed it**: the envelope key that joined,
+    /// and the check that proves it on the rendered bytes.
+    Closed {
+        /// The key that joined the envelope.
+        key: &'static str,
+        /// The check that drives the real renderer in both surfaces.
+        proof: fn(),
+    },
+    /// **Declared out** of the additive-key window, with the recorded reason.
+    DeclaredOut(&'static str),
+    /// Declared out with the reason **derived from a code-side registry** rather than
+    /// hand-listed — for a member whose disposition is a claim about every member of some
+    /// enumerable axis, so the entry cannot fall behind the axis it speaks for.
+    Derived(fn() -> String),
 }
 
 /// **Every leaf verb, classified.** Bijected against the clap tree by
@@ -87,23 +128,58 @@ const REGISTRY: &[(&[&str], Tier)] = &[
         &["start"],
         Tier::Judgment(
             "the orientation / composed-workflow surface — prose, pinned as {task, text}",
+            Disposition::DeclaredOut(
+                "the composed envelope is PINNED at exactly `{task, text}` \
+                 (`command-output-contract.md` §1), which declares the agent surface's mint \
+                 announcement, task-state affordances and create-gate list to be presentation \
+                 that adds no key — a prior contract decision the window does not reopen; the \
+                 composed text itself rides `text` whole",
+            ),
         ),
     ),
     (
         &["workflow"],
-        Tier::Judgment("the composed-workflow surface — prose, pinned as {task, text}"),
+        Tier::Judgment(
+            "the composed-workflow surface — prose, pinned as {task, text}",
+            Disposition::DeclaredOut(
+                "the same pinned `{task, text}` projection, byte-identical to `start`'s with \
+                 `task: null` — the preview banner is presentation by the same declaration",
+            ),
+        ),
     ),
     (&["setup"], Tier::Fenced("setup_success")),
     (&["uninstall"], Tier::Fenced("uninstall_success")),
     (
         &["upgrade"],
-        Tier::Judgment("the upgrade validation report — prose findings + a checked count"),
+        Tier::Judgment(
+            "the upgrade validation report — prose findings + a checked count",
+            // The census's second close. `checked` is read by the dispatch
+            // (`upgrade::recorded_delta_count`) and printed by the clean line — "no findings —
+            // N recorded config delta(s) re-apply clean" — while the envelope carried the
+            // report alone. It is not re-derivable from `findings[]` (a clean sweep over zero
+            // recorded deltas and a clean sweep over twelve serialize identically), so a driver
+            // could not tell "nothing to check" from "everything checks out": the gap shape the
+            // window exists to close.
+            Disposition::Closed {
+                key: "checked",
+                proof: upgrade_checked_close,
+            },
+        ),
     ),
     (&["ingest"], Tier::Fenced("ingest")),
     (
         &["migrate"],
         Tier::Judgment(
             "the migration review — the rewritten prose itself, plus its fidelity narration",
+            Disposition::DeclaredOut(
+                "the review's one computed-and-printed value is the fidelity delta \
+                 (`render::dropped_release_versions`), which is DISPLAY-ONLY by decision \
+                 (DECISIONS C4, Framing A: a labeled fuzzy scan that feeds no gate and is never \
+                 a second structural authority) and is re-derivable besides — the envelope \
+                 carries `source` and every `rewrites[].rendered` whole, which are the scan's \
+                 only two inputs. Promoting a heuristic to a contract key is inventing surface, \
+                 not closing a gap",
+            ),
         ),
     ),
     (
@@ -112,6 +188,12 @@ const REGISTRY: &[(&[&str], Tier)] = &[
             "the corpus-migration report — its three run-mode sentences (dry-run / committed / \
              `--no-commit`) are prose, and the report type carries a crate-private \
              commit-boundary field, so no witness exists outside the crate",
+            Disposition::DeclaredOut(
+                "the whole report serializes (`json(report)`), and the one text-only field is \
+                 `no_commit` — declared `#[serde(skip)]` at the field itself, with the recorded \
+                 reason that the envelope already discriminates the run mode by `dry_run: \
+                 false` + `commit: null`. Re-derivable, and recorded where it is skipped",
+            ),
         ),
     ),
     (&["unmanage"], Tier::Fenced("unmanage")),
@@ -119,11 +201,27 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (&["relocate"], Tier::Fenced("freeze_exempt_relocation")),
     (
         &["describe"],
-        Tier::Judgment("the introspection menu — prose one-liners over the projected catalog"),
+        Tier::Judgment(
+            "the introspection menu — prose one-liners over the projected catalog",
+            // The census's headline close. The router-hidden state (and the declared reason for
+            // it) has been narrated by the prose surface since M43's suppression fence, while a
+            // driver could recover it only by substring-matching a sentence — on the one
+            // surface whose prose is deliberately non-contractual, so the substring was never
+            // a promise. The key joins the envelope; the prose tier is untouched.
+            Disposition::Closed {
+                key: "router_hidden",
+                proof: describe_router_hidden_close,
+            },
+        ),
     ),
     (
         &["validate"],
-        Tier::Judgment("the store validation report — prose finding lines + the store trailer"),
+        Tier::Judgment(
+            "the store validation report — prose finding lines + the store trailer",
+            // Derived, never hand-listed: the disposition is a claim about EVERY exit-flipping
+            // condition, so it is built from the code-side table and re-proven per member.
+            Disposition::Derived(validate_census_entry),
+        ),
     ),
     // ── doc ─────────────────────────────────────────────────────────────────────
     (&["doc", "create"], Tier::Fenced("doc_ack")),
@@ -139,6 +237,12 @@ const REGISTRY: &[(&[&str], Tier)] = &[
         Tier::Judgment(
             "a separately versioned read contract — the text arm renders the document, the \
              envelope its own `contract-version`ed projection",
+            Disposition::DeclaredOut(
+                "governed by its OWN pinned contract (`doc-read-surface.md`), whose additive \
+                 keys this wave's window closes in the same motion — the plain arm renders the \
+                 document's own bytes, so there is no rendered-fact-vs-key axis for the parity \
+                 rule to run over",
+            ),
         ),
     ),
     (
@@ -146,6 +250,11 @@ const REGISTRY: &[(&[&str], Tier)] = &[
         Tier::Judgment(
             "a separately versioned read contract — the text arm is the agent listing, the \
              envelope its own `contract-version`ed projection",
+            Disposition::DeclaredOut(
+                "governed by its own explicitly versioned contract, bumped 4→5 by this very \
+                 increment (T1, the id-source `write-key`) — its evolution is a version bump, \
+                 which is what the window's successor regime asks for, not a silent key",
+            ),
         ),
     ),
     (
@@ -153,6 +262,11 @@ const REGISTRY: &[(&[&str], Tier)] = &[
         Tier::Judgment(
             "a separately versioned read contract — the text arm is the index listing, the \
              envelope its own `contract-version`ed projection",
+            Disposition::DeclaredOut(
+                "governed by its own pinned contract; the index row's every rendered fact \
+                 (identity, registration state, item count) is already a key of that \
+                 projection — the text arm is a rendering OF the envelope, not a sibling of it",
+            ),
         ),
     ),
     // ── task ────────────────────────────────────────────────────────────────────
@@ -160,7 +274,15 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (&["task", "diff"], Tier::Fenced("task_diff")),
     (
         &["task", "validate"],
-        Tier::Judgment("the task-scoped validation report — prose finding lines + the verdict"),
+        Tier::Judgment(
+            "the task-scoped validation report — prose finding lines + the verdict",
+            Disposition::DeclaredOut(
+                "the text renders the report and nothing else — one line per finding, each from \
+                 a `Finding` the envelope carries whole — and the verdict it previews IS the \
+                 exit code, which no key may restate without becoming a second authority over \
+                 the same fact",
+            ),
+        ),
     ),
     (&["task", "discard"], Tier::Fenced("task_ack")),
     (
@@ -168,6 +290,12 @@ const REGISTRY: &[(&[&str], Tier)] = &[
         Tier::Judgment(
             "the validation report plus the landed summary — prose; its landed facts ride the \
              whole-value `committed` object",
+            Disposition::DeclaredOut(
+                "the success section renders from `Landed` alone (hash, subject, manifest, file \
+                 count, the left-out residue) and the envelope carries that value WHOLE under \
+                 `committed` beside the report — a whole-value carry is the strongest form of \
+                 the parity rule, not an exception to it",
+            ),
         ),
     ),
     (&["task", "bind"], Tier::Fenced("task_ack")),
@@ -186,27 +314,45 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     // `{text, hook_output}` and the growth rides inside `text` by declaration.
     (
         &["milestone", "create"],
-        Tier::Judgment("the mint ack — a prose summary carried whole inside `text`"),
+        Tier::Judgment(
+            "the mint ack — a prose summary carried whole inside `text`",
+            MILESTONE_PROSE_SUMMARY,
+        ),
     ),
     (
         &["milestone", "add-task"],
-        Tier::Judgment("a prose summary carried whole inside `text`"),
+        Tier::Judgment(
+            "a prose summary carried whole inside `text`",
+            MILESTONE_PROSE_SUMMARY,
+        ),
     ),
     (
         &["milestone", "add-from-spec"],
-        Tier::Judgment("a prose summary carried whole inside `text`"),
+        Tier::Judgment(
+            "a prose summary carried whole inside `text`",
+            MILESTONE_PROSE_SUMMARY,
+        ),
     ),
     (
         &["milestone", "list-tasks"],
-        Tier::Judgment("a prose summary carried whole inside `text`"),
+        Tier::Judgment(
+            "a prose summary carried whole inside `text`",
+            MILESTONE_PROSE_SUMMARY,
+        ),
     ),
     (
         &["milestone", "provision"],
-        Tier::Judgment("a prose summary carried whole inside `text`"),
+        Tier::Judgment(
+            "a prose summary carried whole inside `text`",
+            MILESTONE_PROSE_SUMMARY,
+        ),
     ),
     (
         &["milestone", "execute"],
-        Tier::Judgment("a prose summary carried whole inside `text`"),
+        Tier::Judgment(
+            "a prose summary carried whole inside `text`",
+            MILESTONE_PROSE_SUMMARY,
+        ),
     ),
     (&["milestone", "join"], Tier::Fenced("milestone_join")),
     (
@@ -215,9 +361,21 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     ),
     (
         &["milestone", "discard"],
-        Tier::Judgment("a prose summary carried whole inside `text`"),
+        Tier::Judgment(
+            "a prose summary carried whole inside `text`",
+            MILESTONE_PROSE_SUMMARY,
+        ),
     ),
 ];
+
+/// The seven prose-summary `milestone` verbs' shared census disposition — one statement
+/// because they share one renderer (`render::milestone`), and a per-verb copy would be
+/// seven places for the same fact to rot in.
+const MILESTONE_PROSE_SUMMARY: Disposition = Disposition::DeclaredOut(
+    "`render::milestone` puts the ENTIRE agent summary on the wire as `text` (beside \
+     `hook_output`); the agent surface differs from it only by the routing footer, which is \
+     framing every surface carries. Nothing is computed, printed, and withheld",
+);
 
 /// The per-renderer parity checks the fenced tier names. Bijected against the renderer
 /// names [`REGISTRY`] uses, so a fenced row cannot name a check that does not exist and a
@@ -1120,6 +1278,261 @@ fn milestone_finalized_parity() {
     carries(committed, "hook_output", hook_output, label, "hook_output");
 }
 
+// ────────────────────────── the judgment-tier census (T5) ──────────────────────────
+
+/// A no-delta resolved cascade — the honest input for a report whose findings carry no
+/// inventory row, so the engine's severity post-pass is a guaranteed no-op over them
+/// (the `cli::cascade_util::no_delta_resolved` shape, which is crate-private).
+fn no_delta_resolved() -> engine::cascade::Resolved {
+    let pack = engine::cascade::PackDefaultLayer::new("", "", BTreeMap::new(), Vec::new());
+    engine::cascade::resolve(&pack, None, None).expect("a no-delta cascade resolves")
+}
+
+/// **The `describe` close.** A hidden workflow's suppression reaches the envelope as the
+/// structured `router_hidden` key, carrying the declared reason the prose sentence names —
+/// asserted on the rendered bytes of the real renderer, over the engine's real assembler,
+/// with a non-hidden sibling in the same projection so the key discriminates rather than
+/// merely existing.
+///
+/// The end-to-end twin over the **shipped packs** lives in
+/// `crates/cli/tests/describe.rs::describe_json_carries_the_router_hidden_suppression_as_a_key`.
+fn describe_router_hidden_close() {
+    let reason = "spawned by the fan-out, never picked from the catalog";
+    let hidden = WorkflowDef {
+        when: None,
+        description: Some("one sub-task of a milestone fan-out".to_owned()),
+        usage: None,
+        creates_task: true,
+        selectable: false,
+        suppressed: Some(Suppressed {
+            reason: reason.to_owned(),
+            expires: "never".to_owned(),
+        }),
+        allows_create: Vec::new(),
+        reads: Vec::new(),
+        includes: Vec::new(),
+    };
+    let plain = WorkflowDef {
+        description: Some("one well-scoped change, intent to commit".to_owned()),
+        selectable: true,
+        suppressed: None,
+        ..hidden.clone()
+    };
+    let catalog = CommandCatalog {
+        commands: BTreeMap::new(),
+    };
+    let description = Description::assemble(
+        [("sub-task", &hidden), ("single-task", &plain)],
+        std::iter::empty(),
+        &catalog,
+    );
+
+    let text = describe(Format::Agent, &description);
+    let doc = envelope(&describe(Format::Json, &description), "jigc describe");
+    let definitions = doc["definitions"]
+        .as_array()
+        .expect("the projection carries `definitions`");
+
+    text_prints(&text, reason, "jigc describe", "suppressed.reason");
+    for definition in definitions {
+        let id = definition["id"].as_str().expect("each entry carries an id");
+        let key = definition.get("router_hidden").unwrap_or_else(|| {
+            panic!(
+                "`jigc describe`'s envelope withholds `router_hidden` for `{id}` — its prose \
+                 states the router-hidden clause, and a value the text prints but the envelope \
+                 withholds is a gap. Envelope:\n{doc:#}"
+            )
+        });
+        match id {
+            "sub-task" => assert_eq!(
+                key.as_str(),
+                Some(reason),
+                "the hidden workflow's key carries its DECLARED REASON:\n{doc:#}",
+            ),
+            _ => assert!(
+                key.is_null(),
+                "`{id}` is not hidden, so its key must be null — a key that lies is worse than \
+                 one that is absent:\n{doc:#}",
+            ),
+        }
+    }
+}
+
+/// **The `upgrade` close.** The delta count the clean line names — *"N recorded config
+/// delta(s) re-apply clean"* — reaches the envelope as `checked`, on a clean sweep (where
+/// the text prints it) and with findings present alike (where a driver still needs to know
+/// how wide the sweep was).
+fn upgrade_checked_close() {
+    let resolved = no_delta_resolved();
+    let report = engine::result::ValidationReport::new(Vec::new(), &resolved);
+    let checked = 3usize;
+
+    let text = validation_upgrade(Format::Agent, &report, checked);
+    let doc = envelope(
+        &validation_upgrade(Format::Json, &report, checked),
+        "jigc upgrade",
+    );
+    text_prints(&text, "3", "jigc upgrade", "checked");
+    carries(&doc, "checked", &checked, "jigc upgrade", "checked");
+
+    // The zero case is the one a driver most needs: "no recorded deltas to check" and
+    // "twelve deltas re-apply clean" carry identical `findings: []`.
+    let none = envelope(
+        &validation_upgrade(Format::Json, &report, 0),
+        "jigc upgrade",
+    );
+    carries(&none, "checked", &0usize, "jigc upgrade", "checked");
+}
+
+/// **The `validate` member's census entry, DERIVED from the code-side registry.** Its
+/// disposition is a claim about *which condition fired*, and that is a claim about every
+/// member of [`STORE_EXIT_FLIPS`] — so the entry is built from the table rather than
+/// hand-listed, and a fifth condition joins it the day it joins the table (the `pub`
+/// promotion is what lets a `tests/` suite read the table at all).
+///
+/// The disposition itself: **declared out under the recorded re-derivable exclusion.** The
+/// trailer names which condition fired in prose; the envelope carries `report_only: false`
+/// plus the very finding that *is* the condition inside `findings[]`, so the identity is
+/// re-derivable from the wire rather than withheld — and
+/// [`the_validate_census_entry_is_derived_from_the_exit_flip_table`] re-proves that per
+/// member against the real renderer instead of taking this sentence's word for it.
+fn validate_census_entry() -> String {
+    let conditions: Vec<String> = cli::render::STORE_EXIT_FLIPS
+        .iter()
+        .map(|flip| format!("`{}` ({})", flip.id, flip.cause))
+        .collect();
+    format!(
+        "declared out under the recorded re-derivable exclusion: the store trailer names WHICH \
+         exit-flipping condition fired — {} — and each condition's identifying finding rides \
+         `findings[]` on the same envelope beside `report_only: false`, so the identity is \
+         re-derivable from the wire, not withheld. Derived from `cli::render::STORE_EXIT_FLIPS`, \
+         so a fifth condition joins this entry with the table",
+        conditions.join(", "),
+    )
+}
+
+/// **The derivation, proven per member.** The entry above claims something of *every*
+/// exit-flipping condition, so this drives the real store renderer with each member's own
+/// witness and holds both halves of the claim: the agent trailer names the condition (the
+/// text really does print the fact), and the envelope carries `report_only: false` plus a
+/// finding whose code identifies *that* condition and no other (the fact is re-derivable,
+/// which is what the exclusion rests on).
+///
+/// A fifth condition whose identity does **not** reach the wire reddens here rather than
+/// silently widening a disposition written for four. Proven non-vacuous by applied mutation
+/// (M48 Inc 7 T5): blanking a member's `cause` reddens its first assertion.
+#[test]
+fn the_validate_census_entry_is_derived_from_the_exit_flip_table() {
+    let resolved = no_delta_resolved();
+    let entry = validate_census_entry();
+
+    // Every member of the table is named by the derived entry — the derivation, not a
+    // hand-list that a fifth member could outlive.
+    for flip in cli::render::STORE_EXIT_FLIPS {
+        assert!(
+            entry.contains(flip.id) && entry.contains(flip.cause),
+            "the derived census entry must name `{}` and the words its trailer fires with \
+             ({:?}); got:\n{entry}",
+            flip.id,
+            flip.cause,
+        );
+    }
+
+    // The identifying codes discriminate: an envelope carrying one member's finding cannot
+    // be read as another's.
+    let codes: BTreeSet<String> = cli::render::STORE_EXIT_FLIPS
+        .iter()
+        .map(|flip| (flip.witness)().code.clone())
+        .collect();
+    assert_eq!(
+        codes.len(),
+        cli::render::STORE_EXIT_FLIPS.len(),
+        "each exit-flipping condition must be identifiable by its own finding code, or the \
+         identity is NOT re-derivable from `findings[]` and the exclusion does not hold",
+    );
+
+    for flip in cli::render::STORE_EXIT_FLIPS {
+        let id = flip.id;
+        let witness = (flip.witness)();
+        let code = witness.code.clone();
+        let report = engine::result::ValidationReport::new(vec![witness], &resolved);
+        let unbaselined = BTreeSet::new();
+
+        let text = cli::render::validation_store(Format::Agent, &report, &unbaselined);
+        assert!(
+            text.contains(flip.cause),
+            "{id}: the trailer must name which condition fired ({:?}) — the half of the claim \
+             that says the TEXT prints this fact; got:\n{text}",
+            flip.cause,
+        );
+
+        let doc = envelope(
+            &cli::render::validation_store(Format::Json, &report, &unbaselined),
+            "jigc validate",
+        );
+        assert_eq!(
+            doc.get("report_only"),
+            Some(&Value::Bool(false)),
+            "{id}: the envelope must state the flipped exit;\n{doc:#}",
+        );
+        let carried: Vec<&str> = doc["findings"]
+            .as_array()
+            .expect("the report carries `findings`")
+            .iter()
+            .filter_map(|finding| finding["code"].as_str())
+            .collect();
+        assert!(
+            carried.contains(&code.as_str()),
+            "{id}: the finding that IS this condition must ride `findings[]`, or the trailer's \
+             identity is withheld rather than re-derivable and this member is a GAP, not a \
+             declared exclusion. Envelope:\n{doc:#}",
+        );
+    }
+}
+
+/// **Every judgment member states a disposition, and every close proves its key.** The
+/// census is the judgment tier's deliverable: a member with no disposition is a verb the
+/// sweep looked at and decided nothing about.
+#[test]
+fn every_judgment_member_states_a_disposition_the_census_can_stand_on() {
+    let mut closed = 0usize;
+    for (path, tier) in REGISTRY {
+        let Tier::Judgment(reason, disposition) = tier else {
+            continue;
+        };
+        let verb = path.join(" ");
+        assert!(
+            reason.len() > 20,
+            "`jigc {verb}` is in the judgment tier, so it must record WHY its text has no \
+             field↔key correspondence; got {reason:?}",
+        );
+        match disposition {
+            Disposition::Closed { key, proof } => {
+                eprintln!("census close: jigc {verb} → {key}");
+                proof();
+                closed += 1;
+            }
+            Disposition::DeclaredOut(why) => assert!(
+                why.len() > 40,
+                "`jigc {verb}` is declared out of the additive-key window, so it must carry the \
+                 reason — an unreasoned exclusion is the census deciding nothing; got {why:?}",
+            ),
+            Disposition::Derived(derive) => {
+                let derived = derive();
+                assert!(
+                    derived.len() > 40,
+                    "`jigc {verb}`'s derived disposition must state something; got {derived:?}",
+                );
+            }
+        }
+    }
+    assert!(
+        closed >= 2,
+        "the census closed two gaps (`describe`'s `router_hidden`, `upgrade`'s `checked`) — a \
+         run where neither is claimed means the closes lost their rows; got {closed}",
+    );
+}
+
 // ─────────────────────────────────── the fence ───────────────────────────────────
 
 /// **The bijection.** [`REGISTRY`] and the clap tree's leaf verbs are the *same* set — no
@@ -1167,7 +1580,7 @@ fn every_fenced_member_names_a_renderer_the_fence_checks() {
         .iter()
         .filter_map(|(_, tier)| match tier {
             Tier::Fenced(renderer) => Some(*renderer),
-            Tier::Judgment(_) => None,
+            Tier::Judgment(..) => None,
         })
         .collect();
     let checked: BTreeSet<&str> = FENCES.iter().map(|(name, _)| *name).collect();
@@ -1182,23 +1595,6 @@ fn every_fenced_member_names_a_renderer_the_fence_checks() {
         checked.len(),
         "one check per renderer — a duplicated name would shadow a check",
     );
-}
-
-/// **Every judgment member states why it is there.** The judgment tier is the escape
-/// hatch from the mechanical check, so an empty reason would let a fenced-able verb slip
-/// out of the fence unremarked.
-#[test]
-fn every_judgment_member_records_its_reason() {
-    for (path, tier) in REGISTRY {
-        if let Tier::Judgment(reason) = tier {
-            assert!(
-                reason.len() > 20,
-                "`jigc {}` is in the judgment tier, so it must record WHY its text has no \
-                 field↔key correspondence; got {reason:?}",
-                path.join(" "),
-            );
-        }
-    }
 }
 
 /// **The fence itself.** Every fenced renderer carries, on the wire, each field of the

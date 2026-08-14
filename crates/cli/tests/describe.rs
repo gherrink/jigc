@@ -924,3 +924,73 @@ call was made.
         panic!("legitimate colon-bearing prose must PASS the predicate: {why}")
     });
 }
+
+/// M48 Inc 7 / T5 — **the judgment tier's one close.** `jigc describe --format json`
+/// carries a hidden workflow's suppression as a **structured key** (`router_hidden`),
+/// not only as a substring of the woven `prose`.
+///
+/// The census's rule is the wave's: *a value the human/agent text already prints, but
+/// the `--format json` envelope withholds, is a gap* (DECISIONS → 2026-08-13 the
+/// Settle, the pre-1.0 additive-key window). `describe`'s prose surface has named the
+/// router-hidden state — and the declared reason for it — since M43's suppression fence
+/// (`surface-contract.md` → law 2), while a driver reading the envelope could only
+/// recover the fact by substring-matching the prose sentence. `describe`'s **prose** tier
+/// stays deliberately non-contractual (the format predicate above); the key joins the
+/// envelope, which is the arm nothing forbids parsing.
+///
+/// Driven through the **emitted bytes** of the real binary over the **shipped** packs, so
+/// the arm is about what an agent actually receives: every definition whose prose states
+/// the router-hidden clause carries `router_hidden` = the declared reason, every other
+/// definition carries `null`, and at least one hidden workflow exists (non-vacuity).
+#[test]
+fn describe_json_carries_the_router_hidden_suppression_as_a_key() {
+    const CLAUSE: &str = "is hidden from the router catalog: ";
+
+    let repo = TempDir::new("router-hidden");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let json = describe_json(repo.path(), home.path());
+    let definitions = json["definitions"]
+        .as_array()
+        .expect("the projection carries `definitions`")
+        .clone();
+
+    let mut hidden_seen = 0usize;
+    for definition in &definitions {
+        let id = definition["id"].as_str().unwrap_or("<no id>");
+        let prose = definition["prose"].as_str().unwrap_or_default();
+        let key = definition.get("router_hidden").unwrap_or_else(|| {
+            panic!(
+                "`{id}`'s projection must carry `router_hidden` — the router-hidden state the \
+                 prose states is a value the envelope withheld (M48, the pre-1.0 additive-key \
+                 window). Got:\n{definition:#}"
+            )
+        });
+
+        match prose.split_once(CLAUSE) {
+            Some((_, tail)) => {
+                let reason = tail.strip_suffix('.').unwrap_or(tail);
+                assert_eq!(
+                    key.as_str(),
+                    Some(reason),
+                    "`{id}` is hidden, so `router_hidden` must carry the DECLARED REASON its \
+                     prose names, not a same-shaped different fact. Got:\n{definition:#}",
+                );
+                hidden_seen += 1;
+            }
+            None => assert!(
+                key.is_null(),
+                "`{id}` is not hidden from the router catalog, so `router_hidden` must be \
+                 null — a key that lies is worse than one that is absent. Got:\n{definition:#}",
+            ),
+        }
+    }
+
+    assert!(
+        hidden_seen > 0,
+        "the shipped packs must still carry at least one router-hidden workflow, or this arm \
+         proves nothing; got {} definitions",
+        definitions.len(),
+    );
+}
