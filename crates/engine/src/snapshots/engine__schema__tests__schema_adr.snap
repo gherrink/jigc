@@ -50,7 +50,7 @@ expression: json
     {
       "id": "options",
       "slot": {
-        "hint": "Alternatives weighed and why they lost — omit when the call was obvious.",
+        "hint": "Alternatives weighed and why they lost — leave it empty when the call was obvious; the heading renders either way.",
         "optional": true
       }
     },

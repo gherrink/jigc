@@ -33,6 +33,8 @@ mod flow20_completion_encode;
 mod flow40_acceptance;
 #[path = "../flow45_acceptance.rs"]
 mod flow45_acceptance;
+#[path = "../optional_slot_guidance.rs"]
+mod optional_slot_guidance;
 #[path = "../orphan_detection.rs"]
 mod orphan_detection;
 #[path = "../prd_batch_author.rs"]

@@ -23,8 +23,9 @@ jigc doc set-slot adr:<slug>#decision --from-file - --task your-task-id
 jigc doc set-slot adr:<slug>#consequences --from-file - --task your-task-id
 
 The `options` slot is optional — fill it only when alternatives were genuinely
-weighed; omit it when the call was obvious. The `status` defaults to `proposed`;
-set it on the `status` section only when the decision is already `accepted`:
+weighed. Its `## Options` heading renders either way; an empty optional slot is
+conformant and never blocks finalize. The `status` defaults to `proposed`; set it
+on the `status` section only when the decision is already `accepted`:
 
 jigc doc set-slot adr:<slug>#options --from-file - --task your-task-id
 jigc doc set-field adr:<slug>#status --value accepted --task your-task-id

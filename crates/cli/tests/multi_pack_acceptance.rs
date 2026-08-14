@@ -411,7 +411,8 @@ jigc doc set-slot adr:<slug>#decision --from-file - --task add-a-thing
 jigc doc set-slot adr:<slug>#consequences --from-file - --task add-a-thing
 
 The `options` slot is optional — fill it only when alternatives were genuinely
-weighed; omit it when the call was obvious:
+weighed. Its `## Options` heading renders either way; an empty optional slot is
+conformant and never blocks finalize:
 
 jigc doc set-slot adr:<slug>#options --from-file - --task add-a-thing
 

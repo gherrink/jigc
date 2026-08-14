@@ -23,7 +23,7 @@ sections:
   - id: context
     slot: { hint: "Why a decision was needed — the forces at play." }
   - id: options
-    slot: { optional: true, hint: "Alternatives weighed and why they lost — omit when the call was obvious." }
+    slot: { optional: true, hint: "Alternatives weighed and why they lost — leave it empty when the call was obvious; the heading renders either way." }
   - id: decision
     slot: { hint: "What we decided, in a sentence or two." }
   - id: consequences

@@ -18,7 +18,8 @@ Map the foreign ADR's headings onto the schema above:
   - the foreign Status / state line maps to the `status` field (see the enum map below);
   - the foreign Context / Background / Problem heading maps to the `context` slot;
   - the foreign Options / Alternatives / Considered-options heading maps to the
-    optional `options` slot (omit the entry when the foreign source weighed none);
+    optional `options` slot (when the foreign source weighed none, leave its entry
+    unauthored — the `## Options` heading still renders, empty, and that conforms);
   - the foreign Decision heading maps to the `decision` slot;
   - the foreign Consequences / Outcome / Tradeoffs heading maps to the `consequences` slot.
 
