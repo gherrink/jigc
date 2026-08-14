@@ -20,4 +20,4 @@ allows-create:
 {{ include: step:author-ledger }}
 {{ include: step:author-decisions }}
 {{ include: step:author-commit }}
-{{ include: step:finalize }}
+{{ include: step:planning-finalize }}

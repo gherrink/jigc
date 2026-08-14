@@ -170,6 +170,25 @@ carry yet:
 
 jigc doc show commit:sweep-the-compose-surface --task sweep-the-compose-surface
 
+Committing this plan lands the roadmap entry; it does not open the milestone
+work-unit. The entry is the durable record of what you decomposed, the work-unit
+is what sub-tasks are minted under and joined from, and no reference joins the
+two — their ids are minted separately, from the same title. So once this task
+commits, open the work-unit under that same title:
+
+jigc milestone create "<the title you just used>"
+
+Then seed its task list by hand, one call per unit of work your decomposition
+names — `<milestone-id>` is the id `create` minted:
+
+jigc milestone add-task <milestone-id> "<intent>"
+
+By hand is the whole path from here, and the bound is worth knowing before you go
+looking for a shortcut: `jigc milestone add-from-spec <milestone-id> <spec-addr>`
+seeds one sub-task per `criterion` of a committed spec, while this milestone's
+breakdown is prose in the roadmap entry's `decomposition` slot, which carries no
+criteria — so there is nothing there for it to read, and the intents are retyped
+from your own decomposition.
 Land the change as exactly one logical commit. finalize commits the git index —
 only what you have staged (`git add`), plus the docs it manages. Unstaged edits
 and untracked files are left out of the commit; with nothing staged over a dirty

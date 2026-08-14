@@ -1193,3 +1193,148 @@ fn composed_authoring_commands_carry_the_minted_task_id_with_two_active_tasks() 
         String::from_utf8_lossy(&filled.stderr),
     );
 }
+
+/// The composed body with runs of whitespace collapsed to single spaces — step prose
+/// is hard-wrapped at ~80 columns, so a sentence an agent must read straddles a line
+/// break. Still the EMITTED bytes; it just refuses to make the assertion hostage to a
+/// reflow (`methodology_staging_contract.rs`'s precedent).
+fn flowed(body: &str) -> String {
+    body.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// M48 Increment 9 / T6 — planning's finalize names the milestone verbs and states
+/// the seeding path's bound (`RC-pre-1.0/findings-verification.md` → F15; the Settle
+/// → *F15's bound belongs on the surface that creates the adjacency*).
+///
+/// The trial's planner followed `planning` to its finalize, committed a roadmap
+/// entry, and believed it had opened a milestone: the roadmap entry and the
+/// `milestone:<id>` work-unit are two objects with no reference between them, and
+/// **no pack prose named a single milestone verb** (verified by grep over both packs
+/// before this task). So the composed spine must name `jigc milestone create` — and
+/// `jigc milestone add-task` with it, because an agent that reaches for the
+/// obvious-looking `add-from-spec` is stopped by a gap the naming itself surfaces:
+/// that verb seeds one sub-task per committed spec `criterion`, which planning's
+/// prose `decomposition` slot cannot feed.
+///
+/// Asserted on the EMITTED bytes of **both** composing doors — `jigc start --workflow
+/// planning` (mints) and `jigc workflow planning --preview` (mints nothing) — since
+/// the preview is the shape an operator reads before committing to the walk.
+#[test]
+fn planning_finalize_names_the_milestone_verbs_and_the_seeding_bound() {
+    let repo = TempDir::new("planning-milestone-verbs");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    let preview = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["workflow", "planning", "--preview"],
+    );
+    assert!(
+        preview.status.success(),
+        "`jigc workflow planning --preview` must compose + exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&preview.stderr),
+    );
+    let previewed = String::from_utf8(preview.stdout).expect("utf-8 stdout");
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "planning", "M99"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow planning \"M99\"` must compose + exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let started = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    for (door, body) in [("start", &started), ("workflow --preview", &previewed)] {
+        let flat = flowed(body);
+        // The two manual verbs render as runnable lines, verbatim.
+        assert!(
+            body.lines()
+                .any(|line| line.trim() == "jigc milestone create \"<the title you just used>\""),
+            "`{door}` must name the work-unit mint as a runnable line; got:\n{body}",
+        );
+        assert!(
+            body.lines()
+                .any(|line| line.trim() == "jigc milestone add-task <milestone-id> \"<intent>\""),
+            "`{door}` must name `add-task` as the manual seeding path; got:\n{body}",
+        );
+        // The bound, so naming the seeding path does not dead-end at `add-from-spec`.
+        assert!(
+            flat.contains("jigc milestone add-from-spec"),
+            "`{door}` must name the `add-from-spec` bound rather than leave it to be \
+             discovered; got:\n{body}",
+        );
+        assert!(
+            flat.contains("criterion") && flat.contains("`decomposition` slot"),
+            "`{door}` must state WHY `add-from-spec` cannot seed this milestone — it reads \
+             a committed spec's criteria, and the decomposition is prose in a slot; \
+             got:\n{body}",
+        );
+        // The shared finalize tail still composes through the wrapper.
+        assert!(
+            flat.contains("only what you have staged"),
+            "`{door}` must still compose the shared finalize tail; got:\n{body}",
+        );
+        assert!(
+            !body.contains("{{") && !body.contains("}}"),
+            "`{door}` must compose with no surviving `{{{{ … }}}}` placeholder; got:\n{body}",
+        );
+    }
+}
+
+/// The omitting context (dev-workflow hardening #5): `dev-task` composes the SAME
+/// shared `step:finalize`, through no wrapper — the milestone prose must be **inert
+/// there**, never leaked and never an error. A wrapper step that landed its prose in
+/// the shared step instead would pass the arm above and fail here.
+#[test]
+fn a_workflow_that_composes_the_bare_finalize_carries_no_milestone_prose() {
+    let repo = TempDir::new("planning-milestone-inert");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "dev-task", "add a cache"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow dev-task` must compose + exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let body = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        flowed(&body).contains("only what you have staged"),
+        "`dev-task` must compose the shared finalize tail (the omitting context is real); \
+         got:\n{body}",
+    );
+    assert!(
+        !body.contains("jigc milestone"),
+        "`dev-task` composes the bare `step:finalize` — no milestone verb may leak into it; \
+         got:\n{body}",
+    );
+}
