@@ -49,6 +49,12 @@ It does these things:
 - allowlists `Bash(jigc:*)` in `.claude/settings.json` and adds a `SessionStart` hook
   that runs `jigc start` (so each session opens with orientation), so the agent
   can call the CLI without a permission prompt;
+- writes jigc's own guides — this file and the migration field notes — to the path
+  your assistant reads skills from (`.claude/skills/jigc/SKILL.md` for Claude Code),
+  as **one file jigc owns**: it opens with a `jigc-version:` stamp naming the build
+  that wrote it plus the hash of its own body, and every `jigc setup` rewrites it, so
+  the guidance in your repo always matches the binary in your `PATH`. Re-run `setup`
+  after upgrading and the copy follows;
 - extracts the embedded `doc-code` probe beside the installed `jigc` (so the
   doc↔code probe resolves next to the binary — written if no sibling is present
   **or** if an existing sibling's bytes differ from the embedded copy, so a

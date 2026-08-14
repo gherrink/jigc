@@ -425,3 +425,14 @@ forward by the next protocol.
    `.md` inside the corpus becomes an ingest candidate). Declare it as operator seeding, and expect
    their in-repo relative links to dangle from that location — if a worker is stranded following one,
    that is a finding, not a prep defect.
+
+   > **Superseded 2026-08-14 — the convention retires (M48 Increment 10, T1).** The rule existed
+   > because `setup` shipped no guides; it now writes them itself, as an **adapter-owned,
+   > version-stamped artifact** at the profile-declared path (`design/assistant-adapter.md` → The
+   > adapter's owned artifacts), committed with the rest of the install. So a trial on rc.11 or later
+   > **does not seed a sibling directory** — the guides are in the corpus, matched to the binary, and
+   > naming them in a prompt is no longer operator seeding at all. Both halves of the rule's rationale
+   > are answered rather than worked around: the artifact lands under the assistant's own skills path
+   > (not a doc directory), and its in-repo relative links are **resolved away in the shipped bytes**,
+   > so the dangling-link finding this rule pre-registered can no longer be produced by the shipping
+   > guides. The note is added, not rewritten: what the rule said was true of the binary the trial ran.

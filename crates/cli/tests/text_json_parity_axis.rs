@@ -480,22 +480,30 @@ fn text_prints(text: &str, value: &str, label: &str, field_name: &str) {
 
 // ─────────────────────────────── the fenced checks ───────────────────────────────
 
-/// `jigc setup` — the install summary. Four fields, four keys (`hook_file` is M48's own
-/// close, T2), plus the constant `installed` discriminator.
+/// `jigc setup` — the install summary. Five fields, five keys (`hook_file` is M48's own
+/// close, T2; `guide_file` the adapter-owned guide artifact of Increment 10), plus the
+/// constant `installed` discriminator.
+///
+/// `guide_file` is an `Option`: the witness declares one, because a profile omitting the
+/// guide target has no fact to carry and so no gap to close — that omitting context is
+/// asserted through the real binary in `adapter_artifact.rs`, where it belongs.
 fn setup_success_parity() {
     let summary = SetupSummary {
         line_file: "CLAUDE.md".to_owned(),
         allowlist_file: ".claude/settings.json".to_owned(),
         hook_file: ".git/hooks/pre-commit".to_owned(),
+        guide_file: Some(".claude/skills/jigc/SKILL.md".to_owned()),
         install_commit: InstallCommit::Committed("a1b2c3d".to_owned()),
     };
-    // Exhaustive — no `..`: a fifth field fails to compile here.
+    // Exhaustive — no `..`: a sixth field fails to compile here.
     let SetupSummary {
         line_file,
         allowlist_file,
         hook_file,
+        guide_file,
         install_commit,
     } = &summary;
+    let guide_file = guide_file.as_ref().expect("the witness declares a guide");
 
     let text = setup_success(Format::Agent, &summary);
     let doc = envelope(&setup_success(Format::Json, &summary), "jigc setup");
@@ -504,6 +512,7 @@ fn setup_success_parity() {
         ("line_file", line_file),
         ("allowlist_file", allowlist_file),
         ("hook_file", hook_file),
+        ("guide_file", guide_file),
     ] {
         text_prints(&text, value, "jigc setup", field_name);
         carries(&doc, field_name, value, "jigc setup", field_name);

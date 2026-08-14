@@ -2342,6 +2342,12 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
                 // pre-1.0 window (`design/command-output-contract.md` → Evolution
                 // posture, the M48 additive key).
                 "hook_file": summary.hook_file,
+                // The adapter's owned guide artifact, or `null` for a profile that
+                // declares no guide target (M48 Increment 10) — a driver reads where the
+                // guides landed rather than assuming an assistant-specific path. An
+                // additive key inside the still-open pre-1.0 window
+                // (`design/command-output-contract.md` → Evolution posture).
+                "guide_file": summary.guide_file,
                 "install_commit": install_commit,
             }))
         }
@@ -2363,6 +2369,16 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
             out.push_str("  - pre-commit hook → ");
             out.push_str(&summary.hook_file);
             out.push_str("   (warn-only doc↔code drift backstop)\n");
+            // The adapter's owned guide artifact (M48 Increment 10) — named only when the
+            // profile declares one, so an assistant without a guide target says nothing
+            // about a file it did not install.
+            if let Some(guide_file) = &summary.guide_file {
+                out.push_str("  - jigc guides → ");
+                out.push_str(guide_file);
+                out.push_str(
+                    "   (jigc's own quickstart + migration notes, stamped with this build)\n",
+                );
+            }
             // When setup committed its own install (M26), name that commit so the user
             // knows the scaffolding landed on its own, not in their first feature commit.
             if let InstallCommit::Committed(sha) = &summary.install_commit {
@@ -5351,7 +5367,7 @@ mod tests {
     /// The successful-setup summary names each installed target **and what it is for**
     /// (#9c — less-terse setup output), ending with the routing footer; the JSON shape
     /// carries the same facts as keys (`installed`/`line_file`/`allowlist_file`/
-    /// `hook_file`), with none of the explanatory prose — regression watch.
+    /// `hook_file`/`guide_file`), with none of the explanatory prose — regression watch.
     #[test]
     fn render_setup_success_names_what_was_installed() {
         let summary = SetupSummary {
@@ -5361,6 +5377,7 @@ mod tests {
             // git resolved (D4), so a `core.hooksPath` install names where the hook
             // really landed. The prior hardcoded literal pinned that lie here.
             hook_file: "my-hooks/pre-commit".to_string(),
+            guide_file: Some(".claude/skills/jigc/SKILL.md".to_string()),
             install_commit: InstallCommit::Skipped,
         };
 
@@ -5373,6 +5390,7 @@ mod tests {
           - jigc allowlist → .claude/settings.json   (pre-approves the `jigc` commands the agent runs)
           - SessionStart hook → .claude/settings.json   (runs `jigc start` to orient your assistant each session)
           - pre-commit hook → my-hooks/pre-commit   (warn-only doc↔code drift backstop)
+          - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -5390,6 +5408,7 @@ mod tests {
         assert!(json_out.contains("\"line_file\": \"CLAUDE.md\""));
         assert!(json_out.contains("\"allowlist_file\": \".claude/settings.json\""));
         assert!(json_out.contains("\"hook_file\": \"my-hooks/pre-commit\""));
+        assert!(json_out.contains("\"guide_file\": \".claude/skills/jigc/SKILL.md\""));
     }
 
     /// The free-prose `describe` renderer frames the engine's woven definition

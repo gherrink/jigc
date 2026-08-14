@@ -62,6 +62,13 @@ pub struct AdapterProfile {
     /// running `jigc workflow … --task …`). The locked seam: CLI owns the payload,
     /// the adapter owns the launch.
     pub spawn: SpawnTarget,
+
+    /// The **guide** target — where this assistant wants jigc's own shipped guides,
+    /// and the assistant-specific header they carry (`design/assistant-adapter.md`
+    /// → The adapter's owned artifacts). **Optional**: an assistant with no place to
+    /// put a guide declares none and the install is inert there, never an error.
+    #[serde(default)]
+    pub guide: Option<GuideTarget>,
 }
 
 impl AdapterProfile {
@@ -92,6 +99,109 @@ impl AdapterProfile {
     pub fn spawn(&self) -> Option<&SpawnTarget> {
         Some(&self.spawn)
     }
+
+    /// The profile's **guide** target, if it declares one — the adapter-owned artifact
+    /// `setup` writes, stamps, and names in its install commit. `None` is the ordinary
+    /// omitting context, not a degraded profile.
+    pub fn guide(&self) -> Option<&GuideTarget> {
+        self.guide.as_ref()
+    }
+}
+
+/// The guide target: where the assistant wants jigc's shipped guides, and the header
+/// that file has to open with for the assistant to recognize it.
+///
+/// The **path is assistant knowledge** (`.claude/skills/jigc/SKILL.md` is Claude Code's
+/// skill convention, not jigc's), and so is the header — which is why both live in the
+/// profile rather than in `setup`'s neutral core: the core copies what the profile
+/// declares and appends only its own stamp keys ([`crate::setup::guide_artifact`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuideTarget {
+    /// The repo-relative path the artifact is written to (e.g.
+    /// `.claude/skills/jigc/SKILL.md`).
+    pub file: String,
+
+    /// The assistant's own front-matter keys, emitted verbatim above jigc's stamp lines.
+    /// A `BTreeMap` so the rendered header is deterministic (same profile in → same bytes
+    /// out, which is what makes the artifact's hash stable across runs). `#[serde(default)]`
+    /// so a profile whose assistant wants no header stays valid.
+    #[serde(default, rename = "front-matter")]
+    pub front_matter: std::collections::BTreeMap<String, String>,
+}
+
+/// Why a [`GuideTarget`] is rejected at install — a precise typed clause, mirroring
+/// [`SpawnTemplateReason`]: the violated clause *is* the install error's route, so the
+/// profile author is told which rule to fix rather than that "something is wrong".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GuideTargetReason {
+    /// The declared path is empty.
+    EmptyPath,
+    /// The declared path is absolute — the artifact is written under the repo root, so
+    /// an absolute path would escape the repo the install is committing from.
+    AbsolutePath,
+    /// The declared path climbs out of the repo (a `..` component).
+    EscapingPath,
+    /// A front-matter key collides with one of jigc's own stamp keys — the profile would
+    /// be forging the version/hash the ownership check reads.
+    ReservedKey,
+    /// A front-matter key is empty or carries a character outside `[A-Za-z0-9_-]`, so it
+    /// could not be emitted as a plain YAML key.
+    MalformedKey,
+}
+
+impl fmt::Display for GuideTargetReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let clause = match self {
+            GuideTargetReason::EmptyPath => "the guide target's `file` must name a path",
+            GuideTargetReason::AbsolutePath => {
+                "the guide target's `file` must be repo-relative, not absolute"
+            }
+            GuideTargetReason::EscapingPath => {
+                "the guide target's `file` must stay inside the repo (no `..` component)"
+            }
+            GuideTargetReason::ReservedKey => {
+                "the guide target's `front-matter` must not declare a `jigc-` stamp key \
+                 (jigc appends `jigc-version:` and `jigc-body-blake3:` itself)"
+            }
+            GuideTargetReason::MalformedKey => {
+                "each `front-matter` key must be a non-empty run of `[A-Za-z0-9_-]`"
+            }
+        };
+        f.write_str(clause)
+    }
+}
+
+/// The stamp keys jigc appends to every guide artifact's front matter — reserved against
+/// the profile, so the ownership check reads jigc's own record and never a profile's.
+pub const GUIDE_RESERVED_KEYS: [&str; 2] = ["jigc-version", "jigc-body-blake3"];
+
+/// Gate a [`GuideTarget`] against the decidable install-time rules, mirroring
+/// [`validate_spawn_template`]: purely lexical, no judgement, run **before any write** so
+/// a broken profile touches nothing on disk.
+pub fn validate_guide_target(guide: &GuideTarget) -> Result<(), GuideTargetReason> {
+    if guide.file.trim().is_empty() {
+        return Err(GuideTargetReason::EmptyPath);
+    }
+    if guide.file.starts_with('/') {
+        return Err(GuideTargetReason::AbsolutePath);
+    }
+    if guide.file.split('/').any(|component| component == "..") {
+        return Err(GuideTargetReason::EscapingPath);
+    }
+    for key in guide.front_matter.keys() {
+        if GUIDE_RESERVED_KEYS.contains(&key.as_str()) {
+            return Err(GuideTargetReason::ReservedKey);
+        }
+        if key.is_empty()
+            || !key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(GuideTargetReason::MalformedKey);
+        }
+    }
+    Ok(())
 }
 
 /// One bootstrap injection target — an **untagged** variant keyed by its single
@@ -1183,6 +1293,64 @@ fn load_profile_from(
 mod tests {
     use super::*;
 
+    /// The shipped Claude Code **guide target** passes `validate_guide_target` and declares
+    /// the Claude Code skill path — the canonical-pass anchor for the second decidable rule,
+    /// and the one place the shipped path is asserted from the profile rather than re-typed.
+    #[test]
+    fn shipped_guide_target_passes_validation() {
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+        let guide = profile
+            .guide()
+            .expect("the shipped profile declares a guide target");
+        validate_guide_target(guide).expect("the shipped guide target passes the decidable rule");
+        assert_eq!(guide.file, ".claude/skills/jigc/SKILL.md");
+        assert_eq!(
+            guide.front_matter.get("name").map(String::as_str),
+            Some("jigc"),
+            "the assistant's own header keys ride in the profile, not in the neutral core",
+        );
+    }
+
+    /// Each broken guide target **fails on its own clause** — the full clause coverage, the
+    /// `broken_spawn_templates_fail_on_their_clause` discipline applied to the second gate.
+    /// Asserting the *specific* clause is what stops a clause swap passing by failing on a
+    /// sibling.
+    #[test]
+    fn broken_guide_targets_fail_on_their_clause() {
+        use GuideTargetReason::*;
+
+        let target = |file: &str, key: &str| GuideTarget {
+            file: file.to_string(),
+            front_matter: if key.is_empty() {
+                std::collections::BTreeMap::new()
+            } else {
+                std::collections::BTreeMap::from([(key.to_string(), "v".to_string())])
+            },
+        };
+
+        let cases: &[(GuideTarget, GuideTargetReason)] = &[
+            (target("   ", ""), EmptyPath),
+            (target("/etc/skills/SKILL.md", ""), AbsolutePath),
+            (target("../outside/SKILL.md", ""), EscapingPath),
+            // Both stamp keys are reserved: a profile that could name one would forge the
+            // record the ownership check reads.
+            (target("a/SKILL.md", "jigc-version"), ReservedKey),
+            (target("a/SKILL.md", "jigc-body-blake3"), ReservedKey),
+            (target("a/SKILL.md", "not a key"), MalformedKey),
+        ];
+        for (guide, expected) in cases {
+            assert_eq!(
+                validate_guide_target(guide),
+                Err(*expected),
+                "guide target {guide:?} must fail on its own clause",
+            );
+        }
+
+        // …and the shape the shipped profile uses passes, so the gate is not vacuous.
+        validate_guide_target(&target(".claude/skills/jigc/SKILL.md", "name"))
+            .expect("a well-formed guide target passes");
+    }
+
     /// The shipped Claude Code spawn template **passes** `validate_spawn_template`:
     /// it carries both placeholders, the `jigc workflow … --task` invocation, sits
     /// on one line, and wraps exactly one backticked span in free prose with no
@@ -1360,6 +1528,17 @@ mod tests {
             - "Bash(cat ./**/.npmrc:*)"
         spawn:
           template: "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`"
+        # The adapter's own owned artifact: the shipped guides, installed as a Claude Code
+        # skill, stamped with the binary version and replaced by `setup` (M48 Increment 10).
+        # Optional — an assistant with no place to put a guide simply declares none and the
+        # install is inert there. `file` is the assistant-specific path; `front-matter` is the
+        # assistant's own header, copied verbatim above jigc's `jigc-version:` /
+        # `jigc-body-blake3:` stamp lines (which no profile may name).
+        guide:
+          file: .claude/skills/jigc/SKILL.md
+          front-matter:
+            name: jigc
+            description: How to work in a jigc-managed repository — the setup/start/finalize loop, adopting an existing project, and upgrading a corpus.
         "###);
     }
 

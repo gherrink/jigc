@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+#[path = "../adapter_artifact.rs"]
+mod adapter_artifact;
 #[path = "../anchor_root_truth.rs"]
 mod anchor_root_truth;
 #[path = "../duplicate_field_finding_keys.rs"]

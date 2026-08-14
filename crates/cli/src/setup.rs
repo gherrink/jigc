@@ -54,6 +54,135 @@ fn version_stamp_body() -> String {
     format!("{VERSION_STAMP_KEY} {}\n", env!("CARGO_PKG_VERSION"))
 }
 
+// ──────────────────── the adapter's owned guide artifact (M48 Inc 10) ────────────────────
+
+/// The guide artifact's second stamp line: the `blake3` of the artifact's **own body**
+/// (everything after the front matter), so the file records what jigc wrote and a later
+/// read can tell jigc's own bytes from a hand-edited copy without keeping a side record.
+/// Reserved against the profile ([`adapter::GUIDE_RESERVED_KEYS`]).
+const GUIDE_HASH_KEY: &str = "jigc-body-blake3:";
+
+/// The shipped guides, embedded at compile time from the **repo's own** copies — the
+/// single home for this content (the `include_dir!` of `packs/methodology/` from the
+/// workspace root is the same move). A second authored copy in `crates/cli/` would drift
+/// behind them the first time either is edited.
+const QUICKSTART_GUIDE: &str = include_str!("../../../QUICKSTART.md");
+const MIGRATING_GUIDE: &str = include_str!("../../../MIGRATING.md");
+
+/// The generated paragraph the artifact opens with — the ownership statement (this file is
+/// jigc's, refreshed by `setup`), the version it was written from, and the two facts an
+/// adopter needs to read the rest honestly: the guides ship concatenated, and their
+/// cross-references to jigc's *project* docs are named without links because those files
+/// live in the jigc repository, not in the reader's.
+fn guide_preamble() -> String {
+    format!(
+        "`jigc setup` wrote this file from jigc {} and owns it: re-run `jigc setup` after \
+         upgrading the binary to refresh it.\n\nIt carries the two guides that ship with that \
+         binary, one after the other — the quickstart loop, then the migration field notes. A \
+         cross-reference to `QUICKSTART.md` or `MIGRATING.md` means the matching part of this \
+         file; every other jigc document named below lives in the jigc project's own \
+         repository, not in this one, which is why none of them are links here.\n",
+        env!("CARGO_PKG_VERSION"),
+    )
+}
+
+/// The artifact's **body**: the preamble followed by both shipped guides, every in-repo
+/// relative link resolved away ([`unlink_in_repo_links`]).
+fn guide_body() -> String {
+    format!(
+        "{}\n{}\n{}",
+        guide_preamble(),
+        unlink_in_repo_links(QUICKSTART_GUIDE).trim_end(),
+        unlink_in_repo_links(MIGRATING_GUIDE).trim_end(),
+    )
+}
+
+/// Rewrite `[label](target)` to a bare `label` for every **in-repo relative** target,
+/// leaving absolute URLs and in-document anchors as links.
+///
+/// The guides' relative links point at files of the *jigc* repository (`design/storage.md`,
+/// `implementation/roadmap.md`, the archived migration method); from an adopter's tree every
+/// one of them dangles, and a guide that strands its reader on a followed link is a law-1
+/// defect authored in the same motion that fixes one. The label is kept — it already names
+/// the document — so nothing the sentence needs is lost.
+///
+/// Deliberately lexical and conservative: an unterminated or multi-line construct is left
+/// exactly as written rather than guessed at.
+fn unlink_in_repo_links(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        // Any shape below that is not a plain inline link emits the bracket and resumes
+        // scanning right after it, so no byte of the source is ever dropped.
+        rest = after;
+        let Some(close) = after.find("](") else {
+            out.push('[');
+            continue;
+        };
+        let label = &after[..close];
+        let tail = &after[close + 2..];
+        let Some(end) = tail.find(')') else {
+            out.push('[');
+            continue;
+        };
+        let target = &tail[..end];
+        if label.contains('[') || label.contains('\n') || target.contains('\n') {
+            out.push('[');
+            continue;
+        }
+        if target.contains("://") || target.starts_with('#') {
+            out.push('[');
+            out.push_str(label);
+            out.push_str("](");
+            out.push_str(target);
+            out.push(')');
+        } else {
+            out.push_str(label);
+        }
+        rest = &tail[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The full artifact for `guide`: the profile's own front-matter keys, then jigc's two
+/// stamp lines, then the body — the front matter closed by `---` and one blank line.
+///
+/// The stamp is computed over the body **as assembled**, never over a pre-image, so the
+/// recorded hash is always this file's own. Front-matter values are emitted as JSON
+/// strings, which are valid single-line YAML scalars — deterministic bytes for any value a
+/// profile can declare, with no emitter line-wrapping to reason about.
+pub fn guide_artifact(guide: &adapter::GuideTarget) -> String {
+    let body = guide_body();
+    let hash = engine::file_state::hash_bytes(body.as_bytes());
+    let mut front = String::new();
+    for (key, value) in &guide.front_matter {
+        let value = serde_json::to_string(value).unwrap_or_else(|_| format!("{value:?}"));
+        front.push_str(&format!("{key}: {value}\n"));
+    }
+    format!(
+        "---\n{front}{VERSION_STAMP_KEY} {}\n{GUIDE_HASH_KEY} {hash}\n---\n\n{body}",
+        env!("CARGO_PKG_VERSION"),
+    )
+}
+
+/// Write the guide artifact to `<repo_root>/<guide.file>`, creating its parent dirs.
+///
+/// Rewritten **whole** on every `setup`, on the `.jigc/AGENT.md` mold: the file is wholly
+/// CLI-owned, so it needs no in-file idempotency markers and a re-run over the same binary
+/// is byte-identical. A copy stamped at an older version is therefore *replaced* — which is
+/// what "regenerated on upgrade" means for an artifact only `setup` writes
+/// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
+fn write_guide_artifact(repo_root: &Path, guide: &adapter::GuideTarget) -> std::io::Result<()> {
+    let target = repo_root.join(&guide.file);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&target, guide_artifact(guide))
+}
+
 /// Write the binary-provenance stamp under `<repo_root>/.jigc/version` (creating `.jigc/`
 /// if absent). `jigc setup` writes it and store-writing ops (`finalize`) refresh it — a
 /// same-build refresh writes identical bytes, so it is a no-op in the commit.
@@ -708,6 +837,10 @@ pub struct SetupSummary {
     /// repo-root-relative inside the repo, absolute when the hooks dir lives outside it
     /// (`core.hooksPath`, or a linked worktree's common hooks dir).
     pub hook_file: String,
+    /// The repo-root-relative path of the adapter's **owned guide artifact**, or `None`
+    /// when the profile declares no guide target (the omitting context — inert, never an
+    /// error). M48 Increment 10.
+    pub guide_file: Option<String>,
     /// The outcome of committing setup's own install files as a dedicated commit
     /// (M26 shakedown — see [`commit_install`]).
     pub install_commit: InstallCommit,
@@ -779,6 +912,22 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
             "setup.spawn-template",
             format!(
                 "the `{}` adapter profile's spawn launch template is invalid: {reason}",
+                profile.assistant
+            ),
+            reason.to_string(),
+        ));
+    }
+    // 0b. The same gate over the **guide** target, when the profile declares one — a
+    //     path jigc is about to write and commit, so its decidable clauses are checked
+    //     before any write too (`design/assistant-adapter.md` → The adapter's owned
+    //     artifacts). A profile declaring none skips this and installs no guide.
+    if let Some(guide) = profile.guide()
+        && let Err(reason) = adapter::validate_guide_target(guide)
+    {
+        return Err(Finding::block(
+            "setup.guide-target",
+            format!(
+                "the `{}` adapter profile's guide target is invalid: {reason}",
                 profile.assistant
             ),
             reason.to_string(),
@@ -912,6 +1061,34 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         )
     })?;
 
+    // 4c. Write the adapter's own **owned artifact** — jigc's shipped guides at the
+    //     profile-declared path, stamped with this build's version and the `blake3` of
+    //     their own body (M48 Increment 10; `design/assistant-adapter.md` → The adapter's
+    //     owned artifacts). VISION commits the adapter to skill files that just call the
+    //     CLI and the install carried none, so an adopter had no version-matched path to
+    //     the guides at all. Rewritten whole each `setup` on the `.jigc/AGENT.md` mold, so
+    //     a re-run is byte-identical and a copy from an older build is replaced. Inert for
+    //     a profile that declares no guide target.
+    let guide_file = match profile.guide() {
+        Some(guide) => {
+            write_guide_artifact(repo_root, guide).map_err(|err| {
+                Finding::block(
+                    "setup.write-guide",
+                    format!(
+                        "cannot write the adapter guide artifact `{}`: {err}",
+                        guide.file
+                    ),
+                    format!(
+                        "ensure `{}` is writable, then re-run `jigc setup`",
+                        guide.file
+                    ),
+                )
+            })?;
+            Some(guide.file.clone())
+        }
+        None => None,
+    };
+
     // 5. Install the assistant-neutral warn-only `pre-commit` hook (the auto-firing
     //    doc<->code backstop) into the repo's real hooks dir, pinned to the installing
     //    `jigc`'s own absolute path (the stale-binary hazard — `precommit_hook_body`).
@@ -977,6 +1154,7 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         &allowlist_file,
         seeded_gitignore,
         &hook_path,
+        guide_file.as_deref(),
     )
     .map_err(|rejection| rejection.finding())?;
 
@@ -984,6 +1162,7 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         line_file,
         allowlist_file,
         hook_file,
+        guide_file,
         install_commit,
     })
 }
@@ -1015,6 +1194,7 @@ fn install_tracked_paths(
     allowlist_file: &str,
     seeded_gitignore: bool,
     hook: Option<&str>,
+    guide: Option<&str>,
 ) -> Vec<String> {
     let mut paths = vec![
         line_file.to_string(),      // CLAUDE.md (the bootstrap reference host)
@@ -1030,6 +1210,12 @@ fn install_tracked_paths(
     // did not touch and must not sweep into its install commit).
     if seeded_gitignore {
         paths.push(".gitignore".to_string());
+    }
+    // The adapter's owned **guide artifact**, when the profile declares one. It is
+    // committed for the same reason the bootstrap file is: it must travel with the repo,
+    // so a clone gets the guides that match the binary that wrote them (M48 Increment 10).
+    if let Some(guide) = guide {
+        paths.push(guide.to_string());
     }
     // The `pre-commit` hook, iff git can track it from this working tree.
     if let Some(hook) = hook {
@@ -1265,8 +1451,8 @@ fn is_git_identity_rejection(git_err: &str) -> bool {
 /// `Err(`[`InstallCommitRejection`]`)` for [`install`] to surface as a loud blocking
 /// finding rather than a silent skip behind a success banner.
 ///
-/// **The `pre-commit` hook is a *soft* member of the pathspec.** Six of the seven entries
-/// are files setup wrote at paths setup chose; the seventh is the hook, whose home the
+/// **The `pre-commit` hook is a *soft* member of the pathspec.** Seven of the eight entries
+/// are files setup wrote at paths setup chose; the eighth is the hook, whose home the
 /// *user's* `core.hooksPath` chose, and no test [`committable_hook_path`] can run
 /// *promises* git will accept it (a registered-but-absent submodule looked committable to
 /// the filesystem until the index was asked; a sparse-checkout excluding the hooks dir
@@ -1291,6 +1477,7 @@ fn commit_install(
     allowlist_file: &str,
     seeded_gitignore: bool,
     hook_file: &Path,
+    guide_file: Option<&str>,
 ) -> Result<InstallCommit, InstallCommitRejection> {
     // Require a git work tree — but DO mint on an **unborn HEAD** (a brand-new repo with
     // no commits). Setup owns committing its own install footprint regardless of HEAD
@@ -1308,12 +1495,17 @@ fn commit_install(
 
     // Only the files setup itself wrote, and only those present + not gitignored.
     let hook = committable_hook_path(repo_root, hook_file);
-    let mut paths: Vec<String> =
-        install_tracked_paths(line_file, allowlist_file, seeded_gitignore, hook.as_deref())
-            .into_iter()
-            .filter(|p| repo_root.join(p).exists())
-            .filter(|p| !git_path_ignored(repo_root, p))
-            .collect();
+    let mut paths: Vec<String> = install_tracked_paths(
+        line_file,
+        allowlist_file,
+        seeded_gitignore,
+        hook.as_deref(),
+        guide_file,
+    )
+    .into_iter()
+    .filter(|p| repo_root.join(p).exists())
+    .filter(|p| !git_path_ignored(repo_root, p))
+    .collect();
     if paths.is_empty() {
         return Ok(InstallCommit::Skipped);
     }
@@ -2529,6 +2721,7 @@ mod tests {
             ".claude/settings.json",
             false,
             Path::new("/nonexistent/hooks/pre-commit"),
+            None,
         )
         .expect_err("a git step that ran and refused must not degrade to a silent skip");
 
@@ -3140,6 +3333,7 @@ mod tests {
             ".claude/settings.json",
             false,
             &hook,
+            None,
         )
         .expect("a refusal the hook caused must not sink the install commit");
 
@@ -3167,6 +3361,7 @@ mod tests {
             ".claude/settings.json",
             false,
             &hook,
+            None,
         )
         .expect_err("a refusal the hook did NOT cause must stay loud");
         assert!(

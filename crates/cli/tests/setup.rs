@@ -1124,13 +1124,18 @@ enum HooksDirShape {
     SparseCheckoutExcluded,
 }
 
-/// The install commit's footprint apart from the `pre-commit` hook: the seven paths
+/// The install commit's footprint apart from the `pre-commit` hook: the eight paths
 /// `install_tracked_paths` names on a repo with a born HEAD (the root `.gitignore`
 /// secrets floor is seeded, and committed, only on a zero-commit repo). Sorted-set
 /// compared, so the assertion is *exactly* this set — a path that silently joins the
 /// install commit reddens here.
-const INSTALL_COMMIT_BASE_PATHS: [&str; 7] = [
+///
+/// The eighth is the adapter's owned **guide artifact** (M48 Increment 10), at the path
+/// the shipped Claude Code profile declares: it is committed for the same reason the
+/// bootstrap file is — a clone must get the guides that match the binary that wrote them.
+const INSTALL_COMMIT_BASE_PATHS: [&str; 8] = [
     ".claude/settings.json",
+    ".claude/skills/jigc/SKILL.md",
     ".jigc/.gitignore",
     ".jigc/AGENT.md",
     ".jigc/config/.gitkeep",
@@ -1175,7 +1180,7 @@ fn repo_relative(root: &Path, path: &Path) -> Option<String> {
 ///
 /// For each shape: the resolved hook's membership in the install commit equals its
 /// committability, nothing from inside git's control dir is ever staged, the rest of the
-/// commit is exactly [`INSTALL_COMMIT_BASE_PATHS`] — so the seven jigc-owned paths land
+/// commit is exactly [`INSTALL_COMMIT_BASE_PATHS`] — so the eight jigc-owned paths land
 /// in **one** install commit whatever the hooks dir turns out to be — a committable hook
 /// is left **tracked** in the working tree, and a second `jigc setup` mints no second
 /// commit (idempotency survives the widened pathspec).
@@ -1188,7 +1193,7 @@ fn repo_relative(root: &Path, path: &Path) -> Option<String> {
 /// (shape (8), a sparse-checkout excluding the hooks dir) — so the hook is a **soft**
 /// member of the pathspec and a refusal it causes costs the hook, never the install
 /// commit. Every non-committable cell therefore asserts the same thing the committable
-/// ones do: `jigc setup` exits 0 and the seven jigc-owned paths land in one commit.
+/// ones do: `jigc setup` exits 0 and the eight jigc-owned paths land in one commit.
 ///
 /// Declared bound, stated rather than engineered around: such a hook is installed and
 /// reported but not committable *here*, so the working tree keeps it as the containing
