@@ -1315,6 +1315,149 @@ fn run_orient(format: Format) -> Outcome {
     }
 }
 
+/// Which side of the read/write line a leaf verb sits on.
+///
+/// The classification is by the verb's **job**, and a verb is [`VerbKind::Read`] only
+/// when *no* invocation of it acts: it reports what is there and mutates nothing —
+/// neither repo files, nor the git index/history, nor the `.jigc/` workbench (minting a
+/// task included). Anything that can act is [`VerbKind::Write`], including the mixed
+/// verbs whose read-shaped form is one flag among several (`jigc start` orients bare and
+/// mints with an intent; `jigc milestone execute` mints nothing yet reseeds the cache).
+///
+/// It exists because *"a read intent must never be answered with a write verb"* is a
+/// claim about **every** leaf of the clap tree, not about the handful of guesses a trial
+/// happened to record — so the rule that enforces it reads this table rather than a
+/// curated `(parent, guess)` list, and the table is fenced total against the tree
+/// (`cli_parse::every_leaf_verb_is_classified`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerbKind {
+    /// Reports state; mutates nothing. The honest answer to a read intent.
+    Read,
+    /// Acts — on the repo, on git, or on the workbench. Never offered to a read intent.
+    Write,
+}
+
+/// Every **leaf** verb's argv path with its [`VerbKind`] — total over the clap tree by
+/// fence, so a verb added anywhere must classify itself before it can ship.
+pub const VERB_KINDS: &[(&[&str], VerbKind)] = &[
+    // Top level.
+    (&["start"], VerbKind::Write),
+    (&["workflow"], VerbKind::Write),
+    (&["setup"], VerbKind::Write),
+    (&["uninstall"], VerbKind::Write),
+    (&["upgrade"], VerbKind::Read),
+    (&["ingest"], VerbKind::Write),
+    (&["migrate"], VerbKind::Write),
+    (&["migrate-corpus"], VerbKind::Write),
+    (&["unmanage"], VerbKind::Write),
+    (&["rename"], VerbKind::Write),
+    (&["relocate"], VerbKind::Write),
+    (&["describe"], VerbKind::Read),
+    (&["validate"], VerbKind::Read),
+    // `jigc doc` — the managed-doc surface.
+    (&["doc", "create"], VerbKind::Write),
+    (&["doc", "add-item"], VerbKind::Write),
+    (&["doc", "remove-item"], VerbKind::Write),
+    (&["doc", "retitle-item"], VerbKind::Write),
+    (&["doc", "rename"], VerbKind::Write),
+    (&["doc", "set-field"], VerbKind::Write),
+    (&["doc", "set-slot"], VerbKind::Write),
+    (&["doc", "author"], VerbKind::Write),
+    (&["doc", "show"], VerbKind::Read),
+    (&["doc", "schema"], VerbKind::Read),
+    (&["doc", "list"], VerbKind::Read),
+    // `jigc task` — the task lifecycle.
+    (&["task", "list"], VerbKind::Read),
+    (&["task", "diff"], VerbKind::Read),
+    (&["task", "validate"], VerbKind::Read),
+    (&["task", "discard"], VerbKind::Write),
+    (&["task", "finalize"], VerbKind::Write),
+    (&["task", "bind"], VerbKind::Write),
+    // `jigc config` — the cascade surface.
+    (&["config", "set"], VerbKind::Write),
+    (&["config", "insert-step"], VerbKind::Write),
+    (&["config", "replace-step"], VerbKind::Write),
+    (&["config", "remove-step"], VerbKind::Write),
+    (&["config", "fill"], VerbKind::Write),
+    (&["config", "fork"], VerbKind::Write),
+    (&["config", "get"], VerbKind::Read),
+    (&["config", "list"], VerbKind::Read),
+    // `jigc milestone` — the work-unit surface.
+    (&["milestone", "create"], VerbKind::Write),
+    (&["milestone", "add-task"], VerbKind::Write),
+    (&["milestone", "add-from-spec"], VerbKind::Write),
+    (&["milestone", "list-tasks"], VerbKind::Read),
+    (&["milestone", "provision"], VerbKind::Write),
+    (&["milestone", "execute"], VerbKind::Write),
+    (&["milestone", "join"], VerbKind::Write),
+    (&["milestone", "finalize"], VerbKind::Write),
+    (&["milestone", "discard"], VerbKind::Write),
+];
+
+/// The [`VerbKind`] of a leaf verb path — `None` for a path that names no leaf verb
+/// (a parent node, an unknown token, clap's builtin `help`).
+pub fn verb_kind<S: AsRef<str>>(path: &[S]) -> Option<VerbKind> {
+    VERB_KINDS
+        .iter()
+        .find(|(known, _)| {
+            known.len() == path.len()
+                && known
+                    .iter()
+                    .zip(path)
+                    .all(|(known, token)| *known == token.as_ref())
+        })
+        .map(|(_, kind)| *kind)
+}
+
+/// The guessed tokens that **mean "show me"** — the read-intent lexicon.
+///
+/// This is a lexicon of English, not an enumeration of jigc's surface: it decides only
+/// whether the *guess* asked to see something. What may be offered back is decided by
+/// [`VERB_KINDS`] over the whole clap tree, so widening the surface can never re-open
+/// the law-1 hole this rule closes.
+pub const READ_INTENT_GUESSES: &[&str] = &[
+    "read", "cat", "view", "show", "get", "list", "ls", "print", "display", "dump", "info",
+    "inspect", "head", "status", "peek", "open",
+];
+
+/// One parent node's **read answer**: the tip a read-shaped miss under that parent earns
+/// when no near sibling of clap's reads.
+///
+/// Fenced total over the clap tree's parent nodes, the root included
+/// (`cli_parse::every_parent_node_carries_a_read_answer`), so a new verb *group* cannot
+/// ship without an answer to "how do I see what is there?" — and every command span in
+/// every answer is asserted [`VerbKind::Read`] by that same fence.
+pub struct ReadAnswer {
+    /// The parent node's argv path (`&[]` is the root — `jigc <guess>`).
+    pub parent: &'static [&'static str],
+    /// Builds the answer's tip text (leading `tip: `).
+    pub tip: fn() -> String,
+}
+
+/// The per-parent read answers — see [`ReadAnswer`].
+pub const PARENT_READ_ANSWERS: &[ReadAnswer] = &[
+    ReadAnswer {
+        parent: &[],
+        tip: tip_root_read_shaped,
+    },
+    ReadAnswer {
+        parent: &["doc"],
+        tip: tip_doc_read_shaped,
+    },
+    ReadAnswer {
+        parent: &["task"],
+        tip: tip_task_read_shaped,
+    },
+    ReadAnswer {
+        parent: &["config"],
+        tip: tip_config_read_shaped,
+    },
+    ReadAnswer {
+        parent: &["milestone"],
+        tip: tip_milestone_read_shaped,
+    },
+];
+
 /// One curated row of the unknown-subcommand table: the `(parent, guess)` key an agent
 /// actually reached for in a trial, and the honest tip it earns.
 ///
@@ -1349,7 +1492,7 @@ pub const CURATED_SIBLING_TIPS: &[SiblingTip] = &[
     SiblingTip {
         parent: "task",
         guess: "status",
-        tip: tip_task_status,
+        tip: tip_task_read_shaped,
     },
     SiblingTip {
         parent: "doc",
@@ -1383,8 +1526,9 @@ fn tip_task_discard_write() -> String {
     )
 }
 
-/// The status guess: name what each real sibling *does*, not a bare did-you-mean.
-fn tip_task_status() -> String {
+/// The `task` parent's read answer (the `status` guess among them): name what each real
+/// sibling *does*, not a bare did-you-mean.
+fn tip_task_read_shaped() -> String {
     format!(
         "tip: {}; {}",
         engine::finding::Route::mechanical(
@@ -1447,6 +1591,48 @@ fn tip_config_read_shaped() -> String {
     )
 }
 
+/// The **root**'s read answer: a read-shaped guess with no parent (`jigc read`, `jigc
+/// cat`) asked to see the project, and clap's nearest siblings are `relocate`/`rename` —
+/// two writes, one of them the identity-mutating verb. The docs are what a read intent at
+/// this level is after, so the two doc reads lead and the tour follows.
+fn tip_root_read_shaped() -> String {
+    format!(
+        "tip: reading is its own verb — {}; {}; {}",
+        engine::finding::Route::mechanical(
+            ["jigc", "doc", "list"],
+            " enumerates the managed docs (identity, repo path, registration state)",
+        )
+        .as_str(),
+        engine::finding::Route::mechanical(
+            ["jigc", "doc", "show", "<address>"],
+            " prints one committed doc, or the addressed slice of it, on stdout",
+        )
+        .as_str(),
+        engine::finding::Route::mechanical(
+            ["jigc", "describe"],
+            " tours the workflows and doc-types the resolved cascade offers",
+        )
+        .as_str(),
+    )
+}
+
+/// The `milestone` parent's read answer: the one milestone verb that only reports.
+fn tip_milestone_read_shaped() -> String {
+    format!(
+        "tip: {}; {}",
+        engine::finding::Route::mechanical(
+            ["jigc", "milestone", "list-tasks", "<milestone-id>"],
+            " emits a milestone's sub-task ids in the canonical id-sorted order",
+        )
+        .as_str(),
+        engine::finding::Route::mechanical(
+            ["jigc", "doc", "show", "<address>"],
+            " reads the milestone's own committed record (`milestone-record:<slug>`)",
+        )
+        .as_str(),
+    )
+}
+
 /// The honest sibling tip for an unknown-subcommand **semantic guess** — never a
 /// silent alias (M43 law 2, `DECISIONS.md` 2026-07-16 Settle, cross-cutting; trial
 /// provenance: A1 papercut, log rec 254).
@@ -1485,8 +1671,19 @@ pub fn unknown_subcommand_tip(err: &clap::Error, argv: &[String]) -> Option<Stri
 /// 1). So for this kind jigc composes the block from the error's own context — the same
 /// four parts in the same order, plain text on stderr at the same exit 2
 /// ([`crate::task::EXIT_USAGE`]) — and the **tip slot** carries the curated tip where a
-/// row matches, clap's own did-you-mean where none does. did-you-mean is dropped only
-/// where a curated tip replaces it, never globally.
+/// row matches, the parent's read answer where the guess asked to *see* something, and
+/// clap's own did-you-mean otherwise. did-you-mean is dropped only where one of those
+/// two replaces it, never globally.
+///
+/// **The read-intent layer is the axis, not a curated pair.** A curated `(parent, guess)`
+/// table can only answer the misses a trial happened to record: at M48 Inc 6's first HEAD
+/// `jigc doc read` was repaired while `jigc doc cat` still drew `'create'` and `jigc read`
+/// still drew `'relocate', 'rename'` — the identical law-1 lie one uncurated key away. So
+/// when the guess is a [`READ_INTENT_GUESSES`] token, clap's suggestions are classified
+/// against [`VERB_KINDS`] and every **write** verb is dropped; whatever reads is kept, and
+/// if nothing does, the parent's [`ReadAnswer`] takes the slot. A read intent therefore
+/// cannot reach clap's did-you-mean at all, and both tables are fenced against the clap
+/// tree — so a verb added anywhere joins the rule the day it lands.
 ///
 /// The parts, all read from the error clap already built (never re-derived): the guessed
 /// token (`ContextKind::InvalidSubcommand`), clap's suggestion list
@@ -1497,12 +1694,18 @@ pub fn unknown_subcommand_block(err: &clap::Error, argv: &[String]) -> Option<St
 
     let guess = invalid_subcommand_guess(err)?;
     let mut block = format!("error: unrecognized subcommand '{guess}'\n");
-    let tip = unknown_subcommand_tip(err, argv).or_else(|| {
-        match err.get(ContextKind::SuggestedSubcommand) {
-            Some(ContextValue::Strings(near)) if !near.is_empty() => Some(did_you_mean(near)),
-            _ => None,
+    let suggested = match err.get(ContextKind::SuggestedSubcommand) {
+        Some(ContextValue::Strings(near)) => near.clone(),
+        _ => Vec::new(),
+    };
+    let tip = match unknown_subcommand_tip(err, argv) {
+        Some(curated) => Some(curated),
+        None if READ_INTENT_GUESSES.contains(&guess) => {
+            read_intent_tip(&parent_path(argv, guess), &suggested)
         }
-    });
+        None if suggested.is_empty() => None,
+        None => Some(did_you_mean(&suggested)),
+    };
     if let Some(tip) = tip {
         block.push_str(&format!("\n  {tip}\n"));
     }
@@ -1511,6 +1714,57 @@ pub fn unknown_subcommand_block(err: &clap::Error, argv: &[String]) -> Option<St
     }
     block.push_str("\nFor more information, try '--help'.\n");
     Some(block)
+}
+
+/// The **parent node's argv path** the guess was typed under — `[]` for a top-level
+/// guess (`jigc read`), `["doc"]` for `jigc doc cat`.
+///
+/// Walked down the real clap tree rather than read off the token before the guess, so a
+/// global flag and its value (`jigc --format json doc cat`) cannot be mistaken for the
+/// parent. Stops at the guess itself; an unresolvable argv yields the deepest node it
+/// did resolve.
+fn parent_path(argv: &[String], guess: &str) -> Vec<String> {
+    use clap::CommandFactory;
+
+    let mut cmd = Cli::command();
+    let mut path = Vec::new();
+    for token in argv.iter().skip(1) {
+        if token == guess {
+            break;
+        }
+        if let Some(sub) = cmd.find_subcommand(token).cloned() {
+            path.push(token.clone());
+            cmd = sub;
+        }
+    }
+    path
+}
+
+/// The tip a **read-shaped** guess earns: clap's near siblings minus every write verb,
+/// and — when that leaves nothing — the parent's own [`ReadAnswer`].
+///
+/// `None` only when the parent resolves to no node carrying an answer, and even then the
+/// caller prints no tip rather than falling back to a suggestion that might act: a read
+/// intent is answered with a read verb or with silence, never with a write verb.
+fn read_intent_tip(parent: &[String], suggested: &[String]) -> Option<String> {
+    let readable: Vec<String> = suggested
+        .iter()
+        .filter(|name| {
+            let mut path = parent.to_vec();
+            path.push((*name).clone());
+            verb_kind(&path) == Some(VerbKind::Read)
+        })
+        .cloned()
+        .collect();
+    if !readable.is_empty() {
+        return Some(did_you_mean(&readable));
+    }
+    PARENT_READ_ANSWERS
+        .iter()
+        .find(|answer| {
+            answer.parent.len() == parent.len() && answer.parent.iter().eq(parent.iter())
+        })
+        .map(|answer| (answer.tip)())
 }
 
 /// clap's own did-you-mean wording for a suggestion list, re-emitted verbatim so an
@@ -1573,6 +1827,158 @@ mod cli_parse {
                 "the tip is identifiable as a tip; got: {tip}"
             );
         }
+    }
+
+    /// Walk the clap tree, returning `(leaf verb paths, parent node paths)` — the root
+    /// (`vec![]`) is a parent node. `help` is clap's builtin, not a jigc verb.
+    fn clap_tree() -> (Vec<Vec<String>>, Vec<Vec<String>>) {
+        fn walk(
+            cmd: &clap::Command,
+            prefix: Vec<String>,
+            leaves: &mut Vec<Vec<String>>,
+            parents: &mut Vec<Vec<String>>,
+        ) {
+            let subs: Vec<&clap::Command> = cmd
+                .get_subcommands()
+                .filter(|sub| sub.get_name() != "help")
+                .collect();
+            if subs.is_empty() {
+                if !prefix.is_empty() {
+                    leaves.push(prefix);
+                }
+                return;
+            }
+            parents.push(prefix.clone());
+            for sub in subs {
+                let mut child = prefix.clone();
+                child.push(sub.get_name().to_string());
+                walk(sub, child, leaves, parents);
+            }
+        }
+        let (mut leaves, mut parents) = (Vec::new(), Vec::new());
+        walk(
+            &<Cli as clap::CommandFactory>::command(),
+            Vec::new(),
+            &mut leaves,
+            &mut parents,
+        );
+        (leaves, parents)
+    }
+
+    /// **The read/write classification is total over the clap tree** — a bijection, so a
+    /// verb added anywhere must classify itself before it can ship, and a row for a verb
+    /// that no longer exists cannot linger.
+    ///
+    /// This is what makes *"a read intent is never answered with a write verb"* a claim
+    /// about the whole surface rather than about the `(parent, guess)` pairs a trial
+    /// happened to record: the rule reads [`VERB_KINDS`], and membership is decided here,
+    /// at the tree (`implementation/dev-workflow.md` → a grep is not a fence).
+    #[test]
+    fn every_leaf_verb_is_classified() {
+        let (leaves, _) = clap_tree();
+        for leaf in &leaves {
+            assert!(
+                verb_kind(leaf).is_some(),
+                "`jigc {}` is a leaf verb and must carry a VERB_KINDS row — is it a read \
+                 (it only reports) or a write (it can act)?",
+                leaf.join(" "),
+            );
+        }
+        for (path, _) in VERB_KINDS {
+            let path: Vec<String> = path.iter().map(|token| (*token).to_string()).collect();
+            assert!(
+                leaves.contains(&path),
+                "VERB_KINDS carries `jigc {}`, which the clap tree no longer has",
+                path.join(" "),
+            );
+        }
+        assert_eq!(
+            VERB_KINDS.len(),
+            leaves.len(),
+            "the classification is a bijection with the clap tree's leaves",
+        );
+    }
+
+    /// **Every parent node can answer "how do I see what is there?"** — the root
+    /// included — and every command span in every answer is a [`VerbKind::Read`] verb
+    /// that parses (the tips are built here with the route fence installed).
+    ///
+    /// Without this, a new verb *group* could ship with no read answer, and a
+    /// read-shaped miss under it would fall to silence.
+    #[test]
+    fn every_parent_node_carries_a_read_answer() {
+        crate::route_fence::install();
+        let (_, parents) = clap_tree();
+        for parent in &parents {
+            let answer = PARENT_READ_ANSWERS
+                .iter()
+                .find(|answer| answer.parent.iter().eq(parent.iter()))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "the `jigc {}` node must carry a read answer for a read-shaped miss",
+                        parent.join(" "),
+                    )
+                });
+            let tip = (answer.tip)();
+            assert!(
+                tip.starts_with("tip: "),
+                "the answer is identifiable as a tip; got: {tip}",
+            );
+            let named = spans_named(&tip);
+            assert!(
+                !named.is_empty(),
+                "the `jigc {}` read answer must name a verb; got: {tip}",
+                parent.join(" "),
+            );
+            for path in named {
+                assert_eq!(
+                    verb_kind(&path),
+                    Some(VerbKind::Read),
+                    "the `jigc {}` read answer names `jigc {}`, which acts",
+                    parent.join(" "),
+                    path.join(" "),
+                );
+            }
+        }
+        for answer in PARENT_READ_ANSWERS {
+            let path: Vec<String> = answer
+                .parent
+                .iter()
+                .map(|token| (*token).to_string())
+                .collect();
+            assert!(
+                parents.contains(&path),
+                "a read answer is declared for `jigc {}`, which is no node of the clap tree",
+                path.join(" "),
+            );
+        }
+    }
+
+    /// The leaf-verb paths a tip's backticked `jigc …` spans name — each token run walked
+    /// down the clap tree for as far as it matches.
+    fn spans_named(tip: &str) -> Vec<Vec<String>> {
+        tip.split('`')
+            .skip(1)
+            .step_by(2)
+            .filter_map(|span| {
+                let mut tokens = span.split_whitespace();
+                if tokens.next() != Some("jigc") {
+                    return None;
+                }
+                let mut cmd = <Cli as clap::CommandFactory>::command();
+                let mut path = Vec::new();
+                for token in tokens {
+                    match cmd.find_subcommand(token).cloned() {
+                        Some(sub) => {
+                            path.push(token.to_string());
+                            cmd = sub;
+                        }
+                        None => break,
+                    }
+                }
+                (!path.is_empty()).then_some(path)
+            })
+            .collect()
     }
 
     /// A clap error that is not `InvalidSubcommand` never yields a tip — the map

@@ -33,20 +33,30 @@
 //! never a list re-typed here (the receipt-outlives-contract failure the M48 razor
 //! guards against).
 //!
-//! **M48 Inc 6 T3 — the read-shaped rows** (`DECISIONS.md` 2026-08-13 the Settle, F8
-//! part 2): a **read** intent must never land on a **write** verb. Three misses agents
-//! reached for are curated — `doc read` / `doc get` → `jigc doc show`, `config show` →
-//! `jigc config get` / `jigc config list` — because clap answered them with a write verb
-//! or with nothing at all: `doc read` drew `tip: some similar subcommands exist:
-//! 'create', 'rename'` (a read intent steered at two writes — law 1), while `doc get` and
-//! `config show` were **silent misses**, clap finding no near sibling and the surface
-//! saying nothing about the read rung that does exist.
+//! **M48 Inc 6 T3 — a read intent is never answered with a write verb** (`DECISIONS.md`
+//! 2026-08-13 the Settle, F8 part 2). Three misses agents reached for are curated —
+//! `doc read` / `doc get` → `jigc doc show`, `config show` → `jigc config get` — because
+//! clap answered them with a write verb or with nothing at all: `doc read` drew `tip:
+//! some similar subcommands exist: 'create', 'rename'` (a read intent steered at two
+//! writes — law 1), while `doc get` and `config show` were **silent misses**.
+//!
+//! **The claim, though, is universal**, so the curated rows cannot be its acceptance: at
+//! the increment's first HEAD `jigc read` still drew `'relocate', 'rename'` and `jigc doc
+//! cat` still drew `'create'` — the identical law-1 lie, one uncurated `(parent, guess)`
+//! away. So the fence below iterates the **read-intent axis** instead: every parent node
+//! the clap tree enumerates (the root included) × every token of
+//! [`READ_INTENT_GUESSES`](cli::cli::READ_INTENT_GUESSES) that names no real child there,
+//! with every verb reference in the emitted bytes — command spans **and** clap's quoted
+//! did-you-mean names alike — classified against
+//! [`VERB_KINDS`](cli::cli::VERB_KINDS), the code-side read/write table the rule itself
+//! reads. A verb added anywhere joins both sides the day it lands.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
 //! repo is a real `git init`, and a self-cleaning `TempDir` keeps the test off the
 //! dev's repo.
 
-use cli::cli::CURATED_SIBLING_TIPS;
+use clap::CommandFactory;
+use cli::cli::{CURATED_SIBLING_TIPS, Cli, READ_INTENT_GUESSES, VerbKind, verb_kind};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -58,41 +68,112 @@ const CLAP_DID_YOU_MEAN: [&str; 2] = [
     "tip: some similar subcommands exist",
 ];
 
-/// The read-shaped misses of M48 Inc 6 T3: `(parent, guess, the read span the tip must
-/// name)`. Every row is a **read** intent — the question "show me what is there" — so
-/// every row's tip must answer with a read verb and only a read verb.
-const READ_SHAPED_MISSES: [(&str, &str, &str); 3] = [
-    ("doc", "read", "jigc doc show <address>"),
-    ("doc", "get", "jigc doc show <address>"),
-    ("config", "show", "jigc config get <key>"),
-];
+/// Every **parent** node's argv path in the clap tree, the root (`vec![]`) first — the
+/// enumeration seam the read-intent axis is built over, so a new verb group joins the
+/// sweep the day it lands. `help` is clap's builtin, not a jigc verb.
+fn parent_paths() -> Vec<Vec<String>> {
+    fn walk(cmd: &clap::Command, prefix: Vec<String>, out: &mut Vec<Vec<String>>) {
+        let subs: Vec<&clap::Command> = cmd
+            .get_subcommands()
+            .filter(|sub| sub.get_name() != "help")
+            .collect();
+        if subs.is_empty() {
+            return;
+        }
+        out.push(prefix.clone());
+        for sub in subs {
+            let mut child = prefix.clone();
+            child.push(sub.get_name().to_string());
+            walk(sub, child, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&Cli::command(), Vec::new(), &mut out);
+    out
+}
 
-/// The `doc` / `config` **write** verbs. None may appear anywhere in a read-shaped
-/// miss's emitted stderr — not in the tip, not in a suggestion, not in the usage block.
-const WRITE_VERB_TOKENS: [&str; 8] = [
-    "create",
-    "rename",
-    "set",
-    "insert-step",
-    "replace-step",
-    "remove-step",
-    "fill",
-    "fork",
-];
+/// The direct child names of the node at `path`.
+fn children_of(path: &[String]) -> Vec<String> {
+    let mut cmd = Cli::command();
+    for token in path {
+        cmd = cmd
+            .find_subcommand(token)
+            .unwrap_or_else(|| panic!("`{token}` is a node of the clap tree"))
+            .clone();
+    }
+    cmd.get_subcommands()
+        .map(|sub| sub.get_name().to_string())
+        .collect()
+}
 
-/// Split emitted text into command-ish tokens: runs of `[A-Za-z0-9-]`, so a hyphenated
-/// verb (`insert-step`) stays one token and ordinary prose (`creates`, `subset`) cannot
-/// masquerade as one. A token counts as naming a write verb when it **is** the verb or
-/// carries it as a hyphenated head (`set-field`, `set-slot`).
-fn names_a_write_verb(text: &str) -> Option<String> {
-    text.split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
-        .filter(|token| !token.is_empty())
-        .find(|token| {
-            WRITE_VERB_TOKENS
-                .iter()
-                .any(|verb| *token == *verb || token.starts_with(&format!("{verb}-")))
-        })
-        .map(str::to_owned)
+/// **The read-intent axis**: every `(parent node, read-shaped guess)` pair the surface
+/// can be asked — every parent the clap tree enumerates × every token of
+/// `READ_INTENT_GUESSES` that names no real child there (a real child dispatches and is
+/// no miss at all).
+fn read_intent_misses() -> Vec<(Vec<String>, String)> {
+    let mut out = Vec::new();
+    for parent in parent_paths() {
+        let children = children_of(&parent);
+        for guess in READ_INTENT_GUESSES {
+            if children.iter().any(|child| child == guess) {
+                continue;
+            }
+            out.push((parent.clone(), (*guess).to_string()));
+        }
+    }
+    out
+}
+
+/// Trim a token of the punctuation emitted text wraps command names in — backticks,
+/// clap's single quotes, and trailing sentence marks.
+fn unwrap_token(token: &str) -> &str {
+    token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+}
+
+/// Every **verb reference** the emitted `text` makes, as `(argv path, kind)` — the two
+/// shapes a block can name a verb in:
+///
+/// * a command **span** (`` `jigc doc show <address>` ``): the tokens after `jigc` are
+///   walked down the clap tree for as far as they match, and the walked path is
+///   classified when it lands on a leaf;
+/// * a **quoted name** (clap's did-you-mean `'create'`, and the error line's own echo of
+///   the guess): resolved as a child of `parent`, and classified when that is a leaf.
+///
+/// Anything that resolves to no leaf verb — the usage line's `jigc doc [OPTIONS]`, the
+/// guess itself — is not a verb reference and is skipped.
+fn verb_references(text: &str, parent: &[String]) -> Vec<(Vec<String>, VerbKind)> {
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    let mut out = Vec::new();
+    for (at, token) in tokens.iter().enumerate() {
+        // A quoted name, resolved under the parent the guess was typed at.
+        if token.contains('\'') {
+            let mut path = parent.to_vec();
+            path.push(unwrap_token(token).to_string());
+            if let Some(kind) = verb_kind(&path) {
+                out.push((path, kind));
+            }
+        }
+        // A command span leading with the binary name.
+        if unwrap_token(token) != "jigc" {
+            continue;
+        }
+        let mut cmd = Cli::command();
+        let mut path: Vec<String> = Vec::new();
+        for next in &tokens[at + 1..] {
+            let name = unwrap_token(next);
+            match cmd.find_subcommand(name) {
+                Some(sub) => {
+                    path.push(name.to_string());
+                    cmd = sub.clone();
+                }
+                None => break,
+            }
+        }
+        if let Some(kind) = verb_kind(&path) {
+            out.push((path, kind));
+        }
+    }
+    out
 }
 
 /// A throwaway directory that removes itself on drop.
@@ -205,6 +286,26 @@ fn run_first_emitted_span(text: &str, repo: &Path, home: &Path) {
     );
 }
 
+/// Run the first **placeholder-free** backticked `jigc …` span in `text` verbatim,
+/// asserting exit 0. A tip whose spans all carry placeholders (`<milestone-id>`) has
+/// nothing runnable as emitted and is left to the construction-time route fence.
+fn run_first_placeholder_free_span(text: &str, repo: &Path, home: &Path) {
+    for span in text.split('`').skip(1).step_by(2) {
+        if span.contains('<') || !span.starts_with("jigc ") {
+            continue;
+        }
+        let argv: Vec<&str> = span.split_whitespace().skip(1).collect();
+        let run = jigc(repo, home, &argv);
+        assert_eq!(
+            run.status.code(),
+            Some(0),
+            "the emitted span `{span}` must run verbatim; stderr:\n{}",
+            String::from_utf8_lossy(&run.stderr),
+        );
+        return;
+    }
+}
+
 /// `jigc task discard-write <path>` — the ghost-verb guess. clap's did-you-mean points
 /// at `discard`; the honest tip must say what `task discard` actually DOES (abandons
 /// the whole task), so the guesser is not steered into destroying it.
@@ -278,24 +379,40 @@ fn task_status_guess_gets_the_real_sibling_effects_and_the_span_runs() {
     run_first_emitted_span(tip, repo.path(), home.path());
 }
 
-/// **A read intent never lands on a write verb** (M48 Inc 6 T3): per row of
-/// [`READ_SHAPED_MISSES`], the emitted stderr is a usage error (exit 2) that names the
-/// guess, carries a tip naming the **read** verb, and holds **no** write-verb token
-/// anywhere — clap's own answers were `'create', 'rename'` for `doc read` and silence
-/// for `doc get` / `config show`. The tip's first backticked span is extracted from the
-/// emitted bytes and run verbatim, so the read the surface points at is one that works.
+/// **A read intent never lands on a write verb — over the whole axis** (M48 Inc 6 T3,
+/// widened on the increment's validation). For every `(parent, read-shaped guess)` pair
+/// [`read_intent_misses`] enumerates from the clap tree — `jigc read` and `jigc doc cat`
+/// among them, the two the curated `(parent, guess)` rows left answered with
+/// `'relocate', 'rename'` and `'create'` — the emitted stderr is a usage error (exit 2)
+/// naming the guess, and **every verb reference in it classifies
+/// [`VerbKind::Read`]**: no command span, no quoted did-you-mean name, resolves to a
+/// verb that acts. At least one read verb is named, so the miss routes somewhere rather
+/// than merely withholding the lie.
+///
+/// Once per parent the tip's first backticked span is extracted from the emitted bytes
+/// and run verbatim, so the read the surface points at is one that works.
 #[test]
-fn a_read_shaped_miss_routes_to_a_read_verb_and_names_no_write_verb() {
+fn no_read_intent_is_answered_with_a_write_verb() {
     let repo = TempDir::new("read-shaped");
     let home = TempDir::new("home");
     init_repo(repo.path());
 
-    for (parent, guess, read_span) in READ_SHAPED_MISSES {
-        let out = jigc(repo.path(), home.path(), &[parent, guess]);
+    let misses = read_intent_misses();
+    assert!(
+        misses.len() >= 3 * READ_INTENT_GUESSES.len(),
+        "the axis must span every parent node of the clap tree; got {} pairs",
+        misses.len(),
+    );
+    let mut span_run_for: Vec<Vec<String>> = Vec::new();
+    for (parent, guess) in misses {
+        let mut argv: Vec<&str> = parent.iter().map(String::as_str).collect();
+        argv.push(&guess);
+        let typed = format!("jigc {}", argv.join(" "));
+        let out = jigc(repo.path(), home.path(), &argv);
         assert_eq!(
             out.status.code(),
             Some(2),
-            "`jigc {parent} {guess}` stays a usage error (exit 2); stdout:\n{}\nstderr:\n{}",
+            "`{typed}` stays a usage error (exit 2); stdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr),
         );
@@ -305,27 +422,31 @@ fn a_read_shaped_miss_routes_to_a_read_verb_and_names_no_write_verb() {
             "the error line names the guess; got:\n{stderr}",
         );
 
-        let tip_at = stderr.find("tip: ").unwrap_or_else(|| {
+        let named = verb_references(&stderr, &parent);
+        if let Some((path, _)) = named.iter().find(|(_, kind)| *kind == VerbKind::Write) {
             panic!(
-                "`jigc {parent} {guess}` is a read-shaped miss and must carry a tip; got:\n{stderr}"
-            )
-        });
-        let tip = &stderr[tip_at..];
-        assert!(
-            tip.contains(&format!("`{read_span}`")),
-            "the tip names the read verb `{read_span}`; got:\n{tip}",
-        );
-
-        if let Some(token) = names_a_write_verb(&stderr) {
-            panic!(
-                "`jigc {parent} {guess}` is a read intent and must name no write verb, \
-                 but its emitted stderr carries `{token}`:\n{stderr}"
+                "`{typed}` is a read intent and must name no write verb, but its emitted \
+                 stderr names `jigc {}`:\n{stderr}",
+                path.join(" "),
             );
         }
+        assert!(
+            named.iter().any(|(_, kind)| *kind == VerbKind::Read),
+            "`{typed}` must route to a read verb, not merely withhold the wrong one; \
+             got:\n{stderr}",
+        );
 
-        // The emitted span runs verbatim (exit 0) in a real repo — the read the tip
-        // points at is the contract, not a description of one.
-        run_first_emitted_span(tip, repo.path(), home.path());
+        if !span_run_for.contains(&parent) {
+            span_run_for.push(parent.clone());
+            let tip_at = stderr.find("tip: ").unwrap_or_else(|| {
+                panic!("`{typed}` names a read verb inside a tip; got:\n{stderr}")
+            });
+            // The emitted span runs verbatim (exit 0) in a real repo — the read the tip
+            // points at is the contract, not a description of one. A placeholder-carrying
+            // span cannot be run as emitted; those are parse-fenced at construction by
+            // the T2 route fence, live in this debug build.
+            run_first_placeholder_free_span(&stderr[tip_at..], repo.path(), home.path());
+        }
     }
 }
 
@@ -432,11 +553,12 @@ fn an_uncurated_guess_stays_a_plain_clap_error_with_no_tip() {
     );
 }
 
-/// The parent-scoped context: the curated guess under the WRONG parent (`jigc doc
-/// status`) stays inert — the map keys on (parent, guess), so a `doc` guess must not
-/// receive the `task`-sibling tip.
+/// The parent-scoped context: the curated `task status` row does not fire under the
+/// WRONG parent (`jigc doc status`) — the map keys on (parent, guess). What that miss
+/// gets instead is the **`doc` parent's** read answer, because `status` is a read intent
+/// wherever it is typed; the one thing it must never get is another parent's siblings.
 #[test]
-fn a_curated_guess_under_the_wrong_parent_gets_no_tip() {
+fn a_curated_guess_under_the_wrong_parent_gets_its_own_parents_answer() {
     let repo = TempDir::new("wrong-parent");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -455,5 +577,9 @@ fn a_curated_guess_under_the_wrong_parent_gets_no_tip() {
     assert!(
         !stderr.contains("enumerates the active tasks"),
         "the task-sibling tip must not fire under `doc`; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("`jigc doc show <address>`"),
+        "the read-shaped miss still earns its own parent's read answer; got:\n{stderr}",
     );
 }
