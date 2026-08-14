@@ -55,6 +55,8 @@ mod release_smoke;
 mod routing_loop;
 #[path = "../task_diff_envelope.rs"]
 mod task_diff_envelope;
+#[path = "../text_json_parity_axis.rs"]
+mod text_json_parity_axis;
 #[path = "../validate_command.rs"]
 mod validate_command;
 #[path = "../validate_envelope.rs"]

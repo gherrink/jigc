@@ -1,0 +1,1214 @@
+//! M48 Increment 7 / T4 — **the standing text/JSON parity fence** (`DECISIONS.md` →
+//! 2026-08-13 the Settle, *the pre-1.0 additive-key window*;
+//! [command-output-contract.md](../../../design/command-output-contract.md) → Evolution
+//! posture; `implementation/pinning.md` §2 — a contract property suite).
+//!
+//! The rule the Settle fixed, so the sweep is plannable and testable:
+//!
+//! > **A value the human/agent text already prints, but the `--format json` envelope
+//! > withholds, is a gap.**
+//!
+//! Two locked contracts permit **additive keys pre-1.0 only** — from the 1.0 pin the
+//! shape evolves solely by an explicitly versioned extension. M48 is the last pre-1.0
+//! wave, so the window closes here, and it closes **fenced**: this suite is a standing
+//! fence, not a one-time census, so a verb added after 1.0 cannot quietly print a fact it
+//! withholds from its driver.
+//!
+//! **The enumeration is the clap tree** — the axis `format_json_success_axis.rs`
+//! established: *every machine-output surface* enumerates as *every leaf verb that speaks
+//! `--format json`*. [`REGISTRY`] must **biject** that set, so a new verb reddens this
+//! suite until someone classifies it.
+//!
+//! **The two tiers, split at the seam that makes parity decidable.**
+//!
+//!   * **Fenced** — the verb's agent/human text renders from a **structured Rust value**,
+//!     so *field vs envelope key* is a mechanical question. Its check destructures the
+//!     value **exhaustively — no `..`** — which makes the compiler the field enumerator:
+//!     a field added to (or dropped from) the value fails this suite to *compile*, which
+//!     is the strongest form of "the fence cannot fall behind the surface it fences".
+//!     Each bound field then either names the envelope key that carries it, names the
+//!     keys it is **decomposed** into, or is a **declared exclusion** carrying its
+//!     recorded reason inline.
+//!   * **Judgment** — the verb's text is composed **prose** (an orientation, a composed
+//!     workflow, a validation report, a menu, a per-run-mode summary sentence). No
+//!     field↔key correspondence exists to check mechanically, so these get the one-time
+//!     enumerated census instead; each member below carries the reason it is there.
+//!
+//! **Declared bound, carried from the Settle:** this fence does **not** cover the prose
+//! tier, and a key whose value nothing computes is **not** a gap ("re-derivable state,
+//! counts, internal identifiers never rendered" — adding those is inventing contract
+//! surface, not closing a gap).
+//!
+//! **Proven non-vacuous by applied mutation** (M48 Inc 7 T4, recorded in `DECISIONS.md`):
+//! deleting the shipped `"hook_file"` key from `render::setup_success`'s JSON arm reddens
+//! [`every_fenced_renderer_carries_on_the_wire_what_its_text_prints`] with
+//! *"`jigc setup`'s envelope withholds `hook_file`"*; restoring it greens.
+
+use clap::CommandFactory;
+use cli::cli::{Cli, Format};
+use cli::ingest::IngestReport;
+use cli::relocate::RelocationReport;
+use cli::rename::RenameReport;
+use cli::render::{
+    AckTarget, ConfigAck, DiscardState, DiscardedWork, DocAck, DroppedStaged, KnobReading,
+    ManifestEntry, ManifestKind, MilestoneLanded, RejectedSet, StagedDoc, SubTaskContribution,
+    TaskAck, TaskDiffView, config_ack, config_get, config_list, doc_ack, freeze_exempt_relocation,
+    ingest, milestone_finalized, milestone_join, rename, setup_success, task_ack, task_diff,
+    task_list, uninstall_success, unmanage,
+};
+use cli::setup::{InstallCommit, RemovedArtifacts, SetupSummary, UninstallSummary};
+use cli::task::TaskListRow;
+use cli::unmanage::UnmanageReport;
+use engine::finding::Findings;
+use engine::milestone::JoinOutcome;
+use engine::state::BasePin;
+use serde_json::Value;
+use std::collections::BTreeSet;
+
+// ─────────────────────────────── the registry ───────────────────────────────
+
+/// How a leaf verb's `--format json` envelope relates to what its text prints.
+enum Tier {
+    /// The text renders from a structured Rust value: the named renderer's check
+    /// destructures it exhaustively and asserts each field reaches the wire.
+    Fenced(&'static str),
+    /// The text is composed prose: no mechanical field↔key correspondence. The reason
+    /// is recorded here; the enumerated census is the judgment tier's own deliverable.
+    Judgment(&'static str),
+}
+
+/// **Every leaf verb, classified.** Bijected against the clap tree by
+/// [`the_parity_registry_bijects_the_clap_leaf_verbs`], so a verb added anywhere reddens
+/// this suite until it is classified — the property that makes this a standing fence
+/// rather than a census with an expiry date.
+const REGISTRY: &[(&[&str], Tier)] = &[
+    // ── top-level ───────────────────────────────────────────────────────────────
+    (
+        &["start"],
+        Tier::Judgment(
+            "the orientation / composed-workflow surface — prose, pinned as {task, text}",
+        ),
+    ),
+    (
+        &["workflow"],
+        Tier::Judgment("the composed-workflow surface — prose, pinned as {task, text}"),
+    ),
+    (&["setup"], Tier::Fenced("setup_success")),
+    (&["uninstall"], Tier::Fenced("uninstall_success")),
+    (
+        &["upgrade"],
+        Tier::Judgment("the upgrade validation report — prose findings + a checked count"),
+    ),
+    (&["ingest"], Tier::Fenced("ingest")),
+    (
+        &["migrate"],
+        Tier::Judgment(
+            "the migration review — the rewritten prose itself, plus its fidelity narration",
+        ),
+    ),
+    (
+        &["migrate-corpus"],
+        Tier::Judgment(
+            "the corpus-migration report — its three run-mode sentences (dry-run / committed / \
+             `--no-commit`) are prose, and the report type carries a crate-private \
+             commit-boundary field, so no witness exists outside the crate",
+        ),
+    ),
+    (&["unmanage"], Tier::Fenced("unmanage")),
+    (&["rename"], Tier::Fenced("rename")),
+    (&["relocate"], Tier::Fenced("freeze_exempt_relocation")),
+    (
+        &["describe"],
+        Tier::Judgment("the introspection menu — prose one-liners over the projected catalog"),
+    ),
+    (
+        &["validate"],
+        Tier::Judgment("the store validation report — prose finding lines + the store trailer"),
+    ),
+    // ── doc ─────────────────────────────────────────────────────────────────────
+    (&["doc", "create"], Tier::Fenced("doc_ack")),
+    (&["doc", "add-item"], Tier::Fenced("doc_ack")),
+    (&["doc", "remove-item"], Tier::Fenced("doc_ack")),
+    (&["doc", "retitle-item"], Tier::Fenced("doc_ack")),
+    (&["doc", "rename"], Tier::Fenced("doc_ack")),
+    (&["doc", "set-field"], Tier::Fenced("doc_ack")),
+    (&["doc", "set-slot"], Tier::Fenced("doc_ack")),
+    (&["doc", "author"], Tier::Fenced("doc_ack")),
+    (
+        &["doc", "show"],
+        Tier::Judgment(
+            "a separately versioned read contract — the text arm renders the document, the \
+             envelope its own `contract-version`ed projection",
+        ),
+    ),
+    (
+        &["doc", "schema"],
+        Tier::Judgment(
+            "a separately versioned read contract — the text arm is the agent listing, the \
+             envelope its own `contract-version`ed projection",
+        ),
+    ),
+    (
+        &["doc", "list"],
+        Tier::Judgment(
+            "a separately versioned read contract — the text arm is the index listing, the \
+             envelope its own `contract-version`ed projection",
+        ),
+    ),
+    // ── task ────────────────────────────────────────────────────────────────────
+    (&["task", "list"], Tier::Fenced("task_list")),
+    (&["task", "diff"], Tier::Fenced("task_diff")),
+    (
+        &["task", "validate"],
+        Tier::Judgment("the task-scoped validation report — prose finding lines + the verdict"),
+    ),
+    (&["task", "discard"], Tier::Fenced("task_ack")),
+    (
+        &["task", "finalize"],
+        Tier::Judgment(
+            "the validation report plus the landed summary — prose; its landed facts ride the \
+             whole-value `committed` object",
+        ),
+    ),
+    (&["task", "bind"], Tier::Fenced("task_ack")),
+    // ── config ──────────────────────────────────────────────────────────────────
+    (&["config", "get"], Tier::Fenced("config_get")),
+    (&["config", "list"], Tier::Fenced("config_list")),
+    (&["config", "set"], Tier::Fenced("config_ack")),
+    (&["config", "insert-step"], Tier::Fenced("config_ack")),
+    (&["config", "replace-step"], Tier::Fenced("config_ack")),
+    (&["config", "remove-step"], Tier::Fenced("config_ack")),
+    (&["config", "fill"], Tier::Fenced("config_ack")),
+    (&["config", "fork"], Tier::Fenced("config_ack")),
+    // ── milestone ───────────────────────────────────────────────────────────────
+    // The seven verbs rendered by `render::milestone` hand it a **prose summary string**
+    // (`milestone_created`'s multi-line ack among them); the envelope is pinned
+    // `{text, hook_output}` and the growth rides inside `text` by declaration.
+    (
+        &["milestone", "create"],
+        Tier::Judgment("the mint ack — a prose summary carried whole inside `text`"),
+    ),
+    (
+        &["milestone", "add-task"],
+        Tier::Judgment("a prose summary carried whole inside `text`"),
+    ),
+    (
+        &["milestone", "add-from-spec"],
+        Tier::Judgment("a prose summary carried whole inside `text`"),
+    ),
+    (
+        &["milestone", "list-tasks"],
+        Tier::Judgment("a prose summary carried whole inside `text`"),
+    ),
+    (
+        &["milestone", "provision"],
+        Tier::Judgment("a prose summary carried whole inside `text`"),
+    ),
+    (
+        &["milestone", "execute"],
+        Tier::Judgment("a prose summary carried whole inside `text`"),
+    ),
+    (&["milestone", "join"], Tier::Fenced("milestone_join")),
+    (
+        &["milestone", "finalize"],
+        Tier::Fenced("milestone_finalized"),
+    ),
+    (
+        &["milestone", "discard"],
+        Tier::Judgment("a prose summary carried whole inside `text`"),
+    ),
+];
+
+/// The per-renderer parity checks the fenced tier names. Bijected against the renderer
+/// names [`REGISTRY`] uses, so a fenced row cannot name a check that does not exist and a
+/// check cannot outlive the row that justified it.
+const FENCES: &[(&str, fn())] = &[
+    ("setup_success", setup_success_parity),
+    ("uninstall_success", uninstall_success_parity),
+    ("ingest", ingest_parity),
+    ("unmanage", unmanage_parity),
+    ("rename", rename_parity),
+    ("freeze_exempt_relocation", relocation_parity),
+    ("doc_ack", doc_ack_parity),
+    ("task_list", task_list_parity),
+    ("task_diff", task_diff_parity),
+    ("task_ack", task_ack_parity),
+    ("config_get", config_get_parity),
+    ("config_list", config_list_parity),
+    ("config_ack", config_ack_parity),
+    ("milestone_join", milestone_join_parity),
+    ("milestone_finalized", milestone_finalized_parity),
+];
+
+// ────────────────────────────── shared machinery ──────────────────────────────
+
+/// Every **leaf** verb's argv path, walked from the clap `Command` tree — the shared
+/// enumeration seam (`format_json_success_axis.rs` / `machine_output.rs` idiom), so this
+/// fence and the success-path sweep derive their axis from the same tree.
+fn leaf_verb_paths() -> Vec<Vec<String>> {
+    fn walk(cmd: &clap::Command, prefix: Vec<String>, out: &mut Vec<Vec<String>>) {
+        let mut had_child = false;
+        for sub in cmd.get_subcommands() {
+            if sub.get_name() == "help" {
+                continue;
+            }
+            had_child = true;
+            let mut child = prefix.clone();
+            child.push(sub.get_name().to_string());
+            walk(sub, child, out);
+        }
+        if !had_child && !prefix.is_empty() {
+            out.push(prefix);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&Cli::command(), Vec::new(), &mut out);
+    out
+}
+
+/// The rendered JSON arm, parsed — the envelope a driver reads.
+fn envelope(rendered: &str, label: &str) -> Value {
+    serde_json::from_str(rendered).unwrap_or_else(|err| {
+        panic!("`{label}`'s JSON arm is one document ({err}); got:\n{rendered}")
+    })
+}
+
+/// **The parity assertion.** The envelope carries `key`, and its value is exactly the
+/// field's own serialization — so the fact the text printed is on the wire, not merely a
+/// key of the same name holding something else.
+fn carries<T: serde::Serialize>(doc: &Value, key: &str, field: &T, label: &str, field_name: &str) {
+    let expected = serde_json::to_value(field).expect("the rendered field serializes");
+    let got = doc.get(key).unwrap_or_else(|| {
+        panic!(
+            "`{label}`'s envelope withholds `{key}` — its text renders `{field_name}`, and a value \
+             the text prints but the envelope withholds is a gap (M48, the pre-1.0 additive-key \
+             window). Envelope:\n{doc:#}",
+        )
+    });
+    assert_eq!(
+        got, &expected,
+        "`{label}`'s `{key}` must carry `{field_name}`'s own value, not a same-named different \
+         fact. Envelope:\n{doc:#}",
+    );
+}
+
+/// The same, for a field the envelope carries **decomposed** into several keys (the
+/// write address decomposed into `target`, say): every named key is present, and the
+/// declared decomposition is recorded at the call site.
+fn carries_decomposed(doc: &Value, keys: &[&str], label: &str, field_name: &str) {
+    for key in keys {
+        assert!(
+            doc.get(*key).is_some(),
+            "`{label}`'s envelope withholds `{key}`, one of the keys `{field_name}` is decomposed \
+             into. Envelope:\n{doc:#}",
+        );
+    }
+}
+
+/// The agent text really does print `value` — the other half of the rule (a fact the
+/// envelope carries that the text never prints is not this fence's business, but a
+/// declared *gap* must be a gap: the text has to print it).
+fn text_prints(text: &str, value: &str, label: &str, field_name: &str) {
+    assert!(
+        text.contains(value),
+        "`{label}`'s agent text must print `{field_name}` — the fence asserts parity with what \
+         the text says, so a field it never says has no gap to close. Text:\n{text}",
+    );
+}
+
+// ─────────────────────────────── the fenced checks ───────────────────────────────
+
+/// `jigc setup` — the install summary. Four fields, four keys (`hook_file` is M48's own
+/// close, T2), plus the constant `installed` discriminator.
+fn setup_success_parity() {
+    let summary = SetupSummary {
+        line_file: "CLAUDE.md".to_owned(),
+        allowlist_file: ".claude/settings.json".to_owned(),
+        hook_file: ".git/hooks/pre-commit".to_owned(),
+        install_commit: InstallCommit::Committed("a1b2c3d".to_owned()),
+    };
+    // Exhaustive — no `..`: a fifth field fails to compile here.
+    let SetupSummary {
+        line_file,
+        allowlist_file,
+        hook_file,
+        install_commit,
+    } = &summary;
+
+    let text = setup_success(Format::Agent, &summary);
+    let doc = envelope(&setup_success(Format::Json, &summary), "jigc setup");
+
+    for (field_name, value) in [
+        ("line_file", line_file),
+        ("allowlist_file", allowlist_file),
+        ("hook_file", hook_file),
+    ] {
+        text_prints(&text, value, "jigc setup", field_name);
+        carries(&doc, field_name, value, "jigc setup", field_name);
+    }
+    let InstallCommit::Committed(sha) = install_commit else {
+        unreachable!("the witness commits")
+    };
+    text_prints(&text, sha, "jigc setup", "install_commit");
+    carries(&doc, "install_commit", sha, "jigc setup", "install_commit");
+}
+
+/// `jigc uninstall` — the teardown summary. The six-flag removal ledger rides the wire
+/// whole under `removed`, so every flag the text turns into a bullet reaches a driver.
+fn uninstall_success_parity() {
+    let summary = UninstallSummary {
+        line_file: "CLAUDE.md".to_owned(),
+        allowlist_file: ".claude/settings.json".to_owned(),
+        removed: RemovedArtifacts {
+            jigc_dir: true,
+            reference: true,
+            allowlist: true,
+            hook: true,
+            deny: true,
+            precommit: true,
+        },
+    };
+    let UninstallSummary {
+        line_file,
+        allowlist_file,
+        removed,
+    } = &summary;
+    let RemovedArtifacts {
+        jigc_dir,
+        reference,
+        allowlist,
+        hook,
+        deny,
+        precommit,
+    } = removed;
+
+    let text = uninstall_success(Format::Agent, &summary);
+    let doc = envelope(&uninstall_success(Format::Json, &summary), "jigc uninstall");
+
+    text_prints(&text, line_file, "jigc uninstall", "line_file");
+    carries(&doc, "line_file", line_file, "jigc uninstall", "line_file");
+    text_prints(&text, allowlist_file, "jigc uninstall", "allowlist_file");
+    carries(
+        &doc,
+        "allowlist_file",
+        allowlist_file,
+        "jigc uninstall",
+        "allowlist_file",
+    );
+
+    let removed_doc = doc
+        .get("removed")
+        .unwrap_or_else(|| panic!("`jigc uninstall`'s envelope withholds `removed`:\n{doc:#}"));
+    for (field_name, flag) in [
+        ("jigc_dir", jigc_dir),
+        ("reference", reference),
+        ("allowlist", allowlist),
+        ("hook", hook),
+        ("deny", deny),
+        ("precommit", precommit),
+    ] {
+        carries(
+            removed_doc,
+            field_name,
+            flag,
+            "jigc uninstall",
+            &format!("removed.{field_name}"),
+        );
+    }
+}
+
+/// `jigc ingest` — the triage report. Its one field rides the wire whole (the envelope
+/// adds the derived `summary` rollup beside it, which is projection, not parity).
+fn ingest_parity() {
+    let report = IngestReport { rows: Vec::new() };
+    let IngestReport { rows } = &report;
+
+    let doc = envelope(&ingest(Format::Json, &report), "jigc ingest");
+    carries(&doc, "rows", rows, "jigc ingest", "rows");
+}
+
+/// `jigc unmanage` — the drop report, carried whole.
+fn unmanage_parity() {
+    let report = UnmanageReport {
+        path: "docs/decisions/use-sqlite.md".to_owned(),
+        identity: Some("adr:use-sqlite".to_owned()),
+        dropped: true,
+    };
+    let UnmanageReport {
+        path,
+        identity,
+        dropped,
+    } = &report;
+
+    let text = unmanage(Format::Agent, &report);
+    let doc = envelope(&unmanage(Format::Json, &report), "jigc unmanage");
+
+    text_prints(&text, path, "jigc unmanage", "path");
+    carries(&doc, "path", path, "jigc unmanage", "path");
+    carries(&doc, "identity", identity, "jigc unmanage", "identity");
+    carries(&doc, "dropped", dropped, "jigc unmanage", "dropped");
+}
+
+/// `jigc rename` — the atomic-identity-move report, carried whole.
+fn rename_parity() {
+    let report = RenameReport {
+        from: "adr:use-sqlite".to_owned(),
+        to: "adr:use-postgres".to_owned(),
+        old_path: "docs/decisions/use-sqlite.md".to_owned(),
+        new_path: "docs/decisions/use-postgres.md".to_owned(),
+        title: "Use Postgres".to_owned(),
+        referrers: vec!["adr:cache-strategy#supersedes".to_owned()],
+        prose_mentions: vec!["README.md:12".to_owned()],
+        hook_output: String::new(),
+    };
+    let RenameReport {
+        from,
+        to,
+        old_path,
+        new_path,
+        title,
+        referrers,
+        prose_mentions,
+        hook_output,
+    } = &report;
+
+    let doc = envelope(&rename(Format::Json, &report), "jigc rename");
+    for (field_name, value) in [
+        ("from", from),
+        ("to", to),
+        ("old_path", old_path),
+        ("new_path", new_path),
+        ("title", title),
+        ("hook_output", hook_output),
+    ] {
+        carries(&doc, field_name, value, "jigc rename", field_name);
+    }
+    carries(&doc, "referrers", referrers, "jigc rename", "referrers");
+    carries(
+        &doc,
+        "prose_mentions",
+        prose_mentions,
+        "jigc rename",
+        "prose_mentions",
+    );
+}
+
+/// `jigc relocate` — the freeze-exempt relocation report, carried whole.
+fn relocation_parity() {
+    let report = RelocationReport {
+        moved: vec![("docs/legacy/n.md".to_owned(), "notes/n.md".to_owned())],
+        blocked: vec![("docs/legacy/b.md".to_owned(), "unreadable".to_owned())],
+        displaced: vec![("notes/n.md".to_owned(), ".jigc/displaced/n.md".to_owned())],
+    };
+    let RelocationReport {
+        moved,
+        blocked,
+        displaced,
+    } = &report;
+
+    let doc = envelope(
+        &freeze_exempt_relocation(Format::Json, &report),
+        "jigc relocate",
+    );
+    carries(&doc, "moved", moved, "jigc relocate", "moved");
+    carries(&doc, "blocked", blocked, "jigc relocate", "blocked");
+    carries(&doc, "displaced", displaced, "jigc relocate", "displaced");
+}
+
+/// `jigc task list` — the active-task roster. The rows are the envelope.
+fn task_list_parity() {
+    let rows = vec![TaskListRow {
+        id: "harden-the-cache".to_owned(),
+        workflow: Some("single-task".to_owned()),
+        intent: "harden the cache".to_owned(),
+    }];
+    let TaskListRow {
+        id,
+        workflow,
+        intent,
+    } = &rows[0];
+
+    let text = task_list(Format::Agent, &rows);
+    let doc = envelope(&task_list(Format::Json, &rows), "jigc task list");
+    let row = doc
+        .get(0)
+        .unwrap_or_else(|| panic!("`jigc task list`'s envelope is the row array:\n{doc:#}"));
+
+    text_prints(&text, id, "jigc task list", "id");
+    carries(row, "id", id, "jigc task list", "id");
+    carries(row, "workflow", workflow, "jigc task list", "workflow");
+    text_prints(&text, intent, "jigc task list", "intent");
+    carries(row, "intent", intent, "jigc task list", "intent");
+}
+
+/// `jigc task diff` — the work-unit reader.
+///
+/// **Declared exclusion: `StagedDoc.body`.** The text prints the staged bytes verbatim;
+/// the envelope carries the identity only, because echoing bodies would mint a second,
+/// unversioned managed-doc content-read path beside the separately-versioned `doc show`
+/// (`design/doc-read-surface.md` → The version/posture map). Not a gap — a *routed*
+/// read: the identity **is** the address `jigc doc show <id> --task <id>` takes.
+fn task_diff_parity() {
+    let base = BasePin::new("0123456789abcdef", "0123456");
+    let staged = vec![StagedDoc {
+        id: "adr:cache-strategy".to_owned(),
+        body: "# Cache strategy\n".to_owned(),
+    }];
+    let view = TaskDiffView {
+        task: "harden-the-cache",
+        base: &base,
+        code_diff: "diff --git a/src/lib.rs b/src/lib.rs\n",
+        staged: &staged,
+    };
+    let TaskDiffView {
+        task,
+        base,
+        code_diff,
+        staged,
+    } = &view;
+    let StagedDoc {
+        id,
+        // DECLARED EXCLUSION — see this function's doc comment.
+        body: _body,
+    } = &staged[0];
+
+    let doc = envelope(&task_diff(Format::Json, &view), "jigc task diff");
+    carries(&doc, "task", task, "jigc task diff", "task");
+    carries(&doc, "base", base, "jigc task diff", "base");
+    carries(&doc, "code_diff", code_diff, "jigc task diff", "code_diff");
+    let staged_doc = doc
+        .get("staged_docs")
+        .and_then(|docs| docs.get(0))
+        .unwrap_or_else(|| panic!("`jigc task diff`'s envelope carries `staged_docs`:\n{doc:#}"));
+    carries(staged_doc, "id", id, "jigc task diff", "staged.id");
+}
+
+/// The nine `doc` write acks — every variant, exhaustively destructured.
+///
+/// **Declared decomposition: `address`.** The text leads with the write address; the
+/// envelope carries it decomposed into `target` (`doctype`/`slug`/`section`/`item`/`leaf`
+/// — the same depth ladder `doc show`'s `#fragment` projects), so the value is on the
+/// wire in the contract's own normal form, never withheld.
+fn doc_ack_parity() {
+    let target = || AckTarget {
+        doctype: "adr".to_owned(),
+        slug: "cache-strategy".to_owned(),
+        section: Some("decision".to_owned()),
+        item: None,
+        leaf: None,
+    };
+    let head = || AckTarget {
+        doctype: "adr".to_owned(),
+        slug: "cache-strategy".to_owned(),
+        section: None,
+        item: None,
+        leaf: None,
+    };
+    let address = "adr:cache-strategy#decision".to_owned();
+
+    let acks = vec![
+        DocAck::Field {
+            address: address.clone(),
+            target: target(),
+            value: Value::String("accepted".to_owned()),
+            findings: Findings::from(Vec::new()),
+            copied_in: true,
+        },
+        DocAck::UnsetField {
+            address: address.clone(),
+            target: target(),
+            findings: Findings::from(Vec::new()),
+            copied_in: true,
+        },
+        DocAck::Slot {
+            address: address.clone(),
+            target: target(),
+            chars: 42,
+            findings: Findings::from(Vec::new()),
+            copied_in: true,
+        },
+        DocAck::RemovedItem {
+            address: address.clone(),
+            target: target(),
+            findings: Findings::from(Vec::new()),
+            copied_in: true,
+        },
+        DocAck::RetitledItem {
+            address: address.clone(),
+            target: target(),
+            title: "Limits by client".to_owned(),
+            findings: Findings::from(Vec::new()),
+            copied_in: true,
+        },
+        DocAck::Renamed {
+            address: "adr:cache-policy".to_owned(),
+            target: head(),
+            title: "Cache policy".to_owned(),
+            from: "adr:cache-strategy".to_owned(),
+            reslugged: true,
+            committed_identity: false,
+            findings: Findings::from(Vec::new()),
+            copied_in: true,
+        },
+        DocAck::Renamed {
+            address: "adr:cache-strategy".to_owned(),
+            target: head(),
+            title: "Cache policy".to_owned(),
+            from: "adr:cache-strategy".to_owned(),
+            reslugged: false,
+            committed_identity: true,
+            findings: Findings::from(Vec::new()),
+            copied_in: false,
+        },
+        DocAck::Created {
+            address: "adr:cache-strategy".to_owned(),
+            target: head(),
+            existed: true,
+            findings: Findings::from(Vec::new()),
+        },
+        DocAck::AddedItem {
+            address: "spec:rate-limiting#criteria/limits-per-ip".to_owned(),
+            target: target(),
+            findings: Findings::from(Vec::new()),
+            copied_in: true,
+        },
+        DocAck::Authored {
+            address: "adr:cache-strategy".to_owned(),
+            target: head(),
+            findings: Findings::from(Vec::new()),
+        },
+    ];
+
+    for ack in &acks {
+        let doc = envelope(&doc_ack(Format::Json, ack), "jigc doc <write>");
+        let text = doc_ack(Format::Agent, ack);
+        let label = doc["op"].as_str().unwrap_or("<no op>").to_owned();
+        let label = format!("jigc doc {label}");
+        let decomposed = &["doctype", "slug"];
+
+        // Exhaustive per variant — no `..`: a field added to any arm fails to compile.
+        match ack {
+            DocAck::Field {
+                address,
+                target,
+                value,
+                findings,
+                copied_in,
+            } => {
+                text_prints(&text, address, &label, "address");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "value", value, &label, "value");
+                carries(&doc, "findings", findings, &label, "findings");
+                carries(&doc, "copied_in", copied_in, &label, "copied_in");
+            }
+            DocAck::UnsetField {
+                address,
+                target,
+                findings,
+                copied_in,
+            } => {
+                text_prints(&text, address, &label, "address");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "findings", findings, &label, "findings");
+                carries(&doc, "copied_in", copied_in, &label, "copied_in");
+            }
+            DocAck::Slot {
+                address,
+                target,
+                chars,
+                findings,
+                copied_in,
+            } => {
+                text_prints(&text, address, &label, "address");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "chars", chars, &label, "chars");
+                carries(&doc, "findings", findings, &label, "findings");
+                carries(&doc, "copied_in", copied_in, &label, "copied_in");
+            }
+            DocAck::RemovedItem {
+                address,
+                target,
+                findings,
+                copied_in,
+            } => {
+                text_prints(&text, address, &label, "address");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "findings", findings, &label, "findings");
+                carries(&doc, "copied_in", copied_in, &label, "copied_in");
+            }
+            DocAck::RetitledItem {
+                address,
+                target,
+                title,
+                findings,
+                copied_in,
+            } => {
+                text_prints(&text, address, &label, "address");
+                text_prints(&text, title, &label, "title");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "title", title, &label, "title");
+                carries(&doc, "findings", findings, &label, "findings");
+                carries(&doc, "copied_in", copied_in, &label, "copied_in");
+            }
+            DocAck::Renamed {
+                address,
+                target,
+                title,
+                from,
+                reslugged,
+                committed_identity,
+                findings,
+                copied_in,
+            } => {
+                text_prints(&text, address, &label, "address");
+                text_prints(&text, title, &label, "title");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "title", title, &label, "title");
+                carries(&doc, "from", from, &label, "from");
+                carries(&doc, "reslugged", reslugged, &label, "reslugged");
+                carries(
+                    &doc,
+                    "committed_identity",
+                    committed_identity,
+                    &label,
+                    "committed_identity",
+                );
+                carries(&doc, "findings", findings, &label, "findings");
+                carries(&doc, "copied_in", copied_in, &label, "copied_in");
+            }
+            DocAck::Created {
+                address,
+                target,
+                existed,
+                findings,
+            } => {
+                text_prints(&text, address, &label, "address");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "existed", existed, &label, "existed");
+                carries(&doc, "findings", findings, &label, "findings");
+            }
+            DocAck::AddedItem {
+                address,
+                target,
+                findings,
+                copied_in,
+            } => {
+                text_prints(&text, address, &label, "address");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "findings", findings, &label, "findings");
+                carries(&doc, "copied_in", copied_in, &label, "copied_in");
+            }
+            DocAck::Authored {
+                address,
+                target,
+                findings,
+            } => {
+                text_prints(&text, address, &label, "address");
+                carries_decomposed(&doc["target"], decomposed, &label, "address");
+                carries(&doc, "target", target, &label, "target");
+                carries(&doc, "findings", findings, &label, "findings");
+            }
+        }
+    }
+}
+
+/// The two task-state acks.
+///
+/// **Declared decomposition: `Bound.address`** — carried as `target`, the same normal
+/// form the doc acks use. **Declared exclusion: `DroppedStaged.transient`** — the text
+/// marks a transient instance `(transient)`; the envelope carries the bare identities
+/// because transience is a **schema** fact a driver reads from `jigc doc schema`
+/// (`design/command-output-contract.md` §2, the recorded posture), i.e. re-derivable
+/// state, which the Settle's exclusion covers.
+fn task_ack_parity() {
+    let acks = vec![
+        TaskAck::Bound {
+            task: "enforce-the-rate-limit".to_owned(),
+            role: "spec".to_owned(),
+            address: "spec:rate-limiting".to_owned(),
+            target: AckTarget {
+                doctype: "spec".to_owned(),
+                slug: "rate-limiting".to_owned(),
+                section: None,
+                item: None,
+                leaf: None,
+            },
+        },
+        TaskAck::Discarded {
+            task: "harden-the-cache".to_owned(),
+            dropped: vec![DroppedStaged {
+                doc: "adr:cache-strategy".to_owned(),
+                transient: false,
+            }],
+        },
+    ];
+
+    for ack in &acks {
+        let doc = envelope(&task_ack(Format::Json, ack), "jigc task <state verb>");
+        let text = task_ack(Format::Agent, ack);
+        let label = format!("jigc {}", doc["op"].as_str().unwrap_or("<no op>"));
+
+        match ack {
+            TaskAck::Bound {
+                task,
+                role,
+                address,
+                target,
+            } => {
+                text_prints(&text, task, &label, "task");
+                carries(&doc, "task", task, &label, "task");
+                text_prints(&text, role, &label, "role");
+                carries(&doc, "role", role, &label, "role");
+                text_prints(&text, address, &label, "address");
+                carries_decomposed(&doc["target"], &["doctype", "slug"], &label, "address");
+                carries(&doc, "target", target, &label, "target");
+            }
+            TaskAck::Discarded { task, dropped } => {
+                text_prints(&text, task, &label, "task");
+                carries(&doc, "task", task, &label, "task");
+                let DroppedStaged {
+                    doc: staged_doc,
+                    // DECLARED EXCLUSION — see this function's doc comment.
+                    transient: _transient,
+                } = &dropped[0];
+                text_prints(&text, staged_doc, &label, "dropped.doc");
+                carries(&doc, "dropped", &vec![staged_doc], &label, "dropped[].doc");
+            }
+        }
+    }
+}
+
+/// One `KnobReading` witness — the row shape both cascade read verbs render.
+fn knob_reading() -> KnobReading {
+    KnobReading {
+        key: "docs-root".to_owned(),
+        value: "docs".to_owned(),
+        layer: "project",
+        rejected: Some(RejectedSet {
+            attempted: "documentation".to_owned(),
+            floor: "docs".to_owned(),
+            layer: "team",
+        }),
+    }
+}
+
+/// Assert one knob-reading row object carries every field the reading line prints.
+fn assert_knob_row(row: &Value, reading: &KnobReading, text: &str, label: &str) {
+    let KnobReading {
+        key,
+        value,
+        layer,
+        rejected,
+    } = reading;
+    text_prints(text, key, label, "key");
+    carries(row, "key", key, label, "key");
+    text_prints(text, value, label, "value");
+    carries(row, "value", value, label, "value");
+    text_prints(text, layer, label, "layer");
+    carries(row, "layer", layer, label, "layer");
+
+    let RejectedSet {
+        attempted,
+        floor,
+        layer: rejected_layer,
+    } = rejected.as_ref().expect("the witness carries a rejection");
+    let rejected_row = row
+        .get("rejected")
+        .unwrap_or_else(|| panic!("`{label}`'s envelope withholds `rejected`:\n{row:#}"));
+    text_prints(text, attempted, label, "rejected.attempted");
+    carries(
+        rejected_row,
+        "attempted",
+        attempted,
+        label,
+        "rejected.attempted",
+    );
+    text_prints(text, floor, label, "rejected.floor");
+    carries(rejected_row, "floor", floor, label, "rejected.floor");
+    text_prints(text, rejected_layer, label, "rejected.layer");
+    carries(
+        rejected_row,
+        "layer",
+        rejected_layer,
+        label,
+        "rejected.layer",
+    );
+}
+
+/// `jigc config get` — one knob's resolved reading.
+fn config_get_parity() {
+    let reading = knob_reading();
+    let text = config_get(Format::Agent, &reading);
+    let doc = envelope(&config_get(Format::Json, &reading), "jigc config get");
+    assert_knob_row(&doc, &reading, &text, "jigc config get");
+}
+
+/// `jigc config list` — the whole declared surface, one row per knob.
+fn config_list_parity() {
+    let readings = vec![knob_reading()];
+    let text = config_list(Format::Agent, &readings);
+    let doc = envelope(&config_list(Format::Json, &readings), "jigc config list");
+    let row = doc
+        .get("knobs")
+        .and_then(|knobs| knobs.get(0))
+        .unwrap_or_else(|| panic!("`jigc config list`'s envelope carries `knobs`:\n{doc:#}"));
+    assert_knob_row(row, &readings[0], &text, "jigc config list");
+}
+
+/// The six cascade-authoring acks — iterated from [`ConfigAck::ALL`], the code-side axis
+/// T3 minted, so a seventh authoring verb joins this fence with its arm.
+fn config_ack_parity() {
+    for arm in ConfigAck::ALL {
+        let ack = (arm.witness)();
+        let label = format!("jigc config {}", arm.verb);
+        let text = config_ack(Format::Agent, &ack);
+        let doc = envelope(&config_ack(Format::Json, &ack), &label);
+
+        match &ack {
+            ConfigAck::Set { key, value } => {
+                text_prints(&text, key, &label, "key");
+                carries(&doc, "key", key, &label, "key");
+                text_prints(&text, value, &label, "value");
+                carries(&doc, "value", value, &label, "value");
+            }
+            ConfigAck::InsertStep {
+                workflow,
+                step,
+                side,
+                anchor,
+            } => {
+                text_prints(&text, workflow, &label, "workflow");
+                carries(&doc, "workflow", workflow, &label, "workflow");
+                text_prints(&text, step, &label, "step");
+                carries(&doc, "step", step, &label, "step");
+                text_prints(&text, side, &label, "side");
+                carries(&doc, "side", side, &label, "side");
+                text_prints(&text, anchor, &label, "anchor");
+                carries(&doc, "anchor", anchor, &label, "anchor");
+            }
+            ConfigAck::ReplaceStep { target, step } => {
+                text_prints(&text, target, &label, "target");
+                carries(&doc, "target", target, &label, "target");
+                text_prints(&text, step, &label, "step");
+                carries(&doc, "step", step, &label, "step");
+            }
+            ConfigAck::RemoveStep { target } => {
+                text_prints(&text, target, &label, "target");
+                carries(&doc, "target", target, &label, "target");
+            }
+            ConfigAck::Fill { target } => {
+                text_prints(&text, target, &label, "target");
+                carries(&doc, "target", target, &label, "target");
+            }
+            ConfigAck::Fork { target, path, base } => {
+                text_prints(&text, target, &label, "target");
+                carries(&doc, "target", target, &label, "target");
+                text_prints(&text, path, &label, "path");
+                carries(&doc, "path", path, &label, "path");
+                text_prints(&text, base, &label, "base");
+                carries(&doc, "base", base, &label, "base");
+            }
+        }
+    }
+}
+
+/// `jigc milestone join` — the merged-overlay ack. Its text renders from **three**
+/// inputs, not one: the milestone id it echoes, the merge outcome, and the milestone's
+/// full sub-task list, from which it derives the `no docs staged from:` line naming every
+/// sub-task that contributed nothing.
+fn milestone_join_parity() {
+    let outcome = JoinOutcome::default();
+    let milestone_id = "cache-rework";
+    let sub_tasks = vec!["warm-the-read-cache".to_owned()];
+
+    let text = milestone_join(Format::Agent, milestone_id, &outcome, &sub_tasks);
+    let doc = envelope(
+        &milestone_join(Format::Json, milestone_id, &outcome, &sub_tasks),
+        "jigc milestone join",
+    );
+    let JoinOutcome { overlay, findings } = &outcome;
+
+    text_prints(&text, milestone_id, "jigc milestone join", "milestone_id");
+    carries(
+        &doc,
+        "milestone",
+        &milestone_id,
+        "jigc milestone join",
+        "milestone_id",
+    );
+    carries(&doc, "overlay", overlay, "jigc milestone join", "overlay");
+    carries(
+        &doc,
+        "findings",
+        findings,
+        "jigc milestone join",
+        "findings",
+    );
+    // The doc-less sub-tasks the text names — derived from `sub_tasks` minus the overlay's
+    // contributors, so the fact the text states is the one the envelope must carry.
+    text_prints(
+        &text,
+        &sub_tasks[0],
+        "jigc milestone join",
+        "sub_tasks (the doc-less set)",
+    );
+    carries(
+        &doc,
+        "no_docs_from",
+        &sub_tasks,
+        "jigc milestone join",
+        "sub_tasks (the doc-less set)",
+    );
+}
+
+/// `jigc milestone finalize` — the landed boundary, carried whole under `committed`.
+fn milestone_finalized_parity() {
+    let landed = MilestoneLanded {
+        hash: "a1b2c3d".to_owned(),
+        subject: "Finalize milestone cache-rework (1 sub-task)".to_owned(),
+        files: 1,
+        manifest: vec![ManifestEntry {
+            path: "docs/decisions/cache-strategy.md".to_owned(),
+            kind: ManifestKind::Promoted,
+        }],
+        sub_tasks: vec![SubTaskContribution {
+            id: "warm-the-read-cache".to_owned(),
+            docs: 1,
+            code_files: 0,
+            provisioned: true,
+            discarded: vec![DiscardedWork {
+                path: "src/scratch.rs".to_owned(),
+                state: DiscardState::NeverStaged,
+            }],
+        }],
+        hook_output: String::new(),
+    };
+    let MilestoneLanded {
+        hash,
+        subject,
+        files,
+        manifest,
+        sub_tasks,
+        hook_output,
+    } = &landed;
+
+    let text = milestone_finalized(Format::Agent, &landed);
+    let doc = envelope(
+        &milestone_finalized(Format::Json, &landed),
+        "jigc milestone finalize",
+    );
+    let committed = doc.get("committed").unwrap_or_else(|| {
+        panic!("`jigc milestone finalize`'s envelope carries `committed`:\n{doc:#}")
+    });
+
+    let label = "jigc milestone finalize";
+    text_prints(&text, hash, label, "hash");
+    carries(committed, "hash", hash, label, "hash");
+    text_prints(&text, subject, label, "subject");
+    carries(committed, "subject", subject, label, "subject");
+    carries(committed, "files", files, label, "files");
+    carries(committed, "manifest", manifest, label, "manifest");
+    carries(committed, "sub_tasks", sub_tasks, label, "sub_tasks");
+    carries(committed, "hook_output", hook_output, label, "hook_output");
+}
+
+// ─────────────────────────────────── the fence ───────────────────────────────────
+
+/// **The bijection.** [`REGISTRY`] and the clap tree's leaf verbs are the *same* set — no
+/// verb unclassified, no stale row — with a floor beneath it so a simultaneous delete on
+/// both sides stays visible rather than shrinking the axis in silence.
+#[test]
+fn the_parity_registry_bijects_the_clap_leaf_verbs() {
+    let from_clap: BTreeSet<Vec<String>> = leaf_verb_paths().into_iter().collect();
+    let from_registry: BTreeSet<Vec<String>> = REGISTRY
+        .iter()
+        .map(|(path, _)| path.iter().map(|s| (*s).to_string()).collect())
+        .collect();
+
+    assert!(
+        from_clap.len() >= 47,
+        "the clap tree must still enumerate the whole verb surface (>= 47 leaf verbs); got {}: \
+         {from_clap:?}",
+        from_clap.len(),
+    );
+
+    let unclassified: Vec<_> = from_clap.difference(&from_registry).collect();
+    let stale: Vec<_> = from_registry.difference(&from_clap).collect();
+    assert!(
+        unclassified.is_empty() && stale.is_empty(),
+        "the parity registry must be a BIJECTION with the clap leaf verbs — every verb that \
+         speaks `--format json` is either FENCED (its text renders from a structured value) or \
+         JUDGMENT (its text is prose).\n\
+         verbs with no classification: {unclassified:?}\n\
+         rows naming no verb (delete them): {stale:?}",
+    );
+    assert_eq!(
+        REGISTRY.len(),
+        from_clap.len(),
+        "one row per leaf verb — a duplicated path would hide an unclassified verb",
+    );
+}
+
+/// **Every fenced row names a check, and every check is claimed.** The renderer names are
+/// the join between the verb axis and the per-renderer parity assertions, so neither side
+/// can drift: a fenced verb whose renderer has no check reddens here, and a check no verb
+/// claims reddens here too.
+#[test]
+fn every_fenced_member_names_a_renderer_the_fence_checks() {
+    let named: BTreeSet<&str> = REGISTRY
+        .iter()
+        .filter_map(|(_, tier)| match tier {
+            Tier::Fenced(renderer) => Some(*renderer),
+            Tier::Judgment(_) => None,
+        })
+        .collect();
+    let checked: BTreeSet<&str> = FENCES.iter().map(|(name, _)| *name).collect();
+
+    assert_eq!(
+        named, checked,
+        "every FENCED verb's renderer owns a parity check, and every check is claimed by at \
+         least one verb",
+    );
+    assert_eq!(
+        FENCES.len(),
+        checked.len(),
+        "one check per renderer — a duplicated name would shadow a check",
+    );
+}
+
+/// **Every judgment member states why it is there.** The judgment tier is the escape
+/// hatch from the mechanical check, so an empty reason would let a fenced-able verb slip
+/// out of the fence unremarked.
+#[test]
+fn every_judgment_member_records_its_reason() {
+    for (path, tier) in REGISTRY {
+        if let Tier::Judgment(reason) = tier {
+            assert!(
+                reason.len() > 20,
+                "`jigc {}` is in the judgment tier, so it must record WHY its text has no \
+                 field↔key correspondence; got {reason:?}",
+                path.join(" "),
+            );
+        }
+    }
+}
+
+/// **The fence itself.** Every fenced renderer carries, on the wire, each field of the
+/// value its agent/human text renders from — asserted against a witness the real renderer
+/// formats in both surfaces, with the value destructured exhaustively so the compiler is
+/// the field enumerator.
+#[test]
+fn every_fenced_renderer_carries_on_the_wire_what_its_text_prints() {
+    for (name, check) in FENCES {
+        eprintln!("parity fence: {name}");
+        check();
+    }
+}

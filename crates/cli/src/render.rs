@@ -1407,9 +1407,11 @@ fn landed_summary(landed: &Landed) -> String {
 /// into the working area (`doc.rs` → `Task::read_or_copy_in`). It states the same effect
 /// [`DocAck::Created`]'s `existed` states on the create door (M47 Inc 10 T3, RC-alpha4
 /// P4-6: the M43 fix was incomplete over the *verb* axis — the five edit doors stayed
-/// silent, and the trial's worker learned of the staging from the finalize output). It is
-/// an **agent/human-text** note only: the JSON ack shape is unchanged
-/// (`design/command-output-contract.md` §2 → the first-touch copy-in note).
+/// silent, and the trial's worker learned of the staging from the finalize output). Since
+/// M48 it is **both** surfaces: the text appends its note, and every JSON ack carries
+/// `copied_in` — the parity rule the pre-1.0 additive-key window closes on (*a value the
+/// text prints but the envelope withholds is a gap*;
+/// `design/command-output-contract.md` §2 → the first-touch copy-in note).
 pub enum DocAck {
     /// A `set-field` landed `value` at `address`/`target`. `value` is the written field
     /// value shaped as `doc show`'s `fields` project it (scalar → string, list → array).
@@ -1454,9 +1456,9 @@ pub enum DocAck {
     /// which is *why* a retitle-only kept the id, not *that* it did: a committed slug is
     /// the committed path and is frozen here, while a never-committed doc simply landed on
     /// the id it already had. The rendered sentence states the cell it is actually in — a
-    /// retitle-only is reached from **both** (`design/surface-contract.md` law 1). It is
-    /// rendering input only, and adds no envelope key: the effect a driver deserializes is
-    /// `reslugged`, unchanged.
+    /// retitle-only is reached from **both** (`design/surface-contract.md` law 1). Since M48
+    /// it rides the envelope as `committed_identity` too: `reslugged: false` alone cannot
+    /// tell the two cells apart, so a driver would lose a distinction the text makes.
     Renamed {
         address: String,
         target: AckTarget,
@@ -1536,80 +1538,104 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
     // projection (`command-output-contract.md` → The membership test) — the presence half on
     // each `Finding`, the uniqueness half on the collection.
     match format {
-        Format::Json => match ack {
-            // The command-output contract (`design/command-output-contract.md` §2):
-            // `op` + the decomposed `target` + the op's retained effect key +
-            // `findings` (the intrinsic single-doc advisories, `[]` on a clean write —
-            // each projects the pinned findings envelope via `Finding`'s `Serialize`).
-            DocAck::Field {
-                target,
-                value,
-                findings,
-                ..
-            } => json(&serde_json::json!({
-                "op": "set-field", "target": target, "value": value, "findings": findings,
-            })),
-            // `--unset` shares the `set-field` op, with `unset: true` in place of a value.
-            DocAck::UnsetField {
-                target, findings, ..
-            } => json(&serde_json::json!({
-                "op": "set-field", "target": target, "unset": true, "findings": findings,
-            })),
-            DocAck::Slot {
-                target,
-                chars,
-                findings,
-                ..
-            } => json(&serde_json::json!({
-                "op": "set-slot", "target": target, "chars": chars, "findings": findings,
-            })),
-            DocAck::RemovedItem {
-                target, findings, ..
-            } => json(&serde_json::json!({
-                "op": "remove-item", "target": target, "removed": true, "findings": findings,
-            })),
-            DocAck::RetitledItem {
-                target,
-                title,
-                findings,
-                ..
-            } => json(&serde_json::json!({
-                "op": "retitle-item", "target": target, "title": title, "findings": findings,
-            })),
-            DocAck::Renamed {
-                target,
-                title,
-                from,
-                reslugged,
-                findings,
-                ..
-            } => json(&serde_json::json!({
-                "op": "rename", "target": target, "title": title, "from": from,
-                "reslugged": reslugged, "findings": findings,
-            })),
-            // `create` / `add-item` / `author` join the envelope: `op` + the decomposed
-            // `target` + `findings`. No per-op effect key — their effect is the whole
-            // doc / the new item, read back via `doc show` (contract §2). `create`
-            // additionally carries the always-present `existed` discriminator.
-            DocAck::Created {
-                target,
-                existed,
-                findings,
-                ..
-            } => json(&serde_json::json!({
-                "op": "create", "target": target, "existed": existed, "findings": findings,
-            })),
-            DocAck::AddedItem {
-                target, findings, ..
-            } => json(&serde_json::json!({
-                "op": "add-item", "target": target, "findings": findings,
-            })),
-            DocAck::Authored {
-                target, findings, ..
-            } => json(&serde_json::json!({
-                "op": "author", "target": target, "findings": findings,
-            })),
-        },
+        Format::Json => {
+            let mut envelope = match ack {
+                // The command-output contract (`design/command-output-contract.md` §2):
+                // `op` + the decomposed `target` + the op's retained effect key +
+                // `findings` (the intrinsic single-doc advisories, `[]` on a clean write —
+                // each projects the pinned findings envelope via `Finding`'s `Serialize`).
+                DocAck::Field {
+                    target,
+                    value,
+                    findings,
+                    ..
+                } => serde_json::json!({
+                    "op": "set-field", "target": target, "value": value, "findings": findings,
+                }),
+                // `--unset` shares the `set-field` op, with `unset: true` in place of a value.
+                DocAck::UnsetField {
+                    target, findings, ..
+                } => serde_json::json!({
+                    "op": "set-field", "target": target, "unset": true, "findings": findings,
+                }),
+                DocAck::Slot {
+                    target,
+                    chars,
+                    findings,
+                    ..
+                } => serde_json::json!({
+                    "op": "set-slot", "target": target, "chars": chars, "findings": findings,
+                }),
+                DocAck::RemovedItem {
+                    target, findings, ..
+                } => serde_json::json!({
+                    "op": "remove-item", "target": target, "removed": true, "findings": findings,
+                }),
+                DocAck::RetitledItem {
+                    target,
+                    title,
+                    findings,
+                    ..
+                } => serde_json::json!({
+                    "op": "retitle-item", "target": target, "title": title, "findings": findings,
+                }),
+                // `committed_identity` rides the rename ack because the **text** states it
+                // ("the committed identity keeps its slug" vs "the id is unchanged"), and a
+                // driver reading `reslugged: false` alone cannot tell the two cells apart
+                // (M48, the pre-1.0 additive-key window — a value the text prints and the
+                // envelope withholds is a gap).
+                DocAck::Renamed {
+                    target,
+                    title,
+                    from,
+                    reslugged,
+                    committed_identity,
+                    findings,
+                    ..
+                } => serde_json::json!({
+                    "op": "rename", "target": target, "title": title, "from": from,
+                    "reslugged": reslugged, "committed_identity": committed_identity,
+                    "findings": findings,
+                }),
+                // `create` / `add-item` / `author` join the envelope: `op` + the decomposed
+                // `target` + `findings`. No per-op effect key — their effect is the whole
+                // doc / the new item, read back via `doc show` (contract §2). `create`
+                // additionally carries the always-present `existed` discriminator.
+                DocAck::Created {
+                    target,
+                    existed,
+                    findings,
+                    ..
+                } => serde_json::json!({
+                    "op": "create", "target": target, "existed": existed, "findings": findings,
+                }),
+                DocAck::AddedItem {
+                    target, findings, ..
+                } => serde_json::json!({
+                    "op": "add-item", "target": target, "findings": findings,
+                }),
+                DocAck::Authored {
+                    target, findings, ..
+                } => serde_json::json!({
+                    "op": "author", "target": target, "findings": findings,
+                }),
+            };
+            // The wire half of the first-touch copy-in note (M48): the same fact
+            // [`COPY_IN_NOTE`] states in prose, as the key a driver reads. Inserted in
+            // **one** place off the same [`DocAck::copied_in`] the text arm reads, so a verb
+            // cannot join the copy-in seam and stay silent on either surface. Present on
+            // every arm — including the two whose own door states it differently
+            // (`create`'s `existed`, `author`'s whole-doc write, both `false` here) — so a
+            // driver deserializes one envelope shape.
+            envelope
+                .as_object_mut()
+                .expect("each doc ack envelope is a JSON object")
+                .insert(
+                    "copied_in".to_owned(),
+                    serde_json::Value::Bool(ack.copied_in()),
+                );
+            json(&envelope)
+        }
         Format::Agent | Format::Human => {
             let line = match ack {
                 DocAck::Field { address, value, .. } => {
@@ -2856,7 +2882,32 @@ pub fn milestone_join(
     sub_tasks: &[String],
 ) -> String {
     match format {
-        Format::Json => json(outcome),
+        Format::Json => {
+            // The [`JoinOutcome`] projection, plus the two facts the **text** states that the
+            // outcome alone does not carry: the milestone the join ran over, and the
+            // doc-less sub-task set the text names on its `no docs staged from:` line (M48,
+            // the pre-1.0 additive-key window — a value the text prints and the envelope
+            // withholds is a gap). Both are additive top-level keys beside the outcome's own,
+            // so a driver already parsing `overlay`/`findings` is unaffected.
+            let mut envelope = serde_json::to_value(outcome).expect("the join outcome serializes");
+            let object = envelope
+                .as_object_mut()
+                .expect("the join outcome serializes as an object");
+            object.insert(
+                "milestone".to_owned(),
+                serde_json::Value::String(milestone_id.to_owned()),
+            );
+            object.insert(
+                "no_docs_from".to_owned(),
+                serde_json::Value::Array(
+                    doc_less_sub_tasks(outcome, sub_tasks)
+                        .into_iter()
+                        .map(|id| serde_json::Value::String(id.to_owned()))
+                        .collect(),
+                ),
+            );
+            json(&envelope)
+        }
         Format::Agent | Format::Human => {
             let mut out = format!(
                 "joined milestone:{milestone_id} — {} doc(s) merged\n",
@@ -2879,17 +2930,8 @@ pub fn milestone_join(
                 out.push('\n');
             }
             // The doc-less sub-tasks, in the caller's (id-sorted) order — named, never
-            // silently credited by omission.
-            let contributed: std::collections::BTreeSet<&str> = outcome
-                .overlay
-                .values()
-                .map(|doc| doc.source_task.as_str())
-                .collect();
-            let absent: Vec<&str> = sub_tasks
-                .iter()
-                .map(String::as_str)
-                .filter(|id| !contributed.contains(id))
-                .collect();
+            // silently credited by omission. Derived once, for both surfaces.
+            let absent = doc_less_sub_tasks(outcome, sub_tasks);
             if !absent.is_empty() {
                 out.push_str("  no docs staged from: ");
                 out.push_str(&absent.join(", "));
@@ -2899,6 +2941,23 @@ pub fn milestone_join(
             out
         }
     }
+}
+
+/// The milestone's sub-tasks that contributed **no** merged doc, in the caller's
+/// (id-sorted) order — the set [`milestone_join`]'s `no docs staged from:` line names and
+/// its envelope's `no_docs_from` key carries. One derivation for both surfaces, so the
+/// text and the wire cannot disagree about who staged nothing.
+fn doc_less_sub_tasks<'a>(outcome: &JoinOutcome, sub_tasks: &'a [String]) -> Vec<&'a str> {
+    let contributed: std::collections::BTreeSet<&str> = outcome
+        .overlay
+        .values()
+        .map(|doc| doc.source_task.as_str())
+        .collect();
+    sub_tasks
+        .iter()
+        .map(String::as_str)
+        .filter(|id| !contributed.contains(id))
+        .collect()
 }
 
 /// The agent-text label for a merged doc's provenance.
