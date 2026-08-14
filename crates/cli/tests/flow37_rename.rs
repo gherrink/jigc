@@ -551,6 +551,182 @@ fn noop_reslug_degrades_to_a_retitle_only() {
     );
 }
 
+/// The parsed JSONL invocation-log records at `.jigc/logs/invocations.jsonl` (empty when
+/// the file is absent) — the `commit_rejected_axis.rs` idiom, so the door's own logged
+/// identity is read back rather than inferred from the printed surface.
+fn log_records(repo: &Path) -> Vec<serde_json::Value> {
+    let path = repo.join(".jigc").join("logs").join("invocations.jsonl");
+    match fs::read_to_string(&path) {
+        Ok(body) => body
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).expect("each log line is valid JSON"))
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// The **last** logged record whose `argv` is exactly `argv` — this run, never an earlier
+/// call that happens to share a token.
+fn record_for<'a>(records: &'a [serde_json::Value], argv: &[&str]) -> &'a serde_json::Value {
+    records
+        .iter()
+        .rev()
+        .find(|record| {
+            record["argv"].as_array().is_some_and(|logged| {
+                logged.len() == argv.len()
+                    && logged
+                        .iter()
+                        .zip(argv)
+                        .all(|(got, want)| got.as_str() == Some(*want))
+            })
+        })
+        .unwrap_or_else(|| panic!("the log must carry a record for {argv:?}; got:\n{records:#?}"))
+}
+
+/// The **idempotent** rename (M48 Increment 8 T1): a `--to` title that slugs to the doc's
+/// own current slug **and** matches the H1 the doc already carries changes nothing, so the
+/// staged set is empty and git refuses to make a commit. That refusal is not a rejection of
+/// anything — nobody rejected this run, there was simply nothing to commit — so the door
+/// must **not** dress it in the survivable hook-rejection frame, must not route to a re-run
+/// that can only fail identically, and must not spill git's unrelated **untracked-file**
+/// listing (the frame's noise on this path). It acks the no-op instead, at exit 0, in both
+/// surfaces (`design/write-commands.md` → `jigc rename` step 2, the degenerate arm;
+/// `completions/artifacts/RC-pre-1.0/v1-walk.md` → Arm 6).
+#[test]
+fn idempotent_retitle_acks_the_no_op_and_never_claims_a_rejection() {
+    let repo = TempDir::new("idempotent");
+    seed_store(repo.path());
+    // The invocation log ON — the door's logged error identity is part of the contract.
+    fs::write(
+        repo.path().join(".jigc/config/manifest.yaml"),
+        "scalar:\n  invocation-log: true\n",
+    )
+    .expect("write the project scalar layer");
+    // An unrelated **untracked** file: git prints its "Untracked files:" listing on the
+    // refused empty commit, and the framed surface relayed it verbatim as if it were the
+    // rejection's cause.
+    fs::write(repo.path().join("scratch-note.txt"), "unrelated\n").expect("write the untracked");
+
+    let before_head = git(repo.path(), &["rev-parse", "HEAD"]);
+    let before_count = commit_count(repo.path());
+    let before_doc = fs::read_to_string(repo.path().join("docs/decisions/single-node-cache.md"))
+        .expect("read the target");
+
+    // The exact title the doc already holds: same slug AND same H1.
+    let argv = [
+        "rename",
+        "adr:single-node-cache",
+        "--to",
+        "Single node cache",
+    ];
+    let out = jigc(repo.path(), &argv);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        out.status.success(),
+        "an idempotent rename changed nothing — it must exit 0, not fail; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    let printed = format!("{stdout}{stderr}");
+    assert!(
+        printed.contains("no-op") && printed.contains("nothing committed"),
+        "the ack must STATE the no-op (nothing renamed, nothing committed); printed:\n{printed}",
+    );
+    assert!(
+        !printed.contains("was rejected"),
+        "no rejection happened — the door must not assert one; printed:\n{printed}",
+    );
+    assert!(
+        !printed.contains("scratch-note.txt"),
+        "the unrelated untracked file has nothing to do with this run and must not be listed; \
+         printed:\n{printed}",
+    );
+
+    // Nothing landed and nothing moved.
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        before_head,
+        "an idempotent rename must leave HEAD untouched",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count,
+        "an idempotent rename must emit no commit at all (never an empty one)",
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join("docs/decisions/single-node-cache.md"))
+            .expect("read the target"),
+        before_doc,
+        "an idempotent rename must leave the doc byte-identical",
+    );
+
+    // The log names no rejection for a run where nothing was rejected.
+    let records = log_records(repo.path());
+    let record = record_for(&records, &argv);
+    assert_eq!(
+        record["error_code"],
+        serde_json::Value::Null,
+        "the logged record must carry no `rename.commit-rejected` identity; record:\n{record:#}",
+    );
+    assert_eq!(
+        record["exit_code"], 0,
+        "the logged record must carry exit 0; record:\n{record:#}",
+    );
+
+    // The machine envelope discriminates the no-op from a landed rename: `commit` is the
+    // landed sha, `null` when nothing was committed (the `migrate-corpus` precedent).
+    let no_op = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "Single node cache",
+            "--format",
+            "json",
+        ],
+    );
+    let no_op_stdout = String::from_utf8_lossy(&no_op.stdout);
+    let no_op_doc: serde_json::Value =
+        serde_json::from_str(&no_op_stdout).expect("the no-op envelope is valid JSON");
+    assert_eq!(
+        no_op_doc["commit"],
+        serde_json::Value::Null,
+        "the no-op envelope must carry `commit: null`; envelope:\n{no_op_doc:#}",
+    );
+
+    let landed = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "Distributed cache",
+            "--format",
+            "json",
+        ],
+    );
+    let landed_stdout = String::from_utf8_lossy(&landed.stdout);
+    assert!(
+        landed.status.success(),
+        "the landed rename must exit 0; stdout:\n{landed_stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&landed.stderr),
+    );
+    let landed_doc: serde_json::Value =
+        serde_json::from_str(&landed_stdout).expect("the landed envelope is valid JSON");
+    assert_eq!(
+        landed_doc["commit"].as_str().map(str::is_empty),
+        Some(false),
+        "a landed rename must carry its commit sha, so the key DISCRIMINATES; envelope:\n{landed_doc:#}",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count + 1,
+        "exactly one commit — the landed rename's",
+    );
+}
+
 /// Mid-fan-out guard (#4): an active task working area blocks the rename. Pairs with the
 /// happy path (no marker → proceeds) to prove the guard is not inert (increment-workflow
 /// #5).

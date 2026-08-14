@@ -66,10 +66,18 @@ pub struct RenameReport {
     /// authors no prose). A word-boundary/token match, scoped to `git ls-files`. Never
     /// changes the verb's exit status; empty for a retitle-only (the slug is unchanged).
     pub prose_mentions: Vec<String>,
+    /// The short sha of the atomic rename commit, or `None` when **nothing was committed** —
+    /// the machine discriminator of the **idempotent** no-op: a `--to` title that slugs to the
+    /// doc's own current slug *and* matches the H1 it already carries changes nothing, so the
+    /// staged set is empty and no commit is made (never an empty one, and never git's refusal
+    /// of one dressed as a hook rejection — M48 Increment 8;
+    /// `design/write-commands.md` → `jigc rename` step 2, the degenerate arm). The
+    /// `migrate-corpus` precedent (`CorpusMigrationReport::commit`).
+    pub commit: Option<String>,
     /// The atomic rename commit's captured non-blocking hook stream — **present-always**,
-    /// the empty string when no hook spoke (the hook_output producer axis;
-    /// `design/command-output-contract.md` → Stream discipline). The caller relays the
-    /// same string on the other channel ([`crate::task::relay_hook_output`]).
+    /// the empty string when no hook spoke **or nothing was committed** (the hook_output
+    /// producer axis; `design/command-output-contract.md` → Stream discipline). The caller
+    /// relays the same string on the other channel ([`crate::task::relay_hook_output`]).
     pub hook_output: String,
 }
 
@@ -243,8 +251,9 @@ pub(crate) fn run(
     tracked_restore.extend(referrer_writes.iter().map(|w| w.rel.clone()));
 
     // The transaction proper: any failure rolls the store back byte-and-record identical.
-    // A landed commit yields its captured non-blocking hook stream for the report.
-    let hook_output = match apply_and_commit(
+    // A landed commit yields its short sha + captured non-blocking hook stream for the
+    // report; an idempotent run (nothing staged) yields `None` and commits nothing.
+    let (commit, hook_output) = match apply_and_commit(
         &repo_root,
         &jigc_root,
         &schema_map,
@@ -254,7 +263,7 @@ pub(crate) fn run(
         &new_source,
         &referrer_writes,
     ) {
-        Ok(hook_output) => hook_output,
+        Ok(landed) => landed,
         Err(err) => {
             rollback_rename(
                 &repo_root,
@@ -292,6 +301,7 @@ pub(crate) fn run(
         title: title.to_string(),
         referrers: referrer_labels,
         prose_mentions,
+        commit,
         hook_output,
     })
 }
@@ -304,10 +314,11 @@ struct ReferrerWrite {
 }
 
 /// Apply the rename mutations on disk, run the pre-commit integrity assertion, re-baseline
-/// file-state, and commit — the inside of the transaction. Returns the landed commit's
-/// captured non-blocking hook stream (the hook_output producer axis — dropping it here was
-/// this producer's defect) and `Err` on any failure (a `git mv` error, a dangling-ref
-/// integrity violation, or a hook/commit rejection); the caller rolls back on `Err`.
+/// file-state, and commit — the inside of the transaction. Returns the landed commit's short
+/// sha (`None` when the run staged nothing — the idempotent no-op, step 6) plus its captured
+/// non-blocking hook stream (the hook_output producer axis — dropping it here was this
+/// producer's defect), and `Err` on any failure (a `git mv` error, a dangling-ref integrity
+/// violation, or a hook/commit rejection); the caller rolls back on `Err`.
 #[allow(clippy::too_many_arguments)]
 fn apply_and_commit(
     repo_root: &Path,
@@ -318,7 +329,7 @@ fn apply_and_commit(
     new_rel: &str,
     new_source: &str,
     referrer_writes: &[ReferrerWrite],
-) -> Result<String> {
+) -> Result<(Option<String>, String)> {
     // 0. Capture the **pre-rename** dangling-edge set off the committed store *before* any
     // mutation (disk == HEAD here). The integrity gate (step 4) refuses only on a dangle the
     // rename itself *introduces* — a pre-existing dangle unrelated to the move must pass
@@ -386,7 +397,25 @@ fn apply_and_commit(
         .save(jigc_root)
         .with_context(|| format!("could not save the file-state record under {jigc_root:?}"))?;
 
-    // 6. Commit (the user's hooks run, never `--no-verify`). A rejected hook bails here and
+    // 6a. The **idempotent** run stops here (M48 Increment 8): a `--to` title that slugs to
+    // the doc's own current slug AND matches the H1 the doc already carries rewrites nothing,
+    // moves nothing and repoints nothing, so this transaction's own paths stage no change.
+    // git refuses a commit that would record nothing, and that refusal reaches the commit seam
+    // as a non-zero exit indistinguishable from a hook's — which is how this door came to
+    // assert `git commit` was rejected over a run nobody rejected, route to a re-run that can
+    // only fail identically, and relay git's unrelated *untracked-file* listing as the cause
+    // (`completions/artifacts/RC-pre-1.0/v1-walk.md` → Arm 6). So the emptiness is
+    // discriminated **before** the commit, at the shared axis predicate, and the run acks its
+    // no-op instead (`commit: None`). The pathspec is exactly this transaction's paths — the
+    // move's two ends plus every repointed referrer — the `migrate-corpus` / `setup` skip
+    // shape; the up-front clean-tree gate means nothing else could be staged anyway.
+    let mut pathspec: Vec<&str> = vec![old_rel, new_rel];
+    pathspec.extend(referrer_writes.iter().map(|write| write.rel.as_str()));
+    if crate::task::nothing_staged(repo_root, &pathspec) {
+        return Ok((None, String::new()));
+    }
+
+    // 6b. Commit (the user's hooks run, never `--no-verify`). A rejected hook bails here and
     // the caller rolls back.
     let msg_path = std::env::temp_dir().join(format!("jigc-rename-msg-{}", std::process::id()));
     std::fs::write(
@@ -398,7 +427,15 @@ fn apply_and_commit(
     let _ = std::fs::remove_file(&msg_path);
     // The landed commit's captured non-blocking hook stream, threaded to the report
     // (the hook_output producer axis — this was the site that discarded it).
-    commit
+    let hook_output = commit?;
+    // The landed commit's short sha — the report's `Some`/`None` discriminator. Read only
+    // after the commit succeeded (so git is present and HEAD exists) and deliberately **not**
+    // propagated as an error: the caller rolls back on `Err`, and rolling back a commit git
+    // has already recorded would half-revert the store. An unreadable sha names the landed
+    // commit as `HEAD` — never `None`, which is reserved for "nothing was committed".
+    let sha = git_capture(repo_root, &["rev-parse", "--short", "HEAD"])
+        .unwrap_or_else(|_| "HEAD".to_owned());
+    Ok((Some(sha), hook_output))
 }
 
 /// Roll the store back to its pre-rename state on a pre-commit failure: restore every

@@ -617,6 +617,7 @@ fn rename_parity() {
         title: "Use Postgres".to_owned(),
         referrers: vec!["adr:cache-strategy#supersedes".to_owned()],
         prose_mentions: vec!["README.md:12".to_owned()],
+        commit: Some("a1b2c3d".to_owned()),
         hook_output: String::new(),
     };
     let RenameReport {
@@ -627,6 +628,7 @@ fn rename_parity() {
         title,
         referrers,
         prose_mentions,
+        commit,
         hook_output,
     } = &report;
 
@@ -641,6 +643,9 @@ fn rename_parity() {
     ] {
         carries(&doc, field_name, value, "jigc rename", field_name);
     }
+    // The no-op discriminator (M48 Increment 8): the landed commit's sha, `null` when nothing
+    // was committed — the fact the **text** states as the no-op ack, so the envelope owes it.
+    carries(&doc, "commit", commit, "jigc rename", "commit");
     carries(&doc, "referrers", referrers, "jigc rename", "referrers");
     carries(
         &doc,

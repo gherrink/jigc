@@ -2653,9 +2653,24 @@ pub fn unmanage(format: Format, report: &crate::unmanage::UnmanageReport) -> Str
 /// the move summary (old→new identity + path, the count of repointed referrers, each
 /// listed), followed by the routing footer; `json` emits the generic projection (no
 /// footer). The verb owns the structural rewrite + commit; the CLI only formats the report.
+///
+/// An **idempotent** run — `report.commit` is `None`, so nothing was staged and nothing was
+/// committed — says exactly that instead of reporting a rename that did not happen (M48
+/// Increment 8; law 1, "acks state the effect"). It is the only way to reach `None`: a
+/// genuine reslug always stages the move's two ends, so the identity there is unchanged and
+/// the ack names the title the doc already holds.
 pub fn rename(format: Format, report: &crate::rename::RenameReport) -> String {
     match format {
         Format::Json => json(report),
+        Format::Agent | Format::Human if report.commit.is_none() => {
+            let mut out = format!(
+                "no-op: {} already holds the title {:?} at {} — nothing renamed, nothing \
+                 committed\n",
+                report.from, report.title, report.old_path,
+            );
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
         Format::Agent | Format::Human => {
             let mut out = format!(
                 "renamed {} -> {} ({} -> {}), repointed {} referrer(s)\n",

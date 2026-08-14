@@ -3622,6 +3622,33 @@ pub(crate) fn git_commit_capture(repo_root: &Path, args: &[&std::ffi::OsStr]) ->
     Ok(stderr.trim_end().to_owned())
 }
 
+/// Whether **nothing under `pathspec` is staged** — `git diff --cached --quiet -- <pathspec>`
+/// exits 0 exactly when the index matches HEAD there (with no HEAD it diffs the empty tree,
+/// so a first commit still reports changes).
+///
+/// The committing axis's **empty-commit discriminator**, the pre-flight side of
+/// [`git_commit_capture`]: git refuses a commit that would record no change, and that refusal
+/// arrives at the seam as a non-zero exit indistinguishable from a hook's — so a door that
+/// commits unconditionally frames *"`git commit` was rejected"* over a run nobody rejected,
+/// routes to a re-run that can only fail identically, and relays git's unrelated untracked-file
+/// listing as if it were the cause (M48 Increment 8; `completions/artifacts/RC-pre-1.0/v1-walk.md`
+/// → Arm 6). A door asks this **before** committing and acks its own no-op instead. The
+/// predicate is the shipped shape of `migrate_corpus`' and `setup`'s own skips, lifted beside
+/// the commit seam the axis shares so a door inherits it rather than re-deriving it.
+///
+/// A git that cannot be spawned reads as **`false`** (something may be staged): the commit
+/// then runs and fails loudly at the seam, never silently claiming a no-op.
+pub(crate) fn nothing_staged(repo_root: &Path, pathspec: &[&str]) -> bool {
+    let mut args: Vec<&str> = vec!["diff", "--cached", "--quiet", "--"];
+    args.extend(pathspec);
+    Command::new("git")
+        .args(&args)
+        .current_dir(repo_root)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 /// Apply a worktree's staged `patch` (`git diff --cached --binary`) onto `repo_root`'s index
 /// **and** working tree — `git apply --index --whitespace=nowarn`, feeding the patch on stdin
 /// (the `squash: false` honest-rework, M31; [`chain_commit`] runs it in the dedicated worktree,
