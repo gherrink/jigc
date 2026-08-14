@@ -17,7 +17,18 @@
 //! - **(c)** the forecast is *checked against reality*: with jigc's **own** config layer
 //!   dirty (`jigc config set …`), the left-out set the **dry-run** forecasts, the set the
 //!   **pre-commit** advisory names, and the **landed residual** are one and the same — a
-//!   path the finalize itself stages is never named "left-out (… git add to include)".
+//!   path the finalize itself stages is never named "left-out (… git add to include)";
+//! - **(d)** (M48 Increment 9 / T3 — RC-pre-1.0
+//!   [findings-verification.md](../../../completions/artifacts/RC-pre-1.0/findings-verification.md)
+//!   → **F13**) **both** pre-commit headers state what finalize is *about to do*, never
+//!   what it has done: G1's rejected run opened `finalize — committing the index; leaving
+//!   out:` and only then reported the rejection — *"it reads as done until the next line
+//!   contradicts it"* (a law-1 lie, `design/surface-contract.md` → law 1). The fix is a
+//!   **reword, never a move**: `design/finalize.md` → "The `left-out` advisory prints
+//!   BEFORE the commit too (M42)" settles the *placement*, so the arm proves the print is
+//!   still emitted ahead of the commit (it appears on a run whose commit a hook rejects,
+//!   with HEAD untouched) and that the four `left-out`/`carried-over` label render sites
+//!   are unmoved.
 
 use std::fs;
 use std::io::Write;
@@ -121,9 +132,16 @@ fn ok_stdout(repo: &Path, home: &Path, args: &[&str], what: &str) -> String {
     String::from_utf8(out.stdout).expect("utf-8 stdout")
 }
 
-/// Mint a `single-task` and fill its commit doc's author-required fields/slots.
+/// Install jigc, then mint a `single-task` and fill its commit doc.
 fn seed_task(repo: &Path, home: &Path, intent: &str) -> String {
     ok_stdout(repo, home, &["setup"], "jigc setup");
+    mint_and_fill_commit(repo, home, intent)
+}
+
+/// Mint a `single-task` and fill its commit doc's author-required fields/slots — the half
+/// of [`seed_task`] that runs **after** `jigc setup`, split out so an arm that must stage a
+/// foreign change **pre-mint** (the carryover snapshot is taken at mint) can interleave.
+fn mint_and_fill_commit(repo: &Path, home: &Path, intent: &str) -> String {
     ok_stdout(
         repo,
         home,
@@ -154,6 +172,22 @@ fn seed_task(repo: &Path, home: &Path, intent: &str) -> String {
     set_slot(&format!("commit:{task}#summary"), b"tell the truth\n");
     set_slot(&format!("commit:{task}#body"), b"A message-truth change.\n");
     task
+}
+
+/// Install a `pre-commit` hook that rejects every commit, speaking `message` on **stderr**
+/// (the correction signal git relays verbatim). Returns the hook's path so an arm can
+/// remove it and prove the re-run lands.
+fn install_rejecting_hook(repo: &Path, message: &str) -> PathBuf {
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::create_dir_all(hook.parent().expect("hooks dir")).expect("create hooks dir");
+    fs::write(&hook, format!("#!/bin/sh\necho '{message}' 1>&2\nexit 1\n"))
+        .expect("write pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod hook");
+    }
+    hook
 }
 
 /// The left-out paths a finalize surface names: the shared `left_out_lines` section is a
@@ -240,18 +274,7 @@ fn hook_rejection_says_the_task_is_intact_and_the_rerun_lands() {
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
 
     // A rejecting hook whose stderr is the correction signal.
-    let hook = repo.path().join(".git").join("hooks").join("pre-commit");
-    fs::create_dir_all(hook.parent().expect("hooks dir")).expect("create hooks dir");
-    fs::write(
-        &hook,
-        "#!/bin/sh\necho 'lint: trailing whitespace' 1>&2\nexit 1\n",
-    )
-    .expect("write pre-commit hook");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod hook");
-    }
+    let hook = install_rejecting_hook(repo.path(), "lint: trailing whitespace");
 
     let rejected = run_jigc(repo.path(), home.path(), &["task", "finalize", &task], None);
     assert!(
@@ -395,4 +418,152 @@ fn the_pre_commit_left_out_equals_the_landed_residual_when_jigcs_config_is_dirty
         !committed.lines().any(|line| line == "README.md"),
         "the unstaged edit stays out of the commit; files:\n{committed}",
     );
+}
+
+/// The bytes a **pre-commit** header must not carry: each tells the reader the commit is a
+/// fact — the present-progressive stem G1 read as done (`committing the index`), its
+/// perfect sibling, and the landed line's own stem. A header is emitted *before* the
+/// commit, so on a rejected run every one of these is a lie
+/// (`design/surface-contract.md` → law 1).
+const DEED_STEMS: [&str; 3] = ["committing the index", "committed the index", "finalized "];
+
+/// The bytes a pre-commit header carries **instead** — the intent the print actually has,
+/// in the words `design/finalize.md` uses for it (*"says what it is about to leave out,
+/// before it commits"*).
+const INTENT_STEM: &str = "about to commit the index";
+
+/// The pre-commit header line naming `subject` (`leaving out` / `carrying over`). Both
+/// advisories open with the same `finalize — ` stem, so this reads either off the emitted
+/// bytes rather than reconstructing it.
+fn pre_commit_header(surface: &str, subject: &str) -> String {
+    surface
+        .lines()
+        .find(|line| line.starts_with("finalize — ") && line.contains(subject))
+        .unwrap_or_else(|| {
+            panic!("the pre-commit `{subject}` header must be emitted; surface:\n{surface}")
+        })
+        .to_string()
+}
+
+/// The shared property (d) asserts of **both** pre-commit headers: it states what finalize
+/// is about to do, and carries no claim that the commit is already a fact.
+fn assert_states_the_intent_not_the_deed(header: &str, which: &str) {
+    for stem in DEED_STEMS {
+        assert!(
+            !header.contains(stem),
+            "the pre-commit {which} header must not assert the commit as a fact — it prints \
+             BEFORE the commit, and on a rejected run there is no commit at all; the stem \
+             {stem:?} is in:\n{header}",
+        );
+    }
+    assert!(
+        header.contains(INTENT_STEM),
+        "the pre-commit {which} header must say what finalize is about to do ({INTENT_STEM:?}); \
+         got:\n{header}",
+    );
+}
+
+/// (d) **Both** pre-commit headers state the intent, never the deed (M48 Inc 9 / T3, F13) —
+/// and the print keeps its settled position ahead of the commit.
+///
+/// Arm 1 is G1's picture exactly: a finalize with work left behind, whose commit a
+/// `pre-commit` hook rejects. The `left-out` header is emitted (so the print is still
+/// pre-commit — HEAD never moved and nothing on either stream claims a landing), and it no
+/// longer reads as done above the rejection. Arm 2 takes the sibling header on a declared
+/// `--carry-staged` run. In both, the label render sites are asserted **unmoved**: the
+/// `left-out (unstaged/untracked — git add to include):` section header and the
+/// `carried-over <path>` manifest line are the bytes the other three sites share.
+#[test]
+fn both_pre_commit_headers_state_the_intent_and_a_rejected_finalize_never_reads_as_done() {
+    // ── Arm 1 — the `left-out` header on a run the hook rejects ──────────────────────
+    let repo = TempDir::new("header-rejected");
+    let home = TempDir::new("home-header-rejected");
+    init_repo(repo.path());
+    let task = seed_task(repo.path(), home.path(), "state the intent");
+
+    fs::write(repo.path().join("staged.txt"), "the task's work\n").expect("write staged.txt");
+    git(repo.path(), &["add", "staged.txt"]);
+    fs::write(repo.path().join("README.md"), "hello\nunstaged WIP\n").expect("edit README.md");
+    fs::write(repo.path().join("scratch.txt"), "private WIP\n").expect("write scratch.txt");
+
+    install_rejecting_hook(repo.path(), "lint: rejected by policy");
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+
+    let rejected = run_jigc(repo.path(), home.path(), &["task", "finalize", &task], None);
+    assert!(
+        !rejected.status.success(),
+        "the premise: the hook rejects, so finalize exits non-zero; stdout:\n{}",
+        String::from_utf8_lossy(&rejected.stdout),
+    );
+    let stdout = String::from_utf8(rejected.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(rejected.stderr).expect("utf-8 stderr");
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "the rejected commit leaves HEAD untouched — which is what makes every deed-stem a lie",
+    );
+    assert!(
+        stderr.contains("lint: rejected by policy"),
+        "the premise: the rejection is reported after the header; stderr:\n{stderr}",
+    );
+
+    // The print keeps its settled position: it was emitted on a run that never committed.
+    let header = pre_commit_header(&stdout, "leaving out");
+    assert_states_the_intent_not_the_deed(&header, "left-out");
+    // …and the label render site is unmoved — the section header the dry-run forecast and
+    // the landed residual share, naming the same set.
+    assert!(
+        stdout.contains("left-out (unstaged/untracked — git add to include):"),
+        "the `left-out` section header is unmoved; stdout:\n{stdout}",
+    );
+    assert_eq!(
+        left_out_paths(&stdout),
+        vec!["README.md".to_string(), "scratch.txt".to_string()],
+        "the advisory still names what the commit would have left behind; stdout:\n{stdout}",
+    );
+    for stream in [&stdout, &stderr] {
+        assert!(
+            !stream.contains("finalized "),
+            "a rejected finalize claims no landing anywhere; got:\n{stream}",
+        );
+    }
+
+    // ── Arm 2 — the `carried-over` header on a declared `--carry-staged` run ─────────
+    let repo = TempDir::new("header-carried");
+    let home = TempDir::new("home-header-carried");
+    init_repo(repo.path());
+    ok_stdout(repo.path(), home.path(), &["setup"], "jigc setup");
+
+    // Foreign work staged BEFORE the task exists — the carryover snapshot's subject.
+    fs::write(repo.path().join("foreign.txt"), "not this task's work\n").expect("write foreign");
+    git(repo.path(), &["add", "foreign.txt"]);
+
+    let task = mint_and_fill_commit(repo.path(), home.path(), "carry the intent");
+    fs::write(repo.path().join("staged.txt"), "the task's work\n").expect("write staged.txt");
+    git(repo.path(), &["add", "staged.txt"]);
+
+    let stdout = ok_stdout(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", &task, "--carry-staged"],
+        "jigc task finalize --carry-staged",
+    );
+    let landed_at = stdout
+        .find("finalized ")
+        .unwrap_or_else(|| panic!("the declared carry lands; stdout:\n{stdout}"));
+    let before_commit = &stdout[..landed_at];
+
+    let header = pre_commit_header(before_commit, "carrying over");
+    assert_states_the_intent_not_the_deed(&header, "carried-over");
+    assert!(
+        header.contains("--carry-staged"),
+        "the header still says the carry was declared; got:\n{header}",
+    );
+    // The label render site is unmoved at both the pre-commit print and the landed text.
+    for site in [before_commit, &stdout[landed_at..]] {
+        assert!(
+            site.contains("  carried-over foreign.txt"),
+            "the `carried-over` label is unmoved; site:\n{site}",
+        );
+    }
 }

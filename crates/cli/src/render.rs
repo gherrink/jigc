@@ -1257,12 +1257,19 @@ fn left_out_lines(left_out: &[ManifestEntry]) -> Vec<String> {
 /// Empty (no bytes) when the tree leaves nothing out; ends with a newline (the caller
 /// emits it as-is on the stream the format selects). It **surfaces only** — the commit
 /// still lands; the block stays reserved for the empty-index case.
+///
+/// **The header states the intent, never the deed** (M48 Inc 9 / T3, RC-pre-1.0 → F13;
+/// `design/surface-contract.md` → law 1). It read *"finalize — committing the index"*,
+/// which the commit had not yet done and, on a run a hook rejects, never would: the header
+/// stood above the rejection and *"read as done until the next line contradicted it"*.
+/// **Reworded, never moved** — the print's position is settled (`design/finalize.md` → "The
+/// `left-out` advisory prints BEFORE the commit too"), so the fix is in the words alone.
 pub fn left_out_advisory(left_out: &[ManifestEntry]) -> String {
     let lines = left_out_lines(left_out);
     if lines.is_empty() {
         return String::new();
     }
-    let mut out = String::from("finalize — committing the index; leaving out:\n");
+    let mut out = String::from("finalize — about to commit the index; leaving out:\n");
     for line in lines {
         out.push_str(&line);
         out.push('\n');
@@ -1277,14 +1284,16 @@ pub fn left_out_advisory(left_out: &[ManifestEntry]) -> String {
 /// [`manifest_line`] label (`carried-over`) the dry-run forecast and the landed
 /// manifest render — the four sites move together. Empty (no bytes) when nothing is
 /// carried (a refused run never reaches this print); ends with a newline. Sits beside
-/// [`left_out_advisory`] (the M42 print, untouched) on the same stream discipline.
+/// [`left_out_advisory`] (the M42 print) on the same stream discipline — and, since M48
+/// Inc 9 / T3, on the same **intent-not-deed** header: the sibling stem was reworded over
+/// the whole pair, because F13's lie is the *stem's*, and it was carried by both prints.
 pub fn carried_over_advisory(carried: &[ManifestEntry]) -> String {
     if carried.is_empty() {
         return String::new();
     }
     let mut out = String::from(
-        "finalize — committing the index; carrying over (staged before this task existed — \
-         declared with `--carry-staged`):\n",
+        "finalize — about to commit the index; carrying over (staged before this task existed \
+         — declared with `--carry-staged`):\n",
     );
     for entry in carried {
         out.push_str(&manifest_line(entry));
@@ -6250,7 +6259,7 @@ mod tests {
 
         let advisory = carried_over_advisory(&carried);
         insta::assert_snapshot!(advisory, @r"
-        finalize — committing the index; carrying over (staged before this task existed — declared with `--carry-staged`):
+        finalize — about to commit the index; carrying over (staged before this task existed — declared with `--carry-staged`):
           carried-over foreign-a.txt
         ");
         assert_eq!(

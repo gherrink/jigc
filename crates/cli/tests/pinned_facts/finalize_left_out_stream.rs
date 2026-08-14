@@ -31,7 +31,7 @@
 //! expect:
 //!   stdout: exactly one JSON document (byte 1 is `{`); no `left-out (` block;
 //!           `committed.left_out` names the unstaged + untracked paths
-//!   stderr: the `finalize — committing the index; leaving out:` block naming them
+//!   stderr: the `finalize — about to commit the index; leaving out:` block naming them
 //! contrast:
 //!   a finalize with nothing left behind prints the block on NEITHER stream
 //! ```
@@ -48,7 +48,11 @@ use std::collections::BTreeSet;
 use std::fs;
 
 /// The verbatim first line of the pre-commit advisory (`render::left_out_advisory`).
-const ADVISORY_TITLE: &str = "finalize — committing the index; leaving out:";
+/// **Reworded at M48 Inc 9 / T3** (RC-pre-1.0 → F13 — the header stated the deed above a
+/// rejection); the stream discipline this file pins is untouched by the wording, and the
+/// header's own intent-not-deed property is pinned at
+/// `finalize_message_truth::both_pre_commit_headers_state_the_intent_and_a_rejected_finalize_never_reads_as_done`.
+const ADVISORY_TITLE: &str = "finalize — about to commit the index; leaving out:";
 /// The verbatim section header the advisory and the landed residual share
 /// (`render::left_out_lines`).
 const LEFT_OUT_HEADER: &str = "left-out (unstaged/untracked — git add to include):";
