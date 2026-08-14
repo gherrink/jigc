@@ -15,6 +15,8 @@ mod flow10_acceptance;
 mod flow27_marquee;
 #[path = "../flow36_corpus_structural.rs"]
 mod flow36_corpus_structural;
+#[path = "../foreign_at_both_doors.rs"]
+mod foreign_at_both_doors;
 #[path = "../golden_harness.rs"]
 mod golden_harness;
 #[path = "../managed_vs_foreign.rs"]

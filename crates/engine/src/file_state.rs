@@ -215,6 +215,13 @@ impl ConflictBlock {
 ///
 /// - **`UNKNOWN`** (no recorded hash) → **baseline-adopt**: record the current hash,
 ///   emit the advisory `file-state.baseline-adopt` finding (absent-hash is not drift).
+///   A **non-conformant** file here is not adopted; which advisory it draws is the
+///   **managed-vs-foreign discriminator's** call (M48 Inc 4 / T1,
+///   [`crate::validate::AdoptionInputs::unadopted`]): a **never-adopted foreign** squatter
+///   converges on the store family's `schema-conformance.unadopted-instance` with the
+///   adoption route naming its own path, a **managed** doc keeps
+///   `reconciliation.conformance-block`. Neither is recorded, so either re-fires until the
+///   human resolves it.
 /// - **`IN_SYNC`** (recorded hash matches) → no finding (clean / task-only change —
 ///   the working-area writes are reconciled elsewhere, not here).
 /// - **`DRIFTED + TOUCHED`** (`task_touched`) → **conflict-block**: both sides moved.
@@ -244,20 +251,37 @@ pub fn reconcile_committed(
     bytes: &[u8],
     task_touched: bool,
     conflict: &ConflictBlock,
+    adoption: &crate::validate::AdoptionInputs<'_>,
 ) -> Vec<Finding> {
     let current = hash_bytes(bytes);
     match record.get(path) {
         // UNKNOWN → the G4 conformance gate (M21; `project-setup.md` → Flow 2 hardening):
         // a fresh-checkout doc is baseline-adopted **only if it classifies conformant** —
-        // a foreign non-conformant `.md` squatting in a `location:` dir is routed as an
-        // advisory and **not** recorded (so it re-fires every sweep until the human
-        // resolves it), never silently absorbed.
+        // a non-conformant `.md` sitting in a `location:` dir is routed as an advisory and
+        // **not** recorded (so it re-fires every sweep until the human resolves it), never
+        // silently absorbed.
+        //
+        // *Which* advisory is the managed-vs-foreign discriminator's call (M48 Inc 4 / T1).
+        // The M42 sweep reached the store family and stopped there, so this door graded a
+        // never-adopted **foreign** file — a file the user never handed to jigc — as an
+        // unvetted *managed* one: a different code from the store door's over the same
+        // bytes, carrying a route that names no verb and no path. A foreign file converges
+        // here on the shipped `schema-conformance.unadopted-instance` and its adoption
+        // route; everything the discriminator adjudicates **managed** (the commonest case,
+        // and every doc of an unversioned doctype) keeps `conformance_advisory_finding`
+        // unchanged. Neither branch records.
         None => match conformance_gate(schema, bytes) {
             Ok(_) => {
                 record.record(path, current);
                 vec![baseline_adopt_finding(path)]
             }
-            Err(cause) => vec![conformance_advisory_finding(path, cause)],
+            Err(cause) => {
+                let source = String::from_utf8_lossy(bytes);
+                match adoption.unadopted(&schema.ty, schema, &source, path) {
+                    Some(finding) => vec![finding],
+                    None => vec![conformance_advisory_finding(path, cause)],
+                }
+            }
         },
         // IN_SYNC → clean / task-only change: nothing to reconcile here.
         Some(recorded) if recorded == current => Vec::new(),
@@ -377,13 +401,17 @@ pub fn committed_path_recordable(
 ///
 /// `conflict` is the caller's [`ConflictBlock`] — the sweep knows the working area's
 /// *path*, never which task (or join) owns it, so the naming and the way out come from the
-/// caller that does (M47 inc-2 / T4).
+/// caller that does (M47 inc-2 / T4). `adoption` is the caller's
+/// [`AdoptionInputs`](crate::validate::AdoptionInputs) — three pack facts the engine cannot
+/// produce, feeding [`reconcile_committed`]'s `UNKNOWN` + non-conformant arm so a foreign
+/// squatter draws the same code and route here it draws at store scope (M48 Inc 4 / T1).
 ///
 /// Mutating: `record` (baseline-adopt / absorb) and `index` (absorb) advance in place;
 /// the caller persists them. Findings aggregate in a stable order: persisted schemas
 /// by type, then committed docs by path-sorted slug, then rename findings for each
 /// recorded-but-missing path (also type-then-path sorted). No I/O beyond reading the
 /// committed `.md` bytes — the engine stays shell-free.
+#[allow(clippy::too_many_arguments)]
 pub fn reconcile_committed_store(
     record: &mut FileStateRecord,
     index: &mut crate::index::EdgeIndex,
@@ -392,6 +420,7 @@ pub fn reconcile_committed_store(
     task_dir: &Path,
     history: &crate::validate::HistoryPredicate<'_>,
     conflict: &ConflictBlock,
+    adoption: &crate::validate::AdoptionInputs<'_>,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     // Snapshot the recorded committed paths *before* the reconcile loop mutates the
@@ -430,6 +459,7 @@ pub fn reconcile_committed_store(
                     &bytes,
                     task_touched,
                     conflict,
+                    adoption,
                 ));
             }
             continue; // a placement doctype has no location dir to glob.
@@ -467,6 +497,7 @@ pub fn reconcile_committed_store(
                 &bytes,
                 task_touched,
                 conflict,
+                adoption,
             ));
         }
     }
@@ -1270,6 +1301,7 @@ Referrers must point at the new decision.
             edited,
             /* task_touched */ false,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         // Exactly one advisory absorb finding carrying the message.
@@ -1326,6 +1358,7 @@ Referrers must point at the new decision.
             edited,
             /* task_touched */ false,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         assert!(
@@ -1389,6 +1422,7 @@ Referrers must point at the new decision.
             edited,
             /* task_touched */ true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         assert_eq!(findings.len(), 1, "conflict emits exactly one finding");
@@ -1455,6 +1489,7 @@ Referrers must point at the new decision.
             ADR_B_EDITED_SUPERSEDES.as_bytes(),
             /* task_touched */ true,
             &ConflictBlock::new(detail, crate::finding::Route::human(route_text)),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         assert_eq!(findings.len(), 1, "conflict emits exactly one finding");
@@ -1505,6 +1540,7 @@ Referrers must point at the new decision.
             foreign,
             false,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         assert_eq!(
@@ -1551,6 +1587,7 @@ Referrers must point at the new decision.
             foreign,
             false,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
         assert_eq!(
             again.len(),
@@ -1586,6 +1623,7 @@ Referrers must point at the new decision.
             ADR_B_BASE.as_bytes(),
             false,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         assert_eq!(
@@ -1783,6 +1821,7 @@ Referrers must point at the new decision.
             task.path(),
             &|_| true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         // The clean ADR absorbed (advisory) and its baseline advanced + edge folded in.
@@ -1859,6 +1898,7 @@ Referrers must point at the new decision.
             task.path(),
             &|_| true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         let rename = findings
@@ -1912,6 +1952,7 @@ Referrers must point at the new decision.
             task.path(),
             &|_| true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
         assert!(
             findings.iter().all(|f| f.code != "reconciliation.rename"),
@@ -1933,6 +1974,7 @@ Referrers must point at the new decision.
             task.path(),
             &|_| true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
         let rename = findings
             .iter()
@@ -2014,6 +2056,7 @@ Referrers must point at the new decision.
             task.path(),
             &|_| true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         // (i) NO rename finding — neither the weak-signal restore nor a strong block.
@@ -2044,6 +2087,7 @@ Referrers must point at the new decision.
             task.path(),
             &|_| true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
         assert!(
             again.iter().all(|f| f.code != "reconciliation.rename"),
@@ -2479,6 +2523,7 @@ sections: []
             task.path(),
             &|_| true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         // (a) the OOB edit to the managed placement file is detected + routed.
@@ -2532,6 +2577,7 @@ sections: []
             task.path(),
             &|_| true,
             &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
         );
 
         let rename = findings

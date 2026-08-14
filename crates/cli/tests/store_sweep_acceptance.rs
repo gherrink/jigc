@@ -540,12 +540,20 @@ fn real_doc_code_probe_over_committed_store() {
 /// `file_state_soundness.rs` harness shape):
 ///
 /// - a freeform `docs/decisions/notes.md` (no recorded hash → the `UNKNOWN` arm) is routed as
-///   an **advisory** `reconciliation.conformance-block` (the sweep does **not** block —
-///   exit 0) and **not** baseline-adopted, so a second `task validate` **re-fires** the
-///   same advisory (the routed-but-not-recorded recurrence,
-///   `design/project-setup.md` → Flow 2 hardening, consequence note `:115`);
+///   an **advisory** (the sweep does **not** block — exit 0) and **not** baseline-adopted,
+///   so a second `task validate` **re-fires** the same advisory (the routed-but-not-recorded
+///   recurrence, `design/project-setup.md` → Flow 2 hardening, consequence note `:115`);
 /// - a conformant jigc-minted `docs/decisions/<slug>.md` baselines **without** a false
 ///   conformance-block advisory (the M20 clean-store guarantee holds).
+///
+/// **Which advisory** is the managed-vs-foreign discriminator's call since M48 Inc 4 / T1.
+/// Freeform scratch prose parses against no shipped `adr` schema version and carries no
+/// stamp, so it is a **never-adopted foreign** file: it converges on the store family's
+/// `schema-conformance.unadopted-instance` and the adoption route naming its own path,
+/// instead of the `reconciliation.conformance-block` this door used to grade every
+/// non-conformant file with. The gate this suite pins is untouched — routed, not recorded,
+/// exit 0, recurring — only the code it is routed under. The convergence itself is pinned
+/// at `crates/cli/tests/foreign_at_both_doors.rs`.
 mod g4_baseline_adopt_gate {
     use std::fs;
     use std::path::Path;
@@ -734,14 +742,21 @@ mod g4_baseline_adopt_gate {
             .clone()
     }
 
-    /// Count the advisory `reconciliation.conformance-block` findings naming `path`.
-    fn conformance_advisory_count(findings: &[serde_json::Value], path: &str) -> usize {
+    /// The task-scope advisory a **never-adopted foreign** file draws at the `UNKNOWN` arm
+    /// (M48 Inc 4 / T1) — the store family's adoption code, served here too.
+    const UNADOPTED: &str = "schema-conformance.unadopted-instance";
+    /// The advisory a **managed** non-conformant file keeps at that same arm.
+    const CONFORMANCE_BLOCK: &str = "reconciliation.conformance-block";
+
+    /// Count the advisory findings of `code` whose stable key targets `path` — read from the
+    /// emitted `key` object, the contract's own discriminating handle.
+    fn advisory_count(findings: &[serde_json::Value], code: &str, path: &str) -> usize {
         findings
             .iter()
             .filter(|f| {
-                f["code"] == "reconciliation.conformance-block"
+                f["key"]["code"] == code
+                    && f["key"]["target"] == path
                     && f["severity"] == "advisory"
-                    && f["message"].as_str().is_some_and(|m| m.contains(path))
             })
             .count()
     }
@@ -776,14 +791,14 @@ mod g4_baseline_adopt_gate {
         stage_commit_only(repo.path(), home.path(), task_a, task_a);
         let findings = validate_findings(repo.path(), home.path(), task_a);
         assert_eq!(
-            conformance_advisory_count(&findings, NOTES),
+            advisory_count(&findings, UNADOPTED, NOTES),
             1,
-            "the freeform notes.md is routed exactly one advisory conformance-block; got:\n{findings:#?}",
+            "the freeform notes.md is routed exactly one adoption advisory; got:\n{findings:#?}",
         );
         // The advisory-only sweep lands at the finalize boundary (exit not blocked).
         let findings = finalize_findings(repo.path(), home.path(), task_a);
         assert_eq!(
-            conformance_advisory_count(&findings, NOTES),
+            advisory_count(&findings, UNADOPTED, NOTES),
             1,
             "the advisory also surfaces in the finalize-preflight sweep; got:\n{findings:#?}",
         );
@@ -811,7 +826,7 @@ mod g4_baseline_adopt_gate {
         stage_commit_only(repo.path(), home.path(), task_b, task_b);
         let findings = finalize_findings(repo.path(), home.path(), task_b);
         assert_eq!(
-            conformance_advisory_count(&findings, NOTES),
+            advisory_count(&findings, UNADOPTED, NOTES),
             1,
             "the advisory re-fires on a second sweep (not silently absorbed); got:\n{findings:#?}",
         );
@@ -902,7 +917,7 @@ mod g4_baseline_adopt_gate {
         stage_commit_only(repo.path(), home.path(), task_d, task_d);
         let findings = validate_findings(repo.path(), home.path(), task_d);
         assert_eq!(
-            conformance_advisory_count(&findings, MINTED),
+            advisory_count(&findings, CONFORMANCE_BLOCK, MINTED),
             0,
             "the conformant minted ADR draws no false conformance-block advisory; got:\n{findings:#?}",
         );
@@ -948,7 +963,7 @@ mod g4_baseline_adopt_gate {
 
         let findings = finalize_findings(repo.path(), home.path(), task_a);
         assert_eq!(
-            conformance_advisory_count(&findings, NOTES),
+            advisory_count(&findings, UNADOPTED, NOTES),
             1,
             "finalize 1 routes the freeform notes.md exactly one advisory; got:\n{findings:#?}",
         );
@@ -987,7 +1002,7 @@ mod g4_baseline_adopt_gate {
         stage_commit_only(repo.path(), home.path(), task_b, task_b);
         let findings = finalize_findings(repo.path(), home.path(), task_b);
         assert_eq!(
-            conformance_advisory_count(&findings, NOTES),
+            advisory_count(&findings, UNADOPTED, NOTES),
             1,
             "the advisory re-fires on the second finalize (not silently absorbed at the \
              post-commit door); got:\n{findings:#?}",

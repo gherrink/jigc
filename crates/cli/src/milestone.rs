@@ -884,6 +884,14 @@ fn reconcile_record_preflight(
         stamp: String::new(),
         edges: Vec::new(),
     };
+    // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1). This door
+    // holds no pack, so it resolves its own — the alternative is a `false` constant that
+    // would silently make a foreign file squatting the record path read as an unvetted
+    // *managed* record, the exact split this task closes.
+    let pack = make_pack()?;
+    let versions = crate::pack::frozen_doctype_versions(pack.as_ref());
+    let priors = crate::pack::prior_doctype_schemas(pack.as_ref(), &versions);
+    let migratable = crate::pack::migratable_doctypes(pack.as_ref());
     let findings = reconcile_committed(
         &mut fs_record,
         &mut index,
@@ -893,6 +901,7 @@ fn reconcile_record_preflight(
         &bytes,
         /* task_touched = */ true,
         &record_conflict_block(&key),
+        &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
     );
     if let Some(blocking) = findings.iter().find(|f| f.severity == Severity::Blocking) {
         // Drift on a machine-owned record → conflict-block, the record untouched, routed.
@@ -3325,6 +3334,12 @@ fn milestone_boundary_gate(
     let history = move |path: &str| {
         crate::task::git_path_has_history(&repo_root_for_history, path).unwrap_or(true)
     };
+    // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1) — the merged
+    // gate drives the same committed-store sweep the per-task door does, so a foreign
+    // squatter must draw the store door's code and route here too.
+    let versions = crate::pack::frozen_doctype_versions(pack.as_ref());
+    let priors = crate::pack::prior_doctype_schemas(pack.as_ref(), &versions);
+    let migratable = crate::pack::migratable_doctypes(pack.as_ref());
 
     // ONE validate over the persisted merged docs (the filtered `gate_staging` area) + the
     // merged code root — the committed edge index is keyed to the shared base (`base.sha`),
@@ -3355,6 +3370,7 @@ fn milestone_boundary_gate(
                  the external edit on disk, then re-run the join",
             ),
         ),
+        &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
     )
     .with_context(|| format!("validating the merged effective state under {staging_dir:?}"))?;
 

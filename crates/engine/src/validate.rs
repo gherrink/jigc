@@ -184,6 +184,14 @@ pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// milestone join gate passes its own (no single task owns the merged area) — so the naming
 /// and the way out come from the caller that knows, never a placeholder minted here.
 ///
+/// `adoption` is the CLI-supplied [`AdoptionInputs`] the same committed-store sweep hands to
+/// its `UNKNOWN` + non-conformant classifier (M48 Inc 4 / T1), so a **never-adopted foreign**
+/// file squatting at a managed home draws the store family's
+/// `schema-conformance.unadopted-instance` and its adoption route here too, instead of being
+/// graded an unvetted *managed* doc. The three facts it carries — the manifest version map,
+/// the shipped prior shapes, the `migrate-<ty>`-bearing doctypes — are pack facts the engine
+/// cannot produce; an empty set leaves this arm byte-identical to its pre-M48 behaviour.
+///
 /// `repo_root` is the committed-store root, `jigc_root` is the `.jigc/` home (where the
 /// edge index caches), and `head` is the opaque HEAD stamp the committed index is
 /// tagged with (the CLI reads it via `git`, keeping the engine shell-free). These three
@@ -252,6 +260,7 @@ pub fn validate_task(
     changed_code: &BTreeSet<String>,
     base_code_tree_root: &Path,
     conflict: &crate::file_state::ConflictBlock,
+    adoption: &AdoptionInputs<'_>,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
     for filename in staged_instances(dir)? {
@@ -312,6 +321,7 @@ pub fn validate_task(
         dir,
         history,
         conflict,
+        adoption,
     ));
 
     // `schema-conformance.ref-resolves` — the cross-doc forward-ref / edge-index
@@ -979,6 +989,97 @@ pub fn adoption_route(ty: &str, rel_key: &str, migratable: bool) -> String {
         "adopt — run `jigc ingest` to route it; it is a foreign file, not an unmigrated \
          managed doc"
             .to_string()
+    }
+}
+
+/// The **managed-vs-foreign discriminator's three CLI-supplied inputs**, bundled so the
+/// *task-scope* reconciler can ask the same question the store family asks (M48 Inc 4 / T1).
+///
+/// M42 shipped the discriminator and swept it through the surfaces that adjudicate the
+/// **committed store**: the fifth content family, family 3's un-baselined advisory, and `jigc
+/// doc list`'s registration state. It never reached
+/// [`crate::file_state::reconcile_committed`] — the primitive `jigc task validate` and the
+/// `finalize` preflight route every committed doc through — so one foreign file answered
+/// `schema-conformance.unadopted-instance` at one door and `reconciliation.conformance-block`
+/// at the other, with a route that is prose about a class rather than about that file.
+///
+/// The engine produces none of these three: the manifest version map, the shipped
+/// prior-version shapes and the set of doctypes whose `migrate-<ty>` workflow exists are all
+/// **pack** facts the CLI resolves and threads in — the determinism boundary, exactly like the
+/// caller-supplied [`crate::file_state::ConflictBlock`] beside it. Bundling them keeps one
+/// value travelling through [`validate_task`] instead of three, and keeps the question
+/// answerable in exactly one place ([`AdoptionInputs::unadopted`]).
+///
+/// **Inert by construction where it must be.** An empty `versions` map makes
+/// [`is_unadopted_foreign`] answer `false` for every doctype (its stated precondition: the
+/// discriminator runs only where a stamp can exist), so a caller that supplies nothing gets
+/// the pre-M48 behaviour byte for byte.
+#[derive(Clone, Copy)]
+pub struct AdoptionInputs<'a> {
+    /// `doctype → manifest schema-version` — the **versioned** set the discriminator is
+    /// allowed to answer over at all.
+    versions: &'a BTreeMap<String, u32>,
+    /// `doctype → shipped prior-version shapes` — the parse-against-a-prior arm that keeps a
+    /// v0-era **managed** doc from reading foreign.
+    priors: &'a BTreeMap<String, Vec<Schema>>,
+    /// The doctypes whose `migrate-<ty>` workflow ships — the M40 two-tier route's condition
+    /// (never command a verb that hard-errors).
+    migratable: &'a BTreeSet<String>,
+}
+
+impl<'a> AdoptionInputs<'a> {
+    /// Bundle the three pack facts the CLI resolved.
+    pub fn new(
+        versions: &'a BTreeMap<String, u32>,
+        priors: &'a BTreeMap<String, Vec<Schema>>,
+        migratable: &'a BTreeSet<String>,
+    ) -> Self {
+        Self {
+            versions,
+            priors,
+            migratable,
+        }
+    }
+
+    /// The **adoption advisory** for a committed file at a managed home, or `None` when the
+    /// discriminator adjudicates it **managed** — the single seam every non-store consumer
+    /// asks through, so the code *and* the route are decided once.
+    ///
+    /// It is [`unadopted_instance`] verbatim, gated on [`is_unadopted_foreign`]: no new check
+    /// id, no second producer, no second route (`design/validation.md` → The managed-vs-foreign
+    /// discriminator). `rel_key` is the repo-relative path the finding addresses — a foreign
+    /// file has no managed identity to claim.
+    pub(crate) fn unadopted(
+        &self,
+        ty: &str,
+        schema: &Schema,
+        source: &str,
+        rel_key: &str,
+    ) -> Option<Finding> {
+        is_unadopted_foreign(ty, schema, source, self.versions, self.priors)
+            .then(|| unadopted_instance(ty, rel_key, self.migratable.contains(ty)))
+    }
+}
+
+#[cfg(test)]
+impl AdoptionInputs<'static> {
+    /// The **inert** discriminator — the empty pack-fact set an engine unit test supplies when
+    /// its subject is not adoption. `versions` is empty, so [`is_unadopted_foreign`]'s stated
+    /// precondition refuses every doctype and [`AdoptionInputs::unadopted`] answers `None`
+    /// throughout: the reconciler's `UNKNOWN` + non-conformant arm keeps its pre-M48
+    /// `reconciliation.conformance-block` byte for byte. The foreign arm has its own binary-level
+    /// acceptance (`crates/cli/tests/foreign_at_both_doors.rs`), where the real pack facts are in
+    /// hand — the engine ships empty of content by invariant and cannot mint them here.
+    pub(crate) fn inert() -> Self {
+        use std::sync::OnceLock;
+        static VERSIONS: OnceLock<BTreeMap<String, u32>> = OnceLock::new();
+        static PRIORS: OnceLock<BTreeMap<String, Vec<Schema>>> = OnceLock::new();
+        static MIGRATABLE: OnceLock<BTreeSet<String>> = OnceLock::new();
+        Self {
+            versions: VERSIONS.get_or_init(BTreeMap::new),
+            priors: PRIORS.get_or_init(BTreeMap::new),
+            migratable: MIGRATABLE.get_or_init(BTreeSet::new),
+        }
     }
 }
 
@@ -4763,6 +4864,7 @@ kind: memo
             &BTreeSet::new(),
             area.dir(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -4802,6 +4904,7 @@ kind: memo
             &BTreeSet::new(),
             clean.dir(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("clean sweep runs");
 
@@ -4911,6 +5014,7 @@ Bursty-but-honest clients see occasional 429s.
             &BTreeSet::new(),
             area.dir(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5015,6 +5119,7 @@ Bursty-but-honest clients see occasional 429s.
             &BTreeSet::new(),
             area.dir(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5065,6 +5170,7 @@ Bursty-but-honest clients see occasional 429s.
             &BTreeSet::new(),
             area.dir(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5117,6 +5223,7 @@ Bursty-but-honest clients see occasional 429s.
             &BTreeSet::new(),
             area.dir(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5175,6 +5282,7 @@ Bursty-but-honest clients see occasional 429s.
             &BTreeSet::new(),
             area.dir(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5234,6 +5342,7 @@ sections:
             &BTreeSet::new(),
             area.dir(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5469,6 +5578,7 @@ A failed node's sessions are re-routed on next request.
             &BTreeSet::new(),
             repo.path(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5527,6 +5637,7 @@ A failed node's sessions are re-routed on next request.
             &BTreeSet::new(),
             repo.path(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5581,6 +5692,7 @@ A failed node's sessions are re-routed on next request.
             &BTreeSet::new(),
             repo.path(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -5633,6 +5745,7 @@ A failed node's sessions are re-routed on next request.
             &BTreeSet::new(),
             repo.path(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
 
@@ -6052,6 +6165,7 @@ The audit landed green.
             &BTreeSet::new(),
             repo.path(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("validate runs");
         assert!(
@@ -8099,6 +8213,7 @@ Effects.
                 changed,
                 base,
                 &test_conflict(),
+                &AdoptionInputs::inert(),
             )
             .expect("sweep runs")
         };
@@ -8168,6 +8283,7 @@ Effects.
             &change_set(&["src/foo.rs"]),
             base.path(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
         assert!(
@@ -8238,6 +8354,7 @@ Effects.
             &change_set(&["src/foo.rs"]),
             base.path(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
         assert!(
@@ -8307,6 +8424,7 @@ Effects.
             &change_set(&["src/foo.rs"]),
             base.path(),
             &test_conflict(),
+            &AdoptionInputs::inert(),
         )
         .expect("sweep runs");
         assert!(

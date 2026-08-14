@@ -859,6 +859,12 @@ impl TaskArea {
         // touches a file already carrying pre-existing committed drift is not wedged on drift
         // it did not cause (only anchors that resolved at HEAD but dangle at the index block).
         let base_tree = self.materialize_head_subset(&changed_code)?;
+        // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1): the
+        // committed-store sweep this call drives must answer a foreign squatter with the
+        // *store* door's code and route, and the engine produces none of them.
+        let versions = crate::pack::frozen_doctype_versions(self.pack.as_ref());
+        let priors = crate::pack::prior_doctype_schemas(self.pack.as_ref(), &versions);
+        let migratable = crate::pack::migratable_doctypes(self.pack.as_ref());
         let report = validate_task(
             &self.dir,
             &schemas,
@@ -878,6 +884,7 @@ impl TaskArea {
             // The conflict route is the caller's, and this caller is a named task: a
             // `DRIFTED + TOUCHED` block routes at the REAL id (M47 inc-2 / T4).
             &engine::file_state::ConflictBlock::task(&self.id),
+            &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
         let report = self.preview_gates(report, preview, &schemas)?;

@@ -719,15 +719,26 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
 /// report-only trailer must therefore never claim a task-scope gate for (`validation.md` →
 /// The trailer must not claim a gate that does not exist, M42).
 ///
-/// **Derived from the emit sites, not from prose.** Each code below is emitted only on a
-/// store-scope path and by **no** task-scope path, so neither `jigc task validate` nor the
-/// `finalize` preflight (both [`engine::validate::validate_task`]) can ever see it:
+/// **Derived from the emit sites, not from prose — and the derivation is *"no gate blocks on
+/// it"*, not *"no task-scope path emits it"*.** That distinction was inert until M48 Inc 4 / T1,
+/// when `schema-conformance.unadopted-instance` gained a task-scope producer while staying a
+/// member of this list; stating the old, narrower derivation would now be a false claim about a
+/// code that still belongs here. For each code below, walk its producers and confirm that none
+/// of them can reach a **blocking** verdict at `jigc task validate`, the `finalize` preflight or
+/// the milestone-boundary gate:
 ///
-/// - `schema-conformance.{mention-resolves, repeatable-populated, surplus-sections-absent,
-///   unadopted-instance}` and `schema-completeness.inverse-cardinality` — the store-only
-///   families of `validate_store_families` (`mention_resolves_store`, `hollow_surplus_store`,
-///   `schema_conformance_store`'s foreign arm, `inverse_cardinality_store`; completeness and
-///   in-prose mentions depend on *other* tasks, so they are by design never a per-task gate).
+/// - `schema-conformance.{mention-resolves, repeatable-populated, surplus-sections-absent}` and
+///   `schema-completeness.inverse-cardinality` — the store-only families of
+///   `validate_store_families` (`mention_resolves_store`, `hollow_surplus_store`,
+///   `inverse_cardinality_store`), with **no** task-scope producer at all; completeness and
+///   in-prose mentions depend on *other* tasks, so they are by design never a per-task gate.
+/// - `schema-conformance.unadopted-instance` — the adoption advisory, with **two** producers
+///   since M48 Inc 4 / T1: `schema_conformance_store`'s foreign arm and
+///   `file_state::reconcile_committed`'s `UNKNOWN` + non-conformant arm (reached by
+///   [`engine::validate::validate_task`], i.e. by every task-scope door). Both mint it
+///   **advisory** through the one `unadopted_instance` producer, and the task-scope doors gate
+///   on `has_blocking()` — so a foreign squatter is reported at those doors and blocks at none
+///   of them. Membership therefore stands on the emit sites, not on their absence.
 /// - `file-state.un-baselined` — the read-only committed-store twin's UNKNOWN outcome
 ///   (`file_state::detect_committed_store`); the task path *adopts* a baseline instead
 ///   (`file-state.baseline-adopt`), so this code never reaches a gate.
@@ -786,7 +797,10 @@ const GATES_NOWHERE: &[&str] = &[
 ///    - **un-baselined** (no record — a fresh clone, a brownfield adoption, any hand-authored
 ///      corpus, i.e. the dominant `jigc validate` corpus) → **advisory**
 ///      `reconciliation.conformance-block` (`conformance_advisory_finding` — *routed, not
-///      recorded*). Nothing gates on it, ever. The claim is a lie.
+///      recorded*), or — where the managed-vs-foreign discriminator adjudicates the file
+///      **never adopted** (M48 Inc 4 / T1) — the advisory `unadopted-instance`, which this
+///      condition never has to reach because [`GATES_NOWHERE`] already carries it. Nothing
+///      gates on either, ever. The claim is a lie.
 ///
 ///    So the discriminator is `FileStateRecord` membership — the same one M40's two-tier orphan
 ///    route keys on. `unbaselined` carries the `<type>:<slug>` identities of the committed

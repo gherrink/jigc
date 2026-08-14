@@ -183,6 +183,25 @@ pub(crate) fn prior_doctype_schemas(
     out
 }
 
+/// The composed pack-set's **migratable doctypes** — those shipping the `migrate-<ty>`
+/// workflow that `jigc migrate <path> --as <ty>` composes. The **M40 two-tier route's**
+/// condition (`design/validation.md` → the M40 two-tier route): the adoption route names that
+/// doctype-directed verb only where it exists, because `jigc migrate` hard-errors *"not
+/// migratable"* when the composed pack ships no such workflow — never command a verb that
+/// hard-errors.
+///
+/// Derived from the workflow ids exactly as `jigc doc show`'s read-side reroute derives it
+/// (`crate::doc` → `reroute_unadopted`), lifted here because the task-scope reconciler is now
+/// a third consumer (M48 Inc 4 / T1). The set is a plain `migrate-` prefix strip, so a
+/// non-doctype workflow like `migrate-corpus` contributes a member no doctype lookup ever
+/// matches — membership is only ever asked with a real doctype in hand.
+pub(crate) fn migratable_doctypes(pack: &dyn PackSource) -> std::collections::BTreeSet<String> {
+    pack.list(PackResourceKind::Workflows)
+        .iter()
+        .filter_map(|id| id.as_str().strip_prefix("migrate-").map(str::to_owned))
+        .collect()
+}
+
 /// The `config/` resource id of a pack's frozen doctype-set manifest (the M33
 /// freeze artifact). A pack that ships this file gets its declared doctype shapes
 /// checked against it at pack-load by [`assert_schema_freeze`]; a pack that omits
