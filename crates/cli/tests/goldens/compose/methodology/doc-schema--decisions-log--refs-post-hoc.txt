@@ -6,7 +6,7 @@ fields:
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - entries: repeatable (add-item: decisions-log:<slug>#entries)
-    - title: string (add-item: decisions-log:<slug>#entries) (retitle-item: decisions-log:<slug>#entries/<id>) *
+    - title: string (add-item: decisions-log:<slug>#entries) (retitle-item: decisions-log:<slug>#entries/<id>) (write-key: --title) *
     - date: date (set: on-create) (set-field: decisions-log:<slug>#entries/<id>/date)
     - why: slot (set-slot: decisions-log:<slug>#entries/<id>/why)
 --- stderr ---

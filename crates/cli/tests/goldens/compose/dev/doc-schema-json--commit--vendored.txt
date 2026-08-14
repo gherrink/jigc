@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "commit",
   "schema-version": 1,
   "fields": [
@@ -67,7 +67,8 @@ exit: 0
             "required": true,
             "author-required": true,
             "add-item": "commit:<slug>#trailers",
-            "retitle-item": "commit:<slug>#trailers/<id>"
+            "retitle-item": "commit:<slug>#trailers/<id>",
+            "write-key": "--title"
           },
           {
             "id": "value",

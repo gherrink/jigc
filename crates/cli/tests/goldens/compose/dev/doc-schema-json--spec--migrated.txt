@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "spec",
   "schema-version": 1,
   "fields": [
@@ -45,7 +45,8 @@ exit: 0
             "required": true,
             "author-required": true,
             "add-item": "spec:<slug>#criteria",
-            "retitle-item": "spec:<slug>#criteria/<id>"
+            "retitle-item": "spec:<slug>#criteria/<id>",
+            "write-key": "--title"
           },
           {
             "id": "maps-to-test",

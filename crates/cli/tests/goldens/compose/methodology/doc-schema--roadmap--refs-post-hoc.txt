@@ -6,7 +6,7 @@ fields:
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - milestones: repeatable (add-item: roadmap:<slug>#milestones)
-    - title: string (add-item: roadmap:<slug>#milestones) (retitle-item: roadmap:<slug>#milestones/<id>) *
+    - title: string (add-item: roadmap:<slug>#milestones) (retitle-item: roadmap:<slug>#milestones/<id>) (write-key: --title) *
     - proves: slot (set-slot: roadmap:<slug>#milestones/<id>/proves)
     - decomposition: slot (set-slot: roadmap:<slug>#milestones/<id>/decomposition)
 --- stderr ---

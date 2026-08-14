@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "roadmap",
   "schema-version": 1,
   "fields": [
@@ -27,7 +27,8 @@ exit: 0
             "required": true,
             "author-required": true,
             "add-item": "roadmap:<slug>#milestones",
-            "retitle-item": "roadmap:<slug>#milestones/<id>"
+            "retitle-item": "roadmap:<slug>#milestones/<id>",
+            "write-key": "--title"
           }
         ],
         "slots": [

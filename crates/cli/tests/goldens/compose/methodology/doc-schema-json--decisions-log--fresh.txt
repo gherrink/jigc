@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "decisions-log",
   "schema-version": 1,
   "fields": [
@@ -27,7 +27,8 @@ exit: 0
             "required": true,
             "author-required": true,
             "add-item": "decisions-log:<slug>#entries",
-            "retitle-item": "decisions-log:<slug>#entries/<id>"
+            "retitle-item": "decisions-log:<slug>#entries/<id>",
+            "write-key": "--title"
           },
           {
             "id": "date",

@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "changelog",
   "schema-version": 2,
   "fields": [
@@ -34,7 +34,8 @@ exit: 0
             ],
             "required": true,
             "author-required": true,
-            "add-item": "changelog:<slug>#unreleased-changes"
+            "add-item": "changelog:<slug>#unreleased-changes",
+            "write-key": "--title"
           }
         ],
         "slots": [
@@ -58,7 +59,8 @@ exit: 0
             "required": true,
             "author-required": true,
             "add-item": "changelog:<slug>#releases",
-            "retitle-item": "changelog:<slug>#releases/<id>"
+            "retitle-item": "changelog:<slug>#releases/<id>",
+            "write-key": "--title"
           },
           {
             "id": "date",
@@ -96,7 +98,8 @@ exit: 0
                   ],
                   "required": true,
                   "author-required": true,
-                  "add-item": "changelog:<slug>#releases/<id>/changes"
+                  "add-item": "changelog:<slug>#releases/<id>/changes",
+                  "write-key": "--title"
                 }
               ],
               "slots": [

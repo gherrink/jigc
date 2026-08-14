@@ -6,7 +6,7 @@ fields:
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - entries: repeatable (add-item: deferral-ledger:<slug>#entries)
-    - title: string (add-item: deferral-ledger:<slug>#entries) (retitle-item: deferral-ledger:<slug>#entries/<id>) *
+    - title: string (add-item: deferral-ledger:<slug>#entries) (retitle-item: deferral-ledger:<slug>#entries/<id>) (write-key: --title) *
     - kind: enum [Decision|Idea] (set-field: deferral-ledger:<slug>#entries/<id>/kind) *
     - trigger: string (set-field: deferral-ledger:<slug>#entries/<id>/trigger) *
     - date: date (set: on-create) (set-field: deferral-ledger:<slug>#entries/<id>/date)

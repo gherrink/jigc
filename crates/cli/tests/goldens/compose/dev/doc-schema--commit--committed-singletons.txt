@@ -10,6 +10,6 @@ sections:
   - summary: slot (set-slot: commit:<slug>#summary)
   - body: slot (optional) (set-slot: commit:<slug>#body)
   - trailers: repeatable (add-item: commit:<slug>#trailers)
-    - key: string (add-item: commit:<slug>#trailers) (retitle-item: commit:<slug>#trailers/<id>) *
+    - key: string (add-item: commit:<slug>#trailers) (retitle-item: commit:<slug>#trailers/<id>) (write-key: --title) *
     - value: string (set-field: commit:<slug>#trailers/<id>/value) *
 --- stderr ---

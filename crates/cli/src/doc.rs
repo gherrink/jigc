@@ -416,7 +416,7 @@ pub enum DocCommand {
     /// Injected stamp field included — the third read surface, next to `describe`
     /// (the non-contractual menu) and `doc show` (the committed-content read).
     /// `--format json` is the separately-pinned, explicitly versioned contract
-    /// (`contract-version: 4` — `design/doc-read-surface.md` → Why json is a contract
+    /// (`contract-version: 5` — `design/doc-read-surface.md` → Why json is a contract
     /// here); plain text is a non-contractual human listing. Task-less — a schema
     /// projection is never task-scoped.
     Schema {
@@ -3681,6 +3681,17 @@ struct SchemaContract<'a> {
 /// construction (an id-from leaf is never `set-field`-settable), and **all three are
 /// absent** when the doctype is machine-maintained whole (`milestone-record`) — the
 /// doctype exclusion wins over the per-leaf states.
+///
+/// **`write-key` names the payload key an id-source leaf's value is supplied under**
+/// (M48 Inc 7 — F12; `design/doc-read-surface.md` → the id-source names its write key).
+/// An address says which **verb** takes the leaf; on the id-source it did not say which
+/// **key** carries the value, and the leaf's own id is the misleading answer — a
+/// `changelog` change-group projects `category` while both its verbs take
+/// [`ID_SOURCE_WRITE_KEY`], whatever the field is called
+/// (`design/write-commands.md` → The argument convention). It rides the id-source state
+/// **alone**: a `set-field` entry's payload is that verb's `--value`/`--unset` pair and a
+/// slot's is `--from-file <path|->` — neither is one key, and neither is shadowed by a
+/// field id, so naming one there would understate the verb rather than teach it.
 #[derive(serde::Serialize)]
 struct ContractField<'a> {
     id: &'a str,
@@ -3703,6 +3714,8 @@ struct ContractField<'a> {
     add_item: Option<String>,
     #[serde(rename = "retitle-item", skip_serializing_if = "Option::is_none")]
     retitle_item: Option<String>,
+    #[serde(rename = "write-key", skip_serializing_if = "Option::is_none")]
+    write_key: Option<&'static str>,
 }
 
 /// One section of the pinned projection: `{id, kind: "slot"|"repeatable",
@@ -3827,7 +3840,7 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
         }
     }
     SchemaContract {
-        contract_version: 4,
+        contract_version: 5,
         ty: &schema.ty,
         schema_version,
         fields,
@@ -3835,12 +3848,23 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
     }
 }
 
+/// The payload key an **id-source** leaf's value is supplied under — at mint by
+/// `jigc doc add-item --title`, afterwards by `jigc doc retitle-item --title`. It is
+/// **always literally `--title`**, whatever the doctype's `id-from` field is called: the
+/// flag names the role (the title being minted from), not the field
+/// (`design/write-commands.md` → The argument convention). Exported so the projection's
+/// claim can be fenced against the real clap tree rather than re-typed beside it.
+pub const ID_SOURCE_WRITE_KEY: &str = "--title";
+
 /// Project one schema field into its pinned [`ContractField`]. The three write-verb
 /// addresses are **caller-computed** (the caller knows the field's position, which the
 /// settability state keys on; see [`ContractField`]): `set_field` for a directly
 /// settable field, the `add_item` + `retitle_item` pair for a block's `id-from` leaf,
 /// and all three `None` for a machine-maintained absolute or a machine-maintained-whole
-/// doctype.
+/// doctype. The `write-key` marker is **derived from that same call**, never passed
+/// separately: a field carrying `add_item` IS the block's id-source leaf (the only
+/// state that sets it), so the key and the address it belongs to cannot drift apart —
+/// and a suppressed leaf, advertised under no verb, names no key either.
 fn contract_field(
     field: &engine::schema::Field,
     set_field: Option<String>,
@@ -3848,6 +3872,7 @@ fn contract_field(
     retitle_item: Option<String>,
 ) -> ContractField<'_> {
     let author_required = engine::validate::is_author_required(field);
+    let write_key = add_item.is_some().then_some(ID_SOURCE_WRITE_KEY);
     ContractField {
         id: &field.id,
         ty: &field.ty,
@@ -3861,6 +3886,7 @@ fn contract_field(
         set_field,
         add_item,
         retitle_item,
+        write_key,
     }
 }
 
@@ -4019,6 +4045,13 @@ fn push_field_line(out: &mut String, field: &ContractField<'_>, depth: usize) {
     }
     if let Some(addr) = &field.retitle_item {
         out.push_str(&format!(" (retitle-item: {addr})"));
+    }
+    // The id-source's payload key, mirrored from the pinned json in the json's own key
+    // spelling (the plain arm teaches the machine arm's vocabulary rather than
+    // inventing a second one) — the field the listing names `category` is written
+    // `--title`, and the listing is where a reader meets that id first.
+    if let Some(key) = field.write_key {
+        out.push_str(&format!(" (write-key: {key})"));
     }
     if field.author_required {
         out.push_str(" *");

@@ -2,7 +2,7 @@
 //!
 //! The contract property suite for the **address grammar** — pinned in
 //! [doc-read-surface.md](../../../design/doc-read-surface.md) → The address grammar /
-//! Three settability states (contract-version 4), and required by
+//! Three settability states (contract-version 5), and required by
 //! [pinning.md](../../../implementation/pinning.md) §2 (*Address grammar*, both halves).
 //! Revising that doc's statement and breaking this fence are visibly the same event —
 //! the linkage the §2 naming rule requires.
@@ -20,7 +20,9 @@
 //!    three-valued — a settable leaf's `set-field` address is advertised **and** a
 //!    write is accepted · an `id-from` leaf is advertised under its **owning verb**
 //!    (`add-item` [+ `retitle-item` iff a string id-from]) **and** a `set-field` write
-//!    is refused *with that verb's route* · a machine-maintained absolute is advertised
+//!    is refused *with that verb's route* — with both those verbs driven under the
+//!    **advertised payload key** (`write-key`, M48 Inc 7 — F12), never a re-typed flag ·
+//!    a machine-maintained absolute is advertised
 //!    by **nothing** and a write is refused. `milestone-record` carries the
 //!    doctype-level caveat: it is machine-maintained **whole**, so **no** leaf is
 //!    advertised and **every** write is refused — a doctype exclusion, not the per-leaf
@@ -315,13 +317,19 @@ fn assert_repeatable(
         id_from["type"].as_str().expect("id-from has a type"),
         id_from["of"].as_array(),
     );
+    // The advertised PAYLOAD KEY, driven rather than re-typed (M48 Inc 7 — F12): the
+    // id-source's `write-key` is the flag the mint is run with, so a projection naming
+    // a key the verb does not take reddens here, not in the field.
+    let write_key = id_from["write-key"]
+        .as_str()
+        .expect("an id-from leaf advertises its write-key");
 
     let item_addr = corpus
         .jigc_ok(&[
             "doc",
             "add-item",
             &block_addr,
-            "--title",
+            write_key,
             &title,
             "--task",
             task,
@@ -440,11 +448,15 @@ fn assert_item_field(
                 } else {
                     "Retitled Round Trip"
                 };
+                // Driven under the advertised payload key, like the mint above.
+                let write_key = field["write-key"]
+                    .as_str()
+                    .expect("an id-from leaf advertises its write-key");
                 corpus.jigc_ok(&[
                     "doc",
                     "retitle-item",
                     item_addr,
-                    "--title",
+                    write_key,
                     new_title,
                     "--task",
                     task,

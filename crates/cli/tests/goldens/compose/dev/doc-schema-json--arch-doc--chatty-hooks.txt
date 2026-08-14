@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "arch-doc",
   "schema-version": 1,
   "fields": [
@@ -40,7 +40,8 @@ exit: 0
             "required": true,
             "author-required": true,
             "add-item": "arch-doc:<slug>#components",
-            "retitle-item": "arch-doc:<slug>#components/<id>"
+            "retitle-item": "arch-doc:<slug>#components/<id>",
+            "write-key": "--title"
           },
           {
             "id": "implemented-by",

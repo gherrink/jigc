@@ -6,21 +6,23 @@
 //! 2026-07-10 → M40 Settle #3).
 //!
 //! The load-bearing contract this pins is the **separately-pinned, explicitly
-//! versioned `--format json` shape** — `contract-version: 4` (the M45 bump: the
-//! three settability states — an id-from leaf carries `add-item` [+ `retitle-item`
-//! iff its type is string], a `set: on-create` stamp carries `set-field`, a
-//! machine-maintained absolute carries none; 3 was the M43 rc.7 write-address join,
-//! 2 the M41 rc.5 `of`/`section` join), golden-pinned at ship:
-//! `{ contract-version, type, schema-version-or-null, fields, sections }` with
+//! versioned `--format json` shape** — `contract-version: 5` (the M48 bump: the
+//! id-source's `write-key`; 4 was the M45 three settability states — an id-from leaf
+//! carries `add-item` [+ `retitle-item` iff its type is string], a `set: on-create`
+//! stamp carries `set-field`, a machine-maintained absolute carries none; 3 was the
+//! M43 rc.7 write-address join, 2 the M41 rc.5 `of`/`section` join), golden-pinned at
+//! ship: `{ contract-version, type, schema-version-or-null, fields, sections }` with
 //! per-field `{id, type, of?, required, author-required, default?, set?, section?,
-//! set-field? | (add-item? + retitle-item?)}` (`of` = the enum members, universal
-//! across depths; `section` = the owning simple-section id, top-level fields only;
-//! `set-field` = the concrete `jigc doc set-field` address of a directly settable
+//! set-field? | (add-item? + retitle-item? + write-key)}` (`of` = the enum members,
+//! universal across depths; `section` = the owning simple-section id, top-level fields
+//! only; `set-field` = the concrete `jigc doc set-field` address of a directly settable
 //! field — **absent** on a machine-maintained absolute [`set: schema-version` /
 //! `on-transition`] and on a block's `id-from` leaf, which instead carries
 //! `add-item` [the block address, always] + `retitle-item` [the item address, iff a
-//! string id-from — an enum id-from carries `add-item` alone]) and per-section
-//! `{id, kind, optional?, set-slot?|add-item?, item: {fields, slots, nested}}` —
+//! string id-from — an enum id-from carries `add-item` alone] + `write-key` [the
+//! payload key both those verbs take, `--title` whatever the field is called]) and
+//! per-section `{id, kind, optional?, set-slot?|add-item?, item: {fields, slots,
+//! nested}}` —
 //! a slot section carries its `set-slot` address, a repeatable its `add-item`
 //! address — the `item` object **recursive** for nested repeatables, its slots
 //! carrying `set-slot` and its nested blocks `add-item`. The three witnesses:
@@ -37,6 +39,9 @@
 //! (`CARGO_BIN_EXE_jigc`); an unknown doctype is driven through the real exit
 //! code + routed stderr. No external test crates.
 
+use clap::Parser;
+use cli::cli::Cli;
+use cli::doc::ID_SOURCE_WRITE_KEY;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -131,14 +136,14 @@ fn stdout_of(out: &std::process::Output) -> String {
     String::from_utf8(out.stdout.clone()).expect("utf-8 stdout")
 }
 
-// ---- the pinned `--format json` goldens (contract-version 3, byte-verbatim) ----
+// ---- the pinned `--format json` goldens (contract-version 5, byte-verbatim) ----
 
 /// dogfood-record — methodology, frozen v1 (M40 A1): `schema-version` 1 with the
 /// loader-injected stamp field appended; the 14 meta fields stay author-required
 /// (no default, no set, no optional/pack exemption) and each carries its
 /// `set-field` write address (the stamp, `set:`-derived, carries none).
 const DOGFOOD_RECORD_JSON: &str = r#"{
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "dogfood-record",
   "schema-version": 1,
   "fields": [
@@ -291,7 +296,7 @@ const DOGFOOD_RECORD_JSON: &str = r#"{
 /// and carries `set-field`; the optional `link` carries `set-field`; every item
 /// slot `set-slot`; and every repeatable — nested included — its section `add-item`.
 const CHANGELOG_JSON: &str = r#"{
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "changelog",
   "schema-version": 2,
   "fields": [
@@ -324,7 +329,8 @@ const CHANGELOG_JSON: &str = r#"{
             ],
             "required": true,
             "author-required": true,
-            "add-item": "changelog:<slug>#unreleased-changes"
+            "add-item": "changelog:<slug>#unreleased-changes",
+            "write-key": "--title"
           }
         ],
         "slots": [
@@ -348,7 +354,8 @@ const CHANGELOG_JSON: &str = r#"{
             "required": true,
             "author-required": true,
             "add-item": "changelog:<slug>#releases",
-            "retitle-item": "changelog:<slug>#releases/<id>"
+            "retitle-item": "changelog:<slug>#releases/<id>",
+            "write-key": "--title"
           },
           {
             "id": "date",
@@ -386,7 +393,8 @@ const CHANGELOG_JSON: &str = r#"{
                   ],
                   "required": true,
                   "author-required": true,
-                  "add-item": "changelog:<slug>#releases/<id>/changes"
+                  "add-item": "changelog:<slug>#releases/<id>/changes",
+                  "write-key": "--title"
                 }
               ],
               "slots": [
@@ -412,7 +420,7 @@ const CHANGELOG_JSON: &str = r#"{
 /// section (its `set-slot` address carried like its required siblings).
 /// Schema-version 2: the M36 `options`-slot migration bumped adr past v1.
 const ADR_JSON: &str = r#"{
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "adr",
   "schema-version": 2,
   "fields": [
@@ -509,7 +517,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     assert_eq!(
         dogfood.trim_end(),
         DOGFOOD_RECORD_JSON,
-        "the dogfood-record schema json is the pinned contract-version-4 shape",
+        "the dogfood-record schema json is the pinned contract-version-5 shape",
     );
 
     // (2) dogfood-record — the Proves line, asserted behaviorally (not just bytes):
@@ -517,7 +525,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     //     fields plus the injected stamp, every meta field author-required.
     let value: serde_json::Value =
         serde_json::from_str(&dogfood).expect("the emitted contract parses as json");
-    assert_eq!(value["contract-version"], 4, "the contract is versioned");
+    assert_eq!(value["contract-version"], 5, "the contract is versioned");
     assert_eq!(
         value["schema-version"], 1,
         "a manifest-frozen methodology doctype reports schema-version 1",
@@ -778,9 +786,24 @@ fn doc_schema_plain_listing_surfaces_write_addresses() {
         "an enum id-from leaf names add-item alone, never retitle-item; got:\n{category}",
     );
     // The `set: on-create` stamp (`date`) is author-overridable — directly settable.
+    let date = field_line(&changelog, "date");
     assert!(
-        field_line(&changelog, "date").contains("(set-field: changelog:<slug>#releases/<id>/date)"),
+        date.contains("(set-field: changelog:<slug>#releases/<id>/date)"),
         "a `set: on-create` stamp names its set-field address; got:\n{changelog}",
+    );
+    // (M48 Inc 7 / T1 — F12) Both id-source leaves mirror the pinned json's `write-key`
+    // in its own key spelling — the plain arm teaches the machine arm's vocabulary —
+    // and the omitting context holds in text too: a directly settable field names no
+    // payload key (its verb takes `--value`/`--unset`, not one key).
+    let write_key = format!("(write-key: {ID_SOURCE_WRITE_KEY})");
+    assert!(
+        title.contains(&write_key) && category.contains(&write_key),
+        "each id-source leaf line names the payload key its value is supplied under; \
+         got:\n{changelog}",
+    );
+    assert!(
+        !date.contains("(write-key:"),
+        "a directly settable field line names no payload key; got:\n{date}",
     );
 }
 
@@ -899,6 +922,182 @@ fn doc_schema_plain_listing_legends_the_marker_where_it_lands() {
     );
 }
 
+/// (M48 Inc 7 / T1 — F12) An **id-source** leaf's projection names the **payload key**
+/// its value is supplied under: `write-key: --title`, whatever the field is called
+/// (`design/write-commands.md` → The argument convention — *the flag names the role,
+/// not the field*; `design/doc-read-surface.md` → the settability states).
+///
+/// The reported defect is law-2 *nothing hides* on the surface an agent is told to
+/// consult: `doc schema changelog` projected `category: enum […] (add-item: …)` and a
+/// payload written from that projection was rejected, with nothing anywhere naming
+/// `title` as the spelling that works. The address said which **verb**; nothing said
+/// which **key**, and the field's own id is the misleading answer.
+///
+/// The axis is the **id-from leaf**, iterated over `changelog` — the only shipped
+/// doctype with an **enum** id-from, and it carries one at **both** nesting depths
+/// (`unreleased-changes/<id>` and `releases/<id>/changes/<id>`) beside a **string**
+/// id-from (`releases/<id>`) whose field id *happens* to be `title`, hiding the gap.
+/// All three carry the same key: the state is *id-source*, never the field's spelling.
+///
+/// Two omitting contexts, because a marker that lands everywhere says nothing:
+/// **no other settability state carries it** (a `set-field` entry's payload is the
+/// verb's own `--value`/`--unset` pair, an item slot's is `--from-file <path|->` —
+/// neither is one key, and neither is shadowed by a field id), and a doctype with no
+/// repeatable at all (`adr`) carries none anywhere. The **suppressed** context —
+/// `milestone-record`, machine-maintained whole — is asserted in its own test below.
+///
+/// The advertised key is **fenced against the real clap tree**: both verbs that take it
+/// parse with it, and the field-id spelling the projection would otherwise imply does
+/// not — so the projection cannot advertise a key the binary refuses.
+#[test]
+fn doc_schema_id_source_names_its_write_key() {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "changelog", "--format", "json"],
+    );
+    assert_ok(&out, "`jigc doc schema changelog --format json`");
+    let value: serde_json::Value =
+        serde_json::from_str(&stdout_of(&out)).expect("the changelog contract parses as json");
+    assert_eq!(value["contract-version"], 5, "the contract is versioned");
+
+    // The three id-source leaves, at both nesting depths and both id-from types.
+    let sections = value["sections"]
+        .as_array()
+        .expect("`sections` is an array");
+    let section = |id: &str| {
+        sections
+            .iter()
+            .find(|s| s["id"] == id)
+            .unwrap_or_else(|| panic!("the changelog `{id}` section projects; got:\n{value}"))
+    };
+    let leaf = |item: &serde_json::Value, id: &str| {
+        item["fields"]
+            .as_array()
+            .expect("item fields")
+            .iter()
+            .find(|f| f["id"] == id)
+            .unwrap_or_else(|| panic!("the item leaf `{id}` projects; got:\n{value}"))
+            .clone()
+    };
+    let staging = section("unreleased-changes");
+    let releases = section("releases");
+    let nested = releases["item"]["nested"]
+        .as_array()
+        .expect("`nested` is an array")
+        .iter()
+        .find(|n| n["id"] == "changes")
+        .expect("the nested `changes` block projects")
+        .clone();
+
+    for (what, field) in [
+        // The enum id-from — the reported case, at both depths.
+        (
+            "unreleased-changes/<id>",
+            leaf(&staging["item"], "category"),
+        ),
+        (
+            "releases/<id>/changes/<id>",
+            leaf(&nested["item"], "category"),
+        ),
+        // The string id-from, whose field id `title` coincides with the flag — the
+        // coincidence that hid the gap. Same state, same key.
+        ("releases/<id>", leaf(&releases["item"], "title")),
+    ] {
+        let id = field["id"].as_str().expect("a field has an id");
+        let block = field["add-item"].as_str().unwrap_or_else(|| {
+            panic!("{what}: the id-source leaf carries `add-item`; got:\n{field}")
+        });
+        assert_eq!(
+            field["write-key"], ID_SOURCE_WRITE_KEY,
+            "{what}: the id-source leaf names the payload key its value is supplied \
+             under, whatever the field is called; got:\n{field}",
+        );
+
+        // The advertised key against the real clap tree: BOTH verbs that take the
+        // id-source accept it — a projection that named a key the binary refuses would
+        // be the same law-1 lie one level down.
+        let block = block.replace("<slug>", "changelog").replace("<id>", "x");
+        let item = format!("{block}/x");
+        for argv in [
+            vec!["jigc", "doc", "add-item", &block, ID_SOURCE_WRITE_KEY, "v"],
+            vec![
+                "jigc",
+                "doc",
+                "retitle-item",
+                &item,
+                ID_SOURCE_WRITE_KEY,
+                "v",
+            ],
+        ] {
+            assert!(
+                Cli::try_parse_from(&argv).is_ok(),
+                "{what}: the advertised write key does not parse: `{}`",
+                argv.join(" "),
+            );
+            // The misleading answer the projection would otherwise imply — the field's
+            // own id as a flag — is refused, which is the whole reason the key exists.
+            if id != ID_SOURCE_WRITE_KEY.trim_start_matches('-') {
+                let field_flag = format!("--{id}");
+                let mut guess = argv.clone();
+                guess[4] = &field_flag;
+                assert!(
+                    Cli::try_parse_from(&guess).is_err(),
+                    "{what}: the field-id spelling `{field_flag}` parses — the gap this \
+                     key closes would not exist",
+                );
+            }
+        }
+    }
+
+    // Omitting context (1): no OTHER settability state carries the key — a directly
+    // settable field (`date`, `link`), a machine-maintained absolute (the stamp), and
+    // an item slot each name their verb by address alone.
+    for (what, field) in [
+        ("releases/<id>/date", leaf(&releases["item"], "date")),
+        ("releases/<id>/link", leaf(&releases["item"], "link")),
+        (
+            "meta/schema-version",
+            value["fields"]
+                .as_array()
+                .expect("`fields` is an array")
+                .iter()
+                .find(|f| f["id"] == "schema-version")
+                .expect("the stamp field projects")
+                .clone(),
+        ),
+    ] {
+        assert!(
+            field.get("write-key").is_none(),
+            "{what}: only an id-source leaf names a payload key; got:\n{field}",
+        );
+    }
+    let slot = &staging["item"]["slots"][0];
+    assert!(
+        slot.get("write-key").is_none(),
+        "an item slot names no payload key (its write is `--from-file <path|->`, not \
+         one key); got:\n{slot}",
+    );
+
+    // Omitting context (2): a doctype with no repeatable has no id-source leaf, so the
+    // key appears nowhere in its projection — inert, never an error.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "adr", "--format", "json"],
+    );
+    assert_ok(&out, "`jigc doc schema adr --format json`");
+    let adr = stdout_of(&out);
+    assert!(
+        !adr.contains("write-key"),
+        "a doctype with no repeatable advertises no payload key; got:\n{adr}",
+    );
+}
+
 /// `milestone-record` is machine-maintained **whole** — `machine_maintained_guard`
 /// refuses every `jigc doc` write to it (`design/team-ready-state.md` → The record is
 /// not writable through the `jigc doc` verbs) — so its projection advertises **no**
@@ -934,7 +1133,7 @@ fn doc_schema_milestone_record_advertises_no_write_address() {
     // schema shape: the contract version, and the `tasks` repeatable (address-less).
     let value: serde_json::Value =
         serde_json::from_str(&json).expect("the milestone-record contract parses as json");
-    assert_eq!(value["contract-version"], 4, "the contract is versioned");
+    assert_eq!(value["contract-version"], 5, "the contract is versioned");
     let section_ids: Vec<&str> = value["sections"]
         .as_array()
         .expect("`sections` is an array")

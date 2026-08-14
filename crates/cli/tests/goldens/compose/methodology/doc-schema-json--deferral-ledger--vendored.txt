@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 4,
+  "contract-version": 5,
   "type": "deferral-ledger",
   "schema-version": 2,
   "fields": [
@@ -27,7 +27,8 @@ exit: 0
             "required": true,
             "author-required": true,
             "add-item": "deferral-ledger:<slug>#entries",
-            "retitle-item": "deferral-ledger:<slug>#entries/<id>"
+            "retitle-item": "deferral-ledger:<slug>#entries/<id>",
+            "write-key": "--title"
           },
           {
             "id": "kind",

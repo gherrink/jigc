@@ -8,7 +8,7 @@ fields:
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - findings: repeatable (add-item: completion-record:<slug>#findings)
-    - title: string (add-item: completion-record:<slug>#findings) (retitle-item: completion-record:<slug>#findings/<id>) *
+    - title: string (add-item: completion-record:<slug>#findings) (retitle-item: completion-record:<slug>#findings/<id>) (write-key: --title) *
     - severity: enum [blocking|advisory] (set-field: completion-record:<slug>#findings/<id>/severity) *
     - disposition: enum [fixed|deferred|contested] (set-field: completion-record:<slug>#findings/<id>/disposition) *
     - evidence: string (set-field: completion-record:<slug>#findings/<id>/evidence) *
