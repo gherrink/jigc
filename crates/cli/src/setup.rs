@@ -925,14 +925,17 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
             "re-run `jigc setup` (the install resolves its own absolute path)",
         )
     })?;
-    let hook_file = install_precommit_hook(repo_root, &jigc_path).map_err(|err| {
+    // The **resolved** hook path is carried on (not just its display form): the install
+    // commit's pathspec is derived from where the hook actually landed
+    // ([`install_tracked_paths`]), which the printed value cannot answer.
+    let hook_path = install_precommit_hook(repo_root, &jigc_path).map_err(|err| {
         Finding::block(
             "setup.install-hook",
             format!("cannot install the `pre-commit` hook into the repo's hooks dir: {err}"),
             "ensure the repo's git hooks directory is writable, then re-run `jigc setup`",
         )
     })?;
-    let hook_file = display_hook_path(repo_root, &hook_file);
+    let hook_file = display_hook_path(repo_root, &hook_path);
 
     // 6. Extract the embedded `doc-code` probe beside the installed `jigc` (the
     //    production resolution path `<jigc-bin-dir>/doc-code`), so a `cargo
@@ -967,8 +970,14 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     //    leaves the install staged-but-uncommitted, so it fails loudly with an actionable
     //    finding rather than masquerading as a clean success (mirrors `finalize`'s
     //    identical git-identity failure).
-    let install_commit = commit_install(repo_root, &line_file, &allowlist_file, seeded_gitignore)
-        .map_err(|git_err| {
+    let install_commit = commit_install(
+        repo_root,
+        &line_file,
+        &allowlist_file,
+        seeded_gitignore,
+        &hook_path,
+    )
+    .map_err(|git_err| {
         Finding::block(
             "setup.install-commit",
             format!(
@@ -993,13 +1002,26 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
 /// tracked in git — the committable install footprint, enumerated **explicitly** so the
 /// install commit never sweeps the user's unrelated working-tree changes (a blanket
 /// `git add -A` would). Deliberately excludes: the transient `.jigc/` working area
-/// (`tasks/`/`index/`/`state/`, gitignored by setup's own `.jigc/.gitignore`), the
-/// `.git/hooks/pre-commit` (outside the worktree, in git's control dir — never a tracked
-/// file), and the machine-global `doc-code` probe (beside the binary, not in the repo).
+/// (`tasks/`/`index/`/`state/`, gitignored by setup's own `.jigc/.gitignore`) and the
+/// machine-global `doc-code` probe (beside the binary, not in the repo).
+///
+/// **The `pre-commit` hook is included exactly when it is a committable working-tree
+/// file** — the rule, not the `.git/hooks` instance (M48 Increment 5 / F4). The list was
+/// written on the premise *"the hook lives outside the worktree, in git's control dir —
+/// never a tracked file"*, which is true of `.git/hooks/pre-commit` and **false under an
+/// in-repo `core.hooksPath`**: there the hook is an ordinary working-tree file, so the
+/// summary listed a file the install commit did not carry and left it untracked. The
+/// premise is therefore replaced by [`committable_hook_path`]'s test, which asks git
+/// where the hook landed rather than assuming — so the next hooks-path shape is decided
+/// by the rule instead of re-opening the hole. The hook **file** is named, never the
+/// hooks **dir**: a `core.hooksPath` directory may hold the user's own other hooks, and
+/// `git add <dir>` would sweep them.
 fn install_tracked_paths(
+    repo_root: &Path,
     line_file: &str,
     allowlist_file: &str,
     seeded_gitignore: bool,
+    hook_file: &Path,
 ) -> Vec<String> {
     let mut paths = vec![
         line_file.to_string(),      // CLAUDE.md (the bootstrap reference host)
@@ -1016,7 +1038,60 @@ fn install_tracked_paths(
     if seeded_gitignore {
         paths.push(".gitignore".to_string());
     }
+    // The `pre-commit` hook, iff git can track it from this working tree.
+    if let Some(hook) = committable_hook_path(repo_root, hook_file) {
+        paths.push(hook);
+    }
     paths
+}
+
+/// The installed `pre-commit` hook's repo-root-relative path when it is a **committable
+/// working-tree file**, else `None` — the discriminator the install commit's pathspec is
+/// derived from.
+///
+/// Committable means both halves, and neither is optional:
+///   - **under the canonicalized repo root** — a `core.hooksPath` pointing outside the
+///     repo, and the **common** hooks dir a linked worktree resolves to, are outside the
+///     tree git commits from and cannot be in any commit;
+///   - **outside git's own dirs** (`--git-dir` *and* `--git-common-dir`, both printed by
+///     one `rev-parse`) — the default `.git/hooks/pre-commit` *is* under the repo root, so
+///     the root test alone is not the answer. A `.git`-internal pathspec entry is not
+///     rejected by anything upstream either: it is not gitignored (`git check-ignore`
+///     exits 1 on it) and `git add -- .git/hooks/pre-commit` exits **0** while staging
+///     nothing — an inert entry that would look green.
+///
+/// Deliberately *not* keyed on [`display_hook_path`]'s printed value: that renders the
+/// default `.git/hooks/pre-commit` **relative** (it strips the canonicalized repo root,
+/// and `.git/` is under it), so "the printed path is relative" is not a committability
+/// test. Conservative on failure — if git cannot be asked, nothing is added.
+fn committable_hook_path(repo_root: &Path, hook_file: &Path) -> Option<String> {
+    let root = std::fs::canonicalize(repo_root).ok()?;
+    let hook = std::fs::canonicalize(hook_file).ok()?;
+    let relative = hook.strip_prefix(&root).ok()?.to_str()?.to_string();
+
+    let out = git_output(
+        repo_root,
+        [
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-dir",
+            "--git-common-dir",
+        ],
+    )?;
+    if !out.status.success() {
+        return None;
+    }
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let git_dir = line.trim();
+        if git_dir.is_empty() {
+            continue;
+        }
+        // A git dir that does not resolve cannot contain the hook we just canonicalized.
+        if std::fs::canonicalize(git_dir).is_ok_and(|dir| hook.starts_with(&dir)) {
+            return None;
+        }
+    }
+    Some(relative)
 }
 
 /// Commit `jigc setup`'s own install files as a dedicated commit, so they don't land in
@@ -1048,6 +1123,7 @@ fn commit_install(
     line_file: &str,
     allowlist_file: &str,
     seeded_gitignore: bool,
+    hook_file: &Path,
 ) -> Result<InstallCommit, String> {
     // Require a git work tree — but DO mint on an **unborn HEAD** (a brand-new repo with
     // no commits). Setup owns committing its own install footprint regardless of HEAD
@@ -1064,11 +1140,17 @@ fn commit_install(
     }
 
     // Only the files setup itself wrote, and only those present + not gitignored.
-    let paths: Vec<String> = install_tracked_paths(line_file, allowlist_file, seeded_gitignore)
-        .into_iter()
-        .filter(|p| repo_root.join(p).exists())
-        .filter(|p| !git_path_ignored(repo_root, p))
-        .collect();
+    let paths: Vec<String> = install_tracked_paths(
+        repo_root,
+        line_file,
+        allowlist_file,
+        seeded_gitignore,
+        hook_file,
+    )
+    .into_iter()
+    .filter(|p| repo_root.join(p).exists())
+    .filter(|p| !git_path_ignored(repo_root, p))
+    .collect();
     if paths.is_empty() {
         return Ok(InstallCommit::Skipped);
     }
@@ -2528,6 +2610,85 @@ mod tests {
         assert!(
             main.path().join(".git/hooks/pre-commit").exists(),
             "a worktree install resolves to the common .git/hooks dir",
+        );
+    }
+
+    /// [`committable_hook_path`] admits the hook **iff** it is a working-tree file, over
+    /// the whole hooks-dir axis — and in particular refuses the default
+    /// `.git/hooks/pre-commit`, which *is* under the repo root. A `.git`-internal
+    /// pathspec entry is inert (`git add` on it stages nothing and exits 0), so it cannot
+    /// be caught downstream by the committed set: the refusal has to be pinned here.
+    #[test]
+    fn committable_hook_path_admits_only_working_tree_hooks() {
+        let jigc = Path::new("/abs/bin/jigc");
+
+        // (1) The default hooks dir: under the repo root, but inside git's own dir.
+        let default = TempDir::new();
+        git(default.path(), &["init", "-q"]);
+        let hook = install_precommit_hook(default.path(), jigc).expect("install");
+        assert_eq!(
+            committable_hook_path(default.path(), &hook),
+            None,
+            "`.git/hooks/pre-commit` is not a tracked file — an inert `.git`-internal \
+             pathspec entry must never be produced",
+        );
+
+        // (2) An in-worktree `core.hooksPath`, in its relative form: an ordinary
+        //     working-tree file, and the shape the premise was blind to.
+        let in_tree = TempDir::new();
+        git(in_tree.path(), &["init", "-q"]);
+        git(in_tree.path(), &["config", "core.hooksPath", "my-hooks"]);
+        let hook = install_precommit_hook(in_tree.path(), jigc).expect("install");
+        assert_eq!(
+            committable_hook_path(in_tree.path(), &hook).as_deref(),
+            Some("my-hooks/pre-commit"),
+            "an in-worktree `core.hooksPath` hook is committable, named as the FILE \
+             (never the dir, which may hold the user's own hooks)",
+        );
+
+        // (3) A `core.hooksPath` outside the repo: in no working tree at all.
+        let outside_repo = TempDir::new();
+        let outside_hooks = TempDir::new();
+        git(outside_repo.path(), &["init", "-q"]);
+        git(
+            outside_repo.path(),
+            &[
+                "config",
+                "core.hooksPath",
+                outside_hooks.path().to_str().expect("utf-8 temp path"),
+            ],
+        );
+        let hook = install_precommit_hook(outside_repo.path(), jigc).expect("install");
+        assert_eq!(
+            committable_hook_path(outside_repo.path(), &hook),
+            None,
+            "a hooks dir outside the repo is not committable at all",
+        );
+
+        // (4) A linked worktree: the hook resolves to the main checkout's COMMON hooks
+        //     dir, outside the tree this worktree commits from.
+        let main = TempDir::new();
+        git(main.path(), &["init", "-q"]);
+        git_identity(main.path());
+        git(
+            main.path(),
+            &["commit", "-q", "--allow-empty", "-m", "init"],
+        );
+        let linked = main.path().join("linked");
+        git(
+            main.path(),
+            &[
+                "worktree",
+                "add",
+                "-q",
+                linked.to_str().expect("utf-8 path"),
+            ],
+        );
+        let hook = install_precommit_hook(&linked, jigc).expect("install");
+        assert_eq!(
+            committable_hook_path(&linked, &hook),
+            None,
+            "the common hooks dir a linked worktree resolves to is outside its tree",
         );
     }
 

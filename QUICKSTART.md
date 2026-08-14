@@ -62,11 +62,19 @@ It does these things:
   earlier commit only warns; it never blocks a later, unrelated one.
 
 `setup` **commits its own install** as a dedicated
-`chore(jigc): install jigc workspace config` commit
-(only the files above, never your working tree), so the install doesn't land in
-your first feature commit. These edits are idempotent — re-running `jigc setup`
-leaves the files byte-identical (no new commit), so it is safe to run after every
-upgrade to re-apply the adapter.
+`chore(jigc): install jigc workspace config` commit, so the install doesn't land in
+your first feature commit. It stages **only the files it wrote inside the repo** —
+never your working tree — so two of the things above are *not* in that commit: the
+`doc-code` probe (it lives beside the `jigc` binary, not in your repo), and the
+`pre-commit` hook whenever git keeps hooks outside your working tree — the usual
+`.git/hooks/`, a `core.hooksPath` pointing elsewhere, or a linked worktree's shared
+hooks dir — because git cannot track a file there. If your repo keeps hooks *in* the
+tree (an in-repo `core.hooksPath`), the hook is an ordinary tracked file and `setup`
+commits it with the rest; note that a committed hook carries **this** machine's `jigc`
+path, so in someone else's clone it stays silent until they run `jigc setup`
+themselves. These edits are idempotent — re-running `jigc setup` leaves the files
+byte-identical (no new commit), so it is safe to run after every upgrade to re-apply
+the adapter.
 
 ## 2. `jigc start "<intent>"` — route, then mint
 

@@ -995,6 +995,258 @@ fn setup_names_the_worktree_common_hooks_dir() {
     assert_names_installed_hook(&stdout, &linked, &installed);
 }
 
+/// The hooks-dir shapes the install commit's pathspec must be correct over — the axis,
+/// enumerated, not the one shape the defect was reported on.
+#[derive(Clone, Copy, Debug)]
+enum HooksDirShape {
+    /// (1) the default `.git/hooks` — inside the repo, but in git's own control dir.
+    Default,
+    /// (2) an in-worktree `core.hooksPath`, set in its **relative** form — the hook is a
+    /// tracked-able working-tree file.
+    InWorktreeRelative,
+    /// (3) a `core.hooksPath` pointing **outside** the repo — not committable at all.
+    OutsideRepo,
+    /// (4) a linked worktree, whose hooks resolve to the main checkout's **common** dir —
+    /// outside the worktree git commits from.
+    LinkedWorktree,
+}
+
+/// The install commit's footprint apart from the `pre-commit` hook: the seven paths
+/// `install_tracked_paths` names on a repo with a born HEAD (the root `.gitignore`
+/// secrets floor is seeded, and committed, only on a zero-commit repo). Sorted-set
+/// compared, so the assertion is *exactly* this set — a path that silently joins the
+/// install commit reddens here.
+const INSTALL_COMMIT_BASE_PATHS: [&str; 7] = [
+    ".claude/settings.json",
+    ".jigc/.gitignore",
+    ".jigc/AGENT.md",
+    ".jigc/config/.gitkeep",
+    ".jigc/config/packs.yaml",
+    ".jigc/version",
+    "CLAUDE.md",
+];
+
+/// Run `git -C <root> <args>` with the ambient global/system config neutralized and
+/// return its stdout (the capturing sibling of [`git`]).
+fn git_capture(root: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .unwrap_or_else(|err| panic!("run git {args:?}: {err}"));
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// `path`'s repo-root-relative form when it lives under `root`, else `None` — the
+/// committability question git itself answers: a path outside the working tree cannot
+/// be in any commit. Both sides canonicalized (macOS `/tmp` → `/private/tmp`).
+fn repo_relative(root: &Path, path: &Path) -> Option<String> {
+    let root = fs::canonicalize(root).expect("canonicalize the repo root");
+    let real = fs::canonicalize(path).expect("canonicalize the path");
+    real.strip_prefix(&root)
+        .ok()
+        .map(|rel| rel.display().to_string())
+}
+
+/// The install commit must carry the `pre-commit` hook **iff** the hook is a committable
+/// working-tree file — over the whole hooks-dir axis, not the default shape the pathspec
+/// was written for (M48 Increment 5 / F4).
+///
+/// For each shape: the resolved hook's membership in the install commit equals its
+/// committability, nothing from inside git's control dir is ever staged, the rest of the
+/// commit is exactly [`INSTALL_COMMIT_BASE_PATHS`], no hook is left **untracked** in the
+/// working tree, and a second `jigc setup` mints no second commit (idempotency survives
+/// the widened pathspec).
+#[test]
+fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
+    for shape in [
+        HooksDirShape::Default,
+        HooksDirShape::InWorktreeRelative,
+        HooksDirShape::OutsideRepo,
+        HooksDirShape::LinkedWorktree,
+    ] {
+        let home = TempDir::new("home");
+        let repo = TempDir::new("hook-axis");
+        let outside = TempDir::new("outside-hooks");
+        mark_repo(repo.path());
+        git(
+            repo.path(),
+            &["commit", "-q", "--allow-empty", "-m", "init"],
+        );
+
+        // Wire the shape, then name where the hook must land, whether that path is under
+        // the tree `jigc setup` commits in at all, and whether it is committable there.
+        let (cwd, hook, under_root, committable) = match shape {
+            HooksDirShape::Default => (
+                repo.path().to_path_buf(),
+                repo.path().join(".git/hooks/pre-commit"),
+                // Under the repo root, yet in git's control dir — the shape that makes a
+                // relative-path discriminator look green while staging nothing.
+                true,
+                false,
+            ),
+            HooksDirShape::InWorktreeRelative => {
+                git(repo.path(), &["config", "core.hooksPath", "my-hooks"]);
+                (
+                    repo.path().to_path_buf(),
+                    repo.path().join("my-hooks/pre-commit"),
+                    true,
+                    true,
+                )
+            }
+            HooksDirShape::OutsideRepo => {
+                git(
+                    repo.path(),
+                    &[
+                        "config",
+                        "core.hooksPath",
+                        outside.path().to_str().expect("utf-8 temp path"),
+                    ],
+                );
+                (
+                    repo.path().to_path_buf(),
+                    outside.path().join("pre-commit"),
+                    false,
+                    false,
+                )
+            }
+            HooksDirShape::LinkedWorktree => {
+                let linked = repo.path().join("linked");
+                git(
+                    repo.path(),
+                    &[
+                        "worktree",
+                        "add",
+                        "-q",
+                        linked.to_str().expect("utf-8 temp path"),
+                    ],
+                );
+                // The hook resolves to the COMMON hooks dir — the main checkout's
+                // `.git/hooks`, outside the linked worktree entirely.
+                (
+                    linked,
+                    repo.path().join(".git/hooks/pre-commit"),
+                    false,
+                    false,
+                )
+            }
+        };
+
+        let out = run_setup(&cwd, home.path());
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "{shape:?}: `jigc setup` must exit 0; stdout:\n{stdout}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            hook.exists(),
+            "{shape:?}: the install must write the hook to `{}`",
+            hook.display(),
+        );
+
+        // The install commit's actual footprint.
+        let committed: Vec<String> = {
+            let mut lines: Vec<String> =
+                git_capture(&cwd, &["show", "--name-only", "--format=", "HEAD"])
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(str::to_string)
+                    .collect();
+            lines.sort();
+            lines
+        };
+
+        // Nothing from inside git's own control dir is ever staged — a `.git`-internal
+        // pathspec entry stages nothing and would look green (the trap the relative-path
+        // discriminator falls into).
+        assert!(
+            !committed.iter().any(|p| p.starts_with(".git/")),
+            "{shape:?}: nothing inside `.git/` may be committed; got:\n{committed:#?}",
+        );
+
+        // Membership == committability, over the resolved hook path.
+        let relative_hook = repo_relative(&cwd, &hook);
+        assert_eq!(
+            relative_hook.is_some(),
+            under_root,
+            "{shape:?}: the fixture's own premise about where the hook landed is wrong \
+             (hook `{}`, cwd `{}`)",
+            hook.display(),
+            cwd.display(),
+        );
+        if let Some(relative) = relative_hook.as_deref() {
+            assert_eq!(
+                committed.iter().any(|p| p == relative),
+                committable,
+                "{shape:?}: the hook `{relative}` must be in the install commit iff it is \
+                 committable ({committable}); the commit carries:\n{committed:#?}",
+            );
+        }
+
+        // …and the rest of the commit is exactly today's set.
+        let mut expected: Vec<String> = INSTALL_COMMIT_BASE_PATHS
+            .iter()
+            .map(|p| (*p).to_string())
+            .collect();
+        if committable {
+            expected.push(
+                relative_hook
+                    .clone()
+                    .expect("a committable hook is in-tree"),
+            );
+        }
+        expected.sort();
+        assert_eq!(
+            committed, expected,
+            "{shape:?}: the install commit must carry exactly the install footprint",
+        );
+
+        // No hook is left behind in the working tree (RED at HEAD for shape (2), where
+        // `git status --porcelain` reports the collapsed `?? my-hooks/`). Compared as a
+        // path PREFIX, precisely because git collapses a wholly-untracked directory to
+        // its name — matching the full `my-hooks/pre-commit` would miss the defect.
+        let porcelain = git_capture(&cwd, &["status", "--porcelain"]);
+        if let Some(relative) = relative_hook.as_deref() {
+            // A `.git`-internal hook is never reported by `status` at all; an in-worktree
+            // one must be tracked and clean.
+            let covering = porcelain
+                .lines()
+                .filter_map(|line| line.get(3..))
+                .find(|reported| relative == *reported || relative.starts_with(*reported));
+            assert!(
+                covering.is_none(),
+                "{shape:?}: the hook `{relative}` is left uncommitted — \
+                 `git status --porcelain` reports `{}`; full status:\n{porcelain}",
+                covering.unwrap_or_default(),
+            );
+        }
+
+        // Idempotency survives the widened pathspec: a second `setup` regenerates a
+        // byte-identical hook, so there is no net change and no second commit.
+        let head_before = git_capture(&cwd, &["rev-parse", "HEAD"]).trim().to_string();
+        let again = run_setup(&cwd, home.path());
+        assert!(
+            again.status.success(),
+            "{shape:?}: a second `jigc setup` must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&again.stderr),
+        );
+        assert_eq!(
+            git_capture(&cwd, &["rev-parse", "HEAD"]).trim(),
+            head_before,
+            "{shape:?}: a second `jigc setup` must mint no second install commit",
+        );
+    }
+}
+
 /// Whether `settings` carries a `hooks.PreToolUse[*].hooks[*]` entry running the
 /// seeded `house-precheck.sh` command — the pre-existing non-jigc hook the merge
 /// must preserve.
