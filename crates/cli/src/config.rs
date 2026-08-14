@@ -1315,6 +1315,18 @@ mod tests {
         crate::render::config_ack(crate::cli::Format::Agent, ack)
     }
 
+    /// Assert `line` opens with the verb's `config: <effect>` statement. This test owns
+    /// the **effect** half of the ack; the closing uncommitted-write clause every
+    /// variant now carries is owned — over the whole `ConfigAck::ALL` axis, in both
+    /// surfaces — by `crates/cli/tests/config_ack_uncommitted.rs`, so it is deliberately
+    /// not re-spelled here.
+    fn assert_effect(line: &str, effect: &str) {
+        assert!(
+            line.starts_with(effect),
+            "the ack opens with its effect `{effect}`; got:\n{line}"
+        );
+    }
+
     /// F1 (M43 surface census, Law 1) — every `config` write returns an effect-stating
     /// ack instead of silence. Each verb, run against a real embedded-pack cascade,
     /// renders its `config: <effect>` line.
@@ -1324,9 +1336,9 @@ mod tests {
         {
             let (repo, _cfg) = repo_with_layer("ack-set");
             let ack = run_set(repo.path(), "default-workflow", "quick-fix").expect("set records");
-            assert_eq!(
-                agent_ack(&ack),
-                "config: set `default-workflow` = `quick-fix`"
+            assert_effect(
+                &agent_ack(&ack),
+                "config: set `default-workflow` = `quick-fix`",
             );
         }
         // insert-step — the splice effect (step id + workflow + side + anchor).
@@ -1336,9 +1348,9 @@ mod tests {
             fs::write(&source, "team extra body\n").expect("write source step");
             let ack = run_insert_step(repo.path(), "single-task", Some("implement"), None, &source)
                 .expect("insert-step records");
-            assert_eq!(
-                agent_ack(&ack),
-                "config: inserted step `team-extra` into `single-task` after `implement`"
+            assert_effect(
+                &agent_ack(&ack),
+                "config: inserted step `team-extra` into `single-task` after `implement`",
             );
         }
         // replace-step — the swap effect (target + replacement basename).
@@ -1348,9 +1360,9 @@ mod tests {
             fs::write(&source, "{{ include: step:implement }}\n").expect("write source");
             let ack = run_replace_step(repo.path(), "workflow:single-task#implement", &source)
                 .expect("replace-step records");
-            assert_eq!(
-                agent_ack(&ack),
-                "config: replaced `workflow:single-task#implement` with `project-implement`"
+            assert_effect(
+                &agent_ack(&ack),
+                "config: replaced `workflow:single-task#implement` with `project-implement`",
             );
         }
         // remove-step — the drop effect (target).
@@ -1358,9 +1370,9 @@ mod tests {
             let (repo, _cfg) = repo_with_layer("ack-remove");
             let ack = run_remove_step(repo.path(), "workflow:single-task#implement")
                 .expect("remove-step records");
-            assert_eq!(
-                agent_ack(&ack),
-                "config: removed `workflow:single-task#implement`"
+            assert_effect(
+                &agent_ack(&ack),
+                "config: removed `workflow:single-task#implement`",
             );
         }
         // fill — the inject effect (target). `implement` declares `{{fill: extra-guidance}}`.
@@ -1374,9 +1386,9 @@ mod tests {
                 content.to_str().unwrap(),
             )
             .expect("fill records");
-            assert_eq!(
-                agent_ack(&ack),
-                "config: filled `step:implement#extra-guidance`"
+            assert_effect(
+                &agent_ack(&ack),
+                "config: filled `step:implement#extra-guidance`",
             );
         }
         // fork — the copy effect (target + native path + pinned base prefix).
@@ -1385,12 +1397,10 @@ mod tests {
             let ack =
                 run_fork(repo.path(), "workflow:single-task#implement").expect("fork records");
             let line = agent_ack(&ack);
-            assert!(
-                line.starts_with(
-                    "config: forked `workflow:single-task#implement` -> \
-                     .jigc/config/steps/implement.yaml (pinned base "
-                ),
-                "fork ack states target + native path + pinned base: {line}"
+            assert_effect(
+                &line,
+                "config: forked `workflow:single-task#implement` -> \
+                 .jigc/config/steps/implement.yaml (pinned base ",
             );
         }
     }

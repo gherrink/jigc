@@ -12,6 +12,8 @@ mod changelog_step_subset;
 mod checkpoint_acceptance;
 #[path = "../cold_start_zero_commit.rs"]
 mod cold_start_zero_commit;
+#[path = "../config_ack_uncommitted.rs"]
+mod config_ack_uncommitted;
 #[path = "../config_fill.rs"]
 mod config_fill;
 #[path = "../config_fork.rs"]

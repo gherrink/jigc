@@ -1938,56 +1938,166 @@ pub enum ConfigAck {
     },
 }
 
+/// One member of the [`ConfigAck`] axis: an authoring verb, the `op` its envelope
+/// names, and a **witness** of the variant that verb returns.
+///
+/// The [`STORE_EXIT_FLIPS`] mold — a table a fence can iterate rather than a set of
+/// hand-repeated cases. It carries witness *constructors* because every `ConfigAck`
+/// variant holds data, so a bare value list could not be a `const`.
+pub struct ConfigAckArm {
+    /// The `config` subcommand this ack confirms, as the clap tree spells it.
+    pub verb: &'static str,
+    /// The `op` value this variant's JSON envelope carries — what discriminates it
+    /// on the wire.
+    pub op: &'static str,
+    /// A sample of the variant, so an axis-iterating fence feeds the real renderer
+    /// and no member is testable only in principle.
+    pub witness: fn() -> ConfigAck,
+}
+
+impl ConfigAck {
+    /// Every cascade-authoring verb's ack, in `config --help` order — the axis the
+    /// M48 parity fence iterates (`crates/cli/tests/config_ack_uncommitted.rs`),
+    /// asserted there to biject against the clap `config` verb tree minus its two
+    /// read verbs. A seventh authoring verb owes an arm here and reddens that fence
+    /// until it has one.
+    pub const ALL: &'static [ConfigAckArm] = &[
+        ConfigAckArm {
+            verb: "set",
+            op: "config-set",
+            witness: || ConfigAck::Set {
+                key: "docs-root".to_owned(),
+                value: "docs".to_owned(),
+            },
+        },
+        ConfigAckArm {
+            verb: "insert-step",
+            op: "config-insert-step",
+            witness: || ConfigAck::InsertStep {
+                workflow: "single-task".to_owned(),
+                step: "team-extra".to_owned(),
+                side: "after",
+                anchor: "implement".to_owned(),
+            },
+        },
+        ConfigAckArm {
+            verb: "replace-step",
+            op: "config-replace-step",
+            witness: || ConfigAck::ReplaceStep {
+                target: "workflow:single-task#implement".to_owned(),
+                step: "project-implement".to_owned(),
+            },
+        },
+        ConfigAckArm {
+            verb: "remove-step",
+            op: "config-remove-step",
+            witness: || ConfigAck::RemoveStep {
+                target: "workflow:single-task#implement".to_owned(),
+            },
+        },
+        ConfigAckArm {
+            verb: "fill",
+            op: "config-fill",
+            witness: || ConfigAck::Fill {
+                target: "step:implement#extra-guidance".to_owned(),
+            },
+        },
+        ConfigAckArm {
+            verb: "fork",
+            op: "config-fork",
+            witness: || ConfigAck::Fork {
+                target: "workflow:single-task#implement".to_owned(),
+                path: ".jigc/config/steps/implement.yaml".to_owned(),
+                base: "0a1b2c3d".to_owned(),
+            },
+        },
+    ];
+}
+
+/// The clause **every** [`ConfigAck`] closes its text line with (M48, F5): the write
+/// landed in `.jigc/config/` — the one *committed* corner of the otherwise gitignored
+/// `.jigc/` workbench (`design/overrides.md` → The cascade) — and **jigc committed
+/// nothing**, so the change sits in the worktree until the operator commits it.
+///
+/// Measured three times in the pre-1.0 trial: a `config set` rides an unrelated feature
+/// commit, or a fresh clone inherits no config at all, and no surface said so. It is one
+/// clause on all six verbs rather than a `set`-only sentence because the fact is a
+/// property of the *layer*, not of the knob — the structural verbs write native step and
+/// fill files into the same uncommitted layer.
+///
+/// The prose is the `docs-root` relocation lines' (`config::route_docs_root_repoint_orphans`)
+/// — **prose reuse, not code reuse**: that line is a bare `eprintln!` firing for one knob
+/// and only on a non-empty stranded set, so there is no shared function to extend. Its
+/// subject is also different (the staged `git mv`s), which is why both may print.
+const CONFIG_ACK_UNCOMMITTED: &str =
+    "written to `.jigc/config/`, uncommitted — commit it with your next commit";
+
 /// Render a successful `jigc config <verb>` confirmation ([`ConfigAck`]) to the surface
 /// `format` selects: `agent` / `human` emit the terse `config: <effect>` line (no
-/// footer — symmetric with the bare-line doc/task acks), `json` a small structured
-/// object (`op` + the effect fields), so a `--format json` caller gets a parseable
-/// confirmation instead of empty success.
+/// footer — symmetric with the bare-line doc/task acks), closed by
+/// [`CONFIG_ACK_UNCOMMITTED`]; `json` a small structured object (`op` + the effect
+/// fields + `committed: false`, the same fact on the wire), so a `--format json` caller
+/// gets a parseable confirmation instead of empty success.
 pub fn config_ack(format: Format, ack: &ConfigAck) -> String {
     match format {
-        Format::Json => match ack {
-            ConfigAck::Set { key, value } => json(&serde_json::json!({
-                "op": "config-set", "key": key, "value": value,
-            })),
-            ConfigAck::InsertStep {
-                workflow,
-                step,
-                side,
-                anchor,
-            } => json(&serde_json::json!({
-                "op": "config-insert-step", "workflow": workflow, "step": step,
-                "side": side, "anchor": anchor,
-            })),
-            ConfigAck::ReplaceStep { target, step } => json(&serde_json::json!({
-                "op": "config-replace-step", "target": target, "step": step,
-            })),
-            ConfigAck::RemoveStep { target } => json(&serde_json::json!({
-                "op": "config-remove-step", "target": target,
-            })),
-            ConfigAck::Fill { target } => json(&serde_json::json!({
-                "op": "config-fill", "target": target,
-            })),
-            ConfigAck::Fork { target, path, base } => json(&serde_json::json!({
-                "op": "config-fork", "target": target, "path": path, "base": base,
-            })),
-        },
-        Format::Agent | Format::Human => match ack {
-            ConfigAck::Set { key, value } => format!("config: set `{key}` = `{value}`"),
-            ConfigAck::InsertStep {
-                workflow,
-                step,
-                side,
-                anchor,
-            } => format!("config: inserted step `{step}` into `{workflow}` {side} `{anchor}`"),
-            ConfigAck::ReplaceStep { target, step } => {
-                format!("config: replaced `{target}` with `{step}`")
-            }
-            ConfigAck::RemoveStep { target } => format!("config: removed `{target}`"),
-            ConfigAck::Fill { target } => format!("config: filled `{target}`"),
-            ConfigAck::Fork { target, path, base } => {
-                format!("config: forked `{target}` -> {path} (pinned base {base})")
-            }
-        },
+        Format::Json => {
+            let mut envelope = match ack {
+                ConfigAck::Set { key, value } => serde_json::json!({
+                    "op": "config-set", "key": key, "value": value,
+                }),
+                ConfigAck::InsertStep {
+                    workflow,
+                    step,
+                    side,
+                    anchor,
+                } => serde_json::json!({
+                    "op": "config-insert-step", "workflow": workflow, "step": step,
+                    "side": side, "anchor": anchor,
+                }),
+                ConfigAck::ReplaceStep { target, step } => serde_json::json!({
+                    "op": "config-replace-step", "target": target, "step": step,
+                }),
+                ConfigAck::RemoveStep { target } => serde_json::json!({
+                    "op": "config-remove-step", "target": target,
+                }),
+                ConfigAck::Fill { target } => serde_json::json!({
+                    "op": "config-fill", "target": target,
+                }),
+                ConfigAck::Fork { target, path, base } => serde_json::json!({
+                    "op": "config-fork", "target": target, "path": path, "base": base,
+                }),
+            };
+            // The wire half of the uncommitted state (M48): the same fact
+            // [`CONFIG_ACK_UNCOMMITTED`] states in prose, as the key a driver reads —
+            // a value the text prints and the envelope withholds is a gap. Constant
+            // `false` because **no** `config` verb commits; the key exists so that
+            // stays a statement a driver can read rather than one it must know.
+            envelope
+                .as_object_mut()
+                .expect("each config ack envelope is a JSON object")
+                .insert("committed".to_owned(), serde_json::Value::Bool(false));
+            json(&envelope)
+        }
+        Format::Agent | Format::Human => {
+            let effect = match ack {
+                ConfigAck::Set { key, value } => format!("config: set `{key}` = `{value}`"),
+                ConfigAck::InsertStep {
+                    workflow,
+                    step,
+                    side,
+                    anchor,
+                } => format!("config: inserted step `{step}` into `{workflow}` {side} `{anchor}`"),
+                ConfigAck::ReplaceStep { target, step } => {
+                    format!("config: replaced `{target}` with `{step}`")
+                }
+                ConfigAck::RemoveStep { target } => format!("config: removed `{target}`"),
+                ConfigAck::Fill { target } => format!("config: filled `{target}`"),
+                ConfigAck::Fork { target, path, base } => {
+                    format!("config: forked `{target}` -> {path} (pinned base {base})")
+                }
+            };
+            format!("{effect} — {CONFIG_ACK_UNCOMMITTED}")
+        }
     }
 }
 
