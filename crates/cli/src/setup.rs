@@ -183,7 +183,10 @@ pub enum GuideOwnership {
     /// jigc's own bytes: the recorded `jigc-body-blake3:` **is** this body's digest, so
     /// rewriting the file destroys nothing a human authored.
     Owned,
-    /// Not jigc's (any more). Replacing it would clobber the user's own edits.
+    /// Not jigc's (any more). Replacing it would clobber the user's own edits. This is the
+    /// **fail-closed** verdict, so it also covers a file present at the path that cannot be
+    /// read back as jigc's text at all — bytes that are not UTF-8, or a read that errors for
+    /// any reason other than the file being absent.
     UserModified,
 }
 
@@ -193,10 +196,22 @@ pub enum GuideOwnership {
 /// what lets the read-only `jigc upgrade` door consult it (`design/overrides.md` → The
 /// `jigc upgrade` command: report-and-route only).
 pub fn guide_ownership(repo_root: &Path, guide: &adapter::GuideTarget) -> GuideOwnership {
-    let Ok(text) = std::fs::read_to_string(repo_root.join(&guide.file)) else {
-        // Unreadable is treated as absent on purpose: the *write* then fails loudly with
-        // the routed `setup.write-guide` block, rather than this probe guessing at a cause.
-        return GuideOwnership::Absent;
+    // **Only a genuine `NotFound` is `Absent`** — every other outcome is the user's.
+    // `Absent` is one of the two verdicts the write gate treats as "overwrite it", so
+    // folding a *present but unreadable* file into it fails **open**: an ordinary readable
+    // file whose bytes are not UTF-8 (a hand-written skill saved Latin-1) would be read as
+    // absent and silently clobbered at exit 0. The check is the inverse of the generator's
+    // assembly and fails **closed**: anything it cannot prove is jigc's own is the user's.
+    let bytes = match std::fs::read(repo_root.join(&guide.file)) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return GuideOwnership::Absent,
+        // Present but unreadable (permissions, a directory at the path, an I/O fault): jigc
+        // cannot prove these bytes are its own, so it does not get to replace them.
+        Err(_) => return GuideOwnership::UserModified,
+    };
+    let Ok(text) = String::from_utf8(bytes) else {
+        // jigc only ever writes UTF-8, so bytes that do not decode were not written by jigc.
+        return GuideOwnership::UserModified;
     };
     match recorded_body_digest(&text) {
         Some((recorded, body)) if recorded == engine::file_state::hash_bytes(body.as_bytes()) => {

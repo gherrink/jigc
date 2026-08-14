@@ -549,26 +549,38 @@ fn setup_refuses_to_clobber_a_user_modified_guide_and_routes_it() {
     );
 }
 
-/// **The ownership question over its whole answer axis.** "Not jigc's" has three shapes,
-/// and a check that only compares hashes would pass the first and clobber the other two:
+/// **The ownership question over its whole answer axis.** "Not jigc's" has four shapes,
+/// and a check that only compares hashes would pass the first and clobber the rest:
 /// a body edited under jigc's own header, a file with **no** front matter at all (a user's
-/// own skill squatting at the path), and a front matter carrying every other key but not
-/// jigc's digest. Each must survive `jigc setup` byte-identical, and each must be reported.
+/// own skill squatting at the path), a front matter carrying every other key but not
+/// jigc's digest, and a file whose **bytes do not decode as UTF-8** at all (a hand-written
+/// skill saved Latin-1, the cell a `&str`-seeded fixture cannot express and therefore
+/// cannot witness). Each must survive `jigc setup` byte-identical, and each must be
+/// reported.
 ///
-/// The pristine-stale arm above is this axis's fourth cell and the only one that *is*
+/// The axis is seeded as **bytes**, not `&str`, on purpose: the previous fixture was
+/// authored in exactly the encoding the implementation handled, so the fourth cell
+/// false-passed while `setup` silently destroyed the user's own skill at exit 0.
+///
+/// The pristine-stale arm above is this axis's fifth cell and the only one that *is*
 /// jigc's — so the two tests together say exactly when the artifact is replaced.
 #[test]
 fn every_shape_of_a_not_jigc_artifact_survives_setup_byte_identical() {
-    let seeded: [(&str, &str); 3] = [
+    let seeded: [(&str, &[u8]); 4] = [
         (
             "body-edited",
             // jigc's header shape, a digest that no longer describes the body.
-            "---\nname: jigc\njigc-version: 9.9.9\njigc-body-blake3: 00\n---\n\nmy own words\n",
+            b"---\nname: jigc\njigc-version: 9.9.9\njigc-body-blake3: 00\n---\n\nmy own words\n",
         ),
-        ("no-front-matter", "# My jigc notes\n\nhand-written.\n"),
+        ("no-front-matter", b"# My jigc notes\n\nhand-written.\n"),
         (
             "no-stamp",
-            "---\nname: jigc\ndescription: mine\n---\n\nhand-written.\n",
+            b"---\nname: jigc\ndescription: mine\n---\n\nhand-written.\n",
+        ),
+        (
+            // A user's own skill saved in Latin-1: `Cr\xe9ez` is not valid UTF-8.
+            "not-utf8",
+            b"---\nname: my-skill\n---\n\n# Mon guide\n\nCr\xe9ez un document.\n",
         ),
     ];
 
@@ -584,7 +596,7 @@ fn every_shape_of_a_not_jigc_artifact_survives_setup_byte_identical() {
         let out = run_setup(repo.path(), home.path(), None);
         assert_clean(&out, &format!("setup over a {tag} artifact"));
         assert_eq!(
-            fs::read_to_string(&target).expect("still there"),
+            fs::read(&target).expect("still there"),
             body,
             "{tag}: an artifact jigc cannot prove is its own must survive byte-identical",
         );
