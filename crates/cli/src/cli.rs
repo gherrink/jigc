@@ -1315,70 +1315,167 @@ fn run_orient(format: Format) -> Outcome {
     }
 }
 
+/// One curated row of the unknown-subcommand table: the `(parent, guess)` key an agent
+/// actually reached for in a trial, and the honest tip it earns.
+///
+/// `tip` is a **function**, not a literal, because every command span inside it rides
+/// the checked [`Route::mechanical`](engine::finding::Route) constructor — built at
+/// call time, under the live parse fence.
+pub struct SiblingTip {
+    /// The parent verb the guess sat under (`jigc <parent> <guess>`).
+    pub parent: &'static str,
+    /// The guessed verb — one that does not exist.
+    pub guess: &'static str,
+    /// Builds this row's tip text (leading `tip: `).
+    pub tip: fn() -> String,
+}
+
+/// The curated unknown-subcommand table — **the axis every fence over these tips
+/// iterates**, rather than a list re-typed at each fence (M48 Inc 6 T2; the
+/// receipt-outlives-contract failure the wave's razor guards against).
+///
+/// Keyed on `(parent, guessed verb)` — the guesses agents actually reached for in the
+/// trials — each row supplies a tip naming what the real sibling **does** (its effect),
+/// because clap's bare did-you-mean can steer wrong: a `task discard-write` guesser
+/// suggested toward `discard` would destroy the whole task. Where a row matches, jigc's
+/// own render of the block drops clap's suggestion and carries this tip in its place
+/// ([`unknown_subcommand_block`]); everywhere else clap's suggestion stands verbatim.
+pub const CURATED_SIBLING_TIPS: &[SiblingTip] = &[
+    SiblingTip {
+        parent: "task",
+        guess: "discard-write",
+        tip: tip_task_discard_write,
+    },
+    SiblingTip {
+        parent: "task",
+        guess: "status",
+        tip: tip_task_status,
+    },
+];
+
+/// The ghost verb the reconciliation route used to name: clap's did-you-mean steers to
+/// `discard`, which abandons the whole task — so the tip states that effect out loud.
+fn tip_task_discard_write() -> String {
+    format!(
+        "tip: no per-write discard exists — {}",
+        engine::finding::Route::mechanical(
+            ["jigc", "task", "discard", "<task-id>"],
+            " abandons the WHOLE task (removes its working area and every staged \
+             write); to back out a single external edit, revert that file on disk \
+             instead",
+        )
+        .as_str()
+    )
+}
+
+/// The status guess: name what each real sibling *does*, not a bare did-you-mean.
+fn tip_task_status() -> String {
+    format!(
+        "tip: {}; {}",
+        engine::finding::Route::mechanical(
+            ["jigc", "task", "list"],
+            " enumerates the active tasks (id + minting workflow + intent)",
+        )
+        .as_str(),
+        engine::finding::Route::mechanical(
+            ["jigc", "task", "validate", "<task-id>"],
+            " previews part of the finalize gate for one task — content findings, \
+             carryover, and the owner-artifact causes that need no staging",
+        )
+        .as_str(),
+    )
+}
+
 /// The honest sibling tip for an unknown-subcommand **semantic guess** — never a
 /// silent alias (M43 law 2, `DECISIONS.md` 2026-07-16 Settle, cross-cutting; trial
 /// provenance: A1 papercut, log rec 254).
 ///
-/// A curated, code-side map keys on `(parent, guessed verb)` — the guesses agents
-/// actually reached for in the trials — and supplies a tip naming what the real
-/// sibling **does** (its effect), because clap's bare did-you-mean can steer wrong:
-/// a `task discard-write` guesser suggested toward `discard` would destroy the whole
-/// task. The tip only *appends* — the guess stays a genuine clap usage error (exit 2,
-/// clap's own error + usage output untouched, printed by `main`'s clap-error arm).
-///
-/// Every command span rides the checked [`Route::mechanical`](engine::finding::Route)
-/// constructor, so a tip naming a verb that stops parsing fails the T2 parse fence at
-/// construction (`design/surface-contract.md` → The route fence) — this map cannot
-/// grow a ghost verb. An uncurated guess (or a curated verb under the wrong parent)
-/// returns `None`: inert, never an error.
+/// Looks the guess up in [`CURATED_SIBLING_TIPS`]. The tip never dispatches anything —
+/// the guess stays a genuine usage error (exit 2, the block still says what was wrong
+/// and prints the parent's usage). An uncurated guess (or a curated verb under the
+/// wrong parent) returns `None`: inert, never an error.
 ///
 /// `argv` is the raw process argv; the parent is the token immediately preceding the
 /// guessed verb, so the map fires only where the guess actually sat (a global flag
 /// between parent and guess misses the tip — best-effort by design, the clap error
 /// still prints).
 pub fn unknown_subcommand_tip(err: &clap::Error, argv: &[String]) -> Option<String> {
-    use clap::error::{ContextKind, ContextValue};
-    use engine::finding::Route;
-
-    if err.kind() != clap::error::ErrorKind::InvalidSubcommand {
-        return None;
-    }
-    let guess = match err.get(ContextKind::InvalidSubcommand)? {
-        ContextValue::String(guess) => guess.as_str(),
-        _ => return None,
-    };
+    let guess = invalid_subcommand_guess(err)?;
     let parent = argv
         .windows(2)
         .find(|pair| pair[1] == guess)
         .map(|pair| pair[0].as_str())?;
-    let tip = match (parent, guess) {
-        ("task", "discard-write") => format!(
-            "tip: no per-write discard exists — {}",
-            Route::mechanical(
-                ["jigc", "task", "discard", "<task-id>"],
-                " abandons the WHOLE task (removes its working area and every staged \
-                 write); to back out a single external edit, revert that file on disk \
-                 instead",
-            )
-            .as_str()
-        ),
-        ("task", "status") => format!(
-            "tip: {}; {}",
-            Route::mechanical(
-                ["jigc", "task", "list"],
-                " enumerates the active tasks (id + minting workflow + intent)",
-            )
-            .as_str(),
-            Route::mechanical(
-                ["jigc", "task", "validate", "<task-id>"],
-                " previews part of the finalize gate for one task — content findings, \
-                 carryover, and the owner-artifact causes that need no staging",
-            )
-            .as_str(),
-        ),
-        _ => return None,
+    CURATED_SIBLING_TIPS
+        .iter()
+        .find(|row| row.parent == parent && row.guess == guess)
+        .map(|row| (row.tip)())
+}
+
+/// jigc's own render of the **unknown-subcommand** error block — `None` for every other
+/// clap error kind, which keeps clap's own render untouched (`DECISIONS.md` 2026-08-13
+/// the Settle, F8 part 3).
+///
+/// **Why jigc renders this one kind.** clap's block is emitted whole before anything of
+/// jigc's can speak, so a curated tip could only *append* — and for the curated rows the
+/// two contradict: `jigc task discard-write` printed clap's `tip: a similar subcommand
+/// exists: 'discard'` directly above jigc's warning that `discard` abandons the whole
+/// task, and a read-shaped miss is answered with a write verb. A surface that prints the
+/// correction below the lie has not removed the lie (`design/surface-contract.md` → law
+/// 1). So for this kind jigc composes the block from the error's own context — the same
+/// four parts in the same order, plain text on stderr at the same exit 2
+/// ([`crate::task::EXIT_USAGE`]) — and the **tip slot** carries the curated tip where a
+/// row matches, clap's own did-you-mean where none does. did-you-mean is dropped only
+/// where a curated tip replaces it, never globally.
+///
+/// The parts, all read from the error clap already built (never re-derived): the guessed
+/// token (`ContextKind::InvalidSubcommand`), clap's suggestion list
+/// (`ContextKind::SuggestedSubcommand` — absent when clap found no near sibling, and
+/// then no tip slot is printed at all), and the parent's usage (`ContextKind::Usage`).
+pub fn unknown_subcommand_block(err: &clap::Error, argv: &[String]) -> Option<String> {
+    use clap::error::{ContextKind, ContextValue};
+
+    let guess = invalid_subcommand_guess(err)?;
+    let mut block = format!("error: unrecognized subcommand '{guess}'\n");
+    let tip = unknown_subcommand_tip(err, argv).or_else(|| {
+        match err.get(ContextKind::SuggestedSubcommand) {
+            Some(ContextValue::Strings(near)) if !near.is_empty() => Some(did_you_mean(near)),
+            _ => None,
+        }
+    });
+    if let Some(tip) = tip {
+        block.push_str(&format!("\n  {tip}\n"));
+    }
+    if let Some(ContextValue::StyledStr(usage)) = err.get(ContextKind::Usage) {
+        block.push_str(&format!("\n{usage}\n"));
+    }
+    block.push_str("\nFor more information, try '--help'.\n");
+    Some(block)
+}
+
+/// clap's own did-you-mean wording for a suggestion list, re-emitted verbatim so an
+/// **uncurated** guess loses nothing to the render takeover (law 2 — nothing hides).
+fn did_you_mean(near: &[String]) -> String {
+    let opening = if near.len() == 1 {
+        "tip: a similar subcommand exists: "
+    } else {
+        "tip: some similar subcommands exist: "
     };
-    Some(tip)
+    let quoted: Vec<String> = near.iter().map(|name| format!("'{name}'")).collect();
+    format!("{opening}{}", quoted.join(", "))
+}
+
+/// The guessed token an `InvalidSubcommand` error carries — `None` for every other
+/// clap error kind, which keeps clap's own render.
+fn invalid_subcommand_guess(err: &clap::Error) -> Option<&str> {
+    use clap::error::{ContextKind, ContextValue};
+
+    if err.kind() != clap::error::ErrorKind::InvalidSubcommand {
+        return None;
+    }
+    match err.get(ContextKind::InvalidSubcommand)? {
+        ContextValue::String(guess) => Some(guess.as_str()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -1391,15 +1488,25 @@ mod cli_parse {
     /// naming a verb that does not parse against the real CLI panics here — the
     /// map cannot grow a ghost verb, independent of which guesses the integration
     /// arms happen to drive (`design/surface-contract.md` → The route fence).
+    ///
+    /// The rows are **iterated from [`CURATED_SIBLING_TIPS`]** (M48 Inc 6 T2): a row
+    /// added to the table joins this fence the day it lands, where the earlier
+    /// hand-copied pair list let the receipt outlive the contract.
     #[test]
     fn every_curated_sibling_tip_passes_the_route_parse_fence() {
         crate::route_fence::install();
-        for (parent, guess) in [("task", "discard-write"), ("task", "status")] {
+        for row in CURATED_SIBLING_TIPS {
+            let (parent, guess) = (row.parent, row.guess);
             let err = Cli::try_parse_from(["jigc", parent, guess])
                 .expect_err("a curated guess is an unknown subcommand");
             let argv: Vec<String> = ["jigc", parent, guess].map(String::from).into();
             let tip = unknown_subcommand_tip(&err, &argv)
                 .unwrap_or_else(|| panic!("the curated guess `{parent} {guess}` must yield a tip"));
+            assert_eq!(
+                tip,
+                (row.tip)(),
+                "the tip served for `{parent} {guess}` is the row's own",
+            );
             assert!(
                 tip.starts_with("tip: "),
                 "the tip is identifiable as a tip; got: {tip}"
@@ -1408,7 +1515,9 @@ mod cli_parse {
     }
 
     /// A clap error that is not `InvalidSubcommand` never yields a tip — the map
-    /// intercepts semantic guesses only, not ordinary usage errors.
+    /// intercepts semantic guesses only, not ordinary usage errors — **and jigc
+    /// renders no block for it either**, so clap keeps that error surface whole,
+    /// did-you-mean included (M48 Inc 6 T2: the takeover is one error kind wide).
     #[test]
     fn a_non_subcommand_usage_error_yields_no_tip() {
         let err = Cli::try_parse_from(["jigc", "task", "validate"])
@@ -1416,6 +1525,22 @@ mod cli_parse {
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
         let argv: Vec<String> = ["jigc", "task", "validate"].map(String::from).into();
         assert_eq!(unknown_subcommand_tip(&err, &argv), None);
+        assert_eq!(unknown_subcommand_block(&err, &argv), None);
+    }
+
+    /// The re-emitted did-you-mean matches clap's own wording in **both** arities —
+    /// singular and plural — since jigc now writes that line for every uncurated
+    /// guess and a drift here would silently reword clap's suggestion.
+    #[test]
+    fn the_re_emitted_did_you_mean_matches_claps_wording_in_both_arities() {
+        assert_eq!(
+            did_you_mean(&["validate".to_string()]),
+            "tip: a similar subcommand exists: 'validate'",
+        );
+        assert_eq!(
+            did_you_mean(&["create".to_string(), "rename".to_string()]),
+            "tip: some similar subcommands exist: 'create', 'rename'",
+        );
     }
 
     #[test]

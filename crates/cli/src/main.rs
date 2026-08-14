@@ -39,7 +39,7 @@ fn main() -> ExitCode {
     let outcome = match cli_tree::Cli::try_parse() {
         Ok(cli) => cli.dispatch(),
         Err(err) => {
-            // Reproduce clap's own behavior: `--help`/`--version` print to stdout and exit 0
+            // Reproduce clap's own exit convention: `--help`/`--version` print to stdout, exit 0
             // (`use_stderr()` is false); a genuine usage error prints to stderr and exits 2.
             // The codes read from the taxonomy table, not hand literals (T1).
             let code = if err.use_stderr() {
@@ -47,20 +47,26 @@ fn main() -> ExitCode {
             } else {
                 cli::task::EXIT_SUCCESS
             };
-            let _ = err.print();
-            // The M43 law-2 sibling tip: an unknown subcommand an agent plausibly
-            // guessed gets an honest tip naming what the real sibling *does* — never
-            // a silent alias; clap's own output above and the exit code are untouched
-            // (`cli_tree::unknown_subcommand_tip`; DECISIONS.md 2026-07-16 Settle).
+            // The unknown-subcommand block is jigc's own render (M48 Inc 6 T2): the
+            // curated sibling tip lands *in* the tip slot instead of below clap's
+            // contradicting did-you-mean, which used to steer a `task discard-write`
+            // guesser at the verb that destroys the whole task — the correction printed
+            // under the lie it exists to remove (`cli_tree::unknown_subcommand_block`;
+            // DECISIONS.md 2026-08-13 the Settle, F8). Every other clap error kind
+            // still prints clap's own render, did-you-mean included; the stream, the
+            // plain-text form and the exit code are unchanged either way.
             let argv: Vec<String> = std::env::args().collect();
-            if let Some(tip) = cli_tree::unknown_subcommand_tip(&err, &argv) {
-                eprintln!("{tip}");
+            match cli_tree::unknown_subcommand_block(&err, &argv) {
+                Some(block) => eprint!("{block}"),
+                None => {
+                    let _ = err.print();
+                }
             }
             Outcome::code(code)
         }
     };
 
-    // Tear the tee down AFTER all emission (incl. the clap arm's `err.print()`) but BEFORE the
+    // Tear the tee down AFTER all emission (incl. the clap arm's own) but BEFORE the
     // log write, so `output_bytes` is the true total (`finish` flushes the std streams first).
     let output_bytes = tee.map(OutputTee::finish).unwrap_or(0);
 

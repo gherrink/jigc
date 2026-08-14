@@ -14,9 +14,13 @@
 //!     to stderr;
 //!   * a **reject** (an operational error, a blocked write) leaves **stdout empty** and
 //!     writes exactly one document to **stderr**;
-//!   * a **clap-resolved usage error** is the declared carve-out — clap formats and prints
-//!     its own message before any jigc code reads `--format`, so it is **plain text, exit
-//!     2, no envelope on either stream** (contract → the clap carve-out is declared).
+//!   * a **clap-resolved usage error** is the declared carve-out — the parse *failed*, so
+//!     there is no `--format` value to honour and no funnel to enter: it is **plain text,
+//!     exit 2, no envelope on either stream** (contract → the clap carve-out is declared).
+//!     The reason is the failed parse, **not** who formats the message: since M48 jigc
+//!     renders the unknown-subcommand block itself (`cli::cli::unknown_subcommand_block`)
+//!     and the carve-out is unchanged, because plain text is what the missing format
+//!     value leaves — every other error kind still prints clap's own render.
 //!
 //! **Verbs enumerate from the clap tree** via `CommandFactory` (`--format` is a *global*
 //! arg, so every verb is in scope by construction) — a new verb is swept the day it lands,

@@ -21,13 +21,33 @@
 //! curated map stays inert: clap's error unchanged, no tip, exit 2 — never an error in
 //! the tip machinery.
 //!
+//! **M48 Inc 6 T2 — jigc renders the unknown-subcommand block itself** (`DECISIONS.md`
+//! 2026-08-13 the Settle, F8 parts 2–3). Letting clap render it printed clap's own
+//! `tip: a similar subcommand exists: 'discard'` **above** the curated tip warning
+//! against exactly that verb — a law-1 lie on the surface built to remove one. So for
+//! this one error kind jigc composes the block (error line · tip slot · usage ·
+//! try-help) from the error's own context, and the tip slot carries the curated tip
+//! where a curated row exists. **Every other clap error kind keeps clap's own render**,
+//! did-you-mean included, and an **uncurated** guess keeps clap's suggestion verbatim.
+//! The suppression arm iterates [`CURATED_SIBLING_TIPS`] itself — the table is the axis,
+//! never a list re-typed here (the receipt-outlives-contract failure the M48 razor
+//! guards against).
+//!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
 //! repo is a real `git init`, and a self-cleaning `TempDir` keeps the test off the
 //! dev's repo.
 
+use cli::cli::CURATED_SIBLING_TIPS;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// clap's two did-you-mean openings — the lines jigc's own render drops for a curated
+/// row (and keeps verbatim for every uncurated one).
+const CLAP_DID_YOU_MEAN: [&str; 2] = [
+    "tip: a similar subcommand exists",
+    "tip: some similar subcommands exist",
+];
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -212,6 +232,85 @@ fn task_status_guess_gets_the_real_sibling_effects_and_the_span_runs() {
     run_first_emitted_span(tip, repo.path(), home.path());
 }
 
+/// **The table is the axis** (M48 Inc 6 T2): for EVERY row of `CURATED_SIBLING_TIPS`,
+/// iterated from the table rather than re-typed here, the emitted block carries the
+/// row's own tip and **neither** of clap's did-you-mean openings — jigc renders the
+/// block, so the suggestion that contradicts the curated tip is gone rather than
+/// printed above it. The rest of clap's block is unchanged (error line, the parent's
+/// usage, exit 2).
+#[test]
+fn every_curated_row_renders_without_claps_contradicting_suggestion() {
+    let repo = TempDir::new("curated-render");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    assert!(
+        !CURATED_SIBLING_TIPS.is_empty(),
+        "the curated table must carry rows, or this arm asserts nothing",
+    );
+    for row in CURATED_SIBLING_TIPS {
+        let out = jigc(repo.path(), home.path(), &[row.parent, row.guess]);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "`jigc {} {}` stays a usage error (exit 2)",
+            row.parent,
+            row.guess,
+        );
+        let stderr = String::from_utf8(out.stderr.clone()).expect("utf-8 stderr");
+        assert!(
+            stderr.contains(&format!("error: unrecognized subcommand '{}'", row.guess)),
+            "the error line names the guess; got:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(&format!("Usage: jigc {}", row.parent)),
+            "the parent's usage output is preserved; got:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(&(row.tip)()),
+            "the row's own curated tip is emitted verbatim; got:\n{stderr}",
+        );
+        for lie in CLAP_DID_YOU_MEAN {
+            assert!(
+                !stderr.contains(lie),
+                "`jigc {} {}` must not print clap's `{lie}` beside its curated tip; got:\n{stderr}",
+                row.parent,
+                row.guess,
+            );
+        }
+    }
+}
+
+/// The omitting context for the render takeover: an **uncurated** guess keeps clap's
+/// did-you-mean verbatim — the takeover drops the suggestion only where jigc has a
+/// curated tip that would contradict it, never globally.
+#[test]
+fn an_uncurated_guess_keeps_claps_did_you_mean() {
+    let repo = TempDir::new("uncurated-suggestion");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["valdiate"]);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "an unknown top-level subcommand stays a usage error (exit 2)",
+    );
+    let stderr = String::from_utf8(out.stderr.clone()).expect("utf-8 stderr");
+    assert!(
+        stderr.contains("error: unrecognized subcommand 'valdiate'"),
+        "clap's own error line is preserved; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("tip: a similar subcommand exists: 'validate'"),
+        "an ordinary typo keeps did-you-mean; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("Usage: jigc"),
+        "the usage output is preserved; got:\n{stderr}",
+    );
+}
+
 /// The omitting context: an unknown guess **outside** the curated map stays inert —
 /// clap's error and exit 2 unchanged, no curated tip text — never an error in the
 /// tip machinery itself.
@@ -227,6 +326,12 @@ fn an_uncurated_guess_stays_a_plain_clap_error_with_no_tip() {
         !stderr.contains("no per-write discard exists")
             && !stderr.contains("enumerates the active tasks"),
         "an uncurated guess gets no curated tip; got:\n{stderr}",
+    );
+    // clap itself finds no near sibling for this guess, so the rendered block carries
+    // no tip slot at all — jigc invents neither a tip nor an empty one.
+    assert!(
+        !stderr.contains("tip:"),
+        "an uncurated guess clap cannot suggest for gets no tip line; got:\n{stderr}",
     );
 }
 
