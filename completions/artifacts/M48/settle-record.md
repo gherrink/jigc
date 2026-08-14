@@ -549,11 +549,47 @@ has **no managed-vs-foreign discriminator** (unlike `detect_committed_store:617`
 `is_unadopted_foreign`). So it fires over **managed** docs too, pinned by a standing suite
 (`managed_vs_foreign.rs:944`) that drives a **v2-stamped, fully-migrated ADR** with `## Consequences`
 deleted and asserts one advisory `reconciliation.conformance-block`. Under the settled convergence
-that becomes `unadopted-instance` carrying M42's *"ingest, migrate, or move it out"* route — **a flat
-lie about a stamped managed doc, and destructive advice** — and the un-baselined state is that
+that would move a **managed** doc onto a foreign-file code, and the un-baselined state is that
 suite's own *"dominant `jigc validate` corpus"*, i.e. the **common** cell. Convergence would also
 falsify `render.rs:718`'s `GATES_NOWHERE` membership derivation (*"emitted only on a store-scope path
 and by no task-scope path"*).
+**CORRECTED at the increment-4 plan halt (2026-08-14) — this re-settle carried a misattributed
+quote, and the correction changes what the increment must build.** The string *"ingest, migrate, or
+move it out of the managed location"* is **`conformance_advisory_finding`'s OWN route**
+(`file_state.rs:1088`) — **not** `unadopted_instance`'s, which routes to *"adopt — run `jigc ingest`
+… it is a foreign file, not an unmigrated managed doc"* (`validate.rs:970`). The reviewer
+misattributed it and the proposer propagated it without checking. **Consequence:** the lie does not
+*arrive* with convergence — it is **already on the managed cell today** (live-reproduced on a
+v2-stamped, fully-migrated ADR with `## Consequences` deleted), and the settled split **keeps** it
+there. It is **worse after the fix than before**: today the arm serves foreign ∪ managed and the
+route is correct for the foreign majority; after the split it serves **managed only**, so all three
+clauses — `jigc ingest`, `jigc migrate --as <ty>`, *"move it out of the managed location"* — are
+adoption-or-removal advice about a doc jigc wrote and owns, i.e. wrong for **100%** of its remaining
+population. Increment 4's *Proves* (*"no advisory tells a stamped managed doc to migrate itself"*)
+was undeliverable by the settled mechanism. **The split was right and incomplete: it fixed the code
+and left the route, and the route is the actual lie.**
+
+**Settled at the halt (2026-08-14): route on the stamp, reusing two already-shipped strings.**
+Below-version or stamp-absent → the corpus-migration route (`route_schema_conformance`,
+`validate.rs:1348-1356`, already shipped store-side); at-version → the blocking twin's hand-repair
+sanction (`file_state.rs:1057-1062`, *"fix the file to restore conformance, or revert the edit — this
+is the one case a managed file is yours to hand-edit"*). The stamp split is load-bearing rather than
+decorative: **hand-repair advice over a *stale* managed doc** (a v1-stamped ADR under v2, which lands
+in this same arm) **is itself wrong** — it tells the operator to hand-fix what `migrate-corpus` must
+rewrite. No new mechanism, no new check id, both strings already ship, and `versions` is at the emit
+site by construction of this increment. No locked doc answered this: `project-setup.md:108,152`
+designs this arm **exclusively** as the foreign-squatter G4 gate — the population the increment
+removes from it.
+
+**Two costs the Settle had not priced, verified at the halt:** `is_unadopted_foreign` needs
+`versions` + `priors`, and **none** of `reconcile_committed`, `reconcile_committed_store` or
+`validate_task` carries them — they thread from **three CLI doors** (`task.rs:862`,
+`milestone.rs:3333`, `milestone.rs:887`, the last needing its own `make_pack()`). And
+**`GATES_NOWHERE`'s stated derivation becomes false** — *"emitted only on a store-scope path and by
+no task-scope path"* (`render.rs:722-726`) must be re-derived, mirrored at `validation.md:378,385`;
+its **membership** stays correct, since the task-scope emission is advisory and still gates nowhere.
+*(The planning gate-record's F10 row said the derivation was "preserved" — that cell was wrong.)*
+
 **Settled:** condition the convergence on `is_unadopted_foreign` at the emit site — the discriminator
 the Settle already names as the real defect. **Foreign** converges on `unadopted-instance`; the
 **managed** cell keeps `reconciliation.conformance-block`, which is honest for a doc that genuinely
