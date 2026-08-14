@@ -40,6 +40,12 @@ Before you finalize, verify the change actually works: build it and run the
 tests, and confirm the behaviour you set out to produce. Finalize commits your
 staged work; it does not check that the work is correct.
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show adr:<slug> --task your-task-id
+
 Author this sub-task's own commit prose. The parent milestone's finalize is
 the only commit boundary: `git add` your code edits so the milestone can fold
 this worktree's staged index, but never `git commit` and never `jigc task finalize`
@@ -71,6 +77,12 @@ it in a commit trailer. Add one trailer item, then set its value on the address
 
 jigc doc add-item commit:your-task-id#trailers --title Co-Authored-By --task your-task-id
 jigc doc set-field commit:your-task-id#trailers/<id>/value --value "Name <email>" --task your-task-id
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:your-task-id --task your-task-id
 create-gates: adr   — the doc-types this task is allowed to create; any other type is refused
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

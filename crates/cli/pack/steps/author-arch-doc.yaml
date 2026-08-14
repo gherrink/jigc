@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Document this part of the system as living architecture. The intent is:
 {{ task.intent }}
 
@@ -39,3 +42,9 @@ write; the payload's `title:` mints the slug exactly like the create above. The
 `cites` one-list rule and the committed-first ordering above bind unchanged:
 
 jigc doc author arch-doc --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show arch-doc:<slug> --task {{task.id}}

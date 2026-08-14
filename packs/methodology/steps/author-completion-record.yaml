@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Record the completion audit on the per-milestone completion-record. Create it fresh
 — the slug is minted from the title you give (this milestone):
 
@@ -31,3 +34,9 @@ stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author completion-record --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show completion-record:<slug> --task {{task.id}}

@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Record the investigation on a fresh research doc. Create it — the slug is minted
 from the title you give (the question this investigation answers):
 
@@ -18,3 +21,9 @@ stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author research --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show research:<slug> --task {{task.id}}

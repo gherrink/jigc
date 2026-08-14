@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Migrate the foreign PRD into a managed `prd`. Below is the foreign source the CLI
 staged for you (read-only context — you author the canonical record through the write
 verbs, you never edit this file or place anything yourself):
@@ -23,3 +26,9 @@ Map the foreign PRD's headings onto the schema above:
 A foreign "decomposes into spec X" / "see the auth spec" reference has no structural edge
 in the prd schema (there is no `decomposes-into` relation) — fold it into the `context`
 prose instead; never invent a field for it.
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show prd:<slug> --task {{task.id}}

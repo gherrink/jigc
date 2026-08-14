@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 When done, set the required Conventional-Commits type — your editorial call on
 what this change does. The subject renders as `<type>(<scope>): <summary>`, so
 write the summary without a type or scope prefix of its own — the `type` field
@@ -23,3 +26,9 @@ it in a commit trailer. Add one trailer item, then set its value on the address
 
 jigc doc add-item commit:{{task.id}}#trailers --title Co-Authored-By --task {{task.id}}
 jigc doc set-field commit:{{task.id}}#trailers/<id>/value --value "Name <email>" --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:{{task.id}} --task {{task.id}}

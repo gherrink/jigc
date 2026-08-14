@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 <!-- research-advisory -->
 No committed research exists yet — a vision grounds in the research it cites, so consider running `do-research` first to gather it. Do that in a separate task and come back: leave this task open, finalize the research, then re-compose here with `jigc start --task {{task.id}}` — the research you just committed is in view from there. (Advisory, not required: a vision may ground in experience, and grounding can take several research rounds.)
 <!-- /research-advisory -->
@@ -33,3 +36,9 @@ questions it leaves open:
 jigc doc set-slot vision:vision#thesis --from-file - --task {{task.id}}
 jigc doc set-slot vision:vision#invariants --from-file - --task {{task.id}}
 jigc doc set-slot vision:vision#open-questions --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show vision:vision --task {{task.id}}

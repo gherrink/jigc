@@ -440,28 +440,13 @@ fn migration_finalize_without_approve_exits_review_hold() {
 //     new write verb reddens the sweep instead of dodging it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The `jigc doc` read verbs — the family members with no write to reject,
-/// excluded-with-reason from the rejected-write sweep (`doc show`/`schema`/`list`
-/// are the contract-pinned read surfaces; nothing they do is a write).
-const DOC_READ_VERBS: &[&str] = &["show", "schema", "list"];
-
-/// The `doc` write-verb family, derived from the built clap tree: every `jigc doc`
-/// leaf minus the declared read set. Registry-derived, never a hand list — a new
-/// `doc` verb added later must join either the reject cases or the read set.
-fn doc_write_verbs() -> Vec<String> {
-    use clap::CommandFactory;
-    let mut root = <cli::cli::Cli as CommandFactory>::command();
-    root.build();
-    let doc = root
-        .get_subcommands()
-        .find(|s| s.get_name() == "doc")
-        .expect("the clap tree carries the `doc` subtree");
-    doc.get_subcommands()
-        .filter(|s| s.get_name() != "help")
-        .map(|s| s.get_name().to_string())
-        .filter(|name| !DOC_READ_VERBS.contains(&name.as_str()))
-        .collect()
-}
+/// The `doc` write-verb family — the partition itself lives production-side
+/// (`cli::doc::doc_write_verbs`, the clap-tree-derived leaf set minus the declared
+/// read verbs `show`/`schema`/`list`), because the M48 read-back fence reads the
+/// same split at pack-load. This sweep consumes it rather than keeping a second
+/// copy of the read set beside it: a new `doc` verb must join either the reject
+/// cases here or the read set there.
+use cli::doc::{DOC_READ_VERBS, doc_write_verbs};
 
 /// One rejected-write case: the verb it exercises, the argv of a write the binary
 /// must refuse, optional stdin, and the finding code the refusal carries (asserted

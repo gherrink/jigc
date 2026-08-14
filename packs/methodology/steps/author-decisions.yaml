@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Record each decision Settle made on the running decisions log. Create-or-update the
 log singleton — safe whether or not it already exists (an existing committed log is
 copied in for append):
@@ -24,3 +27,9 @@ above rather than re-authoring it here:
 <!-- /once -->
 
 jigc doc author decisions-log --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show decisions-log:decisions-log --task {{task.id}}

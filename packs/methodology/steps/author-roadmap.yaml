@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Record the milestone you decomposed on the running roadmap. Create-or-update the
 roadmap singleton — safe whether or not it already exists (an existing committed
 roadmap is copied in for append):
@@ -26,3 +29,9 @@ the per-entry `set-slot` lines above rather than re-authoring it here:
 <!-- /once -->
 
 jigc doc author roadmap --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show roadmap:roadmap --task {{task.id}}

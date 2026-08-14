@@ -33,6 +33,37 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
+/// The `jigc doc` **read** verbs — the members of the family with no write to make
+/// (`design/doc-read-surface.md`: `doc show` is the contract-pinned content read,
+/// `doc schema` the separately-versioned schema read, `doc list` the index read).
+/// Declared here, once, as the code-side complement of [`doc_write_verbs`].
+pub const DOC_READ_VERBS: &[&str] = &["show", "schema", "list"];
+
+/// The `jigc doc` **write-verb** family, derived from the built clap tree: every
+/// `doc` leaf minus [`DOC_READ_VERBS`]. Registry-derived, never a hand list — a new
+/// `doc` verb added later joins the write family (or is declared a read) instead of
+/// dodging every consumer.
+///
+/// Two consumers, one partition: the M48 read-back fence
+/// (`crate::pack` → the staged-read-back tier — a catalog entry whose argv is
+/// `jigc doc <write-verb>` is a write solicit, so the step carrying its
+/// `{{cli.<id>}}` ref owes the read-back statement) and the rejected-write
+/// exit-code sweep (`crates/cli/tests/exit_codes.rs`), which read it rather than
+/// re-deriving it beside a second copy of the read set.
+pub fn doc_write_verbs() -> Vec<String> {
+    use clap::CommandFactory;
+    let mut root = <crate::cli::Cli as CommandFactory>::command();
+    root.build();
+    let doc = root
+        .get_subcommands()
+        .find(|sub| sub.get_name() == "doc")
+        .expect("the clap tree carries the `doc` subtree");
+    doc.get_subcommands()
+        .map(|sub| sub.get_name().to_string())
+        .filter(|name| name != "help" && !DOC_READ_VERBS.contains(&name.as_str()))
+        .collect()
+}
+
 /// `doc set-slot`'s long help: the one-line lead plus the **address-independent**
 /// form of the heading-depth ceiling rule, taken verbatim from the engine so the
 /// help and the enforcing write path state one rule. Help is rendered before any

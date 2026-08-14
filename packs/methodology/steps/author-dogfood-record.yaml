@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Record the measured run on the per-run dogfood-record. Create it fresh — the slug
 is minted from the title you give (this run):
 
@@ -58,3 +61,9 @@ write; the payload's `title:` mints the slug exactly like the create above. The
 transcribe-verbatim and seeded-vs-organic bounds above bind unchanged:
 
 jigc doc author dogfood-record --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show dogfood-record:<slug> --task {{task.id}}

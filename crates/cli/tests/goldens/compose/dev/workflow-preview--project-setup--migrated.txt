@@ -42,6 +42,12 @@ write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author prd --from-file - --task your-task-id
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show prd:<slug> --task your-task-id
+
 When done, set the required Conventional-Commits type — your editorial call on
 what this change does. The subject renders as `<type>(<scope>): <summary>`, so
 write the summary without a type or scope prefix of its own — the `type` field
@@ -68,6 +74,12 @@ it in a commit trailer. Add one trailer item, then set its value on the address
 
 jigc doc add-item commit:your-task-id#trailers --title Co-Authored-By --task your-task-id
 jigc doc set-field commit:your-task-id#trailers/<id>/value --value "Name <email>" --task your-task-id
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:your-task-id --task your-task-id
 
 Validate and commit the task as one logical commit. Finalize commits only the
 staged set plus the docs it manages; unstaged edits and untracked files are left

@@ -93,6 +93,12 @@ reference to a document that is not in the store stays prose inside that string.
 When the foreign record states its outcome but records NO findings, author no
 `findings` items — omit that entry entirely.
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show completion-record:<slug> --task your-task-id
+
 Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
 it renders the foreign source against the canonical rewrite and holds (exit 4),
 because the CLI guarantees structure, never content-faithfulness. Review that

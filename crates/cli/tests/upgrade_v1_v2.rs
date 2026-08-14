@@ -286,10 +286,15 @@ fn build_v2(dir: &Path) -> PathBuf {
     let root = dir_pack_with_version(dir, "0.4.0");
     let steps = root.join("steps");
     // implement: changed body, AND the `{{fill: extra-guidance}}` point removed.
+    // It still solicits a `doc set-slot` write through the catalog, so it owes the
+    // M48 read-back statement + declaration (the write-solicit tier of the same
+    // stated-at fence the `finalize` rewrite below stays conformant with).
     fs::write(
         steps.join("implement.yaml"),
-        "Implement the change directly in the working tree (v2 rewrite).\n\n\
-         {{ cli.set-commit-summary }}\n<<author: {{ task.commit#summary }}>>\n",
+        "---\nstates-constraints: [read.staged-read-back]\n---\n\
+         Implement the change directly in the working tree (v2 rewrite).\n\n\
+         {{ cli.set-commit-summary }}\n<<author: {{ task.commit#summary }}>>\n\n\
+         Read your write back: jigc doc show commit:{{task.id}} --task {{task.id}}\n",
     )
     .expect("write v2 implement");
     // finalize: changed body (the fork's upstream moved on). The

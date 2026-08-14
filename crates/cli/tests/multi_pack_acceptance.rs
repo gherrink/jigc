@@ -419,6 +419,12 @@ Before you finalize, verify the change actually works: build it and run the
 tests, and confirm the behaviour you set out to produce. Finalize commits your
 staged work; it does not check that the work is correct.
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show adr:<slug> --task add-a-thing
+
 If the change is user-facing — a feature, a fix, or a behaviour a user would
 notice — record it on the changelog. Create-or-update the singleton first:
 
@@ -486,6 +492,12 @@ one is its own deliberate pass, `jigc start --workflow record-change`). The item
 category is the group's id — so several bullets in the same category are ONE item
 with all its bullets merged into that item's `notes`.
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show changelog:changelog --task add-a-thing
+
 If your decision supersedes an earlier one, set `supersedes` on the ADR; the
 superseded decision then appears below for reference, so your consequences can
 explain what changes (nothing appears if it supersedes none).
@@ -516,6 +528,12 @@ it in a commit trailer. Add one trailer item, then set its value on the address
 
 jigc doc add-item commit:add-a-thing#trailers --title Co-Authored-By --task add-a-thing
 jigc doc set-field commit:add-a-thing#trailers/<id>/value --value \"Name <email>\" --task add-a-thing
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:add-a-thing --task add-a-thing
 
 Validate and commit the task as one logical commit. Finalize commits only the
 staged set plus the docs it manages; unstaged edits and untracked files are left
@@ -602,6 +620,12 @@ Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add
 Set the body — why this change:
 
 Run: `jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter`
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:add-rate-limiter --task add-rate-limiter
 
 Land the change as exactly one logical commit. finalize commits the git index —
 only what you have staged (`git add`), plus the docs it manages. Unstaged edits

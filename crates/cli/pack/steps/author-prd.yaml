@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Create the prd, then author its `vision` and `context` slots on the address
 `create` prints — the created doc is a `prd`, so the write address is
 `prd:<slug>#<slot>`:
@@ -23,3 +26,9 @@ stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author prd --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show prd:<slug> --task {{task.id}}

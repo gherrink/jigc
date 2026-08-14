@@ -88,6 +88,12 @@ migrates ADRs and arch-docs together, migrate the ADR corpus first.
 Component titles must be SLUG-DISTINCT — two titles that slugify identically fail the whole
 batch atomically (`write.already-present`). Give each component a distinct name.
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show arch-doc:<slug> --task sweep-the-compose-surface
+
 Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
 it renders the foreign source against the canonical rewrite and holds (exit 4),
 because the CLI guarantees structure, never content-faithfulness. Review that

@@ -48,6 +48,8 @@ mod nested_item_addressing;
 mod pack_source_determinism;
 #[path = "../planning_checklist_sanction.rs"]
 mod planning_checklist_sanction;
+#[path = "../read_back_fence.rs"]
+mod read_back_fence;
 #[path = "../slug_override.rs"]
 mod slug_override;
 #[path = "../stated_at_fence.rs"]

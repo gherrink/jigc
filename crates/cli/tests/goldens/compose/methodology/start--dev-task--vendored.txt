@@ -55,6 +55,12 @@ Set the body — why this change:
 
 Run: `jigc doc set-slot commit:sweep-the-compose-surface#body --from-file - --task sweep-the-compose-surface`
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:sweep-the-compose-surface --task sweep-the-compose-surface
+
 Land the change as exactly one logical commit. finalize commits the git index —
 only what you have staged (`git add`), plus the docs it manages. Unstaged edits
 and untracked files are left out of the commit; with nothing staged over a dirty

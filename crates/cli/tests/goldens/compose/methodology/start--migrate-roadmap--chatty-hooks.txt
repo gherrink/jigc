@@ -73,6 +73,12 @@ inside the slot it appears in — the roadmap schema declares no managed ref, so
 invent a field for it. Foreign preamble with no milestone home (a legend, a status
 table, a badge block) is dropped.
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show roadmap:roadmap --task sweep-the-compose-surface
+
 Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
 it renders the foreign source against the canonical rewrite and holds (exit 4),
 because the CLI guarantees structure, never content-faithfulness. Review that

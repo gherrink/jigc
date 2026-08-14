@@ -76,6 +76,12 @@ Surplus foreign content with NO slot home is usually a live open question worth 
 fold it into the `open-questions` slot as one bullet. Drop it ONLY when it is pure
 boilerplate (a badge block, a table of contents, a license footer).
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show vision:vision --task your-task-id
+
 Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
 it renders the foreign source against the canonical rewrite and holds (exit 4),
 because the CLI guarantees structure, never content-faithfulness. Review that

@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Log each gap Settle consciously deferred on the running deferral ledger.
 Create-or-update the ledger singleton — safe whether or not it already exists (an
 existing committed ledger is copied in for append):
@@ -27,3 +30,9 @@ rejected and nothing staged, so edit that entry in place with the per-entry
 <!-- /once -->
 
 jigc doc author deferral-ledger --from-file - --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show deferral-ledger:deferral-ledger --task {{task.id}}

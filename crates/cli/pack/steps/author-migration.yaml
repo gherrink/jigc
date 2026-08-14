@@ -1,5 +1,5 @@
 ---
-states-constraints: [create.singleton-copy-in]
+states-constraints: [create.singleton-copy-in, read.staged-read-back]
 ---
 Migrate the foreign changelog into the managed `changelog` singleton. Below is the
 foreign source the CLI staged for you (read-only context — you author the canonical
@@ -54,3 +54,9 @@ Any foreign change NOT yet cut into a release (an `[Unreleased]` section) is aut
 as change-groups under the `unreleased-changes` section — same category map+merge
 rule, the staging area rather than a release. When the foreign file has no unreleased
 changes, omit the `unreleased-changes` entry entirely.
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show changelog:changelog --task {{task.id}}

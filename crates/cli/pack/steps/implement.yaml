@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Implement the change directly in the working tree. `git add` your code edits
 before finalize — it commits only what you have staged.
 
@@ -27,5 +30,11 @@ jigc doc set-slot adr:<slug>#options --from-file - --task {{task.id}}
 Before you finalize, verify the change actually works: build it and run the
 tests, and confirm the behaviour you set out to produce. Finalize commits your
 staged work; it does not check that the work is correct.
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show adr:<slug> --task {{task.id}}
 
 {{fill: extra-guidance}}

@@ -61,6 +61,12 @@ above rather than re-authoring it here:
 
 jigc doc author decisions-log --from-file - --task sweep-the-compose-surface
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show decisions-log:decisions-log --task sweep-the-compose-surface
+
 finalize renders the commit doc; it does not fill it, so set its header and prose
 first. Inside slot prose, the reserved heading depths are schema-relative to the
 address you write — the CLI owns the section, item, and sub-label heading levels
@@ -85,6 +91,12 @@ Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - -
 Set the body — why this change:
 
 Run: `jigc doc set-slot commit:sweep-the-compose-surface#body --from-file - --task sweep-the-compose-surface`
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:sweep-the-compose-surface --task sweep-the-compose-surface
 
 Land the change as exactly one logical commit. finalize commits the git index —
 only what you have staged (`git add`), plus the docs it manages. Unstaged edits

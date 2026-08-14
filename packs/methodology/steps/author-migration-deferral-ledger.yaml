@@ -1,5 +1,5 @@
 ---
-states-constraints: [create.singleton-copy-in]
+states-constraints: [create.singleton-copy-in, read.staged-read-back]
 ---
 Migrate the foreign owed-and-when record into the managed `deferral-ledger`
 singleton — the running ledger of deferred decisions and parked ideas. Below is the
@@ -47,3 +47,9 @@ Everything else the foreign entry says — the rationale, the caveats — folds 
 `body` prose. A foreign cross-reference stays plain prose inside `body` — the
 deferral-ledger schema declares no managed ref, so never invent a field for it.
 Foreign preamble with no entry home is dropped.
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show deferral-ledger:deferral-ledger --task {{task.id}}

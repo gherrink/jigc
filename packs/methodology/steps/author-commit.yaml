@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 finalize renders the commit doc; it does not fill it, so set its header and prose
 first. Inside slot prose, the reserved heading depths are schema-relative to the
 address you write — the CLI owns the section, item, and sub-label heading levels
@@ -21,3 +24,9 @@ carries it):
 Set the body — why this change:
 
 {{ cli.set-commit-body }}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:{{task.id}} --task {{task.id}}

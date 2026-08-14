@@ -6742,6 +6742,12 @@ explain what changes (nothing appears if it supersedes none).
         tests, and confirm the behaviour you set out to produce. Finalize commits your
         staged work; it does not check that the work is correct.
 
+        Read your write back before you move on — with `--task` the read serves THIS
+        task's staged copy, the write you just made, which the committed store does not
+        carry yet:
+
+        jigc doc show adr:<slug> --task {{task.id}}
+
         If your decision supersedes an earlier one, set `supersedes` on the ADR; the
         superseded decision then appears below for reference, so your consequences can
         explain what changes (nothing appears if it supersedes none).
@@ -6771,6 +6777,12 @@ explain what changes (nothing appears if it supersedes none).
 
         jigc doc add-item commit:{{task.id}}#trailers --title Co-Authored-By --task {{task.id}}
         jigc doc set-field commit:{{task.id}}#trailers/<id>/value --value "Name <email>" --task {{task.id}}
+
+        Read your write back before you move on — with `--task` the read serves THIS
+        task's staged copy, the write you just made, which the committed store does not
+        carry yet:
+
+        jigc doc show commit:{{task.id}} --task {{task.id}}
 
         Validate and commit the task as one logical commit. Finalize commits only the
         staged set plus the docs it manages; unstaged edits and untracked files are left

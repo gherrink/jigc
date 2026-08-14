@@ -107,6 +107,12 @@ instead; never author it as a dangling `supersedes` ref. The same drop-to-prose 
 applies to "Related ADRs", "See also", and plain links: only an in-set supersession
 becomes a structural edge. (The `cites-code` field is a separate cross-code pass.)
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show adr:<slug> --task your-task-id
+
 Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
 it renders the foreign source against the canonical rewrite and holds (exit 4),
 because the CLI guarantees structure, never content-faithfulness. Review that

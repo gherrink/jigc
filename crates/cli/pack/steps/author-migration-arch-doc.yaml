@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Migrate the foreign architecture document into a managed `arch-doc`. Below is the
 foreign source the CLI staged for you (read-only context — you author the canonical
 record through the write verbs, you never edit this file or place anything yourself):
@@ -51,3 +54,9 @@ migrates ADRs and arch-docs together, migrate the ADR corpus first.
 
 Component titles must be SLUG-DISTINCT — two titles that slugify identically fail the whole
 batch atomically (`write.already-present`). Give each component a distinct name.
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show arch-doc:<slug> --task {{task.id}}

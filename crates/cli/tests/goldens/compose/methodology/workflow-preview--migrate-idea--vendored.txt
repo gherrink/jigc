@@ -60,6 +60,12 @@ Everything else in the foreign note — the sketch, the rationale, the caveats �
 into the `description` prose. A foreign reference to another document becomes plain
 prose ("see X"); the idea schema is a ref-free leaf, so never invent a field for it.
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show idea:<slug> --task your-task-id
+
 Finalizing a migration adds a review hold: a plain finalize commits NOTHING —
 it renders the foreign source against the canonical rewrite and holds (exit 4),
 because the CLI guarantees structure, never content-faithfulness. Review that

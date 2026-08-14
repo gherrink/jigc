@@ -615,6 +615,155 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
     Ok(())
 }
 
+/// Every lone-line `{{ cli.<id> }}` reference of a step body. A `{{cli.…}}`
+/// placeholder renders only as a whole line (the compose seam's class rule —
+/// `engine::compose` → the command-ref emitter), so the scan is per line rather
+/// than the free-text sweep [`schema_refs`] performs for its own class.
+fn cli_refs(body: &str) -> Vec<String> {
+    body.lines()
+        .filter_map(|line| {
+            let inner = line.trim().strip_prefix("{{")?.strip_suffix("}}")?.trim();
+            let id = inner.strip_prefix("cli.")?.trim();
+            (!id.is_empty() && !id.contains(char::is_whitespace)).then(|| id.to_owned())
+        })
+        .collect()
+}
+
+/// The pack's own catalog ids whose command-ref is a `jigc doc <write-verb>` call —
+/// the first signal of the read-back fence's owe-set. The write-verb partition is
+/// the production one ([`crate::doc::doc_write_verbs`]: the clap `doc` leaf set
+/// minus the declared read verbs), so a `doc` verb added later widens this set
+/// instead of needing a second hand list beside it.
+///
+/// A pack that ships no readable/parseable catalog contributes nothing here (its
+/// `{{cli.<id>}}` refs cannot resolve at all, and composition surfaces that on its
+/// own front door) — the same skip-on-absent posture the fences take toward a
+/// manifest-less pack, and the `{{schema:<T>}}` arm still applies.
+fn doc_write_command_ids(owner: &dyn PackSource) -> std::collections::BTreeSet<String> {
+    let Some(catalog) = owner
+        .read(PackResourceKind::Config, &ResourceId::from("commands"))
+        .ok()
+        .and_then(|bytes| engine::compose::load_command_catalog(&bytes).ok())
+    else {
+        return std::collections::BTreeSet::new();
+    };
+    let write_verbs = crate::doc::doc_write_verbs();
+    catalog
+        .commands
+        .iter()
+        .filter(|(_, command)| {
+            if command.command != "jigc" {
+                return false;
+            }
+            // The leading literal args are the verb path; a `from:`/`agent:` arg in
+            // between is a value, never part of it.
+            let mut literals = command.args.iter().filter_map(|arg| match arg {
+                engine::compose::CommandArg::Literal { literal } => Some(literal.as_str()),
+                _ => None,
+            });
+            literals.next() == Some("doc")
+                && literals
+                    .next()
+                    .is_some_and(|verb| write_verbs.iter().any(|write| write == verb))
+        })
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+/// **The stated-at fence, write-solicit tier (law 2, M48 Inc 3)** —
+/// `design/surface-contract.md` → The stated-at fence: a step that solicits a
+/// managed-doc write must declare [`STAGED_READ_BACK_CODE`], and (via
+/// [`CONSTRAINT_REQUIRED_TOKENS`]) state the read-back it stands for —
+/// `jigc doc show <addr> --task <id>`, the staged read that shows the agent what it
+/// just wrote.
+///
+/// The owe-set is **derived from the two enumerable structural signals a soliciting
+/// step already renders**, never a hand-copied list:
+///
+///  - a lone-line `{{cli.<id>}}` ref whose catalog entry is a `jigc doc <write-verb>`
+///    call ([`doc_write_command_ids`], keyed on the production write-verb partition);
+///  - **union** a `{{schema:<T>}}` ref — the authoring-payload projection, which is
+///    how the migrate author templates solicit their whole write (they carry no
+///    `{{cli.<id>}}` ref at all, so either signal alone would miss half the surface).
+///
+/// Scope mirrors [`assert_stated_at`]: manifest-shipping constituents, each checked
+/// in isolation, with the catalog read **per origin pack** (a step's `{{cli.<id>}}`
+/// resolves against its own pack's catalog). A manifest-less pack stays on
+/// skip-on-absent.
+///
+/// Declared bounds, recorded rather than silently narrowed. **The direction is
+/// solicit ⇒ declaration only**: a declarer that solicits no write is out of scope
+/// here (unlike `create.singleton-copy-in`'s M47 biconditional, whose reverse arm
+/// exists because deleting *its* ref deletes a promise the composed step still
+/// prints; a withdrawn write solicit leaves no such dangling promise). And a step
+/// that solicits its writes as **literal** command lines only — the dev pack's
+/// `locate-from-spec` sets fields with hand-written `jigc doc set-field` lines and
+/// no catalog ref — carries no structural signal for either arm to see, so it states
+/// the read-back without joining the fenced set.
+fn assert_staged_read_back_stated(pack: &dyn PackSource) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
+    for owner in pack.origin_packs(PackResourceKind::Config, &manifest_id) {
+        let write_refs = doc_write_command_ids(owner);
+        for id in owner.list(PackResourceKind::Steps) {
+            let bytes = owner
+                .read(PackResourceKind::Steps, &id)
+                .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
+            let def = engine::compose::load_step_def(id.as_str(), &bytes).map_err(|finding| {
+                anyhow::anyhow!(
+                    "pack-load step-front-matter sweep failed on `{}`: {}",
+                    id.as_str(),
+                    finding.message,
+                )
+            })?;
+            let solicits_write = cli_refs(&def.body)
+                .iter()
+                .any(|reference| write_refs.contains(reference))
+                || !schema_refs(&def.body).is_empty();
+            if !solicits_write {
+                continue;
+            }
+            if !def
+                .states_constraints
+                .iter()
+                .any(|code| code == STAGED_READ_BACK_CODE)
+            {
+                anyhow::bail!(
+                    "pack-load stated-at fence failed: step `{}` solicits a managed-doc write \
+                     (a `{{{{cli.<id>}}}}` ref resolving to `jigc doc <write-verb>`, or a \
+                     `{{{{schema:<T>}}}}` authoring payload) but does not declare \
+                     `{STAGED_READ_BACK_CODE}` in `states-constraints:` — the agent is told how \
+                     to write and never how to read what it wrote, so it goes to the filesystem \
+                     for its own staged work (design/surface-contract.md → The stated-at fence; \
+                     design/doc-read-surface.md → the staged read)\n\
+                     route: name the staged read-back above or beside the solicit — \
+                     `jigc doc show <addr> --task {{{{task.id}}}}` — and declare \
+                     `{STAGED_READ_BACK_CODE}` in that step's `states-constraints:` front-matter",
+                    id.as_str(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The **staged read-back**'s declared identifier (M48 Inc 3 —
+/// `design/surface-contract.md` → The stated-at fence, the write-solicit tier): a
+/// step that solicits a managed-doc write must name the read that shows the agent
+/// what it just wrote — `jigc doc show <addr> --task <id>`, which serves the task's
+/// **staged** copy the committed store does not carry yet
+/// (`design/doc-read-surface.md` → R7). Six consecutive trials went to the
+/// filesystem to read in-flight work while that capability shipped; the mechanism
+/// behind them is that no soliciting surface named it, so the obligation is fenced
+/// where the write is solicited rather than patched instance by instance.
+///
+/// Code-side beside its assert — the obligation is jigc's, not the pack author's —
+/// and **not** a minted `Finding` code: its production surface is the soliciting
+/// step's own prose (the A-3 presence-only tier), so the string serves as the
+/// declared identifier the fence checks for.
+pub const STAGED_READ_BACK_CODE: &str = "read.staged-read-back";
+
 /// **The named-fact map** (M47 Inc 9 — `design/surface-contract.md` → The
 /// stated-at fence, named-fact tier): for each constraint code the two tiers
 /// above fence, the phrase(s) the declaring step's own prose must contain for the
@@ -638,7 +787,7 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
 /// pack-authored code outside it carries no token requirement, and the map is
 /// bijected against the two code-side consts by
 /// `constraint_token_map_bijects_with_the_fenced_codes`.
-pub const CONSTRAINT_REQUIRED_TOKENS: [(&str, &[&str]); 5] = [
+pub const CONSTRAINT_REQUIRED_TOKENS: [(&str, &[&str]); 6] = [
     (
         "finalize.promote-clobber",
         &["--approve", "retire", "fidelity diff"],
@@ -653,6 +802,7 @@ pub const CONSTRAINT_REQUIRED_TOKENS: [(&str, &[&str]); 5] = [
         SINGLETON_COPY_IN_CODE,
         &["copies the committed body in as", "edit base", "overwrites"],
     ),
+    (STAGED_READ_BACK_CODE, &["jigc doc show", "--task"]),
 ];
 
 /// The named-fact comparison view of a step body: every whitespace run collapsed
@@ -1012,8 +1162,10 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     // fences): the workflow sweep (suppression + catalog shape) and the step
     // sweeps — the stated-at fence's ambush-class tier ([`assert_stated_at`]),
     // its M44 per-soliciting-step tier ([`assert_singleton_copy_in_stated`]), and
-    // its M47 named-fact tier ([`assert_named_facts_stated`], which buys the
-    // declared contract's own facts rather than the declaration alone).
+    // its M48 write-solicit tier ([`assert_staged_read_back_stated`], which owes the
+    // staged read-back wherever a write is solicited), and its M47 named-fact tier
+    // ([`assert_named_facts_stated`], which buys the declared contract's own facts
+    // rather than the declaration alone).
     // Memoized for the two embedded compositions
     // (their bytes cannot change within a process; `make_pack` has ~38 call
     // sites), recomputed whenever a filesystem pack is in the set (its tree is
@@ -1027,6 +1179,7 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
                 assert_workflow_front_matter(pack.as_ref())
                     .and_then(|()| assert_stated_at(pack.as_ref()))
                     .and_then(|()| assert_singleton_copy_in_stated(pack.as_ref()))
+                    .and_then(|()| assert_staged_read_back_stated(pack.as_ref()))
                     .and_then(|()| assert_named_facts_stated(pack.as_ref()))
                     .map_err(|err| format!("{err:#}"))
             })
@@ -1036,6 +1189,7 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
         assert_workflow_front_matter(pack.as_ref())?;
         assert_stated_at(pack.as_ref())?;
         assert_singleton_copy_in_stated(pack.as_ref())?;
+        assert_staged_read_back_stated(pack.as_ref())?;
         assert_named_facts_stated(pack.as_ref())?;
     }
     Ok(pack)
@@ -1881,7 +2035,8 @@ mod tests {
     }
 
     /// (M47 Inc 9 T1) The named-fact map covers **exactly** the codes jigc fences
-    /// — [`AMBUSH_CLASS_CODES`] plus [`SINGLETON_COPY_IN_CODE`] — iterated from the
+    /// — [`AMBUSH_CLASS_CODES`] plus [`SINGLETON_COPY_IN_CODE`] and (M48 Inc 3)
+    /// [`STAGED_READ_BACK_CODE`] — iterated from the
     /// consts, both directions. A fenced code with no token requirement would be
     /// back to buying presence alone; a token requirement on a code jigc does not
     /// fence would put jigc's prose demands on a pack author's own vocabulary
@@ -1894,7 +2049,7 @@ mod tests {
             .collect();
         let fenced: std::collections::BTreeSet<&str> = AMBUSH_CLASS_CODES
             .into_iter()
-            .chain(std::iter::once(SINGLETON_COPY_IN_CODE))
+            .chain([SINGLETON_COPY_IN_CODE, STAGED_READ_BACK_CODE])
             .collect();
         assert_eq!(mapped, fenced);
         assert_eq!(
@@ -1945,6 +2100,9 @@ mod tests {
         let pack = EmbeddedPack::new();
         let body = read_text(&pack, PackResourceKind::Steps, "implement");
         insta::assert_snapshot!(body, @r#"
+        ---
+        states-constraints: [read.staged-read-back]
+        ---
         Implement the change directly in the working tree. `git add` your code edits
         before finalize — it commits only what you have staged.
 
@@ -1974,6 +2132,12 @@ mod tests {
         Before you finalize, verify the change actually works: build it and run the
         tests, and confirm the behaviour you set out to produce. Finalize commits your
         staged work; it does not check that the work is correct.
+
+        Read your write back before you move on — with `--task` the read serves THIS
+        task's staged copy, the write you just made, which the committed store does not
+        carry yet:
+
+        jigc doc show adr:<slug> --task {{task.id}}
 
         {{fill: extra-guidance}}
         "#);

@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Migrate the foreign parked-idea note into a managed `idea`. Below is the foreign
 source the CLI staged for you (read-only context — you author the canonical record
 through the write verbs, you never edit this file or place anything yourself):
@@ -27,3 +30,9 @@ today's date, so a dateless note stays dateless (no false history).
 Everything else in the foreign note — the sketch, the rationale, the caveats — folds
 into the `description` prose. A foreign reference to another document becomes plain
 prose ("see X"); the idea schema is a ref-free leaf, so never invent a field for it.
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show idea:<slug> --task {{task.id}}

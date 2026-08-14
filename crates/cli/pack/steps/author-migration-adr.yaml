@@ -1,3 +1,6 @@
+---
+states-constraints: [read.staged-read-back]
+---
 Migrate the foreign ADR into a managed `adr`. Below is the foreign source the CLI
 staged for you (read-only context — you author the canonical record through the write
 verbs, you never edit this file or place anything yourself):
@@ -60,3 +63,9 @@ block finalize forever. Fold that reference into the `context` or `consequences`
 instead; never author it as a dangling `supersedes` ref. The same drop-to-prose posture
 applies to "Related ADRs", "See also", and plain links: only an in-set supersession
 becomes a structural edge. (The `cites-code` field is a separate cross-code pass.)
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show adr:<slug> --task {{task.id}}

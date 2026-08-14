@@ -1,5 +1,5 @@
 ---
-states-constraints: [create.singleton-copy-in]
+states-constraints: [create.singleton-copy-in, read.staged-read-back]
 ---
 Migrate the foreign vision document into the managed `vision` singleton — the project's
 charter. Below is the foreign source the CLI staged for you (read-only context — you
@@ -40,3 +40,9 @@ into the `open-questions` prose instead — never author it as a structural ref.
 Surplus foreign content with NO slot home is usually a live open question worth keeping:
 fold it into the `open-questions` slot as one bullet. Drop it ONLY when it is pure
 boilerplate (a badge block, a table of contents, a license footer).
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show vision:vision --task {{task.id}}

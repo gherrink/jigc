@@ -173,10 +173,17 @@ fn expect_ok(out: &std::process::Output, what: &str) {
 /// `content-changed`. Returns the pack root.
 fn build_v2(dir: &Path) -> PathBuf {
     let root = dir_pack_with_version(dir, "0.4.0");
+    // The rewritten step still solicits a `doc set-slot` write through the catalog,
+    // so it owes the M48 read-back statement + declaration like any shipped
+    // soliciting step (`design/surface-contract.md` → The stated-at fence, the
+    // write-solicit tier); the fixture is a manifest-shipping pack, hence inside the
+    // fence.
     fs::write(
         root.join("steps").join("implement.yaml"),
-        "Implement the change directly in the working tree (v2 rewrite).\n\n\
-         {{ cli.set-commit-summary }}\n<<author: {{ task.commit#summary }}>>\n",
+        "---\nstates-constraints: [read.staged-read-back]\n---\n\
+         Implement the change directly in the working tree (v2 rewrite).\n\n\
+         {{ cli.set-commit-summary }}\n<<author: {{ task.commit#summary }}>>\n\n\
+         Read your write back: jigc doc show commit:{{task.id}} --task {{task.id}}\n",
     )
     .expect("write v2 implement");
     root

@@ -92,6 +92,12 @@ the per-entry `set-slot` lines above rather than re-authoring it here:
 
 jigc doc author roadmap --from-file - --task your-task-id
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show roadmap:roadmap --task your-task-id
+
 Log each gap Settle consciously deferred on the running deferral ledger.
 Create-or-update the ledger singleton — safe whether or not it already exists (an
 existing committed ledger is copied in for append):
@@ -109,6 +115,12 @@ jigc doc set-slot deferral-ledger:deferral-ledger#entries/<id>/body --from-file 
 
 jigc doc author deferral-ledger --from-file - --task your-task-id
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show deferral-ledger:deferral-ledger --task your-task-id
+
 Record each decision Settle made on the running decisions log. Create-or-update the
 log singleton — safe whether or not it already exists (an existing committed log is
 copied in for append):
@@ -122,6 +134,12 @@ jigc doc add-item decisions-log:decisions-log#entries --title "<the decision>" -
 jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task your-task-id
 
 jigc doc author decisions-log --from-file - --task your-task-id
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show decisions-log:decisions-log --task your-task-id
 
 finalize renders the commit doc; it does not fill it, so set its header and prose
 first. Inside slot prose, the reserved heading depths are schema-relative to the
@@ -147,6 +165,12 @@ Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-ta
 Set the body — why this change:
 
 Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:your-task-id --task your-task-id
 
 Land the change as exactly one logical commit. finalize commits the git index —
 only what you have staged (`git add`), plus the docs it manages. Unstaged edits

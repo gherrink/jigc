@@ -40,6 +40,13 @@ by that spec's full address:
 
 jigc doc set-field commit:{{task.id}}#implements --value spec:<slug> --task {{task.id}}
 
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet (the `--format json` read above is of the COMMITTED spec, so it does not
+show what you have staged):
+
+jigc doc show spec:<slug> --task {{task.id}}
+
 A spec can leave a decision open — a question its prose raises but does not settle.
 When you settle one while implementing, record it before you finalize: this workflow
 grants the `adr` gate, so mint a decision record through the `jigc doc create adr`
