@@ -46,6 +46,9 @@ const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[
     // was not recognized as a placeholder at all — so it skipped this table and the
     // derivability verdict beside it (`milestone.rs` → the unknown-milestone route).
     ("<title>", "A Milestone Title"),
+    // The knob-key positional of `jigc config get <key>` — the read rung the read-shaped
+    // `config show` tip routes to (M48 inc-6 T3). A declared knob key, so the dummy is one.
+    ("<key>", "docs-root"),
 ];
 
 /// Install the parse fence into the engine's `Route::mechanical` constructor hook.

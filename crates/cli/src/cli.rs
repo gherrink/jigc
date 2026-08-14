@@ -1351,6 +1351,21 @@ pub const CURATED_SIBLING_TIPS: &[SiblingTip] = &[
         guess: "status",
         tip: tip_task_status,
     },
+    SiblingTip {
+        parent: "doc",
+        guess: "read",
+        tip: tip_doc_read_shaped,
+    },
+    SiblingTip {
+        parent: "doc",
+        guess: "get",
+        tip: tip_doc_read_shaped,
+    },
+    SiblingTip {
+        parent: "config",
+        guess: "show",
+        tip: tip_config_read_shaped,
+    },
 ];
 
 /// The ghost verb the reconciliation route used to name: clap's did-you-mean steers to
@@ -1381,6 +1396,52 @@ fn tip_task_status() -> String {
             ["jigc", "task", "validate", "<task-id>"],
             " previews part of the finalize gate for one task — content findings, \
              carryover, and the owner-artifact causes that need no staging",
+        )
+        .as_str(),
+    )
+}
+
+/// The read-shaped `doc` guesses (`read` / `get`): both ask to *see* a managed doc, and
+/// both must be answered with the read surface. clap answered `doc read` with `tip: some
+/// similar subcommands exist: 'create', 'rename'` — a read intent steered at two writes,
+/// the plainest law-1 failure the surface can make — and `doc get` with nothing at all.
+///
+/// The enumerating read leads because it is placeholder-free (an agent that guessed the
+/// verb rarely holds an address yet), and the addressed read follows.
+fn tip_doc_read_shaped() -> String {
+    format!(
+        "tip: reading a managed doc is its own verb — {}; {}",
+        engine::finding::Route::mechanical(
+            ["jigc", "doc", "list"],
+            " enumerates the managed docs (identity, repo path, registration state)",
+        )
+        .as_str(),
+        engine::finding::Route::mechanical(
+            ["jigc", "doc", "show", "<address>"],
+            " prints one committed doc, or the addressed slice of it, on stdout \
+             (--format json for the pinned machine shape; --task <task-id> to read a \
+             task's staged copy)",
+        )
+        .as_str(),
+    )
+}
+
+/// The read-shaped `config` guess (`show`): it asks what the cascade currently resolves
+/// to. clap found no near sibling and said nothing, so the surface hid the read rung it
+/// has. Both spans are read verbs; the enumerating one leads (a guesser at `config show`
+/// wants the whole surface, and it needs no key to be runnable).
+fn tip_config_read_shaped() -> String {
+    format!(
+        "tip: {}; {}",
+        engine::finding::Route::mechanical(
+            ["jigc", "config", "list"],
+            " prints every declared knob with its resolved value and the cascade layer \
+             that won it",
+        )
+        .as_str(),
+        engine::finding::Route::mechanical(
+            ["jigc", "config", "get", "<key>"],
+            " reads one knob by name",
         )
         .as_str(),
     )

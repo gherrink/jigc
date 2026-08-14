@@ -33,6 +33,15 @@
 //! never a list re-typed here (the receipt-outlives-contract failure the M48 razor
 //! guards against).
 //!
+//! **M48 Inc 6 T3 — the read-shaped rows** (`DECISIONS.md` 2026-08-13 the Settle, F8
+//! part 2): a **read** intent must never land on a **write** verb. Three misses agents
+//! reached for are curated — `doc read` / `doc get` → `jigc doc show`, `config show` →
+//! `jigc config get` / `jigc config list` — because clap answered them with a write verb
+//! or with nothing at all: `doc read` drew `tip: some similar subcommands exist:
+//! 'create', 'rename'` (a read intent steered at two writes — law 1), while `doc get` and
+//! `config show` were **silent misses**, clap finding no near sibling and the surface
+//! saying nothing about the read rung that does exist.
+//!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
 //! repo is a real `git init`, and a self-cleaning `TempDir` keeps the test off the
 //! dev's repo.
@@ -48,6 +57,43 @@ const CLAP_DID_YOU_MEAN: [&str; 2] = [
     "tip: a similar subcommand exists",
     "tip: some similar subcommands exist",
 ];
+
+/// The read-shaped misses of M48 Inc 6 T3: `(parent, guess, the read span the tip must
+/// name)`. Every row is a **read** intent — the question "show me what is there" — so
+/// every row's tip must answer with a read verb and only a read verb.
+const READ_SHAPED_MISSES: [(&str, &str, &str); 3] = [
+    ("doc", "read", "jigc doc show <address>"),
+    ("doc", "get", "jigc doc show <address>"),
+    ("config", "show", "jigc config get <key>"),
+];
+
+/// The `doc` / `config` **write** verbs. None may appear anywhere in a read-shaped
+/// miss's emitted stderr — not in the tip, not in a suggestion, not in the usage block.
+const WRITE_VERB_TOKENS: [&str; 8] = [
+    "create",
+    "rename",
+    "set",
+    "insert-step",
+    "replace-step",
+    "remove-step",
+    "fill",
+    "fork",
+];
+
+/// Split emitted text into command-ish tokens: runs of `[A-Za-z0-9-]`, so a hyphenated
+/// verb (`insert-step`) stays one token and ordinary prose (`creates`, `subset`) cannot
+/// masquerade as one. A token counts as naming a write verb when it **is** the verb or
+/// carries it as a hyphenated head (`set-field`, `set-slot`).
+fn names_a_write_verb(text: &str) -> Option<String> {
+    text.split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+        .filter(|token| !token.is_empty())
+        .find(|token| {
+            WRITE_VERB_TOKENS
+                .iter()
+                .any(|verb| *token == *verb || token.starts_with(&format!("{verb}-")))
+        })
+        .map(str::to_owned)
+}
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -230,6 +276,57 @@ fn task_status_guess_gets_the_real_sibling_effects_and_the_span_runs() {
 
     // The emitted `jigc task list` span runs verbatim (exit 0) in a real repo.
     run_first_emitted_span(tip, repo.path(), home.path());
+}
+
+/// **A read intent never lands on a write verb** (M48 Inc 6 T3): per row of
+/// [`READ_SHAPED_MISSES`], the emitted stderr is a usage error (exit 2) that names the
+/// guess, carries a tip naming the **read** verb, and holds **no** write-verb token
+/// anywhere — clap's own answers were `'create', 'rename'` for `doc read` and silence
+/// for `doc get` / `config show`. The tip's first backticked span is extracted from the
+/// emitted bytes and run verbatim, so the read the surface points at is one that works.
+#[test]
+fn a_read_shaped_miss_routes_to_a_read_verb_and_names_no_write_verb() {
+    let repo = TempDir::new("read-shaped");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    for (parent, guess, read_span) in READ_SHAPED_MISSES {
+        let out = jigc(repo.path(), home.path(), &[parent, guess]);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "`jigc {parent} {guess}` stays a usage error (exit 2); stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let stderr = String::from_utf8(out.stderr.clone()).expect("utf-8 stderr");
+        assert!(
+            stderr.contains(&format!("error: unrecognized subcommand '{guess}'")),
+            "the error line names the guess; got:\n{stderr}",
+        );
+
+        let tip_at = stderr.find("tip: ").unwrap_or_else(|| {
+            panic!(
+                "`jigc {parent} {guess}` is a read-shaped miss and must carry a tip; got:\n{stderr}"
+            )
+        });
+        let tip = &stderr[tip_at..];
+        assert!(
+            tip.contains(&format!("`{read_span}`")),
+            "the tip names the read verb `{read_span}`; got:\n{tip}",
+        );
+
+        if let Some(token) = names_a_write_verb(&stderr) {
+            panic!(
+                "`jigc {parent} {guess}` is a read intent and must name no write verb, \
+                 but its emitted stderr carries `{token}`:\n{stderr}"
+            );
+        }
+
+        // The emitted span runs verbatim (exit 0) in a real repo — the read the tip
+        // points at is the contract, not a description of one.
+        run_first_emitted_span(tip, repo.path(), home.path());
+    }
 }
 
 /// **The table is the axis** (M48 Inc 6 T2): for EVERY row of `CURATED_SIBLING_TIPS`,

@@ -353,6 +353,13 @@ pub const ROUTE_PLACEHOLDERS: &[RoutePlaceholder] = &[
                  prose, and no address determines it (the quoted-span form `\"<title>\"`, \
                  declared here since the CLI-seam fence learned to read it)",
     },
+    RoutePlaceholder {
+        token: "<key>",
+        derivable: false,
+        reason: "a cascade knob key names a config surface, not a managed document; no \
+                 doc target carries one (the `jigc config get <key>` positional, reached \
+                 by the read-shaped `config show` tip)",
+    },
 ];
 
 /// Whether `token` is a placeholder a finding's own `key.target` determines
