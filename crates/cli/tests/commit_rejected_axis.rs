@@ -41,6 +41,49 @@
 //! arm's commit phase in seconds; the `squash: false` arm's *provisioned-worktree* chain
 //! rejection — one rejection per cause, with the code surviving — is iterated over its
 //! whole rejection-cause axis by `tests/milestone_abort_survives.rs` (M47 Inc 3 T1).
+//!
+//! ## The second sweep: the same axis × the **empty-commit** outcome (M48 Increment 8 T2)
+//!
+//! `git_commit_capture` types **any** non-zero `git commit` exit as `CommitRejected`, and git
+//! refuses a commit that would record nothing with exactly that shape — so a door that commits
+//! unconditionally frames *"`git commit` was rejected"* over a run nobody rejected, routes to a
+//! re-run that can only fail identically, logs a `*.commit-rejected` identity, and relays git's
+//! unrelated untracked-file listing as if it were the cause. That is a **law-1 lie on the very
+//! surface the sweep above exists to keep honest**: the rejecting sweep proves the frame is told
+//! whenever a hook speaks, and this one proves it is *not* told when nobody spoke.
+//!
+//! [`no_committing_door_dresses_an_empty_commit_as_a_rejection`] therefore iterates the **same**
+//! [`COMMITTING_DOORS`] table over the complementary cell — each door driven into the state
+//! where the commit it would make records nothing — and per door asserts that it either
+//! **refuses/skips earlier with its own true diagnosis** or **reaches the end and acks the
+//! no-op**, with the frame's assertion, git's own empty-commit prose, and any `*.commit-rejected`
+//! log identity absent in every cell. The two sweeps share one fixture vocabulary and one axis;
+//! neither hand-lists a door, and an unclassified member is a hard `panic!` in both.
+//!
+//! **What "the empty-commit state" is per door**, established live rather than assumed:
+//!
+//! - the two **content** doors reach the emptiness as a *no-op*: `rename` over a title the doc
+//!   already holds (M48 Inc 8 T1's guard) and `migrate-corpus` over an all-current corpus both
+//!   discriminate it before committing and ack it at exit 0;
+//! - the two **gate** doors refuse ahead of the boundary with a routed blocking finding —
+//!   `task finalize` on the engine's `finalize.empty-commit`, `milestone finalize` (both commit
+//!   models) on `milestone.zero-contribution`. The milestone pair's fixture is a
+//!   `[dev ▸ methodology]` project, where the zero-work refusal keeps precedence over the
+//!   planner's own empty-commit block; a dev-only milestone reports the latter instead
+//!   (`tests/milestone_zero_contribution.rs`, arm (a2)) — both are the door's own true
+//!   diagnosis, and neither is git's refusal;
+//! - of the four **record-only** doors, `add-from-spec` is resumable and answers a fully-seeded
+//!   re-run with `seeded 0 sub-task(s)`, committing nothing; the other three cannot reach an
+//!   empty record commit at all, because the only route to a record write that changes nothing
+//!   is the repeated call, and each refuses at its **identity** guard first
+//!   (`milestone.record-exists` · `milestone.sub-task-collision` · `milestone.terminal`). Their
+//!   cells therefore assert the unreachability *as observed behaviour* — the door's own
+//!   diagnosis, nothing committed — which is what makes a future change that moves the write
+//!   ahead of the guard redden here rather than ship a lying frame.
+//!
+//! **Non-vacuity is proven by applied mutation, not by construction**: reverting T1's
+//! pre-commit emptiness discriminator in `crates/cli/src/rename.rs` reddens the `jigc rename`
+//! cell on four clauses at once (exit, ack, the forbidden assertion, the log identity).
 
 use std::fs;
 use std::io::Write;
@@ -1015,4 +1058,356 @@ fn the_json_arm_keeps_the_framed_text_in_the_operational_error_envelope() {
         case.expected_rerun,
         "the envelope must carry the door's own re-run; got:\n{framed}",
     );
+}
+
+// ── The second sweep: the same axis × the empty-commit outcome (M48 Increment 8 T2) ─────────
+
+/// The **frame's assertion** — the clause that claims a rejection happened. Its appearance in a
+/// cell where nobody rejected anything is the defect this sweep exists to catch, so it is
+/// matched as the frame emits it rather than by a looser token that ordinary prose could carry.
+const REJECTION_ASSERTION: &str = "was rejected (no commit was made)";
+
+/// git's **own** empty-commit prose. It arrives on the seam as the same non-zero exit a hook
+/// rejection does, so a door that relays it has not merely worded the frame badly — it has
+/// mistaken git's refusal to record nothing for someone rejecting the run.
+const GIT_EMPTY_COMMIT_PROSE: &str = "nothing to commit";
+
+/// Settle the fixture: commit everything outstanding, so the cell's tree is clean and the door's
+/// own commit is the only one that could record anything. A tree that is **already** clean is
+/// left alone (`commit_adr` sweeps the whole tree on its way past), because git refuses the
+/// empty commit that would otherwise be attempted here — the very refusal this sweep is about.
+/// The post-condition is asserted either way, since a cell that starts dirty tests a different
+/// question than the one it claims to.
+fn commit_everything(repo: &Path, message: &str) {
+    git(repo, &["add", "-A"]);
+    if !git(repo, &["status", "--porcelain"]).trim().is_empty() {
+        git(repo, &["commit", "-q", "-m", message]);
+    }
+    assert!(
+        git(repo, &["status", "--porcelain"]).trim().is_empty(),
+        "the empty-commit fixture must start from a clean tree",
+    );
+}
+
+/// One door's **empty-commit cell**: the fixture state in which the commit that door would make
+/// records nothing, the argv that drives it there, and what the door must do *instead of*
+/// meeting git's refusal — its exit status, the substring of its own true diagnosis, and (where
+/// the diagnosis is a routed finding rather than an inline code) the finding code the log carries.
+struct EmptyCase {
+    repo: TempDir,
+    home: TempDir,
+    driven: Vec<String>,
+    /// The process exit code the cell must produce — `0` for the two doors that ack a no-op,
+    /// the blocked/failure code for the doors that refuse.
+    exit: i32,
+    /// A substring of the door's **own** diagnosis, which must appear in what it printed.
+    diagnosis: String,
+    /// The finding code the invocation log must carry, for the cells whose refusal is a routed
+    /// finding whose code the message itself does not spell.
+    finding: Option<&'static str>,
+}
+
+/// Build each door's **empty-commit** fixture and drive the door at it. No rejecting hook is
+/// installed anywhere here: the whole point is that nothing rejects these runs.
+fn drive_empty(verb: &str) -> EmptyCase {
+    match verb {
+        // Nothing staged over a clean tree: the task validates and produces no diff, so the
+        // engine's own guard blocks ahead of the boundary. (A *dirty* tree with an empty index
+        // is the different, CLI-side `finalize.nothing-staged` block, which is why this fixture
+        // settles the tree first.)
+        "jigc task finalize" => {
+            let (repo, home) = base_repo("empty-task-finalize", None);
+            commit_everything(repo.path(), "settle the fixture");
+            let task = seed_task(repo.path(), home.path(), "produce no diff");
+            EmptyCase {
+                driven: owned(&["task", "finalize", &task]),
+                exit: 3,
+                diagnosis: "finalize.empty-commit".to_string(),
+                finding: Some("finalize.empty-commit"),
+                repo,
+                home,
+            }
+        }
+        // A milestone with a sub-task that contributed neither a merged doc nor staged code:
+        // the boundary would commit only jigc's own bookkeeping, and the zero-work refusal
+        // stops it — the same seam for both commit models, above the `squash` branch.
+        "jigc milestone finalize (squash: true)" | "jigc milestone finalize (squash: false)" => {
+            let squash = if verb.ends_with("true)") {
+                "true"
+            } else {
+                "false"
+            };
+            let (repo, home) = base_repo(&format!("empty-ms-finalize-{squash}"), Some(squash));
+            commit_everything(repo.path(), "settle the fixture");
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "add-task", "cache-rework", "Area low"],
+                "`jigc milestone add-task`",
+            );
+            EmptyCase {
+                driven: owned(&["milestone", "finalize", "cache-rework"]),
+                exit: 3,
+                diagnosis: "would land no work".to_string(),
+                finding: Some("milestone.zero-contribution"),
+                repo,
+                home,
+            }
+        }
+        // The idempotent rename (M48 Inc 8 T1): a `--to` that slugs to the doc's own current
+        // slug AND matches the H1 it already carries. An unrelated untracked file rides along,
+        // because git's empty-commit refusal *lists* it — so an unguarded door does not merely
+        // assert a rejection, it names a file that has nothing to do with the run.
+        "jigc rename" => {
+            let (repo, home) = base_repo("empty-rename", None);
+            commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(2));
+            commit_everything(repo.path(), "settle the fixture");
+            fs::write(repo.path().join("scratch.txt"), "unrelated\n").expect("write scratch.txt");
+            EmptyCase {
+                driven: owned(&["rename", "adr:alpha-decision", "--to", "Alpha decision"]),
+                exit: 0,
+                diagnosis: "nothing renamed, nothing committed".to_string(),
+                finding: None,
+                repo,
+                home,
+            }
+        }
+        // An all-current corpus: the migration writes nothing back, so its staged-diff check
+        // skips the commit and the run reports what it found.
+        "jigc migrate-corpus" => {
+            let (repo, home) = base_repo("empty-migrate-corpus", None);
+            commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(2));
+            commit_everything(repo.path(), "settle the fixture");
+            EmptyCase {
+                driven: owned(&["migrate-corpus"]),
+                exit: 0,
+                diagnosis: "0 migrated".to_string(),
+                finding: None,
+                repo,
+                home,
+            }
+        }
+        // The repeated `create` — the only route to a record write that would change nothing.
+        // The identity guard refuses ahead of the write, so the empty commit is unreachable.
+        "jigc milestone create" => {
+            let (repo, home) = base_repo("empty-ms-create", None);
+            commit_everything(repo.path(), "settle the fixture");
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            EmptyCase {
+                driven: owned(&["milestone", "create", "Cache rework"]),
+                exit: 1,
+                diagnosis: "milestone.record-exists".to_string(),
+                finding: None,
+                repo,
+                home,
+            }
+        }
+        // The repeated `add-task`, same shape: the sub-task collision guard refuses ahead of
+        // the append that would have re-written the record's own bytes.
+        "jigc milestone add-task" => {
+            let (repo, home) = base_repo("empty-ms-add-task", None);
+            commit_everything(repo.path(), "settle the fixture");
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "add-task", "cache-rework", "Area low"],
+                "`jigc milestone add-task`",
+            );
+            EmptyCase {
+                driven: owned(&["milestone", "add-task", "cache-rework", "Area low"]),
+                exit: 1,
+                diagnosis: "milestone.sub-task-collision".to_string(),
+                finding: None,
+                repo,
+                home,
+            }
+        }
+        // The resumable door, re-run once every criterion is already seeded: it seeds nothing,
+        // commits nothing, and says so — the record-only family's one genuinely reachable
+        // empty-commit state.
+        "jigc milestone add-from-spec" => {
+            let (repo, home) = base_repo("empty-ms-add-from-spec", None);
+            let specs = repo.path().join("docs").join("specs");
+            fs::create_dir_all(&specs).expect("mk docs/specs/");
+            fs::write(specs.join("rate-limit.md"), TWO_CRITERIA_SPEC).expect("write the spec");
+            commit_everything(repo.path(), "settle the fixture");
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Rate limit"],
+                "`jigc milestone create`",
+            );
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &[
+                    "milestone",
+                    "add-from-spec",
+                    "rate-limit",
+                    "spec:rate-limit",
+                ],
+                "`jigc milestone add-from-spec`",
+            );
+            EmptyCase {
+                driven: owned(&[
+                    "milestone",
+                    "add-from-spec",
+                    "rate-limit",
+                    "spec:rate-limit",
+                ]),
+                exit: 0,
+                diagnosis: "seeded 0 sub-task(s)".to_string(),
+                finding: None,
+                repo,
+                home,
+            }
+        }
+        // The repeated `discard`: the milestone is already settled, so the terminal guard
+        // refuses ahead of the status flip that would have re-written identical bytes.
+        "jigc milestone discard" => {
+            let (repo, home) = base_repo("empty-ms-discard", None);
+            commit_everything(repo.path(), "settle the fixture");
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "discard", "cache-rework"],
+                "`jigc milestone discard`",
+            );
+            EmptyCase {
+                driven: owned(&["milestone", "discard", "cache-rework"]),
+                exit: 1,
+                diagnosis: "milestone.terminal".to_string(),
+                finding: None,
+                repo,
+                home,
+            }
+        }
+        other => panic!(
+            "`{other}` is a committing door with no **empty-commit** cell in this suite — the \
+             axis is the code-side `COMMITTING_DOORS` table, so a door added there owes its \
+             cell here as well as its rejection arm",
+        ),
+    }
+}
+
+/// The empty-commit sweep: every code-side committing door, driven through the real binary into
+/// the state where the commit it would make records nothing, with **no hook installed anywhere**.
+#[test]
+fn no_committing_door_dresses_an_empty_commit_as_a_rejection() {
+    assert_eq!(
+        COMMITTING_DOORS.len(),
+        9,
+        "the axis is 9 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+    );
+
+    for door in COMMITTING_DOORS {
+        let verb = door.verb;
+        let case = drive_empty(verb);
+        let repo = case.repo.path();
+        let home = case.home.path();
+        let driven: Vec<&str> = case.driven.iter().map(String::as_str).collect();
+
+        let head_before = git(repo, &["rev-parse", "HEAD"]);
+        let out = jigc(repo, home, &driven, None);
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let printed = format!("{stdout}{stderr}");
+
+        // (1) the door lands where its own design says it lands — exit 0 for the two doors that
+        // ack a no-op, the blocked/failure code for the doors that refuse ahead of the boundary.
+        assert_eq!(
+            out.status.code(),
+            Some(case.exit),
+            "[{verb}] the empty-commit cell must exit {}; stdout:\n{stdout}\nstderr:\n{stderr}",
+            case.exit,
+        );
+
+        // (2) nothing was committed — in every cell, whichever side of the boundary it stopped on.
+        assert_eq!(
+            git(repo, &["rev-parse", "HEAD"]),
+            head_before,
+            "[{verb}] the empty-commit cell must leave HEAD untouched; printed:\n{printed}",
+        );
+
+        // (3) the door states its OWN true diagnosis.
+        assert!(
+            printed.contains(&case.diagnosis),
+            "[{verb}] the door must state its own diagnosis (expected {:?}); printed:\n{printed}",
+            case.diagnosis,
+        );
+
+        // (4) …and never claims someone rejected the run, nor relays git's refusal to record
+        // nothing as if it were that rejection.
+        assert!(
+            !printed.contains(REJECTION_ASSERTION),
+            "[{verb}] nobody rejected this run — the frame's assertion must be absent; \
+             printed:\n{printed}",
+        );
+        assert!(
+            !printed.contains(GIT_EMPTY_COMMIT_PROSE),
+            "[{verb}] git's own empty-commit prose must not be relayed as a rejection; \
+             printed:\n{printed}",
+        );
+        assert!(
+            !printed.contains(door.error_code),
+            "[{verb}] the rejection identity `{}` must not appear over a run nobody rejected; \
+             printed:\n{printed}",
+            door.error_code,
+        );
+
+        // (5) the log carries no rejection identity either — the release-build-visible half of
+        // the claim, since the `Outcome::error` membership check is a compiled-out `debug_assert!`.
+        let records = log_records(repo);
+        let record = record_for(&records, &case.driven)
+            .unwrap_or_else(|| panic!("[{verb}] the run must be logged; records:\n{records:#?}"));
+        let logged = record["error_code"].as_str();
+        assert!(
+            !logged.is_some_and(|code| code.ends_with(".commit-rejected")),
+            "[{verb}] the log must carry no `*.commit-rejected` identity over a run nobody \
+             rejected; got {record}",
+        );
+        assert_ne!(
+            logged,
+            Some(door.error_code),
+            "[{verb}] the log must not carry this door's rejection identity; got {record}",
+        );
+        assert_eq!(
+            record["exit_code"].as_i64(),
+            Some(i64::from(case.exit)),
+            "[{verb}] the logged exit must be the one the door actually took; got {record}",
+        );
+        if let Some(code) = case.finding {
+            let codes: Vec<&str> = record["finding_codes"]
+                .as_array()
+                .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
+                .unwrap_or_default();
+            assert!(
+                codes.contains(&code),
+                "[{verb}] the refusal must be logged as its own finding `{code}`; got {record}",
+            );
+        }
+    }
 }
