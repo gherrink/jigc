@@ -264,7 +264,7 @@ fn shipped_schemas() -> BTreeMap<String, Schema> {
 const PRECIOUS: &str = "precious, uncommitted, in no object DB\n";
 
 /// One prepared cell: a repo standing in the shape that produces one
-/// [`LeftoverVerdict`], with [`PRECIOUS`] planted at the `area-low` worktree path.
+/// [`LeftoverVerdict`], with [`PRECIOUS`] planted at the `area-zed` worktree path.
 struct LeftoverCell {
     repo: PathBuf,
     home: PathBuf,
@@ -275,7 +275,8 @@ struct LeftoverCell {
 }
 
 /// Mint `milestone:cache-rework` with two sub-tasks — id-sorted `[area-low, area-zed]`,
-/// so the leftover planted at `area-low` is the first path every door reaches.
+/// so the leftover planted at `area-zed` ([`plant_precious`]) is the **last** path every
+/// door reaches, never the first.
 fn mint_milestone(repo: &Path, home: &Path) {
     run_jigc_ok(
         repo,
@@ -309,9 +310,19 @@ fn copy_repo(from: &Path, to: &Path) {
     );
 }
 
-/// The `area-low` worktree path of `repo`, with [`PRECIOUS`] planted inside it.
+/// The **last** sub-task worktree path of `repo` (`area-zed`), with [`PRECIOUS`] planted
+/// inside it and the first path (`area-low`) left absent.
+///
+/// The position is deliberate: a leftover at the *first* path can never witness whether a
+/// door mutates as it walks, which is how `provision`'s "refuses before any removal or
+/// add" contract went untested until the M48 completion audit (the position axis itself is
+/// iterated in `provision_leftover_guard.rs`). A copy fixture arrives carrying the
+/// source's provisioned worktrees, so the first one is dropped here: the set must hold
+/// exactly **one** leftover, or a refusal is not attributable to the planted path.
 fn plant_precious(repo: &Path) -> (PathBuf, PathBuf) {
-    let leftover = repo.join(".jigc").join("worktrees").join("area-low");
+    let root = repo.join(".jigc").join("worktrees");
+    let _ = fs::remove_dir_all(root.join("area-low"));
+    let leftover = root.join("area-zed");
     fs::create_dir_all(&leftover).expect("mk the leftover dir");
     let planted = leftover.join("precious.txt");
     fs::write(&planted, PRECIOUS).expect("plant precious.txt");

@@ -30,6 +30,17 @@
 //! `provision` is still idempotent (a registered worktree is reused untouched), and `--force`
 //! clears and provisions in all three refusing arms.
 //!
+//! **The leftover's position in the ordered path set is the second axis** (M48 completion
+//! audit). The refusal's recorded contract is that it fires *before any removal or add*, so a
+//! refused provision leaves **every** sub-task path as it found it — and the probe used to be
+//! asked **inside** the provisioning loop, which made that false for every position but the
+//! first: a leftover at path *k* refused only after paths `0..k` had been cleared and freshly
+//! `git worktree add`-ed. Both fixtures planted at the first path, so the claim was never
+//! exercised. The fixtures now plant at the **last** path, and
+//! [`a_refusal_leaves_every_path_unprovisioned_wherever_the_leftover_sits`] **iterates the
+//! position** over an order it reads back from the tool — so a change to the walk order
+//! re-derives the axis instead of silently re-masking it.
+//!
 //! Drives the REAL binary — the emitted refusal is the contract, not a reconstructed one.
 
 use cli::milestone::{LEFTOVER_VERDICTS, LeftoverVerdict, PROVISION_DOOR};
@@ -104,16 +115,15 @@ fn run_milestone(repo: &Path, home: &Path, args: &[&str]) -> std::process::Outpu
         .expect("run the jigc binary")
 }
 
-/// Mint `milestone:cache-rework` with two sub-tasks — id-sorted `[area-low, area-zed]`, so
-/// the leftover planted at `area-low` is the first path the provisioning loop reaches.
-fn mint_milestone(repo: &Path, home: &Path) {
+/// Mint `milestone:cache-rework` with one sub-task per intent.
+fn mint_milestone_with(repo: &Path, home: &Path, intents: &[&str]) {
     assert!(
         run_milestone(repo, home, &["create", "Cache rework"])
             .status
             .success(),
         "create must exit 0",
     );
-    for intent in ["Area zed", "Area low"] {
+    for intent in intents {
         assert!(
             run_milestone(repo, home, &["add-task", "cache-rework", intent])
                 .status
@@ -121,6 +131,63 @@ fn mint_milestone(repo: &Path, home: &Path) {
             "add-task `{intent}` must exit 0",
         );
     }
+}
+
+/// Mint `milestone:cache-rework` with two sub-tasks — id-sorted `[area-low, area-zed]`, so the
+/// leftover planted at `area-zed` is the **last** path the provisioning loop reaches and the
+/// first path is something a door that mutates as it walks would already have provisioned.
+fn mint_milestone(repo: &Path, home: &Path) {
+    mint_milestone_with(repo, home, &["Area zed", "Area low"]);
+}
+
+/// The milestone's sub-task ids **in the order the provisioning loop walks them**, read back
+/// from the tool (`list-tasks` prints the id-sorted enumeration) rather than hand-written — so
+/// the position axis below is derived from the shipped order, and a change to that order
+/// re-derives the axis instead of silently re-masking it.
+fn ordered_sub_ids(repo: &Path, home: &Path) -> Vec<String> {
+    let out = run_milestone(repo, home, &["list-tasks", "cache-rework"]);
+    assert!(
+        out.status.success(),
+        "list-tasks must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let line = stdout
+        .lines()
+        .find(|line| line.contains("): "))
+        .unwrap_or_else(|| panic!("list-tasks must print the enumeration; got:\n{stdout}"));
+    let (_, listed) = line
+        .split_once("): ")
+        .unwrap_or_else(|| panic!("list-tasks must print `(<n>): <ids>`; got:\n{stdout}"));
+    listed
+        .split(", ")
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect()
+}
+
+/// The worktree paths git has registered **under this repo's own `.jigc/worktrees/`** — empty
+/// until a `provision` lands one here, since a `cp -R` copy's admin records name the *source's*
+/// paths (the very reason the guard's subject is the path, not the registered set). A refused
+/// provision must leave this empty: anything in it was added before the refusal.
+fn own_registered_worktrees(repo: &Path) -> Vec<String> {
+    let out = Command::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(repo)
+        .output()
+        .expect("run git worktree list");
+    let root = repo
+        .canonicalize()
+        .unwrap_or_else(|_| repo.to_path_buf())
+        .join(".jigc")
+        .join("worktrees");
+    let prefix = root.display().to_string();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .filter(|path| path.starts_with(&prefix))
+        .map(str::to_string)
+        .collect()
 }
 
 /// `cp -R <from> <to>` — the ordinary way a corpus copy is made (the trigger the charter did
@@ -157,8 +224,26 @@ struct Fixture {
     planted: PathBuf,
 }
 
+/// Plant `PRECIOUS` at the **last** sub-task worktree path (`area-zed`) and leave the first
+/// (`area-low`) absent, returning `(leftover, planted)`.
+///
+/// The position is the point: with the single leftover at the *end* of the walk, the first path
+/// is a path a door that probes as it goes would already have cleared and provisioned before it
+/// ever reached the refusal. A copy fixture arrives carrying the source's provisioned worktrees,
+/// so the first one is dropped here — the set must hold exactly **one** leftover, or the refusal
+/// is not attributable to the planted path.
+fn plant_precious(repo: &Path) -> (PathBuf, PathBuf) {
+    let root = repo.join(".jigc").join("worktrees");
+    let _ = fs::remove_dir_all(root.join("area-low"));
+    let leftover = root.join("area-zed");
+    fs::create_dir_all(&leftover).expect("mk leftover dir");
+    let planted = leftover.join("precious.txt");
+    fs::write(&planted, PRECIOUS).expect("plant precious.txt");
+    (leftover, planted)
+}
+
 /// Build the real shape that yields `verdict`, with `PRECIOUS` planted inside the leftover at
-/// the `area-low` worktree path.
+/// the `area-zed` worktree path ([`plant_precious`]).
 fn plant(verdict: LeftoverVerdict) -> Fixture {
     let source = TempDir::new("source");
     init_repo(source.path());
@@ -169,14 +254,7 @@ fn plant(verdict: LeftoverVerdict) -> Fixture {
         LeftoverVerdict::NoOwnLinkage => {
             // A plain directory with no `.git` of its own: git walks up and answers for the
             // enclosing repo, so nothing there vouches for these bytes.
-            let leftover = source
-                .path()
-                .join(".jigc")
-                .join("worktrees")
-                .join("area-low");
-            fs::create_dir_all(&leftover).expect("mk leftover dir");
-            let planted = leftover.join("precious.txt");
-            fs::write(&planted, PRECIOUS).expect("plant precious.txt");
+            let (leftover, planted) = plant_precious(source.path());
             let repo = source.path().to_path_buf();
             Fixture {
                 _source: source,
@@ -203,9 +281,7 @@ fn plant(verdict: LeftoverVerdict) -> Fixture {
             let repo = copies.path().join("copy");
             copy_repo(source.path(), &repo);
 
-            let leftover = repo.join(".jigc").join("worktrees").join("area-low");
-            let planted = leftover.join("precious.txt");
-            fs::write(&planted, PRECIOUS).expect("plant precious.txt");
+            let (leftover, planted) = plant_precious(&repo);
 
             // The `Unverifiable` half: move the source away, so the copy's worktree points at
             // an admin directory that no longer exists and `rev-parse` exits 128.
@@ -268,6 +344,87 @@ fn every_verdict_refuses_a_non_empty_leftover_and_leaves_the_planted_bytes_intac
             fs::read_to_string(&f.planted).expect("the planted file must survive the refusal"),
             PRECIOUS,
             "[{verdict:?}] the planted bytes must survive byte-intact",
+        );
+        // And the refusal is transactional: the leftover sits at the LAST path, so anything
+        // provisioned under this repo's own worktrees root was landed on the way there.
+        assert!(
+            own_registered_worktrees(&f.repo).is_empty(),
+            "[{verdict:?}] a refused provision must add NO worktree — it fires before any \
+             removal or add, so no path is half-provisioned; got: {:?}",
+            own_registered_worktrees(&f.repo),
+        );
+    }
+}
+
+#[test]
+fn a_refusal_leaves_every_path_unprovisioned_wherever_the_leftover_sits() {
+    // The position axis. The probe used to be asked INSIDE the provisioning loop, so a
+    // leftover at any but the FIRST path refused only after the earlier paths had already
+    // been cleared and freshly `git worktree add`-ed — the half-provisioned set the refusal's
+    // own contract says cannot happen. Three sub-tasks, one run per position, and the walk
+    // order is read back from the tool rather than assumed.
+    let intents = ["Area zed", "Area low", "Area mid"];
+    for position in 0..intents.len() {
+        let repo = TempDir::new(&format!("position-{position}"));
+        init_repo(repo.path());
+        let home = TempDir::new("home");
+        mint_milestone_with(repo.path(), home.path(), &intents);
+
+        let ids = ordered_sub_ids(repo.path(), home.path());
+        assert_eq!(
+            ids.len(),
+            intents.len(),
+            "every minted sub-task must be enumerated; got {ids:?}",
+        );
+        let worktrees = repo.path().join(".jigc").join("worktrees");
+        let leftover = worktrees.join(&ids[position]);
+        fs::create_dir_all(&leftover).expect("mk leftover dir");
+        let planted = leftover.join("precious.txt");
+        fs::write(&planted, PRECIOUS).expect("plant precious.txt");
+
+        let refused = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+        let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
+        assert!(
+            !refused.status.success(),
+            "[position {position} of {ids:?}] provision must REFUSE; got {:?}\nstderr:\n{stderr}",
+            refused.status,
+        );
+        assert!(
+            stderr.contains(PROVISION_DOOR.code)
+                && stderr.contains(&leftover.display().to_string()),
+            "[position {position} of {ids:?}] the refusal must carry `{}` and name `{}`; got:\n{stderr}",
+            PROVISION_DOOR.code,
+            leftover.display(),
+        );
+        assert_eq!(
+            fs::read_to_string(&planted).expect("the planted file must survive the refusal"),
+            PRECIOUS,
+            "[position {position} of {ids:?}] the planted bytes must survive byte-intact",
+        );
+
+        // "leaves every sub-task path exactly as it found it" — asserted over the whole set,
+        // not just the refusing one: no worktree registered anywhere under this repo's
+        // worktrees root, and every other path still absent.
+        assert!(
+            own_registered_worktrees(repo.path()).is_empty(),
+            "[position {position} of {ids:?}] a refused provision must add NO worktree at ANY \
+             path; got: {:?}",
+            own_registered_worktrees(repo.path()),
+        );
+        for id in &ids {
+            if id == &ids[position] {
+                continue;
+            }
+            assert!(
+                !worktrees.join(id).exists(),
+                "[position {position} of {ids:?}] `{id}` was untouched before the run and must \
+                 still be untouched after it",
+            );
+        }
+        assert!(
+            !leftover.join(".git").exists(),
+            "[position {position} of {ids:?}] the refusing path itself must not have been \
+             cleared and re-provisioned",
         );
     }
 }

@@ -1647,6 +1647,18 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
 /// uncommitted sub-agent work at exit 0 — the registered set cannot see it, because a copy's
 /// admin record names the source's path. The refusal fires **before any removal or add**, so
 /// a refused provision leaves every path exactly as it found it.
+///
+/// **That last sentence is what the two phases below buy**, and it did not hold while the
+/// probe was asked *inside* the mutating loop (M48 completion audit): a leftover at the k-th
+/// path refused only after paths `0..k` had been cleared and freshly added — a
+/// half-provisioned set, which is precisely what a fail-closed guard exists to prevent. So
+/// every path answers first, and the first byte moves only once none of them refused. The
+/// sibling doors were already shaped this way ([`held_subtask_worktrees`] for `discard`,
+/// `crate::setup::dirty_fanout_worktrees` for `uninstall`, both collect-then-refuse).
+///
+/// **The claim is about the refusal, and stays that narrow**: a `git worktree add` that fails
+/// partway through phase 2 still leaves the earlier paths provisioned, and nothing here rolls
+/// that back — an idempotent re-run reuses them.
 fn provision_worktrees(
     repo_root: &Path,
     jigc_home: &Path,
@@ -1669,33 +1681,43 @@ fn provision_worktrees(
     git_worktree(repo_root, &["worktree", "prune"])?;
     let registered = registered_worktrees(repo_root)?;
 
-    let mut paths = Vec::with_capacity(sub_ids.len());
+    // Phase 1 — probe every path, mutate none. A path already registered as a worktree here
+    // is reused untouched (idempotent), so it is neither probed nor cleared; every other one
+    // is asked before the walk is allowed to move a byte anywhere.
+    let mut plan = Vec::with_capacity(sub_ids.len());
     for id in sub_ids {
         // The absolute worktree path; `worktree_path(id)` is the shared relative
         // convention (`.jigc/worktrees/<id>`) the spawn line also renders.
         let path = canonical_home.join(worktree_path(id));
-        if registered.iter().any(|w| w == &path) {
-            // Already a registered worktree at this exact path — reuse it (idempotent).
-            paths.push(path);
-            continue;
-        }
+        let reuse = registered.iter().any(|w| w == &path);
         // A non-registered leftover dir would make `git worktree add` fail ("already
         // exists"), so it has to go — but only once the probe can prove it holds nothing
         // (or `--force` says so): the binary cannot tell `junk.txt` from `precious.txt`.
-        if path.exists() {
-            if !force && let Some(hold) = probe_leftover(&path)? {
-                return Err(finding_to_err(leftover_finding(milestone_id, &path, &hold)));
-            }
-            std::fs::remove_dir_all(&path)
-                .with_context(|| format!("could not clear the stale worktree dir {path:?}"))?;
+        if !reuse
+            && !force
+            && let Some(hold) = probe_leftover(&path)?
+        {
+            return Err(finding_to_err(leftover_finding(milestone_id, &path, &hold)));
         }
-        let path_str = path
-            .to_str()
-            .with_context(|| format!("worktree path {path:?} is not valid UTF-8"))?;
-        git_worktree(
-            repo_root,
-            &["worktree", "add", "--detach", path_str, base_sha],
-        )?;
+        plan.push((path, reuse));
+    }
+
+    // Phase 2 — nothing refused, so clear and add.
+    let mut paths = Vec::with_capacity(plan.len());
+    for (path, reuse) in plan {
+        if !reuse {
+            if path.exists() {
+                std::fs::remove_dir_all(&path)
+                    .with_context(|| format!("could not clear the stale worktree dir {path:?}"))?;
+            }
+            let path_str = path
+                .to_str()
+                .with_context(|| format!("worktree path {path:?} is not valid UTF-8"))?;
+            git_worktree(
+                repo_root,
+                &["worktree", "add", "--detach", path_str, base_sha],
+            )?;
+        }
         paths.push(path);
     }
     Ok(paths)
