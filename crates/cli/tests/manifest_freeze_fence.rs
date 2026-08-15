@@ -50,6 +50,9 @@
 use engine::manifest::Manifest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// The dev pack's frozen doctype-set manifest — one of the two texts the fence
 /// compares.
@@ -962,6 +965,821 @@ mod escape {
             rendered(&reversed),
             "the surviving report must not depend on the order the range's messages \
              arrive in",
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The window (M48 Increment 11, T3) — the pushed range, and its fallback ladder.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The comparator above is a pure function of two texts; **which two texts** is the
+// question this section answers, and it is the question the increment-11 plan halt
+// (2026-08-15) re-opened. The settled shape compared `HEAD~1` against the working
+// copy — but GitHub Actions fires **one run per push, at the tip**, and this repo
+// pushes in large batches. `6e81d53` (M47 Increment 1) re-pinned **all 16 doctype
+// hashes at unchanged `schema-version`s, in both manifests, in one commit** — the
+// exact shape this fence exists to catch — and it landed **34 first-parent commits
+// from its push tip**, where a `HEAD~1` window is provably clean. A fence that
+// cannot see the only real instance in the repo's history is not a fence
+// (`implementation/roadmap.md` → M48 Increment 11; `completions/artifacts/M48/
+// settle-record.md` → *CORRECTED at the increment-11 plan halt*).
+//
+// So the base is the **base of the pushed range**, resolved by a ladder, and the
+// ladder lives **here, in Rust, never in the workflow YAML**: the workflow's whole job
+// is to forward each raw event field to its own variable and choose nothing among
+// them. A `${{ … || … }}` expression in YAML would put the very decision the halt
+// found broken back where nothing tests it.
+//
+// The rungs, in order:
+//
+// | event | candidate | when the candidate is unusable |
+// |---|---|---|
+// | `push` | `github.event.before` | fall to the floor |
+// | `pull_request` / `pull_request_target` | the PR base sha | fall to the floor |
+// | anything else (`workflow_dispatch`, `schedule`, …) | none | the floor |
+//
+// *Unusable* means absent, empty, all-zeros (GitHub's new-branch sentinel), or **not
+// resolvable in this clone** (a force-pushed range whose base object is gone). The
+// **floor is `HEAD~1`** — the originally-settled shape, kept as the floor rather than
+// replaced, so widening the window can only ever add reach. A root commit has no
+// `HEAD~1` and therefore nothing to compare: clean, not an error.
+
+/// Both manifests the fence compares, in the order it reports them.
+pub const MANIFESTS: [&str; 2] = [DEV_MANIFEST, METHODOLOGY_MANIFEST];
+
+/// The raw GitHub Actions event fields the ladder chooses between.
+///
+/// Both candidates are carried **verbatim and separately**: the choice among them is
+/// made by [`Event::declared_base`], in Rust, so the ladder is a tested function
+/// rather than an untested workflow expression.
+#[derive(Clone, Copy, Debug)]
+pub struct Event<'a> {
+    /// `GITHUB_EVENT_NAME` — `push`, `pull_request`, `workflow_dispatch`, …
+    pub name: &'a str,
+    /// `github.event.before` — the commit the pushed range starts after. All-zeros on
+    /// a new branch; absent on every non-push event.
+    pub push_before: &'a str,
+    /// `github.event.pull_request.base.sha` — absent on every non-PR event.
+    pub pr_base: &'a str,
+}
+
+impl Event<'_> {
+    /// The base this event *declares*, before it is checked against the clone.
+    ///
+    /// The event's kind picks the field: a `push` never reads a PR base and a
+    /// `pull_request` never reads `before`, so a stale or cross-wired variable cannot
+    /// silently widen or narrow the window.
+    pub fn declared_base(&self) -> Option<&str> {
+        match self.name {
+            "push" => usable(self.push_before),
+            "pull_request" | "pull_request_target" => usable(self.pr_base),
+            _ => None,
+        }
+    }
+}
+
+/// A candidate ref that names something, or `None`.
+///
+/// Empty, whitespace, and **all-zeros of any length** are all *nothing named*: GitHub
+/// writes the zero sha for a branch that did not exist before this push, and a
+/// zero-sha `git rev-parse` would simply fail — the ladder says so explicitly rather
+/// than relying on that.
+fn usable(value: &str) -> Option<&str> {
+    let value = value.trim();
+    (!value.is_empty() && !value.chars().all(|c| c == '0')).then_some(value)
+}
+
+/// Which end of the ladder the base came from — and therefore how much of the push
+/// the fence can see.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Window {
+    /// The base of the pushed range, as the event declared it and the clone resolved
+    /// it — the whole push is in view.
+    Declared(String),
+    /// The floor: `HEAD~1`. Only the tip commit is in view — the originally-settled
+    /// shape, kept as a floor.
+    Floor(String),
+    /// Nothing to compare: a root commit has no prior state.
+    Nothing,
+}
+
+impl Window {
+    /// The resolved base sha, or `None` when there is nothing to compare.
+    pub fn base(&self) -> Option<&str> {
+        match self {
+            Window::Declared(sha) | Window::Floor(sha) => Some(sha),
+            Window::Nothing => None,
+        }
+    }
+}
+
+/// Walk the ladder against a real clone: the declared base if it resolves here, the
+/// `HEAD~1` floor otherwise, and nothing at a root commit.
+pub fn resolve_window(repo: &Path, event: Event<'_>) -> Window {
+    if let Some(sha) = event.declared_base().and_then(|r| rev_parse(repo, r)) {
+        return Window::Declared(sha);
+    }
+    match rev_parse(repo, "HEAD~1") {
+        Some(sha) => Window::Floor(sha),
+        None => Window::Nothing,
+    }
+}
+
+/// Resolve a rev to a commit sha, or `None` when this clone cannot reach it.
+///
+/// `^{commit}` so a ref that exists but names no commit is unusable too, and
+/// `--quiet` so an unresolvable rev is an answer rather than noise on stderr.
+fn rev_parse(repo: &Path, rev: &str) -> Option<String> {
+    let out = Command::new("git")
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{rev}^{{commit}}"),
+        ])
+        .current_dir(repo)
+        .output()
+        .expect("run git rev-parse");
+    if !out.status.success() {
+        return None;
+    }
+    let sha = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    (!sha.is_empty()).then_some(sha)
+}
+
+/// One file's bytes at one rev, or `None` when the path does not exist there.
+///
+/// `None` is the comparator's *manifest absent at base* cell — a pack whose manifest
+/// was first added inside the inspected range declares no prior pin.
+pub fn show_at(repo: &Path, rev: &str, path: &str) -> Option<String> {
+    let out = Command::new("git")
+        .args(["show", &format!("{rev}:{path}")])
+        .current_dir(repo)
+        .output()
+        .expect("run git show");
+    out.status
+        .success()
+        .then(|| String::from_utf8(out.stdout).expect("a manifest is utf-8"))
+}
+
+/// Every commit message in `base..head`, whole — subject and body — feeding the
+/// per-entity escape.
+///
+/// The **whole range**, not the tip: the escape is written on the commit that does
+/// the re-pin, and in a batched push that commit is rarely the last one.
+pub fn messages_in(repo: &Path, base: &str, head: &str) -> Vec<String> {
+    let out = Command::new("git")
+        .args(["log", "--format=%B%x00", &format!("{base}..{head}")])
+        .current_dir(repo)
+        .output()
+        .expect("run git log");
+    assert!(
+        out.status.success(),
+        "git log {base}..{head} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout)
+        .expect("a commit message is utf-8")
+        .split('\0')
+        // `%B%x00` leaves git's own inter-commit newline glued to the front of the
+        // next message. Only that separator is stripped — never the message's own
+        // leading bytes, since the escape is read line-leading and trimming would
+        // promote an indented first line into a trailer.
+        .map(|m| m.strip_prefix('\n').unwrap_or(m).to_string())
+        .filter(|m| !m.trim().is_empty())
+        .collect()
+}
+
+/// The text a manifest **absent at the head side** is read as: no pins at all.
+///
+/// Written out rather than left to an empty string's deserialization, so the reading
+/// is a stated choice. It makes every entity read as *removed* — the comparator's
+/// clean cell — which is the honest verdict here and not a hole: shipping **no**
+/// `config/schema-manifest.yaml` is the freeze's own **wholesale, pack-level opt-out**
+/// (`crates/cli/src/pack.rs` → a manifest-less pack stays on skip-on-absent;
+/// `engine::manifest::Manifest` → *"Opting out of the freeze stays a pack-level,
+/// wholesale act"*). A per-entity fence does not get to overrule that by re-deciding
+/// it one entity at a time.
+const NO_DECLARATION: &str = "doctypes: []\n";
+
+/// The whole fence over one window of one clone: both manifests at either end,
+/// compared, then excused by the range's own commit messages.
+pub fn fence_over(repo: &Path, base: &str, head: &str) -> Vec<Violation> {
+    let texts: Vec<(&str, Option<String>, String)> = MANIFESTS
+        .iter()
+        .map(|path| {
+            (
+                *path,
+                show_at(repo, base, path),
+                show_at(repo, head, path).unwrap_or_else(|| NO_DECLARATION.to_string()),
+            )
+        })
+        .collect();
+    let pairs: Vec<(&str, Option<&str>, &str)> = texts
+        .iter()
+        .map(|(path, base, head)| (*path, base.as_deref(), head.as_str()))
+        .collect();
+    let messages = messages_in(repo, base, head);
+    let messages: Vec<&str> = messages.iter().map(String::as_str).collect();
+    excuse(compare_all(&pairs), &messages)
+}
+
+/// A self-cleaning temp dir — the shipped suite idiom (pid + nanos, `Drop`-removed),
+/// so a throwaway `git init` never lands in the developer's tree.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "jigc-fence-{tag}-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Run git in a throwaway repo, asserting success — the fixtures' own plumbing, kept
+/// separate from [`rev_parse`], whose whole job is to tolerate failure.
+fn git(repo: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string()
+}
+
+/// A throwaway repo with git identity configured and no commits yet.
+fn fresh_repo(tag: &str) -> TempDir {
+    let repo = TempDir::new(tag);
+    git(repo.path(), &["init", "-q"]);
+    git(repo.path(), &["config", "user.email", "fence@example.com"]);
+    git(repo.path(), &["config", "user.name", "Fence"]);
+    repo
+}
+
+/// Commit every change in the throwaway repo under one message.
+fn commit_all(repo: &Path, message: &str) -> String {
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "--allow-empty", "-m", message]);
+    git(repo, &["rev-parse", "HEAD"])
+}
+
+/// Write one manifest text at its repo-relative path, creating the pack dirs.
+fn write_manifest(repo: &Path, path: &str, text: &str) {
+    let target = repo.join(path);
+    fs::create_dir_all(target.parent().expect("a manifest has a parent"))
+        .expect("create pack dirs");
+    fs::write(target, text).expect("write manifest");
+}
+
+/// The base-ref ladder: which commit the fence compares against, and why.
+mod base_ref {
+    use super::*;
+
+    /// The sentinel the rung table writes where the fixture's real base sha goes — the
+    /// table states *shapes*, and the fixture substitutes the one value it cannot know
+    /// statically.
+    const THE_PUSH_BASE: &str = "<the push base>";
+
+    /// A well-formed sha that resolves nowhere — a force-pushed range whose base object
+    /// this clone never received.
+    const GONE: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    /// Which rung the ladder must land on.
+    #[derive(Debug, PartialEq, Eq)]
+    enum Expect {
+        /// The declared base of the pushed range.
+        Declared,
+        /// The `HEAD~1` floor.
+        Floor,
+    }
+
+    /// One event shape, and the rung it lands on.
+    struct Rung {
+        /// Why the row exists — printed on failure, so a red arm names its own rule.
+        rule: &'static str,
+        name: &'static str,
+        push_before: &'static str,
+        pr_base: &'static str,
+        expect: Expect,
+    }
+
+    /// **The ladder, as a table.** Every event shape CI can hand the fence against the
+    /// rung it lands on — so a shape cannot be entertained without a stated verdict, and
+    /// the floor cannot quietly become the ceiling again.
+    const RUNGS: &[Rung] = &[
+        Rung {
+            rule: "a push declares the base of its range, and the whole push is in view",
+            name: "push",
+            push_before: THE_PUSH_BASE,
+            pr_base: "",
+            expect: Expect::Declared,
+        },
+        Rung {
+            rule: "the all-zeros sentinel of a NEW BRANCH names nothing — the floor holds",
+            name: "push",
+            push_before: "0000000000000000000000000000000000000000",
+            pr_base: "",
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "the zero sentinel is refused by SHAPE, not by length — a sha-256 repo \
+                   writes 64 of them",
+            name: "push",
+            push_before: "0000000000000000000000000000000000000000000000000000000000000000",
+            pr_base: "",
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "an ABSENT `before` (the variable never set) falls to the floor",
+            name: "push",
+            push_before: "",
+            pr_base: "",
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "a whitespace-only value names nothing either",
+            name: "push",
+            push_before: "   ",
+            pr_base: "",
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "a base this clone cannot resolve (FORCE-PUSH: the object is gone) \
+                   falls to the floor rather than failing the run",
+            name: "push",
+            push_before: GONE,
+            pr_base: "",
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "a push never reads a PR base — a cross-wired variable cannot widen \
+                   the window",
+            name: "push",
+            push_before: "",
+            pr_base: THE_PUSH_BASE,
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "a pull request declares its base sha",
+            name: "pull_request",
+            push_before: "",
+            pr_base: THE_PUSH_BASE,
+            expect: Expect::Declared,
+        },
+        Rung {
+            rule: "`pull_request_target` is the same event shape and reads the same field",
+            name: "pull_request_target",
+            push_before: "",
+            pr_base: THE_PUSH_BASE,
+            expect: Expect::Declared,
+        },
+        Rung {
+            rule: "a pull request with no base sha falls to the floor",
+            name: "pull_request",
+            push_before: "",
+            pr_base: "",
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "a pull request never reads `before` — the cross-wiring refusal runs \
+                   both ways",
+            name: "pull_request",
+            push_before: THE_PUSH_BASE,
+            pr_base: "",
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "`workflow_dispatch` declares neither field, so it reads NEITHER — even \
+                   when a stale value is present in the environment",
+            name: "workflow_dispatch",
+            push_before: THE_PUSH_BASE,
+            pr_base: THE_PUSH_BASE,
+            expect: Expect::Floor,
+        },
+        Rung {
+            rule: "any other event (`schedule`, …) is the floor by the same rule",
+            name: "schedule",
+            push_before: "",
+            pr_base: "",
+            expect: Expect::Floor,
+        },
+    ];
+
+    /// A repo of four commits, so the declared base and the `HEAD~1` floor are **two
+    /// different commits** — a fixture where they coincide proves nothing about either.
+    fn four_commit_repo() -> (TempDir, String, String) {
+        let repo = fresh_repo("ladder");
+        commit_all(repo.path(), "one");
+        let base = commit_all(repo.path(), "two — the base of the pushed range");
+        let floor = commit_all(repo.path(), "three — what HEAD~1 reaches");
+        commit_all(repo.path(), "four — the tip");
+        (repo, base, floor)
+    }
+
+    #[test]
+    fn every_event_shape_lands_on_a_stated_rung() {
+        let (repo, base, floor) = four_commit_repo();
+        let subst = |value: &str| {
+            if value == THE_PUSH_BASE {
+                base.clone()
+            } else {
+                value.to_string()
+            }
+        };
+        for rung in RUNGS {
+            let push_before = subst(rung.push_before);
+            let pr_base = subst(rung.pr_base);
+            let found = resolve_window(
+                repo.path(),
+                Event {
+                    name: rung.name,
+                    push_before: &push_before,
+                    pr_base: &pr_base,
+                },
+            );
+            let expected = match rung.expect {
+                Expect::Declared => Window::Declared(base.clone()),
+                Expect::Floor => Window::Floor(floor.clone()),
+            };
+            assert_eq!(
+                found, expected,
+                "{}\n  event: {} before={push_before:?} pr_base={pr_base:?}",
+                rung.rule, rung.name,
+            );
+        }
+    }
+
+    #[test]
+    fn the_floor_is_the_settled_shape_kept_as_a_floor_never_the_ceiling() {
+        let (repo, base, floor) = four_commit_repo();
+        let declared = resolve_window(
+            repo.path(),
+            Event {
+                name: "push",
+                push_before: &base,
+                pr_base: "",
+            },
+        );
+        assert_eq!(
+            declared.base(),
+            Some(base.as_str()),
+            "the declared window reaches past HEAD~1 — {floor} is what the settled \
+             shape would have compared against",
+        );
+        assert_ne!(base, floor, "the fixture must genuinely differ");
+    }
+
+    #[test]
+    fn a_root_commit_has_nothing_to_compare() {
+        let repo = fresh_repo("root");
+        commit_all(repo.path(), "the root commit");
+        assert_eq!(
+            resolve_window(
+                repo.path(),
+                Event {
+                    name: "workflow_dispatch",
+                    push_before: "",
+                    pr_base: "",
+                },
+            ),
+            Window::Nothing,
+            "a repo whose only commit is its root has no prior state: clean, not an \
+             error — the fence reports nothing rather than failing the run",
+        );
+    }
+
+    #[test]
+    fn a_root_commit_with_an_unresolvable_declared_base_still_has_nothing_to_compare() {
+        let repo = fresh_repo("root-declared");
+        commit_all(repo.path(), "the root commit");
+        assert_eq!(
+            resolve_window(
+                repo.path(),
+                Event {
+                    name: "push",
+                    push_before: GONE,
+                    pr_base: "",
+                },
+            ),
+            Window::Nothing,
+            "the ladder falls all the way through: an unresolvable declaration, then no \
+             floor to land on",
+        );
+    }
+
+    /// The plumbing the comparator eats: one file's bytes at a rev.
+    #[test]
+    fn a_manifest_is_read_at_its_rev_and_a_path_absent_there_is_none() {
+        let repo = fresh_repo("show");
+        write_manifest(
+            repo.path(),
+            DEV_MANIFEST,
+            &with_doctypes(&[("adr", 2, HASH_A)]),
+        );
+        let base = commit_all(repo.path(), "the dev manifest only");
+        write_manifest(
+            repo.path(),
+            METHODOLOGY_MANIFEST,
+            &with_doctypes(&[("idea", 1, HASH_B)]),
+        );
+        commit_all(repo.path(), "the methodology manifest joins");
+
+        assert_eq!(
+            show_at(repo.path(), &base, DEV_MANIFEST).as_deref(),
+            Some(with_doctypes(&[("adr", 2, HASH_A)]).as_str()),
+            "the base text is the file's own bytes at that commit",
+        );
+        assert_eq!(
+            show_at(repo.path(), &base, METHODOLOGY_MANIFEST),
+            None,
+            "a manifest first added inside the range is absent at the base — the \
+             comparator's *absent at base* cell, fed from git rather than fabricated",
+        );
+    }
+
+    /// The plumbing the escape eats: every message in the range, whole.
+    #[test]
+    fn the_ranges_whole_messages_are_read_and_nothing_outside_it_is() {
+        let repo = fresh_repo("messages");
+        commit_all(repo.path(), "before the range\n\nManifest-Repin: adr\n");
+        let base = commit_all(repo.path(), "the base");
+        commit_all(repo.path(), "inside\n\nManifest-Repin: changelog\n");
+        commit_all(repo.path(), "the tip\n\nManifest-Repin: slug-rule\n");
+
+        let messages = messages_in(repo.path(), &base, "HEAD");
+        let messages: Vec<&str> = messages.iter().map(String::as_str).collect();
+        assert_eq!(messages.len(), 2, "two commits in the range: {messages:?}");
+        assert_eq!(
+            excused_entities(&messages),
+            ["changelog".to_string(), SLUG_RULE_ENTITY.to_string()]
+                .into_iter()
+                .collect(),
+            "the body of every commit in the range is read — and a trailer written \
+             BEFORE the base is outside the window, so it excuses nothing",
+        );
+    }
+
+    /// A throwaway repo shaped like one of this project's real pushes: the re-pin sits
+    /// in the **middle** of the batch, never at the tip.
+    fn batched_push_repo(tag: &str, repin_message: &str) -> (TempDir, String) {
+        let repo = fresh_repo(tag);
+        write_manifest(
+            repo.path(),
+            DEV_MANIFEST,
+            &with_doctypes(&[("adr", 2, HASH_A)]),
+        );
+        let base = commit_all(repo.path(), "the pinned base");
+        write_manifest(
+            repo.path(),
+            DEV_MANIFEST,
+            &with_doctypes(&[("adr", 2, HASH_B)]),
+        );
+        commit_all(repo.path(), repin_message);
+        commit_all(repo.path(), "an unrelated commit");
+        commit_all(repo.path(), "another unrelated commit — the push tip");
+        (repo, base)
+    }
+
+    /// **The mechanism, proven on a synthetic push before it is proven on the real
+    /// one.** The declared window sees a breach the settled floor is provably clean
+    /// over — the halt's finding, reduced to four commits.
+    #[test]
+    fn the_declared_window_catches_a_mid_batch_repin_the_floor_cannot_see() {
+        let (repo, base) = batched_push_repo("batch", "re-pin adr with nothing declaring it");
+
+        let over_the_push = fence_over(repo.path(), &base, "HEAD");
+        assert_eq!(
+            over_the_push,
+            vec![Violation::HashMovedWithoutVersion {
+                manifest: DEV_MANIFEST.to_string(),
+                entity: "adr".to_string(),
+                version: 2,
+                base_hash: HASH_A.to_string(),
+                head_hash: HASH_B.to_string(),
+            }],
+            "the base of the pushed range sees the whole batch",
+        );
+
+        let floor = rev_parse(repo.path(), "HEAD~1").expect("a floor exists");
+        assert_eq!(
+            fence_over(repo.path(), &floor, "HEAD"),
+            vec![],
+            "the settled HEAD~1 window is PROVABLY CLEAN over the very push that \
+             carries the breach — which is why the floor is a floor and not the fence",
+        );
+    }
+
+    /// The escape reaches the whole window too: it is written on the commit that
+    /// re-pins, which in a batch is not the commit CI runs at.
+    #[test]
+    fn a_mid_batch_escape_excuses_the_mid_batch_repin() {
+        let (repo, base) = batched_push_repo(
+            "batch-escaped",
+            "re-pin adr, declared\n\nManifest-Repin: adr\n",
+        );
+        assert_eq!(
+            fence_over(repo.path(), &base, "HEAD"),
+            vec![],
+            "a legitimate re-pin declares itself on its own commit — and the fence \
+             reads the range, not the tip",
+        );
+    }
+
+    /// A manifest deleted inside the range reads as *every entity removed* — clean,
+    /// and stated rather than left to an accident of deserialization.
+    ///
+    /// **This is not the fence looking away.** Deleting the file is the freeze's own
+    /// wholesale, pack-level opt-out, declared as such where the freeze is defined; a
+    /// per-entity fence that re-decided it one entity at a time would be overruling a
+    /// shipped decision from a test file. The arm exists so the reading is *chosen*.
+    #[test]
+    fn a_manifest_deleted_inside_the_range_reads_as_removed_not_moved() {
+        let repo = fresh_repo("deleted");
+        write_manifest(
+            repo.path(),
+            DEV_MANIFEST,
+            &with_doctypes(&[("adr", 2, HASH_A)]),
+        );
+        let base = commit_all(repo.path(), "the pinned base");
+        fs::remove_file(repo.path().join(DEV_MANIFEST)).expect("remove the manifest");
+        commit_all(repo.path(), "opt the pack out of the freeze, wholesale");
+
+        assert_eq!(
+            fence_over(repo.path(), &base, "HEAD"),
+            vec![],
+            "no hash moved — the declaration itself is gone, which the freeze permits \
+             at pack level and this fence does not re-adjudicate per entity",
+        );
+    }
+}
+
+/// **The window's acceptance is this repo's own history.**
+///
+/// The halt's finding is not left as a paragraph: the commit it turned on is the
+/// fixture. `6e81d53` — M47 Increment 1, *"the schema-hash becomes a presentation
+/// projection"* — re-pinned **all 16 doctype hashes at unchanged `schema-version`s in
+/// both manifests**, and both manifest headers name it *"the declared genesis exemption
+/// and the ONLY one."* Over the pushed range the fence flags every one of the 16; over
+/// the `HEAD~1`-shaped window at that push's tip it flags none.
+///
+/// The window is stable by construction: **no commit after `6e81d53` touches either
+/// manifest** (`git log 6e81d53..HEAD -- <both>` is empty), so the flagged set is
+/// exactly the 16 and stays so.
+///
+/// **These arms fail loudly rather than skip.** A shallow clone that cannot reach the
+/// fixture makes the fence's own acceptance unverifiable, and a skipped fence is the
+/// green nobody earned — which is why `.github/workflows/ci.yml` checks out with
+/// `fetch-depth: 0`.
+mod historical {
+    use super::*;
+
+    /// M47 Increment 1 — the re-pin of all 16, and the only declared genesis exemption.
+    const GENESIS: &str = "6e81d53";
+
+    /// The base of the window that contains it.
+    const GENESIS_PARENT: &str = "6e81d53~1";
+
+    /// The tip of the push that carried it — pinned as a sha rather than an offset.
+    const PUSH_TIP: &str = "d0b8728";
+
+    /// How far the genesis commit landed from its push tip, first-parent.
+    const DISTANCE_FROM_TIP: usize = 34;
+
+    /// The dev pack's frozen doctypes at the genesis commit.
+    const DEV_DOCTYPES: [&str; 6] = ["commit", "adr", "spec", "prd", "arch-doc", "changelog"];
+
+    /// The methodology pack's, at the same commit.
+    const METHODOLOGY_DOCTYPES: [&str; 10] = [
+        "commit",
+        "completion-record",
+        "decisions-log",
+        "deferral-ledger",
+        "dogfood-record",
+        "idea",
+        "milestone-record",
+        "research",
+        "roadmap",
+        "vision",
+    ];
+
+    /// This repo — the fixture is its own history, so the arms run against the checkout.
+    fn this_repo() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("the workspace root is reachable from the cli crate")
+    }
+
+    /// Fail loudly on a clone that cannot reach the fixture.
+    fn require_reachable(repo: &Path, rev: &str) {
+        assert!(
+            rev_parse(repo, rev).is_some(),
+            "{rev} is unreachable in this clone, so the fence's own acceptance cannot \
+             run. This arm FAILS rather than skips: a skipped fence is a green nobody \
+             earned. Check out with full history (`fetch-depth: 0` in CI, \
+             `git fetch --unshallow` locally).",
+        );
+    }
+
+    #[test]
+    fn the_fixture_commits_are_reachable_and_a_whole_push_apart() {
+        let repo = this_repo();
+        require_reachable(&repo, GENESIS);
+        require_reachable(&repo, GENESIS_PARENT);
+        require_reachable(&repo, PUSH_TIP);
+        let distance = git(
+            &repo,
+            &[
+                "rev-list",
+                "--first-parent",
+                "--count",
+                &format!("{GENESIS}..{PUSH_TIP}"),
+            ],
+        );
+        assert_eq!(
+            distance.parse::<usize>().expect("a count"),
+            DISTANCE_FROM_TIP,
+            "the genesis re-pin landed {DISTANCE_FROM_TIP} first-parent commits from \
+             its push tip — the distance is the whole point: the settled window could \
+             see one of them",
+        );
+    }
+
+    #[test]
+    fn the_repin_of_all_sixteen_is_flagged_over_the_pushed_range() {
+        let repo = this_repo();
+        require_reachable(&repo, GENESIS_PARENT);
+        require_reachable(&repo, PUSH_TIP);
+
+        let found = fence_over(&repo, GENESIS_PARENT, PUSH_TIP);
+        let flagged: BTreeSet<(String, String)> = found
+            .iter()
+            .map(|violation| match violation {
+                Violation::HashMovedWithoutVersion {
+                    manifest, entity, ..
+                } => (manifest.clone(), entity.clone()),
+                other => panic!("the genesis re-pin is a hash move, got {other:?}"),
+            })
+            .collect();
+
+        let expected: BTreeSet<(String, String)> = DEV_DOCTYPES
+            .iter()
+            .map(|ty| (DEV_MANIFEST.to_string(), ty.to_string()))
+            .chain(
+                METHODOLOGY_DOCTYPES
+                    .iter()
+                    .map(|ty| (METHODOLOGY_MANIFEST.to_string(), ty.to_string())),
+            )
+            .collect();
+        assert_eq!(
+            flagged, expected,
+            "over the pushed range the fence flags all 16 doctype entities across both \
+             manifests — the exact event it exists to catch, and the one the repo's own \
+             history carries",
+        );
+        assert_eq!(found.len(), 16, "one violation each: {found:?}");
+        assert!(
+            !flagged.iter().any(|(_, entity)| entity == SLUG_RULE_ENTITY),
+            "the genesis commit re-pinned doctype hashes only — the slug rule did not \
+             move, and the fence does not invent a violation over it",
+        );
+    }
+
+    #[test]
+    fn the_head_tilde_one_window_at_the_push_tip_is_clean() {
+        let repo = this_repo();
+        require_reachable(&repo, PUSH_TIP);
+        assert_eq!(
+            fence_over(&repo, &format!("{PUSH_TIP}~1"), PUSH_TIP),
+            vec![],
+            "the settled `HEAD~1` shape, evaluated where CI would actually have \
+             evaluated it, is PROVABLY CLEAN over the push that carried the re-pin of \
+             all 16 — the fence as settled would have missed the exact event it exists \
+             to catch",
         );
     }
 }
