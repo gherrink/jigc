@@ -2363,6 +2363,14 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
                 // pre-1.0 window (`design/command-output-contract.md` → Evolution
                 // posture, the M48 additive key).
                 "hook_file": summary.hook_file,
+                // Whether that hook rode the install commit (M48 — the hooks-dir shape
+                // the first sweep left silent). `false` is the ordinary answer on the
+                // default `.git/hooks`: the hook works here and is in no commit, so a
+                // clone has no drift backstop until `jigc setup` runs there. A driver
+                // reads the fact rather than inferring it from the printed path's shape.
+                // An additive key inside the still-open pre-1.0 window
+                // (`design/command-output-contract.md` → Evolution posture).
+                "hook_committed": summary.hook_committed,
                 // The adapter's owned guide artifact, or `null` for a profile that
                 // declares no guide target (M48 Increment 10) — a driver reads where the
                 // guides landed rather than assuming an assistant-specific path. An
@@ -2396,6 +2404,18 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
             out.push_str("  - pre-commit hook → ");
             out.push_str(&summary.hook_file);
             out.push_str("   (warn-only doc↔code drift backstop)\n");
+            // …and, when the hook is in no commit, the consequence of that — the line above
+            // is true (it IS installed) and incomplete, which on the default `.git/hooks`
+            // is the shape almost every adopter is on. Keyed on the install commit's own
+            // answer ([`cli::setup::SetupSummary::hook_committed`]), never on re-reading
+            // the printed path, so the sentence and the commit cannot disagree.
+            if !summary.hook_committed {
+                out.push_str(
+                    "    local to this checkout — git cannot track this path, so the hook is \
+                     not in the install commit; a clone gets no drift backstop until `jigc \
+                     setup` runs there\n",
+                );
+            }
             // The adapter's owned guide artifact (M48 Increment 10) — named only when the
             // profile declares one, so an assistant without a guide target says nothing
             // about a file it did not install.
@@ -5430,7 +5450,8 @@ mod tests {
     /// The successful-setup summary names each installed target **and what it is for**
     /// (#9c — less-terse setup output), ending with the routing footer; the JSON shape
     /// carries the same facts as keys (`installed`/`line_file`/`allowlist_file`/
-    /// `hook_file`/`guide_file`), with none of the explanatory prose — regression watch.
+    /// `hook_file`/`hook_committed`/`guide_file`), with none of the explanatory prose —
+    /// regression watch.
     #[test]
     fn render_setup_success_names_what_was_installed() {
         let summary = SetupSummary {
@@ -5440,6 +5461,9 @@ mod tests {
             // git resolved (D4), so a `core.hooksPath` install names where the hook
             // really landed. The prior hardcoded literal pinned that lie here.
             hook_file: "my-hooks/pre-commit".to_string(),
+            // …and this witness is the shape where the hook DID ride the install commit,
+            // so the hook line stands alone. Its sibling below is the other half.
+            hook_committed: true,
             guide_file: Some(".claude/skills/jigc/SKILL.md".to_string()),
             findings: Vec::new().into(),
             install_commit: InstallCommit::Skipped,
@@ -5472,7 +5496,46 @@ mod tests {
         assert!(json_out.contains("\"line_file\": \"CLAUDE.md\""));
         assert!(json_out.contains("\"allowlist_file\": \".claude/settings.json\""));
         assert!(json_out.contains("\"hook_file\": \"my-hooks/pre-commit\""));
+        assert!(json_out.contains("\"hook_committed\": true"));
         assert!(json_out.contains("\"guide_file\": \".claude/skills/jigc/SKILL.md\""));
+    }
+
+    /// The other half of the hooks-dir axis at the renderer: a hook the install commit
+    /// could not carry — the default `.git/hooks`, the shape almost every adopter is on —
+    /// is still listed under "setup installed:" (it *is* installed, locally) and now says
+    /// what that costs. Red before the fix: the two shapes printed byte-identical lines,
+    /// so the only shape most adopters hit was the one the door stayed silent about.
+    #[test]
+    fn render_setup_success_says_a_hook_the_commit_could_not_carry_is_local_only() {
+        let summary = SetupSummary {
+            line_file: "CLAUDE.md".to_string(),
+            allowlist_file: ".claude/settings.json".to_string(),
+            hook_file: ".git/hooks/pre-commit".to_string(),
+            hook_committed: false,
+            guide_file: None,
+            findings: Vec::new().into(),
+            install_commit: InstallCommit::Committed("a1b2c3d".to_string()),
+        };
+
+        let agent = setup_success(Format::Agent, &summary);
+        insta::assert_snapshot!(agent, @r"
+        jigc setup — adapter installed
+
+        jigc is now wired into this project; setup installed:
+          - bootstrap reference → CLAUDE.md   (orients your assistant to `jigc start` each session)
+          - jigc allowlist → .claude/settings.json   (pre-approves the `jigc` commands the agent runs)
+          - SessionStart hook → .claude/settings.json   (runs `jigc start` to orient your assistant each session)
+          - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
+            local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
+          - install commit → a1b2c3d   (setup's install files are committed on their own, off your first feature commit)
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+
+        // The clause hangs off the hook's own line, not off the install commit's: an
+        // install commit was made here, and it is the hook that is missing from it.
+        let json_out = setup_success(Format::Json, &summary);
+        assert!(json_out.contains("\"hook_committed\": false"));
+        assert!(json_out.contains("\"install_commit\": \"a1b2c3d\""));
     }
 
     /// The free-prose `describe` renderer frames the engine's woven definition

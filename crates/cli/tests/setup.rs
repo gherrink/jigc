@@ -1144,6 +1144,12 @@ const INSTALL_COMMIT_BASE_PATHS: [&str; 8] = [
     "CLAUDE.md",
 ];
 
+/// The distinguishing words of the summary clause that says the installed hook did **not**
+/// ride the install commit. Written out here rather than imported from the renderer: this
+/// suite's subject is the emitted bytes a reader sees, and a constant shared with the
+/// producer would assert only that the producer equals itself.
+const HOOK_LOCAL_ONLY: &str = "not in the install commit";
+
 /// Run `git -C <root> <args>` with the ambient global/system config neutralized and
 /// return its stdout (the capturing sibling of [`git`]).
 fn git_capture(root: &Path, args: &[&str]) -> String {
@@ -1438,6 +1444,22 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
             );
         }
 
+        // …and the door SAYS which of the two happened. The summary lists the hook under
+        // "setup installed:" on every shape, which is true — it is installed, locally —
+        // so the lie a reader can be told here is by omission: on a shape where the hook
+        // did not ride the install commit, nothing said so, and the default `.git/hooks`
+        // is the shape almost every adopter is on. The clause is keyed on the pathspec the
+        // commit was actually made from (`committable_hook_path`'s own answer, plus the
+        // soft-member drop of shape (8)) — never on a re-test of the path shape, so the
+        // sentence and the commit cannot disagree.
+        assert_eq!(
+            stdout.contains(HOOK_LOCAL_ONLY),
+            !committable,
+            "{shape:?}: the summary must carry the local-only clause exactly when the \
+             install commit does NOT carry the hook (committable={committable}); \
+             summary:\n{stdout}",
+        );
+
         // …and the rest of the commit is exactly today's set.
         let mut expected: Vec<String> = INSTALL_COMMIT_BASE_PATHS
             .iter()
@@ -1492,6 +1514,16 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
             git_capture(&cwd, &["rev-parse", "HEAD"]).trim(),
             head_before,
             "{shape:?}: a second `jigc setup` must mint no second install commit",
+        );
+        // The clause survives the re-run, which mints nothing: it states where the hook
+        // *is*, not what this particular run committed — a reader who runs `setup` twice
+        // must not watch the warning disappear off a hook that is still uncommittable.
+        assert_eq!(
+            String::from_utf8_lossy(&again.stdout).contains(HOOK_LOCAL_ONLY),
+            !committable,
+            "{shape:?}: the re-run's summary must say the same thing about the hook; \
+             summary:\n{}",
+            String::from_utf8_lossy(&again.stdout),
         );
     }
 }

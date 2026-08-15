@@ -485,8 +485,9 @@ fn text_prints(text: &str, value: &str, label: &str, field_name: &str) {
 
 // ─────────────────────────────── the fenced checks ───────────────────────────────
 
-/// `jigc setup` — the install summary. Six fields, six keys (`hook_file` is M48's own
-/// close, T2 of Increment 7; `guide_file` + `findings` the adapter-owned guide artifact of
+/// `jigc setup` — the install summary. Seven fields, seven keys (`hook_file` is M48's own
+/// close, T2 of Increment 7; `hook_committed` its completion over the hooks-dir shape the
+/// first sweep left silent; `guide_file` + `findings` the adapter-owned guide artifact of
 /// Increment 10), plus the constant `installed` discriminator.
 ///
 /// **Two witnesses, because the summary has two shapes and each withholds what the other
@@ -501,6 +502,9 @@ fn setup_success_parity() {
         line_file: "CLAUDE.md".to_owned(),
         allowlist_file: ".claude/settings.json".to_owned(),
         hook_file: ".git/hooks/pre-commit".to_owned(),
+        // The default hooks dir: git cannot track it, so the hook is in no commit — the
+        // shape the summary must SAY something about, and the one the wire must carry.
+        hook_committed: false,
         guide_file: Some(guide.to_owned()),
         findings: Vec::new().into(),
         install_commit: InstallCommit::Committed("a1b2c3d".to_owned()),
@@ -509,17 +513,19 @@ fn setup_success_parity() {
         line_file: "CLAUDE.md".to_owned(),
         allowlist_file: ".claude/settings.json".to_owned(),
         hook_file: ".git/hooks/pre-commit".to_owned(),
+        hook_committed: false,
         guide_file: None,
         findings: vec![cli::setup::guide_modified_finding(guide)].into(),
         install_commit: InstallCommit::Committed("a1b2c3d".to_owned()),
     };
 
     for summary in [&installed, &refused] {
-        // Exhaustive — no `..`: a seventh field fails to compile here.
+        // Exhaustive — no `..`: an eighth field fails to compile here.
         let SetupSummary {
             line_file,
             allowlist_file,
             hook_file,
+            hook_committed,
             guide_file,
             findings,
             install_commit,
@@ -536,6 +542,27 @@ fn setup_success_parity() {
             text_prints(&text, value, "jigc setup", field_name);
             carries(&doc, field_name, value, "jigc setup", field_name);
         }
+        // A boolean the text renders as a whole clause rather than as a printed value, so
+        // the two halves are asserted apart: the wire carries the fact, and the text says
+        // it in words. Both witnesses are the uncommittable shape, so the clause is owed.
+        carries(
+            &doc,
+            "hook_committed",
+            hook_committed,
+            "jigc setup",
+            "hook_committed",
+        );
+        assert!(
+            !*hook_committed,
+            "both witnesses are built on the default hooks dir — the assertion below reads \
+             the `false` half",
+        );
+        text_prints(
+            &text,
+            "not in the install commit",
+            "jigc setup",
+            "hook_committed",
+        );
         // Carried either way — a `null` is the honest answer when this run installed none.
         if let Some(guide_file) = guide_file {
             text_prints(&text, guide_file, "jigc setup", "guide_file");

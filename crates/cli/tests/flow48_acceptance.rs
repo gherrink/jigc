@@ -1445,7 +1445,10 @@ fn one_at<'a>(findings: &'a [Value], code: &str, target: &str, door: &str) -> &'
 /// Riding with it, the wave's other install-side truth: `jigc setup` commits the
 /// `pre-commit` hook **iff** the hook is a working-tree file — driven over both producible
 /// hooks-dir shapes (the default `.git/hooks`, where it is not committable, and an
-/// in-worktree `core.hooksPath`, where it is).
+/// in-worktree `core.hooksPath`, where it is) — **and says which of the two happened**.
+/// The commit half held on both shapes from the start; the surface half did not: the
+/// summary listed the hook identically either way, so on the dominant shape a reader was
+/// told the backstop was installed and never that no clone would get it.
 ///
 /// Red on rc.10: the task-scope door graded every non-conformant committed file
 /// `reconciliation.conformance-block`, foreign and managed alike, and the advisory told a
@@ -1612,6 +1615,16 @@ fn one_file_answers_one_code_at_every_door_and_the_install_commit_carries_its_ho
         assert!(
             !untracked.contains("pre-commit"),
             "[{shape}] the install must leave no untracked hook behind; status:\n{untracked}",
+        );
+        // The door says which of the two happened — read off the emitted summary, keyed on
+        // the same pathspec the commit was made from. (The whole 8-cell hooks-dir axis is
+        // swept in `setup.rs`; this arm holds the done picture on the two shapes an adopter
+        // actually meets.)
+        assert_eq!(
+            summary.contains("not in the install commit"),
+            !carries_hook,
+            "[{shape}] the summary must say the hook is local-only exactly when the install \
+             commit does not carry it; summary:\n{summary}",
         );
     }
 }

@@ -976,6 +976,21 @@ pub struct SetupSummary {
     /// repo-root-relative inside the repo, absolute when the hooks dir lives outside it
     /// (`core.hooksPath`, or a linked worktree's common hooks dir).
     pub hook_file: String,
+    /// Whether the installed `pre-commit` hook rode the **install commit** — the pathspec
+    /// [`commit_install`] actually committed from, not a re-reading of the path's shape.
+    ///
+    /// `false` on the default `.git/hooks` (git cannot track a path inside its own control
+    /// dir), on a `core.hooksPath` outside the repo, from a linked worktree (whose hooks
+    /// resolve to the main checkout's common dir), on a hooks dir another repo owns, and on
+    /// the shapes where git refuses the path anyway (the soft-member drop). `true` for an
+    /// in-worktree `core.hooksPath` whose hook git took.
+    ///
+    /// The summary line is listed under *"setup installed:"* either way — it IS installed,
+    /// locally — so what the surface owes the reader is the **consequence** of a `false`
+    /// here: the hook is in no commit, so a clone starts without the drift backstop until
+    /// `jigc setup` runs there. Carried as the commit's own answer precisely so the
+    /// sentence and the commit cannot drift apart (M48, the surface-fundament lens).
+    pub hook_committed: bool,
     /// The repo-root-relative path of the adapter's **owned guide artifact** *this run
     /// wrote*, or `None` when the profile declares no guide target (the omitting context —
     /// inert, never an error) **or** when a user-modified copy was found and left alone.
@@ -1309,7 +1324,10 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     //    routed on git's own cause ([`InstallCommitRejection::finding`]) rather than
     //    masquerading as a clean success (mirrors `finalize`'s identical git-identity
     //    failure).
-    let install_commit = commit_install(
+    let InstallCommitOutcome {
+        commit: install_commit,
+        hook_committed,
+    } = commit_install(
         repo_root,
         &line_file,
         &allowlist_file,
@@ -1323,6 +1341,7 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         line_file,
         allowlist_file,
         hook_file,
+        hook_committed,
         guide_file,
         findings: findings.into(),
         install_commit,
@@ -1640,7 +1659,7 @@ fn commit_install(
     seeded_gitignore: bool,
     hook_file: &Path,
     guide_file: Option<&str>,
-) -> Result<InstallCommit, InstallCommitRejection> {
+) -> Result<InstallCommitOutcome, InstallCommitRejection> {
     // Require a git work tree — but DO mint on an **unborn HEAD** (a brand-new repo with
     // no commits). Setup owns committing its own install footprint regardless of HEAD
     // state (M30 audit finding 1): on a cold-start repo the first `finalize` since M30
@@ -1652,7 +1671,7 @@ fn commit_install(
     // git is unavailable — the writes still succeeded; the commit is a convenience there.
     match git_output(repo_root, ["rev-parse", "--is-inside-work-tree"]) {
         Some(out) if out.status.success() => {}
-        _ => return Ok(InstallCommit::Skipped),
+        _ => return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped)),
     }
 
     // Only the files setup itself wrote, and only those present + not gitignored.
@@ -1669,14 +1688,16 @@ fn commit_install(
     .filter(|p| !git_path_ignored(repo_root, p))
     .collect();
     if paths.is_empty() {
-        return Ok(InstallCommit::Skipped);
+        return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
     }
 
     // Stage exactly those paths — never a blanket `git add -A`.
     match stage_paths(repo_root, &paths) {
         StageOutcome::Staged => {}
         // git could not be spawned at all — benign skip (the writes still succeeded).
-        StageOutcome::GitUnavailable => return Ok(InstallCommit::Skipped),
+        StageOutcome::GitUnavailable => {
+            return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
+        }
         // git ran and REFUSED to stage. Retry without the hook — the one soft member —
         // before deciding the install commit is lost (see this function's doc comment);
         // an entry that is not there cannot be the cause, so a pathspec that never
@@ -1688,11 +1709,13 @@ fn commit_install(
             };
             paths.retain(|p| p != dropped);
             if paths.is_empty() {
-                return Ok(InstallCommit::Skipped);
+                return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
             }
             match stage_paths(repo_root, &paths) {
                 StageOutcome::Staged => {}
-                StageOutcome::GitUnavailable => return Ok(InstallCommit::Skipped),
+                StageOutcome::GitUnavailable => {
+                    return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
+                }
                 // The hook was not the cause: surface the refusal over the reduced
                 // pathspec, which names what actually still blocks.
                 StageOutcome::Refused(git) => return Err(InstallCommitRejection::Stage(git)),
@@ -1706,11 +1729,25 @@ fn commit_install(
     // install still reports changes.
     let mut diff: Vec<&str> = vec!["diff", "--cached", "--quiet", "--"];
     diff.extend(paths.iter().map(String::as_str));
+    // From here on the pathspec is settled, so the hook's membership in it is the honest
+    // answer to *"is the hook in the install commit?"* — including after the soft-member
+    // drop above, which is exactly the case where every committability test said yes and
+    // git said no.
+    let hook_committed = hook
+        .as_deref()
+        .is_some_and(|h| paths.iter().any(|p| p == h));
+
     if git_output(repo_root, diff)
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
-        return Ok(InstallCommit::Nothing);
+        // A re-run over an unchanged install: no commit this time, but the hook's place in
+        // the install commit is the one an earlier run gave it — the pathspec still says
+        // where it stands, which is what the summary reports.
+        return Ok(InstallCommitOutcome {
+            commit: InstallCommit::Nothing,
+            hook_committed,
+        });
     }
 
     // Commit only our paths: a pathspec-limited commit commits exactly those files and
@@ -1725,20 +1762,55 @@ fn commit_install(
         // are" guidance) for `install` to turn into a loud blocking finding.
         Some(out) => return Err(InstallCommitRejection::Commit(git_said(&out))),
         // git could not be spawned at all — benign skip (the writes still succeeded).
-        None => return Ok(InstallCommit::Skipped),
+        None => return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped)),
     }
 
     // Resolve the short sha of the commit just made, for the success surface.
-    match git_output(repo_root, ["rev-parse", "--short", "HEAD"]) {
+    let commit = match git_output(repo_root, ["rev-parse", "--short", "HEAD"]) {
         Some(out) if out.status.success() => {
             let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if sha.is_empty() {
-                Ok(InstallCommit::Skipped)
+                InstallCommit::Skipped
             } else {
-                Ok(InstallCommit::Committed(sha))
+                InstallCommit::Committed(sha)
             }
         }
-        _ => Ok(InstallCommit::Skipped),
+        _ => InstallCommit::Skipped,
+    };
+    // The commit was made whatever `rev-parse` then said, so the hook's membership stands
+    // even when the sha could not be read back.
+    Ok(InstallCommitOutcome {
+        commit,
+        hook_committed,
+    })
+}
+
+/// What [`commit_install`] did: the commit outcome, and whether the installed `pre-commit`
+/// hook was **in the pathspec that commit was made from**.
+///
+/// The two travel together because the summary must not say one thing while the commit
+/// carries another (M48, the surface-fundament lens). The membership is read off the
+/// settled pathspec rather than re-derived: [`committable_hook_path`] decides the entry,
+/// the present/not-gitignored filters can still drop it, and the soft-member retry drops it
+/// on a git refusal no test can predict — so the pathspec is the only place all three
+/// answers have already been folded together.
+#[derive(Debug)]
+struct InstallCommitOutcome {
+    /// The outcome of the commit itself.
+    commit: InstallCommit,
+    /// Whether the `pre-commit` hook rode it. `false` means the hook is installed and
+    /// working **locally only** — in no commit, so no clone has it.
+    hook_committed: bool,
+}
+
+impl InstallCommitOutcome {
+    /// An outcome that carried no hook — every path that returns before a pathspec is
+    /// settled (no work tree, git unavailable, nothing to commit).
+    fn uncommitted(commit: InstallCommit) -> Self {
+        Self {
+            commit,
+            hook_committed: false,
+        }
     }
 }
 
@@ -3600,8 +3672,17 @@ mod tests {
         .expect("a refusal the hook caused must not sink the install commit");
 
         assert!(
-            matches!(outcome, InstallCommit::Committed(_)),
-            "the install must still be committed; got {outcome:?}",
+            matches!(outcome.commit, InstallCommit::Committed(_)),
+            "the install must still be committed; got {:?}",
+            outcome.commit,
+        );
+        // …and the outcome SAYS the hook did not ride it. This is the cell no
+        // committability test can predict — every one of them called the hook committable
+        // and git refused it anyway — so the summary's clause is keyed on the pathspec the
+        // commit was made from rather than on `committable_hook_path`'s answer alone.
+        assert!(
+            !outcome.hook_committed,
+            "a hook git refused is not in the install commit, whatever the tests said",
         );
         let committed = git_str(dir.path(), &["show", "--name-only", "--format=", "HEAD"]);
         assert!(
