@@ -75,7 +75,7 @@ repro:
 expect:
   observed: "1 of 66 step files; the one is locate-from-spec.yaml, not an authoring step"
   wanted: "the authoring steps that solicit writes also name `jigc doc show <addr> --task <id>`"
-pinned-by: UNPINNED — a pack-load fence (authoring steps that solicit a write must state the read-back) is the fix's own red test
+pinned-by: read_back_fence::the_dev_owe_set_is_exactly_its_read_back_declarers · ::the_methodology_owe_set_is_exactly_its_read_back_declarers · ::every_write_soliciting_dev_step_is_fenced_at_pack_load
 ```
 
 ### F2 · HIGH — `doc author` silently ignores a corrected `title:` and acks success
@@ -100,7 +100,7 @@ expect:
   h1: "# Keep the sample store in-memory"    # unchanged
   slots: "updated — the rest of the payload applied"
   wanted: "reject the payload, or ack `title ignored — create-only`; never a silent no-op under a success ack"
-pinned-by: UNPINNED — the fix's red test pins it
+pinned-by: write_title_divergence::cell_a_a_same_slug_reauthor_with_a_dropped_title_blocks_and_routes · doc_rename_in_task::a_committed_doc_is_retitle_only_and_a_reslug_routes_at_jigc_rename
 ```
 
 ### F3 · HIGH — `milestone provision` destroys a non-registered leftover's uncommitted work
@@ -132,7 +132,7 @@ repro:
 expect:
   observed: "install commit e80e0c2 carries 7 files, none of them .githooks/pre-commit; hook left ` M` at session end"
   wanted: "commit it with the install, or say it is left for the operator to commit"
-pinned-by: UNPINNED
+pinned-by: setup::setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file · setup::setup_json_names_the_core_hookspath_hook
 ```
 
 ### F5 · MEDIUM — `jigc config set` leaves config uncommitted, and it rides an unrelated feature commit
@@ -159,7 +159,7 @@ repro:
 expect:
   observed: "untracked; ack silent; clone has no manifest.yaml and logs nothing"
   wanted: "commit it, or say it is uncommitted until your next commit"
-pinned-by: UNPINNED
+pinned-by: config_ack_uncommitted::every_config_ack_states_its_uncommitted_write_in_text_and_on_the_wire · ::config_set_through_the_binary_states_the_uncommitted_write_in_both_formats · ::config_ack_all_bijects_against_the_clap_config_verbs
 ```
 
 ### F6 · MEDIUM — an idempotent `rename` misreports git's empty commit as a hook rejection
@@ -183,7 +183,8 @@ repro:
 expect:
   observed: "## Options followed by blank lines, committed at ac08936"
   wanted: "no heading for an omitted optional section, or template guidance that matches"
-pinned-by: UNPINNED
+  settled: "the second disjunct — the format is behaving as designed; the guidance is the lying link"
+pinned-by: optional_slot_guidance::no_persisted_optional_slot_hint_instructs_an_omission · ::no_step_paragraph_guiding_a_persisted_optional_slot_instructs_an_omission · ::the_transient_exclusion_covers_only_the_commit_sink
 ```
 
 ### F8 · MEDIUM — no config read verb, and read intents are routed to write verbs
@@ -205,7 +206,7 @@ repro:
 expect:
   observed: "unrecognized subcommand 'get' → tip: 'set';  unrecognized subcommand 'read' → tip: 'create'"
   wanted: "a config read verb; and near-miss tips that prefer a read verb for a read-shaped miss"
-pinned-by: UNPINNED
+pinned-by: config_read::config_list_emits_exactly_the_declared_knob_set · ::config_get_names_the_resolved_value_and_its_pack_default_layer · unknown_subcommand_tip::no_read_intent_is_answered_with_a_write_verb
 ```
 
 ### F9 · MEDIUM — the generated slug statement omits the literal hyphen as a word separator
@@ -230,7 +231,7 @@ expect:
   observed: "adr:keep-the-sample-store  (in-memory split; cap at 5; trailing `in` dropped)"
   stated_rule_omits: "that a literal `-` is also a word boundary"
   wanted: "the generated statement names the literal hyphen alongside space/_/./ as a boundary"
-pinned-by: UNPINNED — the statement is generated, so the fix and its fence are the same change
+pinned-by: engine::slug::tests::mint_statement_states_the_whole_mint_rule
 ```
 
 ### F10 · LOW — a stale conformance advisory attaches to unrelated tasks, and is named `-block`
@@ -312,7 +313,7 @@ expect:
   exit: 0
   stdout_contains: "doctype: adr (schema-version 2)"
   and: "every field with its set-field address, every section with its set-slot address"
-pinned-by: UNPINNED — belongs in pinned_facts/ per pinning.md §3
+pinned-by: doc_schema::doc_schema_json_is_the_pinned_contract · ::doc_schema_plain_listing_surfaces_write_addresses
 ```
 
 ### R2 — "no inventory verb; I used `find docs VISION.md`"
@@ -329,7 +330,7 @@ expect:
   exit: 0
   stdout_contains: "id  path  state"
   and: "one row per managed doc; `unregistered` rows distinguished"
-pinned-by: UNPINNED — belongs in pinned_facts/
+pinned-by: doc_list::doc_list_projects_the_store_surface_with_its_registration_state
 ```
 
 ### R3 — "there is no supported way to review in-flight authoring before finalize"
@@ -349,7 +350,7 @@ repro:
 expect:
   exit: 0
   stdout: "the staged doc rendered through the canonical path, including a transient commit:<task>"
-pinned-by: UNPINNED — belongs in pinned_facts/; F1 is the fix that makes it findable
+pinned-by: doc_show_staged::staged_read_serves_plain_json_and_slice  # findability is F1's fence, not this one's
 ```
 
 ### R4 — "`doc show` never rendered my authored changelog item" (operator's own, self-refuted)
@@ -363,25 +364,40 @@ before it. Verified by reading the whole output.
 
 **The gate on the 1.0.0 call: not taken until every row below carries `pinned-by:` or a stated
 `UNPINNED: <why>`** ([decisions-pending.md](../../../implementation/decisions-pending.md) →
-Acceptance). Every row is currently `UNPINNED` **by design** — the trial ran under *no mid-trial
-fixes*, so no fix and therefore no red test exists yet.
+Acceptance). **Closed 2026-08-15 (M48 Increment 12, T2.)** At the trial's writing every row was
+`UNPINNED` **by design** — the trial ran under *no mid-trial fixes*, so no fix and therefore no red
+test existed yet. M48 built the fixes; this table is the citation each one earned.
 
-| Row | Kind | Conversion owed |
+**Every citation below was verified by reading what the test *asserts*, never by matching its name**
+— §3's own honesty note (*a symbol-existence parser would be a finder wearing a fence's badge*), and
+the discipline the latent-surface sweep ran under two days earlier. The per-suite assertion that
+makes each one the pin is recorded in this change's commit message. **The lumped `F10–F16` row is
+split**: one row cannot carry seven citations, and a lumped row is exactly where an uncited member
+hides. **A citation is not a claim of completeness** — where a finding had two halves and one
+shipped, the row says so and the unshipped half carries its own `UNPINNED:`.
+
+| Row | Kind | Disposition — the citation, and what it holds |
 |---|---|---|
-| F1 | confirmed | pack-load fence: an authoring step soliciting a write states the read-back |
-| F2 | confirmed | red test: re-author with changed title → rejected or acked as ignored |
-| F3 | confirmed | red test: provision over a leftover refuses, naming the dirty paths |
-| F4 | confirmed | red test: in-repo hooksPath install commit carries the hook |
-| F5 | confirmed | red test: `config set` ack states its uncommitted state |
-| F6 | confirmed | red test: same-slug **same-H1** rename — the axis's un-swept point |
-| F7 | confirmed | red test: omitted optional section renders no heading |
-| F8 | confirmed | red test: read-shaped near-miss routes to a read verb |
-| F9 | confirmed | the generated statement names the literal hyphen (fix and fence are one change) |
-| F10–F16 | confirmed | red tests per item; F15/F16 may route to M46 rather than a fix |
+| F1 | confirmed — **CLOSED** | `pinned-by: read_back_fence::the_dev_owe_set_is_exactly_its_read_back_declarers` · `::the_methodology_owe_set_is_exactly_its_read_back_declarers` · `::every_write_soliciting_dev_step_is_fenced_at_pack_load` — the owe-set **derived from the pack tree itself** equals the set of steps declaring `read.staged-read-back`, and withdrawing any one member's declaration blocks pack load non-zero |
+| F2 | confirmed — **CLOSED** | `pinned-by: write_title_divergence::cell_a_a_same_slug_reauthor_with_a_dropped_title_blocks_and_routes` · `doc_rename_in_task::a_committed_doc_is_retitle_only_and_a_reslug_routes_at_jigc_rename` — the silent no-op blocks with its own code and its **emitted** route runs verbatim; the destination that reject needs exists, partitioned over the whole doctype registry |
+| F3 | confirmed — **CLOSED** | `pinned-by: provision_leftover_guard::every_verdict_refuses_a_non_empty_leftover_and_leaves_the_planted_bytes_intact` · `milestone_discard::a_non_registered_leftover_at_a_subtask_worktree_path_refuses_the_discard` · `uninstall_worktree_guard::uninstall_refuses_a_non_empty_worktree_path_no_registered_probe_can_see` — every `LeftoverVerdict`, iterated from the code-side table, refuses and leaves the planted bytes **byte-intact**, at all three destroying doors |
+| F4 | confirmed — **CLOSED** | `pinned-by: setup::setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file` · `::setup_json_names_the_core_hookspath_hook` — over the whole hooks-dir axis the install commit carries the resolved hook **iff** it is a committable working-tree file, and the envelope names where it landed |
+| F5 | confirmed — **CLOSED** | `pinned-by: config_ack_uncommitted::every_config_ack_states_its_uncommitted_write_in_text_and_on_the_wire` · `::config_set_through_the_binary_states_the_uncommitted_write_in_both_formats` · `::config_ack_all_bijects_against_the_clap_config_verbs` — every `ConfigAck::ALL` arm states it in both text surfaces and carries `committed: false` on the wire, and the table **bijects against the clap verb tree** so a seventh authoring verb cannot skip it |
+| F6 | confirmed — **CLOSED** | `pinned-by: flow37_rename::idempotent_retitle_acks_the_no_op_and_never_claims_a_rejection` · `commit_rejected_axis::no_committing_door_dresses_an_empty_commit_as_a_rejection` — the axis's un-swept point acks the no-op at exit 0, and the class is swept over all nine `COMMITTING_DOORS` |
+| F7 | confirmed — **CLOSED** | `pinned-by: optional_slot_guidance::no_persisted_optional_slot_hint_instructs_an_omission` · `::no_step_paragraph_guiding_a_persisted_optional_slot_instructs_an_omission` · `::the_transient_exclusion_covers_only_the_commit_sink` — **arm 2, not arm 1**: no guidance for a persisted optional slot instructs an omission the writer will not honour, subject derived from the loaded schema model. Declared bound, carried from the Settle: the derived-`optional:` half is axis-complete; the step-body half is a bounded omission-vocabulary probe |
+| F8 | confirmed — **CLOSED** | `pinned-by: config_read::config_list_emits_exactly_the_declared_knob_set` · `::config_get_names_the_resolved_value_and_its_pack_default_layer` · `unknown_subcommand_tip::no_read_intent_is_answered_with_a_write_verb` — the read rung emits *exactly* the declared knob set and names its winning layer; and over every `(parent, read-shaped guess)` pair the clap tree yields, no emitted tip names a write verb, at least one read verb is named, and the emitted span runs |
+| F9 | confirmed — **CLOSED** | `pinned-by: engine::slug::tests::mint_statement_states_the_whole_mint_rule` — the boundary set is **parsed back out of the rendered sentence** and set-compared against the set derived from `renormalize`'s behaviour over every printable ASCII char, so the literal `-` can be neither omitted nor over-claimed |
+| F10 | confirmed — **half closed** | `pinned-by: foreign_at_both_doors::a_foreign_file_answers_one_code_and_one_route_at_every_door` · `::the_managed_advisory_routes_on_the_stamp_never_at_adoption` — the lying name is gone: one foreign file answers one code and one route at the store, `task validate` and `finalize` doors, and the managed cell routes on the stamp. **The second half is `UNPINNED:` the advisory still fires on a task that never touched the file** — routed to M46 entry 3 as a counted datum, not fixed, so a standing test over it would pin the advisory-habituation floor as expected output ([pinning.md](../../../implementation/pinning.md) §5) |
+| F11 | confirmed — **CLOSED** | `pinned-by: corpus_migration::migrate_corpus_headline_states_its_run_mode_over_the_whole_axis` — the headline is byte-exact and true across three run modes × two corpus states, each landing cell asserting whether `HEAD` moved |
+| F12 | confirmed — **CLOSED** | `pinned-by: doc_schema::doc_schema_id_source_names_its_write_key` — the id-source leaf names the key its value is written under, at both nesting depths and both `id-from` types, **fenced against the real clap tree** (the field-id spelling the projection would otherwise imply does not parse), with two omitting contexts |
+| F13 | confirmed — **CLOSED** | `pinned-by: finalize_message_truth::both_pre_commit_headers_state_the_intent_and_a_rejected_finalize_never_reads_as_done` — both headers state the intent, the print keeps its pre-commit position, and `HEAD` is asserted unmoved on the rejected run |
+| F14 | confirmed — **CLOSED** | `pinned-by: start_orientation::every_selectable_changelog_granting_workflow_names_the_gate_on_both_routing_surfaces` — the member set is derived from the pack's own `allows-create:`, and the assertion runs over the **emitted** catalog line and describe paragraph. Unbundling was refused at the Settle; nothing is owed for it here |
+| F15 | confirmed — **CLOSED (the non-schema half; the other was refused)** | `pinned-by: methodology_pack_compose::planning_finalize_names_the_milestone_verbs_and_the_seeding_bound` · `::a_workflow_that_composes_the_bare_finalize_carries_no_milestone_prose` — asserted on the emitted bytes of **both** composing doors, and the `add-from-spec` seeding bound is stated on the surface that creates the adjacency. The structural half (a managed `roadmap-entry → milestone-record` edge) is refused on three independent grounds ([settle-record.md](../M48/settle-record.md) → F15), so it owes no fence |
+| F16 | confirmed | `UNPINNED:` routed to **M46 entry 2**, re-counted at seven demands and still deferred — a record where none exists is new domain capability, which the wave's razor refuses ([settle-record.md](../M48/settle-record.md) → F16). No fix exists, so there is no behaviour to cite; `Checkpoint:` remains pure emission, carried against that entry rather than fenced here |
 | R1 | **refuted — CLOSED** | `pinned-by: doc_schema::doc_schema_json_is_the_pinned_contract` · `::doc_schema_plain_listing_surfaces_write_addresses` |
 | R2 | **refuted — CLOSED** | `pinned-by: doc_list::doc_list_projects_the_store_surface_with_its_registration_state` |
 | R3 | **refuted — CLOSED** | `pinned-by: doc_show_staged::staged_read_serves_plain_json_and_slice` |
-| R4 | refuted (operator) | none owed — a measurement error, not a fact about the product |
+| R4 | refuted (operator) | `UNPINNED:` the operator's own measurement error (`head -8` truncating the render), not a fact about the product — there is nothing about jigc for a standing test to hold, and the capability it appeared to contradict is R3's, already cited above |
 
 **The refuted set is closed, and closed without minting a test** (2026-08-13). Each of the three
 product refutations is a **shipped capability the sessions did not find** — M40's `doc schema`, M42's
@@ -393,14 +409,27 @@ in both formats; `doc_list` asserts the exact row set *and* the `managed`/`unreg
 `doc_show_staged::staged_read_serves_plain_json_and_slice` drives `doc show <addr> --task <id>` over
 uncommitted bytes and asserts the staged bytes serve.
 
-**What that leaves unpinned is reachability, not capability.** The capabilities are fenced; what
-nothing fences is that an agent can *find* them — F1's countable property (1 of 66 pack step files
-names `doc show`, and it is not an authoring step). That fence lands with F1's fix. Pinning the gap
-now would pin it as expected output.
+**What that left unpinned was reachability, not capability** — the capabilities were fenced; what
+nothing fenced was that an agent can *find* them, F1's countable property (**1 of 66** pack step
+files named `doc show`, and it was not an authoring step). **That fence has landed.** At `HEAD`
+the tree carries **67** step files, **31** name `doc show`, and **30** of those are held there by
+`read.staged-read-back` at pack load — the thirty-first is `locate-from-spec`, the suite's declared
+bound (it solicits its writes as literal command lines, so it carries no structural signal to
+derive from and states the read-back without joining the fenced set). The property that was
+countable-but-unheld is now derived and enforced, which is why F1's row cites a fence rather than a
+count.
 
-**The confirmed set stays open, and it is the gate.** F1–F16 are uniformly `UNPINNED` because the
-trial ran under *no mid-trial fixes* — no fix exists, so no red test can carry them. The 1.0.0 call
-is not taken until this table is closed.
+**The confirmed set is closed, and the gate is discharged.** F1–F16 each carry a citation or a
+stated reason: **fourteen closed on a standing test**, one (**F10**) closed on the half that shipped
+with its second half explicitly routed and unpinned, and one (**F16**) `UNPINNED` on the Settle's
+own refusal. **The two non-fences are not one reason but two**, and saying so is the point of a
+ledger: F16 has *no behaviour to fence* — the fix was refused, so there is nothing standing that a
+test could hold — while F10's second half **does** stand, and fencing it is the thing that would be
+wrong: a standing test over an advisory still firing on an untouched file pins the
+advisory-habituation floor as expected output, and a guard over a defect defends the defect against
+its own fix ([pinning.md](../../../implementation/pinning.md) §5 addendum). Both are carried against
+M46 entries, where their fixes are counted. The 1.0.0 call's precondition is this table; **it no
+longer blocks.**
 
 ---
 
