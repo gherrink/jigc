@@ -425,6 +425,35 @@ real contract change), and 1.0 is the moment the freeze becomes load-bearing.
 **new stored format** — out under the razor; (c) the successor rule is unimplementable in-process
 for the reason M47 recorded (a pack-load assert cannot observe a *change* without a recorded prior).
 
+**CORRECTED at the increment-11 plan halt (2026-08-15) — the comparison WINDOW, not the mechanism.**
+The settled form (`fetch-depth: 2` + `git show HEAD~1:<manifest>`) inspects only the **last commit of
+a push**, because GitHub Actions fires one run per push, at the tip — and this repo pushes in large
+batches (**53** commits in one push during this very build; the historically relevant one carried
+**37**). **The instance that decides it:** `6e81d53` (M47 Increment 1, *"the schema-hash becomes a
+presentation projection"*) re-pinned **all 16 doctype hashes at unchanged `schema-version`s, in both
+manifests, in one commit** — the exact shape this fence exists to catch, and the one both manifest
+headers name as *"the declared genesis exemption and the ONLY one."* It landed **34 commits from its
+push tip**, and the settled check is **provably clean** over that push (the two-manifest diff between
+the tip and its parent is empty). **The fence as settled would have missed the only real instance in
+the repo's history.**
+
+**Settled at the halt: widen the base ref, keep the mechanism.** Same one-shot git-diff check;
+base = `github.event.before` for pushes, the PR base for pull requests, **falling back to `HEAD~1`**
+when absent or all-zeros (new branch, force-push, `workflow_dispatch`) — so the originally-approved
+shape remains the **floor** rather than being replaced. Cost: `fetch-depth: 0`, **9.89 MiB** over
+1800 commits. Taken to the human rather than absorbed, because it changes human-approved text.
+
+**Two sub-decisions taken at the resumed plan, recorded so they are not re-opened:** *(i)* the fence
+is **CI-only**, not part of the local four-command gate — the escape's natural shape is a
+commit-message trailer (per-commit, reviewable, not retro-addable without rewriting history), and the
+dev-workflow gate runs **before the commit message exists**, so a fence riding `cargo test` locally
+could never be made green for a legitimate re-pin; the live arm is `#[ignore]`d and invoked by the
+named CI step, while the **verdict-axis tests** (fabricated manifest texts + throwaway git repos)
+stay in the local gate so the fence's own logic is standing-tested. *(ii)* it adds **no product
+surface** — `Manifest`, `ManifestEntry` (`ty`/`schema_version`/`schema_hash`) and `SlugRule`
+(`version`/`hash`) are already `pub`, so both manifest texts are parsed and compared entirely inside
+a test file; no new engine or CLI function ships.
+
 **Declared bounds:** it protects **this repo only, not adopters** — honest scope, since this repo is
 the only party that edits a manifest — and it is a **build fence, not a surface**, so it sits on the
 razor's edge rather than inside it. Recorded as a deliberate edge case, not an oversight.
