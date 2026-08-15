@@ -2283,13 +2283,25 @@ fn run_doc_rename(
         )));
     }
 
+    let new_uri = format!("{}:{new_slug}", address.r#type.as_str());
+    // The destination-occupancy guard runs **before a byte is written** — a refused
+    // rename must not leave the source doc retitled at its old id (the half-applied
+    // state the pre-hoist order produced: `rewrite_h1` had already landed the new `# H1`
+    // when the collision refusal fired).
+    let new_path = if reslugged {
+        Some(free_destination(
+            &task, &schema, &new_slug, &new_uri, &uri, to,
+        )?)
+    } else {
+        None
+    };
+
     let retitled = crate::rename::rewrite_h1(&source, to)
         .ok_or_else(|| anyhow!("the staged doc `{uri}` carries no `# H1` to retitle"))?;
     persist(&path, &retitled)?;
 
-    let new_uri = format!("{}:{new_slug}", address.r#type.as_str());
-    if reslugged {
-        move_staged_identity(&task, &address, &path, &new_slug, &new_uri)?;
+    if let Some(new_path) = new_path {
+        move_staged_identity(&task, &address, &path, &new_path, &new_slug, &new_uri)?;
     }
 
     let target = whole_doc_ack_target(&new_uri)?;
@@ -2411,6 +2423,131 @@ fn committed_reslug_refusal(
     )
 }
 
+/// **The destination-occupancy guard** — the re-slug's *"is this identity free?"*, asked
+/// over **both homes a doc lives in**, before a byte is written. Returns the staged path
+/// the move may claim; blocks with `write.already-present` keyed at the destination
+/// identity otherwise.
+///
+/// A re-slug that lands on an identity something already answers to is a collision in
+/// either home, and each home loses different bytes:
+///
+/// * **staged** — another doc in this task's own working area. The move would overwrite
+///   it, discarding that doc's authored content **now**;
+/// * **committed** — an instance in the store. Nothing is lost at the write, so this arm
+///   read as harmless and shipped staged-only: the rename **acked success at exit 0**,
+///   `task validate` stayed clean, and the state was refused three commands later by
+///   `finalize.promote-clobber`. That is a write ack over a state the task cannot
+///   complete, and a `task validate` that did not preview what `finalize` gates on
+///   (`design/surface-contract.md` → law 1; M47 Increment 4). Refusing here makes the
+///   two doors agree by making the state unreachable, rather than by teaching a third
+///   surface to describe it.
+///
+/// The committed arm is [`state::create_incumbent`], **not** a second committed-existence
+/// check of its own — the same predicate `doc create` / `doc author` adjudicate their
+/// title pre-check with. Reusing it is what buys the parity: its committed arm carries
+/// the **in-location-squatter carve-out** (a migration whose recorded `source-path` IS
+/// this slug's canonical destination is rewriting that very file in place), which is the
+/// carve-out `engine::finalize::plan_clobber_guard` makes at the committing door. A bare
+/// committed-existence probe — [`state::bound_instance_present`], the two-home predicate
+/// the sibling title pre-check reads — answers the wrong question here: it is about a
+/// **role binding**'s document and carries no carve-out, so it would refuse an in-place
+/// migration rename that `finalize` lands happily — the same lie pointed the other way.
+///
+/// `create_incumbent`'s **staged** arm is the same `docs/<type>:<slug>.md` probe as the
+/// one above it, so this call reads purely as the committed answer: the staged home has
+/// already been adjudicated (and with the write-time barrier applied, which
+/// `create_incumbent` does not know about).
+fn free_destination(
+    task: &ActiveTask,
+    schema: &Schema,
+    new_slug: &str,
+    new_uri: &str,
+    old_uri: &str,
+    to: &str,
+) -> Result<PathBuf, DocFailure> {
+    let new_address = parse_addr(new_uri)?;
+    let new_path = staged_path(&task.dir, &new_address, &task.id)?;
+    if new_path.exists() {
+        return Err(DocFailure::block(occupied_destination_refusal(
+            new_uri,
+            old_uri,
+            to,
+            format!(
+                "this task already stages `{new_uri}` — a rename onto it would discard \
+                 that doc's authored content"
+            ),
+            format!("remove the staged `{new_uri}` first if it was minted by mistake"),
+        )));
+    }
+    // The **second home**. `id_source` is the slug itself and `slug_override` carries it
+    // verbatim, so the probed identity is exactly `new_uri` — the title has already minted
+    // the slug up in `run_doc_rename`, and re-deriving it here could only disagree.
+    let incumbent = state::create_incumbent(
+        &task.dir,
+        schema,
+        schema.ty.as_str(),
+        new_slug,
+        Some(new_slug),
+        &task.jigc_home,
+    )
+    .map_err(DocFailure::block)?;
+    if let Some(committed) = incumbent.incumbent {
+        let at = committed
+            .strip_prefix(&task.jigc_home)
+            .unwrap_or(&committed)
+            .display()
+            .to_string();
+        return Err(DocFailure::block(occupied_destination_refusal(
+            new_uri,
+            old_uri,
+            to,
+            format!(
+                "the committed store already holds `{new_uri}` at `{at}` — landing this \
+                 task's doc under that identity would overwrite it at finalize"
+            ),
+            format!(
+                "if `{new_uri}` is the doc you meant to work on, read it with `jigc doc \
+                 show {new_uri}` and edit that one instead of minting a second under its \
+                 identity"
+            ),
+        )));
+    }
+    Ok(new_path)
+}
+
+/// The re-slug's occupancy refusal — one code and one `(code, target)` key for both
+/// homes ([`free_destination`]), keyed at the **destination identity** the write refused
+/// to claim. `what` states the home; `alternative` states that home's own second exit.
+///
+/// The route leads with the exit that is this agent's own command back, one flag longer:
+/// a re-slug is *chosen*, not derived, so an explicit `--slug` corrects the title without
+/// moving onto an occupied id. It is a **`Human`** route, like the committing door's
+/// `finalize.promote-clobber` sibling it previews: the free slug is the agent's to pick,
+/// and a mechanical argv may only carry a declared placeholder
+/// (`engine::finding::ROUTE_PLACEHOLDERS`), which a slug is not.
+fn occupied_destination_refusal(
+    new_uri: &str,
+    old_uri: &str,
+    to: &str,
+    what: String,
+    alternative: String,
+) -> Finding {
+    let to = crate::task::shell_token(to);
+    Finding::graded(
+        Severity::Blocking,
+        "write.already-present",
+        format!("rename rejected: {what}"),
+        Some(Location::addressed(new_uri, 1, 1)),
+        Some(
+            format!(
+                "give this doc an id nothing else answers to — re-run `jigc doc rename \
+                 {old_uri} --to {to} --slug <other-slug>`; or {alternative}"
+            )
+            .into(),
+        ),
+    )
+}
+
 /// Move a **never-committed** staged doc's identity within the task working area: the
 /// staged body, and every in-task reference to it. The set is **derived, never hand
 /// listed** — the whole point of confining the re-slug to the uncommitted case is that
@@ -2428,37 +2565,19 @@ fn committed_reslug_refusal(
 /// 5. a migration task's recorded `slug-override`, when it held the old slug — the id the
 ///    author path re-mints from, which would otherwise re-create the doc at the old id.
 ///
-/// A destination already occupied by another staged doc **blocks** rather than
-/// clobbering it (the working-area sibling of `rename`'s collision guard).
+/// The destination must be **free in both homes** before any of it runs — see
+/// [`free_destination`], which is where that adjudication lives and which hands this
+/// function the `new_path` it moves to.
 fn move_staged_identity(
     task: &ActiveTask,
     address: &Address,
     old_path: &Path,
+    new_path: &Path,
     new_slug: &str,
     new_uri: &str,
 ) -> Result<(), DocFailure> {
     let old_uri = address.to_string();
-    let new_address = parse_addr(new_uri)?;
-    let new_path = staged_path(&task.dir, &new_address, &task.id)?;
-    if new_path.exists() {
-        return Err(DocFailure::block(Finding::graded(
-            Severity::Blocking,
-            "write.already-present",
-            format!(
-                "rename rejected: this task already stages `{new_uri}` — a rename onto it \
-                 would discard that doc's authored content"
-            ),
-            Some(Location::addressed(new_uri, 1, 1)),
-            Some(
-                format!(
-                    "pick a free id (`--slug <other>`), or remove the staged `{new_uri}` \
-                     first if it was minted by mistake"
-                )
-                .into(),
-            ),
-        )));
-    }
-    std::fs::rename(old_path, &new_path)
+    std::fs::rename(old_path, new_path)
         .with_context(|| format!("could not move the staged `{old_uri}` to `{new_uri}`"))?;
 
     // 2. the provenance manifest — re-keyed, the recorded value preserved.

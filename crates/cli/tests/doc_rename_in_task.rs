@@ -1176,3 +1176,370 @@ fn retitle_item_still_refuses_an_enum_id_from() {
         "the shipped item-level refusal is unchanged:\n{stderr}"
     );
 }
+
+// ───────── arm F — the destination-occupancy axis, over both of its homes ─────────
+
+/// Where a doc answering to the **destination** identity can already live. A re-slug
+/// has to be refused over **both** homes, because both are a collision: the task's
+/// own working area (moving onto it discards that doc's authored content) and the
+/// committed store (promoting onto it overwrites the committed file at finalize).
+/// The axis is this cell set — the reported repro was one cell of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Occupant {
+    /// Nothing answers to the destination identity — the re-slug lands.
+    Absent,
+    /// Another doc **staged in this task's working area** holds it.
+    Staged,
+    /// A **committed** doc in the store holds it.
+    Committed,
+}
+
+impl Occupant {
+    /// The whole axis. The arm below matches it **exhaustively**, so a fourth home
+    /// cannot be added without a cell here.
+    const ALL: [Occupant; 3] = [Occupant::Absent, Occupant::Staged, Occupant::Committed];
+
+    /// The `--to` title the re-slug aims at, per cell.
+    fn destination_title(self) -> &'static str {
+        match self {
+            Occupant::Absent => "Adopt NATS",
+            Occupant::Staged => "Adopt Kafka",
+            Occupant::Committed => "Adopt Redis",
+        }
+    }
+
+    /// The `<type>:<slug>` identity that title mints — the destination.
+    fn destination_uri(self) -> &'static str {
+        match self {
+            Occupant::Absent => "adr:adopt-nats",
+            Occupant::Staged => "adr:adopt-kafka",
+            Occupant::Committed => "adr:adopt-redis",
+        }
+    }
+
+    /// The slug of the doc this task stages and then tries to move — one per cell, so
+    /// a cell that finalizes cannot seed the next one's committed store.
+    fn source_slug(self) -> &'static str {
+        match self {
+            Occupant::Absent => "broker-choice-a",
+            Occupant::Staged => "broker-choice-b",
+            Occupant::Committed => "broker-choice-c",
+        }
+    }
+}
+
+/// The free id the occupancy route's `<other-slug>` span is filled with when the arm
+/// below runs that route verbatim.
+const FREE_SLUG: &str = "broker-rethink";
+
+/// **Every** backticked `jigc` command in a route, in emission order — the occupancy
+/// refusal names two exits, and a route floor that only ever checks the first one is a
+/// floor under half the surface. A backticked span that is not a command (a route also
+/// backticks the addresses it names) is not one of them.
+fn backticked_all(route: &str) -> Vec<String> {
+    route
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|span| span.starts_with("jigc "))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Author a complete `adr` into `task` at an explicit `slug`, through the real verbs.
+fn author_adr_at(corpus: &TrialCorpus, task: &str, title: &str, slug: &str) {
+    corpus.jigc_ok(&[
+        "doc", "create", "adr", "--title", title, "--slug", slug, "--task", task,
+    ]);
+    for (section, prose) in [
+        ("context", "Queue depth is unbounded."),
+        ("decision", "Adopt a broker."),
+        ("consequences", "One more service to run."),
+    ] {
+        corpus.jigc_stdin_ok(
+            &[
+                "doc",
+                "set-slot",
+                &format!("adr:{slug}#{section}"),
+                "--from-file",
+                "-",
+                "--task",
+                task,
+            ],
+            prose,
+        );
+    }
+}
+
+/// **The re-slug's destination guard answers over both homes.** A never-committed
+/// staged doc may move its identity inside the task — but only onto an identity
+/// nothing already answers to. The **staged** home was guarded; the **committed** one
+/// was not, so a re-slug onto a committed identity acked success at exit 0, `task
+/// validate` stayed clean, and only `finalize` refused with
+/// `finalize.promote-clobber` — a write ack over a state the task cannot complete.
+///
+/// The arm iterates [`Occupant::ALL`]: the free cell still lands, and **both**
+/// occupied cells block at the write with `write.already-present` keyed at the
+/// destination identity, carrying a route, staging nothing there and leaving the
+/// source doc byte-untouched — a refused write is not a partial one.
+#[test]
+fn the_reslug_destination_guard_answers_over_both_homes() {
+    let corpus = TrialCorpus::build(State::Fresh);
+
+    // The committed home's occupant.
+    let first = corpus.start_workflow("single-task", "pick the cache");
+    author_adr_at(&corpus, &first, "Adopt Redis", "adopt-redis");
+    corpus.finalize(&first, "cache", "pick the cache", false);
+    assert!(
+        corpus
+            .repo()
+            .join("docs/decisions/adopt-redis.md")
+            .is_file(),
+        "the committed occupant is in place — the Committed cell's precondition"
+    );
+
+    for cell in Occupant::ALL {
+        let task = corpus.start_workflow("single-task", "pick the broker");
+        let source_slug = cell.source_slug();
+        author_adr_at(&corpus, &task, "Pick a broker", source_slug);
+
+        let task_dir = corpus.repo().join(".jigc/tasks").join(&task);
+        let source = task_dir.join(format!("docs/adr:{source_slug}.md"));
+        let before = fs::read_to_string(&source).expect("read the staged source doc");
+        let dest_staged = task_dir.join(format!("docs/{}.md", cell.destination_uri()));
+
+        // The staged home's occupant is placed **into the working area directly** —
+        // the state-derived producer the guard has to answer for (the area is a plain
+        // directory, and the pre-1.0 trial found every blind session reaching into it).
+        // Every gated create door binds one `as:` role, so no shipped door mints a
+        // second `adr` into one task; the guard is about the state, not the door.
+        if cell == Occupant::Staged {
+            fs::write(
+                &dest_staged,
+                before.replace("# Pick a broker", "# Adopt Kafka"),
+            )
+            .expect("place the staged occupant");
+        }
+        let occupant_before = (cell == Occupant::Staged)
+            .then(|| fs::read_to_string(&dest_staged).expect("read the staged occupant"));
+
+        let (ok, stdout, stderr) = json(
+            &corpus,
+            &[
+                "doc",
+                "rename",
+                &format!("adr:{source_slug}"),
+                "--to",
+                cell.destination_title(),
+                "--task",
+                &task,
+            ],
+        );
+
+        if cell == Occupant::Absent {
+            assert!(
+                ok,
+                "{cell:?}: a free destination must still land; stdout:\n{stdout}\nstderr:\n{stderr}"
+            );
+            assert!(
+                dest_staged.is_file() && !source.exists(),
+                "{cell:?}: the identity moved to the free destination"
+            );
+            corpus.jigc_ok(&["task", "discard", &task]);
+            continue;
+        }
+
+        assert!(
+            !ok,
+            "{cell:?}: an occupied destination must block at the write, not at finalize; \
+             stdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            stdout.trim().is_empty(),
+            "{cell:?}: a blocked write leaves stdout empty; got:\n{stdout}"
+        );
+        let finding = blocking_finding(&stderr, "occupied destination");
+        assert_eq!(
+            finding["code"], "write.already-present",
+            "{cell:?}: the occupancy refusal keys on the shipped code:\n{stderr}"
+        );
+        assert_eq!(
+            finding["key"]["target"],
+            cell.destination_uri(),
+            "{cell:?}: the refusal keys at the destination identity:\n{stderr}"
+        );
+        // A refused write is not a partial one: the source keeps its identity AND its
+        // bytes (its `# H1` is not pre-rewritten), and the occupant is untouched.
+        assert_eq!(
+            fs::read_to_string(&source).expect("the source doc survives the refusal"),
+            before,
+            "{cell:?}: the refused rename leaves the source doc byte-untouched"
+        );
+        match occupant_before {
+            Some(occupant) => assert_eq!(
+                fs::read_to_string(&dest_staged).expect("the staged occupant survives"),
+                occupant,
+                "{cell:?}: the staged occupant is not overwritten"
+            ),
+            None => assert!(
+                !dest_staged.exists(),
+                "{cell:?}: nothing is staged at the refused destination"
+            ),
+        }
+
+        // The route floor for a blocking finding: every command the route emits is
+        // bytes a real shell parses and this binary runs — asserted on the **emitted**
+        // route, run verbatim, with the free slug (the one span that is the agent's to
+        // fill) substituted.
+        let route = finding["route"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{cell:?}: a blocking finding names its recovery:\n{stderr}"))
+            .to_string();
+        for emitted in backticked_all(&route) {
+            let cmd = emitted.replace("<other-slug>", FREE_SLUG);
+            let argv = shell_split(&corpus, &cmd);
+            let mut args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+            // The rename recovery is task-scoped; the `doc show` read is not.
+            if args.first() == Some(&"doc") && args.get(1) == Some(&"rename") {
+                args.extend_from_slice(&["--task", &task]);
+            }
+            let out = corpus.jigc(&args);
+            assert!(
+                out.status.success(),
+                "{cell:?}: the emitted route `{cmd}` must run; stdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+        // The recovery did what it said it would.
+        assert!(
+            task_dir.join(format!("docs/adr:{FREE_SLUG}.md")).is_file() && !source.exists(),
+            "{cell:?}: the emitted recovery moved the doc to the free id"
+        );
+
+        if cell == Occupant::Committed {
+            // The refusal leaves a state the committing door agrees with — the
+            // contract the exit-0 ack broke: with the task otherwise complete,
+            // `task validate` previews clean and `finalize` lands the doc at the
+            // identity it kept. (Before the fix, the two disagreed: the rename acked,
+            // `validate` stayed clean, and `finalize` refused with
+            // `finalize.promote-clobber`.)
+            for (field, value) in [("type", "docs"), ("scope", "broker")] {
+                corpus.jigc_ok(&[
+                    "doc",
+                    "set-field",
+                    &format!("commit:{task}#{field}"),
+                    "--value",
+                    value,
+                    "--task",
+                    &task,
+                ]);
+            }
+            for (slot, prose) in [("summary", "pick the broker"), ("body", "The broker call.")] {
+                corpus.jigc_stdin_ok(
+                    &[
+                        "doc",
+                        "set-slot",
+                        &format!("commit:{task}#{slot}"),
+                        "--from-file",
+                        "-",
+                        "--task",
+                        &task,
+                    ],
+                    prose,
+                );
+            }
+            let validate = corpus.jigc(&["task", "validate", &task]);
+            assert!(
+                validate.status.success(),
+                "{cell:?}: `task validate` and `finalize` must agree; stdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&validate.stdout),
+                String::from_utf8_lossy(&validate.stderr),
+            );
+            corpus.jigc_ok(&["task", "finalize", &task]);
+            assert!(
+                corpus
+                    .repo()
+                    .join(format!("docs/decisions/{FREE_SLUG}.md"))
+                    .is_file(),
+                "{cell:?}: finalize lands the doc at the id the route named"
+            );
+            let occupant = fs::read_to_string(corpus.repo().join("docs/decisions/adopt-redis.md"))
+                .expect("the committed occupant survives");
+            assert!(
+                occupant.contains("# Adopt Redis"),
+                "{cell:?}: the committed occupant is still there, unclobbered:\n{occupant}"
+            );
+        } else {
+            corpus.jigc_ok(&["task", "discard", &task]);
+        }
+    }
+}
+
+/// **The committed cell's carve-out, and the parity that earns it.** A migration whose
+/// recorded `source-path` IS the destination's own canonical path is the **in-place
+/// rewrite**: the committed file there is the very foreign original being replaced,
+/// which is why `finalize`'s clobber guard carves it out
+/// (`engine::finalize::plan_clobber_guard`, the M43 same-path carve-out). The write
+/// guard reads the committed home through the shipped [`state::create_incumbent`]
+/// predicate, whose committed arm reproduces that same carve-out — so the write
+/// refuses exactly what `finalize` refuses, and a rename onto the migration's own
+/// destination still lands.
+#[test]
+fn a_rename_onto_a_migrations_own_destination_is_not_a_collision() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    fs::create_dir_all(corpus.repo().join("docs/decisions")).expect("create the decisions dir");
+    fs::write(
+        corpus.repo().join("docs/decisions/legacy-store.md"),
+        "# Legacy store\n\nWe kept the legacy store, undocumented.\n",
+    )
+    .expect("write the foreign decision");
+    corpus.git(&["add", "docs/decisions/legacy-store.md"]);
+    corpus.git(&["commit", "-q", "-m", "the foreign decision"]);
+
+    let composed = corpus.jigc_ok(&[
+        "migrate",
+        "docs/decisions/legacy-store.md",
+        "--as",
+        "adr",
+        "--slug",
+        "holding-id",
+    ]);
+    let task = composed
+        .lines()
+        .find_map(|line| line.strip_prefix("task minted: "))
+        .expect("the migrate mint prints its task id")
+        .trim()
+        .to_string();
+    corpus.jigc_stdin_ok(
+        &["doc", "author", "adr", "--from-file", "-", "--task", &task],
+        ADR_PAYLOAD,
+    );
+
+    let (ok, stdout, stderr) = json(
+        &corpus,
+        &[
+            "doc",
+            "rename",
+            "adr:holding-id",
+            "--to",
+            "Legacy store",
+            "--task",
+            &task,
+        ],
+    );
+    assert!(
+        ok,
+        "a re-slug onto the migration's own in-place destination must land — the committed \
+         file there is the original being rewritten; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        corpus
+            .repo()
+            .join(".jigc/tasks")
+            .join(&task)
+            .join("docs/adr:legacy-store.md")
+            .is_file(),
+        "the staged doc moved to the in-place identity"
+    );
+}
