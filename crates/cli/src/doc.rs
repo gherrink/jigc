@@ -2585,10 +2585,14 @@ fn ref_relations(schema: &Schema) -> Vec<String> {
 /// Two shapes, and they are **not** the same defect:
 ///
 /// * **identity divergence** — the workflow gate entry's `as:` role is already bound to
-///   `<type>:<slug>` and this call would mint or re-point a *different* identity. That is
-///   an identity change made through a verb that only mints, so it converges on the
-///   shipped **`write.identity-change`** (its other producers: `retitle-item` under an
-///   enum `id-from`, and `doc rename`'s two refusals).
+///   `<type>:<slug>` **that is actually there** ([`state::bound_instance_present`] — staged
+///   in the working area, or committed in the store) and this call would mint or re-point a
+///   *different* identity. That is an identity change made through a verb that only mints,
+///   so it converges on the shipped **`write.identity-change`** (its other producers:
+///   `retitle-item` under an enum `id-from`, and `doc rename`'s two refusals). A binding
+///   whose document is in neither home is **stale, not an incumbent**: refusing on it says
+///   the task holds a doc it does not (a `design/surface-contract.md` law-1 lie) and routes
+///   at a `jigc doc rename` that cannot run.
 /// * **the silent no-op** — the call lands on the identity the task already holds (or on
 ///   a committed doc it would copy in), so the create hands that body back **as found**
 ///   and the supplied title is never written. This is *not* an identity change:
@@ -2634,12 +2638,21 @@ fn title_pre_check(
     // Rank 2 — identity divergence. The bound role is the identity this task **holds**;
     // a call that would mint another one is a second document, not a correction. A
     // binding naming a different doctype is another entry's role and is not ours to read.
+    //
+    // **"Holds" is probed, never assumed** ([`state::bound_instance_present`]): `roles.json`
+    // is a record, and a binding outlives its document whenever a write that bound the role
+    // rolls its staged file back — `create_gated` binds *before* `run_author` applies the
+    // payload leaves, so one bad leaf leaves the role pointing at nothing. Reading that
+    // orphan as an incumbent refused the retry with a sentence naming a doc that is not
+    // there and a `jigc doc rename` route that could not run. A binding whose document is
+    // in neither home is stale, so the mint proceeds and re-points it.
     if !entry.as_role.is_empty() {
         let roles =
             state::RolesRecord::load(&task.dir).context("could not read the task's bound roles")?;
         if let Some(bound) = roles.get(&entry.as_role)
             && bound.starts_with(&format!("{ty}:"))
             && bound != incumbent.address
+            && state::bound_instance_present(&task.dir, schema, bound, &task.jigc_home)
         {
             return Err(DocFailure::block(identity_divergence_refusal(
                 task,

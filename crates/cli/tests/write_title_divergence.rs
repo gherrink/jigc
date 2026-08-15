@@ -962,3 +962,325 @@ fn sole_task(repo: &Path) -> String {
     assert_eq!(ids.len(), 1, "exactly one task is in flight; got: {ids:?}");
     ids.remove(0)
 }
+
+// ───────── the orphaned-binding axis: a role bound to a doc that is not there ─────────
+
+/// One cell the pre-check's **identity-divergence** rank governs: a workflow gate entry
+/// of the object form (`{type: T, as: R}`) over a **slug-identity** doctype. Rank 2 keys
+/// on `roles.json[R]`, so exactly these cells can reach it — a fixed-title doctype
+/// returns one rank higher and a transient sink is mintable by no verb.
+#[derive(Debug)]
+struct RoleCell {
+    doctype: String,
+    workflow: String,
+    role: String,
+}
+
+/// **The axis**, re-derived from the two loaded registries rather than hand-listed:
+/// every doctype carried by an object-form `allows-create` entry in **any** shipped
+/// workflow, minus the identity cells rank 2 cannot see. A pack that adds a gate entry
+/// — or a doctype that gains one — joins this sweep by construction.
+///
+/// Each doctype is driven at its **preferred** admitting workflow ([`admitting_workflow`]
+/// — a directly-startable one over a `migrate-*` one), and the role name is read off that
+/// workflow's own gate entry, so the assertions name the binding the binary will write.
+fn role_bound_mint_cells() -> Vec<RoleCell> {
+    let schemas = shipped_schemas();
+    let pack = composite();
+    let mut doctypes: Vec<String> = Vec::new();
+    for id in pack.list(PackResourceKind::Workflows) {
+        let Ok(bytes) = pack.read(PackResourceKind::Workflows, &id) else {
+            continue;
+        };
+        let Ok(def) = engine::compose::load_workflow_def(&bytes) else {
+            continue;
+        };
+        for entry in &def.allows_create {
+            let Some(schema) = schemas.get(&entry.doc_type) else {
+                continue;
+            };
+            if entry.as_role.is_empty()
+                || schema.fixed_title().is_some()
+                || schema.location.is_none()
+                || doctypes.contains(&entry.doc_type)
+            {
+                continue;
+            }
+            doctypes.push(entry.doc_type.clone());
+        }
+    }
+    doctypes.sort();
+    doctypes
+        .into_iter()
+        .map(|doctype| {
+            let workflow = admitting_workflow(&doctype);
+            let bytes = pack
+                .read(PackResourceKind::Workflows, &workflow.as_str().into())
+                .expect("the admitting workflow reads back");
+            let def = engine::compose::load_workflow_def(&bytes).expect("it parses");
+            let role = def
+                .allows_create
+                .iter()
+                .find(|entry| entry.doc_type == doctype && !entry.as_role.is_empty())
+                .map(|entry| entry.as_role.clone())
+                .expect("the admitting workflow carries the object-form entry");
+            RoleCell {
+                doctype,
+                workflow,
+                role,
+            }
+        })
+        .collect()
+}
+
+/// A payload that **fails after the create has already bound the role**: a well-formed
+/// title with one leaf naming a section the schema does not declare. The create runs, the
+/// gate binds `as:`, the leaf rejects, and the staged `.md` is rolled back — leaving the
+/// binding pointing at a document that is no longer on disk.
+fn orphaning_payload(title: &str) -> String {
+    format!(
+        "\
+title: {title}
+sections:
+  - id: no-such-section-here
+    set:
+      no-such-slot: |-
+        <<Never applied.>>
+"
+    )
+}
+
+/// The address bound to `role` in the task's `roles.json`, if any.
+fn bound_role(repo: &Path, task: &str, role: &str) -> Option<String> {
+    let path = repo.join(".jigc/tasks").join(task).join("roles.json");
+    let raw = fs::read_to_string(path).ok()?;
+    let record: Value = serde_json::from_str(&raw).expect("roles.json is JSON");
+    record["roles"][role].as_str().map(str::to_string)
+}
+
+/// Is `address` (`<type>:<slug>`) staged in the task's working area?
+fn is_staged(repo: &Path, task: &str, address: &str) -> bool {
+    repo.join(".jigc/tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("{address}.md"))
+        .is_file()
+}
+
+/// **The orphaned-binding cell, over the whole role-bound axis.** The divergence rank
+/// treats `roles.json` as evidence that the task *holds* a document — a **record**, never
+/// probed against the **state** it claims. A `doc author` whose payload fails mid-chain
+/// rolls the staged `.md` back but leaves the binding, so the retry under a corrected
+/// title was refused as an "identity change" naming a doc that is not there, and the
+/// refusal's own route (`jigc doc rename …`) could not run: `no staged instance for …`.
+/// The only surviving recoveries — re-author under the *wrong* title, or `jigc task
+/// discard` — were named by nothing.
+///
+/// So the claim: **a binding whose document is not there is not an incumbent.** The retry
+/// lands at *both* minting verbs and the binding is re-pointed at the doc that now
+/// exists — and, in the same loop, the complement: once a real staged incumbent is back,
+/// a divergent title still blocks with `write.identity-change` and *that* route runs
+/// verbatim. A guard neutered to clear the dead end is the other defect.
+#[test]
+fn a_binding_whose_doc_is_gone_is_not_an_incumbent_at_any_minting_verb() {
+    let cells = role_bound_mint_cells();
+    assert!(
+        cells.len() >= 4,
+        "the role-bound slug-identity axis is populated (adr · spec · prd · arch-doc and \
+         more at M48); got: {cells:?}"
+    );
+
+    for cell in &cells {
+        for verb in ["create", "author"] {
+            let what = format!("{} @ doc {verb}", cell.doctype);
+            let corpus = TrialCorpus::build(State::Fresh);
+            let task = corpus.start_workflow(&cell.workflow, "settle the open question");
+
+            // ── the cell, produced through its real door: a payload that fails after
+            //    the gate has bound the role ──
+            let (ok, stdout, _) = json(
+                &corpus,
+                &[
+                    "doc",
+                    "author",
+                    &cell.doctype,
+                    "--from-file",
+                    "-",
+                    "--task",
+                    &task,
+                ],
+                Some(&orphaning_payload("Wrong Name Here")),
+            );
+            assert!(
+                !ok,
+                "`{what}`: the orphaning payload must fail on its bogus leaf; got:\n{stdout}"
+            );
+            let orphan = bound_role(&corpus.repo(), &task, &cell.role).unwrap_or_else(|| {
+                panic!("`{what}`: the failed author leaves `{}` bound", cell.role)
+            });
+            assert!(
+                !is_staged(&corpus.repo(), &task, &orphan),
+                "`{what}`: the cell is bound-but-NOT-staged — `{orphan}` must have been \
+                 rolled back, else this arm proves nothing"
+            );
+
+            // ── the retry under a corrected title must LAND, not dead-end ──
+            let corrected = "Corrected Name Here";
+            let out = match verb {
+                "create" => corpus.jigc(&[
+                    "doc",
+                    "create",
+                    &cell.doctype,
+                    "--title",
+                    corrected,
+                    "--task",
+                    &task,
+                ]),
+                _ => corpus.jigc_stdin(
+                    &[
+                        "doc",
+                        "author",
+                        &cell.doctype,
+                        "--from-file",
+                        "-",
+                        "--task",
+                        &task,
+                    ],
+                    &format!("title: {corrected}\n"),
+                ),
+            };
+            assert!(
+                out.status.success(),
+                "`{what}`: a binding pointing at nothing is not an incumbent — the \
+                 correction must land; got:\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr),
+            );
+            let rebound = bound_role(&corpus.repo(), &task, &cell.role)
+                .unwrap_or_else(|| panic!("`{what}`: the landed write re-binds the role"));
+            assert_ne!(
+                rebound, orphan,
+                "`{what}`: the role must be re-pointed at the doc that now exists"
+            );
+            assert!(
+                is_staged(&corpus.repo(), &task, &rebound),
+                "`{what}`: the re-bound `{rebound}` is staged — the record and the state \
+                 agree again"
+            );
+
+            // ── the complement: a REAL incumbent still gates a divergent title, and the
+            //    route it names runs verbatim ──
+            let (blocked, stdout, stderr) = json(
+                &corpus,
+                &[
+                    "doc",
+                    "create",
+                    &cell.doctype,
+                    "--title",
+                    "Third Name Here",
+                    "--task",
+                    &task,
+                ],
+                None,
+            );
+            assert!(
+                !blocked,
+                "`{what}`: with a real staged incumbent, a divergent title must still \
+                 block — the fix must not neuter the rank; got:\n{stdout}"
+            );
+            let finding = blocking_finding(&stderr, &what);
+            assert_eq!(
+                finding["code"], "write.identity-change",
+                "`{what}`: the real divergence keeps its code; got:\n{stderr}"
+            );
+            assert_eq!(
+                key_target(&finding),
+                rebound,
+                "`{what}`: the refusal names the doc the task actually holds"
+            );
+            let argv = route_argv(&corpus, &finding, &what);
+            run_route(&corpus, &argv, &what);
+        }
+    }
+}
+
+/// **The binding's other home.** [`engine::state::bound_instance_present`] answers over
+/// *two* homes, and the arm above only reaches one of them: a rolled-back first-touch
+/// author over a **committed** instance removes the staged copy (the create provisioned it,
+/// so its pre-image is "absent") and leaves the role bound — yet that document plainly
+/// still exists. The task holds it, the refusal's sentence is true, and its recovery is the
+/// task-less store rename, so this cell must keep blocking. Stated as its own arm because
+/// it is the boundary the widened predicate must not cross: a fix that keyed on *staged*
+/// alone would let a divergent title mint beside a committed doc the task had already
+/// bound for revision.
+#[test]
+fn a_binding_whose_doc_is_committed_is_still_an_incumbent() {
+    let (corpus, slug, _) = committed_adr();
+    let task = corpus.start_workflow("record-decision", "revise the committed choice");
+
+    // A first-touch author over the committed ADR: the create copies it in and binds the
+    // role, the bogus leaf rejects, and the rollback removes the staged copy it provisioned.
+    let (ok, stdout, _) = json(
+        &corpus,
+        &["doc", "author", "adr", "--from-file", "-", "--task", &task],
+        Some(&orphaning_payload(COMMITTED_TITLE)),
+    );
+    assert!(
+        !ok,
+        "the orphaning payload must fail on its bogus leaf; got:\n{stdout}"
+    );
+    let bound = bound_role(&corpus.repo(), &task, "decision")
+        .expect("the failed author leaves `decision` bound");
+    assert_eq!(bound, format!("adr:{slug}"), "bound to the committed ADR");
+    assert!(
+        !is_staged(&corpus.repo(), &task, &bound),
+        "the cell: the rollback removed the copy-in, so the binding is not staged"
+    );
+
+    // It is still an incumbent — the doc exists, in the store.
+    let (blocked, stdout, stderr) = json(
+        &corpus,
+        &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Adopt Valkey Instead",
+            "--task",
+            &task,
+        ],
+        None,
+    );
+    assert!(
+        !blocked,
+        "a binding whose doc is COMMITTED must still block a divergent mint; got:\n{stdout}"
+    );
+    let finding = blocking_finding(&stderr, "committed incumbent");
+    assert_eq!(
+        finding["code"], "write.identity-change",
+        "the committed home keeps the divergence code; got:\n{stderr}"
+    );
+    assert_eq!(
+        key_target(&finding),
+        bound,
+        "the refusal names the committed doc the task really does hold"
+    );
+    // And the emitted route **answers**, which is the whole distinction from the stale
+    // cell: run verbatim, `jigc doc rename` recognises the committed identity and refuses
+    // with a route of its own — the task-less `jigc rename` store op, after this task is
+    // finalized or discarded. It never answers the dead end the stale binding produced
+    // (*"no staged instance … provision it first"*, about a doc the refusal had just
+    // claimed the task holds).
+    let argv = route_argv(&corpus, &finding, "committed incumbent");
+    let args: Vec<&str> = argv.iter().skip(1).map(String::as_str).collect();
+    let out = corpus.jigc(&args);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !said.contains("no staged instance"),
+        "the route must not dead-end on a doc that demonstrably exists; got:\n{said}"
+    );
+    assert!(
+        said.contains("`jigc rename "),
+        "the committed identity's recovery is the task-less store op; got:\n{said}"
+    );
+}

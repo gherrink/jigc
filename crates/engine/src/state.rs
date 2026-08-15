@@ -1196,6 +1196,46 @@ pub fn create_incumbent(
     })
 }
 
+/// Does a **bound context role**'s recorded address still name a document this task can
+/// act on? — the state probe the identity-divergence rank owes its own premise. Writes
+/// nothing.
+///
+/// [`RolesRecord`] is a *record*; the rank's sentence — *"this task's `<role>` is already
+/// `<addr>`"* — is a claim about *state*, and the two part company whenever a binding
+/// outlives its document. [`create_gated`] binds the `as:` role **before** the CLI's
+/// `doc author` applies its payload leaves, and a leaf failure rolls the staged `.md` back
+/// but not the binding (the rollback is [`CreatedDoc::rollback`]'s, which owns the file and
+/// not the record). Read as an incumbent, that orphan refuses the retry with a sentence
+/// naming a doc that is not there and a `jigc doc rename` route that answers *"no staged
+/// instance … provision it first"* — a blocking dead end whose only exits (re-author under
+/// the wrong title, or `jigc task discard`) nothing names.
+///
+/// **"Can act on" is two homes, because a bound doc lives in either**: the task's
+/// **staged** working copy (which `jigc doc rename` retitles in place), or the
+/// **committed** store instance a create would copy in (whose divergence refusal routes at
+/// the task-less `jigc rename`). Present in neither, the binding is stale — not an
+/// incumbent — and the next mint re-points it, since [`RolesRecord::bind`] is
+/// last-write-wins. The probe is deliberately **state-derived, not event-derived**: it
+/// holds however the orphan arose, including the plainly-reachable one the working area
+/// invites — a directory a human or an agent edits directly.
+///
+/// `address` is the `<type>:<slug>` form the record stores; `schema` is that type's
+/// schema (the caller has already established the doctype matches).
+pub fn bound_instance_present(
+    task_dir: &Path,
+    schema: &Schema,
+    address: &str,
+    repo_root: &Path,
+) -> bool {
+    let Some((type_name, slug)) = address.split_once(':') else {
+        return false;
+    };
+    if instance_path(task_dir, type_name, slug).is_file() {
+        return true;
+    }
+    crate::store::canonical_path(repo_root, schema, slug).is_some_and(|path| path.is_file())
+}
+
 /// Does a **migration** task target this slug's own canonical destination? — the
 /// create-side half of the in-location-squatter discriminator (`design/auto-migration.md`
 /// → Path-collision guard / Hardening #8). Reads the task's recorded `source-path`
