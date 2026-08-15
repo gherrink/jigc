@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 publish = false
 # The ~250 suite files under `tests/` are NOT cargo targets of their own — they are
-# compiled into the ten `[[test]]` group binaries declared at the bottom of this file
+# compiled into the 12 group targets declared at the bottom of this file
 # (each group root pulls its suites in with `#[path = "../<name>.rs"] mod <name>;`, the
 # idiom `tests/pinned_facts.rs` already used). One cargo target per suite file cost a
 # **macOS Gatekeeper policy assessment per freshly-linked binary** — measured at ~44 s
