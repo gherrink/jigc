@@ -15,11 +15,12 @@
 //!   2. **QUICKSTART.md cross-refs it.** The quickstart's finalize section is where a
 //!      cold reader meets the commit boundary; it points at the gate rather than
 //!      restating it (CLAUDE.md → *Cross-reference, never restate*).
-//!   3. **CLAUDE.md's project-state paragraph names M47 and claims only the build.**
-//!      M47 is **built, not audited** at this increment — the completion audit and its
-//!      VERDICT are the milestone-completion workflow's next act — so the paragraph must
-//!      name the roadmap section and the flow-47 acceptance while making **no** clean-audit
-//!      claim. This is the law-1 fence applied to our own record: the doc may not claim a
+//!   3. **CLAUDE.md's project-state paragraph names the wave under construction, and
+//!      claims only the build.** The wave is **built, not audited** at its close increment —
+//!      the completion audit, its verdict artifact and the release build are the
+//!      milestone-completion workflow's next acts — so the paragraph must name the roadmap
+//!      section and the flow acceptance while making **no** clean-audit claim and citing no
+//!      verdict. This is the law-1 fence applied to our own record: the doc may not claim a
 //!      verdict that has not been reached.
 //!
 //! A fourth claim joined at M48 Increment 12 (T1):
@@ -192,54 +193,64 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
     &rest[..end]
 }
 
+/// **The fence follows the wave whose claim is still moving.** It was written at M47
+/// Increment 11's fold-back over `**M47 —`, requiring the bound *built, not audited* and
+/// forbidding a verdict citation; when M47's audit landed it went red, which is the fence
+/// working rather than failing, and it was reconciled to the inverse direction — a
+/// completed wave cites what its audit found and may not say *audited clean* over three LOW
+/// findings. Both directions are the same rule: **the paragraph may say no more about the
+/// audit than the audit found.**
+///
+/// At M48 Increment 12 it moves forward again, to the wave this build closes. M47's claim
+/// is settled prose now — its audit ran, its verdict is persisted, and nothing in this
+/// build can move it — while M48's claim is the one a fold-back can overstate, and the
+/// overstatement available *today* is the premature one: the completion audit, its verdict
+/// artifact and the `1.0.0-rc.11` build are the milestone-completion workflow's next acts
+/// ([roadmap.md](../../../implementation/roadmap.md) → Milestone 48, its closing line).
+/// So the arm is **revised, not duplicated**: the assertions invert back to their original
+/// direction and re-aim, rather than accumulating one dead pin per wave.
 #[test]
-fn claude_md_names_m47_and_claims_only_the_build() {
+fn claude_md_names_m48_and_claims_only_the_build() {
     let body = read_doc("CLAUDE.md");
-    let span = milestone_span(&body, "**M47 —");
+    // The project-state paragraph is a single line; the sections that follow it (build /
+    // lint / test, quickstart, code architecture) are not milestone claims, and M48 is the
+    // last marker in the paragraph — so the span is bounded at the paragraph's own end
+    // rather than running to EOF and forbidding these words to the whole file.
+    let span = milestone_span(&body, "**M48 —")
+        .split('\n')
+        .next()
+        .expect("splitting a str always yields at least one part");
 
     for owed in [
         "implementation/roadmap.md",
-        "Milestone 47",
-        "flow 47",
-        "flow47_acceptance.rs",
+        "Milestone 48",
+        "flow 48",
+        "flow48_acceptance.rs",
     ] {
         assert!(
             span.contains(owed),
-            "the M47 project-state claim must name `{owed}`; it reads:\n{span}",
+            "the M48 project-state claim must name `{owed}`; it reads:\n{span}",
         );
     }
 
-    // **Reconciled 2026-08-09, not retired.** This fence was written during Increment
-    // 11's fold-back to stop the record claiming an audit that had not run: it required
-    // the bound `built, not audited` and *forbade* `VERDICT.md`. The audit has since run,
-    // so leaving it would have fenced the record into a stale transitional truth — it went
-    // red the moment the completion fold-back landed, which is the fence working, not
-    // failing. Its **purpose is unchanged**: the M47 claim must not say more about the
-    // audit than the audit found. Only the direction inverts — it stopped a premature
-    // claim, and now stops an over-claim.
-    //
-    // The audit was **not** clean: 3 LOW findings were raised, reproduced live and fixed
-    // (completions/artifacts/M47/VERDICT.md). So "audited clean" is exactly the overclaim
-    // to forbid, and the honest record names its verdict artifact instead.
+    // The bound is stated, not merely implied by an absence: a reader must be able to see
+    // that the audit is owed, and a paragraph that simply omits the word cannot say so.
     assert!(
-        span.contains("VERDICT"),
-        "a completed audit cites its persisted verdict; the M47 claim names none:\n{span}",
-    );
-    assert!(
-        span.contains("LOW") || span.contains("findings"),
-        "the M47 claim must state what the audit FOUND, not merely that it ran:\n{span}",
+        span.contains("built, not audited"),
+        "M48 is built and not yet audited, and the claim must say so in those words:\n{span}",
     );
     for forbidden in [
-        // The audit raised 3 LOW findings — any of these would overstate it.
+        // No audit has run, so every one of these claims a verdict nobody reached.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // The retired transitional bound: true during the build, false after the audit.
-        "built, not audited",
+        // The verdict artifact does not exist yet; a link to one would be a law-1 lie.
+        "VERDICT",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M47 claim must not overstate the audit, but contains `{forbidden}`:\n{span}",
+            "the M48 claim may not claim an audit that has not run, but contains \
+             `{forbidden}`:\n{span}",
         );
     }
 }
