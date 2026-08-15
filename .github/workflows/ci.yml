@@ -43,3 +43,22 @@ jobs:
       # `cargo build` for the doc-code probe (~30s), which must run to completion.
       - name: cargo test
         run: cargo test
+
+      # The manifest-freeze fence (M48 Increment 11): a frozen `schema-hash` may move
+      # only together with its co-located version field. CI-ONLY, and the arm is
+      # `#[ignore]`d for that reason — the escape is a commit-message trailer
+      # (`Manifest-Repin: <entity>`), and the local four-command gate runs before the
+      # message exists, so a fence riding it could never be made green for a legitimate
+      # re-pin. `--ignored --exact` un-skips exactly this arm; every rule it is built
+      # out of stays in the ordinary `cargo test` above.
+      #
+      # The event context is forwarded RAW and chosen among in Rust: the ladder
+      # (push -> github.event.before, PR -> the base sha, everything else and every
+      # unusable value -> the HEAD~1 floor) is a tested function, and a `${{ … || … }}`
+      # here would put it back where nothing tests it.
+      - name: manifest-freeze fence
+        env:
+          FENCE_EVENT_NAME: ${{ github.event_name }}
+          FENCE_PUSH_BEFORE: ${{ github.event.before }}
+          FENCE_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: cargo test -p cli --test g_finalize manifest_freeze_fence::live -- --ignored --exact

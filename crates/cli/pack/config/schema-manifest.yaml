@@ -29,13 +29,35 @@
 # and an enum widening were the same keystroke, guarded only by the line above
 # (design/corpus-migration.md → The freeze).
 #
-# THE SUCCESSOR RULE, stated forward from M47 Increment 1: a SCHEMA-SHAPE change moves
-# a doctype's `schema-hash` only together with its `schema-version`, and a SLUG-RULE
-# change moves `slug-rule.hash` only together with `slug-rule.version`. It is stated,
-# not fenced (no implementable mechanism today; deferred to M46). M47 Increment 1 is
-# the declared genesis exemption and the ONLY one: the narrowing re-pinned all 16
-# doctype hashes at unchanged schema-versions BY CONSTRUCTION — no schema's shape
-# moved, only what the hash is computed over.
+# THE SUCCESSOR RULE, stated forward from M47 Increment 1 and FENCED since M48
+# Increment 11: a SCHEMA-SHAPE change moves a doctype's `schema-hash` only together
+# with its `schema-version`, and a SLUG-RULE change moves `slug-rule.hash` only
+# together with `slug-rule.version`.
+#
+# The fence fires in CI, over the pushed range — it reads both manifests at the base
+# of that range and at its tip, and fails on any entity whose hash moved while its
+# co-located version stood still. It is not a pack-load assert: pack-load still only
+# recomputes each hash against the shipped schema, and one state of the tree cannot
+# tell a legitimate re-pin from a silent breach. A legitimate re-pin declares itself
+# per entity, on the commit that does it —
+#
+#     Manifest-Repin: <doctype | slug-rule>
+#
+# — never blanket: a blanket escape would restore "re-pin the hash" as one keystroke
+# with two meanings, merely renamed. M47 Increment 1 is the declared genesis exemption
+# and the ONLY one: the narrowing re-pinned all 16 doctype hashes at unchanged
+# schema-versions BY CONSTRUCTION — no schema's shape moved, only what the hash is
+# computed over. It predates the fence, and is now the fixture that proves it fires
+# (crates/cli/tests/manifest_freeze_fence.rs).
+#
+# TWO DECLARED BOUNDS, recorded rather than glossed: the fence protects this repo only,
+# not adopters (it lives in this repo's CI, and this repo is the only party that edits
+# a manifest), and it is a build fence, not a surface — it mints no finding code, no
+# route and no verb. The two other candidate mechanisms stay refused: an append-only
+# (type, version) -> hash ledger asserted at pack-load would protect adopters too, but
+# it is a new stored format; and the successor rule as an in-process check is
+# unimplementable in-process, since a pack-load assert cannot observe a CHANGE without
+# a recorded prior (design/corpus-migration.md → The freeze; M48 settle-record).
 #
 # `slug-rule` (M42) declares the IDENTITY-MINT rule the ids inside every doctype
 # above are derived by — `engine::slug::slugify`, which sits in no schema-hash, so

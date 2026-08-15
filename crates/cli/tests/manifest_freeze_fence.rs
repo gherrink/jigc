@@ -1686,14 +1686,6 @@ mod historical {
         "vision",
     ];
 
-    /// This repo — the fixture is its own history, so the arms run against the checkout.
-    fn this_repo() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .expect("the workspace root is reachable from the cli crate")
-    }
-
     /// Fail loudly on a clone that cannot reach the fixture.
     fn require_reachable(repo: &Path, rev: &str) {
         assert!(
@@ -1707,7 +1699,7 @@ mod historical {
 
     #[test]
     fn the_fixture_commits_are_reachable_and_a_whole_push_apart() {
-        let repo = this_repo();
+        let repo = repo_root();
         require_reachable(&repo, GENESIS);
         require_reachable(&repo, GENESIS_PARENT);
         require_reachable(&repo, PUSH_TIP);
@@ -1731,7 +1723,7 @@ mod historical {
 
     #[test]
     fn the_repin_of_all_sixteen_is_flagged_over_the_pushed_range() {
-        let repo = this_repo();
+        let repo = repo_root();
         require_reachable(&repo, GENESIS_PARENT);
         require_reachable(&repo, PUSH_TIP);
 
@@ -1771,7 +1763,7 @@ mod historical {
 
     #[test]
     fn the_head_tilde_one_window_at_the_push_tip_is_clean() {
-        let repo = this_repo();
+        let repo = repo_root();
         require_reachable(&repo, PUSH_TIP);
         assert_eq!(
             fence_over(&repo, &format!("{PUSH_TIP}~1"), PUSH_TIP),
@@ -1781,5 +1773,330 @@ mod historical {
              all 16 — the fence as settled would have missed the exact event it exists \
              to catch",
         );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The fence goes live (M48 Increment 11, T4) — and the record stops saying it is
+// unfenced.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// This repo — the fence's fixture *and* its subject, so every arm below runs
+/// against the checkout rather than a fabricated tree.
+pub fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("the workspace root is reachable from the cli crate")
+}
+
+/// The workflow that runs the fence.
+const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
+
+/// The **named** step — named, because a fence buried inside another step's script is
+/// a fence nobody can find in a red run's log.
+const CI_STEP_NAME: &str = "manifest-freeze fence";
+
+/// The argv that step runs, verbatim. `--ignored --exact` is what makes the CI-only
+/// sub-decision mechanically true in **both** directions: `cargo test` skips the arm
+/// locally, and only this line un-skips it.
+const CI_STEP_RUN: &str =
+    "cargo test -p cli --test g_finalize manifest_freeze_fence::live -- --ignored --exact";
+
+/// This suite's own source, read for the one property no assertion inside it can
+/// reach: that the live arm is still `#[ignore]`d.
+fn suite_source() -> String {
+    fs::read_to_string(repo_root().join("crates/cli/tests/manifest_freeze_fence.rs"))
+        .expect("this suite can read its own source")
+}
+
+/// The variable the live arm reads each event field from, and the GitHub expression
+/// the workflow must fill it with.
+///
+/// **One list, two consumers** — [`EventVars::read`] and the workflow fence in
+/// `live_wiring` — so a variable renamed on one side and not the other is a red test
+/// rather than a silently floored window, which is the failure that looks exactly like
+/// a clean push.
+pub const EVENT_VARS: [(&str, &str); 3] = [
+    ("FENCE_EVENT_NAME", "github.event_name"),
+    ("FENCE_PUSH_BEFORE", "github.event.before"),
+    ("FENCE_PR_BASE", "github.event.pull_request.base.sha"),
+];
+
+/// The event context CI threads in, owned — so the borrowed [`Event`] the ladder eats
+/// can point into it.
+pub struct EventVars {
+    name: String,
+    push_before: String,
+    pr_base: String,
+}
+
+impl EventVars {
+    /// Read the three fields **through a lookup**, so the variable→field mapping is a
+    /// pure function of a map and its arm mutates no process-global environment —
+    /// which would force this suite out of its group target into a solo one
+    /// (`test_target_registration::an_env_mutating_suite_is_alone_in_its_target`, whose
+    /// scan is literal, so this sentence deliberately names neither call).
+    pub fn read(get: impl Fn(&str) -> String) -> Self {
+        Self {
+            name: get(EVENT_VARS[0].0),
+            push_before: get(EVENT_VARS[1].0),
+            pr_base: get(EVENT_VARS[2].0),
+        }
+    }
+
+    /// The real environment: an unset variable is *nothing named*, which the ladder
+    /// already reads as a fall to the floor.
+    pub fn from_env() -> Self {
+        Self::read(|var| std::env::var(var).unwrap_or_default())
+    }
+
+    /// The ladder's input.
+    pub fn event(&self) -> Event<'_> {
+        Event {
+            name: &self.name,
+            push_before: &self.push_before,
+            pr_base: &self.pr_base,
+        }
+    }
+}
+
+/// **The fence, live over this repo.**
+///
+/// `#[ignore]`d on purpose, and this is the whole of the CI-only sub-decision: the
+/// escape is a **commit-message trailer**, and the local four-command gate runs
+/// *before* the commit message exists — so a fence riding `cargo test` locally could
+/// never be made green for a legitimate re-pin, and would be disabled the first time
+/// one was needed. `cargo test` skips it; the named `manifest-freeze fence` step in
+/// `.github/workflows/ci.yml` un-skips exactly it, over the pushed range, with the
+/// event context threaded in as [`EVENT_VARS`]. Everything it is built out of — the
+/// verdict table, the escape, the ladder, this repo's own history — stays in the local
+/// gate, so the fence's *logic* is standing-tested even where the fence itself does not
+/// run (`completions/artifacts/M48/settle-record.md` → the fence's sub-decision *(i)*).
+#[test]
+#[ignore = "CI-only: run by the named `manifest-freeze fence` step in .github/workflows/ci.yml"]
+fn live() {
+    let repo = repo_root();
+    let vars = EventVars::from_env();
+    let window = resolve_window(&repo, vars.event());
+    let (rung, base) = match &window {
+        Window::Declared(base) => ("the base of the pushed range", base),
+        Window::Floor(base) => ("the HEAD~1 floor — no usable base was declared", base),
+        // A root commit has no prior state: clean, not an error.
+        Window::Nothing => return,
+    };
+    let violations = fence_over(&repo, base, "HEAD");
+    assert!(
+        violations.is_empty(),
+        "the freeze moved without its versions.\n\n{}\n\n\
+         Window: {rung} ({base}).\n\
+         Each line names a manifest and an entity whose `{}` moved while its \
+         co-located version stood still — a schema-shape change shipping past every \
+         gate at exit 0 unless the version moves with it.\n\
+         The fix is one of two, and they are not the same act: bump the entity's \
+         version and ship its corpus migration, or — if the hash moved for a reason \
+         that is NOT a shape change — declare it per entity on the commit that does \
+         it, `{} <entity>`, never blanket.",
+        rendered(&violations),
+        "schema-hash",
+        ESCAPE_TRAILER_KEY,
+    );
+}
+
+mod live_wiring {
+    use super::*;
+
+    fn workflow() -> String {
+        fs::read_to_string(repo_root().join(CI_WORKFLOW)).expect("the CI workflow is readable")
+    }
+
+    #[test]
+    fn the_ci_step_is_named_and_runs_the_ignored_arm_verbatim() {
+        let yaml = workflow();
+        assert!(
+            yaml.contains(&format!("name: {CI_STEP_NAME}")),
+            "the fence runs as its own NAMED step — a red run must say which fence \
+             failed, not just that the suite did:\n{yaml}",
+        );
+        assert!(
+            yaml.contains(CI_STEP_RUN),
+            "the step runs the ignored arm verbatim — `{CI_STEP_RUN}` — because \
+             `--ignored --exact` is the only thing that un-skips it:\n{yaml}",
+        );
+    }
+
+    #[test]
+    fn every_event_field_is_threaded_from_the_expression_that_carries_it() {
+        let yaml = workflow();
+        for (var, expression) in EVENT_VARS {
+            assert!(
+                yaml.contains(&format!("{var}: ${{{{ {expression} }}}}")),
+                "the workflow forwards {expression} into {var} and chooses nothing \
+                 among them — the ladder is Rust, so a `||` expression here would put \
+                 the decision the plan halt found broken back where nothing tests \
+                 it:\n{yaml}",
+            );
+        }
+        assert!(
+            yaml.contains("fetch-depth: 0"),
+            "the window needs the whole history it is asked to inspect:\n{yaml}",
+        );
+    }
+
+    /// Each field comes from **its own** variable — the one cross-wiring the ladder's
+    /// own table cannot catch, because by the time `Event` is built the mix-up looks
+    /// like an honest value.
+    #[test]
+    fn every_event_field_is_read_from_the_variable_that_carries_it() {
+        for (var, _) in EVENT_VARS {
+            let vars = EventVars::read(|asked| {
+                if asked == var {
+                    "the-value".to_string()
+                } else {
+                    String::new()
+                }
+            });
+            let event = vars.event();
+            let found = [
+                ("FENCE_EVENT_NAME", event.name),
+                ("FENCE_PUSH_BEFORE", event.push_before),
+                ("FENCE_PR_BASE", event.pr_base),
+            ];
+            for (field, value) in found {
+                let expected = if field == var { "the-value" } else { "" };
+                assert_eq!(
+                    value, expected,
+                    "{var} feeds {field} and nothing else — a swap here floors every \
+                     window silently, which reads exactly like a clean push",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_live_arm_is_ignored_so_the_local_gate_never_runs_it() {
+        let source = suite_source();
+        assert_eq!(
+            source.matches("\nfn live() {").count(),
+            1,
+            "exactly one live arm, and `manifest_freeze_fence::live` is the name the \
+             CI step addresses with `--exact`",
+        );
+        let declaration = source
+            .split_once("\nfn live() {")
+            .expect("the live arm exists")
+            .0;
+        // **Attribute lines only** — the arm's own doc comment explains why it is
+        // `#[ignore]`d, and a substring search over the whole block is satisfied by
+        // that prose alone (caught by an applied mutant: deleting the attribute left
+        // this arm green).
+        let attributes: Vec<&str> = declaration
+            .rsplit("\n\n")
+            .next()
+            .expect("the arm's own attribute block")
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("#["))
+            .collect();
+        assert!(
+            attributes.contains(&"#[test]")
+                && attributes.iter().any(|line| line.starts_with("#[ignore")),
+            "the live arm stays `#[ignore]`d: the escape is a commit-message trailer \
+             and the local four-command gate runs BEFORE the message exists, so a \
+             fence riding `cargo test` locally could never be made green for a \
+             legitimate re-pin (settle-record → the fence's sub-decision (i)). Found:\
+             \n{attributes:?}",
+        );
+    }
+}
+
+/// **The record stops saying the rule is unfenced.**
+///
+/// Law 1: this commit is what makes the four homes' *"stated, not fenced … deferred
+/// (M46)"* false, so it is the commit that repairs them — and the repair is fenced
+/// rather than remembered, because a statement about a mechanism rots the moment the
+/// mechanism moves.
+mod record {
+    use super::*;
+
+    /// The four homes that state the successor rule.
+    const HOMES: [&str; 4] = [
+        DEV_MANIFEST,
+        METHODOLOGY_MANIFEST,
+        "design/corpus-migration.md",
+        "design/storage.md",
+    ];
+
+    /// What every home must now say, one row per claim — the claim named, so a red arm
+    /// says which sentence went missing rather than which substring did.
+    const MUST_STATE: [(&str, &str); 8] = [
+        (
+            "the named escape, by its exact trailer key",
+            ESCAPE_TRAILER_KEY,
+        ),
+        ("where the fence fires", "in CI, over the pushed range"),
+        ("where it does NOT fire", "not a pack-load assert"),
+        ("declared bound — its reach", "this repo only, not adopters"),
+        (
+            "declared bound — what it is",
+            "a build fence, not a surface",
+        ),
+        ("refused mechanism (a)", "append-only"),
+        ("refused mechanism (a) — the reason", "a new stored format"),
+        (
+            "refused mechanism (c) — the reason",
+            "without a recorded prior",
+        ),
+    ];
+
+    /// What no home may say any more.
+    const MUST_NOT_STATE: [(&str, &str); 3] = [
+        ("the rule is fenced now", "stated, not fenced"),
+        ("nothing here is owed to a later wave", "deferred to M46"),
+        ("nothing here is owed to a later wave", "deferred (M46)"),
+    ];
+
+    /// A home's prose, read the way a reader reads it: comment markers and emphasis
+    /// gone, wraps collapsed — so a claim split across two wrapped comment lines still
+    /// counts as stated, and a claim genuinely absent still counts as missing.
+    fn prose(text: &str) -> String {
+        let lines: Vec<&str> = text
+            .lines()
+            .map(|line| line.trim_start().trim_start_matches('#'))
+            .collect();
+        lines
+            .join(" ")
+            .chars()
+            .filter(|c| !matches!(c, '*' | '`'))
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn every_home_states_what_is_now_fenced() {
+        for home in HOMES {
+            let text = prose(&fs::read_to_string(repo_root().join(home)).expect(home));
+            for (claim, token) in MUST_STATE {
+                assert!(
+                    text.contains(token),
+                    "{home} must state {claim} — expected to find {token:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn no_home_still_says_the_rule_is_unfenced() {
+        for home in HOMES {
+            let text = prose(&fs::read_to_string(repo_root().join(home)).expect(home));
+            for (why, token) in MUST_NOT_STATE {
+                assert!(
+                    !text.contains(token),
+                    "{home} still carries {token:?} — {why}",
+                );
+            }
+        }
     }
 }
