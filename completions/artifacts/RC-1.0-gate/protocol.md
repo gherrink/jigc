@@ -153,7 +153,16 @@ Every arm below is justified by a behaviour M48 changed that no blind probe reac
    The judgment to record is not whether it refuses — tests already fence that — but **whether the
    refusal reads as protection or as obstruction**, since this is the one deliberate regression an
    adopter meets. Also drive the **junk-directory** case, which now refuses where rc.10 succeeded.
-2. **The rc.10 → rc.11 upgrade.** Build/install `1.0.0-rc.10` to a temp prefix, author ~5 managed
+2. **The rc.10 → rc.11 upgrade.** ⚠️ **Build rc.10 from `8979f16` — pin that sha, do not search for
+   the version string.** **Two commits stamp `version = "1.0.0-rc.10"`**: `8979f16`, the genuine
+   pre-M48 binary the last trial ran on, and `4fd7fbc`, which is still rc.10-stamped but **contains
+   every M48 change including the audit fixes** (the bump landed late, at `9cb9b78`, deliberately
+   *after* the audit). A search for the version finds the **wrong, newer** one, and building it makes
+   this arm compare rc.11 against itself — **vacuous, with nothing in the output to reveal it**.
+   Verify before authoring: `git -C <build-tree> rev-parse HEAD` is `8979f16`, and the built binary
+   must **refuse nothing** at `milestone provision` over a planted leftover (rc.10's defect is the
+   arm's whole baseline; if it refuses, you built the wrong tree).
+   Then: build/install to a temp prefix, author ~5 managed
    docs of mixed doctypes plus a milestone record, commit; **then switch to rc.11** and continue
    (`validate` · `doc show` · a task → finalize · a `rename` · `migrate-corpus`). **This is the
    real 1.0.0 upgrade path** and it is covered by nothing today — the fixture builder constructs
