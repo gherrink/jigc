@@ -184,7 +184,20 @@ spec or arch-doc.
 **All three must reach the guides.** M48 ships them as an **adapter-owned artifact installed by
 `jigc setup`** — which **drains RC-pre-1.0's process note 4** (which required seeding
 `QUICKSTART.md`/`MIGRATING.md` into a sibling directory because setup shipped neither). **Do not
-seed them.** Whether a worker finds the installed artifact is now itself a measurement: record it.
+seed them.**
+
+**Two corrections to how that is measured, both verified against the installed artifact on
+2026-08-15:**
+
+- **It is not a discovery measurement.** `setup` commits the guide to
+  `.claude/skills/jigc/SKILL.md`, and the harness **auto-advertises** `.claude/skills/` in the
+  worker's system prompt. The worker is *told* the skill exists. Record whether it is **used**, and
+  do not report use as a worker having *found* anything.
+- **The guide names no read surface at all.** Across its 250 lines there is not one occurrence of
+  `doc show`, `doc list`, `doc schema`, `--task`, or any read-back instruction. So the guide
+  **cannot** be the channel by which a worker learns the read-back verb — that channel is the pack
+  steps (17 methodology + 3 dev steps declare `read.staged-read-back`). A VERB result under §3.3 is
+  therefore attributable to the M48 fence, not to the guide; state it that way in the record.
 
 ---
 
@@ -220,15 +233,24 @@ Every arm below is justified by a behaviour M48 changed that no blind probe reac
    Verify before authoring: `git -C <build-tree> rev-parse HEAD` is `8979f16`, and the built binary
    must **refuse nothing** at `milestone provision` over a planted leftover (rc.10's defect is the
    arm's whole baseline; if it refuses, you built the wrong tree).
-   Then: build/install to a temp prefix, author ~5 managed
-   docs of mixed doctypes plus a milestone record, commit; **then switch to rc.11** and continue
-   (`validate` · `doc show` · a task → finalize · a `rename` · `migrate-corpus`). **This is the
-   real 1.0.0 upgrade path** and it is covered by nothing today — the fixture builder constructs
-   every state by driving the *current* binary. Expect `setup`/`upgrade` to install the guide
-   artifact onto a corpus that predates it.
+   **Since the isolation change (§2), build it with `harness/build-image.sh 8979f16`** rather than
+   to a temp prefix: the sha is an argument, so the wrong-tree hazard above is unreachable rather
+   than merely warned about, and this arm then runs in the same isolation as every other. Confirm
+   the pair with `harness/verify-pair.sh` — it fails unless rc.10 **lacks** three verbs M48 shipped.
+   Then: author ~5 managed docs of mixed doctypes plus a milestone record, commit; **then switch to
+   rc.11** and continue (`validate` · `doc show` · a task → finalize · a `rename` ·
+   `migrate-corpus`). **This is the real 1.0.0 upgrade path** and it is covered by nothing today —
+   the fixture builder constructs every state by driving the *current* binary. Expect **`setup`** to
+   install the guide artifact onto a corpus that predates it — **not `upgrade`**, see arm 3.
 3. **The guide artifact's clobber refusal.** On that same upgraded corpus, **edit the installed
-   guide**, then re-run `setup`/`upgrade`. Expect a refusal-to-clobber with a route, not a silent
+   guide**, then re-run **`jigc setup`**. Expect a refusal-to-clobber with a route, not a silent
    overwrite and not a blocked setup. Then `uninstall` and confirm the artifact is taken back out.
+   ⚠️ **Not `jigc upgrade` — it does not touch the guide.** Verified 2026-08-15: with `SKILL.md`
+   deleted, `upgrade` exits 0 reporting only that the recorded config deltas re-apply clean, and
+   restores nothing; `setup` restores it. `upgrade` re-checks **config deltas** and is report-only
+   by its own help (*"it changes nothing"*). An executor who drives `upgrade` here sees no refusal
+   and would record a false finding — which is why the earlier `setup`/`upgrade` wording is gone
+   from both this arm and arm 2.
 4. **The verbs a blind session may never reach:** `config get` / `config list`, `describe
    --workflows`, `doc rename` on a **committed** identity (expect the refusal, not exit 0), and a
    read-shaped near-miss (`jigc config get` typo'd, `jigc doc read`) to confirm the tip names a read
