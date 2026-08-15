@@ -36,11 +36,19 @@
 //! | manifest text unparseable | **violation, fail closed** (either side; this wave's re-settled F3 precedent) |
 //!
 //! A violation names **the manifest path and the entity**: a bare count is
-//! unactionable across two files, and the named escape a later task adds is
+//! unactionable across two files, and the **named escape** (T2, `escape::…`) is
 //! per-entity, so the entity is the identity the report is keyed by.
+//!
+//! **The escape is a table too.** A re-pin is sometimes legitimate, so a violation is
+//! excused **iff** a commit message in the inspected range carries a line-leading
+//! `Manifest-Repin:` trailer naming **that exact entity** — and `escape::SHAPES`
+//! enumerates every shape the token can appear in against its verdict, refusals
+//! included, so no shape is entertained without a stated row. Blanket and empty values
+//! excuse **nothing**, deliberately: a blanket escape would restore *"re-pin the hash"*
+//! as one keystroke with two meanings, merely renamed.
 
 use engine::manifest::Manifest;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 /// The dev pack's frozen doctype-set manifest — one of the two texts the fence
@@ -100,6 +108,18 @@ pub enum Violation {
         /// The deserializer's own message.
         error: String,
     },
+}
+
+impl Violation {
+    /// The frozen entity this violation is about — the identity the per-entity escape
+    /// is keyed by. `None` for [`Violation::Unparseable`], which is about a *text*: it
+    /// names no entity, so no named escape can reach it.
+    fn entity(&self) -> Option<&str> {
+        match self {
+            Violation::HashMovedWithoutVersion { entity, .. } => Some(entity),
+            Violation::Unparseable { .. } => None,
+        }
+    }
 }
 
 impl fmt::Display for Violation {
@@ -222,6 +242,69 @@ pub fn compare_all(manifests: &[(&str, Option<&str>, &str)]) -> Vec<Violation> {
     manifests
         .iter()
         .flat_map(|(path, base, head)| compare_manifest(path, *base, head))
+        .collect()
+}
+
+/// The escape's trailer key (M48 Increment 11, T2).
+///
+/// A re-pin is sometimes **legitimate** — the schema-hash presentation projection at
+/// M47 Increment 1 re-pinned all 16 doctype hashes at unchanged versions, and both
+/// manifest headers name it *"the declared genesis exemption and the ONLY one."* A
+/// fence with no way to say that is a fence that gets disabled, so the escape ships
+/// with it — as a **commit-message trailer**: per-commit, reviewed with the diff that
+/// needs it, and not retro-addable without rewriting history
+/// (`completions/artifacts/M48/settle-record.md` → the fence's sub-decision *(i)*,
+/// which is also why the fence is CI-only: the local four-command gate runs *before*
+/// the commit message exists).
+pub const ESCAPE_TRAILER_KEY: &str = "Manifest-Repin:";
+
+/// The entities excused by a range's commit messages.
+///
+/// **Per entity, never blanket.** A value is matched against the violating entity by
+/// **exact equality** — no glob, no `all`, no pattern syntax is interpreted anywhere —
+/// so a blanket or empty value names nothing and excuses nothing. That refusal is
+/// deliberate and is the point of the whole increment: a blanket escape would restore
+/// *"re-pin the hash"* as one keystroke with two meanings, merely renamed, voiding what
+/// the fence proves.
+///
+/// **A line-leading token only.** The key is read off the **raw** line, so an indented
+/// line and a mid-prose mention are both prose — the same shape rule the `commit`
+/// doctype's own trailer-key guard states (`engine::validate` → the commit-trailer
+/// key-shape rule: a git trailer token carries no whitespace and no colon, on its own
+/// line). The key is matched **case-sensitively**: the fence fails **closed**, so a
+/// mis-typed escape leaves the violation standing rather than silently excusing it.
+///
+/// Declared bound: position within the message is **not** checked (git recognizes
+/// trailers only in the last paragraph). Being permissive about *where* a deliberate,
+/// human-written declaration sits — while strict about its shape and its value — costs
+/// the fence nothing it protects.
+///
+/// The messages are a **parameter**: this stays a pure function of text, so its whole
+/// axis runs with no git at all (T3 supplies the real range's messages).
+pub fn excused_entities(messages: &[&str]) -> BTreeSet<String> {
+    messages
+        .iter()
+        .flat_map(|message| message.lines())
+        .filter_map(|line| line.strip_prefix(ESCAPE_TRAILER_KEY))
+        .map(str::trim)
+        .filter(|entity| !entity.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Drop the violations a range's commit messages name — and only those.
+///
+/// A violation with no entity ([`Violation::Unparseable`]) is **never** excusable: the
+/// escape is per-entity, and an unreadable manifest names none. Order is preserved, so
+/// the surviving report is the same bytes it would have been unexcused.
+pub fn excuse(violations: Vec<Violation>, messages: &[&str]) -> Vec<Violation> {
+    let excused = excused_entities(messages);
+    violations
+        .into_iter()
+        .filter(|violation| match violation.entity() {
+            Some(entity) => !excused.contains(entity),
+            None => true,
+        })
         .collect()
 }
 
@@ -631,5 +714,254 @@ mod verdict {
                  declaration order",
             );
         }
+    }
+}
+
+/// The named escape (M48 Increment 11, T2) — `Manifest-Repin: <entity>`.
+///
+/// A violation is excused **iff** some commit message in the inspected range carries a
+/// **line-leading** `Manifest-Repin:` trailer whose value names **that exact entity**.
+/// Everything else about the escape is a refusal, and each refusal is an arm below
+/// rather than a comment: the escape exists so a legitimate re-pin can ship, and it is
+/// worth nothing if it can also wave the illegitimate one through.
+mod escape {
+    use super::*;
+
+    /// A violation over one named entity, to hold the escape against.
+    fn violation(entity: &str) -> Violation {
+        Violation::HashMovedWithoutVersion {
+            manifest: DEV_MANIFEST.to_string(),
+            entity: entity.to_string(),
+            version: 2,
+            base_hash: HASH_A.to_string(),
+            head_hash: HASH_B.to_string(),
+        }
+    }
+
+    /// One shape a commit message can carry the escape in, and whether it excuses the
+    /// entity `adr`.
+    struct Shape {
+        /// Why this row exists — printed on failure, so a red arm names its own rule.
+        rule: &'static str,
+        /// The whole commit message, subject line included.
+        message: &'static str,
+        /// Whether `adr`'s violation is excused by it.
+        excuses: bool,
+    }
+
+    /// **The escape's axis, as a table.** Every shape the token can appear in — the one
+    /// that excuses, and every one that must not — enumerated in one place, so a shape
+    /// cannot be entertained without a row stating its verdict.
+    const SHAPES: &[Shape] = &[
+        Shape {
+            rule: "a line-leading trailer naming the exact entity is the escape",
+            message: "fix(engine): re-pin adr after the projection change\n\n\
+                      Manifest-Repin: adr\n",
+            excuses: true,
+        },
+        Shape {
+            rule: "git accepts `token:value`; the value is trimmed, not required to be spaced",
+            message: "fix(engine): x\n\nManifest-Repin:adr\n",
+            excuses: true,
+        },
+        Shape {
+            rule: "surrounding whitespace in the value is trimmed, not part of the name",
+            message: "fix(engine): x\n\nManifest-Repin:   adr  \n",
+            excuses: true,
+        },
+        Shape {
+            rule: "the trailer need not be the last line of the message",
+            message: "fix(engine): x\n\nManifest-Repin: adr\nCo-Authored-By: Someone <a@b>\n",
+            excuses: true,
+        },
+        Shape {
+            rule: "a trailer naming a DIFFERENT entity excuses nothing — the escape is \
+                   keyed on the entity, not on the presence of the token",
+            message: "fix(engine): x\n\nManifest-Repin: changelog\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "an EMPTY value names no entity and excuses nothing",
+            message: "fix(engine): x\n\nManifest-Repin:\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "a whitespace-only value names no entity and excuses nothing",
+            message: "fix(engine): x\n\nManifest-Repin:    \n",
+            excuses: false,
+        },
+        Shape {
+            rule: "`*` is not an entity: no pattern syntax is interpreted, so a BLANKET \
+                   value excuses nothing — refused deliberately, since a blanket escape \
+                   restores the one-keystroke-two-meanings ambiguity this fence ends",
+            message: "fix(engine): x\n\nManifest-Repin: *\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "`all` is matched by exact equality like any other name, and no entity \
+                   is called `all` — the second blanket shape, refused the same way",
+            message: "fix(engine): x\n\nManifest-Repin: all\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "a comma-joined list names no single entity — one trailer per entity, \
+                   so a legitimate multi-entity re-pin writes the names out",
+            message: "fix(engine): x\n\nManifest-Repin: adr, changelog\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "a MID-PROSE mention is not a trailer: the token is read line-leading, \
+                   the shape rule the commit doctype's own trailer-key guard states",
+            message: "fix(engine): x\n\nWe considered Manifest-Repin: adr and decided against it.\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "an indented line is not a trailer either — the raw line is read, so a \
+                   quoted or fenced block cannot smuggle an escape in",
+            message: "fix(engine): x\n\n    Manifest-Repin: adr\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "a longer key that merely STARTS with the token is a different key",
+            message: "fix(engine): x\n\nManifest-Repinned: adr\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "the key is matched case-sensitively — the fence fails closed, so a \
+                   mis-typed escape leaves the violation standing",
+            message: "fix(engine): x\n\nmanifest-repin: adr\n",
+            excuses: false,
+        },
+        Shape {
+            rule: "a message carrying no escape at all excuses nothing",
+            message: "fix(engine): re-pin adr\n\nNo trailer here.\n",
+            excuses: false,
+        },
+    ];
+
+    #[test]
+    fn every_shape_the_token_can_appear_in_has_a_stated_verdict() {
+        for Shape {
+            rule,
+            message,
+            excuses,
+        } in SHAPES
+        {
+            let survivors = excuse(vec![violation("adr")], &[message]);
+            assert_eq!(
+                survivors.is_empty(),
+                *excuses,
+                "{rule}\n  message: {message:?}\n  survivors: {survivors:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn the_named_entity_is_excused_and_its_neighbour_is_not() {
+        let survivors = excuse(
+            vec![violation("adr"), violation(SLUG_RULE_ENTITY)],
+            &["fix(engine): re-pin adr\n\nManifest-Repin: adr\n"],
+        );
+        assert_eq!(
+            survivors,
+            vec![violation(SLUG_RULE_ENTITY)],
+            "the escape is per entity: naming one leaves every other violation from the \
+             same commit standing",
+        );
+    }
+
+    #[test]
+    fn several_entities_are_excused_across_several_commits_of_one_range() {
+        let messages = [
+            "fix(engine): re-pin adr\n\nManifest-Repin: adr\n",
+            "chore: unrelated\n",
+            "fix(engine): re-pin the slug rule and the changelog\n\n\
+             Manifest-Repin: slug-rule\n\
+             Manifest-Repin: changelog\n",
+        ];
+        let survivors = excuse(
+            vec![
+                violation("adr"),
+                violation("changelog"),
+                violation(SLUG_RULE_ENTITY),
+                violation("spec"),
+            ],
+            &messages,
+        );
+        assert_eq!(
+            survivors,
+            vec![violation("spec")],
+            "the whole inspected range is read, and one commit may name more than one \
+             entity — one trailer each",
+        );
+    }
+
+    #[test]
+    fn an_unparseable_manifest_is_never_excused() {
+        let unparseable = Violation::Unparseable {
+            manifest: DEV_MANIFEST.to_string(),
+            side: Side::Base,
+            error: "did not parse".to_string(),
+        };
+        let survivors = excuse(
+            vec![unparseable.clone()],
+            &[
+                "chore: x\n\nManifest-Repin: adr\n",
+                "chore: y\n\nManifest-Repin: slug-rule\n",
+            ],
+        );
+        assert_eq!(
+            survivors,
+            vec![unparseable],
+            "the escape is per entity and an unreadable text names none: no set of \
+             trailers can excuse the fail-closed verdict",
+        );
+    }
+
+    #[test]
+    fn the_escape_composes_over_the_comparator_it_excuses() {
+        let base = with_doctypes(&[("adr", 2, HASH_A)]);
+        let head = with_doctypes(&[("adr", 2, HASH_B)]);
+        let found = compare_manifest(DEV_MANIFEST, Some(&base), &head);
+        assert_eq!(
+            found.len(),
+            1,
+            "the fixture must genuinely violate: {found:?}"
+        );
+        assert_eq!(
+            excuse(found, &["fix(engine): x\n\nManifest-Repin: adr\n"]),
+            vec![],
+            "the escape excuses the comparator's own violations, keyed by the entity \
+             the comparator names",
+        );
+    }
+
+    /// The excused set is a set, not a log: the same messages fed in **two divergent
+    /// orders** must leave byte-identical output, or which entity survived would depend
+    /// on the order git happened to list the range in.
+    #[test]
+    fn the_surviving_report_is_byte_identical_under_divergent_message_orders() {
+        let forward = [
+            "fix: a\n\nManifest-Repin: adr\n",
+            "fix: b\n\nManifest-Repin: changelog\n",
+        ];
+        let reverse = [forward[1], forward[0]];
+        let violations = || {
+            vec![
+                violation("adr"),
+                violation("changelog"),
+                violation(SLUG_RULE_ENTITY),
+            ]
+        };
+
+        let in_order = excuse(violations(), &forward);
+        let reversed = excuse(violations(), &reverse);
+        assert_eq!(in_order.len(), 1, "two of three excused: {in_order:?}");
+        assert_eq!(
+            rendered(&in_order),
+            rendered(&reversed),
+            "the surviving report must not depend on the order the range's messages \
+             arrive in",
+        );
     }
 }
