@@ -22,6 +22,32 @@
 //!      claim. This is the law-1 fence applied to our own record: the doc may not claim a
 //!      verdict that has not been reached.
 //!
+//! A fourth claim joined at M48 Increment 12 (T1):
+//!
+//!   4. **The pack-step count is stated once, and says which binary it was measured on.**
+//!      The pre-1.0 trial's headline discoverability fact — *of N pack step files exactly
+//!      one names `jigc doc show`, and it is not an authoring step* — reached **eleven
+//!      sites across seven files** as a bare `69`, and 69 was never the number. It is what
+//!      the finding's own repro command printed: `ls crates/cli/pack/steps/
+//!      packs/methodology/steps/ | wc -l` counts `ls`'s two directory headers and the
+//!      blank line between them, so a tree of **66** step `*.yaml` — what the trial's HEAD
+//!      `8979f16` carried, and therefore what 1.0.0-rc.10 shipped — reported 66 + 3. The
+//!      finding survives its denominator intact; only the denominator was wrong.
+//!
+//!      A bare count also re-falsifies itself on the next step file the pack gains (HEAD
+//!      is already **67**), so the surviving statement carries its **measurement point** —
+//!      the pre-1.0.0 trial's 1.0.0-rc.10 — and lives in **one** home: the rc.11 charter
+//!      row in `implementation/decisions-pending.md`. The live docs that restated it now
+//!      cross-reference that home instead (CLAUDE.md → *Cross-reference, never restate*).
+//!
+//!      The **dated records** — `DECISIONS.md` and the two `RC-pre-1.0/` artifacts — are
+//!      not rewritten and do not outsource their numbers: a trial record that stated
+//!      someone else's measurement would stop being a record. They keep their own figure,
+//!      corrected, inside the file's own **dated correction bracket** (`DECISIONS.md`'s
+//!      `[Corrected <date> …]` convention), because the reader must see the basis *and*
+//!      what falsified it — and that bracket names the home, so landing on the record
+//!      still reaches the count that is current.
+//!
 //! These are doc-content assertions by nature — the deliverable *is* the prose. The
 //! behaviour the prose describes is proven elsewhere, through the real binary:
 //! `crates/cli/tests/commit_rejected_axis.rs` drives every committing door under a
@@ -214,6 +240,247 @@ fn claude_md_names_m47_and_claims_only_the_build() {
         assert!(
             !span.contains(forbidden),
             "the M47 claim must not overstate the audit, but contains `{forbidden}`:\n{span}",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. The pack-step count — one home, and it names its measurement point.
+// ---------------------------------------------------------------------------
+
+/// Every home the pre-1.0 trial's pack-step-count claim reached, enumerated from the
+/// M48 Settle's own site list plus `implementation/roadmap.md`, which was already
+/// correct and must stay so. Enumerated rather than globbed: a glob over the repo
+/// would sweep in the goldens and this suite's own prose.
+const STEP_COUNT_HOMES: [&str; 8] = [
+    "implementation/decisions-pending.md",
+    "CLAUDE.md",
+    "design/surface-contract.md",
+    "DECISIONS.md",
+    "implementation/roadmap.md",
+    "completions/artifacts/M48/handover.md",
+    "completions/artifacts/RC-pre-1.0/trial-record.md",
+    "completions/artifacts/RC-pre-1.0/findings-verification.md",
+];
+
+/// The single home the count is allowed to live in — the rc.11 charter row.
+const STEP_COUNT_HOME: &str = "implementation/decisions-pending.md";
+
+/// The **live** docs that restated F1's count and now cross-reference the charter
+/// instead — present-tense prose, which is where *cross-reference, never restate* binds.
+///
+/// `implementation/roadmap.md` is deliberately not here: its M48 row is the milestone's
+/// own claim, already stated at 66 before this task, and owned by the record repair (T6).
+const STEP_COUNT_RESTATEMENTS: [&str; 3] = [
+    "CLAUDE.md",
+    "design/surface-contract.md",
+    "completions/artifacts/M48/handover.md",
+];
+
+/// The **dated records**, which state their own measurement rather than pointing at
+/// someone else's — a trial record that outsourced its numbers would stop being a record.
+/// They carry the correction instead: a dated bracket that keeps the falsified figure
+/// visible beside what falsified it, and names the home the live count now lives in.
+///
+/// `DECISIONS.md` is a record in the same sense, and also carries unrelated step-file
+/// censuses in its build entries (F1's owe-set *30 of 66*, the batch-author-note's *13*)
+/// that a blanket no-count rule would forbid for no gain.
+const STEP_COUNT_RECORDS: [&str; 3] = [
+    "DECISIONS.md",
+    "completions/artifacts/RC-pre-1.0/trial-record.md",
+    "completions/artifacts/RC-pre-1.0/findings-verification.md",
+];
+
+/// The smallest byte index `>= i` that is a char boundary of `s` (or `s.len()`).
+fn char_ceil(s: &str, mut i: usize) -> usize {
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i.min(s.len())
+}
+
+/// Byte spans of the file's **dated** correction brackets — `[Corrected YYYY-MM-DD …]**`,
+/// the convention `DECISIONS.md` uses to keep a falsified basis visible beside what
+/// falsified it. An undated `[Corrected …]` is not one: the date is the whole point.
+fn dated_correction_spans(body: &str) -> Vec<(usize, usize)> {
+    const OPEN: &str = "[Corrected ";
+    let mut spans = Vec::new();
+    let mut from = 0usize;
+    while let Some(rel) = body[from..].find(OPEN) {
+        let start = from + rel;
+        let after = start + OPEN.len();
+        from = after;
+        let rest = &body[after..];
+        let dated = rest.len() >= 10
+            && rest.as_bytes()[..10].iter().enumerate().all(|(i, b)| {
+                if i == 4 || i == 7 {
+                    *b == b'-'
+                } else {
+                    b.is_ascii_digit()
+                }
+            });
+        if !dated {
+            continue;
+        }
+        if let Some(close) = rest.find("]**") {
+            spans.push((start, after + close + "]**".len()));
+        }
+    }
+    spans
+}
+
+/// Every `(offset, value)` at which `body` states a number as a count of pack **step
+/// files**.
+///
+/// Tight by construction: the number must govern a `step file(s)` phrase within a short
+/// reach that crosses no other number. That admits every shape the claim was written in
+/// (`of 69 pack step files`, `1 of 69 step files`, `(1/69 step files)`, `**66** pack step
+/// files`) while excluding the many `…md:69` *line* references the record also carries.
+fn step_count_claims(body: &str) -> Vec<(usize, usize)> {
+    let bytes = body.as_bytes();
+    let mut hits = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if !bytes[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        // Not the line half of a `path.md:69` / `1.69` reference.
+        if body[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c == ':' || c == '.')
+        {
+            continue;
+        }
+        let tail = &body[i..];
+        let window = tail[..char_ceil(tail, 40.min(tail.len()))].to_lowercase();
+        let Some(phrase) = window.find("step file") else {
+            continue;
+        };
+        if window[..phrase].chars().any(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        if let Ok(value) = body[start..i].parse::<usize>() {
+            hits.push((start, value));
+        }
+    }
+    hits
+}
+
+/// The count claims of `body` that sit outside every dated correction bracket — the
+/// statements the file makes in its own present-tense voice.
+fn uncorrected_step_count_claims(body: &str) -> Vec<(usize, usize)> {
+    let brackets = dated_correction_spans(body);
+    step_count_claims(body)
+        .into_iter()
+        .filter(|(at, _)| !brackets.iter().any(|(s, e)| at >= s && at < e))
+        .collect()
+}
+
+fn line_of(body: &str, at: usize) -> usize {
+    body[..at].matches('\n').count() + 1
+}
+
+/// Whether `text` cross-references the one home the live count lives in. Both halves are
+/// required: the file alone is a big document, the heading alone is not addressable.
+fn points_at_the_home(text: &str) -> bool {
+    text.contains("decisions-pending.md") && text.contains("The rc.11 wave")
+}
+
+#[test]
+fn the_stale_pack_step_count_survives_only_inside_a_dated_correction() {
+    let mut bare = Vec::new();
+    for home in STEP_COUNT_HOMES {
+        let body = read_doc(home);
+        for (at, _) in uncorrected_step_count_claims(&body)
+            .into_iter()
+            .filter(|(_, value)| *value == 69)
+        {
+            bare.push(format!("{home}:{}", line_of(&body, at)));
+        }
+    }
+    assert!(
+        bare.is_empty(),
+        "`69` pack step files was never the number — it is `ls <dir> <dir> | wc -l` \
+         counting its own two directory headers and blank separator over a tree of 66, \
+         which is what 1.0.0-rc.10 shipped. A dated record keeps its basis inside a \
+         `[Corrected …]` bracket; a live doc is corrected. Bare at: {bare:?}",
+    );
+}
+
+#[test]
+fn the_pack_step_count_is_stated_once_and_names_its_measurement_point() {
+    // The live docs state no count of their own — they point at the home.
+    let mut restated = Vec::new();
+    for home in STEP_COUNT_RESTATEMENTS {
+        let body = read_doc(home);
+        for (at, value) in uncorrected_step_count_claims(&body) {
+            restated.push(format!("{home}:{} (`{value}`)", line_of(&body, at)));
+        }
+        assert!(
+            points_at_the_home(&body),
+            "{home} drops the count, so it must point at the home that keeps it \
+             (`implementation/decisions-pending.md` → *The rc.11 wave*)",
+        );
+    }
+    assert!(
+        restated.is_empty(),
+        "the F1 pack-step count lives in one home ({STEP_COUNT_HOME}) and is \
+         cross-referenced, never restated (CLAUDE.md → *Cross-reference, never \
+         restate*); restated at: {restated:?}",
+    );
+
+    // A dated record keeps its own measurement, corrected — and its correction names the
+    // home, so a reader who lands on the record still reaches the count that is current.
+    for record in STEP_COUNT_RECORDS {
+        let body = read_doc(record);
+        let brackets = dated_correction_spans(&body);
+        assert!(
+            brackets
+                .iter()
+                .any(|(s, e)| points_at_the_home(&body[*s..*e])),
+            "{record} corrects the count in its own voice, so one of its dated \
+             correction brackets must name the home that now keeps it \
+             (`implementation/decisions-pending.md` → *The rc.11 wave*)",
+        );
+    }
+
+    let body = read_doc(STEP_COUNT_HOME);
+    let charter = section(&body, "Before planning — milestone-keyed deferrals");
+    let start = charter
+        .find("### The rc.11 wave")
+        .expect("decisions-pending.md must carry the rc.11 charter");
+    let rest = &charter[start..];
+    let end = rest[1..]
+        .find("\n### ")
+        .map(|i| i + 1)
+        .unwrap_or(rest.len());
+    let rc11 = &rest[..end];
+
+    let rows: Vec<&str> = rc11
+        .lines()
+        .filter(|line| step_count_claims(line).iter().any(|(_, n)| *n == 66))
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "the rc.11 charter must state the pack-step count as 66, exactly once; \
+         found {} row(s) in:\n{rc11}",
+        rows.len(),
+    );
+
+    // A bare count re-falsifies itself on the next step file the pack gains (the tree is
+    // already at 67), so the surviving statement carries the binary it was measured on.
+    let row = rows[0];
+    for owed in ["1.0.0-rc.10", "pre-1.0.0 trial"] {
+        assert!(
+            row.contains(owed),
+            "the count must name its measurement point (`{owed}`); the row reads:\n{row}",
         );
     }
 }

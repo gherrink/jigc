@@ -51,8 +51,10 @@ alongside it — every finding has a live repro block, so nothing needs re-deriv
    framing, so the proposer must not self-frame it.
 
 4. **F1 is the wave's centre of gravity, and its fence is the one genuine design question** (fork 3).
-   The gap is countable — **1 of 69 pack step files names `doc show`**, and it is not an authoring
-   step. Precedent for the fence is the `states-constraints:` stated-at mold (M43 fork 3 / M44 D5).
+   The gap is countable — **exactly one pack step file names `doc show`**, and it is not an authoring
+   step (the denominator and the binary it was measured on live in one home:
+   [decisions-pending.md](../../../implementation/decisions-pending.md) → *The rc.11 wave (M48)*).
+   Precedent for the fence is the `states-constraints:` stated-at mold (M43 fork 3 / M44 D5).
 
 ## Three things that will bite you
 

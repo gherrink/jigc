@@ -58,9 +58,18 @@ justification, in [operator-log.md](operator-log.md).
 - **The discoverability lens landed for the sixth consecutive trial — on the capability built for it.**
   All three sessions independently went to the filesystem to read their own in-flight work.
   `jigc doc show --task <id>` has shipped since M43, where it is recorded as *"demanded three trials
-  running"*, and is documented both in its own help and in line 3 of the AGENT.md preload. **Of 69
+  running"*, and is documented both in its own help and in line 3 of the AGENT.md preload. **Of 66
   pack step files, exactly one mentions `doc show`** — and not an authoring step. That is the located,
   checkable gap (F1).
+  **[Corrected 2026-08-15 (M48 Increment 12, T1):** this record stated the denominator as **69** here
+  and as `1/69` in the adjudication below, and 69 was never the number of step files. It is what
+  `ls crates/cli/pack/steps/ packs/methodology/steps/ | wc -l` — the command in F1's repro block —
+  prints, because `ls` given two directories emits a header line for each plus a blank separator. The
+  tree at this trial's HEAD (`8979f16`) carried **66** step `*.yaml`, so the command reported 66 + 3.
+  The finding itself is untouched: one step file, and not an authoring one. The corrected count and
+  the binary it was measured on (1.0.0-rc.10) live in one home,
+  [decisions-pending.md](../../../implementation/decisions-pending.md) → *The rc.11 wave (M48)*; the
+  second restatement below is corrected in place against this bracket.**]**
 - **Three refutations, all the same shape**: no schema read (`doc schema` ships), no inventory verb
   (`doc list` ships), no staged read (`doc show --task` ships). Fifth consecutive trial where headline
   complaints dissolve into shipped capability.
@@ -85,7 +94,7 @@ the rc.9 → rc.10 upgrade path clean across five doctypes.
 **The known-hole lens did not land.** No prior-wave hole recurred on its fixed path.
 
 **Two lenses did.** The **discoverability lens**, for the sixth time, now with the mechanism located
-in a countable artifact (1/69 step files) rather than described. And a **write-surface honesty**
+in a countable artifact (1 of 66 step files) rather than described. And a **write-surface honesty**
 pair that is new: F2 (`doc author` ignores a corrected title and acks success) and F7 (an omitted
 optional section renders its heading into a committed doc) are both *silent* — a write that does
 nothing while reporting success, and a template instruction whose result contradicts it.

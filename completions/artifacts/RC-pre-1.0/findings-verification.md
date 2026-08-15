@@ -38,9 +38,20 @@ own in-flight work:
 the second sentence of `doc show --help` and in **line 3 of the `AGENT.md` preload** every session
 starts with. It was still not found by any of the three.
 
-**The located, mechanically checkable gap** (F1): of **69 pack step files, exactly one** mentions
+**The located, mechanically checkable gap** (F1): of **66 pack step files, exactly one** mentions
 `doc show` — `locate-from-spec.yaml`, which is about locating against a spec, not reading back your
-own writes. No authoring step names it. The agent is told once at session start, then walked through
+own writes. No authoring step names it.
+**[Corrected 2026-08-15 (M48 Increment 12, T1):** the denominator was recorded throughout this file
+as **69** — here, in F1's `observed:` line, and in the closing coverage note — and 69 was never the
+number of step files. F1's second repro command,
+`ls crates/cli/pack/steps/ packs/methodology/steps/ | wc -l`, counts `ls`'s own two directory
+headers and the blank line separating them; the tree at the trial's HEAD (`8979f16`) carried **66**
+step `*.yaml`, so the command reported 66 + 3. The command is corrected to glob the files it means
+to count (`ls crates/cli/pack/steps/*.yaml packs/methodology/steps/*.yaml | wc -l`), and the two
+restatements are corrected in place against this bracket. **The verdict does not move**: the
+numerator, the named file, and *"no authoring step names it"* were all read directly and are
+unaffected. The count's one home, with the binary it was measured on (1.0.0-rc.10), is
+[decisions-pending.md](../../../implementation/decisions-pending.md) → *The rc.11 wave (M48)*.**]** The agent is told once at session start, then walked through
 six write verbs that never mention it again.
 
 ---
@@ -60,9 +71,9 @@ setup:
   - fixture: any repo after `jigc setup`
 repro:
   - ["sh","-c","grep -rl 'doc show' crates/cli/pack/steps/ packs/methodology/steps/ | wc -l"]
-  - ["sh","-c","ls crates/cli/pack/steps/ packs/methodology/steps/ | wc -l"]
+  - ["sh","-c","ls crates/cli/pack/steps/*.yaml packs/methodology/steps/*.yaml | wc -l"]
 expect:
-  observed: "1 of 69 step files; the one is locate-from-spec.yaml, not an authoring step"
+  observed: "1 of 66 step files; the one is locate-from-spec.yaml, not an authoring step"
   wanted: "the authoring steps that solicit writes also name `jigc doc show <addr> --task <id>`"
 pinned-by: UNPINNED — a pack-load fence (authoring steps that solicit a write must state the read-back) is the fix's own red test
 ```
@@ -383,7 +394,7 @@ in both formats; `doc_list` asserts the exact row set *and* the `managed`/`unreg
 uncommitted bytes and asserts the staged bytes serve.
 
 **What that leaves unpinned is reachability, not capability.** The capabilities are fenced; what
-nothing fences is that an agent can *find* them — F1's countable property (1 of 69 pack step files
+nothing fences is that an agent can *find* them — F1's countable property (1 of 66 pack step files
 names `doc show`, and it is not an authoring step). That fence lands with F1's fix. Pinning the gap
 now would pin it as expected output.
 
