@@ -37,9 +37,36 @@ week went.
 
 ## 2 · Instruments
 
-**Three blind sessions + one operator-scripted walk** — the RC-pre-1.0 shape, chosen deliberately
-so the reachability result is **directly comparable** to the trial that produced M48's findings.
-That comparison *is* the headline measurement; changing the instrument would forfeit it.
+**Three blind sessions + one operator-scripted walk** — the RC-pre-1.0 shape, kept so the
+reachability result stays as comparable as it can be to the trial that produced M48's findings.
+
+### Revised 2026-08-15, before the trial ran: every session runs filesystem-isolated
+
+**This paragraph records a change to a pre-registered instrument, made before any session ran and
+with its cost stated.** The original text said the comparison *is* the headline measurement and that
+changing the instrument would forfeit it. That was written without knowing the environment was
+already contaminated.
+
+**The confound, verified rather than assumed.** Every jigc trial through RC-pre-1.0 ran as an
+ordinary session on the operator's machine, which loads `~/.claude/CLAUDE.md`. Measured 2026-08-15:
+from `/tmp`, with no project in sight, a host session answered **YES** to *"do your loaded
+instructions mention a bash output filter, or a rule about asking the user only one question at a
+time?"* — the operator's `PRINCIPLES.md` and `LACON.md`, in every worker's context. So every prior
+result measured jigc **plus** those instructions, with nothing separating the two.
+
+**Why it cannot simply be declared and left in place.** Its direction is unknown. *"Never ask what
+you can find out yourself"* plausibly pushes a worker toward reading — but toward reading **files**,
+which §3.3 scores as FILESYSTEM, the non-VERB outcome. A confound that could inflate *either* column
+cannot be corrected for after the fact.
+
+**The cost, stated plainly: the RC-pre-1.0 comparison becomes indicative, not direct.** That trade
+is taken deliberately. The comparison was already weakened by six fresh corpora, a different binary,
+and a designed-need correction no prior trial carried — and a clean absolute measurement is worth
+more than a comparison with an uncontrolled variable inside it.
+
+The mechanism, its five verification checks and its declared bounds live in
+[harness/README.md](harness/README.md). A redirected config dir does **not** defeat this; this
+project's own M17 pilot recorded that as insufficient.
 
 **Invocation log ON in every session** (`jigc config set invocation-log true` in the worker prompt,
 as every prior trial did). §3's measurement depends on it.
@@ -97,18 +124,38 @@ is a different result from one that only uses the verb, and the difference matte
 single managed doc I wrote"*) was a confession, and the next worker may not be that candid. The log
 and the transcript are the instrument; the feedback report is context.
 
-### 3.4 The pre-registered reading
+### 3.4 The pre-registered reading — and the control that makes a null readable
+
+**The positive control, run first, on the operator walk. Added 2026-08-15 with the isolation
+change.** Before any blind result is read, one arm must demonstrate that the VERB channel **can**
+fire: an operator-driven task whose correct completion is impossible without reading a managed doc
+back — the doc's on-disk state must differ from what the operator wrote, so recall cannot substitute
+for reading. Its only job is to put one `jigc doc show … --task …` record in the invocation log.
+
+**If the control does not fire, no blind result may be read at all.** A uniform null in both
+directions is the signature of an apparatus that cannot discriminate, not of a finding — the failure
+mode that voided a sibling project's entire results set three times, and the one this rig already
+hit once (its first isolation probe returned UNKNOWN on the host *and* in the container). Fix the
+instrument and re-run; do not report a landing.
+
+Why it became necessary here: isolation removed the operator's global instructions from every
+worker, including *"never ask what you can find out yourself."* Without a control, a moved number
+cannot be attributed — it could be M48's fence failing, or it could be the removal of something that
+was quietly propping the measurement up.
 
 - **3/3 VERB** — the mechanism fix took. The claim holds; record it as the first trial in seven not
   to land the lens.
 - **1–2 VERB** — partial. **Blocks the claim, not necessarily the release**: the fence works and
   discovery is still unreliable, which is a *surface* finding under §1 and routes to M46 — but the
   wave's claim is recorded as **unproven**, not proven.
-- **0 VERB** — **the seventh landing.** Pre-declared by the wave itself as *"a signal about the
-  product's shape, not about the trial."* This **blocks the claim** and forces a decision the trial
-  cannot make: whether the adapter-enforced ergonomics bet ([VISION.md](../../../VISION.md)
-  principle #3) needs revisiting before 1.0.0. **Escalate to the human with the evidence; do not
-  adjudicate it inside the trial.**
+- **0 VERB, control fired** — **the seventh landing.** Pre-declared by the wave itself as *"a signal
+  about the product's shape, not about the trial."* This **blocks the claim** and forces a decision
+  the trial cannot make: whether the adapter-enforced ergonomics bet
+  ([VISION.md](../../../VISION.md) principle #3) needs revisiting before 1.0.0. **Escalate to the
+  human with the evidence; do not adjudicate it inside the trial.**
+- **0 VERB, control did not fire** — **apparatus failure, not a result.** Nothing about the product
+  may be concluded, in either direction. This row exists so that the cheapest possible explanation
+  for the wave's own predicted outcome cannot be skipped on the way to the expensive one.
 
 A **NEITHER** outcome is scored as a non-VERB for this reading **and** examined separately: if the
 worker proceeded blind and shipped something wrong, that is its own finding under §1.
@@ -147,6 +194,17 @@ Not a blind session, and the reason is evidence rather than preference: its valu
 operator-placed plants and destructive sequences **a blind agent cannot be relied on to reach**.
 Every arm below is justified by a behaviour M48 changed that no blind probe reaches.
 
+0. **The positive control — run FIRST, before any blind session is read** (§3.4). Numbered 0 so the
+   arms below keep the numbers they are referenced by. Its only job is to prove the VERB channel can
+   fire at all; it measures nothing about discoverability, because the operator already knows the
+   verb.
+   The shape that makes reading **unavoidable**: author a managed doc whose **derived** identity is
+   not knowable from what was typed — a title long enough that the slug rule's word cap and edge
+   stopword drop decide the slug — then perform an operation that must address the doc by that
+   derived id. Recall cannot substitute, because nobody ever wrote the id down. Reading it back
+   (`jigc doc show`/`jigc doc list`) is the only route, and it lands the record §3.3 counts.
+   Pass condition: **at least one `jigc doc show … --task …` in that corpus's invocation log.**
+   Fail: the instrument cannot discriminate — fix it and re-run before reading any blind session.
 1. **The declared breaking change.** Plant a **non-registered leftover holding staged, unstaged and
    untracked work**, then drive `milestone provision`. Expect a refusal naming the path and the
    bytes, with `--force` as the hatch. **Then drive the same state at `discard` and `uninstall`.**
@@ -234,3 +292,11 @@ Stated so the 1.0.0 record does not imply coverage that was never bought:
   operator running one session at a time will not exercise them.
 - **Long-horizon drift.** Every trial to date is a short arc. The salience-independent enforcement
   claim rests on the long-horizon study, not on this.
+- **A direct comparison against RC-pre-1.0's reachability result.** Isolation (§2) removed a
+  variable that was present in all seven prior trials, so a difference in the numbers cannot be
+  attributed to M48's fence alone. The comparison is reported as **indicative**, and the absolute
+  measurement — read against the §3.4 control — is what carries weight.
+- **Whether the isolated environment is representative of an adopter's.** A real adopter has their
+  own global instructions, plugins and skills; the container has none. This trial measures jigc
+  without that layer, which is the right instrument for *attributing* a result and the wrong one for
+  predicting an adopter's day.
