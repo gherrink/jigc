@@ -40,18 +40,63 @@ echo "checking corpus at $CORPUS"
 N="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
 [ "$N" = "$EXPECT_COMMITS" ] && ok "$EXPECT_COMMITS commits" || bad "expected $EXPECT_COMMITS commits, found $N"
 
-DIRT="$(git status --porcelain)"
-[ -z "$DIRT" ] && ok "working tree clean" || bad "working tree dirty:
+# `git status` failing must not read as "clean". Empty output and a broken index /
+# dubious-ownership refusal are the same empty string, and this script runs both on the
+# host and inside the container, where `detected dubious ownership in repository at
+# '/work'` is reachable in normal use.
+if DIRT="$(git status --porcelain 2>&1)"; then
+  [ -z "$DIRT" ] && ok "working tree clean" || bad "working tree dirty:
 $DIRT"
+else
+  bad "git status failed — cannot certify the tree: $DIRT"
+fi
 
 # --- it has never met jigc ----------------------------------------------------------
-# The "from nothing" premise is exact, not approximated. A leftover .jigc/ from a
-# rehearsal is the single most likely way to hand a worker a corpus that is not naive.
+# The "from nothing" premise is exact, not approximated. A leftover from a rehearsal is
+# the single most likely way to hand a worker a corpus that is not naive.
+#
+# `.git/hooks/pre-commit` is the one that matters most and the one a human cleanup
+# misses: `jigc setup` installs it (crates/cli/src/setup.rs → install_precommit_hook),
+# it lives INSIDE .git/, so it survives `git reset --hard` and `git clean -fdx`, and it
+# is invisible to `git status`. A corpus carrying it fires `jigc validate` on the
+# worker's first commit and prints doc↔code findings — contamination on the exact
+# conduct axis this trial measures, in a corpus otherwise certified naive.
 RESIDUE=""
-for p in .jigc .claude CLAUDE.md AGENT.md; do
+for p in .jigc .claude CLAUDE.md AGENT.md .mcp.json CLAUDE.local.md AGENTS.md; do
   [ -e "$p" ] && RESIDUE="$RESIDUE $p"
 done
-[ -z "$RESIDUE" ] && ok "no jigc/adapter residue" || bad "corpus is not naive — found:$RESIDUE"
+HOOKS_DIR="$(git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)"
+for h in "$HOOKS_DIR"/*; do
+  [ -f "$h" ] || continue
+  case "$h" in *.sample) continue;; esac
+  RESIDUE="$RESIDUE $h"
+done
+[ -z "$RESIDUE" ] && ok "no jigc/adapter residue (hooks dir included)" \
+  || bad "corpus is not naive — found:$RESIDUE"
+
+# --- no path back to a real repository, and no redirected hooks ----------------------
+# A remote means a worker's `git push` can reach something real. `core.hooksPath` is how
+# a rehearsal's hook survives even an empty .git/hooks.
+# Local remote URLs only — NOT `git remote -v`, which lists a bare name for any
+# `remote.<name>.*` key inherited from the operator's ~/.gitconfig. A global
+# `remote.origin.prune = true` makes every fresh repo report an "origin" with no URL,
+# which is not a remote and cannot be pushed to.
+REMOTES="$(git config --local --get-regexp '^remote\..*\.url' 2>/dev/null || true)"
+[ -z "$REMOTES" ] && ok "no git remote URL" || bad "corpus has a real remote — a worker could push:
+$REMOTES"
+
+HP="$(git config --get core.hooksPath 2>/dev/null || true)"
+[ -z "$HP" ] && ok "core.hooksPath unset" || bad "core.hooksPath is set to '$HP'"
+
+# --- the history is the template's, not a rehearsal's ---------------------------------
+# `git reflog` shows a rehearsal's setup commit even after `git reset --hard`, and a
+# worker that runs `git reflog` for orientation would see it.
+REFLOG_N="$(git reflog 2>/dev/null | wc -l | tr -d ' ')"
+[ "$REFLOG_N" = "$EXPECT_COMMITS" ] && ok "reflog carries $EXPECT_COMMITS entries (no rehearsal residue)" \
+  || bad "reflog has $REFLOG_N entries, expected $EXPECT_COMMITS — this corpus has been worked in"
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+[ "$BRANCH" = "main" ] && ok "on main" || bad "branch is '$BRANCH', expected main"
 
 # --- README.md is the only tracked markdown -----------------------------------------
 # A tracked .md is an ingest candidate; a stray one changes what `jigc ingest` reports
@@ -92,8 +137,17 @@ done
 
 # --- prose/code consistency, only when it was asked for ------------------------------
 if [ "$WANT_CLEAN_PROSE" = 1 ]; then
-  HITS="$(grep -rniE "in front of|long-term store" README.md package.json src/ 2>/dev/null || true)"
-  [ -z "$HITS" ] && ok "prose matches the code (no forwarding claim)" || bad "--clean-prose was expected, but the contradiction survives:
+  # Wider than the two phrases instantiate.sh's sed targets, so this is an independent
+  # check rather than a restatement of the fix — a header reworded to claim forwarding
+  # in different words would no-op the sed and pass its fence, and must still fail here.
+  #
+  # But NOT so wide that it matches the replacement text. The clean header itself reads
+  # "Deliberately not durable … nothing is forwarded anywhere", so "durable"/"forward"
+  # as bare terms make this check fail on a correct corpus — which it did, on the first
+  # attempt. Match claim-shaped phrases, not their negations.
+  HITS="$(grep -rniE "in front of|long-term store|rollup cache|refill|upstream (store|reader)" \
+            README.md package.json src/ 2>/dev/null || true)"
+  [ -z "$HITS" ] && ok "prose matches the code (no forwarding/durability claim)" || bad "--clean-prose was expected, but a forwarding-shaped claim survives:
 $HITS"
 else
   skip "prose contradiction not checked (corpus instantiated without --clean-prose)"

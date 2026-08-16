@@ -104,9 +104,11 @@ touches the original corpus (so a session can be re-run from a clean start), and
 the invocation-log record count and the `doc show` call count, which is protocol.md §3.3's
 primary channel.
 
-Auth is `CLAUDE_CODE_OAUTH_TOKEN_FOR_TESTING`, passed via `--env-file` and never `-e`,
-which would put the token in the process list and in `docker inspect` for anything on the
-machine to read.
+Auth is `CLAUDE_CODE_OAUTH_TOKEN_FOR_TESTING`, passed via `--env-file` rather than `-e`.
+**Corrected 2026-08-16, verified with a canary:** that keeps the token out of the *process
+list* only. `--env-file` is parsed client-side and the value lands in the container config
+verbatim, so `docker inspect` still shows it — for the whole life of a session container.
+Declared bound, not a guarantee: anything that can reach the docker socket can read it.
 
 ## Declared bounds
 

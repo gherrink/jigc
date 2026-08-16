@@ -23,6 +23,19 @@ if [ "${1:-}" = "--clean-prose" ]; then
   shift
 fi
 
+# A flag in any other position is REFUSED, never ignored. `instantiate.sh <dest> <name>
+# --clean-prose` used to exit 0 having silently produced the wart corpus with the flag
+# text substituted into the tagline — the operator gets exactly the corpus this flag
+# exists to avoid, and believes otherwise. That is the same failure mode as the broken
+# escape hatch, reintroduced by argument order.
+for arg in "$@"; do
+  case "$arg" in
+    -*) echo "refusing: '$arg' is not a recognised option there — --clean-prose must come first" >&2
+        echo "usage: instantiate.sh [--clean-prose] <dest-dir> <product-name> [tagline]" >&2
+        exit 2 ;;
+  esac
+done
+
 TEMPLATE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="${1:?usage: instantiate.sh [--clean-prose] <dest-dir> <product-name> [tagline]}"
 PRODUCT="${2:?usage: instantiate.sh [--clean-prose] <dest-dir> <product-name> [tagline]}"

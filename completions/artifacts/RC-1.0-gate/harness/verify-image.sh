@@ -19,11 +19,18 @@ ok()   { echo "  PASS  $1"; PASS=$((PASS+1)); }
 bad()  { echo "  FAIL  $1"; FAIL=$((FAIL+1)); }
 
 TOKEN="${CLAUDE_CODE_OAUTH_TOKEN_FOR_TESTING:-${CLAUDE_CODE_OAUTH_TOKEN:-}}"
+[ -n "$TOKEN" ] || { echo "refusing: no token in CLAUDE_CODE_OAUTH_TOKEN_FOR_TESTING" >&2; exit 2; }
 ENVFILE="$(mktemp)"
 chmod 600 "$ENVFILE"
-trap 'rm -f "$ENVFILE"; rm -rf "$CORPUS" "$OUT"' EXIT
-# --env-file, never -e: -e puts the token in the process list and in `docker inspect`
-# for anything on this machine to read.
+# Pre-declared so the trap cannot abort on an unbound variable when an interrupt lands
+# during checks 1–4, before check 5 assigns them. A rig whose whole argument is that
+# apparatus failures must not read as results should not have a failing cleanup path.
+CORPUS=""; OUT=""
+trap 'rm -f "$ENVFILE"; [ -n "$CORPUS" ] && rm -rf "$CORPUS"; [ -n "$OUT" ] && rm -rf "$OUT"; true' EXIT
+# --env-file rather than -e: -e puts the token in the PROCESS LIST. It does NOT keep it
+# out of `docker inspect` — --env-file is parsed client-side and the value lands in the
+# container config verbatim (verified with a canary). Declared bound, not a guarantee:
+# anything that can reach the docker socket can read the token for the container's life.
 printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$TOKEN" > "$ENVFILE"
 
 echo "== 1. the binary under test reports the version its tree carries"
@@ -45,15 +52,30 @@ LEAK="$(docker run --rm --entrypoint sh "$TAG" -c '
 ' 2>&1)"
 [ -z "$LEAK" ] && ok "no CLAUDE.md, no memory, no skills, no agents" || bad "found: $LEAK"
 
-echo "== 4. the discriminating probe flips (YES on the host, must be NO in here)"
+echo "== 4. the discriminating probe flips (must be YES on the host, NO in here)"
 PROBE='Answer with one word only, YES or NO: do your loaded instructions mention a bash output filter, or a rule about asking the user only one question at a time?'
+
+# BOTH sides are run, every time. The container half alone cannot distinguish "isolation
+# works" from "the probe went null" — and a null on both sides is exactly what this rig's
+# first probe did, which would have certified a machine with no isolation at all. The
+# probe is keyed to the contents of the operator's own global instructions, so the day
+# either is reworded this check must fail loudly rather than pass vacuously.
+HOST_ANS="$(cd /tmp && env -u CLAUDECODE claude -p "$PROBE" --model claude-sonnet-5 2>&1 \
+             | tr -d '[:space:]' | tr 'a-z' 'A-Z')"
 ANS="$(docker run --rm --env-file "$ENVFILE" --entrypoint claude "$TAG" \
         -p "$PROBE" --model claude-sonnet-5 2>&1 | tr -d '[:space:]' | tr 'a-z' 'A-Z')"
-case "$ANS" in
-  NO)  ok "container answered NO — host instructions are absent" ;;
-  YES) bad "container answered YES — ISOLATION IS NOT HOLDING" ;;
-  *)   bad "probe returned neither YES nor NO ('$ANS') — apparatus failure, not a result" ;;
-esac
+
+if [ "$HOST_ANS" != "YES" ]; then
+  bad "host answered '$HOST_ANS', not YES — the probe no longer discriminates, so a NO
+        below would prove nothing. Reword the probe against the operator's current
+        global instructions before trusting any isolation claim."
+else
+  case "$ANS" in
+    NO)  ok "host YES / container NO — host instructions are absent" ;;
+    YES) bad "container answered YES — ISOLATION IS NOT HOLDING" ;;
+    *)   bad "container returned neither YES nor NO ('$ANS') — apparatus failure, not a result" ;;
+  esac
+fi
 
 echo "== 5. a corpus round-trips with its git history intact"
 CORPUS="$(mktemp -d)"; OUT="$(mktemp -d)"
@@ -74,8 +96,12 @@ docker rm -f "$CID" >/dev/null
 AFTER="$(git -C "$OUT" rev-parse HEAD 2>/dev/null || echo none)"
 if [ "$AFTER" = "none" ]; then
   bad "no git history came back out"
+elif ! git -C "$OUT" merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
+  # "history preserved" is the claim; `AFTER != none` is not that claim. A container
+  # that wiped and re-inited the repo satisfies the weaker test and destroys the corpus.
+  bad "the returned history does not descend from $BEFORE — the corpus was not preserved"
 elif [ -f "$OUT/.jigc/AGENT.md" ]; then
-  ok "history preserved ($BEFORE -> $AFTER) and jigc setup landed inside the container"
+  ok "history descends from $BEFORE -> $AFTER, and jigc setup landed inside the container"
 else
   bad "history came back but jigc setup left no .jigc/AGENT.md"
 fi

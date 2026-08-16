@@ -31,4 +31,11 @@ docker build -t "$TAG" --build-arg "JIGC_SHA=${FULL_SHA}" "$CTX"
 
 echo
 echo "built ${TAG} — verifying the binary reports the stamp the tree carries"
-docker run --rm --entrypoint /usr/local/bin/jigc "$TAG" --version
+GOT="$(docker run --rm --entrypoint /usr/local/bin/jigc "$TAG" --version 2>&1)"
+echo "$GOT"
+# Asserted, not printed. The sentence above claimed a verification the script never
+# performed: STAMP was extracted, echoed, and compared to nothing.
+if [ "$GOT" != "jigc ${STAMP}" ]; then
+  echo "MISMATCH: tree ${FULL_SHA} stamps '${STAMP}' but the built binary says '${GOT}'" >&2
+  exit 1
+fi
