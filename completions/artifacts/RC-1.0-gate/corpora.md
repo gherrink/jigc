@@ -1,7 +1,7 @@
 # The 1.0.0-gate trial — corpora as built
 
 Built 2026-08-16, **before any session ran**, from the committed
-[trial-corpus-template](../trial-corpus-template/) with `--clean-prose`. Every one was gated by
+[trial-corpus-template](../../trial-corpus-template/) with `--clean-prose`. Every one was gated by
 `check-corpus.sh` in its naive state and passed **11/11**.
 
 | Corpus | Instrument | Product name | State at freeze |
@@ -47,7 +47,7 @@ operator instruction rather than task. B1 still carries it, because that session
 ## Reproducing
 
 ```sh
-T=completions/artifacts/trial-corpus-template
+T=completions/trial-corpus-template
 $T/instantiate.sh --clean-prose ~/ideas/<name> <product>
 $T/check-corpus.sh ~/ideas/<name> --clean-prose       # must be 11/11 before freezing
 ```

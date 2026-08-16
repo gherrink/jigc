@@ -18,8 +18,10 @@ set -uo pipefail
 OLD="${1:-jigc-gate:rc10}"
 NEW="${2:-jigc-gate:rc11}"
 
-EXPECT_OLD_SHA=8979f163d628c72aa2b05821b0059606e2f8267a   # the genuine pre-M48 rc.10
-EXPECT_OLD_VERSION="jigc 1.0.0-rc.10"
+# Trial-specific, and therefore overridable — the harness outlives any one trial.
+# Defaults are the 1.0.0-gate trial's: 8979f16 is the genuine pre-M48 rc.10.
+EXPECT_OLD_SHA="${EXPECT_OLD_SHA:-8979f163d628c72aa2b05821b0059606e2f8267a}"
+EXPECT_OLD_VERSION="${EXPECT_OLD_VERSION:-jigc 1.0.0-rc.10}"
 
 FAIL=0
 ok()  { echo "  OK    $1"; }

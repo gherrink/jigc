@@ -1,7 +1,7 @@
 # The 1.0.0-gate trial's isolation harness
 
 Built 2026-08-15, **before the trial runs**, and rehearsed end to end before anything was
-staged. The trial it serves is [protocol.md](../protocol.md); this file is the
+staged. The trial it serves is [protocol.md](../artifacts/RC-1.0-gate/protocol.md); this file is the
 **apparatus**, not a restatement of the design.
 
 ## Why it exists
@@ -26,14 +26,14 @@ afterwards, so it is removed instead.
 
 **A redirected config dir does not defeat it.** This project's own M17 pilot tried exactly
 that — `CLAUDE_CONFIG_DIR` at a clean home *plus* moving the global file aside
-([M17/pilot/runbook.md](../../M17/pilot/runbook.md)) — and it was recorded as
+([M17/pilot/runbook.md](../artifacts/M17/pilot/runbook.md)) — and it was recorded as
 insufficient. Only filesystem isolation works.
 
 ## The lineage, and what came back
 
 This repo is the origin: `implementation/dogfood/` (hooks + tally),
-[differentiator-pilot-study1/harness/](../../differentiator-pilot-study1/harness/) (the
-container rig that produced the 0/32 figure), [workflow-eval/](../../../workflow-eval/)
+[differentiator-pilot-study1/harness/](../artifacts/differentiator-pilot-study1/harness/) (the
+container rig that produced the 0/32 figure), [workflow-eval/](../workflow-eval/)
 (the generalized version), then the long-horizon and cross-doc-refint harnesses.
 
 The mechanism was borrowed by a sibling project and improved in four places, all of which

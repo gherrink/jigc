@@ -62,7 +62,7 @@ points (`do-research` before forming a vision; reading `store.ts` before writing
 routed it to the human as a fork instead of silently resolving it — which turned out to be one of
 that trial's better observations about the design-altitude paths. **A future trial must not report it
 as a designed trap**: it is an accident that proved useful, and the honesty of that distinction is
-recorded in [RC-pre-1.0/operator-log.md](../RC-pre-1.0/operator-log.md).
+recorded in [RC-pre-1.0/operator-log.md](../artifacts/RC-pre-1.0/operator-log.md).
 
 ### The escape hatch, and why the old one did not work
 
@@ -73,7 +73,7 @@ would have believed otherwise.
 The tagline argument reaches `package.json` and `README.md`. The same claim lives in a **third**
 place it never touched — `src/store.ts`'s header comment, *"this service is a rollup cache in front
 of whatever long-term store the caller already has"* — which is precisely the file G3 read to find
-the contradiction ([RC-pre-1.0/operator-log.md](../RC-pre-1.0/operator-log.md)). The lever left the
+the contradiction ([RC-pre-1.0/operator-log.md](../artifacts/RC-pre-1.0/operator-log.md)). The lever left the
 wart in the most-read location.
 
 **Use `--clean-prose`.** It rewrites all three sites and then **greps its own work**, failing the
@@ -89,5 +89,5 @@ not rest on the builder having done its job.
 Built for the pre-1.0.0 trial (2026-08-12/13) and committed afterwards on the reasoning that made
 that wave generous in the first place: **paying a cost once beats paying it every time.** Trial
 protocol conventions that outlive a single run are recorded in
-[RC-pre-1.0/findings-verification.md](../RC-pre-1.0/findings-verification.md) → *Process changes for
+[RC-pre-1.0/findings-verification.md](../artifacts/RC-pre-1.0/findings-verification.md) → *Process changes for
 the next trial*.

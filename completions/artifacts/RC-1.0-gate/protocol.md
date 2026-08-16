@@ -78,7 +78,7 @@ and a designed-need correction no prior trial carried — and a clean absolute m
 more than a comparison with an uncontrolled variable inside it.
 
 The mechanism, its five verification checks and its declared bounds live in
-[harness/README.md](harness/README.md). A redirected config dir does **not** defeat this; this
+[trial-harness/README.md](../../trial-harness/README.md). A redirected config dir does **not** defeat this; this
 project's own M17 pilot recorded that as insufficient.
 
 **Invocation log ON in every session** (`jigc config set invocation-log true` in the worker prompt,
@@ -93,7 +93,7 @@ RC-pre-1.0's protocol carried a corpora table, a naming rule, a pre-trial verifi
 verbatim prompts. None of that was here, so *"everything needed to execute it is here"* was not true.
 
 **Source.** All corpora are built from the committed
-[trial-corpus-template](../trial-corpus-template/) — 9 TypeScript modules, 3 test files, 23 tests,
+[trial-corpus-template](../../trial-corpus-template/) — 9 TypeScript modules, 3 test files, 23 tests,
 7 commits, zero managed docs — with `./instantiate.sh --clean-prose <dest> <product-name>`.
 
 **`--clean-prose` is used, and here is the reason.** The template carries a known prose↔code
@@ -429,10 +429,10 @@ Every arm below is justified by a behaviour M48 changed that no blind probe reac
    every M48 change including the audit fixes** (the bump landed late, at `9cb9b78`, deliberately
    *after* the audit). A search for the version finds the **wrong, newer** one, and building it makes
    this arm compare rc.11 against itself — **vacuous, with nothing in the output to reveal it**.
-   **Since the isolation change (§2), build it with `harness/build-image.sh 8979f16`** rather than
+   **Since the isolation change (§2), build it with `completions/trial-harness/build-image.sh 8979f16`** rather than
    to a temp prefix: the sha is an argument, so the wrong-tree hazard above is unreachable rather
    than merely warned about, and this arm then runs in the same isolation as every other. Confirm
-   the pair with `harness/verify-pair.sh` — it fails unless rc.10 **lacks** three verbs M48 shipped.
+   the pair with `completions/trial-harness/verify-pair.sh` — it fails unless rc.10 **lacks** three verbs M48 shipped.
    Then: author ~5 managed docs of mixed doctypes plus a milestone record, commit; **then switch to
    rc.11** and continue (`validate` · `doc show` · a task → finalize · a `rename` ·
    `migrate-corpus`). **This is the real 1.0.0 upgrade path** and it is covered by nothing today —
