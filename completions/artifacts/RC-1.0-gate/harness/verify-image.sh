@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # verify-image.sh [tag] [expected-version]
 #
-# Prove the rig before it carries a trial. Five checks, each one a thing that would
+# Prove the rig before it carries a trial. Seven checks, each one a thing that would
 # otherwise fail silently and be read as a result about jigc rather than about the
 # apparatus.
 #
@@ -17,6 +17,7 @@ PASS=0; FAIL=0
 
 ok()   { echo "  PASS  $1"; PASS=$((PASS+1)); }
 bad()  { echo "  FAIL  $1"; FAIL=$((FAIL+1)); }
+skip() { echo "  SKIP  $1"; }
 
 TOKEN="${CLAUDE_CODE_OAUTH_TOKEN_FOR_TESTING:-${CLAUDE_CODE_OAUTH_TOKEN:-}}"
 [ -n "$TOKEN" ] || { echo "refusing: no token in CLAUDE_CODE_OAUTH_TOKEN_FOR_TESTING" >&2; exit 2; }
@@ -104,6 +105,44 @@ elif [ -f "$OUT/.jigc/AGENT.md" ]; then
   ok "history descends from $BEFORE -> $AFTER, and jigc setup landed inside the container"
 else
   bad "history came back but jigc setup left no .jigc/AGENT.md"
+fi
+
+echo "== 6. the workspace is trusted, so jigc's allowlist is honoured — and a transcript survives"
+# Two things that would each silently change or erase the headline measurement.
+#
+# Trust: `jigc setup` writes .claude/settings.json allowlisting Bash(jigc:*) and
+# Bash(git add:*). Claude Code IGNORES that file in an untrusted workspace, printing
+# "Ignoring N permissions.allow entries ... this workspace has not been trusted". If the
+# seeded projects["/work"].hasTrustDialogAccepted ever stops applying, every jigc call
+# prompts, and the ergonomic asymmetry §3 measures is gone in the other direction.
+# NOTE: this must run through the ENTRYPOINT (gosu node, HOME=/home/node). Probing with
+# `--entrypoint claude` runs as root against an unseeded /root/.claude.json and
+# reproduces the warning spuriously — which is how this check came to exist.
+#
+# Transcript: protocol.md §3.3's FILESYSTEM outcome has the session transcript as its
+# ONLY evidence, and it lives in the session HOME rather than /work.
+if [ -d "$OUT/.claude" ]; then
+  CID2="$(docker create --env-file "$ENVFILE" "$TAG" \
+           claude -p "reply with the single word ok" --model claude-sonnet-5)"
+  docker cp "$OUT/." "$CID2:/work/" >/dev/null
+  TRUST_OUT="$(docker start -a "$CID2" 2>&1)"
+  # docker cp works on a stopped container; docker exec does not, and the -p run has
+  # already exited by here.
+  TDIR="$(mktemp -d)"
+  docker cp "$CID2:/home/node/.claude/projects" "$TDIR/" >/dev/null 2>&1 || true
+  NJSONL="$(find "$TDIR" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')"
+  docker rm -f "$CID2" >/dev/null 2>&1
+  rm -rf "$TDIR"
+
+  case "$TRUST_OUT" in
+    *"has not been trusted"*|*"Ignoring"*permissions*)
+      bad "the workspace is NOT trusted — jigc's allowlist is being ignored: $TRUST_OUT" ;;
+    *) ok "workspace trusted; jigc's allowlist is honoured" ;;
+  esac
+  [ "$NJSONL" -gt 0 ] && ok "a session transcript is recoverable ($NJSONL jsonl)" \
+    || bad "no transcript came out of the session HOME — §3.3's FILESYSTEM channel is unmeasurable"
+else
+  skip "no .claude/ came back from check 5 — trust not exercised"
 fi
 
 echo
