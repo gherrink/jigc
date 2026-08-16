@@ -23,7 +23,7 @@ week went.
 | **Data loss or corruption on any path** — bytes destroyed, unrecoverable, or a doc silently written wrong | **BLOCKS.** No exceptions, no "recorded as known". A wave absorbs it and 1.0.0 waits. |
 | **A regression** — something that worked on rc.10 and does not on rc.11 | **BLOCKS**, unless it is the one **declared** behaviour change (`provision` refusing a non-empty leftover it cannot prove disposable) and the trial confirms the refusal reads as protection, judged against the standard fixed in §5 arm 1 rather than impressionistically. |
 | **A seventh discoverability landing** (§3's measurement returns *filesystem* or *neither*) | **BLOCKS THE CLAIM, and forces a decision the trial cannot make.** Not a bug — evidence that the mechanism fix did not take. See §3.4. |
-| **A blocking dead end** — a refusal whose route cannot run, or a state with no recorded recovery | **BLOCKS.** This is the class M48's own audit found in its centrepiece; it is cheap to fix and expensive to ship. |
+| **A blocking dead end** — a refusal whose route cannot run, or a state with no recorded recovery | **BLOCKS** when it can reach a **project-carrying** file — a repo-root managed doc (`CHANGELOG.md`, `VISION.md`), a decision record, or anything whose loss or misdirection costs project knowledge. **SHIPS RECORDED** when the reachable set is incidental and the state has a correct recovery elsewhere. |
 | **A wrong result on a non-destructive path** — a check that does not fire, a false green, a wrong machine-readable value, a panic | **BLOCKS** if it produces a false green over managed state, or violates a pinned `--format json` contract. **SHIPS RECORDED** otherwise. |
 | **A surface/wording finding** — a lie, an ambush, a missing route on a non-blocking path | **SHIPS RECORDED**, routed to M46, listed in the 1.0.0 record as a known bound — *unless it is a one-way door* (see below). |
 | **A capability gap** — "I wanted a verb that does not exist" | **SHIPS RECORDED**, routed to M46. M48 refused seven of these deliberately; more are expected, and they are not defects. |
@@ -34,6 +34,19 @@ unmigrated corpus"*) and the confidence audit's above-current stamp are neither 
 regressions, nor blocking dead ends — and calling them "surface findings" would have shipped them.
 Adding it now, before the run, is the point; revising the table after a result is known is exactly
 what pre-registration exists to prevent.
+
+**The blast-radius qualifier on the dead-end row, added 2026-08-16 by the human, before the trial.**
+The original row made *any* unrunnable route BLOCK. That reads a papercut on an incidental file the
+same as a dead end over a project's decision history, and the difference is real: what a bad route
+costs is what the file carries. So the row is now keyed on the **reachable set** — root managed docs,
+decision records and anything whose misdirection costs project knowledge are blocking; incidental
+files with a correct recovery elsewhere ship recorded.
+
+**Two guards, so this does not become discretion.** (a) The reachable set is determined by **what the
+defect can reach**, demonstrated, not by which file the reporter happened to hit — a defect that
+fires on a doctype's *home* reaches every file at that home. (b) The class is still fixed from
+evidence before its consequence is looked up; *"judged not to matter"* remains barred, and this
+qualifier is not a route back to it.
 
 **The one-way-door qualifier.** A finding that ships recorded must also be *reversible after 1.0.0*.
 A defect in a pinned `--format json` contract is not: M48 just closed the additive-key window and

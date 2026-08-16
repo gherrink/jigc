@@ -88,9 +88,49 @@ What separates them is whether "the route cannot run" means *the printed route*,
 recovery*. Here the printed route dead-ends but the state does have a recorded recovery — `validate`
 names it correctly, and nothing is stuck or unrecoverable.
 
-**This is escalated rather than adjudicated.** §1 forbids deciding a class after seeing where it
-lands, and the adjudicator here is the person who would bear the cost of the BLOCKS reading. The
-evidence is above; the disposition is the human's.
+### Disposition — provisional, decided by the human 2026-08-16, rechecked at trial close
+
+The human's rule: **it depends on what the file carries.** Root files and anything holding project
+knowledge → blocking dead end; incidental, non-project-carrying files → wrong result that ships. Now
+recorded as §1's blast-radius qualifier.
+
+**Applied here, the rule resolves to BLOCKING — and the reachable set was demonstrated, not
+assumed.** The defect is not specific to the ADR it was found on: it fires on *any* never-adopted
+file sitting at a managed doctype's home, and two of those homes are **repo-root files**. Verified on
+rc.11 with a foreign root `CHANGELOG.md`:
+
+```console
+$ jigc migrate-corpus ; echo "exit=$?"
+corpus migration: 0 migrated, 0 already current, 1 blocked
+  blocked    CHANGELOG.md
+    route: author the new required prose in `CHANGELOG.md` through the write verbs, then re-run …
+exit=1
+
+$ jigc validate
+advisory · schema-conformance.unadopted-instance — committed file `CHANGELOG.md` sits at the
+  `changelog` home but was never adopted by jigc …
+  route: … it is a foreign file, not an unmigrated managed doc
+```
+
+So the reachable set is `CHANGELOG.md`, `VISION.md`, `docs/decisions/*` — root files and decision
+history, the exact category the rule calls blocking.
+
+**Two mitigations, recorded because they bear on the final call and because omitting them would make
+this finding look worse than it is:**
+
+1. **The documented path routes correctly.** [MIGRATING.md](../../../MIGRATING.md) tells an adopter to
+   *"ask `jigc validate` whether you need to migrate — it blocks if you do"*, and for a foreign file
+   `validate` does **not** block: it emits the `unadopted-instance` advisory at exit 0 with the right
+   route. PT-1 is reached by **initiative, not by instruction** — someone who runs `migrate-corpus`
+   unprompted, which a blind B3 worker plausibly will.
+2. **Nothing is destroyed or stranded.** The bytes are rolled back untouched, and a correct recovery
+   exists one verb away.
+
+**Recheck at trial close, per the human's instruction**, on two questions the trial can answer that
+this rehearsal cannot: whether a blind worker actually reaches it, and whether any further instance
+lands on a path where `validate` is *not* the correct second opinion. Until then the provisional
+class is **blocking dead end (project-carrying reach)**, and it is carried into the 1.0.0 record as
+an open disposition rather than a settled one.
 
 ---
 
