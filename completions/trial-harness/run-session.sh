@@ -124,7 +124,9 @@ fi
 docker cp "$CORPUS/." "$CID:/work/" >/dev/null
 
 echo "container  : $CID"
-echo "  (a mid-stream plant runs with: docker exec -it $CID bash -l)"
+# -u node is required, not cosmetic: `docker exec` bypasses the ENTRYPOINT's gosu, so it
+# lands as root, and every git call in /work then dies on "detected dubious ownership".
+echo "  (a mid-stream plant runs with: docker exec -it -u node $CID bash -l)"
 echo
 echo "starting — exit normally when the work is done"
 echo "-------------------------------------------------------------"
