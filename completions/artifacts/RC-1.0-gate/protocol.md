@@ -511,6 +511,17 @@ Stated so the 1.0.0 record does not imply coverage that was never bought:
   by the steps that solicit writes. It says nothing about the next capability nobody finds.
 - **Multi-process concurrency semantics.** Lost updates remain deferred (M46 entry 9); a single
   operator running one session at a time will not exercise them.
+- **The measurement under bypassed permissions — a declared, directional confound.** Blind sessions
+  run `--permission-mode bypassPermissions` (operator's decision, 2026-08-16, taken for tractability:
+  the alternative is approving every non-jigc tool call by hand across three multi-hour sessions).
+  The bound is stated rather than assumed harmless: `jigc setup` allowlists `Bash(jigc:*)` and
+  `Bash(git add:*)`, while `cat`/`sed`/`head`/`grep` — every FILESYSTEM-channel action in §3.3 —
+  are **not** allowlisted and would prompt in an adopter's real session. Bypassing removes friction
+  from **one side only**, in a known direction: it makes the FILESYSTEM outcome *cheaper* than an
+  adopter would find it. So a VERB result is **not weakened** by this (the verb was chosen against a
+  filesystem read made artificially easy), while a FILESYSTEM or NEITHER result is **partly
+  attributable to the setting** and must be reported with this bound attached. `--strict-permissions`
+  on `run-session.sh` runs the adopter's real condition if a later trial wants it.
 - **Most regressions.** §1 makes a regression BLOCK, but only walk arm 2 touches rc.10 at all;
   blind sessions carry no baseline, and §2 already reduced the RC-pre-1.0 comparison to indicative.
   So *"worked on rc.10, does not on rc.11"* has a real detection path **only** on that one arm. The

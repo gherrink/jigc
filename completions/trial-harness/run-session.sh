@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-session.sh [--shell] [--bypass-permissions] <corpus-dir> <out-dir> [tag]
+# run-session.sh [--shell] [--strict-permissions] <corpus-dir> <out-dir> [tag]
 #
 # Drive ONE session in isolation.
 #
@@ -16,19 +16,19 @@
 set -euo pipefail
 
 MODE=claude
-PERMISSION_MODE=default
+PERMISSION_MODE=bypassPermissions
 
 while true; do
   case "${1:-}" in
     --shell)              MODE=shell; shift ;;
-    --bypass-permissions) PERMISSION_MODE=bypassPermissions; shift ;;
+    --strict-permissions) PERMISSION_MODE=default; shift ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) break ;;
   esac
 done
 
-CORPUS="${1:?usage: run-session.sh [--shell] [--bypass-permissions] <corpus-dir> <out-dir> [tag]}"
-OUT="${2:?usage: run-session.sh [--shell] [--bypass-permissions] <corpus-dir> <out-dir> [tag]}"
+CORPUS="${1:?usage: run-session.sh [--shell] [--strict-permissions] <corpus-dir> <out-dir> [tag]}"
+OUT="${2:?usage: run-session.sh [--shell] [--strict-permissions] <corpus-dir> <out-dir> [tag]}"
 TAG="${3:-jigc-gate:rc11}"
 
 # Pinned, and recorded. The CLI version is pinned in the Dockerfile with the argument
@@ -107,10 +107,11 @@ echo "corpus     : $CORPUS"
 echo "out        : $OUT"
 [ "$PERMISSION_MODE" = bypassPermissions ] && cat >&2 <<'WARN'
 
-WARNING: --bypass-permissions removes the prompt friction from file reads while
-`jigc setup` allowlists Bash(jigc:*) — i.e. it removes friction from ONE SIDE of the
-exact asymmetry the headline measurement is about (VISION principle #3). Use it for the
-operator walk; for a blind session it is a directional confound and must be declared.
+NOTE: bypassPermissions is the operator's chosen default (2026-08-16). It removes prompt
+friction from file reads while `jigc setup` allowlists Bash(jigc:*) — i.e. from one side
+of the asymmetry the headline measurement is about. Declared in protocol.md §9 as a
+directional confound, not assumed harmless. `--strict-permissions` runs the adopter's
+real condition instead.
 
 WARN
 
