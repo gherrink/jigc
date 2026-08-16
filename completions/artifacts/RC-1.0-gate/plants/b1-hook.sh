@@ -119,4 +119,4 @@ echo "  working tree     : $(git status --porcelain | wc -l | tr -d ' ') entries
 echo
 echo "release it with: b1-release-hook.sh <repo-dir>"
 echo "NOTE: the session runs on the COPY inside the container — release it there:"
-echo "      docker exec -it <cid> bash -lc 'touch /work/.git/docs-approved'"
+echo "      docker exec -it -u node <cid> bash -lc 'touch /work/.git/docs-approved'"

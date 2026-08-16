@@ -10,7 +10,7 @@
 #   - it does not trip jigc's foreign-untracked-file gate at a task door.
 #
 # INSIDE A LIVE SESSION the corpus is the container's `/work`, not the host directory:
-#   docker exec -it <cid> bash -lc 'touch /work/.git/docs-approved'
+#   docker exec -it -u node <cid> bash -lc 'touch /work/.git/docs-approved'
 # which is exactly what this script does, and the one-liner above is there so the
 # operator does not have to copy this file in to release a plant.
 set -euo pipefail

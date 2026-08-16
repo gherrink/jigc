@@ -63,14 +63,14 @@ $P/b1-staged.sh ~/ideas/harborlight
 completions/trial-harness/run-session.sh ~/ideas/harborlight ~/out/b1 jigc-gate:rc11
 
 # 4. release the hook when the worker reports a rejected finalize — IN THE CONTAINER
-docker exec -it <cid> bash -lc 'touch /work/.git/docs-approved'
+docker exec -it -u node <cid> bash -lc 'touch /work/.git/docs-approved'
 ```
 
 B3's plant is **mid-stream**, so it is landed into the live container:
 
 ```sh
 docker cp $P <cid>:/tmp/plants
-docker exec -it <cid> bash -lc '/tmp/plants/b3-foreign-adr.sh /work'
+docker exec -it -u node <cid> bash -lc '/tmp/plants/b3-foreign-adr.sh /work'
 ```
 
 ---
@@ -165,7 +165,7 @@ live, and the only observation surface the operator has for it:
 Driven non-interactively through the image's entrypoint (`docker create … bash
 /tmp/arc.sh`; `docker exec` alone runs as **root** and every git call dies on *dubious
 ownership in repository at '/work'* — worth knowing before an operator does it by hand
-mid-session, and the reason `docker exec -it <cid> bash -l` in run-session.sh's own hint
+mid-session, and the reason `docker exec -it -u node <cid> bash -l` in run-session.sh's own hint
 works only because it drops to `node`).
 
 ```
@@ -480,7 +480,7 @@ down.
 
 ### Finding 6 — `docker exec` into a live session container is root, and git refuses
 
-`run-session.sh` prints `(a mid-stream plant runs with: docker exec -it <cid> bash -l)`.
+`run-session.sh` prints `(a mid-stream plant runs with: docker exec -it -u node <cid> bash -l)`.
 That works because a login shell drops to `node` — but a **non-interactive**
 `docker exec <cid> bash /tmp/plant.sh` runs as **root**, and every git call in `/work`
 dies:
@@ -490,7 +490,7 @@ fatal: detected dubious ownership in repository at '/work'
 ```
 
 Not a jigc finding; an apparatus note that would cost an operator ten confusing minutes
-mid-session. Use `docker exec -it <cid> bash -l` (or `-u node`) for the B3 plant. Both
+mid-session. Use `docker exec -it -u node <cid> bash -l` (or `-u node`) for the B3 plant. Both
 forms were exercised; only the login/`-u node` form works.
 
 ---

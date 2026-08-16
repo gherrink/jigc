@@ -24,7 +24,7 @@
 # WHERE: the session runs on the container's `/work`, not the host corpus. Land it with
 #
 #     docker cp <plants-dir> <cid>:/tmp/plants
-#     docker exec -it <cid> bash -lc '/tmp/plants/b3-foreign-adr.sh /work'
+#     docker exec -it -u node <cid> bash -lc '/tmp/plants/b3-foreign-adr.sh /work'
 #
 # `run-session.sh` prints `<cid>` at start for exactly this.
 set -euo pipefail

@@ -361,7 +361,7 @@ harness path at all).** `run-session.sh` grew the modes these arms need:
 - **`--shell`** gives a plain `bash -l` in the image instead of a Claude session — the operator walk
   is a sequence of CLI commands, not an agent session, and there was no way to get one.
 - **The container id is printed at start**, so a **mid-stream plant** (§4's foreign ADR) can be
-  landed while a blind session is live: `docker exec -it <cid> bash -l`, then commit with an explicit
+  landed while a blind session is live: `docker exec -it -u node <cid> bash -l`, then commit with an explicit
   pathspec per §8 rule 3 and back-dated env vars per rule 1.
 - **`--bypass-permissions` is opt-in.** It is appropriate here and **not** in a blind session: it
   removes prompt friction from file reads while `jigc setup` allowlists `Bash(jigc:*)`, i.e. from
