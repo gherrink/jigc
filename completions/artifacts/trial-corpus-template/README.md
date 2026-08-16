@@ -15,11 +15,22 @@ operator tooling for a trial, and it lives under `completions/artifacts/` for th
 ## Usage
 
 ```sh
-./instantiate.sh ~/ideas/<product-name> <product-name> ["<tagline>"]
+./instantiate.sh [--clean-prose] ~/ideas/<product-name> <product-name> ["<tagline>"]
+./check-corpus.sh ~/ideas/<product-name> [--clean-prose]
 ```
 
 Run it once per corpus. Each instantiation is an independent git repo with a 7-commit history and a
 clean tree, so parallel blind sessions cannot contaminate each other.
+
+**Always run `check-corpus.sh` before a corpus is frozen and pointed at a session.** It asserts the
+starting state a trial protocol assumes and has never verified: 7 commits, clean tree, no
+`.jigc`/`.claude`/`CLAUDE.md` residue, `README.md` the only tracked `.md`, the suite green 23/23, and
+the `doc-code` anchor symbols still present. RC-pre-1.0 stated exactly that checklist as prose and
+nothing ever checked it — a corpus carrying a rehearsal's leftover `.jigc/` is not a cold start, and
+nothing a worker does in one measures what the protocol says it measures.
+
+Its bars are demonstrated to fail, not assumed to: a dirty tree, an already-adopted corpus, a second
+tracked `.md`, and a wart corpus asked for clean prose each trip the bar that targets them.
 
 **Clean-room naming rule:** give blind corpora **product-plausible** names with no `trial`/`rc*`/
 `probe` token — a worker that reads its own `cwd` must learn nothing. Operator-walk corpora are not
@@ -53,7 +64,25 @@ that trial's better observations about the design-altitude paths. **A future tri
 as a designed trap**: it is an accident that proved useful, and the honesty of that distinction is
 recorded in [RC-pre-1.0/operator-log.md](../RC-pre-1.0/operator-log.md).
 
-If you *want* a clean corpus, fix the tagline before instantiating and say so in the protocol.
+### The escape hatch, and why the old one did not work
+
+This section used to say: *"If you want a clean corpus, fix the tagline before instantiating and say
+so in the protocol."* **That advice did not produce a clean corpus**, and a trial that followed it
+would have believed otherwise.
+
+The tagline argument reaches `package.json` and `README.md`. The same claim lives in a **third**
+place it never touched — `src/store.ts`'s header comment, *"this service is a rollup cache in front
+of whatever long-term store the caller already has"* — which is precisely the file G3 read to find
+the contradiction ([RC-pre-1.0/operator-log.md](../RC-pre-1.0/operator-log.md)). The lever left the
+wart in the most-read location.
+
+**Use `--clean-prose`.** It rewrites all three sites and then **greps its own work**, failing the
+instantiation if any occurrence survives — because a silent no-op here (someone rewords the header,
+the template drifts) hands a trial a corpus it believes is clean and is not. Without the flag the
+corpus is byte-identical to what the pre-1.0.0 trial ran on, so that trial stays reproducible.
+
+`check-corpus.sh <dir> --clean-prose` re-checks the same property from the outside, so the claim does
+not rest on the builder having done its job.
 
 ## Provenance
 
