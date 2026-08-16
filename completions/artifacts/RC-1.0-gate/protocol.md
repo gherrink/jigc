@@ -127,10 +127,14 @@ and the transcript are the instrument; the feedback report is context.
 ### 3.4 The pre-registered reading — and the control that makes a null readable
 
 **The positive control, run first, on the operator walk. Added 2026-08-15 with the isolation
-change.** Before any blind result is read, one arm must demonstrate that the VERB channel **can**
-fire: an operator-driven task whose correct completion is impossible without reading a managed doc
-back — the doc's on-disk state must differ from what the operator wrote, so recall cannot substitute
-for reading. Its only job is to put one `jigc doc show … --task …` record in the invocation log.
+change; its justification corrected 2026-08-16 after rehearsal.** Before any blind result is read,
+one arm must demonstrate that the VERB channel **can** fire and **can be counted**: an
+operator-driven task that authors a managed doc and reads it back with
+`jigc doc show <addr> --task <id>`, leaving exactly that record in the invocation log.
+
+**What the control does and does not prove.** It proves the channel records — nothing about
+discoverability, because the operator already knows the verb. It deliberately no longer claims the
+read is *unavoidable*: see arm 0 for the premise that rehearsal falsified.
 
 **If the control does not fire, no blind result may be read at all.** A uniform null in both
 directions is the signature of an apparatus that cannot discriminate, not of a finding — the failure
@@ -211,11 +215,31 @@ Every arm below is justified by a behaviour M48 changed that no blind probe reac
    arms below keep the numbers they are referenced by. Its only job is to prove the VERB channel can
    fire at all; it measures nothing about discoverability, because the operator already knows the
    verb.
-   The shape that makes reading **unavoidable**: author a managed doc whose **derived** identity is
-   not knowable from what was typed — a title long enough that the slug rule's word cap and edge
-   stopword drop decide the slug — then perform an operation that must address the doc by that
-   derived id. Recall cannot substitute, because nobody ever wrote the id down. Reading it back
-   (`jigc doc show`/`jigc doc list`) is the only route, and it lands the record §3.3 counts.
+   **Rehearsed on the host 2026-08-16, and the rehearsal corrected this arm.** The original shape
+   claimed reading was *unavoidable* because the doc's **derived** slug — decided by the word cap
+   and edge-stopword drop — was never written down by the author. **That is false, and the binary
+   says so:** `jigc doc create adr --title "Keep the rollup buffer in memory and drop the oldest
+   sample when it overflows"` acks `adr:keep-the-rollup-buffer`. The ack *is* the id, written down.
+   Recorded rather than quietly rewritten, because a premise falsified before the run is cheap and
+   the same premise discovered inside a result is not.
+
+   **The shape that survives** — and it is enough, because the control's job is the channel, not
+   discoverability: mint a task, author a managed doc through the write verbs, then read it back
+   with `jigc doc show <addr> --task <id>`. What the read returns genuinely is *not* knowable from
+   what was typed — the CLI owns the front matter (`status`, `date`, `schema-version`), renders the
+   empty optional `## Options` section, and keeps the full title as the H1 while the slug is capped
+   — so the arm still demonstrates a read serving state the author never wrote. It simply no longer
+   pretends the author *had* to run it.
+
+   **Verified in that rehearsal, on `1.0.0-rc.11`:** the read served the staged copy (slots written,
+   no commit carrying them), and the invocation log recorded
+   `["doc","show","adr:…","--task","…"]` at `exit_code: 0` — so §3.3's primary channel both fires
+   and is greppable. Also observed, and it sharpens attribution: the composed `record-decision` step
+   **instructs the read in so many words** — *"Read your write back before you move on — with
+   `--task` the read serves THIS task's staged copy"* — which is M48's fence live in this binary.
+   A VERB outcome therefore measures **acting on a named instruction**, not finding an unnamed
+   capability; a NEITHER outcome means the instruction was there and went unfollowed.
+
    Pass condition: **at least one `jigc doc show … --task …` in that corpus's invocation log.**
    Fail: the instrument cannot discriminate — fix it and re-run before reading any blind session.
 1. **The declared breaking change.** Plant a **non-registered leftover holding staged, unstaged and
