@@ -170,3 +170,48 @@ RC-pre-1.0 recorded a watch: `setup` splices its block into a tracked foreign ho
 file *"modified and uncommitted — its install commit does not carry it."* On rc.11 the install commit
 **does** carry it (`53 0 .githooks/pre-commit`), which is M48 Increment 5 live in the field. Recorded
 as drained, not re-watched.
+
+---
+
+## Arm 0 · the positive control — RUN IN THE RIG, 2026-08-16, PASS
+
+Run through `run-session.sh --exec`, i.e. the **same** copy-in / copy-out / provenance chain the
+blind sessions use — a control driven any other way cannot validate the mechanism it exists to
+validate. The 2026-08-16 host rehearsal proved the verb records; this proves the **chain**.
+
+```
+task: record-that-the-ingest-queue
+created: adr:drop-the-oldest-sample-when
+doc show --task records: 1
+adjacent records: 2
+ARM 0 PASS — the channel fires and is countable
+```
+
+**Checked from `$OUT`, after the container was destroyed** — which is the part a host run cannot
+reach:
+
+```console
+$ cat ~/ideas/rc11-control-out/PROVENANCE.txt
+image        jigc-gate:rc11
+jigc-sha     9a37f0152744f0cba5f9140483e1ca1b1c453c46
+model        claude-sonnet-5
+permissions  bypassPermissions
+
+$ grep '"doc","show"' …/.jigc/logs/invocations.jsonl
+argv ['doc','show','adr:drop-the-oldest-sample-when','--task','record-that-the-ingest-queue']
+exit 0 · binary_version 1.0.0-rc.11
+```
+
+Everything §3.3 needs survives the teardown: the invocation log, the **live task with its staged doc
+still staged** (`.jigc/tasks/record-that-the-ingest-queue/docs/adr:….md` — the state a blind session
+is in when its cue card fires), the git history (8 commits: 7 template + setup's install commit), and
+the provenance naming the sha, model and permission mode.
+
+**So §3.4's `0 VERB, control did not fire` row is now the one that will not be reached for apparatus
+reasons.** A null in a blind session is readable: the channel demonstrably records, is greppable, and
+survives copy-out.
+
+**Two bounds, stated rather than implied.** The transcript directory came back **empty**, which is
+correct here — a scripted arm runs no Claude session — so arm 0 does **not** exercise §3.3's
+FILESYSTEM channel end-to-end; `verify-image.sh` check 6 covers that separately and passed. And the
+control is operator-driven by construction, so it says nothing about whether an agent finds the verb.

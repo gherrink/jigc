@@ -17,10 +17,16 @@ set -euo pipefail
 
 MODE=claude
 PERMISSION_MODE=bypassPermissions
+EXEC_FILE=""
 
 while true; do
   case "${1:-}" in
     --shell)              MODE=shell; shift ;;
+    # --exec runs a script through the SAME copy-in / copy-out / provenance path a blind
+    # session uses. That is the point: arm 0's job is to prove the containerised chain,
+    # and a control driven by some other mechanism would not validate the mechanism the
+    # blind sessions actually run on.
+    --exec)               MODE=exec; EXEC_FILE="${2:?--exec needs a script}"; shift 2 ;;
     --strict-permissions) PERMISSION_MODE=default; shift ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) break ;;
@@ -117,20 +123,31 @@ WARN
 
 if [ "$MODE" = shell ]; then
   CID="$(docker create -it --env-file "$ENVFILE" "$TAG" bash -l)"
+elif [ "$MODE" = exec ]; then
+  [ -f "$EXEC_FILE" ] || { echo "refusing: no such script: $EXEC_FILE" >&2; exit 2; }
+  CID="$(docker create --env-file "$ENVFILE" "$TAG" bash -lc 'bash /tmp/arm.sh')"
 else
   CID="$(docker create -it --env-file "$ENVFILE" "$TAG" \
           claude --model "$MODEL" --permission-mode "$PERMISSION_MODE")"
 fi
 docker cp "$CORPUS/." "$CID:/work/" >/dev/null
+[ "$MODE" = exec ] && docker cp "$EXEC_FILE" "$CID:/tmp/arm.sh" >/dev/null
 
 echo "container  : $CID"
 # -u node is required, not cosmetic: `docker exec` bypasses the ENTRYPOINT's gosu, so it
 # lands as root, and every git call in /work then dies on "detected dubious ownership".
 echo "  (a mid-stream plant runs with: docker exec -it -u node $CID bash -l)"
 echo
-echo "starting — exit normally when the work is done"
+if [ "$MODE" = exec ]; then echo "running $EXEC_FILE in the container"; else
+echo "starting — exit normally when the work is done"; fi
 echo "-------------------------------------------------------------"
-docker start -ai "$CID"
+# -ai for the interactive modes (stdin attached, or you cannot type); -a for a scripted
+# arm, which has no stdin. Getting this wrong disables input on a blind session silently.
+if [ "$MODE" = exec ]; then
+  docker start -a "$CID" || echo "(the arm exited non-zero — that is data, not necessarily failure)"
+else
+  docker start -ai "$CID"
+fi
 echo "-------------------------------------------------------------"
 
 copy_out || { echo "copy-out failed; the trap will retry and keep the container" >&2; exit 1; }
