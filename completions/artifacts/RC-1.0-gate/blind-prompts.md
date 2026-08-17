@@ -429,3 +429,38 @@ inspection behaviour to the worker, which is what §3.2 asks; the broad form wou
 FILESYSTEM outcome across all activity. The asymmetry is in the safe direction — it can weaken a
 positive (3/3 VERB) and cannot manufacture the negative §1 makes consequential — which is the same
 shape as the bypassed-permissions bound in §9, and for the same reason.
+
+---
+
+## 4 · The closing feedback prompt — added 2026-08-17, mid-trial, because it was missing
+
+**This file is where every text the operator pastes into a session lives, and this one was not in
+it.** The runbook said *"collect the standard feedback with the four-question prompt (RC-pre-1.0's,
+unchanged)"* and protocol.md §4 required a *"per-session feedback report"* — but the **words were
+nowhere in this trial's directory**, only in the previous trial's protocol. That is the third
+instance of the same defect: the protocol opens *"everything needed to execute it is here; nothing
+depends on the authoring session's context"* and then defers. §2.1 closed it for corpora and prompts;
+this closes it for feedback.
+
+Found by the operator at the keyboard, at the moment of use, which is the expensive way to find it.
+
+**Paste verbatim into the session, at its end, while it is still fresh** — never after exiting, and
+never into a later worker's session.
+
+> About the `jigc` CLI specifically: (1) what confused you; (2) what did jigc tell you that turned
+> out to be wrong or misleading; (3) what did you look for — a command, a flag, a way to read or
+> write something — and not find; (4) what did you do around jigc rather than through it (any direct
+> file read/edit, raw git command, or other workaround touching managed docs), and why?
+
+**Why it is unchanged from RC-pre-1.0.** The discoverability findings of the last four trials came
+out of these reports rather than out of the logs, and question (4) is the one that produced
+RC-pre-1.0's sharpest datum — a worker volunteering *"I never read back a single managed doc I
+wrote"*. Changing the wording would forfeit the only part of this trial that stays directly
+comparable after the isolation change (§2).
+
+**It is asked, and it is not evidence.** §3.3 is explicit that the log and the transcript are the
+instrument and the feedback report is context — a worker's account of its own conduct is the thing
+this trial's measurement was built to stop relying on.
+
+**Save it as `feedback-B<n>.md` in this directory, never into the corpus** — a tracked `.md` inside
+the corpus becomes an ingest candidate and changes what a later session's `jigc ingest` reports.

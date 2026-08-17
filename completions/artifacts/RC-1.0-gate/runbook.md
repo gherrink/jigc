@@ -85,8 +85,9 @@ and would put the worker's hand back exactly where this design moved it out of.
 
 ### 6 · at the end of the session, in the session
 
-Collect the standard feedback with the four-question prompt (RC-pre-1.0's, unchanged), save it as
-`feedback-B1.md` **here, never into the corpus**, and never feed it to a later worker.
+Paste the closing feedback prompt — **verbatim, from [blind-prompts.md](blind-prompts.md) §4** —
+while the session is still open. Save the answer as `feedback-B1.md` **here, never into the corpus**
+(a tracked `.md` there becomes an ingest candidate), and never feed it to a later worker.
 
 ### 7 · after the session
 
