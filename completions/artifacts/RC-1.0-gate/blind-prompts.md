@@ -448,7 +448,7 @@ Found by the operator at the keyboard, at the moment of use, which is the expens
 never into a later worker's session.
 
 > About the `jigc` CLI specifically: (1) what confused you; (2) what did jigc tell you that turned
-> out to be wrong or misleading; (3) what did you look for — a command, a flag, a way to read or
+out to be wrong or misleading; (3) what did you look for — a command, a flag, a way to read or
 > write something — and not find; (4) what did you do around jigc rather than through it (any direct
 > file read/edit, raw git command, or other workaround touching managed docs), and why?
 

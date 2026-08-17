@@ -1,0 +1,5 @@
+PRIMARY:
+Actually — that decision should be called 'Shed the oldest sample on ingest overflow'. That's the wording our runbook uses.
+
+ALTERNATE (use if the primary's title derives the SAME slug):
+Actually — that decision should be called 'Overflow drops the oldest sample first'. That's the wording our runbook uses.

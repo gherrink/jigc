@@ -1,0 +1,5 @@
+PRIMARY:
+One correction — that research should be called 'Where comparable services put their ceilings'. We say ceilings everywhere else.
+
+ALTERNATE (use if the primary's title derives the SAME slug):
+One correction — that research should be called 'Which ceilings comparable services actually enforce'. We say ceilings everywhere else.

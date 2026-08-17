@@ -1,0 +1,5 @@
+PRIMARY:
+Small thing — that spec should be called 'Cap distinct series at a configured ceiling'. Series ceiling is what we've been calling it in standup.
+
+ALTERNATE (use if the primary's title derives the SAME slug):
+Small thing — that spec should be called 'Series cardinality gets a configured ceiling'. Series ceiling is what we've been calling it in standup.

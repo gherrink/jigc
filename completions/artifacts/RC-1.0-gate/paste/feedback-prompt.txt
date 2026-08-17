@@ -1,0 +1,1 @@
+About the `jigc` CLI specifically: (1) what confused you; (2) what did jigc tell you that turned
