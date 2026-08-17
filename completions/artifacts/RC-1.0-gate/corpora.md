@@ -6,7 +6,7 @@ Built 2026-08-16, **before any session ran**, from the committed
 
 | Corpus | Instrument | Product name | State at freeze |
 |---|---|---|---|
-| `~/ideas/harborlight` | **B1** cold start | `harborlight` | naive — `jigc setup` runs *in* the session |
+| `~/ideas/harborlight` | **B1** cold start | `harborlight` | **PLANTED 2026-08-17** — hook + staged set; `jigc setup` runs *in* the session |
 | `~/ideas/pinegrove` | **B2** design altitude | `pinegrove` | **adopted** — setup + invocation log committed |
 | `~/ideas/stonefly` | **B3** corpus accretes | `stonefly` | **adopted** — setup + invocation log committed |
 | `~/ideas/rc11-control` | **arm 0** positive control | `rc11svc` | naive |
@@ -62,3 +62,21 @@ string + verbatim correction) · the plants for B1 (rejecting `pre-commit` under
 pre-staged files before the mint) and B3 (the mid-stream foreign ADR) **each rehearsed to firing on a
 throwaway copy** · the answer key for the forks a worker predictably raises. A plant assumed to fire
 is not a plant.
+
+## B1 planted, 2026-08-17
+
+`harborlight` was gated 11/11 pristine, then both B1 plants were landed and it is no longer naive by
+design. Its frozen state, and the operator sequence, are in [runbook.md](runbook.md).
+
+```
+staged        A scripts/retention-sweep.sh · M src/router.ts
+hooksPath     .githooks (tracked hook, committed f97cb5f, back-dated)
+marker        .git/docs-approved absent — rejecting
+commits       8
+```
+
+**Verified through the transport, not only on the host:** copied into `jigc-gate:rc11`, the staged
+set, `core.hooksPath` and the executable hook all arrive intact, and a `docs/` commit inside the
+container exits **1** with HEAD unmoved. `check-corpus.sh` will now fail this corpus — correctly, and
+by design: it asserts a *naive* corpus, and a planted one is no longer that. Re-gate only a freshly
+instantiated replacement.
