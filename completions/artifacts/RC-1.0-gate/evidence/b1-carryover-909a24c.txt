@@ -1,0 +1,34 @@
+commit 909a24cb3ee6cceedb801670b981006836471c49
+Author: Worker <worker@example.com>
+Date:   Mon Aug 17 06:43:10 2026 +0000
+
+    docs(ingest): record IngestQueue's drop-oldest overflow policy as an ADR
+
+ .jigc/config/manifest.yaml                         |  2 +
+ .../ingestqueue-overflow-drops-the-oldest.md       | 54 ++++++++++++++++++++++
+ scripts/retention-sweep.sh                         | 13 ++++++
+ src/router.ts                                      |  3 ++
+ 4 files changed, 72 insertions(+)
+--- REFLOG ---
+909a24c HEAD@{2026-08-17 06:43:10 +0000}: commit: docs(ingest): record IngestQueue's drop-oldest overflow policy as an ADR
+087f0ce HEAD@{2026-08-17 05:31:34 +0000}: commit: chore(jigc): install jigc workspace config
+f97cb5f HEAD@{2026-08-16 07:37:34 +0200}: commit: chore: refuse doc commits until the docs review signs off
+f6250f4 HEAD@{2026-08-16 07:37:34 +0200}: commit: feat: router and service wiring
+12660b0 HEAD@{2026-08-16 07:37:34 +0200}: commit: feat: aligned window rollups and summaries
+--- SETUP COMMIT ---
+commit 087f0cec3bac058a9fba8b2690d2cd161a99a4a6
+Author: Worker <worker@example.com>
+Date:   Mon Aug 17 05:31:34 2026 +0000
+
+    chore(jigc): install jigc workspace config
+
+ .claude/settings.json        |  42 ++++++++
+ .claude/skills/jigc/SKILL.md | 251 +++++++++++++++++++++++++++++++++++++++++++
+ .githooks/pre-commit         |  53 +++++++++
+ .jigc/.gitignore             |   7 ++
+ .jigc/AGENT.md               |   9 ++
+ .jigc/config/.gitkeep        |   0
+ .jigc/config/packs.yaml      |   1 +
+ .jigc/version                |   1 +
+ CLAUDE.md                    |   3 +
+ 9 files changed, 367 insertions(+)
