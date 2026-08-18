@@ -120,3 +120,27 @@ Cross-reviewed 2026-07-22 (human-directed): the doc went through a **cross-model
 - **The leftover re-`provision` left the sweep entirely**, because the trial had just confirmed it as a data-loss defect: a standing test over its *current* behaviour would have **pinned data loss as expected output**. It routes to that fix's red test instead.
 
 That last one is the point worth carrying forward: **the classification question is not only "is this covered?" but "would pinning it now pin the bug?"** A sweep that fences current behaviour on an unfenced surface is not neutral — over a defect it is actively harmful, because the guard then defends the defect against its own fix.
+
+---
+
+## §3 addendum — a citation is verified by what a test asserts, and the near-miss is the product (2026-08-18)
+
+§3 already refuses a `pinned-by:` symbol parser. The 1.0.0-gate trial's ledger closed 17 of 17 and
+produced the concrete reason that refusal is right — **three citations that read apt and assert
+something else**, each found only by opening the test:
+
+- `unknown_subcommand_tip::no_read_intent_is_answered_with_a_write_verb` looks like the pin for *"a
+  read-shaped near-miss answers with nothing"*. Its axis is `(parent node, token naming no real
+  child)` — unknown **subcommands**. An unexpected **positional at a leaf verb** is a shape that axis
+  never enumerates.
+- `changelog_gate_advisory.rs` reads apt by name and genuinely pins three arms of the *correct*
+  behaviour — while touching none of the cells the finding is about.
+- `start_resume::sub_task_read_doors_keep_the_blanket_base_pin_refusal` **is** a valid pin, and is
+  also a hazard: it asserts the emitted route text, so it pins a route a later wave wants to change
+  as expected output. A fix there must **revise** the assertion, not add one — otherwise a correct
+  change meets a red test and looks wrong.
+
+**The rule this yields, and it is cheap to apply:** when citing, write the one clause saying *what
+the test asserts*. If that clause cannot be written from the test's own assertions, the citation is
+not one. A near-miss discovered while writing the clause is worth more than the citation would have
+been — it is a test that will fight a future fix, found before the fix rather than during it.

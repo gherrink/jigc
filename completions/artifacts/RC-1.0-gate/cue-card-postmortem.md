@@ -549,3 +549,25 @@ schedule a sentence.*
   putting the naming authority in a committed document narrows the risk without closing it.
 - **The 4/4 read-back result carries §3.4's own caveat unchanged** — instructed compliance at N=4,
   not discovery, and not reliability.
+
+---
+
+## The rule, promoted out of this trial (2026-08-18)
+
+**An instrument fires reliably iff (a) its trigger is a *state*, not a moment; (b) its consequence is
+**re-raised by the product**, not carried in an operator's sentence; and (c) every worker behaviour
+maps to a scored outcome, so a miss is data rather than silence.**
+
+Measured against it, this trial's instruments sort cleanly and in advance:
+
+| instrument | trigger | consequence re-raised? | fired? |
+|---|---|---|---|
+| the foreign-ADR plant | a committed file, permanent | **yes** — every `validate`/`finalize` | **yes**, and caught on its harder branch |
+| the carryover plant | a staged set at mint | yes — the gate re-checks | fired; defused by a tidy worker |
+| the hook plant | a state in `.git/` | yes — every commit | **yes**, twice |
+| the cue card | *a moment in a 3–5 s window* | **no** — only the operator knew | **no. 0 of 4** |
+
+The corollary that costs the most to learn late: **rehearse on the axis you are uncertain about.**
+`cue-cards.md` §0.3 named its own untested assumption in writing — *"reasoned from how Claude Code
+delivers queued messages, not measured"* — and that is precisely the assumption that failed. Naming
+an assumption is not testing it.
