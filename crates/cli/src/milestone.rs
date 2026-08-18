@@ -1952,30 +1952,110 @@ fn child_names(path: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// The id-ordered paths of the milestone's still-provisioned fan-out worktrees — each
-/// sub-task whose `<jigc_home>/.jigc/worktrees/<id>` is a currently-registered git
-/// worktree (the [`remove_worktrees`] enumeration, reused for the combine channel). A
-/// never-provisioned (docs-only) milestone yields an empty list, so the `squash: true`
-/// combine degrades to a docs-only commit. Best-effort on the `git worktree list` read (an
-/// unreadable list yields no worktrees — the combine then commits the docs alone, never a
-/// spurious block).
-fn provisioned_worktrees(
+/// What the milestone boundary found **at a sub-task's worktree path** — the subject the
+/// boundary reads, credits and commits from.
+///
+/// The retired subject was the *registered* set (the task list ∩ `git worktree list`),
+/// the same wrong subject M48 retired at the three [`DESTROYING_DOORS`]. A `cp -R` or `mv`
+/// of the whole repo — how every RC trial corpus is made — leaves the copy's worktree admin
+/// records naming the **source's** paths, so nothing under the copy's own
+/// `.jigc/worktrees/` is registered there and the boundary saw no worktrees at all exactly
+/// where the sub-agents' live work sat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorktreeState {
+    /// Nothing on disk at that path — the sub-task genuinely never got a worktree, and
+    /// contributed no code **by construction** (M47 Inc 3, call (b)(ii)).
+    Absent,
+    /// A live linked worktree of its own ([`LeftoverVerdict::OwnWorktree`]), registered
+    /// here or not: git reads its index correctly, so the boundary reads it.
+    Live,
+    /// A directory git cannot read as a worktree of its own
+    /// ([`LeftoverVerdict::Unverifiable`] after a `mv`, [`LeftoverVerdict::NoOwnLinkage`]
+    /// for a plain directory) — **named**, never read for code.
+    Unreadable,
+}
+
+/// One sub-task's worktree path, classified once for every consumer of the boundary.
+struct SubtaskWorktree {
+    /// The sub-task's work-unit id (the path's final component).
+    id: String,
+    /// The canonical `<jigc_home>/.jigc/worktrees/<id>` path.
+    path: PathBuf,
+    /// What is actually there.
+    state: WorktreeState,
+    /// Whether [`remove_worktrees`]'s teardown reaches this path — it removes **registered**
+    /// worktrees and skips everything else. The loss narration's subject stays exactly that,
+    /// so an unregistered leftover the teardown leaves standing is never narrated as lost.
+    registered: bool,
+}
+
+/// Classify every sub-task's worktree path, id-ordered — one `git rev-parse` per existing
+/// path ([`classify_leftover`], the classifier the destroying doors already ask).
+///
+/// **Membership is the verdict on an EXISTING path, never mere existence.** Driven at a
+/// plain directory under `.jigc/worktrees/`, `git diff --cached --name-only` prints the
+/// **enclosing** repo's staged set at exit 0 — so a mere-existence subject would attribute
+/// the main checkout's staged files to a sub-task and commit them. And the `path.exists()`
+/// pre-check comes first for the same reason [`probe_leftover`] keeps it: `classify_leftover`
+/// on a missing directory answers [`LeftoverVerdict::Unverifiable`], which would turn every
+/// genuinely never-provisioned sub-task into an unreadable one.
+///
+/// Best-effort on the `git worktree list` read (an unreadable list yields no registrations —
+/// the teardown then removes nothing, never a spurious block).
+fn subtask_worktrees(
     repo_root: &Path,
     jigc_home: &Path,
     list: &engine::milestone::TaskList,
-) -> Vec<PathBuf> {
+) -> Vec<SubtaskWorktree> {
     let registered = registered_worktrees(repo_root).unwrap_or_default();
     // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
     // `add` time); fall back to the raw path if canonicalization fails (then nothing
-    // matches and the worktree is treated as not-provisioned).
+    // matches the registered set, which is the fail-closed side).
     let canonical_home = jigc_home
         .canonicalize()
         .unwrap_or_else(|_| jigc_home.to_path_buf());
     list.enumerate()
         .into_iter()
-        .map(|id| canonical_home.join(worktree_path(&id)))
-        .filter(|path| registered.iter().any(|w| w == path))
+        .map(|id| {
+            let path = canonical_home.join(worktree_path(&id));
+            let state = if !path.exists() {
+                WorktreeState::Absent
+            } else if classify_leftover(&path) == LeftoverVerdict::OwnWorktree {
+                WorktreeState::Live
+            } else {
+                WorktreeState::Unreadable
+            };
+            SubtaskWorktree {
+                registered: registered.iter().any(|w| w == &path),
+                id,
+                path,
+                state,
+            }
+        })
         .collect()
+}
+
+/// The id-ordered paths of the milestone's **live** fan-out worktrees — the set the combine,
+/// the collision read, the boundary gate and the staged-code signal all work over. A
+/// never-provisioned (docs-only) milestone yields an empty list, so the `squash: true`
+/// combine degrades to a docs-only commit; a path git cannot vouch for is excluded, so
+/// nothing is ever read out of it.
+fn live_worktrees(subtasks: &[SubtaskWorktree]) -> Vec<PathBuf> {
+    subtasks
+        .iter()
+        .filter(|sub| sub.state == WorktreeState::Live)
+        .map(|sub| sub.path.clone())
+        .collect()
+}
+
+/// [`live_worktrees`] over a freshly classified task list — the single-use form for the
+/// `join` channel, which needs the paths and none of the other facts.
+fn provisioned_worktrees(
+    repo_root: &Path,
+    jigc_home: &Path,
+    list: &engine::milestone::TaskList,
+) -> Vec<PathBuf> {
+    live_worktrees(&subtask_worktrees(repo_root, jigc_home, list))
 }
 
 /// Whether any of the milestone's provisioned worktrees has staged code — Σ `git diff
@@ -2567,7 +2647,10 @@ fn run_milestone_finalize(
     // knob-independent, so its inputs sit above the record flip and the `squash` read).
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
-    let worktrees = provisioned_worktrees(&repo_root, &jigc_home, &list);
+    // The subject is the **path**, classified once (M46 Inc 2 T1) and shared by the gate,
+    // the combine channel and the manifest's contribution facts below.
+    let subtasks = subtask_worktrees(&repo_root, &jigc_home, &list);
+    let worktrees = live_worktrees(&subtasks);
     let staging_dir = materialized
         .docs_dir
         .parent()
@@ -2650,7 +2733,7 @@ fn run_milestone_finalize(
     // at all. The no-work sub-task reads `docs: 0, code_files: 0` and renders visibly as
     // `nothing staged`; a sub-task with no worktree is named too, since it could not have
     // contributed code even in principle (M47 Inc 3, call (b)(ii)).
-    let contributions = subtask_contributions(&list, &materialized.sources, &worktrees)?;
+    let contributions = subtask_contributions(&subtasks, &materialized.sources)?;
 
     // The finalize base-guard refinement (`design/team-ready-state.md` → The commit model: the
     // finalize base-guard refinement; `DECISIONS.md` 2026-07-07). Per-op record commits advance
@@ -3522,46 +3605,55 @@ fn worktree_staged_patch(worktree: &Path) -> Result<Vec<u8>> {
 }
 
 /// Each sub-task's landing-manifest contribution (C2), id-sorted over the milestone's
-/// full task `list`: its merged-doc count from the materialize's address→source map
-/// (`sources`), its staged-code file count from its still-provisioned fan-out
-/// worktree's index (`git diff --cached --name-only`), and **whether it has a
-/// provisioned worktree at all**. Computed **pre-commit** — a landed boundary tears the
-/// worktrees down.
+/// classified worktree set: its merged-doc count from the materialize's address→source map
+/// (`sources`), its staged-code file count from its **live** fan-out worktree's index
+/// (`git diff --cached --name-only`), and what the boundary found at its worktree path.
+/// Computed **pre-commit** — a landed boundary tears the worktrees down.
 ///
-/// A never-provisioned sub-task counts 0 code files **by construction**, not by
-/// measurement: since M31 Inc 4/5 the isolated worktree is the sole place a sub-agent's
-/// code can live, so no worktree means no code was possible. That degrade used to be
-/// indistinguishable from "the sub-agent staged nothing," which is why `provisioned`
-/// rides the manifest (M47 Inc 3, call (b)(ii)).
+/// A sub-task with an [`WorktreeState::Absent`] path counts 0 code files **by
+/// construction**, not by measurement: since M31 Inc 4/5 the isolated worktree is the sole
+/// place a sub-agent's code can live, so no worktree means no code was possible. That
+/// degrade used to be indistinguishable from "the sub-agent staged nothing," which is why
+/// `provisioned` rides the manifest (M47 Inc 3, call (b)(ii)).
+///
+/// An [`WorktreeState::Unreadable`] path is the third cell, and it is neither of those two
+/// facts: something is there, and git cannot read it, so the boundary counted nothing out
+/// of it and committed nothing from it. The manifest says exactly that rather than
+/// borrowing the never-provisioned words (M46 Inc 2, T1).
 fn subtask_contributions(
-    list: &engine::milestone::TaskList,
+    subtasks: &[SubtaskWorktree],
     sources: &std::collections::BTreeMap<String, String>,
-    worktrees: &[PathBuf],
 ) -> Result<Vec<render::SubTaskContribution>> {
     let mut out = Vec::new();
-    for id in list.enumerate() {
-        let docs = sources.values().filter(|source| **source == id).count();
-        let worktree = worktrees
-            .iter()
-            .find(|path| path.file_name().is_some_and(|name| name == id.as_str()));
-        let code_files = match worktree {
-            Some(path) => worktree_staged_file_count(path)?,
-            None => 0,
+    for sub in subtasks {
+        let docs = sources.values().filter(|source| **source == sub.id).count();
+        let live = sub.state == WorktreeState::Live;
+        let code_files = if live {
+            worktree_staged_file_count(&sub.path)?
+        } else {
+            0
         };
         // The loss half of the same pre-commit snapshot (M47 Inc 3, call (c)) — the
         // teardown removes the whole checkout, so everything the worktree holds beyond
         // the staged set dies with it. Read here, where the worktrees are still alive
         // and `code_files` is read, so the manifest's "landed" and "lost" halves come
         // from one observation of one state.
-        let discarded = match worktree {
-            Some(path) => discarded_work(path)?,
-            None => Vec::new(),
+        //
+        // **Gated on `registered`, not on `live`**: [`remove_worktrees`] removes registered
+        // worktrees and skips everything else, so narrating a live-but-unregistered
+        // worktree's content as *lost* — when the teardown leaves it standing — would be a
+        // law-1 lie in the other direction (`design/surface-contract.md`).
+        let discarded = if live && sub.registered {
+            discarded_work(&sub.path)?
+        } else {
+            Vec::new()
         };
         out.push(render::SubTaskContribution {
-            id,
+            id: sub.id.clone(),
             docs,
             code_files,
-            provisioned: worktree.is_some(),
+            provisioned: live,
+            worktree_unreadable: sub.state == WorktreeState::Unreadable,
             discarded,
         });
     }

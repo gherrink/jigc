@@ -1356,6 +1356,7 @@ fn milestone_finalized_parity() {
             docs: 1,
             code_files: 0,
             provisioned: true,
+            worktree_unreadable: false,
             discarded: vec![DiscardedWork {
                 path: "src/scratch.rs".to_owned(),
                 state: DiscardState::NeverStaged,

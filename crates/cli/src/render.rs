@@ -3173,12 +3173,21 @@ pub struct SubTaskContribution {
     /// Staged code files in this sub-task's fan-out worktree (`git diff --cached
     /// --name-only`); 0 for a never-provisioned or code-less sub-task.
     pub code_files: usize,
-    /// Whether this sub-task **had a provisioned fan-out worktree** at the boundary
-    /// (M47 Inc 3, call (b)(ii)). `false` makes the degrade visible rather than
-    /// silent: the worktree is the sole place a sub-agent's code can live, so a
-    /// sub-task without one contributed no code **by construction** — a fact
-    /// `code_files: 0` alone cannot distinguish from "staged nothing."
+    /// Whether this sub-task had a **live** fan-out worktree at the boundary — one git
+    /// reads as a worktree of its own, registered here or not (M47 Inc 3, call (b)(ii);
+    /// the path-subject widening, M46 Inc 2 T1). `false` makes the degrade visible
+    /// rather than silent: the worktree is the sole place a sub-agent's code can live,
+    /// so a sub-task without one contributed no code — a fact `code_files: 0` alone
+    /// cannot distinguish from "staged nothing."
     pub provisioned: bool,
+    /// Whether a directory sits at this sub-task's worktree path that git **cannot read
+    /// as a worktree of its own** — the `mv`-ed copy whose admin directory is gone, or a
+    /// plain directory left at the path. It is a third fact, not a shade of
+    /// `provisioned: false`: something is there, nothing could be counted out of it, and
+    /// nothing from it was committed. Reading it as never-provisioned would claim the
+    /// sub-task contributed nothing **by construction**, which is exactly what cannot be
+    /// said here (M46 Inc 2 T1).
+    pub worktree_unreadable: bool,
     /// The work in this sub-task's fan-out worktree the landed teardown **destroys** —
     /// path-sorted, empty when everything the worktree held was staged (M47 Inc 3, call
     /// (c)). The boundary commits only the staged set and then removes the whole
@@ -3337,10 +3346,21 @@ fn contribution_label(contribution: &SubTaskContribution) -> String {
         };
         parts.push(format!("{} {noun}", contribution.code_files));
     }
-    if parts.is_empty() {
+    // `nothing staged` is a measurement, so it is withheld where nothing could be
+    // measured — an unreadable worktree path leaves the code channel unread, and
+    // claiming the sub-agent staged nothing would be the law-1 lie.
+    if parts.is_empty() && !contribution.worktree_unreadable {
         parts.push("nothing staged".to_owned());
     }
-    if !contribution.provisioned {
+    if contribution.worktree_unreadable {
+        // Name the path, so the reader can go look at what the boundary walked past —
+        // the worktree home is `.jigc/worktrees/<sub-task-id>` by construction
+        // (`engine::milestone::worktree_path`).
+        parts.push(format!(
+            "unreadable worktree at .jigc/worktrees/{}, no code counted",
+            contribution.id,
+        ));
+    } else if !contribution.provisioned {
         parts.push("no worktree provisioned".to_owned());
     }
     format!("{}: {}", contribution.id, parts.join(", "))
@@ -4996,6 +5016,7 @@ mod tests {
                     docs: 1,
                     code_files: 1,
                     provisioned: true,
+                    worktree_unreadable: false,
                     // M47 Inc 3 (c) — the two reportable cells of the index-column
                     // partition. The wholly-staged path (`lru.py`, in the manifest above)
                     // is deliberately absent: it landed.
@@ -5018,6 +5039,7 @@ mod tests {
                     docs: 0,
                     code_files: 0,
                     provisioned: false,
+                    worktree_unreadable: false,
                     discarded: Vec::new(),
                 },
             ],
