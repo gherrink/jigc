@@ -802,9 +802,13 @@ fn every_destroying_door_names_the_bytes_it_is_about_to_destroy() {
     }
 }
 
-/// **Arm 1's second cell** — the authored prose only `uninstall` can reach: bytes in no
-/// object DB at all, under `.jigc/tasks/<id>/docs/`, which the teardown used to take at
-/// exit 0.
+/// **Arm 1's second cell** — the authored prose subject: bytes in no object DB at all, under
+/// `.jigc/tasks/<id>/docs/`, which the teardown used to take at exit 0. `uninstall` is the
+/// door that **refuses** over them (this cell); `jigc milestone discard` reaches the same
+/// bytes through the sub-task areas and **names** them before removing
+/// (`milestone_teardown_loss::the_abandon_names_the_authored_task_prose_it_destroys`) — the
+/// earlier claim that only `uninstall` could reach this prose was false, and the abandon
+/// door took it silently until M46 Inc 2's validation.
 #[test]
 fn uninstall_refuses_the_authored_prose_that_lives_nowhere_else() {
     let repo = TempDir::new("prose-repo");

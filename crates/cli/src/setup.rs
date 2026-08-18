@@ -2319,9 +2319,41 @@ fn narrate_teardown(repo_root: &Path) {
     // The second subject, which no worktree probe can see: `.jigc/tasks/<id>/docs/*.md` is in
     // no object DB at all. A door that names only half of what it takes is a law-1
     // half-truth, so the set [`staged_task_prose`] refuses on is the set named here.
-    let Ok(staged) = staged_task_prose(repo_root) else {
+    narrate_staged_prose(repo_root, "removing `.jigc/`", None);
+}
+
+/// Name the **authored task prose** a door is about to destroy — the staged `*.md` under
+/// `.jigc/tasks/<id>/docs/`, which is in no object DB at all, so the workbench is its only
+/// copy.
+///
+/// **One emitter for every door that removes a task area**, the sibling of
+/// [`crate::milestone::narrate_removal`]'s worktree-shaped subject and for the same reason:
+/// two call sites of one rule drift. Its callers are the two doors that take those bytes
+/// without a commit having carried them — `jigc uninstall`
+/// ([`narrate_teardown`], whose `remove_dir_all(<repo>/.jigc)` takes the whole workbench)
+/// and `jigc milestone discard` ([`crate::milestone::run_discard`], whose teardown
+/// `remove_dir_all`s each sub-task area). The abandon door destroyed them **silently at
+/// exit 0** until M46 Inc 2's validation, while `uninstall` refused over byte-identical
+/// state — one door naming half the axis is exactly the half-truth that increment removes.
+///
+/// `action` is what the door is doing, in the door's own words ("removing `.jigc/`",
+/// "discarding milestone:<id>"), so the warning names a destruction the reader is actually
+/// standing at rather than a generic one.
+///
+/// `only` scopes the set to the task ids the caller's removal reaches — `None` for a door
+/// that takes the whole workbench. A door must not name prose it will not touch: claiming a
+/// destruction that does not happen is the same law-1 lie as performing one it never named.
+///
+/// Best-effort, like every narration: an unreadable workbench yields no warning rather than
+/// failing a teardown the guards already cleared. It is surface over a removal, never itself
+/// a gate — the declared bound stays *visible, not prevented*.
+pub(crate) fn narrate_staged_prose(repo_root: &Path, action: &str, only: Option<&[String]>) {
+    let Ok(mut staged) = staged_task_prose(repo_root) else {
         return;
     };
+    if let Some(only) = only {
+        staged.retain(|(task, _)| only.iter().any(|id| id == task));
+    }
     if staged.is_empty() {
         return;
     }
@@ -2330,7 +2362,7 @@ fn narrate_teardown(repo_root: &Path) {
         .map(|(task, docs)| format!("    {task}: {}", docs.join(", ")))
         .collect();
     eprintln!(
-        "warning: removing `.jigc/` discards the staged docs of {} open task(s), which no commit \
+        "warning: {action} discards the staged docs of {} open task(s), which no commit \
          has a copy of:\n{}\n  note: the workbench is the only copy of those bytes — they are \
          not recoverable.",
         staged.len(),

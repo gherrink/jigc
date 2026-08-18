@@ -528,3 +528,105 @@ fn a_gitignored_only_worktree_still_clears_the_discard_refusal() {
         "the abandon still removes the worktree (visible, not prevented)",
     );
 }
+
+/// **The abandon door's second subject: the authored prose in the sub-task areas.**
+///
+/// `discard`'s teardown does not only remove worktrees — it `remove_dir_all`s each
+/// `.jigc/tasks/<sub-id>/`, which is where a sub-agent's authored `docs/*.md` live, in no
+/// object DB at all. Until this cell that removal was **silent at exit 0**, while
+/// `jigc uninstall` refused over byte-identical state and named the very same docs
+/// (`uninstall.staged-prose`) — the law-1 half-truth M46 Inc 2 removes at the one door and
+/// left standing at its sibling, against the increment's own claim (*no milestone door
+/// silently drops sub-agent work or destroys bytes it does not name*).
+///
+/// **The axis is the task set the door reaches**, not the reported repro: the narration must
+/// name the milestone's sub-tasks that hold staged docs, must **not** name a sub-task holding
+/// none (the over-report that makes a loss warning untrustworthy), and must not name — or
+/// touch — an unrelated open task, whose area this door never removes.
+#[test]
+fn the_abandon_names_the_authored_task_prose_it_destroys() {
+    let repo = TempDir::new("abandon-prose");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+    // The cell that must be named: a milestone sub-task whose authored ADR exists only here.
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:low-policy",
+        &adr_plain("Low policy"),
+    );
+    // `area-zed` stages nothing — the cell that must NOT be named.
+    // The unrelated open task: outside the milestone, so this door neither names nor takes it.
+    stage_doc(
+        repo.path(),
+        "solo-task",
+        "adr:solo-policy",
+        &adr_plain("Solo policy"),
+    );
+
+    let provisioned = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+
+    let discarded = run_milestone(repo.path(), home.path(), &["discard", "cache-rework"]);
+    let stdout = String::from_utf8(discarded.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(discarded.stderr).expect("utf-8 stderr");
+
+    // (1) The worktrees are clean, so no refusal fires — this is the ordinary abandon.
+    assert!(
+        discarded.status.success(),
+        "the un-forced abandon must reach its teardown; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // (2) The door names the authored prose it is about to destroy.
+    assert!(
+        stderr.contains("area-low: adr:low-policy"),
+        "the abandon must name the staged doc it destroys, as `uninstall` does over the same \
+         bytes; stderr:\n{stderr}",
+    );
+
+    // (3) …and names only that: no sub-task holding nothing, no task outside the milestone.
+    assert!(
+        !stderr.contains("area-zed:"),
+        "a sub-task holding no staged doc must not be reported; stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("solo-task"),
+        "the abandon removes only its own sub-tasks' areas — naming another task's prose \
+         would claim a destruction it never performs; stderr:\n{stderr}",
+    );
+
+    // (4) Non-vacuity, both ways: the named bytes really are gone (visible, not prevented),
+    // and the unnamed task's prose really did survive.
+    let tasks = repo.path().join(".jigc").join("tasks");
+    assert!(
+        !tasks.join("area-low").exists(),
+        "the abandon really removes the sub-task area, or the narration was about nothing",
+    );
+    assert!(
+        tasks.join("solo-task").join("docs").exists(),
+        "an unrelated open task's staged prose must survive the abandon",
+    );
+}

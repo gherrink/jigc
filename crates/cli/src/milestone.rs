@@ -2252,6 +2252,19 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
 
     // (5) Teardown — the workbench outlives nothing: the sub-task areas, the registered fan-out
     // worktrees, and the milestone area itself.
+    //
+    // Name the authored prose FIRST. The sub-task areas hold `docs/*.md` that is in no object
+    // DB at all — on the abandon path nothing landed, so the workbench is their only copy —
+    // and this door took them at exit 0 in silence while `jigc uninstall` refused over
+    // byte-identical state (M46 Inc 2 validation; the law-1 half-truth this increment
+    // removes). Scoped to THIS milestone's sub-task ids, because that is exactly the set
+    // [`cleanup_subtask_areas`] removes: an unrelated open task's prose survives and must not
+    // be named. After the record commit, so a rejected commit narrates no loss it never took.
+    crate::setup::narrate_staged_prose(
+        &jigc_home,
+        &format!("discarding milestone:{milestone_id}"),
+        Some(&list.enumerate()),
+    );
     cleanup_subtask_areas(&jigc_root, &list);
     remove_worktrees(&repo_root, &jigc_home, &list);
     remove_milestone_area(&dir);
@@ -3187,14 +3200,22 @@ fn flip_record_for_finalize(
     }))
 }
 
-/// Remove each sub-task's working area (`.jigc/tasks/<sub-id>/`) after a **landed**
-/// milestone finalize — the gitignored runtime state the executor's milestone-area
-/// cleanup leaves behind (it removes only the milestone area). Mirrors the single-task
-/// post-commit cleanup discipline ([`crate::task::post_commit`]): best-effort,
-/// logged-not-raised — a cleanup failure must not fail a commit that already landed (the
-/// "self-heal" stance). Called ONLY on the success path, so a failed/rolled-back finalize
-/// leaves the areas intact for a retry (respecting the F1 rollback path). Enumerates the
-/// milestone's id-sorted sub-task list, so the set cleaned is exactly its sub-tasks.
+/// Remove each sub-task's working area (`.jigc/tasks/<sub-id>/`) once the milestone
+/// **settles** — the gitignored runtime state the executor's milestone-area cleanup leaves
+/// behind (it removes only the milestone area). Mirrors the single-task post-commit cleanup
+/// discipline ([`crate::task::post_commit`]): best-effort, logged-not-raised — a cleanup
+/// failure must not fail a commit that already landed (the "self-heal" stance). Enumerates
+/// the milestone's id-sorted sub-task list, so the set cleaned is exactly its sub-tasks.
+///
+/// **Three call sites, on two kinds of path** — the doc-comment said *"called ONLY on the
+/// success path"* until M46 Inc 2's validation caught the third falsifying it. The two
+/// **landed** finalize arms (`squash: true` and the N+1 chain) run it after the commit, so
+/// the areas' `docs/*.md` are promoted or rendered into the message and git holds them; no
+/// failed or rolled-back finalize reaches it, which is what leaves the areas intact for a
+/// retry (respecting the F1 rollback path). [`run_discard`] runs it on the **abandon** path,
+/// where nothing landed and the area is the only copy of the sub-agent's authored prose — so
+/// that caller, and only that caller, names those bytes first
+/// ([`crate::setup::narrate_staged_prose`]).
 fn cleanup_subtask_areas(jigc_root: &Path, list: &engine::milestone::TaskList) {
     let tasks_root = jigc_root.join("tasks");
     for sub_id in list.enumerate() {
