@@ -814,20 +814,14 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
 /// and render the report through the selected `format`. The sweep is task-less and
 /// **detect-and-report** — it gates no transaction.
 ///
-/// The exit code follows the report-only rule with **three exit-flipping exceptions**
-/// (`design/validation.md` → Exit semantics): a content-only run (stale-anchor findings,
-/// or none) exits **0** (the `jigc ingest` precedent — a blocking *content* finding still
-/// exits 0); but a `pack-probe-integrity.*` meta-finding (the probe didn't run, so the
-/// sweep can't claim a trustworthy result), a `reconciliation.rename` finding (an
-/// out-of-band `git mv` — a structural-identity event this commit introduced, M35
-/// Component B), **or** an `engine::validate::SCHEMA_VERSION_CURRENT_CODE` break (M42 — a
-/// managed committed instance below its manifest version, i.e. an **unmigrated corpus**,
-/// where every other family adjudicated docs against a schema they were never written to;
-/// paired since 2026-07-24 with its above-current sibling
-/// `engine::validate::SCHEMA_VERSION_AHEAD_CODE` — a future/foreign stamp this build has no
-/// schema for, the same untrustworthy-sweep criterion)
-/// exits **non-zero** (`Outcome::failure()`, *not* the task-gate `EXIT_VALIDATION_BLOCKED`
-/// — this is not a transaction gate). The decision is the shared
+/// The exit code follows the report-only rule with the **exit-flipping exceptions**
+/// [`render::STORE_EXIT_FLIPS`] enumerates (`design/validation.md` → Exit semantics): a
+/// content-only run (stale-anchor findings, or none) exits **0** (the `jigc ingest`
+/// precedent — a blocking *content* finding still exits 0); a report matching any member of
+/// that table exits **non-zero** (`Outcome::failure()`, *not* the task-gate
+/// `EXIT_VALIDATION_BLOCKED` — this is not a transaction gate). The table is named here
+/// rather than re-listed: it has grown three times (M35, M42, 2026-07-24, M46) and every
+/// hand-count written beside it went stale. The decision is the shared
 /// [`render::validation_store_exit_flips`] (keyed on the probe id / check id **directly**,
 /// never on `report.has_blocking()` and never on a route string), so the exit code, the JSON
 /// `report_only` field, and the trailer stay truthful in lockstep — a deliberate divergence
@@ -853,22 +847,17 @@ fn run_validate_store(format: Format) -> Outcome {
                 "{}",
                 render::validation_store(format, &report, &unbaselined)
             );
-            // The exit rule honors the **three** exit-flipping exceptions (`validation.md` →
-            // Exit semantics — report-only, with three exit-flipping exceptions): (1) a
-            // `pack-probe-integrity.*` meta-finding means the probe could not be trusted (it
-            // crashed / timed out / emitted malformed output), so the sweep cannot claim a
-            // result; (2) a `reconciliation.rename` finding (M35, Component B) is an
-            // out-of-band `git mv` — a structural-identity event *this commit* introduced,
-            // not pre-existing content rot — so it joins the same exit-flipping class; (3) a
-            // `schema-conformance.schema-version-current` break (M42) means the corpus is
-            // **unmigrated**, so every other family in this very report adjudicated docs
-            // against a schema they were never written to — the same untrustworthy-sweep
-            // criterion as (1); since 2026-07-24 the exception is a code *pair* with its
-            // above-current sibling `schema-conformance.schema-version-ahead` (a
-            // future/foreign stamp this build has no schema for — same criterion, inverse
-            // direction). Otherwise (content-only or clean) detect-and-report exits 0,
-            // even when a content finding blocks. Keyed on the probe id / check id directly,
-            // mirrored by [`render::validation_store`]'s `report_only` field + trailer.
+            // The exit rule honors the exit-flipping exceptions (`validation.md` → Exit
+            // semantics), and asks [`render::STORE_EXIT_FLIPS`] which they are rather than
+            // re-enumerating them here: each member declares its own matcher, closing line
+            // and criterion beside the others, and the members are not one criterion —
+            // `pack-probe-integrity.*` and the two schema-version breaks mean the sweep
+            // could not produce a trustworthy result, while `reconciliation.rename` and the
+            // never-adopted squatter (M46) are sweeps that **worked** and are reporting a
+            // real event they found. This comment enumerated three of them and was stale at
+            // four. Otherwise (content-only or clean) detect-and-report exits 0, even when a
+            // content finding blocks. Keyed on the probe id / check id directly, mirrored by
+            // [`render::validation_store`]'s `report_only` field + trailer.
             let code = if render::validation_store_exit_flips(&report) {
                 1
             } else {

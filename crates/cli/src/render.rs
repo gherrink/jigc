@@ -530,9 +530,9 @@ pub fn validation_upgrade(
 /// (M26 shakedown #10b) — and (b) it carries a **report-only clarification** so the
 /// exit-code contract is unambiguous from the output. The store sweep is detect-and-report:
 /// content findings are *listed on `blocking · …` lines* (the doc's **cascade** severity —
-/// what would gate at `finalize`) yet the run **exits 0**; only the three exit-flipping
-/// exceptions go non-zero (`design/validation.md` → Exit semantics — report-only, with three
-/// exit-flipping exceptions). Without a trailer a human eyeballing `blocking`, or a script
+/// what would gate at `finalize`) yet the run **exits 0**; only the exit-flipping exceptions
+/// [`STORE_EXIT_FLIPS`] enumerates go non-zero (`design/validation.md` → Exit semantics).
+/// Without a trailer a human eyeballing `blocking`, or a script
 /// chaining `jigc validate && deploy`, misreads a report-only store finding as a gate
 /// failure. So the agent/human view appends a [`store_trailer`] naming where these findings
 /// actually gate, and the JSON adds a machine-readable `report_only` (+ `scope`) signal —
@@ -664,12 +664,17 @@ pub struct StoreExitFlip {
 /// untouched by any of them — an invalid enum, a malformed date, a dangling ref keep their
 /// codes and their exit 0.
 ///
-/// **The "managed arm only" condition needs no extra member here**:
-/// `SCHEMA_VERSION_CURRENT_CODE` is emitted *only* on the managed arm of the fifth family's
-/// discriminator (a foreign squatter at a placement home takes the advisory
-/// `schema-conformance.unadopted-instance` instead), so keying on the code **is** the
-/// condition — a stock brownfield repo that has only run `jigc setup` stays exit-0
-/// (`crates/cli/tests/managed_vs_foreign.rs`, the foreign arm).
+/// **The "managed arm only" condition is about which *code* fires, not about the exit**
+/// (M46 Inc 3 / T1, re-derived where it lives). `SCHEMA_VERSION_CURRENT_CODE` is emitted
+/// *only* on the managed arm of the fifth family's discriminator — a foreign squatter at a
+/// placement home takes the advisory `schema-conformance.unadopted-instance` instead — so
+/// keying on the code **is** that condition, and each home keeps its own closing line and its
+/// own route (`jigc migrate-corpus` for the unmigrated managed doc, `jigc ingest` for the file
+/// jigc was never handed). What no longer follows from it is the **exit**: the squatter is the
+/// fifth member below, so a stock brownfield repo carrying an un-adopted file at a managed home
+/// exits **non-zero**. Reporting it at exit 0 was a green over a home jigc has never been
+/// handed — the false all-clear that member exists to retire
+/// (`crates/cli/tests/managed_vs_foreign.rs`, the two foreign arms).
 ///
 /// **Public since M48 Inc 7 / T5** — see [`StoreExitFlip`] for why: a census entry derived
 /// from the registry cannot fall behind it, where a hand-list can.
@@ -759,6 +764,35 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
         cause: AHEAD_STAMP_PHRASE,
         sweep_untrustworthy: true,
     },
+    // (M46 Inc 3 / T1) The **foreign** arm of that same discriminator: a committed file at a
+    // managed doctype's home that jigc was never handed. Last in precedence — every condition
+    // above it either taints the sweep's own result or is a change this commit introduced,
+    // where this one is a standing fact about the corpus. Like `reconciliation.rename` the
+    // sweep **worked**: it found the file and named it foreign, so this member is not an
+    // untrustworthy sweep either.
+    StoreExitFlip {
+        id: "foreign-squatter",
+        matches: |f| f.code == UNADOPTED_INSTANCE_CODE,
+        witness: || {
+            Finding::graded(
+                Severity::Advisory,
+                UNADOPTED_INSTANCE_CODE,
+                "committed file `CHANGELOG.md` sits at the `changelog` home but was never \
+                 adopted by jigc",
+                // The **file-path** target, which is the production form: a foreign file has
+                // no managed identity to claim (`engine::validate::unadopted_instance`).
+                Some(engine::finding::Location::addressed("CHANGELOG.md", 1, 1)),
+                Some(Route::human(engine::validate::adoption_route(
+                    "changelog",
+                    "CHANGELOG.md",
+                    true,
+                ))),
+            )
+        },
+        trailer: unadopted_squatter_trailer,
+        cause: UNADOPTED_SQUATTER_CAUSE,
+        sweep_untrustworthy: false,
+    },
 ];
 
 /// The first [`STORE_EXIT_FLIPS`] member this report matches — table order **is** precedence
@@ -825,7 +859,7 @@ const GATES_NOWHERE: &[&str] = &[
     "schema-conformance.mention-resolves",
     "schema-conformance.repeatable-populated",
     "schema-conformance.surplus-sections-absent",
-    "schema-conformance.unadopted-instance",
+    UNADOPTED_INSTANCE_CODE,
     "schema-completeness.inverse-cardinality",
     "file-state.un-baselined",
     "file-state.orphaned-doc",
@@ -1007,6 +1041,29 @@ pub(crate) fn unmigrated_corpus_trailer() -> String {
         "the committed corpus is below its schema-version — every other finding above was \
          adjudicated against a schema those docs were never written to, so the sweep \
          {STORE_EXIT_FLIP_PHRASE}; run `jigc migrate-corpus`, then re-validate.\n"
+    )
+}
+
+/// The check id of the **adoption advisory** — the finding that *is* the foreign-squatter
+/// condition ([`STORE_EXIT_FLIPS`]), named once so the matcher, the witness and
+/// [`GATES_NOWHERE`] cannot drift apart on a string.
+pub(crate) const UNADOPTED_INSTANCE_CODE: &str = "schema-conformance.unadopted-instance";
+
+/// The words the foreign-squatter closing line names its condition with — deliberately **not**
+/// a substring of the finding's own message, so a fence asserting the trailer says this is
+/// driving the trailer and not the finding line above it.
+pub(crate) const UNADOPTED_SQUATTER_CAUSE: &str = "a never-adopted file sits at a managed home";
+
+/// The store trailer for a never-adopted file at a managed home (M46 Inc 3 / T1). Note what it
+/// does **not** say: nothing about an untrustworthy sweep. This sweep worked — it found the
+/// file and named it foreign; what it refuses is to report a green over a document jigc has
+/// never been handed. Routes at the adoption front door, the same one every finding carries.
+pub(crate) fn unadopted_squatter_trailer() -> String {
+    format!(
+        "{UNADOPTED_SQUATTER_CAUSE} — jigc was never handed it, so the sweep \
+         {STORE_EXIT_FLIP_PHRASE} rather than report a green over a document it has never \
+         seen; run `jigc ingest` to route it (each finding above carries its own route), then \
+         re-validate.\n"
     )
 }
 
@@ -6062,6 +6119,13 @@ mod tests {
         // store sweep can emit that `engine::validate::validate_task` never emits (the shared
         // body of `jigc task validate` and the `finalize` preflight). Dropping any one of these
         // from the shipped set puts the false gate claim back on the wire for it.
+        //
+        // **Split on the exit axis, which is a different axis (M46 Inc 3 / T1).**
+        // `schema-conformance.unadopted-instance` belongs to both: it gates nowhere *and* it is
+        // `STORE_EXIT_FLIPS`' foreign-squatter member, so a report carrying it renders that
+        // member's closing line and never reaches the report-only branch. Feeding it to the
+        // fixture below would prove only that an unreachable branch stays silent, so it is held
+        // out and driven on its own — against **both** claims — after it.
         let advisory = |code: &str| {
             Finding::graded(
                 Severity::Advisory,
@@ -6076,7 +6140,6 @@ mod tests {
                 advisory("schema-conformance.mention-resolves"),
                 advisory("schema-conformance.repeatable-populated"),
                 advisory("schema-conformance.surplus-sections-absent"),
-                advisory("schema-conformance.unadopted-instance"),
                 advisory("schema-completeness.inverse-cardinality"),
                 advisory("file-state.un-baselined"),
                 advisory("file-state.orphaned-doc"),
@@ -6098,11 +6161,34 @@ mod tests {
             "it is still report-only, and still says so: {agent}",
         );
         assert!(
-            agent.contains("9 finding(s)") && agent.contains("gates nowhere"),
+            agent.contains("8 finding(s)") && agent.contains("gates nowhere"),
             "and it states the truth — none of them gates anywhere: {agent}",
         );
         // The exit contract is untouched: gating nowhere is not the same as flipping the exit.
         assert!(!validation_store_exit_flips(&gate_nowhere));
+
+        // **The ninth code, held out above — both claims at once (M46 Inc 3 / T1).** It gates
+        // nowhere, so no door may be named; and it flips the sweep's exit, so the report-only
+        // sentence — which would print `exit 0` beside a non-zero exit — must not render. The
+        // two are independent: flipping the *sweep's* exit is not granting the *finding* a gate.
+        let squatter = ValidationReport::new(vec![advisory(UNADOPTED_INSTANCE_CODE)], &resolved);
+        let agent = validation_store(Format::Agent, &squatter, &BTreeSet::new());
+        assert!(
+            !agent.contains("jigc task validate")
+                && !agent.contains("jigc task finalize")
+                && !agent.contains("jigc milestone finalize"),
+            "the adoption advisory gates nowhere — no closing line may name a door: {agent}",
+        );
+        assert!(
+            validation_store_exit_flips(&squatter),
+            "and it flips the sweep's exit — the fifth member of the axis: {agent}",
+        );
+        assert!(
+            !agent.contains("report-only at store scope (exit 0)")
+                && agent.contains(UNADOPTED_SQUATTER_CAUSE)
+                && agent.contains(STORE_EXIT_FLIP_PHRASE),
+            "so the flip's own closing line renders, naming the condition and the exit: {agent}",
+        );
 
         // A genuinely task-gating finding still names where it gates.
         let gating = ValidationReport::new(

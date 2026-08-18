@@ -2111,6 +2111,32 @@ fn corpus_ahead() -> TrialCorpus {
     corpus
 }
 
+/// A **real** Keep-a-Changelog file: no schema-version stamp, parsing against no shipped
+/// `changelog` version — a foreign document at the doctype's placement home.
+const KEEP_A_CHANGELOG: &str = "\
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [0.1.0] - 2026-01-01
+
+### Added
+
+- The first thing.
+";
+
+/// A corpus carrying a **never-adopted foreign file** at a managed home — the brownfield
+/// state every trial corpus starts in, and the member whose sweep *worked*: it found the
+/// file and named it foreign rather than reporting a green over a document jigc has never
+/// been handed.
+fn corpus_foreign_squatter() -> TrialCorpus {
+    let corpus = TrialCorpus::build(State::Fresh);
+    fs::write(corpus.repo().join("CHANGELOG.md"), KEEP_A_CHANGELOG).expect("write CHANGELOG.md");
+    corpus.git(&["add", "."]);
+    corpus.git(&["commit", "-q", "-m", "a brownfield changelog"]);
+    corpus
+}
+
 /// A corpus whose baselined managed doc was moved **out of band** with `git mv` — the
 /// member whose sweep *worked*, and which the preload's class may therefore not describe
 /// as an untrustworthy sweep.
@@ -2367,6 +2393,7 @@ fn a_read_intent_lands_on_a_read_verb_and_every_ack_and_flip_states_its_fact() {
             "oob-rename" => FlipCell::Live(corpus_oob_rename),
             "unmigrated-corpus" => FlipCell::Live(corpus_below_version),
             "ahead-corpus" => FlipCell::Live(corpus_ahead),
+            "foreign-squatter" => FlipCell::Live(corpus_foreign_squatter),
             other => panic!(
                 "`{other}` is an exit-flipping condition with no cell in this flow — the axis \
                  is `STORE_EXIT_FLIPS`, so a fifth condition owes a decision here",

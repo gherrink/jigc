@@ -18,7 +18,10 @@
 //! - **(foreign)** a stock brownfield repo (a real Keep-a-Changelog `CHANGELOG.md` + `jigc
 //!   setup`, nothing else) → **zero blocking findings**, exactly one advisory
 //!   `schema-conformance.unadopted-instance` addressed at the **file path**, naming both
-//!   `jigc ingest` and `jigc migrate CHANGELOG.md --as changelog`; **exit 0**.
+//!   `jigc ingest` and `jigc migrate CHANGELOG.md --as changelog`; and **exit non-zero** —
+//!   since M46 Inc 3 / T1 the advisory is `STORE_EXIT_FLIPS`' fifth member, so the sweep
+//!   refuses to report a green over a file jigc was never handed. Nothing *blocks*: flipping
+//!   the sweep's own exit is not granting the finding a gate.
 //! - **(managed, v0-era)** an unstamped ADR in the **prior (v1) shape** — the M34 headline
 //!   detect case — stays **managed**: it is routed at the corpus migration and is **never**
 //!   called unadopted (the parse-against-a-shipped-prior arm is what separates it from a
@@ -51,9 +54,11 @@
 //!
 //! - a stale **v1-stamped** ADR and an **unstamped v0-era** managed doc each exit **non-zero**,
 //!   with `report_only: false` and a trailer naming **`jigc migrate-corpus`**;
-//! - the **stock brownfield** repo (the foreign arm above) still exits **0** — the "managed arm
-//!   only" condition, proven rather than re-implemented: the code is *emitted* only on the managed
-//!   arm, so keying the exit on the code **is** the condition;
+//! - the **stock brownfield** repo (the foreign arm above) raises no version-currency break at
+//!   all — the "managed arm only" condition, proven rather than re-implemented: the code is
+//!   *emitted* only on the managed arm, so keying that predicate on the code **is** the
+//!   condition. Its own exit is flipped by its own member (M46 Inc 3 / T1), under its own
+//!   closing line and its own route;
 //! - a **migrated** corpus exits **0** (detect → fix → clean, end to end);
 //! - a **v2-stamped ADR with an invalid `status` enum** raises its **blocking**
 //!   `schema-conformance.field-value-conformant` and still exits **0** — ordinary content drift,
@@ -425,7 +430,9 @@ fn by_code<'a>(findings: &'a [serde_json::Value], code: &str) -> Vec<&'a serde_j
 /// (foreign) A **stock brownfield repo** — a real Keep-a-Changelog `CHANGELOG.md` and `jigc
 /// setup`, nothing else — yields **zero blocking findings** and exactly **one** advisory
 /// `schema-conformance.unadopted-instance`, addressed at the **file path** and routed at the
-/// adoption verbs (`jigc ingest` / `jigc migrate CHANGELOG.md --as changelog`), **exit 0**.
+/// adoption verbs (`jigc ingest` / `jigc migrate CHANGELOG.md --as changelog`). Since M46 Inc 3
+/// / T1 it also **exits non-zero** — the exit half is
+/// `a_foreign_squatter_flips_the_store_sweeps_exit` below.
 ///
 /// Red before the discriminator: four blocking `conformance.*` findings routed at `jigc
 /// migrate-corpus`, a verb that reports `1 blocked` on that file.
@@ -493,15 +500,26 @@ fn a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrat
         "a foreign file is NOT an unmigrated corpus — the route must not name `migrate-corpus`; got: {route}",
     );
 
-    // **The exit flip's "managed arm only" condition (Inc 4 T2), proven rather than
-    // re-implemented.** `schema-conformance.schema-version-current` is emitted only on the
-    // managed arm, so keying the exit predicate on that code *is* the condition — and this is
-    // the arm that would break if it were not: a stock brownfield repo that has only ever run
-    // `jigc setup` must not see `jigc validate` go non-zero.
-    assert_eq!(code, 0, "the brownfield first-run stays exit 0");
+    // **The "managed arm only" condition (Inc 4 T2) is about which *code* fires, not about the
+    // exit (M46 Inc 3 / T1).** `schema-conformance.schema-version-current` is emitted only on
+    // the managed arm, so keying the version-currency predicate on that code *is* that
+    // condition — and this repo, whose one finding is the adoption advisory, never raises it.
+    // The **exit** no longer follows from it: the advisory is `STORE_EXIT_FLIPS`' fifth member,
+    // so the sweep refuses to report a green over a file jigc was never handed. The whole exit
+    // contract is `a_foreign_squatter_flips_the_store_sweeps_exit` below; the halves asserted
+    // here are the ones that would otherwise keep the retired green alive in this arm.
     assert!(
-        report_only(repo.path(), home.path()),
-        "and says so in the envelope — the adoption advisory is report-only",
+        by_code(&findings, "schema-conformance.schema-version-current").is_empty(),
+        "the version-currency break stays on the managed arm — this file is foreign, not a \
+         stale managed doc; got: {findings:#?}",
+    );
+    assert_ne!(
+        code, 0,
+        "the never-adopted squatter flips the sweep's exit; got: {findings:#?}",
+    );
+    assert!(
+        !report_only(repo.path(), home.path()),
+        "and says so in the envelope — the JSON reads the same predicate as the exit code",
     );
 
     // **The trailer claims a gate only where one exists (Inc 4 T3).** This repo's one finding —
@@ -519,12 +537,85 @@ fn a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrat
          milestone one); got:\n{text}",
     );
     assert!(
-        text.contains("report-only at store scope (exit 0)"),
-        "it is still the report-only branch, and still names the exit; got:\n{text}",
+        !text.contains("report-only at store scope (exit 0)"),
+        "and it is no longer the report-only branch: that sentence would print `exit 0` beside \
+         a non-zero exit — the flip's own closing line renders instead; got:\n{text}",
+    );
+}
+
+/// (foreign, the exit — M46 Inc 3 / T1) **The adoption advisory flips the store sweep's exit.**
+/// The arm above pins what the sweep *says* about a never-adopted squatter; this pins what it
+/// *exits with*, and the two are one contract.
+///
+/// A foreign file at a managed home is a file the sweep **could not adjudicate at all**: it
+/// carries no stamp and parses against no shipped version, so every content family below it is
+/// silent about a document sitting exactly where a managed one belongs. Reported at exit 0 that
+/// is a green — the one a script chaining `jigc validate && deploy` reads as *the store is
+/// fine*, over a home jigc has never been handed. So `schema-conformance.unadopted-instance`
+/// joins `STORE_EXIT_FLIPS` as its **fifth** member: the exit goes non-zero, the JSON
+/// `report_only` reads `false` through the *same* predicate, and the closing line names **the
+/// adoption condition and its route** — never the report-only sentence, which would print
+/// `exit 0` beside a non-zero exit.
+///
+/// The finding itself is untouched — still **advisory**, still gating nowhere. Flipping the
+/// sweep's exit is not granting the finding a gate.
+#[test]
+fn a_foreign_squatter_flips_the_store_sweeps_exit() {
+    let repo = TempDir::new("foreign-exit");
+    let home = TempDir::new("home");
+    fs::write(repo.path().join("CHANGELOG.md"), KEEP_A_CHANGELOG).expect("write CHANGELOG.md");
+    setup_repo(repo.path(), home.path());
+
+    let (code, findings) = validate_findings(repo.path(), home.path());
+    assert_eq!(
+        by_code(&findings, "schema-conformance.unadopted-instance").len(),
+        1,
+        "the precondition of this arm — one adoption advisory; got: {findings:#?}",
     );
     assert!(
-        text.contains("gates nowhere"),
-        "and states what is actually true of it; got:\n{text}",
+        findings
+            .iter()
+            .all(|f| f["severity"].as_str() != Some("blocking")),
+        "and nothing blocking: the exit flip is the SWEEP's verdict, not a gate the advisory \
+         suddenly carries; got: {findings:#?}",
+    );
+
+    assert_ne!(
+        code, 0,
+        "a never-adopted file at a managed home flips the sweep's exit — reported at 0 it is a \
+         green over a home jigc has never been handed; got: {findings:#?}",
+    );
+    assert!(
+        !report_only(repo.path(), home.path()),
+        "the JSON `report_only` reads the same predicate as the exit code — it must say false",
+    );
+
+    let (text_code, text) = validate_text(repo.path(), home.path());
+    assert_eq!(
+        text_code, code,
+        "the agent view exits the way the JSON one does; got:\n{text}",
+    );
+    // **The closing line, not the finding line.** The finding's own message and route already
+    // say *never adopted* and `jigc ingest`, so a whole-stdout `contains` would pass on the
+    // finding alone and prove nothing about the trailer. The one line carrying the flipped-exit
+    // phrase IS the closing line, and that is the line put under the assertion.
+    let closing = text
+        .lines()
+        .find(|line| line.contains("exits non-zero"))
+        .unwrap_or_else(|| panic!("the flipped exit is stated in a closing line; got:\n{text}"));
+    assert!(
+        // Written out literally — the contract, not a re-read of `UNADOPTED_SQUATTER_CAUSE`.
+        closing.contains("a never-adopted file sits at a managed home"),
+        "the closing line names WHICH condition fired; got: {closing}",
+    );
+    assert!(
+        closing.contains("jigc ingest"),
+        "and the route that clears it — the adoption front door, the same one the finding \
+         carries; got: {closing}",
+    );
+    assert!(
+        !text.contains("report-only at store scope (exit 0)"),
+        "the report-only trailer would print `exit 0` while the tool exits {code}; got:\n{text}",
     );
 }
 
@@ -1218,7 +1309,11 @@ fn doc_show_over_a_foreign_squatter_routes_at_adoption_and_the_surfaces_tell_one
         1,
         "and the sweep calls the same file foreign; got: {findings:#?}",
     );
-    assert_eq!(code, 0, "the brownfield first-run still exits 0");
+    assert_ne!(
+        code, 0,
+        "and refuses the green over it (M46 Inc 3 / T1 — the exit-flip table's fifth member; \
+         the contract itself is `a_foreign_squatter_flips_the_store_sweeps_exit`)",
+    );
 }
 
 /// (T7 — the **managed** arm; the omitting context) The split is **real, not a blanket swap**: a

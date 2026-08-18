@@ -19,10 +19,11 @@
 //!       shows the plan **without writing**, the run **self-commits** its own migration
 //!       (pathspec-limited), and `validate` then goes **green**.
 //!
-//!   (2) **A stock brownfield `CHANGELOG.md` routes to `ingest`** — not `migrate-corpus` — stays
-//!       **exit 0**, and reads consistently across all three surfaces (`validate` · `doc list` ·
-//!       `doc show`): one adoption advisory, one `unregistered` row, one block carrying the very
-//!       same adoption route.
+//!   (2) **A stock brownfield `CHANGELOG.md` routes to `ingest`** — not `migrate-corpus` — and
+//!       reads consistently across all three surfaces (`validate` · `doc list` · `doc show`):
+//!       one adoption advisory, one `unregistered` row, one block carrying the very same
+//!       adoption route. The sweep **exits non-zero** over it (M46 Inc 3 / T1) while nothing
+//!       *blocks* — the flip is the sweep's verdict on its own run, not a gate.
 //!
 //!   (3) **An OOB edit to the managed `VISION.md` is DETECTED at store scope** — the placement
 //!       class was invisible to `jigc validate` (a false green over a tampered managed doc).
@@ -576,9 +577,10 @@ All notable changes to this project will be documented in this file.
 
 /// **Arm 2.** A **stock brownfield repo** — a real Keep-a-Changelog `CHANGELOG.md` plus `jigc
 /// setup`, nothing else — is an **adoption** case, not an unmigrated corpus: `jigc validate`
-/// stays **exit 0** with exactly one advisory routed at **`jigc ingest`** (never
-/// `migrate-corpus`, a verb that would do nothing to it), `jigc doc list` shows the file
-/// `unregistered`, and `jigc doc show` blocks carrying **the same adoption route**.
+/// raises exactly one advisory routed at **`jigc ingest`** (never `migrate-corpus`, a verb that
+/// would do nothing to it), `jigc doc list` shows the file `unregistered`, and `jigc doc show`
+/// blocks carrying **the same adoption route**. The sweep exits **non-zero** over it (M46 Inc 3
+/// / T1) with **nothing blocking** — the flip is the sweep's own verdict, not a gate.
 ///
 /// Red under a naive family-5 fix: four *blocking* findings on the default brownfield first
 /// run, all routed at a verb with nothing to do — the wave's disease in its purest form (a
@@ -599,11 +601,15 @@ fn a_stock_brownfield_changelog_routes_to_ingest_on_all_three_surfaces() {
         "`jigc setup`",
     );
 
-    // Surface 1 — `validate`: exit 0, one adoption advisory, routed at the adoption verbs.
+    // Surface 1 — `validate`: **exit non-zero** (M46 Inc 3 / T1 — the adoption advisory is
+    // `STORE_EXIT_FLIPS`' fifth member, so the sweep refuses to report a green over a file jigc
+    // was never handed), one adoption advisory, routed at the adoption verbs. Nothing *blocks*
+    // — the flip is the sweep's verdict on its own run, not a gate the advisory now carries,
+    // which is what the next assertion holds.
     let (code, report) = validate_json(repo.path(), home.path());
-    assert_eq!(
+    assert_ne!(
         code, 0,
-        "the brownfield first run stays exit 0; got:\n{report:#}"
+        "the brownfield first run refuses the green over the squatter; got:\n{report:#}"
     );
     let blocking: Vec<_> = report["findings"]
         .as_array()
