@@ -241,14 +241,38 @@ Neither posed arm: the cheap arm is not buildable as specified, the robust arm i
 coarse-lock design the third shape does not need. ~1 increment. `tasks.json` must be explicitly
 scoped in or excluded with a reason.
 
-**D3 · The `validation.md:433` expiry is AFFIRMED NOW: at the 1.0 pin, stamp-absent means foreign,
-full stop.** The doc's own reasoning holds — the unstamped-managed population is *"finite pre-1.0 and
-empty at the 1.0 pin"*, and 1.0 ships internal (`decisions-pending.md:209`), so there are no adopter
-corpora and ours are stamped. **This reshapes PT-1**: `migrate-corpus`'s v0 arm becomes dead code for
-foreign files *by rule*, so the fix is a **deletion plus the shared discriminator**, not a filter
-bolted in front of a live arm — none of Fork 1's three arms as written. *Declared cost:* a one-way
-door on stamp semantics; a legitimately-unstamped managed doc appearing later would be misclassified
-as foreign.
+**D3 · ~~The `validation.md:433` expiry is AFFIRMED~~ — WITHDRAWN the same day, on a falsified
+premise.** The affirmation rested on the bound's own reasoning that the unstamped-managed population
+is *"finite pre-1.0 and empty at the 1.0 pin"*. The independent pre-decompose review falsified it and
+the orchestrator confirmed it by driving the binary:
+
+```console
+$ grep -c schema-version docs/decisions/adopted-me.md   → 0     # conformant foreign ADR, no stamp
+$ jigc ingest                                           → adopted — indexed + baselined, no file moved
+$ head -4 docs/decisions/adopted-me.md                  → byte-identical; still no stamp
+$ jigc doc list | grep adopted-me                       → adr:adopted-me  …  managed
+$ jigc migrate-corpus                                   → 1 migrated       # the v0 arm is LIVE
+```
+
+**`jigc ingest` is register-only** — it indexes and baselines and *"never moves or rewrites the
+file"* — so the product's **own primary brownfield front door refills the population continuously**.
+Under *"stamp-absent means foreign, full stop"*, that doc reads `unregistered` at `doc list` while
+`ingest` calls it adopted: **the wave would create a door-dependent contradiction — the class M48
+removed and the one this razor exists to refuse.** Both readings also regress shipped behaviour
+(deleting `classify_provenance`'s parse-against-prior arm kills two engine tests naming it
+load-bearing and orphans the `priors` threading through four doors; `migrate-corpus`'s v0 arm is the
+whole subject of `methodology_corpus_stamp.rs`).
+
+**PT-1 needs none of it** and reverts to the straightforward shape the affirmation had forbidden:
+*call the shipped 5-site `is_unadopted_foreign` discriminator from `migrate_corpus.rs` before the
+fold* — a filter in front of a live arm.
+
+**What survives:** the *finding* that `validation.md:433` schedules an expiry at this wave's gate and
+no planning input carried it. The bound stands as written and owes an amendment naming `ingest`'s
+register-only adopt as a **continuing** source of unstamped-managed docs.
+
+**Recorded as a basis-has-changed withdrawal, not an override** — and the honest note: the premise was
+checkable in one command, and the check was not run before the recommendation was made.
 
 **D4 · Fork 4 closes as TAKE NEITHER — on evidence, not on a count.** The expiring decision, deferred
 to this Settle with both arms open, is closed on three independent grounds:
