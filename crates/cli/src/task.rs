@@ -3189,6 +3189,17 @@ fn post_commit(
 /// lands as-is. The plan's hash set and the landed commit's re-hash apply on top,
 /// winning on overlap. `None` (the milestone boundary, no sweep) loads the durable
 /// record as before.
+///
+/// **The carried record's merge base must travel with it — never re-load here** (M46
+/// Increment 1). `post_sweep` was loaded back at [`Task::validate`] and moved by value
+/// through staging, the `git commit`, and the pre-commit hook's whole separate `jigc`
+/// process, any of which may have written `.jigc/state/file-state.json` in the meantime.
+/// `FileStateRecord::save` merges *our* per-key deltas onto whatever is on disk now,
+/// relative to the base the load stashed — so a hook's `jigc unmanage` mid-commit stays
+/// unmanaged. Swapping this `Some(swept)` for a fresh `FileStateRecord::load` would
+/// compute the delta against a base that already contains the concurrent write and
+/// silently void the merge on the most important path in the product, without breaking
+/// a single type (`engine::file_state::FileStateRecord::load` carries the same note).
 fn advance_file_state(
     repo_root: &Path,
     jigc_root: &Path,

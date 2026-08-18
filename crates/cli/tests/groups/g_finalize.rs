@@ -10,6 +10,8 @@ mod docs_root;
 mod file_state_concurrency;
 #[path = "../file_state_history_gate.rs"]
 mod file_state_history_gate;
+#[path = "../file_state_merge_hand_off.rs"]
+mod file_state_merge_hand_off;
 #[path = "../file_state_soundness.rs"]
 mod file_state_soundness;
 #[path = "../finalize_finding_keys.rs"]

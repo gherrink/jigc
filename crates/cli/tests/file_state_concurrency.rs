@@ -11,6 +11,20 @@
 //! fix, `save` routes through `state::persist` and the temp sibling is
 //! **process-unique** (`<name>.<pid>.<nanos>.tmp`), so no reader ever sees a
 //! partial or interleaved file: every `load` parses cleanly.
+//!
+//! **M46 Increment 1 — why the writers now load before they mutate.** `save` merges
+//! base-relative against what is on disk, so a writer that saved a *fresh* record
+//! would contribute its keys to a union that only ever grows: the on-disk byte length
+//! would converge to a constant, and byte-length variance is precisely the property
+//! that surfaces a torn write. So each writer is now a real `load → mutate → save`
+//! over its **own key namespace** (`docs/w<writer>-doc-*`), reshaping that namespace
+//! between 1 and 40 entries per turn — the length keeps swinging, so this suite's
+//! M45 claim stays live under the merge.
+//!
+//! This suite asserts **parseability only**, never cross-writer survival: without the
+//! save-scoped lock the read-modify-write window between the merge's re-read and the
+//! `rename` is still open, so a delta can still be lost under true concurrency. That
+//! window is the next task's claim; asserting it here would be flaky-red.
 
 use engine::file_state::FileStateRecord;
 use std::sync::Arc;
@@ -45,13 +59,32 @@ impl Drop for TempRoot {
 /// fails to parse. Each entry is a valid 64-hex blake3-shaped hash string.
 fn record_of_size(writer: usize, n: usize) -> FileStateRecord {
     let mut rec = FileStateRecord::new();
+    reshape(&mut rec, writer, n);
+    rec
+}
+
+/// Reshape `writer`'s **own** key namespace inside `rec` to exactly `n` entries,
+/// dropping whatever it held before. Every writer owns a disjoint `docs/w<writer>-`
+/// prefix, so a turn's `forget`s and `record`s are genuine per-key deltas against
+/// the record the writer just loaded — and the serialized length keeps swinging
+/// turn to turn, which is what makes a torn write observable.
+fn reshape(rec: &mut FileStateRecord, writer: usize, n: usize) {
+    let prefix = format!("docs/w{writer}-doc-");
+    let mine: Vec<String> = rec
+        .hashes
+        .keys()
+        .filter(|k| k.starts_with(&prefix))
+        .cloned()
+        .collect();
+    for key in mine {
+        rec.forget(&key);
+    }
     for i in 0..n {
         rec.record(
-            format!("docs/w{writer}-doc-{i:04}.md"),
+            format!("{prefix}{i:04}.md"),
             format!("{:064x}", (writer * 1000 + i) as u128),
         );
     }
-    rec
 }
 
 #[test]
@@ -77,9 +110,11 @@ fn five_concurrent_state_writers_never_yield_an_unparseable_read() {
             for iter in 0..ITERS {
                 // Sizes fan between small and large to maximise length variance.
                 let n = 1 + ((iter * 7 + w * 3) % 40);
-                record_of_size(w, n)
-                    .save(&jr)
-                    .expect("writer save succeeds");
+                // load → mutate → save: a real writer's shape, and the one the
+                // base-relative merge is defined against.
+                let mut rec = FileStateRecord::load(&jr).expect("writer load parses");
+                reshape(&mut rec, w, n);
+                rec.save(&jr).expect("writer save succeeds");
             }
         }));
     }

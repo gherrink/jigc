@@ -28,7 +28,7 @@
 
 use crate::finding::{Finding, Location, Severity};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// The `file-state.json` filename inside `<jigc_root>/state/`.
@@ -51,11 +51,33 @@ pub fn hash_bytes(bytes: &[u8]) -> String {
 /// byte-stable golden depends on. Paths are stored as their string form; the
 /// record carries no schema version of its own (it is a rebuildable cache,
 /// re-derivable from the committed docs at any time).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `base` is the **loaded** map, stashed by [`load`](Self::load) so
+/// [`save`](Self::save) can tell *our* per-key deltas from the keys we merely
+/// carried along — the substrate of the base-relative three-way merge (M46
+/// Increment 1). It is `#[serde(skip)]`: [`to_bytes`](Self::to_bytes) serializes
+/// `self`, and the on-disk byte form is golden-locked, so the stash must not reach
+/// the wire.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FileStateRecord {
     /// `path → hex-hash`, path-sorted for deterministic output.
     pub hashes: BTreeMap<String, String>,
+    /// The map as loaded from disk — the merge base. Never serialized.
+    #[serde(skip)]
+    base: BTreeMap<String, String>,
 }
+
+/// Equality is over [`hashes`](FileStateRecord::hashes) **alone**: `base` is
+/// bookkeeping for the merge, not part of the record's identity. Two records with
+/// the same map are the same record whether one was loaded and the other built —
+/// which is exactly what the save → load round-trip assertion means.
+impl PartialEq for FileStateRecord {
+    fn eq(&self, other: &Self) -> bool {
+        self.hashes == other.hashes
+    }
+}
+
+impl Eq for FileStateRecord {}
 
 impl FileStateRecord {
     /// An empty record.
@@ -96,8 +118,8 @@ impl FileStateRecord {
         s
     }
 
-    /// Save the record to `<jigc_root>/state/file-state.json`, creating the
-    /// `state/` dir if absent.
+    /// Save the record to `<jigc_root>/state/file-state.json`, **merged** against
+    /// whatever is on disk now, creating the `state/` dir if absent.
     ///
     /// Routes through [`crate::state::persist`] (temp + `rename`) rather than a
     /// direct `std::fs::write`: `.jigc/state/*` is **not** task-isolated, so two
@@ -106,20 +128,98 @@ impl FileStateRecord {
     /// process-unique temp sibling — guarantees every reader sees a complete,
     /// parseable file (M45 Increment 7, Decision 9). `persist` creates the parent
     /// dir on demand, so no separate `create_dir_all` is needed here.
+    ///
+    /// Atomicity alone still lost data: the whole record was written verbatim, so a
+    /// writer that had held its copy across another writer's save silently discarded
+    /// that writer's per-key delta and *reported success* — a merge that never
+    /// happened, which is what `CLAUDE.md`'s "never silently merged" forbids. So the
+    /// save is now **base-relative and three-way** (M46 Increment 1 — `DECISIONS.md`
+    /// 2026-08-18 M46 planned, N-3): the disk is re-read as `theirs` and merged with
+    /// `ours` against the `base` [`load`](Self::load) stashed. See
+    /// [`merge_onto`](Self::merge_onto) for the rule.
+    ///
+    /// Takes `&self` and keeps its signature, so no call site changes and the base
+    /// stash is *not* advanced by a save: a record saved twice merges against the
+    /// same base both times, which is stable (our second save's deltas are still our
+    /// deltas) — see the `migrate-corpus` per-doc save loop.
+    ///
+    /// An **unreadable or unparseable** file on disk degrades to `theirs = ours`,
+    /// which the rule reduces to writing `ours` — the pre-merge behaviour. A
+    /// rebuildable cache must not fail a save because its own bytes went bad.
+    ///
+    /// This closes the *sequential interleave*. The read-modify-write window between
+    /// the re-read and the `rename` is closed by the save-scoped lock (T2), not here.
     pub fn save(&self, jigc_root: &Path) -> std::io::Result<()> {
-        crate::state::persist(&Self::path_in(jigc_root), self.to_bytes().as_bytes())
+        let theirs = Self::load(jigc_root).unwrap_or_else(|_| self.clone());
+        let merged = self.merge_onto(&theirs);
+        crate::state::persist(&Self::path_in(jigc_root), merged.to_bytes().as_bytes())
+    }
+
+    /// The base-relative three-way merge: over `base ∪ ours ∪ theirs`, per key —
+    ///
+    /// - **`ours == base`** (including *both absent*) ⇒ take **theirs**, value *or*
+    ///   absence. We never touched this key, so the other writer's decision stands —
+    ///   this is the half that stops a save from resurrecting a concurrent
+    ///   [`forget`](Self::forget) or dropping a concurrent [`record`](Self::record).
+    /// - **otherwise** ⇒ take **ours**, value *or* absence. We recorded or forgot it
+    ///   deliberately, so our decision stands — including our own deletion, against a
+    ///   concurrent re-record.
+    ///
+    /// Both sides touching one key is the conflict cell, and it resolves to the
+    /// **later saver's** value: deterministic, and the only choice available without
+    /// a semantics for "combine two hashes of the same path", which does not exist
+    /// (a path has exactly one last-known-good hash).
+    fn merge_onto(&self, theirs: &Self) -> Self {
+        let keys: BTreeSet<&String> = self
+            .base
+            .keys()
+            .chain(self.hashes.keys())
+            .chain(theirs.hashes.keys())
+            .collect();
+        let mut merged = Self::new();
+        for key in keys {
+            let ours = self.hashes.get(key);
+            let winner = if ours == self.base.get(key) {
+                theirs.hashes.get(key)
+            } else {
+                ours
+            };
+            if let Some(hash) = winner {
+                merged.hashes.insert(key.clone(), hash.clone());
+            }
+        }
+        merged
     }
 
     /// Load the record from `<jigc_root>/state/file-state.json`. A missing file
     /// is the *first-encounter* case (`reconciliation.md` → Absent-hash is not
     /// drift) and yields an empty record, never an error.
+    ///
+    /// **The loaded map is stashed as the merge base** — this is the *only* place a
+    /// base is minted, and it is what makes [`save`](Self::save)'s three-way merge
+    /// possible. A record built by [`new`](Self::new) has an empty base, so every key
+    /// it carries reads as its own delta: a from-scratch record still wins its own
+    /// keys and adopts everything else on disk.
+    ///
+    /// **The base travels with the moved value, never a fresh load at save time.**
+    /// The wave's most important path is the finalize hand-off: the record loaded in
+    /// `cli/task.rs` → `Task::validate` is carried **by value** through staging, the
+    /// `git commit`, and the pre-commit hook's whole separate `jigc` process, and is
+    /// only saved in phase 7 (`post_commit` → `advance_file_state`). Re-loading it
+    /// there would compute our delta against a base that already contains the hook's
+    /// write — so our copy would read as "unchanged" for the hook's keys and, worse,
+    /// as a *deliberate* delta for keys the hook retired, silently voiding the merge
+    /// exactly where it matters most. A refactor that replaces a carried record with
+    /// a fresh `load` breaks the merge without breaking a type.
     pub fn load(jigc_root: &Path) -> std::io::Result<Self> {
         let path = Self::path_in(jigc_root);
-        match std::fs::read(&path) {
-            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::new()),
-            Err(err) => Err(err),
-        }
+        let mut record = match std::fs::read(&path) {
+            Ok(bytes) => serde_json::from_slice::<Self>(&bytes)?,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Self::new(),
+            Err(err) => return Err(err),
+        };
+        record.base = record.hashes.clone();
+        Ok(record)
     }
 }
 
@@ -2828,6 +2928,144 @@ sections: []
         // save → load round-trips the in-memory record exactly.
         let loaded = FileStateRecord::load(root.path()).expect("load the record");
         assert_eq!(loaded, record, "save → load must round-trip byte-stably");
+    }
+
+    /// **The base-relative three-way merge, iterated over the mutation-kind axis**
+    /// (M46 Increment 1 / T1 — `DECISIONS.md` 2026-08-18 M46 planned, N-3).
+    ///
+    /// `.jigc/state/file-state.json` is **shared**, not task-isolated, so two writers
+    /// legitimately hold the same record at once. Before this fix `save` wrote `self`
+    /// verbatim: the later saver silently discarded every per-key delta the other
+    /// writer had landed in between — a *reported success* for a write that was
+    /// thrown away, which is what `CLAUDE.md`'s "never silently merged" forbids.
+    ///
+    /// The rule, over `base ∪ ours ∪ theirs`: **`ours == base` ⇒ take theirs** (their
+    /// value *or* its absence — we did not touch this key, so the other writer's
+    /// decision stands); **otherwise ⇒ ours** (we recorded or forgot it deliberately,
+    /// so our decision stands, including a deletion).
+    ///
+    /// The axis is the **mutation kind on each side** — `record` and `forget`, both
+    /// ways — enumerated as a code-side table so a third mutation kind cannot be added
+    /// to [`FileStateRecord`] without a cell here. (The post-sweep hand-off, the third
+    /// axis member, is a real-binary cell: `cli/tests/file_state_merge_hand_off.rs`.)
+    /// Every cell is a **sequential interleave** (A loads · B loads-mutates-saves · A
+    /// mutates-saves), never true concurrency: the read-modify-write window this leaves
+    /// open is T2's lock, not this merge's claim.
+    #[test]
+    fn save_merges_a_concurrent_writers_delta_over_the_mutation_kind_axis() {
+        /// One cell of the axis: the seeded base, what the *other* writer did to it,
+        /// what *we* then did to our own loaded copy, and the map that must be on disk
+        /// after we save last.
+        struct Cell {
+            name: &'static str,
+            base: &'static [(&'static str, &'static str)],
+            theirs: fn(&mut FileStateRecord),
+            ours: fn(&mut FileStateRecord),
+            expect: &'static [(&'static str, &'static str)],
+        }
+
+        const HA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const HB: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        const H0: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+        const HX: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+        const HY: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+
+        let axis: &[Cell] = &[
+            // record × record — two writers touching disjoint keys: both survive.
+            Cell {
+                name: "record: disjoint keys both survive",
+                base: &[("docs/decisions/p.md", H0)],
+                theirs: |r| r.record("docs/decisions/x.md", HX),
+                ours: |r| r.record("docs/decisions/y.md", HY),
+                expect: &[
+                    ("docs/decisions/p.md", H0),
+                    ("docs/decisions/x.md", HX),
+                    ("docs/decisions/y.md", HY),
+                ],
+            },
+            // forget × record — their deletion of a key we never touched stands, and
+            // our own addition lands. `jigc unmanage` racing any recorder.
+            Cell {
+                name: "forget: their forget of an untouched key stays gone",
+                base: &[("docs/decisions/p.md", H0)],
+                theirs: |r| {
+                    r.forget("docs/decisions/p.md");
+                },
+                ours: |r| r.record("docs/decisions/q.md", HY),
+                expect: &[("docs/decisions/q.md", HY)],
+            },
+            // record × record on ONE key — the conflict cell. The later saver's value
+            // wins, deterministically; the bystander keys still merge.
+            Cell {
+                name: "conflict: the later saver's value wins, bystanders still merge",
+                base: &[("docs/decisions/k.md", H0), ("docs/decisions/keep.md", HX)],
+                theirs: |r| {
+                    r.record("docs/decisions/k.md", HB);
+                    r.record("docs/decisions/extra.md", HY);
+                },
+                ours: |r| r.record("docs/decisions/k.md", HA),
+                expect: &[
+                    ("docs/decisions/extra.md", HY),
+                    ("docs/decisions/k.md", HA),
+                    ("docs/decisions/keep.md", HX),
+                ],
+            },
+            // record × forget on ONE key — our deletion is a deliberate decision, so it
+            // beats their concurrent re-record; their unrelated addition still lands.
+            Cell {
+                name: "forget: our forget beats a concurrent re-record",
+                base: &[("docs/decisions/p.md", H0)],
+                theirs: |r| {
+                    r.record("docs/decisions/p.md", HB);
+                    r.record("docs/decisions/other.md", HX);
+                },
+                ours: |r| {
+                    r.forget("docs/decisions/p.md");
+                },
+                expect: &[("docs/decisions/other.md", HX)],
+            },
+        ];
+
+        // Every cell is exercised and its mismatch collected, so one red run names
+        // *every* uncovered cell of the axis rather than only the first.
+        let mut failures: Vec<String> = Vec::new();
+        for cell in axis {
+            let root = TempRoot::new("merge");
+
+            let mut seed = FileStateRecord::new();
+            for (path, hash) in cell.base {
+                seed.record(*path, *hash);
+            }
+            seed.save(root.path()).expect("seed the shared record");
+
+            // Writer A loads — and stashes the base it loaded.
+            let mut ours = FileStateRecord::load(root.path()).expect("A loads");
+            // Writer B loads, mutates and saves in between.
+            let mut theirs = FileStateRecord::load(root.path()).expect("B loads");
+            (cell.theirs)(&mut theirs);
+            theirs.save(root.path()).expect("B saves");
+            // A mutates its long-held copy and saves last.
+            (cell.ours)(&mut ours);
+            ours.save(root.path()).expect("A saves");
+
+            let merged = FileStateRecord::load(root.path()).expect("the merged record loads");
+            let expected: BTreeMap<String, String> = cell
+                .expect
+                .iter()
+                .map(|(p, h)| ((*p).to_string(), (*h).to_string()))
+                .collect();
+            if merged.hashes != expected {
+                failures.push(format!(
+                    "[{}] expected {:?}, on disk {:?}",
+                    cell.name, expected, merged.hashes,
+                ));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "the later save must merge the other writer's delta, never discard it:\n{}",
+            failures.join("\n"),
+        );
     }
 
     /// A missing `file-state.json` is the first-encounter case: an empty record,
