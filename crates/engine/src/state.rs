@@ -438,6 +438,97 @@ fn temp_sibling(path: &Path) -> PathBuf {
     }
 }
 
+/// The bounded spin the save-scoped lock takes before it **degrades to running the
+/// critical section anyway**. A rebuildable cache must never wedge a command behind a
+/// lock a crashed or wedged sibling still holds, so exclusion here is best-effort with
+/// a stated ceiling — `ATTEMPTS × SPIN` ≈ one second, three orders of magnitude above a
+/// real critical section (one small read, one merge, one write + `rename`).
+pub const SAVE_LOCK_ATTEMPTS: u32 = 1_000;
+/// The pause between two [`SAVE_LOCK_ATTEMPTS`].
+pub const SAVE_LOCK_SPIN: std::time::Duration = std::time::Duration::from_millis(1);
+
+/// The **stable** lock sibling for a shared `.jigc/` cache file: `<filename>.lock` in
+/// the same directory.
+///
+/// It must be a sibling and never the target's own fd. [`write_atomic`] persists by
+/// `rename`ing a temp over `path`, so the target's inode is **replaced on every write**:
+/// an advisory lock taken on that fd would guard an inode the very next persist orphans,
+/// and the mutual exclusion would silently be no exclusion at all. The lock file's own
+/// inode is never replaced — nothing ever writes to it — so every holder locks the same
+/// object.
+///
+/// Both current targets (`.jigc/state/file-state.json`, `.jigc/index/edges.json`) live
+/// under `state/` and `index/`, which `cli::gitignore::ENTRIES` already ignores, so the
+/// sibling needs no gitignore change and cannot reach a commit.
+pub fn lock_sibling(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".lock");
+    match path.parent() {
+        Some(parent) => parent.join(name),
+        None => PathBuf::from(name),
+    }
+}
+
+/// Run `critical` under an advisory lock on [`lock_sibling`] of `path` — the
+/// **save-scoped exclusion** that closes the read-modify-write window a base-relative
+/// merge alone leaves open (M46 Increment 1; `DECISIONS.md` 2026-08-18 M46 planned,
+/// N-3). Returns whatever `critical` returns, locked or degraded.
+///
+/// **Scope, deliberately narrow — this wraps [`crate::file_state::FileStateRecord::save`]
+/// and [`crate::index::EdgeIndex::save`] only, never [`persist`] itself**, which is also
+/// the task-area / base-pin / roles writer and has no shared-target problem to solve. The
+/// critical section **spawns no subprocess**: that is what dissolves the deadlock that
+/// made a coarse lock unaffordable here — jigc's own `pre-commit` hook runs a nested
+/// `jigc validate`, and `File::lock` is per-open-file-description, so a lock held across
+/// a `git commit` would have the parent waiting on a child that waits on the parent. The
+/// two locks are **per target and never nested**: the paired call sites (`cli/ingest.rs`,
+/// `cli/unmanage.rs`) save the index and the record sequentially.
+///
+/// Degrades rather than blocks: if the lock cannot be taken within the ceiling — or
+/// cannot be opened at all — `critical` runs unlocked, which is exactly the pre-lock
+/// behaviour (the merge still runs; only the narrow window reopens). A cache is worth a
+/// best-effort exclusion, never a hang.
+pub fn with_save_lock<T>(path: &Path, critical: impl FnOnce() -> T) -> T {
+    let _guard = SaveLock::acquire(path);
+    critical()
+}
+
+/// An acquired advisory lock, released on drop (including on an unwinding panic out of
+/// the critical section).
+struct SaveLock(std::fs::File);
+
+impl SaveLock {
+    /// Take the lock, spinning up to [`SAVE_LOCK_ATTEMPTS`] times. `None` means the
+    /// caller runs unlocked — the stated degrade, not an error to report.
+    fn acquire(path: &Path) -> Option<Self> {
+        let lock_path = lock_sibling(path);
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent).ok()?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .ok()?;
+        for _ in 0..SAVE_LOCK_ATTEMPTS {
+            match file.try_lock() {
+                Ok(()) => return Some(SaveLock(file)),
+                Err(std::fs::TryLockError::WouldBlock) => std::thread::sleep(SAVE_LOCK_SPIN),
+                Err(std::fs::TryLockError::Error(_)) => return None,
+            }
+        }
+        None
+    }
+}
+
+impl Drop for SaveLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 /// The base commit a task was started against: the full 40-char SHA and the
 /// abbreviated short SHA, both as `git rev-parse` reports them.
 ///

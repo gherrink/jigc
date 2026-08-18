@@ -147,12 +147,22 @@ impl FileStateRecord {
     /// which the rule reduces to writing `ours` — the pre-merge behaviour. A
     /// rebuildable cache must not fail a save because its own bytes went bad.
     ///
-    /// This closes the *sequential interleave*. The read-modify-write window between
-    /// the re-read and the `rename` is closed by the save-scoped lock (T2), not here.
+    /// The merge closes the *sequential* interleave. The concurrent read-modify-write
+    /// window between the re-read of `theirs` and the `rename` — a sibling whose
+    /// `rename` lands inside it is merged against a disk state that no longer exists,
+    /// and its delta is overwritten by a save that returned `Ok` — is closed by running
+    /// the whole re-read + merge + persist under [`crate::state::with_save_lock`] (M46
+    /// Increment 1, T2). The critical section spawns no subprocess, so it cannot
+    /// deadlock against the `pre-commit` hook's nested `jigc` process; the exclusion
+    /// degrades to running unlocked rather than blocking, since this record is a
+    /// rebuildable cache.
     pub fn save(&self, jigc_root: &Path) -> std::io::Result<()> {
-        let theirs = Self::load(jigc_root).unwrap_or_else(|_| self.clone());
-        let merged = self.merge_onto(&theirs);
-        crate::state::persist(&Self::path_in(jigc_root), merged.to_bytes().as_bytes())
+        let path = Self::path_in(jigc_root);
+        crate::state::with_save_lock(&path, || {
+            let theirs = Self::load(jigc_root).unwrap_or_else(|_| self.clone());
+            let merged = self.merge_onto(&theirs);
+            crate::state::persist(&path, merged.to_bytes().as_bytes())
+        })
     }
 
     /// The base-relative three-way merge: over `base ∪ ours ∪ theirs`, per key —

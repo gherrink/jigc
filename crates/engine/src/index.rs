@@ -97,10 +97,23 @@ impl EdgeIndex {
     }
 
     /// Save the index to `<jigc_root>/index/edges.json`, atomically (temp + rename),
-    /// creating the `index/` dir on demand.
+    /// creating the `index/` dir on demand, under the save-scoped lock
+    /// ([`crate::state::with_save_lock`]) so two concurrent savers cannot interleave
+    /// their serialize-and-`rename` turns.
+    ///
+    /// **The lock only — no merge, and that is a decision, not an omission** (M46
+    /// Increment 1, T2). The edge index is **stamp-rebuildable by construction**: it
+    /// carries the HEAD it was built against, and [`load_committed`] rebuilds the whole
+    /// set from the committed store on any stamp mismatch or unreadable file. A lost
+    /// concurrent delta here therefore costs one rebuild, never a wrong answer, so
+    /// base-relative merge semantics would be gold-plating. The `file-state` record has
+    /// no such self-healing read — its map *is* the last-known-good baseline — which is
+    /// why the merge lives there and not here.
     pub fn save(&self, jigc_root: &Path) -> std::io::Result<()> {
         let path = Self::path_in(jigc_root);
-        crate::state::persist(&path, self.to_bytes().as_bytes())
+        crate::state::with_save_lock(&path, || {
+            crate::state::persist(&path, self.to_bytes().as_bytes())
+        })
     }
 
     /// **Incrementally update** the committed index for one doc's edges — the
