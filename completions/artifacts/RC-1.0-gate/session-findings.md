@@ -149,3 +149,50 @@ that it had to verify through git plumbing because no jigc verb states that guar
 **Recorded in its favour:** *"I didn't read or hand-edit any managed doc content directly — all doc
 writes went through jigc doc verbs."* The adapter held for documents; it did not hold for the
 workspace.
+
+---
+
+## B3 · `stonefly` — and an apparatus failure that voided two arms
+
+**Read-back: VERB.** 94 records, **6 `doc show … --task`**, 5 `task validate`, across changelog →
+spec → implement-from-spec → single-task → architecture-documentation. That makes the headline
+measurement **3/3 VERB** across all three blind sessions, none of them prompted by a cue card.
+
+### A-1 · The B3 plant never fired. Observer failure, not a product finding.
+
+The watcher's **timing was correct** — it caught the worker's first successful `finalize` and fired
+2 minutes 11 seconds later — but the invocation failed:
+
+```
+[04:47:03] first finalize landed (exit 0) — firing the plant
+chmod: changing permissions of '/tmp/plant.sh': Operation not permitted
+[04:47:04] plant exit=1
+```
+
+`docker cp` lands a file owned by root; `docker exec -u node` then cannot `chmod +x` it. The corpus
+was verified afterwards to carry **no** planted ADR, so nothing partial was left behind.
+
+**Two arms are therefore VOID for B3, and neither may be reported as run:**
+
+1. **Detect-and-route** — whether M42's managed-vs-foreign discriminator routes a never-adopted
+   foreign ADR to `ingest`/`migrate`. The log confirms the worker ran **zero** `ingest`, `migrate` or
+   `migrate-corpus` invocations, because there was nothing foreign to find.
+2. **The contradiction trap** — whether a worker finds a committed decision that forbids what it has
+   been asked to build, and supersedes rather than silently contradicting it. B3 *did* build
+   persistence (`c5fee0f`) and recorded its own ADR, but against no opposing decision. This is the arm
+   that produced RC-pre-1.0's strongest single result.
+
+**Fixed and proven, so a re-run cannot fail the same way:** the watcher now runs `bash /tmp/plant.sh`
+rather than `chmod +x` first. Verified end-to-end on a throwaway adopted corpus — the plant lands
+`docs/decisions/0002-keep-the-sample-store-in-memory.md` at commit date **2026-08-04**, body and both
+commit dates agreeing, committed with an explicit pathspec and sweeping nothing else. The plant's own
+timing guard was also observed refusing a premature fire (*"only 1 commit since install — the worker's
+first finalize has not landed"*), so the two safeguards both work.
+
+### Why this matters beyond B3's own record
+
+**PT-1's disposition depends on this arm.** [pre-trial-findings.md](pre-trial-findings.md) carries
+`migrate-corpus` claiming a never-adopted foreign file with an unrunnable route as **provisionally
+blocking**, to be *"rechecked at trial close on two questions the rehearsal cannot answer: whether a
+blind worker actually reaches it…"*. With no foreign file in any blind corpus, **that question is
+currently unanswerable**, and a blocking finding against 1.0.0 stays unresolved on evidence.
