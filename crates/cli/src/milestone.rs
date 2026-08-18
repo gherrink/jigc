@@ -1926,7 +1926,12 @@ pub(crate) fn probe_leftover(path: &Path) -> Result<Option<LeftoverHold>> {
         }
         // Nothing can vouch for these bytes, so *any* content refuses — ignored files
         // included: an ignored file is not work to git, but the binary is not the one who
-        // gets to decide that about a directory it cannot even place.
+        // gets to decide that about a directory it cannot even place. That is the exact
+        // opposite of `dirty_worktrees`' policy one screen down, and its sibling rather
+        // than its contradiction, because the two run at different scopes: there git can
+        // place the bytes, so the project's own ignore rules are readable and the ordinary
+        // fan-out success path is full of build output; here git places nothing, so no
+        // ignored/tracked distinction exists to scope a refusal with.
         LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => child_names(path)?,
     };
     if entries.is_empty() {
@@ -2268,7 +2273,17 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
 /// only the *staged* set, because at `finalize` the staged set is what the combine commits — but
 /// what the abandon path destroys is **everything** in the worktree: staged, unstaged, and
 /// **untracked** alike (`git worktree remove --force` deletes the checkout). So the guard's probe
-/// is the union `git status --porcelain` reports; an ignored file is not work and never appears.
+/// is the union `git status --porcelain` reports.
+///
+/// **And that union stays without `--ignored`, deliberately** — this is the *refusal* probe, and
+/// [`discarded_work`] is the *narration* probe that does read the ignored set and names those
+/// bytes; the measured evidence for the split and the declared cost (**visible, not prevented**)
+/// live there, its re-opening condition with the deferral it disposes
+/// (`implementation/decisions-pending.md` → entry 11). The scope that makes the two policies in
+/// this file siblings rather than a contradiction: **here git can place the bytes**, so the
+/// project's own ignore rules are readable and the ordinary fan-out success path is full of build
+/// output — whereas at a path git cannot place at all ([`probe_leftover`]'s fail-closed arm)
+/// *any* child refuses, ignored or not, because there is nothing to scope a refusal with.
 ///
 /// `pub(crate)` for the sibling teardown — `jigc uninstall`'s `remove_dir_all(.jigc)` destroys
 /// exactly the same bytes (the worktrees live under `.jigc/worktrees/`), so it guards on this
