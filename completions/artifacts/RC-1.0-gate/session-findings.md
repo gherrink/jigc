@@ -373,3 +373,52 @@ made.
 and reverse-engineered the shape with `doc create` + `doc show --format json`. That is a real
 experience of a real worker and stays on the findings list. It is no longer evidence of a fleet-wide
 discoverability failure.
+
+---
+
+## Correction 3 · B2-1 was wrong, and the way it was wrong is the lesson
+
+I recorded B2-1 as **"VERIFIED at the source. The most serious finding so far"** — the pack
+instructing an action its own create gate refuses, law 1 in its purest form. **It is not a lie. The
+printed step is runnable in the context it is issued in.**
+
+What the binary does, driven end to end:
+
+```console
+$ jigc milestone execute bound-the-store
+Spawn: `cd .jigc/worktrees/cap-distinct-series && jigc workflow sub-task --task cap-distinct-series`
+
+$ cd /work/.jigc/worktrees/cap-distinct-series
+$ jigc workflow sub-task --task cap-distinct-series                       # exit 0
+  58: Run: `jigc doc set-field commit:cap-distinct-series#type --value <COMMIT_TYPE> --task …`
+
+$ jigc doc set-field commit:cap-distinct-series#type --value feat --task cap-distinct-series
+exit 0
+set commit:cap-distinct-series#type = feat
+```
+
+Composing the sub-task workflow provisions the transient commit doc, so the instruction the step
+prints works. From the **main tree**, without that compose, the same command fails with
+`no staged instance … provision it first` — and the second option that refusal offers
+(`jigc doc create <type>`) is the one the sub-task gate forbids, which is the `create.gate-blocked`
+B2 actually met.
+
+**So B2-1 collapses into B2-2.** The real finding is the one already recorded: the sub-task context
+is not reachable from the main tree, and nothing names `milestone provision` /
+`.jigc/worktrees/<id>` until an error does. B2 hit a genuine wall; my account of *which* wall was
+wrong.
+
+### The lesson, which is worth more than the finding
+
+**"VERIFIED at the source" was a static read.** I read `sub-task.yaml`'s `allows-create: [adr]`, read
+`sub-task-commit.yaml`'s instruction, and inferred a refusal that the binary does not produce in the
+context that matters. Reading a gate declaration is not running the command it gates.
+
+That is the third correction this trial has needed from me, and the three have one shape: **B1's
+carryover** (read a log count, inferred a gate failure — the gate was never given the case), **D-1's
+seventh landing** (read one session's feedback, inferred a fleet-wide miss — three of four found the
+verb), and this one (read a config, inferred a refusal). Each time the fix came from *driving the
+binary*, and each time the first account was more dramatic than the truth.
+
+**Downgraded from "the most serious finding" to a duplicate of B2-2**, with the runnable repro above
+as the evidence.
