@@ -261,3 +261,79 @@ So PT-1's two halves are both measured rather than argued:
   was steered correctly by the tool's own advisory.
 
 The disposition remains the human's under §1, but the recheck it was waiting on has landed.
+
+---
+
+## F-1 · `changelog-recording.gate-granted-unused` fires on a task that DID record a changelog entry
+
+**VERIFIED, reproduced on rc.11. Reported by B3a; the trial's clearest instance of jigc stating
+something false about its own commit.**
+
+An entry written with `set-slot` against an **already-existing** category does not register with the
+gate tracker, which counts only `add-item`. The advisory then asserts nothing was recorded — in the
+same output that promotes the changed file.
+
+```console
+$ jigc doc set-slot changelog:changelog#releases/0-3-0/changes/added/notes --from-file - --task <t>
+set slot … (copied in for update — the committed doc is now this task's staged copy, re-promoted at finalize)
+
+$ jigc task finalize <t>
+advisory · changelog-recording.gate-granted-unused — workflow `single-task` grants the `changelog`
+  create-gate and this task recorded no changelog entry
+  route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`
+         (or, before finalize, in-task: `jigc doc create changelog …`, then `jigc doc add-item …`)
+  promoted CHANGELOG.md                                        ← same output
+exit 0
+
+$ git show --stat HEAD | grep -i changelog
+ CHANGELOG.md | 1 +                                            ← the entry is really there
+```
+
+### Repro
+
+```sh
+completions/trial-corpus-template/instantiate.sh --clean-prose /tmp/cg svc
+cd /tmp/cg && jigc setup && git add -A && git commit -m "chore: adopt jigc"
+# task 1 — create the changelog and an `added` category via add-item, finalize
+# task 2 — single-task; edit that SAME category with set-slot; finalize
+#          → gate-granted-unused fires, and `promoted CHANGELOG.md` is printed beside it
+```
+
+### Why it matters more than a wording slip
+
+**Its route tells the worker to do the thing it has already done.** A worker that trusts the advisory
+adds a *second* entry for the same change — the failure is duplicated user-facing history, produced by
+following jigc's own instruction. B3a did not fall for it, but only because it checked the manifest
+and saw `"kind": "promoted"` and disbelieved the advisory.
+
+M43 law 1 is *nothing lies*. This is a statement contradicted by the adjacent line of the same output.
+
+**Class under §1:** a wrong result on a non-destructive path — a check that fails to fire (a false
+negative on the gate tracker) surfacing as a false claim. Not a false green over managed state, no
+pinned `--format json` contract violated, reversible after 1.0.0 → **SHIPS RECORDED**, and it should
+be near the top of that list.
+
+---
+
+## B3b · the remaining feedback items
+
+- **B3b-1 · The router never surfaces off-router workflows.** Second independent instance (B3a
+  reported it too): a changelog-only intent got the 12-item catalog, and `record-change` — deliberately
+  hidden from the router — was found only by reading `jigc describe`. Two of four sessions hit it.
+- **B3b-2 · `doc show --task` refuses right after `task bind`** with `store.not-staged`, because
+  binding does not stage a copy. *"Sensible in hindsight, not obvious in the moment."* Worth noting
+  precisely because it is the read-back verb this trial measures, refusing at a moment a worker
+  reaches for it.
+- **B3b-3 · A foreign file's advisory repeats on every unrelated task.** The `unadopted-instance`
+  finding for the planted ADR resurfaced on *"every validate/finalize call across three unrelated
+  tasks"*, making the worker re-check each time whether it was new. Correct but noisy.
+- **B3b-4 · Minted task ids are not predictable and were guessed wrong once** (`no task` error), until
+  the worker read the `.task` field from the JSON instead of predicting the slug.
+- **B3b-5 · No bulk edit for existing items** — wiring `maps-to-test` across five committed criteria
+  meant five `set-field` calls; `doc author` refuses with `write.already-present`. Possibly deliberate
+  (author is create-shaped, not patch-shaped), recorded as a capability gap.
+
+**Adapter adherence, B3b: the cleanest of the four.** *"Nothing I can point to as factually
+incorrect"* on question 2, and on question 4 the only direct read was of an **unregistered** file —
+which AGENT.md explicitly permits until adoption — followed by `jigc migrate … --as adr` when it
+needed to change. No bypass.
