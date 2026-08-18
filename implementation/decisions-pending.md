@@ -109,6 +109,9 @@ The wave ships **1.0.0-rc.10** at close (the rc-name rule); the trial logs on it
 
 ### The capability wave (M46) — the deferred capability tier — CHARTERED 2026-07-23; **ADJUDICATED ENTRY BY ENTRY at the M48 Settle, 2026-08-13**
 
+> **(D) The frozen methodology-doctype schema bump — the window that closes at 1.0.0. DEFERRED TO THE M46 SETTLE by the human, 2026-08-18.** Two entries in this ledger need a **shape change to a frozen methodology doctype**, which means a `schema-version` bump plus a shipped corpus migration. **Pre-1.0 is the last cheap moment to take one**: after the call, the same change costs adopters a migration on a released binary rather than costing us one on our own corpus. The scope brief ([RC-1.0-gate/next-wave-scope.md](../completions/artifacts/RC-1.0-gate/next-wave-scope.md) → Fork 4) recommends **taking neither** and recording the closing window as a declared bound — while flagging it as *the decision it would most want overruled on*, because unlike every other fork here **this one expires**. The human's call, 2026-08-18: **decide it in M46 planning, take-or-not, rather than pre-deciding it now.** So it goes on the Settle agenda as a live fork with both arms open, not as a recommendation to ratify. *Sequencing note the Settle must weigh:* a schema bump is the single highest-impact item on the brief's risk ranking — it makes the **following trial** about migration rather than about the fixes, which is the opposite of what that trial is for. *Trigger:* the M46 Settle — **and it is the one agenda item that cannot be deferred again**, because the window shuts at the 1.0.0 call whether or not anyone decides.
+
+
 > **The M48 adjudication — each entry now carries a disposition, which is what the charter said would close this ledger.** Decided against the exercised baseline, not the charter's framing ([DECISIONS.md](../DECISIONS.md) → 2026-08-13 M48 planning: the Settle).
 >
 > | # | Disposition | Basis |
