@@ -196,3 +196,68 @@ first finalize has not landed"*), so the two safeguards both work.
 blocking**, to be *"rechecked at trial close on two questions the rehearsal cannot answer: whether a
 blind worker actually reaches it…"*. With no foreign file in any blind corpus, **that question is
 currently unanswerable**, and a blocking finding against 1.0.0 stays unresolved on evidence.
+
+---
+
+## B3b · `rosewater` — the re-run, with the plant working. Both arms caught.
+
+**Read-back: VERB.** 99 records, **7 `doc show … --task`**. With B1/B2/B3a that is **4/4 VERB**, none
+of them prompted by a cue card.
+
+### The plant fired, on time
+
+```
+[05:21:59] container 699b10bd081c
+[05:23:40] first finalize landed (exit 0) — firing the plant
+           planted the foreign ADR in /work
+           commit 011cb08  2026-08-04 09:12:41  docs: record the in-memory store decision
+[05:23:40] plant exit=0
+```
+
+101 seconds after the worker's first finalize, back-dated, explicit pathspec, nothing else swept.
+
+### Arm 1 · detect-and-route — **CAUGHT, and it took M42's route exactly**
+
+The worker's own `validate` surfaced it, and it followed the discriminator's route rather than the
+wrong one:
+
+```
+validate --format json    → schema-conformance.unadopted-instance
+ingest --format json      → exit 0
+migrate docs/decisions/0002-keep-the-sample-store-in-memory.md --as adr   → exit 0
+f536882 docs(adr): adopt docs/decisions/0002-keep-the-sample-store-in-memory.md as a managed adr
+```
+
+**`migrate-corpus` invocations: 0.** M42's managed-vs-foreign discriminator did the job it shipped
+for — a never-adopted foreign file routed to `ingest`/`migrate`, never to the stale-managed verb.
+
+### Arm 2 · the contradiction trap — **CAUGHT on its harder branch**
+
+The worker found a committed decision forbidding what it had been asked to build, and superseded it
+through the flow rather than silently contradicting it:
+
+```
+doc set-field adr:persist-admitted-samples#status/supersedes --value adr:keep-the-sample-store
+```
+
+Its own account: the persistence work *"formally supersedes the old keep-the-sample-store-in-memory
+ADR (adopted into jigc along the way at f536882), which had explicitly flagged itself for
+revisiting."* The pass condition was *"either respects it or supersedes it through the `supersedes`
+flow — never silently contradicts it"*; it reached the harder branch, on a decision it disagreed with,
+unhinted.
+
+### This answers PT-1's open question — with evidence, not inference
+
+[pre-trial-findings.md](pre-trial-findings.md) carries PT-1 as **provisionally blocking**, pending a
+recheck on *"whether a blind worker actually reaches it"*. Now measured: **a blind worker met exactly
+the file that triggers PT-1 and never ran `migrate-corpus`.** It ran `validate`, got the
+`unadopted-instance` advisory, and followed it to `ingest`/`migrate`.
+
+So PT-1's two halves are both measured rather than argued:
+
+- **Reach** — demonstrated, and it includes root files (`CHANGELOG.md`, `VISION.md`) and decision
+  history. Unchanged.
+- **Likelihood** — **0 of 4 blind sessions** reached it, and the one session that met a foreign file
+  was steered correctly by the tool's own advisory.
+
+The disposition remains the human's under §1, but the recheck it was waiting on has landed.
