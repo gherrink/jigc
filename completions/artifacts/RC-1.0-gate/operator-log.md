@@ -108,3 +108,29 @@ test, because the worker defused it in its first minute.
 survives to the mint. This one was placed before the session, so a tidy worker can clear it before
 jigc ever sees it. Staging it *after* the mint — or re-checking it at the mint — would test the gate
 rather than the worker's tidiness.
+
+### Intervention 2 — the commit split (logged late, 2026-08-18)
+
+**§8 rule 2 requires every operator utterance in a blind session to be logged; this one was not
+logged when it happened, and is added here with that stated.** It was recovered from B1's session
+transcript (`evidence/b1-transcript.jsonl`), not from recall.
+
+**Worker asked**, after `finalize` committed two unrelated staged paths alongside the ADR, whether to
+`git reset --soft HEAD~1` and re-split the commit.
+
+**Operator replied, verbatim:**
+
+> Yes, split it. I want that commit to be the ADR and nothing else — leave my two files staged the way they were.
+
+**Contamination check:** clean. No read surface, no reading act, no tool knowledge — an ordinary
+product-owner preference about what a commit should contain.
+
+**It changes how B1-3 reads.** [session-findings.md](session-findings.md) records the raw-git commit
+surgery as the trial's clearest adapter bypass. With this logged, the bypass was **operator-approved**
+rather than unilateral: the worker proposed it, named the alternative, and waited. The gap it
+evidences — that jigc has no verb to redo or narrow a finalize — is unchanged; the worker's conduct
+reads better than the unlogged version implied.
+
+**Purity note, auditable rather than asserted:** B2, B3a and B3b carry exactly **two** operator
+utterances each — the opening prompt and the closing feedback prompt — and nothing else. B1 carries
+those two plus interventions 1 and 2.

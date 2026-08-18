@@ -13,7 +13,7 @@ reconstructed.
 
 | session | `doc show … --task` | `doc show` any | VERB-ADJACENT | `task validate` | records |
 |---|---|---|---|---|---|
-| B1 `harborlight` | **5** | 5 | 0 | 1 | 26 |
+| B1 `harborlight` | **3** | 3 | 0 | 2 | 26 |
 | B2 `pinegrove` | **4** | 5 | 2 | 7 | 102 |
 
 Both read their staged work back **unprompted**, through the verb M48's fence names, across
@@ -337,3 +337,39 @@ be near the top of that list.
 incorrect"* on question 2, and on question 4 the only direct read was of an **unregistered** file —
 which AGENT.md explicitly permits until adoption — followed by `jigc migrate … --as adr` when it
 needed to change. No bypass.
+
+---
+
+## Corrections to this file, 2026-08-18 — both from the archived logs, both mine
+
+**1 · B1's counts were wrong.** This file recorded `5 / 5 / 0 / 1`; the archived log
+(`~/ideas/harborlight-out/.jigc/logs/invocations.jsonl`, 26 records) gives **3 / 3 / 0 / 2**. The
+live snapshot in [operator-log.md](operator-log.md) — taken at 21 records, showing 3 — agreed with
+the log all along, so the running table was the outlier. Table corrected above. **B1's verdict is
+unchanged: VERB.**
+
+**2 · D-1's framing was wrong, and the correction matters more than the number.** I reported B1's
+inability to find `jigc doc schema` as *"the seventh consecutive discoverability landing"*. The logs
+say otherwise:
+
+| session | `doc schema` invocations | adapter preloaded at session start? |
+|---|---|---|
+| B1 `harborlight` | **0** | **no** — the worker ran `jigc setup` itself, mid-session |
+| B2 `pinegrove` | 4 | yes |
+| B3a `stonefly` | 3 | yes |
+| B3b `rosewater` | 4 | yes |
+
+**Three of four workers found and used `doc schema`, eleven times between them.** The one that did
+not is the one session where `CLAUDE.md` and `.jigc/AGENT.md` could not be in context, because setup
+ran inside the measured session — the preload problem §4 already anticipates.
+
+So the honest statement is **not** "the lens landed a seventh time". It is: **one of four workers
+missed the capability, and it was the worker without the adapter loaded.** That is a materially
+weaker claim, and it points at a different cause — preload, not discoverability. The correlation is
+n=1 and cannot carry weight on its own; what it does do is remove the basis for the stronger claim I
+made.
+
+**What survives from D-1:** B1 genuinely reached for a schema-introspection surface, did not find one,
+and reverse-engineered the shape with `doc create` + `doc show --format json`. That is a real
+experience of a real worker and stays on the findings list. It is no longer evidence of a fleet-wide
+discoverability failure.
