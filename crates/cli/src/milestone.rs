@@ -3686,10 +3686,8 @@ fn worktree_staged_file_count(worktree: &Path) -> Result<usize> {
 ///
 /// The boundary commits only [`worktree_staged_patch`] and then `git worktree remove
 /// --force`s the whole checkout, so the difference between those two sets is destroyed at
-/// exit 0. The probe is `git status --porcelain`, the same union its
-/// [`dirty_worktrees`] sibling reads (staged, unstaged and untracked alike; an ignored
-/// file is not work and never appears) — **partitioned on the index column** so the
-/// narration stays true:
+/// exit 0. The probe is `git status --porcelain` over the staged, unstaged, untracked
+/// **and ignored** sets — **partitioned on the index column** so the narration stays true:
 ///
 /// * index column set, worktree column clean (`A `, `M `, `R `) — **wholly staged**: every
 ///   byte is in the patch the boundary commits, so it is *not* reported. Reporting it
@@ -3698,6 +3696,25 @@ fn worktree_staged_file_count(worktree: &Path) -> Result<usize> {
 ///   it.
 /// * both columns set (`MM`, `AM`, an unmerged `UU`) — **partly staged**: the commit
 ///   carries the indexed version and the worktree's later edit dies.
+/// * `!!` — **ignored**: no commit could ever carry it, and `git worktree remove --force`
+///   deletes it exactly as hard as the rest (M46 Inc 2, `razor-ledger.md` §2f — driven at
+///   exit 0 over a gitignored `secrets.env`). Falling through the two arms above would
+///   have labelled it *"staged only in part"* over a file that was never staged.
+///
+/// **This is the narration probe, not the refusal probe.** Its [`dirty_worktrees`] sibling
+/// deliberately stays `--porcelain` **without** `--ignored`: a provisioned worktree arrives
+/// tracked-only while the sub-task walk tells the agent to build and test, so refusing on
+/// the ignored axis would fire on the ordinary fan-out **success** path and train `--force`
+/// into reflex. Declared cost, stated rather than implied: the loss is **visible, not
+/// prevented**.
+///
+/// **`--ignored=matching`, not plain `--ignored`.** With `--untracked-files=all` the
+/// traditional mode enumerates every file inside an ignored directory (measured: a
+/// 43-entry `target/` inventory), which is the same over-report the wholly-staged
+/// exclusion above exists to avoid. The matching mode names the level the ignore rule
+/// matched — `target/`, `sub/node_modules/`, `secrets.env`. **Declared bound:** a precious
+/// file nested inside an ignored directory is covered by its container's name, not listed
+/// individually.
 ///
 /// **`--porcelain -z`, not `--porcelain`.** Git display-quotes a path holding a space,
 /// a quote or a non-ASCII byte **regardless of `core.quotePath`**, and a fan-out worktree
@@ -3709,16 +3726,24 @@ fn worktree_staged_file_count(worktree: &Path) -> Result<usize> {
 /// **`--untracked-files=all`, not git's default collapse.** The default reports a wholly
 /// untracked directory as the single entry `notes/`, naming a *directory* where this
 /// surface promises the paths being destroyed. A loss narration read after the fact
-/// enumerates the files (an ignored file still never appears).
+/// enumerates the files (the ignored set is the one deliberate exception, above).
 fn discarded_work(worktree: &Path) -> Result<Vec<render::DiscardedWork>> {
+    const PROBE: [&str; 5] = [
+        "status",
+        "--porcelain",
+        "-z",
+        "--untracked-files=all",
+        "--ignored=matching",
+    ];
     let out = Command::new("git")
-        .args(["status", "--porcelain", "-z", "--untracked-files=all"])
+        .args(PROBE)
         .current_dir(worktree)
         .output()
         .context("could not run `git status` (is git on PATH?)")?;
     if !out.status.success() {
         bail!(
-            "`git status --porcelain -z --untracked-files=all` in worktree {worktree:?} failed: {}",
+            "`git {}` in worktree {worktree:?} failed: {}",
+            PROBE.join(" "),
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
@@ -3738,7 +3763,10 @@ fn discarded_work(worktree: &Path) -> Result<Vec<render::DiscardedWork>> {
             // the origin is never mistaken for a status entry.
             let _ = records.next();
         }
-        let state = if index == b' ' || index == b'?' {
+        let state = if index == b'!' {
+            // Ignored — no commit could carry it, and the teardown deletes it anyway.
+            render::DiscardState::Ignored
+        } else if index == b' ' || index == b'?' {
             render::DiscardState::NeverStaged
         } else if tree == b' ' {
             // Wholly staged — the boundary commits it.

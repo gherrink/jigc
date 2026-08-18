@@ -15,10 +15,20 @@
 //! **The acceptance iterates two axes, not the reported repro:**
 //!
 //! 1. the **porcelain index-column partition** — a *wholly staged* path (`A `), a *never
-//!    staged* path (`??`), and a *partly staged* path (`MM`, the cell whose staged half
-//!    lands and whose unstaged half does not) live in one worktree at once. Only the
-//!    latter two may be named: naming the wholly-staged path would be the over-report the
-//!    M47 completion audit caught, fixed here at birth rather than shipped-then-patched;
+//!    staged* path (`??`), a *partly staged* path (`MM`, the cell whose staged half
+//!    lands and whose unstaged half does not) and — since M46 Inc 2 T2 — an **ignored**
+//!    path (`!!`, which the teardown destroys exactly as hard as the others) live in one
+//!    worktree at once. Only the latter three may be named: naming the wholly-staged path
+//!    would be the over-report the M47 completion audit caught, fixed here at birth rather
+//!    than shipped-then-patched;
+//!
+//!    The ignored cell is reported at the **matching level** — `build/`, the pattern the
+//!    ignore rule matched, not `build/out.o` — because a `target/`/`node_modules/`
+//!    inventory is the over-report `discarded_work`'s own doc-comment says makes a loss
+//!    warning untrustworthy (`implementation/roadmap.md` → M46 Inc 2, deliverable (b);
+//!    `completions/artifacts/M46/razor-ledger.md` §2f). **Declared bound:** a precious file
+//!    nested inside an ignored directory is covered by its container's name, not listed
+//!    individually;
 //! 2. the **landed-arm axis** — `finalize.fan-out.squash: true` (the single combine
 //!    commit) and `false` (the per-sub-task chain) each call `remove_worktrees` and each
 //!    build the landing manifest, so both must narrate.
@@ -78,6 +88,10 @@ fn init_repo(root: &Path) {
     git_ok(root, &["config", "user.email", "test@example.com"]);
     git_ok(root, &["config", "user.name", "Test"]);
     fs::write(root.join("README.md"), "hello\n").expect("write file");
+    // Committed so every fan-out worktree checkout inherits the same ignore rules — the
+    // `!!` cell of the partition needs a rule that is in the tree, not in the main
+    // repo's untracked scratch.
+    fs::write(root.join(".gitignore"), "secrets.env\nbuild/\n").expect("write .gitignore");
     git_ok(root, &["add", "."]);
     git_ok(root, &["commit", "-q", "-m", "initial"]);
 }
@@ -162,6 +176,12 @@ fn stage_partly(repo: &Path, sub: &str, rel: &str, staged: &str, then: &str) {
     fs::write(worktree_dir(repo, sub).join(rel), then).expect("re-modify after staging");
 }
 
+/// The `!!` cell: a path git **ignores** — invisible to `git status --porcelain`, and
+/// destroyed by `git worktree remove --force` exactly as hard as an untracked one.
+fn leave_ignored(repo: &Path, sub: &str, rel: &str, body: &str) {
+    leave_untracked(repo, sub, rel, body);
+}
+
 /// The `??` cell: never staged at all.
 fn leave_untracked(repo: &Path, sub: &str, rel: &str, body: &str) {
     let p = worktree_dir(repo, sub).join(rel);
@@ -234,6 +254,11 @@ fn setup_fanout(repo: &Path, home: &Path, squash: bool) {
         "hello\nstaged half\nunstaged half\n",
     );
     leave_untracked(repo, "area-low", "notes/scratch.rs", "// sub-agent WIP\n");
+    // The `!!` cells: a directly-matched ignored file, and a file *inside* an ignored
+    // directory — the latter must be named by its matching-level container (`build/`),
+    // never enumerated file by file.
+    leave_ignored(repo, "area-low", "secrets.env", "TOKEN=hunter2\n");
+    leave_ignored(repo, "area-low", "build/out.o", "OBJ\n");
 
     // The clean sibling: everything it holds is staged, so nothing may be reported for it.
     stage_wholly(repo, "area-zed", "src/zed.rs", "pub fn zed() {}\n");
@@ -342,6 +367,22 @@ fn a_landed_fan_out_finalize_names_the_work_its_teardown_discards() {
             !warning.contains("src/low.rs"),
             "[{label}] the warning must NOT name the wholly-staged path (it landed); got:\n{warning}",
         );
+        // The `!!` cell — destroyed as hard as the rest, so it is named, at the matching
+        // level and with a state that is not a lie (M46 Inc 2 T2).
+        assert!(
+            warning.contains("secrets.env (ignored by git)"),
+            "[{label}] the warning must name the ignored file; got:\n{warning}",
+        );
+        assert!(
+            warning.contains("build/ (ignored by git)"),
+            "[{label}] the warning must name the ignored directory at its matching level; \
+             got:\n{warning}",
+        );
+        assert!(
+            !warning.contains("out.o"),
+            "[{label}] an ignored directory is named, never enumerated file by file; \
+             got:\n{warning}",
+        );
         // The clean sibling has nothing to narrate, so it prints no warning at all.
         assert!(
             !stderr.contains("worktrees/area-zed discards"),
@@ -364,7 +405,9 @@ fn a_landed_fan_out_finalize_names_the_work_its_teardown_discards() {
                 low["discarded"],
                 serde_json::json!([
                     { "path": "README.md", "state": "partly-staged" },
+                    { "path": "build/", "state": "ignored" },
                     { "path": "notes/scratch.rs", "state": "never-staged" },
+                    { "path": "secrets.env", "state": "ignored" },
                 ]),
                 "[{label}] the JSON manifest must carry the discarded set, path-sorted, and \
                  nothing else; got:\n{stdout}",
@@ -383,8 +426,16 @@ fn a_landed_fan_out_finalize_names_the_work_its_teardown_discards() {
             assert!(
                 block.contains("area-low")
                     && block.contains("notes/scratch.rs (never staged)")
-                    && block.contains("README.md (staged only in part)"),
-                "[{label}] the manifest's discarded block must name both cells; got:\n{block}",
+                    && block.contains("README.md (staged only in part)")
+                    && block.contains("build/ (ignored by git)")
+                    && block.contains("secrets.env (ignored by git)"),
+                "[{label}] the manifest's discarded block must name every reportable cell; \
+                 got:\n{block}",
+            );
+            assert!(
+                !block.contains("out.o"),
+                "[{label}] an ignored directory is named, never enumerated file by file; \
+                 got:\n{block}",
             );
             assert!(
                 !block.contains("src/low.rs"),
@@ -404,4 +455,76 @@ fn a_landed_fan_out_finalize_names_the_work_its_teardown_discards() {
             "[{label}] the landed teardown still removes the worktree (visible, not prevented)",
         );
     }
+}
+
+/// **Refusal stays refused** — the narration learns the `--ignored` axis, the *refusal*
+/// probe deliberately does not (M46 Inc 2, "Refusal stays refused, on measured evidence";
+/// `completions/artifacts/M46/razor-ledger.md` §2f). A provisioned worktree arrives
+/// tracked-only *while the sub-task walk tells the agent to build the code and run the
+/// tests*, so a worktree that did its job holds `target/`-shaped build output: refusing on
+/// the ignored axis would fire on the ordinary fan-out **success** path and train `--force`
+/// into reflex, which is strictly worse than no guard.
+///
+/// So `dirty_worktrees` — the refusal probe — stays `--porcelain` **without** `--ignored`,
+/// and a worktree holding nothing but a gitignored file still clears `discard`'s
+/// `milestone.dirty-worktree` refusal. The declared cost is stated rather than implied:
+/// **the loss becomes visible, not prevented** — which is the second half this cell pins,
+/// on the same door.
+#[test]
+fn a_gitignored_only_worktree_still_clears_the_discard_refusal() {
+    let repo = TempDir::new("ignored-refusal");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    assert!(
+        run_milestone(
+            repo.path(),
+            home.path(),
+            &["add-task", "cache-rework", "Area low"]
+        )
+        .status
+        .success(),
+        "add-task must exit 0",
+    );
+    let provisioned = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+
+    // The whole content of the worktree: one gitignored file, invisible to the refusal probe.
+    leave_ignored(repo.path(), "area-low", "secrets.env", "TOKEN=hunter2\n");
+
+    let discarded = run_milestone(repo.path(), home.path(), &["discard", "cache-rework"]);
+    let stdout = String::from_utf8(discarded.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(discarded.stderr).expect("utf-8 stderr");
+
+    // (1) The refusal is UNCHANGED — the un-forced abandon still goes through.
+    assert!(
+        discarded.status.success(),
+        "an ignored-only worktree must still clear the abandon refusal; stdout:\n{stdout}\n\
+         stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("milestone.dirty-worktree"),
+        "the ignored axis must not reach the refusal probe; stderr:\n{stderr}",
+    );
+
+    // (2) …and the loss is NAMED before it happens — visible, not prevented.
+    let warning = warning_block(&stderr, "area-low");
+    assert!(
+        warning.contains("secrets.env (ignored by git)"),
+        "the teardown must name the ignored bytes it destroys; got:\n{warning}",
+    );
+    assert!(
+        !worktree_dir(repo.path(), "area-low").exists(),
+        "the abandon still removes the worktree (visible, not prevented)",
+    );
 }

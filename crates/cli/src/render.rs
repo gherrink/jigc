@@ -3209,8 +3209,8 @@ pub struct DiscardedWork {
     pub state: DiscardState,
 }
 
-/// Why a path in a fan-out worktree is **not** carried by the boundary commit — the two
-/// reportable cells of the `git status --porcelain` **index-column** partition. The third
+/// Why a path in a fan-out worktree is **not** carried by the boundary commit — the three
+/// reportable cells of the `git status --porcelain` **index-column** partition. The fourth
 /// cell, *wholly staged* (index column set, worktree column clean), is deliberately
 /// absent: those bytes land in the commit, so reporting them would be the over-report
 /// that makes the whole narration untrustworthy.
@@ -3223,6 +3223,10 @@ pub enum DiscardState {
     /// The index holds an earlier version and the worktree has moved on (`MM`, `AM`, an
     /// unmerged cell) — the commit carries the staged half and the rest dies.
     PartlyStaged,
+    /// git **ignores** this path (`!!`) — so no commit could ever carry it, and the
+    /// teardown destroys it exactly as hard as an untracked one (M46 Inc 2). Reported at
+    /// the ignore rule's **matching level**: `build/`, not each file under it.
+    Ignored,
 }
 
 impl DiscardState {
@@ -3232,6 +3236,7 @@ impl DiscardState {
         match self {
             DiscardState::NeverStaged => "never staged",
             DiscardState::PartlyStaged => "staged only in part",
+            DiscardState::Ignored => "ignored by git",
         }
     }
 }
