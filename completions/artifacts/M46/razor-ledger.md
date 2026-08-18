@@ -61,8 +61,33 @@ tier the razor is refusing cleanly.
 | **B3b-1** | `surface-contract.md:136` second clause — name the scope *"**and name what the members outside it do instead**"* | The router names its scope and stops |
 | **B3b-2** | law 1 | **Cause misattributed in the brief.** Not the `bind` ack: `locate-from-spec.yaml:43-48` prints *"Read your write back … **the write you just made**"* **unconditionally**, while `:34-36` sanctions leaving the write off. Driven both arms: with it exit 0, without it `store.not-staged` exit 1 |
 | **S-2** | law 2 — *"Every affordance that is the **designated recovery** … is named by the surfaces that produce that state"* | `cli.rs:317` already records the answer (*"`jigc start --explain` is the resolution trace"*); `jigc describe adr` gives a bare clap exit 2. The brief's read-intent framing **fails** — that axis is scoped to parent nodes and `describe` is a leaf |
-| **Doc riders** (10, all ≤ a paragraph) | per [gap-findings.md](gap-findings.md) §2 slice C | C1+C3/S4 → PT-1 · C2+D5 → F-1/Fork 3 · C4 → F-F · D1+S14 → Fork 4 · D2 → F-D · D3 → Fork 7. **Zero standalone doc increments** |
+| **Doc riders R1–R10** (all ≤ a paragraph) | restated in §1b — **do not use the `C`/`D`/`S` labels**, they collided | Each is a rider on an increment already in scope. **Zero standalone doc increments.** |
 | **S13** | `doctype-authoring.md:1-3` — *"**This is that list.**"* | Five waves stale; names none of the M43–M48 pack-load fences, each a hard `bail!`. **It already produced a wrong estimate inside this wave's own planning.** On entry 2's critical path if entry 2 is IN |
+
+
+### 1b · The ten doc riders, restated
+
+**Renamed `R1`–`R10` because the source labels were unusable.** The pre-decompose review found four of
+them (`D1`,`D2`,`D3`,`D5`) defined nowhere in the repo, `D1`–`D3` colliding with the Settle-decision
+labels in §5 (so *"D2 → F-D"* resolved to *"N-3 takes the third shape"*), and an `S-2`/`S2` collision
+where both are IN and mean different things. Each rider below carries its two contradicting
+statements and the increment it rides on.
+
+| # | The contradiction (both sides, with `file:line`) | Rides on |
+|---|---|---|
+| **R1** | `design/validation.md:418` — a never-adopted foreign file routes to `ingest`/`migrate --as`, *"**never** to `migrate-corpus`"* — vs `design/corpus-migration.md`, the verb's **owning doc**, which has **no foreign arm anywhere** (not in the corpus walk, not in from-selection, not in the property census) | **PT-1** |
+| **R2** | `design/finalize.md:41` — *"`finalize` has **no private check path** at this phase … `jigc task validate` previews this phase in full"* — vs `design/validation.md:506`, which documents `gate-granted-unused` as *"surfaced at `finalize`"*, merged into the phase-2 report at `crates/cli/src/task.rs:1190` and **promotable to blocking** | **F-1 / Fork 3** |
+| **R3** | `design/storage.md:124` — *"`changelog → changelog/`"* in the `location:` list — vs `design/storage.md:143` (its **own** Placement section) and `implementation/doctype-map.md:21`, both giving root `CHANGELOG.md`; shipped schema `crates/cli/pack/schemas/changelog.yaml:34` carries `placement:` and no `location:` | **PT-1's acceptance fixture** — a fixture derived from `:124` is built at `docs/changelog/`, where nothing lives, leaving the placement arm untested |
+| **R4** | `design/validation.md:39` — the route is *"**always present** … never `null`"* — vs `design/validation.md:66` + `design/surface-contract.md:28`, which carve the parser-diagnostic exemption `crates/engine/src/finding.rs:262` implements. **Note §4:** `:39` *cites* the floor rather than contradicting it, so this lands **only if** F-F narrows | **F-F, conditionally** |
+| **R5** | `design/corpus-migration.md:131` and `:264` + `implementation/doctype-authoring.md:35` and `:41` — *"the deterministic value is **spliced into every item**"* for a `set:`-bearing field — vs `crates/engine/src/transform.rs:362-365` and `:431-434`, which read `decl.default` **only** | **F-I** |
+| **R6** | `design/team-ready-state.md:92` + `design/storage.md:121` — *"every door … **refuses content it cannot prove is disposable**"*, stated as a universal — vs the code holding it at one of three verdicts (`crates/cli/src/milestone.rs:1884` vs `:2147`, two opposite policies in one file). `storage.md:121`'s three-member parenthetical also reads as a **false universal** | **N-1 / Fork 7 re-cut** |
+| **R7** | `design/finalize.md:200` — a sub-task with no provisioned worktree contributed no code *"**by construction**"* — vs `provisioned_worktrees` (`crates/cli/src/milestone.rs:1977`) filtering the **registered** set, which a `cp -R` invalidates | **N-2** |
+| **R8** | `design/validation.md:570` — the changelog check *"**keys on the gate, never on the diff**"* — vs `crates/cli/src/task.rs:1880`, a repeatable-**item count** delta, which is neither | **F-1** |
+| **R9** | `implementation/doctype-map.md:12` — `adr` *"✅ frozen v1 (M33)"* — vs `crates/cli/pack/config/schema-manifest.yaml`, where `adr` is **schema-version 2**; `deferral-ledger` and `milestone-record` are version-blind at `:17`/`:25`, and `:41`'s scope pin still describes the M40 ten-at-v1 state | **Fork 4's record** (the fork is closed; the map must not mislead the next sizing) |
+| **R10** | `implementation/doctype-authoring.md:23`/`:35`/`:41` — the transform matrix reading ✅ where the corpus blocks — **narrowed** per the review: the five-wave staleness sweep (M43–M48 fences, `states-constraints`, `staged-read-back`, `CONSTRAINT_REQUIRED_TOKENS`, `Manifest-Repin`) **misleads no M46 increment** now that entry 2 is re-keyed out, so only the F-I cells qualify under the wave's own doc bound. The rest is **recorded, not fixed** | **F-I** (was S13, over-scoped) |
+
+**Namespace rule for decomposition:** riders are `R1`–`R10`; Settle decisions are `D1`–`D4` (§5);
+trial surface findings keep their hyphenated `B`/`S-` forms. No label means two things.
 
 ---
 
@@ -181,6 +206,133 @@ so no test churn.
 `milestone.rs`, is named *"shared by all N sub-agents"*, and is a **registry, not a flat map** — the
 merge does **not** transfer to it unexamined. It must be explicitly scoped in or excluded with a
 reason; losing a sub-task registration is the N-2 class.
+
+---
+
+### 2d · F-I's fix direction — SETTLED (no-op), and the review's framing corrected
+
+The pre-decompose review flagged that the two artifacts pointed opposite ways (the ledger framing the
+code as violating the docs; gap-findings calling the refusal a *false refusal*), and warned that
+no-op'ing *"retires a designed extension point"* — the `transform.rs:362` comment
+*"a `set`-derived field needs the caller-supplied value (T4)"*.
+
+**That framing is corrected on inspection: the extension point is not the `Err` arm.** It is the CLI
+**threading a deterministic value in**, and it is shipped twice — `with_stamp_default`
+(`migrate_corpus.rs:1069`) sets `default` on a schema clone so the stamp places deterministically, and
+`authored_remap` (`:985-995`) fills the `ValueRemapped` table, described in the code as *"a
+value-source the classifier emits blank … the determinism **boundary** holds (a fixed table, not an
+LLM call)"*. **A no-op leaves that pattern entirely intact:** a future doctype needing a migration-time
+value threads one in exactly as the stamp does. What changes is only the behaviour when **nobody
+threads one in**.
+
+**Settled: no-op the `set:`-without-default arm at both loci.** Justified because absence is not
+merely tolerated but *correct*: `is_author_required` is `default.is_none() && set.is_none()`
+(`validate.rs:2877`), so a `set:`-bearing field absent from a doc is **conformance-clean** — and
+semantically honest, since `on-create` and `on-transition` values do not exist for a historical
+record. `corpus-migration.md:162` already states the fact (*"mint-time derivers; **a doc lacking the
+value already conforms**"*). The current `Err` is therefore a **false refusal**, surfaced through
+`try_migrate_doc`'s `.ok()?` collapse as a `prose-needed` finding that names a cause that is not the
+cause and prints a route that does not work **even when followed exactly**.
+
+**One loudness rider, because a silent no-op is its own hazard.** If a doctype author adds a required
+`set:` field expecting a value, migration would omit it and nothing would catch it — the doc conforms.
+So the migration report **names the `set:` fields it left unfilled**. That keeps the loudness the `Err`
+arm was reaching for without the lie, and it is what makes this a reconciliation rather than a
+loosening.
+
+**Docs owed with it** (R5, R10): `corpus-migration.md:131` and `:264`, and
+`doctype-authoring.md:35`/`:41` — all four state the `set:` splice as fact and are falsified by the
+binary. `:41` bills itself as a *correction* of an earlier draft that was *"wrong for the optional
+case"*; it was corrected there and left wrong here.
+
+---
+
+### 2e · The three undisposed forks, closed
+
+The pre-decompose review found three forks the evidence ranked blocking that carried **no
+disposition** — *"undecided at Settle means decided at build."* All three close here.
+
+**F-G · PT-1's exit status — `schema-conformance.unadopted-instance` JOINS `STORE_EXIT_FLIPS`**
+(the human, 2026-08-18). Driven: `jigc validate` over a corpus whose only issue is a foreign
+`docs/decisions/hand-written.md` exits **0** with one advisory, and the code is **not** a member of the
+table at `crates/cli/src/render.rs:676`. Today `migrate-corpus`'s exit 1 is wrong *about its subject*
+but is the only non-zero signal that exists — and PT-1 removes it. A fifth member is what the table is
+built for: M47's audit made it one enumerable source feeding the predicate, the JSON field, all four
+trailers **and** the fence, so a fifth condition cannot compile without joining it. *Declared
+behaviour change, and it must be pre-registered in the next trial's protocol:* a stock brownfield repo
+that exits 0 on `jigc validate` today will exit non-zero once un-adopted files are present.
+
+**F-E · Fork 3 takes the NARROW arm — forced by the record, not chosen.** The changelog advisory joins
+`preview_gates` as a missing member of the existing rule; the base pin **stays excluded** per M47
+Settle Decision 1; and the exclusion list becomes **generated rather than hand-listed** so the
+enumeration cannot go stale again. The wide arm is refused on two independent grounds: it is
+foreclosed by `finalize.md:41` + `command-output-contract.md:363` on a rationale that **holds** (a
+preview must not promise *"this will commit"*), and it would flip `jigc task validate` **0 → 3** on a
+shipped state, touching the **pinned exit-code taxonomy** — which the wave's own one-way-door
+qualifier says BLOCKS rather than ships. Two structural constraints ride into the increment brief:
+`plan_finalize` is **fail-fast** (`finalize.rs:186-270`, every gate `return Err(vec![…])`), so a
+preview built on it shows only the *first* failure; and `migrate.review-pending` is **not a `Finding`
+at all** (`invocation_log.rs:89`), so it is not a member of this set.
+
+**F-F · `is_route_exempt` narrowing is OUT, and R4 falls with it.** The razor adversary established
+that narrowing *does not resolve F-F as posed*: `is_route_exempt(code: &str)` is code-only **by
+declared design** (*"checkable from the code alone, **never a census of call sites**"*), while F-F's
+contradiction is about **managed vs foreign** — a property of the *document*, not the code. So
+narrowing changes which codes are exempt and leaves the exemption blind to the subject. And §4
+adjudicated the doc pair: `validation.md:39` **cites** the floor (*"always present (**the route floor
+below** — never `null`)"*) rather than contradicting `:66` — general rule then stated exceptions,
+inside one section. That is drafting, not contradiction, so **R4 does not land** and the measured
+ceiling of **13** blocking `conformance.*` producers is recorded rather than spent. What survives is
+N-4's route content, already IN.
+
+---
+
+### 2f · The `--ignored` destruction — RE-DISPOSED, narration extended to all four doors
+
+**The first-pass OUT basis was wrong, and the review caught it.** It read
+`team-ready-state.md:92`'s *"a live worktree of its own, whose dirt `git status --porcelain` reads
+correctly, so a **clean** one still clears"* as blessing the porcelain probe for the `OwnWorktree`
+verdict **by name**. It does not: that is a **mechanism note** about the three-way `rev-parse`
+classification, not a declared carve-out — and under this ledger's own citation-qualification clause,
+a mechanism mention is not a carve-out. Three qualified rules point the other way:
+`team-ready-state.md` (*"refuses what it cannot prove is disposable … the binary cannot tell
+`junk.txt` from `precious.txt` and refusing is the only honest answer it has"*), `storage.md:121`
+(same, as a universal), and — a **law-1 surface** — the shipped `jigc milestone discard --help`:
+*"Refuses with `milestone.dirty-worktree` when any sub-task's path under `.jigc/worktrees/` holds
+content nothing can prove is disposable."*
+
+Driven twice, two doors, at exit 0 with a control:
+
+```console
+$ jigc milestone discard ignored-probe ; echo "EXIT=$?"   # worktree holds a gitignored secrets.env
+discarded milestone:ignored-probe (1 sub-task(s); workbench removed)
+EXIT=0                                                    # secrets.env GONE, unnamed, unnarrated
+$ jigc milestone discard control-probe  ; echo "EXIT=$?"  # same door, a plain untracked file
+blocking · milestone.dirty-worktree — …  EXIT=1           # scratch.txt STILL THERE
+$ jigc uninstall ; echo "EXIT=$?"                         # worktree holds a gitignored secrets.env
+jigc uninstall — repo-local install removed
+EXIT=0                                                    # the worktree GONE with the secret in it
+```
+
+**DECIDED (the human, 2026-08-18): extend the narration arm to all four doors.** §2's Fork 7 re-cut
+already makes `milestone finalize`'s narration true over the `--ignored` axis; `milestone discard`,
+`uninstall` and `provision` join it, naming the ignored bytes they are about to destroy. The first
+pass's *"only the **narration** half ships"* was misleading precisely because those three doors carry
+**no narration surface at all**, so nothing was made true there.
+
+**Refusal is refused, on measured evidence rather than preference.** `team-ready-state.md:167` states
+a provisioned worktree arrives tracked-only *"while the sub-task walk **tells the agent to build the
+code and run the tests**"* — so a worktree that did its job holds build output, measured at
+1 → 4 → 43 entries as the probe widens. A refusal on that axis fires on the **ordinary fan-out success
+path** and trains `--force` into reflex, which is strictly worse than no guard; and there is **no
+mechanical discriminator** between a disposable `target/` and an irreplaceable `secrets.env` — the
+codebase's own comment says the binary *"is not the one who gets to decide that about a directory it
+cannot even place."*
+
+**Declared cost, stated rather than implied:** the loss becomes **visible, not prevented**. A
+gitignored secret inside a fan-out worktree is still destroyed; it is named first. *Re-opening
+condition:* an adopter reports real work lost to a narrated ignored-path teardown — which the
+narration is what makes reportable.
 
 ---
 
