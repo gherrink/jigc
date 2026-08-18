@@ -140,3 +140,46 @@ and clap's contradicting suggestion is gone.
 No data loss, no corruption, no dead end, and no regression against rc.10 on any arm driven here.
 Every refusal encountered named its path, its reason and a route, and every route followed verbatim
 worked.
+
+---
+
+## Arm 4 · addendum, 2026-08-18 — the two probes the first pass missed
+
+The coverage derivation caught these: §5 arm 4 charters four probes and `v1-walk.md` recorded two.
+Run now, so the arm is complete rather than reported complete.
+
+### 4a · `doc rename` on a **committed** identity — expect the refusal, not exit 0
+
+```console
+$ jigc doc rename adr:drop-the-oldest-sample --to "Shed the oldest sample" --task <t>
+exit 1
+blocking · write.identity-change — rename rejected: `adr:drop-the-oldest-sample` is committed, so
+  `--to "Shed the oldest sample"` would move its identity to `shed-the-oldest-sample` — a committed
+  doc's path IS its identity, and referrers outside this task point at the old one. A same-slug
+  retitle of the staged copy is supported; a re-slug is not
+  route: `jigc rename adr:drop-the-oldest-sample --to 'Shed the oldest sample'` moves it for real —
+         repointing every committed referrer in one transaction — once this task is finalized or
+         discarded (it is a task-less, self-committing store op)
+```
+
+**PASS.** The committed-store split M48 shipped: it refuses, says why identity and path are the same
+thing, and routes to the verb that does it atomically. Note the first attempt of this probe was run
+with **no task open** and got `no active task — start one with jigc start` (exit 1) — a precondition
+refusal, not this one. The distinction is why the probe is run in-task.
+
+### 4b · a typo'd read-shaped `config` verb
+
+```console
+$ jigc config git docs-root
+exit 2
+error: unrecognized subcommand 'git'
+  tip: some similar subcommands exist: 'list', 'get'
+```
+
+**PASS.** Both suggestions are read verbs, so the tip does not push a read intent at a write verb.
+
+### What this addendum says about the walk
+
+Arm 4 was reported complete when it was half-run. The gap was found by a derivation against the
+protocol's own charter, not by the walk noticing — which is the argument for deriving §6's table
+**before** the record is written rather than after.
