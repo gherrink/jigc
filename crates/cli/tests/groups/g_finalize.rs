@@ -40,6 +40,8 @@ mod freeze_enforcement;
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]
 mod mention_resolves;
+#[path = "../reconciliation_baseline_contrast.rs"]
+mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]
 mod ref_edge_guidance;
 #[path = "../severity_tuning.rs"]
