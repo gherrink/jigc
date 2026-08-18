@@ -204,6 +204,23 @@ mis-written — the entry really lands), no pinned `--format json` contract viol
 plus the predicate are both reversible after 1.0.0 → **SHIPS RECORDED**, and near the top of that
 list, because its route actively instructs a duplicate.
 
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**`UNPINNED:`** the fact this verdict establishes *is the defect* — the predicate counts
+repeatable items, so a prose-only `set-slot` on an existing item fires the advisory. A standing
+test over that cell would pin the false positive as expected output ([pinning.md](../../../implementation/pinning.md)
+§5's rule: *"would pinning it now pin the bug?"*), and this trial ships no fix. What is fenced is the **correct** half, and only
+that half — verified by reading the assertions:
+`changelog_gate_advisory::a_granted_but_unused_changelog_gate_advises_at_the_task_and_still_lands`
+(a granted-and-genuinely-unused gate emits one advisory keyed `task:<id>`, carrying a route, and
+the commit still lands) · `::an_authored_unreleased_change_group_emits_no_advisory` (an
+`add-item`-authored group silences it) · `::a_created_but_unauthored_changelog_is_not_an_entry`
+(a skeleton with no item still fires — the item-count predicate, from the other side). **No arm
+touches the prose-only-edit cell, the `retitle-item`/`date` siblings, or the `task validate`
+omission.** The suite does assert the route's *ordering* (landed-form first, the in-task form
+marked "before finalize") — never that either option runs in the case that raises it, which is
+aggravation (a).
+
 ---
 
 ## 2 · B2-1 · The sub-task step instructs `doc set-field commit:<task>#type`, and the create gate is `[adr]`
@@ -286,6 +303,28 @@ The *subject line* is milestone-synthesized; the per-sub-task commit docs are re
 non-blocking path with a correct sibling option (`jigc start`) in the same sentence. Reversible →
 **SHIPS RECORDED**. The good fix is for the `no staged instance` route to drop the create option when
 the active workflow's `allows-create` does not carry the doctype.
+
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**`pinned-by: milestone::milestone_finalize_squash_false_genuine_reentry_authors_per_subtask_commits`**
+— both REFUTED halves, verified by content: it drives a genuine `jigc workflow sub-task --task
+<sub>` re-entry **from inside each provisioned worktree**, asserts the re-entry provisions
+`.jigc/tasks/<sub>/docs/commit:<sub>.md`, and then runs the printed
+`jigc doc set-field commit:<sub>#type --value feat --task <sub>` and asserts **exit 0** — its own
+comment names that call as *"exactly the call that exits 1 (no staged instance — provision it
+first)"* without the compose. The same test authors each sub-task's `commit:<sub>` prose and
+carries it through join + finalize, which is the second refutation (commit authorship is
+genuinely sub-task-level).
+
+**`UNPINNED:`** the CONFIRMED half — that the `no staged instance` refusal offers
+`jigc doc create <type>` without knowing the active workflow's `allows-create` forbids it. It is a
+static message (`crates/cli/src/doc.rs`), and
+`error_remediation::add_item_absent_instance_keeps_message_without_os_error_tail` asserts only that
+the refusal says `no staged instance` and names the address — not that its options are runnable
+here. A test over the gate-blind route would pin the mis-route as expected output. The gate it
+collides with **is** fenced: `doc_author::disallowed_doctype_is_gate_blocked_through_the_batch`
+asserts an un-allowed doctype is refused with `create.gate-blocked` and the staged set is
+byte-unchanged.
 
 ---
 
@@ -405,6 +444,24 @@ milestone workbench, not a project-carrying file → **SHIPS RECORDED**. The two
 small: route this refusal at `jigc milestone provision <m>` / `cd .jigc/worktrees/<id>`, and give
 `add-task` a `next:` line.
 
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**`pinned-by: start_resume::sub_task_read_doors_keep_the_blanket_base_pin_refusal`** — the
+refusal itself is declared, standing behaviour, not a regression: over one intervening commit the
+test asserts the **top-level** control resumes at exit 0 while **both** sub-task read doors
+(`start --task <sub>` and `workflow <W> --task <sub>`) exit non-zero with stderr carrying
+`is pinned to base` and the `jigc task discard <sub>` span.
+
+**`UNPINNED:`** everything this row adds on top of that — that the milestone's *own* three record
+commits are what move HEAD off the pin every sub-task is created against, that neither offered
+route fits the only case the message serves, and that `milestone add-task` prints no `next:`. All
+three are defect-or-absence; a standing test over the printed route would pin the mis-route, and
+in fact the cited test **already asserts the `jigc task discard` span**, so the fix must revise
+that assertion rather than merely add one. The `next:`-chain fence exists one verb earlier —
+`milestone::milestone_create_names_its_record_commit_its_path_and_the_next_step` lifts `create`'s
+emitted `next:` argv and runs it verbatim — and `add-task` has no such arm, which is exactly where
+the chain breaks.
+
 ---
 
 ## 4 · B2-3 · `milestone join --help` describes only a docs union while finalize folds code
@@ -484,6 +541,21 @@ is help-text scope only, not a system-wide silence.
 **A surface/wording finding** on a non-blocking path, reversible → **SHIPS RECORDED**. One sentence
 in `milestone finalize`'s `about` closes it.
 
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**`pinned-by:`** both halves of the *behaviour* the help mis-describes:
+`milestone::milestone_join_suffixes_a_created_collision_and_reports_the_decision` — after the join
+it re-reads `git rev-parse HEAD` + `git status --porcelain` and asserts the pair is **identical**
+to the pre-join snapshot (*"the join must commit nothing and leave the working tree unchanged"*),
+so `join --help`'s docs-only claim is true · `milestone::milestone_finalize_squash_true_genuine_reentry_materializes_transient_then_lands_aggregate`
+— asserts the single aggregate commit's tree carries `src/low.rs` **and** `src/zed.rs`, folded
+from two independent worktrees, beside the merged persisted docs (the code fold `finalize --help`
+omits).
+
+**`UNPINNED:`** the finding itself — `milestone finalize`'s `about` text. No suite asserts any
+`milestone` help string (`help_truth.rs` covers `start`, the `doc` table and the leaf-help rules
+only), and pinning the current sentence would pin the undersell as expected output.
+
 ---
 
 ## 5 · B2-4 / B3b-5 · No `--dry-run` for `milestone finalize`; no bulk/patch edit for existing items
@@ -559,6 +631,22 @@ exit=1
 
 **A capability gap** — *"I wanted a verb that does not exist"* — for both → **SHIPS RECORDED, routed
 to M46.** Neither is a defect: M48 refused seven of these deliberately.
+
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**5a · `UNPINNED:`** a capability gap — `milestone finalize` has no `--dry-run`, and an absent
+flag has no behaviour to fence. The qualifier's fact (join *is* a partial preview, because it
+commits nothing) is the same join assertion cited in §4.
+
+**5b · `pinned-by: author_write_contract::a_colliding_payload_item_rejects_the_whole_author_over_a_committed_singleton`**
+— asserts the colliding payload is refused with `write.already-present` **and** that the task's
+staged `roadmap:roadmap.md` does not exist afterwards (whole payload rejected, nothing staged),
+then that a fresh title appends beside the committed entry; `::every_step_stating_the_append_half_states_the_collision_reject`
+and `::the_composed_batch_author_note_states_the_collision_reject` assert the composed surfaces
+state that reject up front, which is the *"stated rather than ambushing"* half. B3b's own context
+is fenced too: `doc_author::disallowed_doctype_is_gate_blocked_through_the_batch` (an
+`implement-from-spec`-shaped gate refuses `doc author spec` earlier, staging nothing). The **gap**
+— a patch-shaped bulk edit — is a verb that does not exist, so nothing there is pinnable.
 
 ---
 
@@ -639,6 +727,28 @@ $ git diff --cached --stat        # empty
 on a path that is already refusing (so nothing is lost). Reversible → **SHIPS RECORDED.** The fix is
 to name the staging area: *"your task's staged docs are intact in `.jigc/tasks/<id>/`; your git index
 is unchanged."*
+
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**B1-1 · `UNPINNED:`** the confirmed fact is a *wording* ambiguity in one sentence, and no fence
+holds prose at that tier (the frame's bytes ride no golden — `commit_rejected_axis` asserts
+substrings, not the sentence). Pinning the current sentence would pin the ambiguity as expected
+output. What is fenced is the claim *underneath* it:
+`commit_rejected_axis::every_committing_door_frames_its_rejection_names_itself_and_recovers`
+asserts, per door, that the run exits non-zero, **HEAD is unmoved**, the hook's own bytes survive
+verbatim under git's unwrapped rejection line, the state-truth sentence names what survived (for
+this door, `task <id> is intact`), and the argv **lifted out of the emitted message** exits 0 once
+the hook is removed. Its `task finalize` fixture stages `code.txt` before driving the door — i.e.
+it exercises the *true* branch only, never the docs-only branch where `git diff --cached` is empty,
+which is precisely this row.
+
+**B1-2 · `pinned-by: precommit_hook_acceptance::commit_warns_on_stale_anchor_but_succeeds`** —
+jigc's own installed hook is warn-only: the drift warning appears in the commit output **and the
+commit lands** (asserted against `git log`), so there is no jigc-side docs gate to expose; ·
+`commit_rejected_axis::every_committing_door_frames_its_rejection_names_itself_and_recovers`
+(clause 2) — a foreign hook's own bytes reach the reader verbatim, which is the whole of what jigc
+can honestly know about a third-party gate. The refuting fact has standing tests; no duplicate is
+minted (§3).
 
 ---
 
@@ -748,6 +858,18 @@ one.
 need; zero pack steps reach for it) → **SHIPS RECORDED, routed to M46.** The capability gap half is
 **REFUTED**, so nothing is owed there.
 
+### The discoverability half — `UNPINNED:`
+
+The refutation above carries its `pinned-by:` citations. The **CONFIRMED** half —
+`jigc doc schema` named zero times across both packs' step files and `.claude/skills/jigc/SKILL.md`,
+once in `.jigc/AGENT.md` under a *"how jigc itself behaves"* framing — is a **count over pack
+sources plus the framing of one sentence**: an apparatus measurement, not a product behaviour, and
+pinning *"zero pack steps name `jigc doc schema`"* would pin the gap as expected output. The
+nearest fenced neighbour pins a **statement about** such a count, not the count itself:
+`foldback_truth::the_pack_step_count_is_stated_once_and_names_its_measurement_point` (the `doc
+show` count is stated in exactly one home and names the binary it was measured on). Routed to M46
+with the finding, unfenced by design.
+
 ---
 
 ## 8 · B3a-1 / B3b-1 · The router does not surface off-router workflows
@@ -827,6 +949,24 @@ naming the fuller catalog) → **SHIPS RECORDED.** A one-line addendum to the ro
 closes it, and does so without re-listing hidden workflows in the catalog the suppression exists to
 keep clean.
 
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**`pinned-by: routing_loop::step_5_the_live_router_catalog_lists_exactly_the_real_work_workflows`**
+— drives bare `jigc start`, parses the emitted `- <id> — <when>` lines and asserts the id set is
+**exactly** the eight selectable dev-pack workflows, so `record-change`'s absence from the catalog
+is asserted rather than incidental (the suite also asserts the pairwise `when` non-overlap over
+the live list) · **`describe::describe_projects_the_suppression_reason_for_hidden_workflows`** —
+derives the hidden set from **both** pack sources and asserts every hidden workflow's `describe`
+entry says it is hidden from the router catalog and carries its declared reason verbatim: the one
+path both workers took, fenced · **`suppression_fence::a_stripped_suppressed_block_is_blocked_at_pack_load`**
+— stripping `suppressed:` from a hidden workflow makes the real binary exit non-zero at pack load,
+naming it, so the declaration `record-change` carries cannot quietly lapse.
+
+**`UNPINNED:`** the finding itself — that the router's closing text names no fuller catalog. An
+absent sentence has nothing to assert, and pinning the current closing bytes would pin the missing
+exit as expected output (they ride the compose goldens, which exist to *notice* change, not to
+fence content).
+
 ---
 
 ## 9 · B3b-2 · `doc show --task` refuses with `store.not-staged` right after `task bind`
@@ -870,6 +1010,21 @@ read it with `jigc doc show spec:retention-cap`."*
 
 **A surface/wording finding** on a path that refuses cleanly with a working route → **SHIPS
 RECORDED.**
+
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**`pinned-by: doc_show_staged::committed_json_carries_no_marker_and_not_staged_routes_task_less`**
+— its second arm drives `doc show <addr> --task <other>` from a task that never staged the doc and
+asserts the read **blocks**, that the stderr states the real state (`not staged`), and that the
+route names the task-less `jigc doc show <addr>` — the refusal-plus-working-route this row calls
+correct. The `bind` side is fenced for what it *does*:
+`task_bind::task_bind_enforces_the_five_steps_and_records_the_binding` asserts bind's whole
+persisted effect is `.jigc/tasks/<id>/roles.json` mapping the role to the committed doc, and
+`::the_task_state_verbs_ack_their_mutation` pins the ack's fields (`op`/`task`/`role`/`target`/
+`findings`) — which is why the ack can say nothing about staging.
+
+**`UNPINNED:`** the suggested repair (the bind ack naming the un-staged state) is a sentence that
+does not exist; there is nothing to cite until it does.
 
 ---
 
@@ -928,6 +1083,23 @@ not about the task it prints on.
 RECORDED.** Worth noting it is the *good* half of M42's managed-vs-foreign discriminator being noisy,
 not wrong; the honest fix is scope-aware suppression (print store-scope rows once per store state, or
 only on `jigc validate`), not a severity downgrade.
+
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**`pinned-by: foreign_at_both_doors::a_foreign_file_answers_one_code_and_one_route_at_every_door`**
+— verified by content, and it asserts *this row's own fact*: the foreign file draws the same
+`(code, target)` and a **byte-identical route** at `jigc validate`, `jigc task validate` and the
+`task finalize` preflight, is never baseline-adopted into `.jigc/state/file-state.json`, and
+**re-fires unchanged on a second, unrelated commit-only task's finalize** (*"the advisory re-fires
+unchanged, never silently absorbed"*), with both task doors at exit 0. So the repetition B3b met
+is **asserted, deliberate behaviour**, and this finding is a scope judgment against it, not a
+defect — the honest disposition, and nothing further is owed.
+
+*Cross-check worth recording:* [RC-pre-1.0's ledger](../RC-pre-1.0/findings-verification.md) marks
+F10's second half `UNPINNED` on the ground that a standing test over *"the advisory still fires on
+a task that never touched the file"* would pin the habituation floor as expected output. The suite
+it cites in F10's **first** half already contains exactly that arm. The disposition there was
+generous to itself; the fact was fenced all along.
 
 ---
 
@@ -1047,6 +1219,25 @@ correct second opinion **is** present on every instance found, and the empirical
 sessions was **zero**. The disposition remains the human's under §1, and *"judged not to matter"*
 remains barred.
 
+### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
+
+**`UNPINNED:`** the fact is the defect — `migrate-corpus` claims a never-adopted foreign file and
+blocks it with a route naming a doc id that does not exist. **No suite drives `migrate-corpus`
+over a foreign file**: the four `migrate-corpus.prose-needed` assertions in
+`crates/cli/src/migrate_corpus.rs` are all over genuinely **managed** docs (stamped, or in a
+shipped prior shape), i.e. legitimate prose-needed cells. A standing test over the current
+behaviour would pin the misclassification as expected output.
+
+The second-opinion half **is** fenced, which is what bounds the blast radius:
+`managed_vs_foreign::a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrated_corpus`
+— the squatter draws **exactly one** finding, advisory, addressed at its **path**, whose route
+names `jigc ingest` and `jigc migrate CHANGELOG.md --as changelog` and **must not contain
+`migrate-corpus`**, at exit 0 ·
+`::doc_show_over_a_foreign_squatter_routes_at_adoption_and_the_surfaces_tell_one_story` — `doc
+show` (plain **and** `--format json`), `doc list` (`unregistered`) and `validate` are asserted to
+tell one story about the same file. `migrate-corpus` is precisely the surface those two sweeps do
+not include; that gap in the suite and the defect are the same hole.
+
 ---
 
 ## Supplementary — claims settled in passing
@@ -1075,6 +1266,14 @@ to include):` block before committing. What does not exist is any **post-commit*
 where B1 was when it reached for `git reset --soft HEAD~1`. **Capability gap → SHIPS RECORDED, routed
 to M46.** B1's reasoning for the manual fix was sound, and it verified reconciliation afterwards.
 
+`pinned-by: carryover_gate::the_landed_json_labels_carried_over_and_forecast_landed_stay_identical`
+for the **PARTIAL** half — verified by content: it asserts the `--dry-run` forecast's `manifest`
+**and** `left_out` are equal to the landed commit's (*"dry-run and landed agree on the labeled
+included set"* / *"…on the left-out set"*), so the pre-commit preview really is exact, which is why
+the row is PARTIAL rather than a clean gap. **`UNPINNED:`** the gap itself — no post-commit
+narrowing verb (`redo`/`amend`/`split`) exists, and an absent verb has no behaviour to fence;
+routed to M46.
+
 ### S-2 · B2 · `jigc describe <item>` has no single-item lookup — **CONFIRMED**
 
 ```console
@@ -1097,6 +1296,15 @@ the sibling near-miss a helpful tip — `jigc doc read` answers with *"reading a
 verb — `jigc doc list` … `jigc doc show <address>` …"* (v1-walk arm 4) — while `jigc describe
 <item>` gets a bare clap error with no tip. **Class: a surface/wording finding** (a read-shaped
 near-miss that answers with nothing) → **SHIPS RECORDED.**
+
+`pinned-by: describe::describe_still_refuses_a_positional_argument` — asserts **both** positional
+forms (`jigc describe single-task` and `jigc describe --workflows single-task`) exit non-zero and
+print **no menu**, i.e. *"the single-item form is not built"*: the *kind filters exist, item lookup
+does not* half of this row. **`UNPINNED:`** the other half — that the near-miss carries **no tip**
+— is an absence on stderr nothing asserts, and it sits **outside** the read-intent fence by
+construction: `unknown_subcommand_tip::no_read_intent_is_answered_with_a_write_verb` iterates
+`(parent node, token naming no real child)` pairs off the clap tree — unknown *subcommands*, never
+an unexpected positional at a leaf verb, which is exactly this shape.
 
 ### S-3 · B3b-4 · Minted task ids are not predictable — **REFUTED as a defect**
 
@@ -1137,6 +1345,10 @@ internal doc comment, not a printed surface, so it is **not** a §1 finding — 
 premise behind the route half that sends a worker at in-task verbs it can no longer run, so it should
 be corrected alongside F-1 rather than separately.
 
+**`UNPINNED:`** an internal doc comment is not a product behaviour — there is nothing for a
+standing test to hold. Its *consequence* is F-1's route, whose disposition is recorded there. (Not
+one of the seventeen; carried here so no block in this file is silent.)
+
 ---
 
 ## What this pass did not settle
@@ -1151,3 +1363,81 @@ coverage than was bought:
    [session-findings.md](session-findings.md). This pass verifies findings, not the instrument; the
    read-back measurement stands on 4/4 unprompted VERB, which is stronger evidence than the design
    anticipated, and the record must keep saying the correction was never delivered.
+
+---
+
+## The conversion ledger — closed
+
+**The gate this closes** ([decisions-pending.md](../../../implementation/decisions-pending.md) →
+*The rc.11 wave (M48)*, carried forward to the 1.0.0 call): *the 1.0.0 call is not taken until
+every trial repro block carries `pinned-by:` or a stated `UNPINNED: <why>`.* All **17** rows now
+do. Every citation was verified by **reading what the cited test asserts** — never by its name
+looking apt — per [pinning.md](../../../implementation/pinning.md) §3, which refuses a symbol
+parser for exactly that reason, and per §5's caution that `verb_suite_coverage` green means *named
+by a suite*, never *fenced*.
+
+| # | Row | Verdict | Disposition |
+|---|---|---|---|
+| 1 | F-1 changelog gate | CONFIRMED | `UNPINNED` — pinning the cell would pin the false positive; the correct half is cited |
+| 2 | B2-1 sub-task step / create gate | PARTIAL | **mixed** — `pinned-by` both refuted halves · `UNPINNED` the gate-blind route |
+| 3 | B2-2 un-resumable sub-tasks | CONFIRMED | **mixed** — `pinned-by` the standing refusal · `UNPINNED` the mis-route + missing `next:` |
+| 4 | B2-3 `join`/`finalize` help | PARTIAL | **mixed** — `pinned-by` both behaviours · `UNPINNED` the help sentence |
+| 5a | B2-4 no milestone `--dry-run` | CONFIRMED | `UNPINNED` — an absent flag has no behaviour to fence |
+| 5b | B3b-5 no bulk/patch author | CONFIRMED | `pinned-by` — the create-shaped contract and its stated-up-front surfaces |
+| 6 | B1-1 "staged" collision | CONFIRMED | `UNPINNED` — a wording tier no fence holds; the truth under it is cited |
+| 6′ | B1-2 no jigc docs gate | **REFUTED** | `pinned-by` — warn-only own hook · verbatim foreign-hook relay |
+| 7a | D-1 capability half | **REFUTED** | `pinned-by` — four `doc_schema` / `schema_projection` citations (pre-existing) |
+| 7b | D-1 discoverability half | CONFIRMED | `UNPINNED` — a count over pack sources, not a product behaviour |
+| 8 | B3b-1 router closed list | CONFIRMED | **mixed** — `pinned-by` catalog membership + suppression fences · `UNPINNED` the absent exit line |
+| 9 | B3b-2 `store.not-staged` after `bind` | CONFIRMED | **mixed** — `pinned-by` the refusal + route and bind's real effect · `UNPINNED` the un-written ack clause |
+| 10 | B3b-3 repeating adoption advisory | CONFIRMED | `pinned-by` — the recurrence is asserted, deliberate behaviour |
+| 11 | PT-1 `migrate-corpus` foreign claim | CONFIRMED | `UNPINNED` — pinning it would pin the defect; the fenced neighbours are cited |
+| S-1 | B1-3 no post-commit narrowing | PARTIAL | **mixed** — `pinned-by` the exact `--dry-run` forecast · `UNPINNED` the absent verb |
+| S-2 | `describe <item>` | CONFIRMED | **mixed** — `pinned-by` the positional refusal · `UNPINNED` the absent tip |
+| S-3 | task-id predictability | **REFUTED** | `pinned-by` — `checkpoint_acceptance` (pre-existing) |
+
+**Counts.** 12 of 17 rows carry at least one `pinned-by:` citation; 5 are `UNPINNED` outright; 7
+of the 12 are **mixed** — a citation for the half that is verified-or-refuted behaviour, an
+`UNPINNED` for the half that is an unfixed defect or a surface that does not exist yet. **All
+three REFUTED rows carry citations**, so §3's *"a refuted fact **has** a standing test"* obligation
+is discharged without minting a duplicate.
+
+**The shape of the five outright-`UNPINNED` rows is one shape, and it is the intended one.** Four
+(F-1, B1-1, PT-1, and 5a's absent flag) would, if fenced today, **pin the defect or the gap as
+expected output** — [pinning.md](../../../implementation/pinning.md) §5's *"would pinning it now
+pin the bug?"*, the rule the latent-surface sweep already applied once when the leftover
+re-`provision` left its scope. The fifth (D-1's discoverability half) is a measurement about pack
+content rather than a behaviour of the binary. Each routes to a wave, not to a test:
+[next-wave-scope.md](next-wave-scope.md) carries the dispositions.
+
+
+---
+
+## Two precision notes on the ledger, added by the integrating session
+
+**1 · The B3b-3 cross-check is narrower than first stated, and the difference is the point.**
+`foreign_at_both_doors::a_foreign_file_answers_one_code_and_one_route_at_every_door:551-567` does
+assert *"the advisory re-fires unchanged, never silently absorbed"* — but its subject is **the next
+sweep** (`// and it re-fires on the next sweep (routed-but-not-recorded recurrence)`), i.e. a repeated
+`validate` over the same unadopted file.
+
+[RC-pre-1.0/findings-verification.md](../RC-pre-1.0/findings-verification.md) → F10 declared
+`UNPINNED` on a **different** fact: *"the advisory still fires on a task that never touched the
+file."* Repeat-sweep recurrence and unrelated-task recurrence are adjacent, not identical.
+
+So F10's `UNPINNED` **stands**; what does not fully stand is its stated *reason* — *"a standing test
+over it would pin the advisory-habituation floor as expected output"* — because a standing test over
+the neighbouring recurrence already exists and was cited in F10's own first half. The older,
+dated artifact is left unedited; the correction lives here, where the claim was made.
+
+**2 · B2-2's citation carries a hazard M46 must plan around, not just a pin.**
+`start_resume::sub_task_read_doors_keep_the_blanket_base_pin_refusal` asserts:
+
+```rust
+err.contains("is pinned to base") && err.contains("jigc task discard do-the-thing")
+```
+
+It fences the refusal **and pins the route B2 found unhelpful as expected output**. So the M46 fix
+cannot simply add an assertion: it must **revise this one**, or a fixer improving the route will meet
+a red test and be tempted to revert a correct change. Recorded here so the wave meets it at plan
+time rather than mid-build.
