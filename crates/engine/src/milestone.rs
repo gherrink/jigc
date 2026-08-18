@@ -38,6 +38,42 @@ const BASE_PIN_FILE: &str = "base.json";
 /// `pub` for one consumer: the CLI `add-task` door captures this file's pre-append bytes so a
 /// rejected record commit can restore them (M47 Inc 2 T2). The name is decided **here**, beside
 /// every writer of it, so the door cannot drift onto a second spelling of it.
+///
+/// # Shared state: atomic, and deliberately un-merged
+///
+/// This file is the **second** shared, non-task-isolated engine state file (`file-state.json`
+/// is the first): every sub-task of a fan-out lives under one milestone area, and the whole
+/// worktree set shares one `.jigc/` (`design/team-ready-state.md` → The `.jigc` layer is shared
+/// across worktrees). So M45 Settle Decision 9's rationale for `file-state.json`
+/// ([`crate::file_state::FileStateRecord::save`]) applies to it verbatim, and **all four of its
+/// writers persist through [`crate::state::persist`]** (temp + `rename`): [`mint_milestone`],
+/// [`add_task`], [`drop_sub_tasks`], [`reseed_cache_from_record`]. A plain `std::fs::write`
+/// truncates the target and *then* fills it, so a concurrent [`read_task_list`] — including the
+/// one `add_task` and `drop_sub_tasks` do themselves — could read zero or partial bytes and fail
+/// to parse what is on disk (measured: the real `add_task` door raising `milestone.area-io`,
+/// *"EOF while parsing a value at line 1 column 0"*).
+///
+/// **The base-relative merge that guards `file-state.json` (M46 Increment 1) does NOT extend
+/// here — a decision on evidence, not an omission.** Three facts:
+///
+/// 1. **Every production caller is an orchestrator door**, never a sub-agent-time verb: the mint
+///    at `cli/milestone.rs` → `run_create`, the append at `run_add_task` and inside
+///    [`add_from_spec`], the drop at `run_add_from_spec`'s rollback (`unwind_unrecorded_seeds`),
+///    and the re-seed through `cli/milestone.rs` → `reseed_cache`, reached from the eight
+///    `milestone <verb>` doors (`add-task`, `add-from-spec`, `list-tasks`, `provision`,
+///    `discard`, `execute`, `join`, `finalize`). Nothing a fanned sub-agent runs in its worktree
+///    reaches any of them, so the concurrent read-modify-write the merge exists to survive has
+///    no producer here.
+/// 2. **The one door a fan-out *can* run while sub-agents are live re-seeds byte-idempotently**:
+///    [`reseed_cache_from_record`] returns early when both cache files exist, and otherwise writes
+///    bytes derived from the committed record — so two of them race to write the same bytes.
+/// 3. **[`TaskList`] is a registry, not a flat map.** The merge is defined per *key* over
+///    `base ∪ ours ∪ theirs`; a `Vec<String>` of ids has no keys, and its recorded order is an
+///    audit trail the drop's rewrite depends on. The rule does not transfer, and inventing a
+///    set-union in its place would silently resurrect exactly the ids `drop_sub_tasks` exists to
+///    retire.
+///
+/// The exclusion is from the **merge**, never from temp + `rename`.
 pub const TASKS_FILE: &str = "tasks.json";
 
 /// The `milestone-record` doctype's **header (front-matter) section id** — the
@@ -215,8 +251,11 @@ pub fn mint_milestone(
         .map_err(|err| io_finding(&id, "write the base pin", &err))?;
 
     // The empty task list — no sub-task minted yet.
-    std::fs::write(dir.join(TASKS_FILE), TaskList::default().to_bytes())
-        .map_err(|err| io_finding(&id, "write the task list", &err))?;
+    crate::state::persist(
+        &dir.join(TASKS_FILE),
+        TaskList::default().to_bytes().as_bytes(),
+    )
+    .map_err(|err| io_finding(&id, "write the task list", &err))?;
 
     Ok(MintedMilestone { id, dir, base })
 }
@@ -283,7 +322,7 @@ pub fn add_task(
 
     // Append to the milestone's task list and persist it.
     list.tasks.push(task.id.clone());
-    std::fs::write(dir.join(TASKS_FILE), list.to_bytes())
+    crate::state::persist(&dir.join(TASKS_FILE), list.to_bytes().as_bytes())
         .map_err(|err| io_finding(milestone_id, "append to the task list", &err))?;
 
     Ok(AddedTask {
@@ -462,7 +501,7 @@ pub fn drop_sub_tasks(jigc_root: &Path, milestone_id: &str, ids: &[String]) -> s
     let mut list = read_task_list(&dir)?;
     list.tasks
         .retain(|id| !ids.iter().any(|dropped| dropped == id));
-    std::fs::write(dir.join(TASKS_FILE), list.to_bytes())
+    crate::state::persist(&dir.join(TASKS_FILE), list.to_bytes().as_bytes())
 }
 
 /// The block-section id the spec's repeatable acceptance criteria live in
@@ -882,7 +921,7 @@ pub fn reseed_cache_from_record(
         .map_err(|err| io_finding(id, "open the milestone cache area", &err))?;
     std::fs::write(milestone_dir.join(BASE_PIN_FILE), render_base_pin(&base))
         .map_err(|err| io_finding(id, "re-seed the base pin cache", &err))?;
-    std::fs::write(milestone_dir.join(TASKS_FILE), tasks.to_bytes())
+    crate::state::persist(&milestone_dir.join(TASKS_FILE), tasks.to_bytes().as_bytes())
         .map_err(|err| io_finding(id, "re-seed the task list cache", &err))?;
     Ok(())
 }
