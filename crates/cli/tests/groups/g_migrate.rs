@@ -29,6 +29,8 @@ mod migrate_adr;
 mod migrate_arch_doc;
 #[path = "../migrate_byte_floor.rs"]
 mod migrate_byte_floor;
+#[path = "../migrate_corpus_foreign.rs"]
+mod migrate_corpus_foreign;
 #[path = "../migrate_corpus_value_remap.rs"]
 mod migrate_corpus_value_remap;
 #[path = "../migrate_methodology.rs"]

@@ -1049,7 +1049,15 @@ impl<'a> AdoptionInputs<'a> {
     /// id, no second producer, no second route (`design/validation.md` → The managed-vs-foreign
     /// discriminator). `rel_key` is the repo-relative path the finding addresses — a foreign
     /// file has no managed identity to claim.
-    pub(crate) fn unadopted(
+    ///
+    /// **`pub` since M46 Inc 3 / T2**, and the visibility is the whole point. `jigc
+    /// migrate-corpus` excludes a never-adopted foreign file from its fold and must *report*
+    /// it — as **this** advisory, verbatim, or the two doors tell two stories about one file
+    /// again (which is the defect: the store door said *"adopt it"*, the corpus door said
+    /// *"author the prose, then re-run"* over a file jigc never wrote). [`unadopted_instance`]
+    /// stays private, so widening this seam is the only way to mirror it and there is no
+    /// second constructor to drift from — read-only reach, the `STORE_EXIT_FLIPS` precedent.
+    pub fn unadopted(
         &self,
         ty: &str,
         schema: &Schema,

@@ -135,6 +135,25 @@ pub struct CorpusMigrationReport {
     /// machine-readable naming why**. A non-empty `blocked` now **exits non-zero**
     /// ([`run`]).
     pub blocked: Findings,
+    /// The committed files at a managed home that jigc was **never handed** — excluded from
+    /// the fold before it runs, and **reported** as the store door's own adoption advisory
+    /// ([`engine::validate::AdoptionInputs::unadopted`]), verbatim, from the one producer.
+    /// Sorted by target, like [`Self::blocked`].
+    ///
+    /// **Its own field, deliberately not [`Self::blocked`]** — whose emptiness *is* the exit
+    /// rule ([`run`]). A never-adopted foreign file is not this verb's subject
+    /// (`design/corpus-migration.md` → The corpus walk; `design/validation.md` → The
+    /// managed-vs-foreign discriminator): the corpus migration upgrades the **managed** corpus,
+    /// and a brownfield repo's own Keep-a-Changelog `CHANGELOG.md` belongs to the adoption path
+    /// (`jigc ingest` / `jigc migrate <path> --as <ty>`). Blocking on it exited 1 with a route
+    /// — *"author the prose, then re-run"* — that changes nothing for a file jigc never wrote,
+    /// **and** held the real corpus hostage: the fold halts at its first blocker, so a genuinely
+    /// stale managed doc behind a foreign squatter was reported `deferred` and never migrated.
+    ///
+    /// Excluding it silently would be the sibling failure — this file's own *never a silent
+    /// already-current* rule — so the set rides both surfaces: counted in the text headline and
+    /// listed with its code and route, and serialized here for a driver.
+    pub unadopted: Findings,
     /// The short sha of the commit the verb landed its own migration in ([`commit_migration`]),
     /// or `None` when nothing was committed (nothing migrated, a re-run that staged no change,
     /// or a non-git worktree). Named in both surfaces — the operator/driver reads back *where*
@@ -223,7 +242,11 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
             // hook_output producer axis).
             crate::task::relay_hook_output(format, &report.hook_output);
             if report.blocked.is_empty() {
-                Outcome::success()
+                // Exit 0 — nothing blocked. The adoption advisories still carry their codes
+                // into the invocation log (`Outcome::with_findings(0, …)`): a run that
+                // declined to act on three files is not the same event as a run that found
+                // nothing, and the log is where that difference is readable after the fact.
+                Outcome::with_findings(0, &report.unadopted)
             } else {
                 // Non-zero, carrying the refusal codes into the invocation log — the
                 // `validate` store-sweep precedent (`Outcome::with_findings`).
@@ -547,6 +570,7 @@ pub(crate) fn migrate_committed_corpus(
         migrated: Vec::new(),
         already_current: Vec::new(),
         blocked: Findings::default(),
+        unadopted: Findings::default(),
         commit: None,
         hook_output: String::new(),
         touched: Vec::new(),
@@ -554,6 +578,18 @@ pub(crate) fn migrate_committed_corpus(
         dry_run: options.dry_run,
         no_commit: options.no_commit,
     };
+
+    // THE MANAGED-VS-FOREIGN DISCRIMINATOR'S THREE PACK FACTS, resolved once for the run
+    // (`design/validation.md` → The managed-vs-foreign discriminator). The engine produces none
+    // of them — the manifest version map, the shipped prior-version shapes and the doctypes
+    // whose `migrate-<ty>` workflow exists are pack facts the CLI resolves and threads in, the
+    // determinism boundary — and they are the **same three helpers** the store door feeds the
+    // same question (`crate::cli` → `run_validate_store`), which is what makes the advisory
+    // below identical rather than merely similar.
+    let versions = pack::frozen_doctype_versions(pack);
+    let priors = pack::prior_doctype_schemas(pack, &versions);
+    let migratable = pack::migratable_doctypes(pack);
+    let adoption = engine::validate::AdoptionInputs::new(&versions, &priors, &migratable);
 
     // Prepare every candidate doc across the corpus (heterogeneous: each carries its own
     // schema pair + per-doc change list), collected and path-sorted so the fold — which
@@ -710,6 +746,22 @@ pub(crate) fn migrate_committed_corpus(
                 // doctype's genuine v0 shape ([`v0_prior_shape`]), so the diff is the whole
                 // v0→current chain, not just the stamp.
                 None => {
+                    // NOT THIS VERB'S SUBJECT — asked **before the fold**, so a never-adopted
+                    // foreign file never becomes a `PreparedDoc` at all. Stamp-absence is the
+                    // only arm where the question arises: a stamp *is* jigc's own hand
+                    // (`classify_provenance`' first arm), so a stamped doc is managed by
+                    // definition and the discriminator would answer `false` for it anyway.
+                    //
+                    // The discriminator is the **shipped** one, asked through the **one**
+                    // producer of the advisory, fed the same `CascadeDefs::all_schemas` shape
+                    // the store door feeds it — no second classifier, no second check id, no
+                    // second route. Reported, never silently skipped (below, and in both
+                    // surfaces); it holds neither `blocked` nor `migrated` nor
+                    // `already_current`, and therefore not the exit.
+                    if let Some(advisory) = adoption.unadopted(&dt.ty, &dt.to, &source, &rel_key) {
+                        report.unadopted.push(advisory);
+                        continue;
+                    }
                     let from = v0_from.clone();
                     let changes = per_doc_changes(&schema_diff(&from, &to_diff), &source, true);
                     if changes.is_empty() {
@@ -891,10 +943,15 @@ pub(crate) fn migrate_committed_corpus(
         .already_current
         .retain(|path| !unlanded.contains(path));
     // Sorted by the stable target (the doc's path) — the findings collection is the seam, so
-    // it is re-wrapped rather than sorted in place.
+    // it is re-wrapped rather than sorted in place. The adoption set sorts the same way, for
+    // the same reason: the doctype walk contributes its paths in doctype order, and neither
+    // report list may depend on that.
     let mut blocked = std::mem::take(&mut report.blocked).into_vec();
     blocked.sort_by(|a, b| a.key().target.cmp(&b.key().target));
     report.blocked = blocked.into();
+    let mut unadopted = std::mem::take(&mut report.unadopted).into_vec();
+    unadopted.sort_by(|a, b| a.key().target.cmp(&b.key().target));
+    report.unadopted = unadopted.into();
     // A stable, deduped pathspec (a destination shared by a completed interrupted move is
     // enumerated once) — the staging order never varies between runs.
     report.touched.sort();

@@ -2867,8 +2867,9 @@ pub fn rename(format: Format, report: &crate::rename::RenameReport) -> String {
 
 /// Render a `jigc migrate-corpus` outcome to the surface `format` selects: `agent` /
 /// `human` emit a per-doc summary — one `migrated` / `recovered`-or-`unlanded` / `already
-/// current` line per doc plus, for each blocked doc, its Framing-A route — then the **landed
-/// commit** (the verb commits its
+/// current` line per doc plus, for each blocked doc, its Framing-A route, and for each file
+/// the run **declined to claim** (a never-adopted foreign file at a managed home) the store
+/// door's own adoption advisory — then the **landed commit** (the verb commits its
 /// own migration; absent when nothing was committed) and the routing footer; `json` emits the
 /// generic projection of the report (tooling-consumed, no footer), whose `commit` field
 /// carries the same sha (`null` when nothing was committed). The verb writes the migrated
@@ -2903,16 +2904,25 @@ pub fn corpus_migration(
             // header says what the run IS (nothing written) and every migrated path is framed
             // `would migrate` — byte-distinct from an applying run, which the pre-F2 renderer
             // was not (M43 surface census, F2 — Law 1 "acks state the effect").
+            // THE ADOPTION CLAUSE (M46 Inc 3 / T2). A committed file at a managed home that
+            // jigc was never handed is excluded from the fold — it is not this verb's subject
+            // — but it is **reported**, or the verb saw a file and never mentioned it. Absent
+            // entirely when nothing was excluded, so an ordinary run's bytes are unchanged.
+            let not_adopted = if report.unadopted.is_empty() {
+                String::new()
+            } else {
+                format!(", {} not adopted", report.unadopted.len())
+            };
             let mut out = if report.dry_run {
                 format!(
-                    "corpus migration (dry run — nothing written): {} would migrate, {recovery}{} already current, {} blocked\n",
+                    "corpus migration (dry run — nothing written): {} would migrate, {recovery}{} already current, {} blocked{not_adopted}\n",
                     report.migrated.len(),
                     report.already_current.len(),
                     report.blocked.len(),
                 )
             } else {
                 format!(
-                    "corpus migration: {} migrated, {recovery}{} already current, {} blocked\n",
+                    "corpus migration: {} migrated, {recovery}{} already current, {} blocked{not_adopted}\n",
                     report.migrated.len(),
                     report.already_current.len(),
                     report.blocked.len(),
@@ -2948,6 +2958,22 @@ pub fn corpus_migration(
                     .and_then(|l| l.address.as_deref())
                     .unwrap_or("<unaddressed>");
                 out.push_str(&format!("  blocked    {path}\n"));
+                out.push_str(&format!("    {}: {}\n", finding.code, finding.message));
+                if let Some(route) = &finding.route {
+                    out.push_str(&format!("    route: {route}\n"));
+                }
+            }
+            // An excluded file prints exactly as a blocked one does — path, then code +
+            // message, then route on their own lines — because it *is* a real `Finding`, the
+            // store door's own (`schema-conformance.unadopted-instance`, advisory, routed at
+            // adoption), rendered from the one producer rather than re-worded here.
+            for finding in &report.unadopted {
+                let path = finding
+                    .location
+                    .as_ref()
+                    .and_then(|l| l.address.as_deref())
+                    .unwrap_or("<unaddressed>");
+                out.push_str(&format!("  unadopted  {path}\n"));
                 out.push_str(&format!("    {}: {}\n", finding.code, finding.message));
                 if let Some(route) = &finding.route {
                     out.push_str(&format!("    route: {route}\n"));
