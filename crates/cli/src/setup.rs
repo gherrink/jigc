@@ -2035,6 +2035,10 @@ fn uninstall(
 
     let jigc_dir = repo_root.join(".jigc");
     if jigc_dir.exists() {
+        // Name the loss BEFORE the removal ([`narrate_teardown`], law 1) — the guards above
+        // either cleared this tree or `force` consented past them, and neither is a reason to
+        // destroy bytes in silence.
+        narrate_teardown(repo_root);
         std::fs::remove_dir_all(&jigc_dir).map_err(|err| {
             Finding::block(
                 "uninstall.remove-jigc",
@@ -2234,22 +2238,8 @@ fn prune_empty_dirs(repo_root: &Path, artifact: &Path, keep: &[PathBuf]) {
 /// irreversible, committed `discard --force` that clears nothing. Only the registered set can
 /// tell the two apart, so it is read here and answered in [`dirty_worktree_finding`].
 fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Finding> {
-    let worktrees_root = repo_root.join(".jigc").join("worktrees");
-    if !worktrees_root.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut paths: Vec<PathBuf> = Vec::new();
-    let entries = std::fs::read_dir(&worktrees_root)
+    let paths = fanout_worktree_paths(repo_root)
         .map_err(|err| unverified_worktrees_finding(anyhow::Error::new(err)))?;
-    for entry in entries {
-        let entry = entry.map_err(|err| unverified_worktrees_finding(anyhow::Error::new(err)))?;
-        let path = entry.path();
-        if path.is_dir() {
-            paths.push(path);
-        }
-    }
-    // Sorted, so the refusal's listing does not vary with readdir order.
-    paths.sort();
 
     let mut holds: Vec<HeldWorktreePath> = Vec::new();
     for path in paths {
@@ -2283,6 +2273,69 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Fin
         }
     }
     Ok(holds)
+}
+
+/// Every worktree-shaped path under `<repo>/.jigc/worktrees/` — the subject both this
+/// door's refusal ([`dirty_fanout_worktrees`]) and its loss narration ([`narrate_teardown`])
+/// work over, enumerated once so the two cannot drift into disagreeing about which paths the
+/// teardown takes.
+///
+/// **Sorted**, so neither surface varies with readdir order. An absent root is the empty set,
+/// so the no-fan-out teardown (and the idempotent second run over an already-removed
+/// `.jigc/`) short-circuits before any `git` call.
+fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let worktrees_root = repo_root.join(".jigc").join("worktrees");
+    if !worktrees_root.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut paths: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(&worktrees_root)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+/// Name what `remove_dir_all(<repo>/.jigc)` is about to destroy, on stderr, **before** it
+/// runs — [`crate::milestone::DESTROYING_DOORS`]' narration law at this door
+/// (`design/surface-contract.md` → law 1: a door that exits 0 must not also have silently
+/// destroyed work). Until M46 Inc 2 this teardown reported only `- removed .jigc/`.
+///
+/// Its two subjects are exactly the two the guards in [`uninstall`] refuse on, and for the
+/// same reason: the tree holds the sole copy of both. So the narration is **not** conditional
+/// on `force` — `force` is what skips the *guards* — and a teardown those guards cleared
+/// still takes any gitignored byte their probe deliberately does not look at (the *visible,
+/// not prevented* bound: `crate::milestone::narrate_removal`).
+///
+/// Best-effort throughout: an unreadable workbench yields no warning rather than failing a
+/// teardown that has already been cleared to run.
+fn narrate_teardown(repo_root: &Path) {
+    for path in fanout_worktree_paths(repo_root).unwrap_or_default() {
+        crate::milestone::narrate_removal(&path);
+    }
+    // The second subject, which no worktree probe can see: `.jigc/tasks/<id>/docs/*.md` is in
+    // no object DB at all. A door that names only half of what it takes is a law-1
+    // half-truth, so the set [`staged_task_prose`] refuses on is the set named here.
+    let Ok(staged) = staged_task_prose(repo_root) else {
+        return;
+    };
+    if staged.is_empty() {
+        return;
+    }
+    let listing: Vec<String> = staged
+        .iter()
+        .map(|(task, docs)| format!("    {task}: {}", docs.join(", ")))
+        .collect();
+    eprintln!(
+        "warning: removing `.jigc/` discards the staged docs of {} open task(s), which no commit \
+         has a copy of:\n{}\n  note: the workbench is the only copy of those bytes — they are \
+         not recoverable.",
+        staged.len(),
+        listing.join("\n"),
+    );
 }
 
 /// One worktree-shaped path [`uninstall`] would destroy, and what git can say about it —

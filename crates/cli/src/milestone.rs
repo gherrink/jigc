@@ -1707,6 +1707,11 @@ fn provision_worktrees(
     for (path, reuse) in plan {
         if !reuse {
             if path.exists() {
+                // Name the loss BEFORE the removal ([`narrate_removal`], law 1). Phase 1
+                // refused on any content unless `force`, so reaching here over a non-empty
+                // path means the operator consented — and consent is a reason to proceed,
+                // never a reason to destroy in silence.
+                narrate_removal(&path);
                 std::fs::remove_dir_all(&path)
                     .with_context(|| format!("could not clear the stale worktree dir {path:?}"))?;
             }
@@ -1783,39 +1788,78 @@ pub const LEFTOVER_VERDICTS: [LeftoverVerdict; 3] = [
 ];
 
 /// A **destroying door**: a verb that removes a worktree-shaped path under
-/// `.jigc/worktrees/` from disk, and therefore asks [`probe_leftover`] before it does.
+/// `.jigc/worktrees/` from disk.
+///
+/// Every door **narrates** the bytes it is about to take ([`narrate_removal`]) — a door
+/// that destroys what it never named is the law-1 half-truth (`design/surface-contract.md`).
+/// A door reached *before* those bytes could have landed anywhere also **refuses** first,
+/// and [`DestroyingDoor::code`] carries that refusal's identity; it is the axis's
+/// refuse-vs-narrate discriminator, so a narrate-only door cannot be given a refusal code it
+/// does not emit.
 pub struct DestroyingDoor {
     /// The verb line the refusal names — the door the reader is standing at.
     pub verb: &'static str,
-    /// The **door-scoped** blocking finding code its refusal carries, so a reader can tell
-    /// which door refused without parsing prose.
-    pub code: &'static str,
+    /// `Some(code)` — the **door-scoped** blocking finding code its refusal carries, so a
+    /// reader can tell which door refused without parsing prose.
+    ///
+    /// `None` — the door does not refuse ([`FINALIZE_DOOR`]): the boundary it stands at has
+    /// already committed the staged set, so what the removal takes is by definition what no
+    /// commit was ever going to carry, and a refusal there would fire on the ordinary
+    /// fan-out **success** path and train `--force` into reflex (M46 Inc 2, *"Refusal stays
+    /// refused, on measured evidence"*). **Declared cost:** at that door the loss is made
+    /// visible, not prevented.
+    pub code: Option<&'static str>,
 }
+
+/// [`PROVISION_DOOR`]'s blocking identity, named separately so its refusal producer
+/// ([`leftover_finding`]) reads the code without unwrapping the axis discriminator.
+const PROVISION_CODE: &str = "milestone.leftover-holds-work";
+
+/// [`DISCARD_DOOR`]'s blocking identity — [`dirty_worktree_finding`]'s, same reason.
+const DISCARD_CODE: &str = "milestone.dirty-worktree";
 
 /// `jigc milestone provision`'s door — it deletes a leftover at each sub-task's worktree
 /// path before `git worktree add`.
 pub const PROVISION_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc milestone provision",
-    code: "milestone.leftover-holds-work",
+    code: Some(PROVISION_CODE),
 };
 
 /// `jigc milestone discard`'s door — the abandon teardown removes the fan-out worktrees.
 pub const DISCARD_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc milestone discard",
-    code: "milestone.dirty-worktree",
+    code: Some(DISCARD_CODE),
 };
 
 /// `jigc uninstall`'s door — `remove_dir_all(<repo>/.jigc)` takes the worktrees with it.
 pub const UNINSTALL_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc uninstall",
-    code: "uninstall.dirty-worktree",
+    code: Some("uninstall.dirty-worktree"),
 };
 
-/// The destroying-door axis — the three verbs that remove a worktree-shaped path, minted
+/// `jigc milestone finalize`'s door — the **landed** boundary tears the fan-out worktrees
+/// down once the commit is in ([`remove_worktrees`]).
+///
+/// The fourth member, and the one that never refuses. It was outside the table while the
+/// table's subject was *refusal*, which left the door that destroys bytes on the ordinary
+/// success path unrepresented on the very axis minted to enumerate destroying doors — so the
+/// table's subject is now *destruction*, and the refusal is a property of a member
+/// ([`DestroyingDoor::code`]).
+pub const FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
+    verb: "jigc milestone finalize",
+    code: None,
+};
+
+/// The destroying-door axis — the four verbs that remove a worktree-shaped path, minted
 /// code-side beside the verdicts they ask about so the acceptance iterates the door × verdict
-/// matrix rather than a hand-written cell list.
-pub const DESTROYING_DOORS: [&DestroyingDoor; 3] =
-    [&PROVISION_DOOR, &DISCARD_DOOR, &UNINSTALL_DOOR];
+/// matrix rather than a hand-written cell list. The refusal cells iterate the members whose
+/// [`DestroyingDoor::code`] is `Some`; the narration cells iterate all four.
+pub const DESTROYING_DOORS: [&DestroyingDoor; 4] = [
+    &PROVISION_DOOR,
+    &DISCARD_DOOR,
+    &UNINSTALL_DOOR,
+    &FINALIZE_DOOR,
+];
 
 /// Which [`LeftoverVerdict`] `path` falls in — one `git rev-parse --show-toplevel` run
 /// **inside** it.
@@ -1919,7 +1963,7 @@ fn leftover_finding(milestone_id: &str, path: &Path, hold: &LeftoverHold) -> Fin
     let address = path.display().to_string();
     Finding::graded(
         Severity::Blocking,
-        PROVISION_DOOR.code,
+        PROVISION_CODE,
         format!(
             "milestone:{milestone_id}: `{address}` already holds {} item(s) that `{}` would \
              delete — {because}:\n{}",
@@ -2337,7 +2381,7 @@ fn dirty_worktree_finding(milestone_id: &str, held: &[HeldWorktree]) -> Finding 
     let address = held[0].path.display().to_string();
     Finding::graded(
         Severity::Blocking,
-        DISCARD_DOOR.code,
+        DISCARD_CODE,
         format!(
             "milestone:{milestone_id}: {} sub-task worktree path(s) hold content, and `{}` would \
              settle the record and tear the workbench down over them:\n{}",
@@ -3195,21 +3239,9 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
             continue;
         };
         // Name the loss BEFORE the removal (law 1 — nothing lies: a boundary that exits 0
-        // must not also have silently destroyed work). Best-effort: an unreadable status
-        // yields no warning and never blocks a commit that already landed.
-        let discarded = discarded_work(&path).unwrap_or_default();
-        if !discarded.is_empty() {
-            let listing: Vec<String> = discarded
-                .iter()
-                .map(|work| format!("    {} ({})", work.path, work.state.label()))
-                .collect();
-            eprintln!(
-                "warning: removing the fan-out worktree {path_str} discards work that is not in \
-                 git:\n{}\n  note: the worktree is the only copy of these bytes — they are not \
-                 recoverable.",
-                listing.join("\n"),
-            );
-        }
+        // must not also have silently destroyed work), through the emitter every destroying
+        // door shares.
+        narrate_removal(&path);
         if let Err(err) = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]) {
             // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
             eprintln!(
@@ -3778,6 +3810,89 @@ fn discarded_work(worktree: &Path) -> Result<Vec<render::DiscardedWork>> {
     }
     discarded.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(discarded)
+}
+
+/// What a destroying door is about to destroy at a worktree-shaped path, in the shape the
+/// narration prints — the **narration** counterpart of [`probe_leftover`], which is the
+/// **refusal** one. Both dispatch on the same [`classify_leftover`] verdict, so neither
+/// surface claims more about a path than git can say about it.
+struct Doomed {
+    /// How the path can honestly be named: git reads it as a worktree of its own, or it
+    /// cannot read it at all. Calling a directory nothing vouches for a *worktree* is the
+    /// law-1 lie the refusals already avoid ([`dirty_worktree_finding`]), and the narration
+    /// is not exempt from it.
+    subject: &'static str,
+    /// One line per doomed item — the `git status` path plus its [`render::DiscardState`]
+    /// label where git can read the worktree, the directory's sorted child names where it
+    /// cannot.
+    lines: Vec<String>,
+}
+
+/// Probe what a removal at `path` would take. An empty `lines` means the removal destroys
+/// nothing that is not already in git: an absent path, an empty directory, or a worktree
+/// whose whole content is staged.
+fn doomed_at(path: &Path) -> Result<Doomed> {
+    const WORKTREE: &str = "fan-out worktree";
+    if !path.exists() {
+        return Ok(Doomed {
+            subject: WORKTREE,
+            lines: Vec::new(),
+        });
+    }
+    match classify_leftover(path) {
+        LeftoverVerdict::OwnWorktree => Ok(Doomed {
+            subject: WORKTREE,
+            lines: discarded_work(path)?
+                .into_iter()
+                .map(|work| format!("{} ({})", work.path, work.state.label()))
+                .collect(),
+        }),
+        // Nothing vouches for these bytes, so nothing may be claimed about them beyond their
+        // names — the [`child_names`] listing the two fail-closed refusals already print.
+        LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => Ok(Doomed {
+            subject: "leftover directory",
+            lines: child_names(path)?,
+        }),
+    }
+}
+
+/// Name the bytes a destroying door is about to remove, on stderr, **before** it removes
+/// them — the law-1 minimum every member of [`DESTROYING_DOORS`] owes
+/// (`design/surface-contract.md`: a door that exits 0 must not also have silently destroyed
+/// work).
+///
+/// **One emitter for all four doors**, not one per door. `finalize` and `discard` narrated
+/// from M47 Inc 3 while `jigc milestone provision --force` cleared a leftover in silence and
+/// `jigc uninstall --force` removed `.jigc/` reporting only `- removed .jigc/` — and three
+/// call sites of one rule drift, so a fourth door would have arrived with a fourth phrasing.
+///
+/// **Best-effort**: an unreadable path yields no warning rather than failing the door. The
+/// narration is surface *over* removals the refusals already cleared or the operator already
+/// consented to, never itself a gate — which is the declared bound stated plainly: at these
+/// doors the loss is made **visible, not prevented**.
+///
+/// `pub(crate)` for `crate::setup::uninstall`, whose `remove_dir_all(<repo>/.jigc)` takes
+/// exactly these paths with it.
+pub(crate) fn narrate_removal(path: &Path) {
+    let Ok(doomed) = doomed_at(path) else {
+        return;
+    };
+    if doomed.lines.is_empty() {
+        return;
+    }
+    let listing: Vec<String> = doomed
+        .lines
+        .iter()
+        .map(|line| format!("    {line}"))
+        .collect();
+    eprintln!(
+        "warning: removing the {} {} discards work that is not in git:\n{}\n  note: the {} is \
+         the only copy of these bytes — they are not recoverable.",
+        doomed.subject,
+        path.display(),
+        listing.join("\n"),
+        doomed.subject,
+    );
 }
 
 /// Assemble the landed-boundary facts for [`render::milestone_finalized`] (C2), read

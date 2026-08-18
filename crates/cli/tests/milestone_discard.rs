@@ -57,6 +57,15 @@
 //!              the refusal must therefore say.
 
 use cli::milestone::DISCARD_DOOR;
+
+/// [`DISCARD_DOOR`]'s blocking refusal code. Since M46 Inc 2 the door table's `code` is the
+/// axis's **refuse-vs-narrate discriminator** (`jigc milestone finalize` joined it and
+/// carries no refusal), so a refusing door's code is read through its `Some`.
+fn discard_code() -> &'static str {
+    DISCARD_DOOR
+        .code
+        .expect("`jigc milestone discard` is a refusing door")
+}
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -426,9 +435,9 @@ fn a_non_registered_leftover_at_a_subtask_worktree_path_refuses_the_discard() {
         String::from_utf8_lossy(&out.stdout),
     );
     assert!(
-        stderr.contains(DISCARD_DOOR.code),
+        stderr.contains(discard_code()),
         "the refusal carries the door-scoped code `{}`; stderr:\n{stderr}",
-        DISCARD_DOOR.code,
+        discard_code(),
     );
     assert!(
         stderr.contains(&leftover.display().to_string()),
@@ -533,7 +542,7 @@ fn discard_long_help_states_the_widened_refusal_and_what_force_really_does() {
 
     for needle in [
         // the refusal, by the code it carries and the paths it probes …
-        DISCARD_DOOR.code,
+        discard_code(),
         ".jigc/worktrees/",
         // … its real subject: any content the door cannot prove disposable, committed included,
         // and the ordinary way an unregistered path gets there …

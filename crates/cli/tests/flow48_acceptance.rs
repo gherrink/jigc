@@ -13,14 +13,18 @@
 //! repro the trial reported. Where the wave found no registry it **minted** one, and the
 //! arms below consume the mints rather than re-typing their contents.
 //!
-//! The six arms — eight `#[test]`s over the real binary, since arms 1 and 6 each carry two
-//! cells that need their own fixture world:
+//! The six arms — nine `#[test]`s over the real binary, since arm 6 carries two cells that
+//! need their own fixture world and arm 1 carries three:
 //!
-//!   (1) **No destroying door takes work it cannot prove is junk** — the axis is the
-//!       code-side [`cli::milestone::DESTROYING_DOORS`] × [`cli::milestone::LEFTOVER_VERDICTS`]
-//!       matrix (3 × 3), plus `uninstall`'s authored-prose cell: every cell refuses with
-//!       **that door's** blocking code, leaves the planted bytes byte-intact, and names
-//!       `--force` — which is then driven and is the only way past (Inc 1).
+//!   (1) **No destroying door takes work it cannot prove is junk, and none removes bytes it
+//!       did not name** — the axis is the code-side [`cli::milestone::DESTROYING_DOORS`] ×
+//!       [`cli::milestone::LEFTOVER_VERDICTS`] matrix, plus `uninstall`'s authored-prose
+//!       cell: every cell refuses with **that door's** blocking code, leaves the planted
+//!       bytes byte-intact, and names `--force` — which is then driven and is the only way
+//!       past (Inc 1). The refusal matrix iterates the **refusing subset** (3 × 3); the
+//!       narration cell iterates all four doors, since M46 Inc 2 made the table's subject
+//!       *destruction* and admitted `jigc milestone finalize`, which destroys on the
+//!       ordinary success path and never refuses.
 //!
 //!   (2) **An authoring step cannot ship without naming the read-back, and the read it
 //!       names runs** — the owe-set is re-derived from **both** loaded packs
@@ -98,8 +102,9 @@
 //! `JIGC_PACK_DIR` scrubbed); the arms that need **worktrees** build their repos fresh —
 //! `TrialCorpus::copy_state` refuses a worktree-bearing corpus by design
 //! ([pinning.md](../../../implementation/pinning.md) §4: a copied `.git/worktrees/*/gitdir`
-//! holds absolute paths back into the source), so arm 1's nine cells and arm 6's fan-out
-//! doors mint their fixtures per cell. Cost accepted at planning.
+//! holds absolute paths back into the source), so arm 1's nine refusal cells, its four
+//! narration cells and arm 6's fan-out doors mint their fixtures per cell. Cost accepted at
+//! planning.
 
 use crate::support;
 
@@ -107,7 +112,10 @@ use clap::CommandFactory;
 use cli::cli::{
     CURATED_SIBLING_TIPS, Cli, PARENT_READ_ANSWERS, READ_INTENT_GUESSES, VerbKind, verb_kind,
 };
-use cli::milestone::{DESTROYING_DOORS, DestroyingDoor, LEFTOVER_VERDICTS, LeftoverVerdict};
+use cli::milestone::{
+    DESTROYING_DOORS, DestroyingDoor, LEFTOVER_VERDICTS, LeftoverVerdict, PROVISION_DOOR,
+    UNINSTALL_DOOR,
+};
 use cli::pack::{CompositePack, EmbeddedPack};
 use cli::render::{ConfigAck, STORE_EXIT_FLIPS};
 use cli::setup::GuideOwnership;
@@ -402,11 +410,17 @@ fn plant_cells(verdict: LeftoverVerdict, count: usize) -> Vec<LeftoverCell> {
     cells
 }
 
-/// The argv that drives one destroying door at the planted milestone, and what must be
-/// true of the repo once `--force` has been given — the door's **own** post-condition,
-/// since the three teardowns do genuinely different things with consent (`provision`
-/// clears and re-provisions the path, `uninstall` removes `.jigc/` whole, and `discard`
-/// removes the worktrees this repo **registered** and leaves every other path on disk).
+/// The argv that drives one **refusing** destroying door at the planted milestone, and what
+/// must be true of the repo once `--force` has been given — the door's **own**
+/// post-condition, since the three teardowns do genuinely different things with consent
+/// (`provision` clears and re-provisions the path, `uninstall` removes `.jigc/` whole, and
+/// `discard` removes the worktrees this repo **registered** and leaves every other path on
+/// disk).
+///
+/// Its domain is the members whose [`DestroyingDoor::code`] is `Some` — the refusal matrix
+/// below iterates exactly those. [`cli::milestone::FINALIZE_DOOR`] has no refusal to drive
+/// and no `--force` to give; it is reached by the **narration** cell, which iterates all
+/// four.
 fn door_drive(door: &DestroyingDoor) -> (Vec<String>, fn(&LeftoverCell)) {
     match door.verb {
         "jigc milestone provision" => {
@@ -458,8 +472,14 @@ fn door_drive(door: &DestroyingDoor) -> (Vec<String>, fn(&LeftoverCell)) {
 ///
 /// The axis is two code-side tables minted beside the classifier they describe
 /// ([`DESTROYING_DOORS`] × [`LEFTOVER_VERDICTS`]): a fourth verdict cannot be added
-/// without this arm failing to compile, and a fourth destroying door is a hard panic
-/// here rather than a silent gap. Per cell, through the real binary: the door **refuses**
+/// without this arm failing to compile, and a destroying door added to the table is a hard
+/// panic here rather than a silent gap.
+///
+/// **The refusal matrix iterates the refusing subset**, not the whole table (M46 Inc 2 T3):
+/// since `jigc milestone finalize` joined the axis, membership means *destroys*, and
+/// [`DestroyingDoor::code`] is the discriminator that says which members also *refuse*. A
+/// door with no refusal is covered by the narration cell below, which iterates all four.
+/// Per refusing cell, through the real binary: the door **refuses**
 /// non-zero carrying *its own* blocking code, names the path and what is in it, routes at
 /// the consent flag, and leaves the planted bytes **byte-intact** — then `--force` is
 /// driven and the door proceeds, so consent is proven to be the only way past rather than
@@ -473,20 +493,34 @@ fn door_drive(door: &DestroyingDoor) -> (Vec<String>, fn(&LeftoverCell)) {
 fn no_destroying_door_takes_work_it_cannot_prove_is_junk() {
     assert_eq!(
         DESTROYING_DOORS.len(),
-        3,
+        4,
         "the axis is the code-side destroying-door table",
     );
-    let codes: BTreeSet<&str> = DESTROYING_DOORS.iter().map(|door| door.code).collect();
+    let refusing: Vec<&DestroyingDoor> = DESTROYING_DOORS
+        .iter()
+        .copied()
+        .filter(|door| door.code.is_some())
+        .collect();
+    let codes: BTreeSet<&str> = refusing.iter().filter_map(|door| door.code).collect();
     assert_eq!(
         codes.len(),
-        DESTROYING_DOORS.len(),
-        "one blocking code per door — a shared identity makes a refusal unattributable",
+        refusing.len(),
+        "one blocking code per refusing door — a shared identity makes a refusal \
+         unattributable",
+    );
+    assert!(
+        refusing.len() < DESTROYING_DOORS.len(),
+        "the table's subject is destruction, not refusal — a door that only narrates is a \
+         member, and the narration cell is what reaches it",
     );
 
     for verdict in LEFTOVER_VERDICTS {
-        let mut cells = plant_cells(verdict, DESTROYING_DOORS.len());
-        for (door, cell) in DESTROYING_DOORS.iter().zip(cells.iter_mut()) {
+        let mut cells = plant_cells(verdict, refusing.len());
+        for (door, cell) in refusing.iter().zip(cells.iter_mut()) {
             let verb = door.verb;
+            let code = door
+                .code
+                .expect("the refusal matrix iterates refusing doors only");
             let (driven, forced_postcondition) = door_drive(door);
             let argv: Vec<&str> = driven.iter().map(String::as_str).collect();
 
@@ -498,10 +532,9 @@ fn no_destroying_door_takes_work_it_cannot_prove_is_junk() {
                  junk; got:\n{text}",
             );
             assert!(
-                text.contains(door.code),
-                "[{verb} · {verdict:?}] the refusal must carry THIS door's code `{}`; \
+                text.contains(code),
+                "[{verb} · {verdict:?}] the refusal must carry THIS door's code `{code}`; \
                  got:\n{text}",
-                door.code,
             );
             assert!(
                 text.contains("precious.txt"),
@@ -531,6 +564,240 @@ fn no_destroying_door_takes_work_it_cannot_prove_is_junk() {
                 printed(&out),
             );
             forced_postcondition(cell);
+        }
+    }
+}
+
+/// The `!!` plant — a path git **ignores**. No commit could ever carry it, and every
+/// destroying door deletes it exactly as hard as tracked bytes.
+const PLANTED_IGNORED: &str = "secrets.env";
+
+/// The `??` plant — a path git merely does not track. It is also what the three refusing
+/// doors refuse on, so one fixture witnesses both halves of this cell.
+///
+/// Kept at the worktree **root**: the refusal probe is `git status --porcelain` in git's
+/// default collapse, which reports a wholly-untracked directory as the single entry
+/// `notes/`. The refusal probe is deliberately untouched by this cell, so the plant is
+/// placed where both probes name the same bytes.
+const PLANTED_UNTRACKED: &str = "scratch.rs";
+
+/// [`init_repo`] plus a **committed** ignore rule, so every fan-out worktree's checkout
+/// inherits it — the `!!` plant needs a rule that is in the tree, not in the main
+/// checkout's untracked scratch. Committed before the milestone mint, which pins its base.
+fn init_repo_ignoring(root: &Path) {
+    init_repo(root);
+    fs::write(root.join(".gitignore"), format!("{PLANTED_IGNORED}\n")).expect("write .gitignore");
+    git_ok(root, &["add", ".gitignore"]);
+    git_ok(root, &["commit", "-q", "-m", "ignore the secret"]);
+}
+
+/// Stage a sub-task's authored `commit:<sub>` doc + its provenance bit into
+/// `.jigc/tasks/<sub>/docs/` — the sub-task contribution a `finalize` promotes, and (the
+/// same bytes, a different door's subject) the authored prose `uninstall` destroys.
+fn stage_subtask_commit(repo: &Path, sub: &str) {
+    let address = format!("commit:{sub}");
+    let docs = repo.join(".jigc").join("tasks").join(sub).join("docs");
+    fs::create_dir_all(&docs).expect("mk the sub-task docs area");
+    fs::write(
+        docs.join(format!("{address}.md")),
+        format!(
+            "---\ntype: feat\n---\n\n# {sub}\n\n## Summary\n\nrework {sub}\n\n## Body\n\n\n\n## \
+             Trailers\n"
+        ),
+    )
+    .expect("write the staged commit doc");
+    let manifest = docs.join("provenance.json");
+    let mut record: Value = match fs::read_to_string(&manifest) {
+        Ok(text) => serde_json::from_str(&text).expect("the provenance manifest parses"),
+        Err(_) => serde_json::json!({ "docs": {} }),
+    };
+    record["docs"][&address] = Value::String("created".to_string());
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&record).expect("serialize the provenance manifest"),
+    )
+    .expect("write the provenance manifest");
+}
+
+/// Write + `git add` a file **inside** a provisioned fan-out worktree — the staged code
+/// that gives a `finalize` work to land, so it reaches its teardown instead of refusing
+/// `milestone.zero-contribution` first.
+fn stage_in_worktree(repo: &Path, sub: &str, rel: &str, body: &str) {
+    let wt = repo.join(".jigc").join("worktrees").join(sub);
+    let path = wt.join(rel);
+    fs::create_dir_all(path.parent().expect("the plant has a parent")).expect("mk the parent");
+    fs::write(&path, body).expect("write the worktree file");
+    git_ok(&wt, &["add", rel]);
+}
+
+/// Put **both** plants in `area-zed`'s worktree and return the path holding them.
+fn plant_both(repo: &Path) -> PathBuf {
+    let doomed = repo.join(".jigc").join("worktrees").join("area-zed");
+    for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
+        let path = doomed.join(rel);
+        fs::create_dir_all(path.parent().expect("the plant has a parent")).expect("mk the parent");
+        fs::write(&path, "sub-agent WIP\n").expect("write the plant");
+    }
+    doomed
+}
+
+/// One prepared narration cell: a repo whose `area-zed` fan-out worktree holds both plants,
+/// standing in the shape in which `door` actually destroys them.
+struct NarrationCell {
+    repo: PathBuf,
+    home: PathBuf,
+    /// The `area-zed` worktree path — the plants under it must be gone once the door ran,
+    /// or the cell proved a narration over a destruction that never happened.
+    doomed: PathBuf,
+    _keep: Vec<TempDir>,
+}
+
+/// Build the fixture `door` needs to reach its removal.
+///
+/// Three doors take the plain provisioned repo. `provision` cannot: it **reuses** a
+/// registered worktree untouched, so the only shape in which it destroys anything is the one
+/// that produced the defect — a `cp -R` of the repo, whose worktrees are registered at the
+/// *source's* path and nowhere under the copy's own `.jigc/worktrees/`. The source is kept
+/// alive so the copy's checkout still classifies as a worktree git can read.
+fn narration_cell(door: &DestroyingDoor) -> NarrationCell {
+    let home = TempDir::new("narrate-home");
+    let home_path = home.path().to_path_buf();
+    let source = TempDir::new("narrate-src");
+    init_repo_ignoring(source.path());
+    mint_milestone(source.path(), &home_path);
+    for sub in ["area-low", "area-zed"] {
+        stage_subtask_commit(source.path(), sub);
+    }
+    run_jigc_ok(
+        source.path(),
+        &home_path,
+        &["milestone", "provision", "cache-rework"],
+        "`jigc milestone provision`",
+    );
+    stage_in_worktree(source.path(), "area-low", "src/low.rs", "pub fn low() {}\n");
+
+    if door.verb == PROVISION_DOOR.verb {
+        let copies = TempDir::new("narrate-copy");
+        let repo = copies.path().join("copy");
+        copy_repo(source.path(), &repo);
+        // Exactly one leftover, or the refusal is not attributable to the planted path.
+        fs::remove_dir_all(repo.join(".jigc").join("worktrees").join("area-low"))
+            .expect("drop the copy's other worktree");
+        let doomed = plant_both(&repo);
+        return NarrationCell {
+            repo,
+            home: home_path,
+            doomed,
+            _keep: vec![copies, source, home],
+        };
+    }
+    let repo = source.path().to_path_buf();
+    let doomed = plant_both(&repo);
+    NarrationCell {
+        repo,
+        home: home_path,
+        doomed,
+        _keep: vec![source, home],
+    }
+}
+
+/// The argv that drives one destroying door to its removal — **without** the consent flag,
+/// which the cell appends for the doors that have one.
+fn narration_argv(door: &DestroyingDoor) -> Vec<String> {
+    match door.verb {
+        "jigc milestone provision" => owned(&["milestone", "provision", "cache-rework"]),
+        "jigc milestone discard" => owned(&["milestone", "discard", "cache-rework"]),
+        "jigc uninstall" => owned(&["uninstall"]),
+        "jigc milestone finalize" => owned(&["milestone", "finalize", "cache-rework"]),
+        other => panic!(
+            "`{other}` is a destroying door with no narration fixture in this flow — the axis \
+             is the code-side `DESTROYING_DOORS` table, so a door added there owes its cell here",
+        ),
+    }
+}
+
+/// **Arm 1's third cell** — no destroying door removes bytes it did not name.
+///
+/// The same code-side axis as the refusal matrix, iterated **whole**: since M46 Inc 2 the
+/// table's subject is *destruction*, so `jigc milestone finalize` — the door that destroys on
+/// the ordinary success path and can never refuse — is a member, and every member owes a
+/// narration. Two of the four said nothing at all before this cell: `provision --force`
+/// cleared the leftover silently, and `uninstall --force` removed `.jigc/` printing only
+/// `- removed .jigc/`.
+///
+/// Per door, through the real binary, over a worktree holding **one gitignored file and one
+/// plain untracked file** — the pair that separates the two probes: the refusing doors still
+/// refuse the untracked plant (the guard is untouched, the narration is added surface), and
+/// once driven past, each door names **both** plants and then really does destroy them.
+/// `uninstall` additionally names the authored task prose it takes, the set its own un-forced
+/// guard already refuses on — a door that names only half of what it takes is the law-1
+/// half-truth this cell removes.
+///
+/// **The declared bound rides here rather than being implied:** the ignored axis is a
+/// *narration* axis only. `dirty_worktrees`, the refusal probe, deliberately stays
+/// `--porcelain` without `--ignored` (a provisioned worktree that did its job holds
+/// `target/`-shaped build output, so refusing on it would fire on the ordinary fan-out
+/// success path) — so the loss of an ignored path is made **visible, not prevented**.
+#[test]
+fn every_destroying_door_names_the_bytes_it_is_about_to_destroy() {
+    for door in DESTROYING_DOORS {
+        let verb = door.verb;
+        let cell = narration_cell(door);
+        let base = narration_argv(door);
+
+        // (1) The guard is unchanged: a refusing door still refuses the untracked plant.
+        if let Some(code) = door.code {
+            let argv: Vec<&str> = base.iter().map(String::as_str).collect();
+            let refused = run_jigc(&cell.repo, &cell.home, &argv);
+            let text = printed(&refused);
+            assert!(
+                !refused.status.success(),
+                "[{verb}] the untracked plant must still REFUSE the door; got:\n{text}",
+            );
+            assert!(
+                text.contains(code) && text.contains(PLANTED_UNTRACKED),
+                "[{verb}] the refusal must carry `{code}` and name `{PLANTED_UNTRACKED}`; \
+                 got:\n{text}",
+            );
+        }
+
+        // (2) Driven to the removal, the door names what it is about to take.
+        let mut driven = base;
+        if door.code.is_some() {
+            driven.push("--force".to_string());
+        }
+        let argv: Vec<&str> = driven.iter().map(String::as_str).collect();
+        let out = run_jigc(&cell.repo, &cell.home, &argv);
+        let text = printed(&out);
+        assert!(
+            out.status.success(),
+            "[{verb}] the door must reach its removal at exit 0; got:\n{text}",
+        );
+        assert!(
+            text.contains(PLANTED_UNTRACKED),
+            "[{verb}] the door must name the untracked path it destroys; got:\n{text}",
+        );
+        assert!(
+            text.contains(PLANTED_IGNORED),
+            "[{verb}] the door must name the gitignored path it destroys — no commit could \
+             ever carry it, and the removal takes it just as hard; got:\n{text}",
+        );
+        if verb == UNINSTALL_DOOR.verb {
+            assert!(
+                text.contains("commit:area-zed"),
+                "[{verb}] the teardown must ALSO name the authored task prose it destroys — \
+                 the set its own un-forced guard refuses on; got:\n{text}",
+            );
+        }
+
+        // (3) Non-vacuity: the bytes really are gone, so the narration was about a real
+        // destruction (visible, not prevented — the declared bound).
+        for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
+            assert!(
+                !cell.doomed.join(rel).exists(),
+                "[{verb}] the door must really have destroyed `{rel}`, or this cell proves a \
+                 narration over nothing",
+            );
         }
     }
 }

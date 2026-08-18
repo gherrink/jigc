@@ -18,6 +18,14 @@
 //! teardown with `uninstall.dirty-worktree`, naming each path and its porcelain
 //! entries, routed at the already-shipped escape hatch.
 //!
+//! **And what the guards let through, the teardown names** (M46 Inc 2 T3). `uninstall` is a
+//! member of `cli::milestone::DESTROYING_DOORS`, and every member owes the loss narration
+//! law 1 requires: it removes `.jigc/` with `remove_dir_all`, so whatever the two guards do
+//! not refuse on is destroyed exactly as hard as what they do. That is observable precisely
+//! where no refusal fires — a worktree holding nothing but **gitignored** bytes, which the
+//! refusal probe deliberately does not look at — so the narration is not gated on `--force`
+//! and the last cell below drives the ordinary clean teardown.
+//!
 //! **The acceptance iterates the rejection-cause axis, not one repro** — the promised-safe
 //! state is reachable through each of the three ways the fan-out boundary can refuse
 //! (`milestone_abort_survives.rs`' axis: an aggregate-hook rejection, a per-sub-task-hook
@@ -1059,4 +1067,58 @@ fn uninstall_route_keeps_the_abandon_arm_where_this_repo_registered_the_path() {
             "[{label}] the teardown must complete once the route is followed",
         );
     }
+}
+
+/// **The teardown names what its guards let through** (M46 Inc 2 T3 — the narration law at
+/// this door; `design/surface-contract.md` → law 1).
+///
+/// The refusal probe deliberately stays `git status --porcelain` **without** `--ignored`, on
+/// measured evidence: a provisioned worktree arrives tracked-only while the sub-task walk
+/// tells the agent to build and test, so refusing on the ignored axis would fire on the
+/// ordinary fan-out **success** path and train `--force` into reflex. A worktree holding
+/// nothing but gitignored build output therefore **clears both guards** — and
+/// `remove_dir_all(<repo>/.jigc)` then destroys it just as hard as anything else.
+///
+/// So the declared bound is *visible, not prevented*, and this is the cell where it is
+/// observable: the teardown exits 0, removes the tree, and **names the ignored bytes first**.
+/// It is driven **without** `--force`, which is what pins that the narration is not the
+/// consent path's decoration — `--force` skips the guards, never the naming.
+#[test]
+fn the_clean_teardown_still_names_the_ignored_bytes_it_destroys() {
+    let repo = TempDir::new("ignored");
+    init_repo(repo.path());
+    // The ignore rule has to be IN THE TREE: a fan-out worktree checks out the milestone's
+    // base commit, so a rule sitting in the main checkout's untracked scratch never reaches
+    // it. Committed before the mint, which pins that base.
+    fs::write(repo.path().join(".gitignore"), "secrets.env\n").expect("write .gitignore");
+    git_ok(repo.path(), &["add", ".gitignore"]);
+    git_ok(repo.path(), &["commit", "-q", "-m", "ignore the secret"]);
+    let home = TempDir::new("home");
+
+    // Clean worktrees, no staged prose — neither guard has a subject.
+    setup_fanout(repo.path(), home.path(), false, false);
+    let ignored = worktree_dir(repo.path(), "area-low").join("secrets.env");
+    fs::write(&ignored, "TOKEN=hunter2\n").expect("plant the ignored file");
+
+    let out = run_uninstall(repo.path(), home.path());
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "an ignored-only worktree must not block the teardown — the refusal probe stays \
+         `--porcelain`; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("secrets.env") && stderr.contains("ignored by git"),
+        "the teardown must NAME the gitignored bytes it destroys, and not mislabel a file \
+         that was never staged; stderr:\n{stderr}",
+    );
+    assert!(
+        !repo.path().join(".jigc").exists(),
+        "the teardown still removes `.jigc/` — visible, not prevented",
+    );
+    assert!(
+        !ignored.exists(),
+        "the narrated bytes really are destroyed, or this cell proves a warning over nothing",
+    );
 }

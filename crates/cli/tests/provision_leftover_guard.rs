@@ -44,6 +44,15 @@
 //! Drives the REAL binary — the emitted refusal is the contract, not a reconstructed one.
 
 use cli::milestone::{LEFTOVER_VERDICTS, LeftoverVerdict, PROVISION_DOOR};
+
+/// [`PROVISION_DOOR`]'s blocking refusal code. Since M46 Inc 2 the door table's `code` is
+/// the axis's **refuse-vs-narrate discriminator** (`jigc milestone finalize` joined it and
+/// carries no refusal), so a refusing door's code is read through its `Some`.
+fn provision_code() -> &'static str {
+    PROVISION_DOOR
+        .code
+        .expect("`jigc milestone provision` is a refusing door")
+}
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -321,9 +330,9 @@ fn every_verdict_refuses_a_non_empty_leftover_and_leaves_the_planted_bytes_intac
             String::from_utf8_lossy(&refused.stdout),
         );
         assert!(
-            stderr.contains(PROVISION_DOOR.code),
+            stderr.contains(provision_code()),
             "[{verdict:?}] the refusal must carry the door-scoped code `{}`; got:\n{stderr}",
-            PROVISION_DOOR.code,
+            provision_code(),
         );
         assert!(
             stderr.contains(&f.leftover.display().to_string()),
@@ -390,10 +399,9 @@ fn a_refusal_leaves_every_path_unprovisioned_wherever_the_leftover_sits() {
             refused.status,
         );
         assert!(
-            stderr.contains(PROVISION_DOOR.code)
-                && stderr.contains(&leftover.display().to_string()),
+            stderr.contains(provision_code()) && stderr.contains(&leftover.display().to_string()),
             "[position {position} of {ids:?}] the refusal must carry `{}` and name `{}`; got:\n{stderr}",
-            PROVISION_DOOR.code,
+            provision_code(),
             leftover.display(),
         );
         assert_eq!(
