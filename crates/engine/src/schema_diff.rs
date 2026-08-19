@@ -120,20 +120,23 @@ pub enum SchemaChange {
     /// actually lives (9 of 14 persisted doctypes carry a repeatable; `decisions-log` *is* one
     /// repeatable, so before M42 **zero** content changes to it were migratable).
     ///
-    /// Emitted for a leaf the driver can place **without new prose** — `optional`, or carrying a
-    /// deterministic value (`default`/`set`) — exactly [`classify_added_field`]'s predicate; a
-    /// *required* leaf with no such value is [`Self::ProseNeeding`] `{ leaf: Some }` instead. The
-    /// driver's two arms mirror that split (`design/corpus-migration.md` → The classifier's holes:
-    /// `AddedItemField`, the per-item semantics):
+    /// Emitted for a leaf the conformance gate never asks a doc for — exactly the negation of
+    /// [`crate::validate::is_author_required`], [`classify_added_field`]'s predicate; a leaf it
+    /// *does* ask for, with no value source, is [`Self::ProseNeeding`] `{ leaf: Some }` instead.
+    /// The driver's two arms mirror that split (`design/corpus-migration.md` → The classifier's
+    /// holes: `AddedItemField`, the per-item semantics):
     ///
-    /// - **`default:`/`set:` present** → the value is spliced into **every item that lacks the
+    /// - **`default:` present** → the value is spliced into **every item that lacks the
     ///   bullet**, through [`crate::write::set_item_field_or_insert`] — the **insert-capable**
     ///   primitive (`set_item_field` is *update-only* and refuses an absent bullet, which is every
-    ///   item by definition of this kind).
-    /// - **`optional:` with no default** → a byte **no-op**: an item without the bullet **already
-    ///   conforms**, and inventing an empty bullet would fabricate a value. It still names itself
-    ///   — the backstop requires that of every real change — and folds to zero bytes (the
-    ///   [`Self::WidenedCardinality`] sibling).
+    ///   item by definition of this kind). A caller-threaded deriver rides this arm: it hands its
+    ///   value in *as* a `default` (`with_stamp_default`), and M46 Inc-4 left that untouched.
+    /// - **an absence that already conforms** — `optional:`, an optional `ref`, a pack-declared
+    ///   type, or a `set:` carrying no `default:` — → a byte **no-op**: an item without the bullet
+    ///   **already conforms**, and inventing an empty bullet would fabricate a value. It still
+    ///   names itself — the backstop requires that of every real change — and folds to zero bytes
+    ///   (the [`Self::WidenedCardinality`] sibling); the derived member is reported as unfilled
+    ///   rather than left silent (M46 Inc-4).
     ///
     /// Pre-M42 the item-block loop emitted [`Self::ValueRemapped`] and nothing else, so an added
     /// item field diffed to `[]`: an optional one "migrated by accident" (the stamp flipped and a

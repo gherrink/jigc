@@ -57,6 +57,8 @@ mod migrate_spec;
 mod migrate_workflow;
 #[path = "../record_foreign_arm.rs"]
 mod record_foreign_arm;
+#[path = "../record_set_splice_retired.rs"]
+mod record_set_splice_retired;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
 #[path = "../setup.rs"]
