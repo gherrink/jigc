@@ -89,12 +89,15 @@ fn commit_file(root: &Path, path: &str, body: &str, message: &str) {
     git(root, &["commit", "-q", "-m", message]);
 }
 
-/// Run `jigc <args>` with `cwd = repo` and `$HOME = home`.
+/// Run `jigc <args>` with `cwd = repo` and `$HOME = home`, never inheriting a harness
+/// `JIGC_PACK_DIR` (the `[dev ▸ methodology]` compose-marker path the sub-task arm
+/// below needs requires it ABSENT — `pack.rs`: an explicit pack dir supersedes the marker).
 fn run(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
+        .env_remove("JIGC_PACK_DIR")
         .output()
         .expect("run the jigc binary")
 }
@@ -461,6 +464,45 @@ fn resume_at_its_pin_still_succeeds_and_only_refusals_become_successes() {
     );
 }
 
+/// Write the `[dev ▸ methodology]` compose marker — the composed cascade then resolves
+/// the methodology-pack `milestone-record` schema, so `milestone create` / `add-task` land
+/// the **committed** record a route printed on this milestone must not contradict.
+fn write_compose_marker(repo: &Path) {
+    fs::write(
+        repo.join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write the compose marker");
+}
+
+/// Run `git <args>` in `root`, returning stdout — the **committed** read (`git show
+/// HEAD:<path>`), so the record assertion is over what is committed, never the worktree copy.
+fn git_out(root: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).expect("utf-8 git stdout")
+}
+
+/// Every backticked `` `jigc …` `` span in `text`, in emission order. A route is proven
+/// by running the bytes the surface emitted; a command rebuilt in test code can pass while
+/// the emitted span is unrunnable.
+fn jigc_spans(text: &str) -> Vec<String> {
+    text.split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|span| span.starts_with("jigc "))
+        .map(str::to_string)
+        .collect()
+}
+
 /// Set up one milestone with one sub-task (`do-the-thing`) plus one top-level task
 /// (`top-task`) pinned to the same HEAD — the two unit kinds the per-task doors must
 /// treat differently. `milestone create` commits the record, so both pin to the
@@ -521,14 +563,30 @@ fn milestone_with_a_sub_task_and_a_top_level_task(repo: &Path, home: &Path) {
 /// exactly the un-iterated member — the resume half drove `top-task`, so relaxing resume
 /// unconditionally left the suite green while `jigc start --task do-the-thing` (the
 /// sub-task's own advertised resume door) had become looser than the milestone finalize.
+///
+/// **Revised at M46 Inc 8 (B2-2), not doubled** ([pinning.md](../../../implementation/pinning.md)
+/// §3 addendum, which names this test as the hazard): the *verdict* is unchanged and still
+/// iterated over both doors, while the assertion over the emitted **route** now says what
+/// the route must be rather than what it was. The refusal used to route at `jigc task
+/// discard <sub>`, which exits 0 while the milestone's committed record still calls the
+/// sub-task active — so the route is lifted out of the emitted bytes and **run verbatim**,
+/// and the record, the task list and the working area are read back afterwards: a route
+/// that contradicts the record it leaves standing cannot pass. Both provisioning states are
+/// driven, since the route is offered in both — the trial's unprovisioned one and the
+/// provisioned one M48's leftover classifier guards.
 #[test]
 fn sub_task_read_doors_keep_the_blanket_base_pin_refusal() {
     let repo = TempDir::new("reentry");
     init_repo(repo.path());
+    // `[dev ▸ methodology]`, so the milestone's record is **committed** — the state the
+    // route must not contradict, and the state the trial ran in.
+    write_compose_marker(repo.path());
     let home = TempDir::new("home");
     milestone_with_a_sub_task_and_a_top_level_task(repo.path(), home.path());
 
-    // One disjoint intervening commit moves HEAD under both tasks.
+    // One disjoint intervening commit moves HEAD under the top-level task; under the
+    // sub-task the milestone's own record commits already moved it — the trial's state,
+    // where *seeding* the sub-task is what took it off its pin.
     commit_file(repo.path(), "unrelated.md", "unrelated\n", "unrelated");
 
     // The top-level control: its commit door re-pins over disjoint history, so its read
@@ -540,23 +598,106 @@ fn sub_task_read_doors_keep_the_blanket_base_pin_refusal() {
         String::from_utf8_lossy(&resume.stderr),
     );
 
-    // Every sub-task read door, same repo state, opposite verdict — one message.
+    // Phase 1 — the trial's own state: the milestone is not provisioned yet, and the
+    // emitted span is what provisions it.
+    both_sub_task_doors_refuse_and_route_at_the_worktree(repo.path(), home.path(), "unprovisioned");
+
+    // Phase 2 — the already-provisioned state, which M48's leftover classifier guards at
+    // the same door. Live work planted in the worktree fences the route's own claim that a
+    // second run leaves an existing worktree untouched: a route that destroyed it would be
+    // a worse dead end than the one it replaced.
+    let wip = repo
+        .path()
+        .join(".jigc")
+        .join("worktrees")
+        .join("do-the-thing")
+        .join("wip.txt");
+    fs::write(&wip, "live sub-agent work\n").expect("plant work in the provisioned worktree");
+    both_sub_task_doors_refuse_and_route_at_the_worktree(repo.path(), home.path(), "provisioned");
+    assert_eq!(
+        fs::read_to_string(&wip).ok().as_deref(),
+        Some("live sub-agent work\n"),
+        "the route ran again over a provisioned worktree and must leave its work untouched",
+    );
+}
+
+/// Both sub-task read doors in one provisioning `state`: each refuses, the refusal routes
+/// at neither `jigc task discard <sub>` (which exits 0 while the committed record still
+/// calls the sub-task active) nor at anything but the worktree its work happens in, and
+/// **every emitted `jigc …` span runs verbatim from the state that raised it** and leaves
+/// the committed record, the milestone's task list and the sub-task's working area
+/// exactly as it found them.
+fn both_sub_task_doors_refuse_and_route_at_the_worktree(repo: &Path, home: &Path, state: &str) {
     for argv in [
         ["start", "--task", "do-the-thing"].as_slice(),
         ["workflow", "single-task", "--task", "do-the-thing"].as_slice(),
     ] {
-        let blocked = run(repo.path(), home.path(), argv);
+        let blocked = run(repo, home, argv);
         assert!(
             !blocked.status.success(),
-            "`jigc {}` on a sub-task must keep the blanket refusal; stdout:\n{}",
+            "`jigc {}` on a sub-task must keep the blanket refusal ({state}); stdout:\n{}",
             argv.join(" "),
             String::from_utf8_lossy(&blocked.stdout),
         );
         let err = String::from_utf8(blocked.stderr).expect("utf-8 stderr");
         assert!(
-            err.contains("is pinned to base") && err.contains("jigc task discard do-the-thing"),
-            "`jigc {}` keeps the pinned-to-base prose and discard route; got:\n{err}",
+            err.contains("is pinned to base"),
+            "`jigc {}` keeps the pinned-to-base prose ({state}); got:\n{err}",
             argv.join(" "),
+        );
+        assert!(
+            !err.contains("jigc task discard do-the-thing"),
+            "`jigc {}` must not route at the discard that exits 0 while the committed record \
+             still names the sub-task ({state}); got:\n{err}",
+            argv.join(" "),
+        );
+        assert!(
+            err.contains(".jigc/worktrees/do-the-thing"),
+            "`jigc {}` must name the worktree the sub-task's work actually happens in \
+             ({state}); got:\n{err}",
+            argv.join(" "),
+        );
+
+        // The emitted bytes are the contract: lift each span and run it as printed.
+        let spans = jigc_spans(&err);
+        assert!(
+            !spans.is_empty(),
+            "the refusal must offer a runnable `jigc` span ({state}); got:\n{err}",
+        );
+        for span in &spans {
+            let span_argv: Vec<&str> = span.split_whitespace().skip(1).collect();
+            let ran = run(repo, home, &span_argv);
+            assert!(
+                ran.status.success(),
+                "the emitted span `{span}` must run verbatim from the {state} state that \
+                 raised it; stdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&ran.stdout),
+                String::from_utf8_lossy(&ran.stderr),
+            );
+        }
+
+        // …and having run it, nothing it did contradicts what the record says. This is the
+        // whole defect: the discarding route exited 0 and left the committed record reading
+        // `status: active` over a working area it had just removed.
+        let record = git_out(repo, &["show", "HEAD:docs/milestone-records/rework.md"]);
+        assert!(
+            record.contains("do-the-thing") && record.contains("status: active"),
+            "the committed record still names the sub-task as active after the route ran \
+             ({state}); got:\n{record}",
+        );
+        let listed = run(repo, home, &["milestone", "list-tasks", "rework"]);
+        let listed_out = String::from_utf8_lossy(&listed.stdout).into_owned();
+        assert!(
+            listed.status.success() && listed_out.contains("do-the-thing"),
+            "`milestone list-tasks` still lists the sub-task after the route ran ({state}); \
+             got:\n{listed_out}",
+        );
+        assert!(
+            repo.join(".jigc")
+                .join("tasks")
+                .join("do-the-thing")
+                .is_dir(),
+            "the working area the record calls active must survive the route ({state})",
         );
     }
 }

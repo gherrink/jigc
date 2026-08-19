@@ -659,9 +659,8 @@ fn rename_rejects_route_to_describe() {
 
 // ── the pinned-base mismatch (`start.rs`, the sub-agent re-entry form) ──────────────
 
-/// A milestone sub-task re-entered off its pinned base routes to `git checkout` (not a
-/// jigc span — untouched prose) or `jigc task discard <the concrete id>`, the jigc span
-/// riding the checked constructor with the runtime id in its argv.
+/// The re-entry door's blanket base-pin refusal, over the **unit-kind axis** its route
+/// splits on — every span riding the checked constructor with the runtime id in its argv.
 ///
 /// **Retargeted at M47 Inc 8 T1 (N7):** this arm drove the `jigc start --task` *resume*
 /// door, whose blanket `base != HEAD` refusal is gone — resume now makes the commit
@@ -669,29 +668,59 @@ fn rename_rejects_route_to_describe() {
 /// (the T3 floor, out of this file's scope; pinned in `start_resume.rs`). The **re-entry**
 /// door is the declared non-goal that keeps the blanket refusal — its commit boundary is
 /// the consciously-strict `plan_milestone_finalize` — so it is where this anyhow-embedded
-/// span still lives, byte-identical.
+/// span still lives.
+///
+/// **Re-split at M46 Inc 8 (B2-2):** the door takes no membership decision, so both unit
+/// kinds reach it, and the recovery differs by kind. A **sub-task** routes at the worktree
+/// its work happens in (`jigc milestone provision <m>`) — the discard it used to offer
+/// exits 0 while the milestone's committed record still calls the sub-task active. A
+/// **top-level task** keeps `git checkout` (not a jigc span — untouched prose) and its own
+/// `jigc task discard <id>`, which really is its teardown. The full sub-task behaviour —
+/// both read doors, the emitted span run verbatim, the record left standing — is pinned in
+/// `start_resume::sub_task_read_doors_keep_the_blanket_base_pin_refusal`.
 #[test]
-fn pinned_base_mismatch_routes_to_task_discard() {
+fn pinned_base_mismatch_routes_by_unit_kind() {
     let repo = TempDir::new("pinned");
     let home = TempDir::new("home");
     init_repo(repo.path());
     let sub = mint_subtask(repo.path(), home.path());
+    mint_task(repo.path(), home.path(), "top-task");
 
     fs::write(repo.path().join("more.md"), "more\n").expect("write file");
     git(repo.path(), &["add", "."]);
     git(repo.path(), &["commit", "-q", "-m", "second"]);
 
-    let out = jigc(
+    let sub_out = jigc(
         repo.path(),
         home.path(),
         &["workflow", "single-task", "--task", sub],
     );
     assert_error_contains(
-        &out,
+        &sub_out,
         &[
             &format!("task `{sub}` is pinned to base "),
+            &format!(
+                " — this is a sub-task of milestone `rework`, and a sub-task's work happens in its own worktree at .jigc/worktrees/{sub}, "
+            ),
+            "run `jigc milestone provision rework` — it adds a worktree that is missing and leaves one that exists untouched — then re-run this from that worktree\n",
+        ],
+    );
+    assert!(
+        !String::from_utf8_lossy(&sub_out.stderr).contains(&format!("jigc task discard {sub}")),
+        "a sub-task must not be routed at a discard the milestone's record contradicts",
+    );
+
+    let top_out = jigc(
+        repo.path(),
+        home.path(),
+        &["workflow", "single-task", "--task", "top-task"],
+    );
+    assert_error_contains(
+        &top_out,
+        &[
+            "task `top-task` is pinned to base ",
             " — switch back with `git checkout ",
-            &format!("` or `jigc task discard {sub}`\n"),
+            "` or `jigc task discard top-task`\n",
         ],
     );
 }

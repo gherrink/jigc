@@ -1703,13 +1703,53 @@ pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogE
 /// doors stay blanket-strict rather than making the overlap-aware `decide_base_repin`
 /// decision a top-level task's own `finalize` makes (M47 Inc 8 / N7; `design/storage.md`
 /// → The per-task working area).
-fn blanket_base_pin_refusal(id: &str, pinned: &BasePin, head: &BasePin) -> anyhow::Error {
+///
+/// **The route is per unit kind** (M46 Inc 8 / B2-2 — the pre-1.0.0 trial's own repro,
+/// `RC-1.0-gate/findings-verification.md` §3), because `milestone` says which recovery is
+/// the real one:
+///
+/// - A **sub-task** (`Some(milestone_id)`) is routed at the isolation mechanism its work
+///   actually happens in — `jigc milestone provision <m>` and the worktree at
+///   `.jigc/worktrees/<id>`, cut from the very base this checkout has moved off. The two
+///   routes this arm used to offer were both wrong for the only case it serves: `git
+///   checkout <pin>` detaches the *shared* checkout onto a base the milestone's own record
+///   commits already sit ahead of, and `jigc task discard <sub>` exits 0 while the committed
+///   record still reads `status: active` and `milestone list-tasks` still lists the sub-task
+///   — a route contradicting the record it leaves standing (`surface-contract.md` → law 1).
+///   The provision span is idempotent over both states this refusal is reachable in: it adds
+///   a worktree that is missing and leaves one that exists untouched, so one line fits the
+///   unprovisioned state (the trial's) and the provisioned one M48's leftover classifier
+///   guards.
+/// - A **top-level task** (`None`) can only reach this refusal at the re-entry door
+///   ([`reenter_in_repo`], which takes no membership decision), and there both offered
+///   routes are right — no record names it and its own discard is the real teardown — so
+///   that arm keeps its bytes.
+fn blanket_base_pin_refusal(
+    id: &str,
+    milestone: Option<&str>,
+    pinned: &BasePin,
+    head: &BasePin,
+) -> anyhow::Error {
+    let pinned_to = format!(
+        "task `{id}` is pinned to base {} but you're on {}",
+        pinned.short, head.short,
+    );
+    let Some(milestone_id) = milestone else {
+        return anyhow!(
+            "{pinned_to} — switch back with `git checkout {}` or {}",
+            pinned.short,
+            engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
+        );
+    };
     anyhow!(
-        "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or {}",
-        pinned.short,
-        head.short,
-        pinned.short,
-        engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
+        "{pinned_to} — this is a sub-task of milestone `{milestone_id}`, and a sub-task's work \
+         happens in its own worktree at .jigc/worktrees/{id}, cut from that base rather than in \
+         this checkout: run {}",
+        engine::finding::Route::mechanical(
+            ["jigc", "milestone", "provision", milestone_id],
+            " — it adds a worktree that is missing and leaves one that exists untouched — then \
+             re-run this from that worktree",
+        ),
     )
 }
 
@@ -1775,8 +1815,13 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
     if pinned.sha != head.sha {
         // Read **only on divergence**, like the schema set below: a task at its pin takes
         // the same door it always did, so it pays for no membership scan.
-        if engine::milestone::owning_milestone(&jigc_root, id).is_some() {
-            return Err(blanket_base_pin_refusal(id, &pinned, &head));
+        if let Some(milestone_id) = engine::milestone::owning_milestone(&jigc_root, id) {
+            return Err(blanket_base_pin_refusal(
+                id,
+                Some(&milestone_id),
+                &pinned,
+                &head,
+            ));
         }
         // The schema set the promote-destination half of the footprint needs — loaded
         // only on divergence, so a task at its pin pays nothing for the decision.
@@ -1862,7 +1907,8 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
     // shared `.jigc/`; only the base-pin HEAD read below stays on the worktree
     // `repo_root` — the worktree HEAD == the milestone pin under WF4 (M31 Inc 2 / WF3).
     let jigc_home = jigc_home_or_repo(start)?;
-    let task_dir = jigc_home.join(".jigc").join("tasks").join(id);
+    let jigc_root = jigc_home.join(".jigc");
+    let task_dir = jigc_root.join("tasks").join(id);
     if !task_dir.is_dir() {
         bail!(
             "no task `{id}` — list a milestone's sub-tasks with {}",
@@ -1878,7 +1924,17 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
         .with_context(|| format!("could not read the base pin for task `{id}`"))?;
     let head = read_head(&repo_root)?;
     if pinned.sha != head.sha {
-        return Err(blanket_base_pin_refusal(id, &pinned, &head));
+        // Which unit kind is refusing decides which recovery is the real one — the same
+        // `owning_milestone` membership test the sibling resume door asks, read only on
+        // divergence ([`blanket_base_pin_refusal`]). This door takes no membership decision
+        // of its own, so a top-level task can reach it too, and answers `None`.
+        let milestone_id = engine::milestone::owning_milestone(&jigc_root, id);
+        return Err(blanket_base_pin_refusal(
+            id,
+            milestone_id.as_deref(),
+            &pinned,
+            &head,
+        ));
     }
 
     // The W-equality guard: the requested `<W>` must equal the sub-task's recorded
