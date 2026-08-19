@@ -459,3 +459,333 @@ fn no_m46_entry_is_keyed_at_the_fired_settle_or_rests_on_a_count() {
         failures.join("\n\n"),
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// T4 — the M48 adjudication table's falsified rows are re-disposed *in place*, with the
+// falsifying datum quoted.
+//
+// The M48 table is a **dated record**: it says what was decided on 2026-08-13, against the
+// baseline exercised that day. Five of its twelve rows were later falsified by driving the
+// binary at the M46 razor — 5, 7, 9, 11 at their stated predicate, and 10 re-based off an
+// argument onto measurement — and four of the five were disposed *the other way*. Left
+// bare, the table reads as live guidance: a planner scanning it finds `stay deferred |
+// untouched` against work that has since shipped.
+//
+// The repair is **not** a rewrite. `DECISIONS.md`'s own convention for a dated record whose
+// basis has moved is a dated correction bracket — the falsified basis stays visible beside
+// what falsified it (`DECISIONS.md:998`, `:2376`, `:2771`, `:4706`) — and M47 named the
+// shape a correction has to take when a call is re-taken against its own record: *"a
+// basis-has-changed rebuttal, not an override"* (`DECISIONS.md` → 2026-08-09). So the M48
+// disposition cells stay **byte-exact**, and each falsified row's basis cell gains a dated
+// bracket that (a) names the datum that falsified it, quoted rather than paraphrased, and
+// (b) names the M46 row that re-disposed it, so the reader lands on the live disposition
+// instead of inferring one.
+//
+// The seven untouched rows are pinned by their first two cells, and the table by its row
+// count, so a correction cannot quietly re-key, re-dispose or drop a neighbour — the same
+// guard `ledger_entry_seven_discharged::no_other_entrys_keying_moves` puts on the M46 table
+// below, which keys off the *M46* header and must stay green through this edit.
+//
+// These are ledger-content assertions by nature. The behaviour each quoted datum records is
+// driven elsewhere — `pre_guard_repair_route.rs` (row 7), `file_state_merge_hand_off.rs` +
+// `reconciliation_baseline_contrast.rs` (row 9), `milestone_path_subject.rs` (row 10),
+// `milestone_teardown_loss.rs` (row 11) — which is why this file asserts only that the
+// record says what those suites hold.
+
+/// The **M48** adjudication table only. It sits *above* the M46 table and repeats its entry
+/// keys, so it is found by its own header row — `Basis`, where M46's reads `Basis (exercised
+/// unless marked)`.
+fn m48_table(body: &str) -> String {
+    let marker = "> | # | Disposition | Basis |\n";
+    let start = body
+        .find(marker)
+        .expect("the ledger must carry the M48 adjudication table header");
+    let rest = &body[start + marker.len()..];
+    let end = rest.find("\n>\n").unwrap_or(rest.len());
+    rest[..end].to_string()
+}
+
+fn m48_row<'a>(table: &'a str, key: &str) -> &'a str {
+    let prefix = format!("> | {key} |");
+    table
+        .lines()
+        .find(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("the M48 table must carry a row keyed `{key}`"))
+}
+
+/// The row's **dated** correction bracket — `**[Corrected YYYY-MM-DD …**]**`, the
+/// convention `DECISIONS.md` uses to keep a falsified basis visible beside what falsified
+/// it. An undated `[Corrected …]` is not one: the date is what makes it a record of when
+/// the basis moved rather than an unattributed edit.
+fn dated_bracket(row: &str) -> Option<&str> {
+    const OPEN: &str = "**[Corrected ";
+    let start = row.find(OPEN)?;
+    let after = start + OPEN.len();
+    let rest = &row[after..];
+    let dated = rest.len() >= 10
+        && rest.as_bytes()[..10].iter().enumerate().all(|(i, b)| {
+            if i == 4 || i == 7 {
+                *b == b'-'
+            } else {
+                b.is_ascii_digit()
+            }
+        });
+    if !dated {
+        return None;
+    }
+    let close = rest.find("**]**")?;
+    Some(&row[start..after + close + "**]**".len()])
+}
+
+/// One falsified M48 row: where it is, which M46 row now governs it, and the datum that
+/// moved it.
+struct ReDisposed {
+    /// The M48 row's key cell, verbatim.
+    key: &'static str,
+    /// The M46 row that re-disposed it — key and disposition, both quoted into the bracket
+    /// so the reader lands on the live call instead of inferring it.
+    m46_key: &'static str,
+    m46_disposition: &'static str,
+    /// `(quoted datum, why it has to be here)`.
+    datum: &'static [(&'static str, &'static str)],
+}
+
+/// **The falsified rows are re-disposed, and each names what falsified it.**
+#[test]
+fn m48_falsified_rows_carry_a_dated_falsification_naming_the_m46_row() {
+    const RE_DISPOSED: &[ReDisposed] = &[
+        ReDisposed {
+            key: "5 Pest is-a-test tier",
+            m46_key: "5 Pest / non-Rust is-a-test tier",
+            m46_disposition: "SPLIT — the message ships, the tier RE-KEYED",
+            datum: &[
+                (
+                    "three frameworks by three parties",
+                    "the reproduction that refuted *untouched* — the row's whole basis was \
+                     that nothing had moved",
+                ),
+                (
+                    "is absent from",
+                    "the blocking message's own words, quoted — it asserts an absence the \
+                     indexed blob disproves",
+                ),
+                (
+                    "indexed blob",
+                    "where the symbol actually is, which is what makes the message false \
+                     rather than merely unhelpful",
+                ),
+            ],
+        },
+        ReDisposed {
+            key: "7 item-slot repair verb",
+            m46_key: "7 item-slot repair verb",
+            m46_disposition: "RETIRED — the verb is not what is missing",
+            datum: &[
+                (
+                    "`migrate --as`",
+                    "the head of the shipped chain that already repairs a pre-guard corpus \
+                     — the motive the row called *largely gone* was gone entirely",
+                ),
+                (
+                    "only from a fresh clone",
+                    "the bound that made the retirement a *route* question rather than a \
+                     verb one",
+                ),
+            ],
+        },
+        ReDisposed {
+            key: "9 store locking",
+            m46_key: "9 store locking / lost updates",
+            m46_disposition: "IN — admitted at the falsified predicate",
+            datum: &[
+                (
+                    "`reconciliation.conflict-block`",
+                    "the guard a lost baseline silently switches off — which is corruption, \
+                     not the contention the row rested on",
+                ),
+                (
+                    "5/5",
+                    "the driven rate, quoted rather than described as *observed*",
+                ),
+                (
+                    "exit 0",
+                    "the exit code every losing process returned — the silence is the defect",
+                ),
+            ],
+        },
+        ReDisposed {
+            key: "10 durable \"was provisioned\"",
+            m46_key: "10 durable \"was provisioned\"",
+            m46_disposition: "RETIRED — residue empty, driven both arms",
+            datum: &[
+                (
+                    "`cp -R`",
+                    "the first driven arm — it falls to the path-subject fix, so the row's \
+                     *motive drained* is now measured rather than argued",
+                ),
+                (
+                    "zero stored state",
+                    "what the arm needed from a durable record: nothing",
+                ),
+                (
+                    "exit 3",
+                    "the fresh-clone arm's refusal, which the row's argument never reached",
+                ),
+            ],
+        },
+        ReDisposed {
+            key: "11 dirty-worktree guard",
+            m46_key: "11 dirty-worktree guard",
+            m46_disposition: "RE-CUT, and the re-cut ships",
+            datum: &[
+                (
+                    "for the remainder it narrates",
+                    "the exclusion predicate itself, quoted — the deferral rested on it",
+                ),
+                (
+                    "enumerated one path while destroying two",
+                    "the finalize that falsified it, driven",
+                ),
+            ],
+        },
+    ];
+
+    let body = read_ledger();
+    let table = m48_table(&body);
+
+    for item in RE_DISPOSED {
+        let row = m48_row(&table, item.key);
+        let Some(bracket) = dated_bracket(row) else {
+            panic!(
+                "M48 row `{}` carries no **dated** correction bracket. Its basis was \
+                 falsified by driving the binary at the M46 razor, and the M48 table is a \
+                 dated record: the disposition stays as written and the correction lands \
+                 beside it in a `**[Corrected YYYY-MM-DD …**]**` bracket \
+                 (`DECISIONS.md`'s own convention), never as a silent swap\nrow was:\n{row}",
+                item.key,
+            );
+        };
+
+        assert!(
+            bracket.contains("falsif"),
+            "M48 row `{}`'s bracket must say the basis was **falsified** — a basis-has-\
+             changed rebuttal names what it rebuts, it does not merely add a \
+             note\nbracket was:\n{bracket}",
+            item.key,
+        );
+
+        for (needle, why) in item.datum {
+            assert!(
+                bracket.contains(needle),
+                "M48 row `{}`'s bracket must quote `{needle}` — {why}\nbracket was:\n{bracket}",
+                item.key,
+            );
+        }
+
+        for (needle, why) in [
+            (
+                item.m46_key,
+                "the M46 row that re-disposed this entry — a correction that does not name \
+                 its home leaves the reader with two dispositions and no order between them",
+            ),
+            (
+                item.m46_disposition,
+                "the live disposition, quoted, so the table a planner scans lands them on \
+                 the call that is still standing",
+            ),
+        ] {
+            assert!(
+                bracket.contains(needle),
+                "M48 row `{}`'s bracket must name `{needle}` — {why}\nbracket was:\n{bracket}",
+                item.key,
+            );
+        }
+    }
+}
+
+/// **The M48 dispositions stay as written, and no neighbour moves.** Every row is pinned by
+/// `| <key> | <disposition> |`: the five corrected rows keep the call they recorded on
+/// 2026-08-13 (the correction is a bracket in the *basis* cell, never a rewritten verdict),
+/// and the other seven are untouched.
+#[test]
+fn no_m48_rows_keying_or_disposition_moves() {
+    const PINNED: &[(&str, &str)] = &[
+        (
+            "1 gate-command / evidence",
+            "**stay deferred**, count unmoved",
+        ),
+        (
+            "2 checkpoint / gate-record",
+            "**stay deferred, re-counted at 7**",
+        ),
+        (
+            "3 acknowledged-findings ledger",
+            "**drain first** — disposition unchanged, **new counted datum**",
+        ),
+        (
+            "4 managed-doc read-side",
+            "**SPLIT** — own-work subclass **closed by F1**; **search subclass stays deferred**",
+        ),
+        ("5 Pest is-a-test tier", "**stay deferred**"),
+        ("6 symbol-mention-sweep", "**stay deferred**"),
+        ("7 item-slot repair verb", "**stay deferred**"),
+        ("8 file-state introspection", "**stay deferred**"),
+        ("9 store locking", "**stay deferred**"),
+        (
+            "10 durable \"was provisioned\"",
+            "**stay deferred, motive drained**",
+        ),
+        ("11 dirty-worktree guard", "**PARTIALLY ABSORBED**"),
+        ("12 `setup --format json` `hook_file`", "**ABSORBED**"),
+    ];
+
+    let body = read_ledger();
+    let table = m48_table(&body);
+
+    for (key, disposition) in PINNED {
+        let cells = format!("> | {key} | {disposition} |");
+        assert_eq!(
+            table.matches(&cells).count(),
+            1,
+            "the M48 table must still key entry `{key}` at `{disposition}`, exactly once — \
+             the M48 adjudication is a dated record of what was decided on 2026-08-13, and a \
+             falsified basis is corrected beside it, never swapped out from under it",
+        );
+    }
+
+    assert_eq!(
+        table.lines().filter(|l| l.starts_with("> | ")).count(),
+        12,
+        "the M48 table must still hold exactly twelve rows — a correction records what \
+         moved, it does not add or drop an entry",
+    );
+}
+
+/// **The seven uncorrected rows stay bare.** A dated bracket marks a row whose basis was
+/// driven and found false; putting one on a row nobody re-drove would make the mark
+/// meaningless, which is how a convention stops carrying information.
+#[test]
+fn the_seven_unfalsified_m48_rows_carry_no_correction() {
+    const UNTOUCHED: [&str; 7] = [
+        "1 gate-command / evidence",
+        "2 checkpoint / gate-record",
+        "3 acknowledged-findings ledger",
+        "4 managed-doc read-side",
+        "6 symbol-mention-sweep",
+        "8 file-state introspection",
+        "12 `setup --format json` `hook_file`",
+    ];
+
+    let body = read_ledger();
+    let table = m48_table(&body);
+
+    for key in UNTOUCHED {
+        let row = m48_row(&table, key);
+        assert!(
+            dated_bracket(row).is_none(),
+            "M48 row `{key}` carries a dated correction bracket, but no driven datum \
+             falsified it at the M46 razor — the mark says *this basis was tested and found \
+             false*, so it has to stay rare enough to mean that\nrow was:\n{row}",
+        );
+    }
+}
