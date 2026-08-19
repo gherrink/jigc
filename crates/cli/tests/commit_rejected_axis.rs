@@ -1020,6 +1020,112 @@ fn add_from_spec_states_the_partial_truth_when_an_earlier_sub_task_already_lande
     }
 }
 
+/// **The task door's state-truth clause, read on the branch git cannot corroborate** (M46
+/// Increment 8 / T1; `design/surface-contract.md:136` — a statement about a surface is
+/// quantified over what that surface actually serves, and the repair is **scope**, never a
+/// behaviour change; the RC-1.0-gate finding B1-1).
+///
+/// The sweep above drives `jigc task finalize` on a fixture that `git add`s `code.txt`
+/// first — the branch on which *"your staged changes are still staged"* is true in git's own
+/// vocabulary. A **docs-only** task never touches git's index at all: its work lives in
+/// `.jigc/tasks/<id>/docs/`, `git diff --cached` prints nothing at the moment of rejection,
+/// and one sentence was covering both mechanisms with one word. That is the branch a
+/// doc-review hook rejects most often, so it is the branch this arm drives: the clause must
+/// name the area the task's work actually survives in, and the assertion is paired with the
+/// git state the sentence is printed over — established live here, never assumed, because the
+/// refused finalize runs four scoped rollback axes over the index before this text is emitted.
+#[test]
+fn the_task_door_names_its_own_staged_docs_over_an_empty_git_index() {
+    let (repo, home) = base_repo("task-finalize-docs-only", None);
+    let task = seed_task(repo.path(), home.path(), "record the eviction policy");
+    // The task's whole contribution: one created-in-task ADR, staged in the task's working
+    // area. Nothing is `git add`-ed, so git's index stays exactly as `jigc setup` left it.
+    jigc_ok(
+        repo.path(),
+        home.path(),
+        &["doc", "create", "adr", "--title", "Eviction policy"],
+        "`jigc doc create adr`",
+    );
+    for slot in ["context", "decision", "consequences"] {
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-slot",
+                &format!("adr:eviction-policy#{slot}"),
+                "--from-file",
+                "-",
+            ],
+            Some(format!("Prose for {slot}.\n").as_bytes()),
+        );
+        assert!(
+            out.status.success(),
+            "`jigc doc set-slot adr:eviction-policy#{slot}` must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+
+    let index_before = git(repo.path(), &["diff", "--cached", "--name-only"]);
+    assert!(
+        index_before.trim().is_empty(),
+        "the fixture is docs-only: git's index must be empty going in; index:\n{index_before}",
+    );
+
+    install_rejecting_hook(repo.path());
+    let rejected = jigc(repo.path(), home.path(), &["task", "finalize", &task], None);
+    let stderr = String::from_utf8_lossy(&rejected.stderr).into_owned();
+    assert!(
+        !rejected.status.success(),
+        "a hook rejection must exit non-zero; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&rejected.stdout),
+    );
+
+    // The git state the clause is printed over — DRIVEN, not assumed: the finalize staged
+    // its promotion and rolled the index back, so `git diff --cached` is empty here and a
+    // reader who checks git for "their staged changes" finds nothing.
+    let index_after = git(repo.path(), &["diff", "--cached", "--name-only"]);
+    assert!(
+        index_after.trim().is_empty(),
+        "git's index is empty at the moment the frame is printed; index:\n{index_after}",
+    );
+
+    // The clause itself, read off the emitted bytes.
+    let clause = stderr
+        .lines()
+        .find(|line| line.contains(&format!("task {task} is intact")))
+        .unwrap_or_else(|| panic!("the frame must still say the task survives; stderr:\n{stderr}"));
+    let area = format!(".jigc/tasks/{task}/docs/");
+    assert!(
+        clause.contains(&area),
+        "the clause must name the task's OWN staged-doc area (`{area}`), the only place this \
+         task's work survives; clause:\n{clause}",
+    );
+    assert!(
+        !clause.contains("your staged changes are still staged"),
+        "the clause must not borrow git's word for a state git's index does not hold; \
+         clause:\n{clause}",
+    );
+
+    // …and the area it names genuinely holds the task's staged docs.
+    let docs = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(&task)
+        .join("docs");
+    let mut names: Vec<String> = fs::read_dir(&docs)
+        .expect("read the task's staged-doc area")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert!(
+        names.iter().any(|n| n == "adr:eviction-policy.md"),
+        "the named area must hold the staged ADR the rejection preserved; area holds {names:?}",
+    );
+}
+
 /// The `--format json` arm: the framed text rides the `operational_error` envelope, so a
 /// tooling consumer parses the same three halves the agent-text surface prints (git's bytes,
 /// the state-truth sentence, the door's own re-run) instead of raw text on stderr. One arm

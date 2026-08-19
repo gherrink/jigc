@@ -134,9 +134,10 @@ route for the next action. Fix and re-run.
 
 Your own `pre-commit` / `commit-msg` hooks still run — jigc never passes
 `--no-verify`, they are your policy — so a hook that rejects the commit stops
-the finalize. Nothing is committed, the task survives with your staged set
-still staged, and the message carries the hook's own output verbatim plus the
-line to re-run once its complaint is fixed. Every jigc verb that commits on
+the finalize. Nothing is committed, the task survives — its staged docs still in
+`.jigc/tasks/<id>/docs/`, anything you had `git add`-ed still in git's index —
+and the message carries the hook's own output verbatim plus the line to re-run
+once its complaint is fixed. Every jigc verb that commits on
 your behalf answers a rejection that way, each stating what *its* rejection
 left behind — the per-door detail is in [MIGRATING.md](MIGRATING.md) →
 Reconciling and backing out.

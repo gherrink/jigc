@@ -1579,6 +1579,21 @@ impl TaskArea {
                 // are unchanged, and the re-run echoes the flags a repeat run genuinely needs
                 // (`--approve` on a migration hold, `--carry-staged` past the carryover gate)
                 // so the printed line is followable, not just recognizable.
+                //
+                // M46 Inc 8 T1 — the clause is **scoped to what this door actually holds**
+                // (`design/surface-contract.md` → the style guide, "quantified over what that
+                // surface actually serves"; RC-1.0-gate B1-1). It used to end *"your staged
+                // changes are still staged"*, one word covering two mechanisms: on a
+                // docs-only task the work lives in `.jigc/tasks/<id>/docs/` and `git diff
+                // --cached` prints nothing, so a reader who took the word in git's sense went
+                // looking for a state git could not show. Naming both areas separately is a
+                // scope repair, not a behaviour change — nothing about the rollback moved,
+                // and each half is driven: the docs-only branch by
+                // `commit_rejected_axis::the_task_door_names_its_own_staged_docs_over_an_empty_git_index`
+                // (index empty at the moment the frame prints, the ADR still in the task
+                // area), the index half by `finalize_message_truth::
+                // hook_rejection_says_the_task_is_intact_and_the_rerun_lands` (the re-run
+                // commits exactly the `git add`-ed path and nothing else).
                 let mut rerun = format!("jigc task finalize {}", shell_token(id));
                 if approve {
                     rerun.push_str(" --approve");
@@ -1592,8 +1607,9 @@ impl TaskArea {
                     &RejectionFrame {
                         code: invocation_log::ERROR_COMMIT_REJECTED,
                         survived: format!(
-                            "task {id} is intact — nothing was committed and your staged \
-                             changes are still staged"
+                            "task {id} is intact — nothing was committed, your task's staged \
+                             docs are still in `.jigc/tasks/{id}/docs/`, and anything you had \
+                             `git add`-ed is still in git's index"
                         ),
                         rerun,
                     },
