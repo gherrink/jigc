@@ -8,6 +8,8 @@ mod changelog_cold_create;
 mod changelog_gate_advisory;
 #[path = "../changelog_step_subset.rs"]
 mod changelog_step_subset;
+#[path = "../changelog_write_touch.rs"]
+mod changelog_write_touch;
 #[path = "../checkpoint_acceptance.rs"]
 mod checkpoint_acceptance;
 #[path = "../cold_start_zero_commit.rs"]

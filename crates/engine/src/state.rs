@@ -342,7 +342,7 @@ pub fn provision_doc(
     on_create: &[crate::field_block::Field],
 ) -> std::io::Result<PathBuf> {
     let path = instance_path(task_dir, &schema.ty, slug);
-    let bytes = write::render(schema, &seeded_instance(schema, title, on_create));
+    let bytes = provisioned_bytes(schema, title, on_create);
     write_atomic(&path, bytes.as_bytes())?;
     // A minted-here instance: record `created` beside the body for the join's clash rule.
     record_provenance(
@@ -351,6 +351,24 @@ pub fn provision_doc(
         Provenance::Created,
     )?;
     Ok(path)
+}
+
+/// The exact bytes [`provision_doc`] materializes for a fresh mint — the **pristine
+/// skeleton** of `schema` under `title`, seeded with the caller-computed `on_create`
+/// header fields.
+///
+/// Split out of [`provision_doc`] (which is its only writer) so a caller that needs to
+/// know what a create *would have* staged can ask for it without staging anything: the
+/// CLI's changelog-gate advisory reconstructs a freshly-created doc's **un-authored
+/// baseline** this way, and must compare against the same bytes the mint wrote, never a
+/// second rendering of the same idea (`design/validation.md` → The changelog-gate
+/// advisory).
+pub fn provisioned_bytes(
+    schema: &Schema,
+    title: &str,
+    on_create: &[crate::field_block::Field],
+) -> String {
+    write::render(schema, &seeded_instance(schema, title, on_create))
 }
 
 /// **Copy-in on first touch** of a pre-existing managed doc into the task working area

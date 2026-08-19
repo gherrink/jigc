@@ -2102,7 +2102,7 @@ fn on_create_nested_item_fields(
 /// the current version, so the stamp is genuine, never false history
 /// (`design/corpus-migration.md` → The schema-version stamp). A doctype carrying no
 /// such field (it was not injected — the non-persisted/non-frozen case) ignores it.
-fn on_create_doc_fields(
+pub(crate) fn on_create_doc_fields(
     schema: &Schema,
     migration: bool,
     schema_version: u32,
@@ -2142,7 +2142,7 @@ fn on_create_doc_fields(
 /// to 1, so the stamp is byte-identical to before; the lookup removes the v2-regime
 /// footgun where a manifest bump would otherwise still stamp 1
 /// (`design/corpus-migration.md` → The schema-version stamp).
-fn stamp_schema_version(pack: &dyn PackSource, doctype: &str) -> u32 {
+pub(crate) fn stamp_schema_version(pack: &dyn PackSource, doctype: &str) -> u32 {
     crate::pack::frozen_doctype_versions(pack)
         .get(doctype)
         .copied()

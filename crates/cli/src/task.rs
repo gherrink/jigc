@@ -551,19 +551,6 @@ const COMMIT_TYPE: &str = "commit";
 /// The changelog-gate advisory). A `singleton`, so its slug is fixed to the type id.
 const CHANGELOG_TYPE: &str = "changelog";
 
-/// The number of repeatable **items** a doc source carries, at every nesting depth —
-/// the structural reading of *"a changelog entry"* (a release, an unreleased
-/// change-group, a nested category group under a release). A source that does not parse
-/// counts **zero**: a malformed doc is validation's business, never this advisory's.
-fn changelog_entry_count(schema: &Schema, source: &str) -> usize {
-    fn nested(items: &[engine::parse::ParsedItem]) -> usize {
-        items.iter().map(|item| 1 + nested(&item.items)).sum()
-    }
-    engine::parse::parse_sections(schema, source)
-        .map(|doc| doc.sections.iter().map(|s| nested(&s.items)).sum())
-        .unwrap_or(0)
-}
-
 /// `jigc task finalize <id>` — execute the commit boundary (`design/finalize.md` →
 /// 5. Stage / 6. Commit / 7. Post-commit; `design/worked-examples.md` → flow #4).
 ///
@@ -1827,12 +1814,21 @@ impl TaskArea {
     /// (the trial's *"if it matters, gate it"*) promotes it to `blocking` with one
     /// cascade line, and the M6 post-pass gates on it with no code change.
     ///
-    /// **An entry is an item.** "Authored" is read structurally — the staged changelog
-    /// carries *more* items than the committed one, at any nesting depth
-    /// ([`changelog_entry_count`]) — so a bare `jigc doc create changelog` (a copy-in of
-    /// the committed body, or an empty skeleton when none is committed) is **not** an
-    /// entry and the advisory still fires: create-and-abandon is precisely the silent
-    /// skip this check exists to surface.
+    /// **"Authored" is a write-touch, not an item count.** The staged changelog is
+    /// compared against its **un-authored baseline** ([`TaskArea::changelog_baseline`]
+    /// — the bytes the staging primitive materialized at first touch), so *any* staged
+    /// write that lands bytes counts: a new change-group, a retitled release, a
+    /// corrected `date`, rewritten `notes`, a retracted entry. The predicate it
+    /// replaces compared **item counts**, so the three writes that leave the count
+    /// alone recorded an entry the check refused to see — the trial's F-1
+    /// ([`RC-1.0-gate/findings-verification.md`] §1), and a straight contradiction of
+    /// the design's own *"it keys on the gate, never on the diff"*.
+    ///
+    /// A bare `jigc doc create changelog` materializes exactly that baseline (a
+    /// copy-in of the committed body, or the pristine skeleton when none is committed),
+    /// so it is **not** an entry and the advisory still fires: create-and-abandon is
+    /// precisely the silent skip this check exists to surface. A **refused** write
+    /// leaves the same copied-in bytes behind, and reads the same way.
     ///
     /// [Keys at the task](work_unit_location) — the finding's subject is the *work
     /// unit*, so a `null` target would collapse every skipped changelog in the corpus
@@ -1882,15 +1878,11 @@ impl TaskArea {
                     .with_context(|| format!("reading the staged changelog at {staged_path:?}"));
             }
         };
-        if let Some(staged) = staged {
-            let committed = match canonical_path(&self.jigc_home, schema, CHANGELOG_TYPE) {
-                Some(path) if path.is_file() => std::fs::read_to_string(&path)
-                    .with_context(|| format!("reading the committed changelog at {path:?}"))?,
-                _ => String::new(),
-            };
-            if changelog_entry_count(schema, &staged) > changelog_entry_count(schema, &committed) {
-                return Ok(None);
-            }
+        if let Some(staged) = staged
+            && let Some(baseline) = self.changelog_baseline(schema)?
+            && staged != baseline
+        {
+            return Ok(None);
         }
 
         Ok(Some(Finding::graded(
@@ -1917,6 +1909,66 @@ impl TaskArea {
                 .into(),
             ),
         )))
+    }
+
+    /// The **un-authored baseline** of this task's staged changelog: the bytes the
+    /// staging primitive materialized at first touch, before any authoring landed on
+    /// them. The write-touch predicate above is `staged != baseline`.
+    ///
+    /// The two arms are the two staging primitives, discriminated by the provenance
+    /// the working area already records at first touch (`storage.md` → The by-task-id
+    /// join → classification by provenance), never re-derived from what happens to be
+    /// on disk — a migration task seeds **blank** over an in-location squatter, so
+    /// "a committed file exists" is not the discriminator:
+    ///
+    /// * [`Provenance::Created`](state::Provenance::Created) — the doc was minted here,
+    ///   so the baseline is the pristine create skeleton, rebuilt through
+    ///   [`engine::state::provisioned_bytes`] (the mint's own renderer) from the same
+    ///   `on_create` seeds `jigc doc create` computes. The changelog's only doc-level
+    ///   header field is the machine-maintained `schema-version` stamp — a
+    ///   [`set:`-derived leaf the write path refuses](crate::doc) — so this rebuild is
+    ///   clock-free and byte-exact.
+    /// * otherwise — the doc was copied in from the committed store, so the baseline is
+    ///   the committed bytes under the one canonicalization
+    ///   [`copy_in`](engine::state::copy_in) applies.
+    ///
+    /// `None` is *"no baseline to compare against"* — a committed source that is gone,
+    /// or a pack whose `changelog` is not a fixed-title singleton and whose skeleton
+    /// title is therefore unknown. The caller keeps the advisory on: an unprovable
+    /// write is not a recorded entry, and the finding is an advisory either way.
+    fn changelog_baseline(&self, schema: &Schema) -> Result<Option<String>> {
+        let address = format!("{CHANGELOG_TYPE}:{CHANGELOG_TYPE}");
+        let provenance = state::ProvenanceRecord::load(&self.dir)
+            .with_context(|| {
+                format!(
+                    "could not read the staged-doc provenance of task `{}`",
+                    self.id
+                )
+            })?
+            .get(&address);
+        if provenance == Some(state::Provenance::Created) {
+            let Some(title) = schema.fixed_title() else {
+                return Ok(None);
+            };
+            let migration = state::read_source_path(&self.dir)
+                .context("could not read the task's migration source path")?
+                .is_some();
+            let on_create = crate::doc::on_create_doc_fields(
+                schema,
+                migration,
+                crate::doc::stamp_schema_version(self.pack.as_ref(), CHANGELOG_TYPE),
+            );
+            return Ok(Some(state::provisioned_bytes(schema, &title, &on_create)));
+        }
+        let Some(path) = canonical_path(&self.jigc_home, schema, CHANGELOG_TYPE) else {
+            return Ok(None);
+        };
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let committed = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading the committed changelog at {path:?}"))?;
+        Ok(Some(engine::write::first_touch_canonicalize(&committed)))
     }
 
     /// The staged managed-doc instances under the working area's `docs/`, in
