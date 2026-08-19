@@ -412,3 +412,101 @@ fn step_4_unknown_chosen_workflow_rejects_cleanly_without_minting() {
         "an unknown workflow must reject before minting — no .jigc/tasks/ dir; got:\n{surfaced}",
     );
 }
+
+/// The backtick-quoted spans of an emitted surface, in order — the copy-runnable
+/// commands a reader would lift out of the prose.
+fn backticked_spans(text: &str) -> Vec<String> {
+    text.split('`')
+        .skip(1)
+        .step_by(2)
+        .map(|span| span.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect()
+}
+
+#[test]
+fn step_6_the_router_closing_text_names_the_fuller_catalog_and_that_read_answers() {
+    // B3b-1 (M46 Increment 8): the router's closing text is a closed list with no
+    // exit — it names its scope and stops, while `record-change` (`selectable:
+    // false`, `suppressed.expires: never`) sits outside it, reachable only by a
+    // read no surface names. `surface-contract.md` → the style guide, second
+    // clause: name the scope AND name what the members outside it do instead. The
+    // repair is scope, never a behaviour change — the member stays hidden.
+    let repo = TempDir::new("fuller-catalog");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["add a changelog entry for the new window cap"],
+    );
+    assert!(
+        out.status.success(),
+        "bare `jigc start \"<intent>\"` must exit 0; streams:\n{}",
+        streams(&out),
+    );
+    let stdout = stdout_of(&out);
+
+    // The premise the closing text now states: the catalog really IS a subset.
+    let catalog_ids: Vec<&str> = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("- "))
+        .filter_map(|rest| rest.split_once(" — "))
+        .map(|(id, _)| id.trim())
+        .collect();
+    assert!(
+        !catalog_ids.contains(&"record-change"),
+        "`record-change` is suppressed and must stay off the catalog; got:\n{catalog_ids:?}",
+    );
+
+    // Scope named, and the members outside it named as a class — the suppressed
+    // member itself is NOT re-listed here (that would undo the suppression the
+    // pack declares with `expires: never`).
+    assert!(
+        stdout.contains("selectable subset"),
+        "the router's closing text must name its catalog as a subset; got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("record-change"),
+        "the repair is scope, not un-hiding the member — the router must not name \
+         a suppressed workflow; got:\n{stdout}",
+    );
+
+    // And the read it points at is run VERBATIM, exactly as emitted — the bytes an
+    // agent would copy, never a reconstruction in test code.
+    let spans = backticked_spans(&stdout);
+    let reads: Vec<&String> = spans
+        .iter()
+        .filter(|span| span.starts_with("jigc describe"))
+        .collect();
+    assert_eq!(
+        reads.len(),
+        1,
+        "the closing text must name exactly one fuller-catalog read; spans: \
+         {spans:?}\ngot:\n{stdout}",
+    );
+    let argv: Vec<&str> = reads[0].split(' ').collect();
+    assert_eq!(
+        argv.first().copied(),
+        Some("jigc"),
+        "the emitted read must be a `jigc` command; got: {argv:?}",
+    );
+    let described = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(&argv[1..])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        described.status.success(),
+        "the emitted read `{}` must run clean; streams:\n{}",
+        reads[0],
+        streams(&described),
+    );
+    let described_out = stdout_of(&described);
+    assert!(
+        described_out.contains("record-change"),
+        "the emitted read must return the workflow the router's catalog leaves \
+         out; got:\n{described_out}",
+    );
+}
