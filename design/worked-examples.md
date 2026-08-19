@@ -106,15 +106,12 @@ State stays `DRIFTED`; the task is blocked from progressing on this doc until th
 The human edited the same doc the task is also writing to:
 
 ```text
-$ jigc doc set-slot adr:cache-policy#consequences --from-file -
-> error: conflict on adr:cache-policy
->   external edit since 2026-05-28T14:03:00Z + task add-rate-limiter has staged changes.
->   resolution:
->     - jigc task discard add-rate-limiter   # drop the whole task's staged writes
->     - revert the file on disk              # drop the human's edit
+$ jigc task validate add-rate-limiter
+> blocking · reconciliation.conflict-block — conflict on `decisions/cache-policy.md`: an external edit and this task's staged writes both changed it
+>   route: `jigc task discard add-rate-limiter` to drop this task's staged writes (discard retires the whole task — no per-doc discard exists), or revert the external edit on disk to keep them — the damage was made out-of-band, so it is repaired where it happened
 ```
 
-File-level block; the discard is **whole-task** (no per-doc discard exists — the M43 ghost-verb repair, [reconciliation.md](reconciliation.md) → Conflict — block at file level), and the route names **this** task, since M47 made the presentation the caller's ([reconciliation.md](reconciliation.md) → The conflict route belongs to the caller); three-way merge is [deferred](reconciliation.md#mvp-scope-vs-post-mvp) (parallels override-conflict resolution).
+File-level block; the discard is **whole-task** (no per-doc discard exists — the M43 ghost-verb repair, [reconciliation.md](reconciliation.md) → Conflict — block at file level), and the route names **this** task, since M47 made the presentation the caller's ([reconciliation.md](reconciliation.md) → The conflict route belongs to the caller); three-way merge is [deferred](reconciliation.md#mvp-scope-vs-post-mvp) (parallels override-conflict resolution). The trailing clause is M46's: the revert it offers is an edit to a managed doc, which the adapter otherwise forbids, so the route carries the sanction that makes it the exception. When the conflicting path is a **migration task's own recorded source**, both exits above are dead ends and the route reads `jigc unmanage <source>` instead — the third exit, keyed on that path alone ([reconciliation.md](reconciliation.md) → The revert exit carries its sanction, and the migration source gets a third exit).
 
 ## 3. Override application at compose time
 

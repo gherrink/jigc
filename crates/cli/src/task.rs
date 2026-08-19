@@ -859,6 +859,11 @@ impl TaskArea {
         // touches a file already carrying pre-existing committed drift is not wedged on drift
         // it did not cause (only anchors that resolved at HEAD but dangle at the index block).
         let base_tree = self.materialize_head_subset(&changed_code)?;
+        // The migration source this task is replacing, when it is a migration — the same
+        // recorded path the carryover gate reads as its retire exemption.
+        let migration_source = state::read_source_path(&self.dir).with_context(|| {
+            format!("could not read the source path for task at {:?}", self.dir)
+        })?;
         // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1): the
         // committed-store sweep this call drives must answer a foreign squatter with the
         // *store* door's code and route, and the engine produces none of them.
@@ -882,8 +887,14 @@ impl TaskArea {
             &changed_code,
             base_tree.path(),
             // The conflict route is the caller's, and this caller is a named task: a
-            // `DRIFTED + TOUCHED` block routes at the REAL id (M47 inc-2 / T4).
-            &engine::file_state::ConflictBlock::task(&self.id),
+            // `DRIFTED + TOUCHED` block routes at the REAL id (M47 inc-2 / T4). A
+            // **migration** task also holds the one path whose general route cannot be
+            // followed — its own recorded source (M46 inc-5 / T2): discarding retires the
+            // migration, and the revert the route's other exit names is the act the adapter
+            // forbids over a managed doc, on a file that was already hand-broken out of
+            // band. So the source path rides along and carries its own exit; every other
+            // conflicting path, here and at a non-migration task, keeps the general one.
+            &engine::file_state::ConflictBlock::task(&self.id, migration_source.as_deref()),
             &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;

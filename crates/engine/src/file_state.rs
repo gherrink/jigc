@@ -279,12 +279,22 @@ pub fn staged_copy_finding(dest: &str) -> Finding {
 /// task id ([`ConflictBlock::task`]), the milestone-record preflight a record-shaped block
 /// whose route is a human revert. Fields are private, so the value exists only through its
 /// constructors and the classifier can add nothing of its own.
+///
+/// A caller may also supply a **second, path-keyed** presentation (M46 inc-5 / T2), used in
+/// place of the general one when the conflict is on exactly that path — a migration task's
+/// own recorded source is the one path whose general exits are both dead ends. The
+/// classifier still adds nothing: it picks between two caller-composed pairs on the one fact
+/// it holds, the conflicting path ([`ConflictBlock::presentation`]).
 #[derive(Clone, Debug)]
 pub struct ConflictBlock {
     /// The clause after ``conflict on `<path>`: `` — names what moved on the CLI side.
     detail: String,
     /// The way out, already substituted by the caller.
     route: crate::finding::Route,
+    /// The caller's **path-keyed** second presentation: `(path, detail, route)`, used in
+    /// place of the pair above when the conflict is on exactly that path
+    /// ([`ConflictBlock::presentation`]).
+    keyed: Option<(String, String, crate::finding::Route)>,
 }
 
 impl ConflictBlock {
@@ -294,6 +304,22 @@ impl ConflictBlock {
         Self {
             detail: detail.into(),
             route,
+            keyed: None,
+        }
+    }
+
+    /// The presentation for a conflict at `path` — the caller's path-keyed pair when it
+    /// names this path, its general pair otherwise.
+    ///
+    /// Still nothing of the classifier's own: both pairs were composed by the caller, and
+    /// this only picks between them on the one fact the classifier does hold — which path
+    /// conflicted. The keying is what keeps a *narrower* exit from being offered on the
+    /// wider domain it is not true of ([surface-contract.md](../../../design/surface-contract.md)
+    /// → A route offered on a wider domain must be gated on that domain).
+    fn presentation(&self, path: &str) -> (&str, &crate::finding::Route) {
+        match &self.keyed {
+            Some((keyed_path, detail, route)) if keyed_path == path => (detail, route),
+            _ => (&self.detail, &self.route),
         }
     }
 
@@ -303,15 +329,34 @@ impl ConflictBlock {
     /// the external edit on disk; only the `<task-id>` placeholder is gone. The jigc span
     /// rides the checked [`crate::finding::Route::mechanical`] constructor, so a verb that
     /// does not parse cannot be taught here again.
-    pub fn task(task_id: &str) -> Self {
-        Self::new(
+    pub fn task(task_id: &str, migration_source: Option<&str>) -> Self {
+        let mut block = Self::new(
             "an external edit and this task's staged writes both changed it",
             crate::finding::Route::mechanical(
                 ["jigc", "task", "discard", task_id],
-                " to drop this task's staged writes (discard retires the whole task — no \
-                 per-doc discard exists), or revert the external edit on disk to keep them",
+                format!(
+                    " to drop this task's staged writes (discard retires the whole task — no \
+                     per-doc discard exists), or revert the external edit on disk to keep \
+                     them — {OUT_OF_BAND_SANCTION}"
+                ),
             ),
-        )
+        );
+        if let Some(source) = migration_source {
+            block.keyed = Some((
+                source.to_string(),
+                "an external edit and this migration's staged rewrite both changed it — this \
+                 path is the source the task is migrating, so replacing it is the point"
+                    .to_string(),
+                crate::finding::Route::mechanical(
+                    ["jigc", "unmanage", source],
+                    " to drop the stale baseline on that path, then run this finalize again — \
+                     the guard is dropped for that path only and the bytes stay on disk; they \
+                     are not merged, this task's staged rewrite replaces them, and the \
+                     `--approve` fidelity diff is where that replacement is reviewed",
+                ),
+            ));
+        }
+        block
     }
 }
 
@@ -1196,9 +1241,26 @@ fn absorb_finding(path: &str) -> Finding {
 /// waiting to happen: the acceptance suite lifts one producer's emitted route and compares it
 /// to the other's, which proves they *agree*, not that they come from the same place. This
 /// const is what makes them the same place.
-const HAND_REPAIR_SANCTION: &str = "fix the file to restore conformance, or revert the edit — \
-     this is the one case a managed file is yours to hand-edit: the damage was made \
-     out-of-band, so it is repaired where it happened";
+fn hand_repair_sanction() -> String {
+    format!(
+        "fix the file to restore conformance, or revert the edit — this is the one case a \
+         managed file is yours to hand-edit: {OUT_OF_BAND_SANCTION}"
+    )
+}
+
+/// The **sanction clause itself** — the half of [`hand_repair_sanction`] that says why a
+/// hand edit of a managed file is legitimate at all, and the half a *third* producer needs
+/// (M46 inc-5 / T2).
+///
+/// The `DRIFTED + TOUCHED` conflict route's second exit is *"revert the external edit on
+/// disk"* — over a managed doc, that is precisely the act `.jigc/AGENT.md`'s routing
+/// sentence forbids ("never read or edit managed docs directly"). The route was right and
+/// the prohibition is right; what was missing is the sentence that reconciles them, and it
+/// already exists here. So it is lifted out of its one consumer rather than retyped into
+/// the second — the M48 Inc 4 / T2 lesson, applied to its own const: two producers agreeing
+/// is not two producers sharing a source.
+const OUT_OF_BAND_SANCTION: &str =
+    "the damage was made out-of-band, so it is repaired where it happened";
 
 /// The blocking **conformance-block** finding (`reconciliation.md` → OOB edit →
 /// conformance-block: "a precise conformance error — file, line, expected shape"). The
@@ -1217,7 +1279,7 @@ fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
         "reconciliation.conformance-block",
         format!("nonconformant edit on `{path}`: {detail}"),
         Some(Location::addressed(path, line, 1)),
-        Some(HAND_REPAIR_SANCTION.into()),
+        Some(hand_repair_sanction().into()),
     )
 }
 
@@ -1238,7 +1300,7 @@ fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
 /// and both answers are already shipped strings:
 ///
 /// - **at-version** (or an **unversioned** doctype, where `current` is `None` and the question
-///   does not arise) ⇒ [`HAND_REPAIR_SANCTION`], the blocking twin's route: nothing to migrate,
+///   does not arise) ⇒ [`hand_repair_sanction`], the blocking twin's route: nothing to migrate,
 ///   so the file really is yours to hand-repair;
 /// - **below-version**, **stamp-absent** (the v0-era corpus) or **above-current** ⇒
 ///   [`crate::validate::route_schema_conformance`]'s version-aware route, the same one the store
@@ -1266,7 +1328,7 @@ fn conformance_advisory_finding(
         "reconciliation.conformance-block",
         format!("unvetted file `{path}` in a managed location is not schema-conformant: {detail}"),
         Some(Location::addressed(path, line, 1)),
-        Some(HAND_REPAIR_SANCTION.into()),
+        Some(hand_repair_sanction().into()),
     );
     // Read the stamp from the RAW front matter, exactly as the discriminator does: a
     // below-version doc of a structurally-changed doctype does not parse under the current
@@ -1296,12 +1358,13 @@ fn conformance_advisory_finding(
 /// [`crate::finding::Route::mechanical`] constructor (`surface-contract.md` → The route
 /// fence) at its producer.
 fn conflict_block_finding(path: &str, conflict: &ConflictBlock) -> Finding {
+    let (detail, route) = conflict.presentation(path);
     Finding::graded(
         Severity::Blocking,
         "reconciliation.conflict-block",
-        format!("conflict on `{path}`: {}", conflict.detail),
+        format!("conflict on `{path}`: {detail}"),
         Some(Location::addressed(path, 1, 1)),
-        Some(conflict.route.clone()),
+        Some(route.clone()),
     )
 }
 
@@ -1336,7 +1399,7 @@ mod tests {
     /// The caller-supplied conflict presentation a task-scope caller hands the classifier
     /// (M47 inc-2 / T4) — a real task id, never a placeholder.
     fn test_conflict() -> ConflictBlock {
-        ConflictBlock::task("drift-the-cache")
+        ConflictBlock::task("drift-the-cache", None)
     }
 
     /// A committed ADR `B` (superseding nothing) — the recorded baseline before any
@@ -1600,8 +1663,10 @@ Referrers must point at the new decision.
             route.as_str(),
             "`jigc task discard drift-the-cache` to drop this task's staged writes (discard \
              retires the whole task — no per-doc discard exists), or revert the external \
-             edit on disk to keep them",
-            "the task-scope conflict route names real verbs AND the real task id"
+             edit on disk to keep them — the damage was made out-of-band, so it is repaired \
+             where it happened",
+            "the task-scope conflict route names real verbs AND the real task id, and the \
+             revert it orders carries the sanction that makes it legal"
         );
         assert!(
             !route.as_str().contains("<task-id>"),
@@ -1610,6 +1675,14 @@ Referrers must point at the new decision.
         assert!(
             matches!(route.kind(), crate::finding::RouteKind::Mechanical { .. }),
             "the jigc span rides the checked mechanical constructor"
+        );
+        // The negative control for the migration exit (M46 inc-5 / T2): this caller declared
+        // no migration source, so the `jigc unmanage` clause is not on offer here. A route
+        // that dropped a baseline guard on a plain task's conflict would be a data-loss
+        // affordance handed to a state that does not need it.
+        assert!(
+            !route.as_str().contains("unmanage"),
+            "a non-migration task's conflict route must not offer the baseline drop: {route:?}"
         );
 
         // No silent merge: neither the recorded hash nor the edge index moved.
@@ -1671,6 +1744,73 @@ Referrers must point at the new decision.
                 && !route.as_str().contains("jigc task discard"),
             "the classifier contributes no task language of its own: {f:?}"
         );
+    }
+
+    /// The **migration-source exit is scoped to the one path it is true of** (M46 inc-5 / T2).
+    ///
+    /// A migration task's conflict on **its own recorded source** is the one conflict whose
+    /// general route cannot be followed: discarding retires the migration, and the alternative
+    /// it names — reverting the external edit on disk — is the act the adapter's read rule
+    /// forbids, over a file that was *already* hand-broken out of band. So that path, and only
+    /// that path, is offered the baseline drop.
+    ///
+    /// This is the scope half: the **same** `ConflictBlock`, asked about a *different* managed
+    /// doc the same migration task also touched, answers the general presentation. A route that
+    /// offered `jigc unmanage` for every conflicting path would hand a data-loss affordance to
+    /// docs the migration is not replacing (the widen-a-guard rule,
+    /// `surface-contract.md` → A route offered on a wider domain must be gated on that domain).
+    #[test]
+    fn the_migration_source_exit_is_keyed_on_the_source_path() {
+        let source = ADR_B_PATH;
+        let conflict = ConflictBlock::task("migrate-adr-decisions-cache", Some(source));
+
+        let on_source = conflict_block_finding(source, &conflict);
+        let route = on_source.route.as_ref().expect("the source arm routes");
+        assert_eq!(
+            route.as_str(),
+            format!(
+                "`jigc unmanage {source}` to drop the stale baseline on that path, then run \
+                 this finalize again — the guard is dropped for that path only and the bytes \
+                 stay on disk; they are not merged, this task's staged rewrite replaces them, \
+                 and the `--approve` fidelity diff is where that replacement is reviewed"
+            ),
+            "the source arm routes at the baseline drop, with the path substituted and the \
+             cost stated"
+        );
+        assert!(
+            matches!(route.kind(), crate::finding::RouteKind::Mechanical { .. }),
+            "the single-argv exit rides the checked mechanical constructor"
+        );
+        assert!(
+            !route.as_str().contains('<'),
+            "no unsubstituted placeholder survives on a blocking finding's route: {route:?}"
+        );
+
+        // The omitting context: another doc the same migration task touched. The exit is not
+        // on offer there — that path is not what the task is replacing.
+        let elsewhere = conflict_block_finding("decisions/unrelated.md", &conflict);
+        let general = elsewhere.route.as_ref().expect("the general arm routes");
+        assert!(
+            !general.as_str().contains("unmanage"),
+            "a conflict away from the migration source keeps the general route: {general:?}"
+        );
+        assert_eq!(
+            general.as_str(),
+            conflict_block_finding(
+                "decisions/unrelated.md",
+                &test_conflict_for("migrate-adr-decisions-cache")
+            )
+            .route
+            .expect("the source-less caller routes")
+            .as_str(),
+            "and it is byte-identical to the route a source-less caller would have supplied"
+        );
+    }
+
+    /// A task-scope conflict presentation for `task_id` with **no** migration source — the
+    /// source-less caller the scope assertion above compares against.
+    fn test_conflict_for(task_id: &str) -> ConflictBlock {
+        ConflictBlock::task(task_id, None)
     }
 
     /// The **at-version advisory and its blocking twin read one shared sanction** (M48 Inc 4 /

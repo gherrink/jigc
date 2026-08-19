@@ -64,19 +64,23 @@ For `DRIFTED + UNTOUCHED`, the CLI re-parses the file against its type's schema 
 For `DRIFTED + TOUCHED`, both sides have moved: the on-disk file changed since the last recorded hash, **and** the task's working area has staged writes to the same doc. The MVP blocks at file granularity:
 
 ```
-conflict on adr:rate-limit-at-the-gateway:
-  external edit since 2026-05-28T14:03:00Z + task add-rate-limiter has staged changes.
-  resolution:
-    - jigc task discard add-rate-limiter   # drop the whole task's staged writes
-    - revert the file on disk              # drop the human's edit
+blocking · reconciliation.conflict-block — conflict on `decisions/rate-limit-at-the-gateway.md`: an external edit and this task's staged writes both changed it
+  route: `jigc task discard add-rate-limiter` to drop this task's staged writes (discard retires the whole task — no per-doc discard exists), or revert the external edit on disk to keep them — the damage was made out-of-band, so it is repaired where it happened
 ```
 
 **The conflict route belongs to the caller, not the classifier (M47).** The classifier sees a path, a hash and a *touched* flag — it has no task id, and at one of its callers there is no task at all. It used to hard-code the presentation above, so the **milestone-record doors** (the CLI writing a machine-owned record, [team-ready-state.md](team-ready-state.md) → No-silent-overwrite discipline) blocked with an **inapplicable verb** carrying an **unsubstituted `<task-id>`** — the pair the M43 route floor exists to prevent on a *blocking* finding ([surface-contract.md](surface-contract.md) → The route fence). So the mover clause **and** the route are now supplied per caller, from what that caller actually holds: the task-scope sweep passes the **real task id** (no placeholder survives the print), the milestone join gate routes at the sub-task listing (the merged area belongs to no single task), and the record door names the *record* and routes a human revert to what jigc last wrote — an external edit to a machine-maintained record is never merged and never clobbered. The frame the classifier still owns is only `` conflict on `<path>`: `` + the location.
 
+**The revert exit carries its sanction, and the migration source gets a third exit (M46).** Two repairs to the same route, both from the pre-guard repair audit ([roadmap](../implementation/roadmap.md) → Milestone 46, Increment 5).
+
+The general route's second exit — *revert the external edit on disk* — is, over a managed doc, precisely the act the adapter's routing sentence forbids ("never read or edit managed docs directly", [assistant-adapter.md](assistant-adapter.md) → Inject the bootstrap). The route was right and the prohibition is right; what was missing is the clause that reconciles them, and it already existed one screen away as the conformance-block's hand-repair sanction — *the damage was made out-of-band, so it is repaired where it happened*. It is now **one source, three producers**: the blocking conformance-block, the advisory `UNKNOWN` arm, and this route.
+
+The **migration** case needed more than a sanction. A `jigc migrate <path> --as <type>` task's staged rewrite of **its own recorded source** is `DRIFTED + TOUCHED` whenever that source is a managed doc that was hand-broken out of band — which is the whole reason the migration was started. Both general exits are then dead: discarding retires the migration, and the revert restores exactly the corruption being repaired. So the *source path, and only the source path*, is offered a third exit — `jigc unmanage <source>`, which drops that path's baseline (and its forward edges) and leaves the bytes on disk, after which the migration finalizes normally through its review hold. The exit is **keyed on the path**: the same task conflicting on any *other* doc, and every non-migration task, keeps the general route, because dropping a baseline guard is only free where the task's staged version is already the intended replacement ([storage.md](storage.md) → What none of this buys states what a lost baseline costs; [surface-contract.md](surface-contract.md) → A route offered on a wider domain must be gated on that domain). The route states that cost inline: the on-disk bytes are not merged, the staged rewrite replaces them, and the `--approve` fidelity diff is where that replacement is reviewed.
+
 Resolution paths (task scope):
 
 - Agent discards the **whole task** (`jigc task discard <id>`) — no per-doc discard exists. (A per-write discard verb was sketched at MVP and never built; the route was repaired to the real verb at M43, [DECISIONS.md](../DECISIONS.md) → 2026-07-16 Settle. Doc-granular discard is deferred with the same machinery as three-way merge.)
-- Human reverts the on-disk edit; the task's writes are kept.
+- Human reverts the on-disk edit; the task's writes are kept — sanctioned, out-of-band damage being repaired where it happened.
+- On a **migration task's own source**: `jigc unmanage <source>` drops the stale baseline, and the migration lands its rewrite over it (reviewed at the `--approve` fidelity diff). Not offered on any other path.
 - **Three-way merge** of both sides is deferred — it parallels override-conflict resolution ([overrides.md](overrides.md)) and rides on the same future machinery.
 
 **Discard is always explicit, never the default, never silent** — no data loss.

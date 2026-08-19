@@ -4861,7 +4861,7 @@ kind: memo
     /// The caller-supplied conflict presentation the CLI hands `validate_task` (M47 inc-2 /
     /// T4) — a task-scope caller names its real task id, never a placeholder.
     fn test_conflict() -> crate::file_state::ConflictBlock {
-        crate::file_state::ConflictBlock::task("drift-the-cache")
+        crate::file_state::ConflictBlock::task("drift-the-cache", None)
     }
 
     /// The done-criterion. Over a working area with **two conformance-broken
@@ -5473,7 +5473,7 @@ mod ref_resolves_in_sweep_tests {
     /// The caller-supplied conflict presentation the CLI hands `validate_task` (M47 inc-2 /
     /// T4) — a task-scope caller names its real task id, never a placeholder.
     fn test_conflict() -> crate::file_state::ConflictBlock {
-        crate::file_state::ConflictBlock::task("drift-the-cache")
+        crate::file_state::ConflictBlock::task("drift-the-cache", None)
     }
 
     /// A committed ADR `A` (the supersede target), with no outgoing ref. Its required
@@ -5934,7 +5934,7 @@ The audit landed green.
     /// The caller-supplied conflict presentation the CLI hands `validate_task` (M47 inc-2 /
     /// T4) — a task-scope caller names its real task id, never a placeholder.
     fn test_conflict() -> crate::file_state::ConflictBlock {
-        crate::file_state::ConflictBlock::task("drift-the-cache")
+        crate::file_state::ConflictBlock::task("drift-the-cache", None)
     }
 
     /// (RED — fires) Each unsafe / absent / untracked owner-artifact path produces
@@ -6262,7 +6262,7 @@ mod validate_store_tests {
     /// The caller-supplied conflict presentation the CLI hands `validate_task` (M47 inc-2 /
     /// T4) — a task-scope caller names its real task id, never a placeholder.
     fn test_conflict() -> crate::file_state::ConflictBlock {
-        crate::file_state::ConflictBlock::task("drift-the-cache")
+        crate::file_state::ConflictBlock::task("drift-the-cache", None)
     }
 
     /// Regression: the store-sweep scratch path must be unique per call even under

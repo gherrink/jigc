@@ -53,11 +53,60 @@ const CODE: &str = "conformance.item-heading-unanchored";
 /// The verb the message named until M46 — the string no carrier may print.
 const RETIRED_VERB: &str = "jigc doc add-item";
 
+/// The committed `prd` the corrupted spec's `derived-from` names — the referrer edge the
+/// arm-1 chain must still resolve at the end.
+const PRD_ID: &str = "prd:gateway-limits";
+
+/// The act the conflict route ordered until M46 and the adapter has never sanctioned —
+/// `.jigc/AGENT.md`'s routing sentence forbids editing a managed doc directly, so a
+/// blocking route whose only in-repo exit is a hand revert is a route out of nothing.
+const FORBIDDEN_ACT: &str = "revert the external edit on disk";
+
 /// A corpus carrying one committed, managed `spec` — then hand-broken and committed
 /// again, which is the shape a corpus corrupted before M45's write guard shipped
 /// carries at rest.
 fn corrupted_corpus() -> TrialCorpus {
+    corrupted_corpus_with_referrer(false)
+}
+
+/// The same corpus, optionally with the corrupted spec carrying a **committed
+/// `derived-from` edge** at a committed `prd` — so the repair chain is driven over a doc
+/// that is a live referrer, not an isolated leaf. The chain's one escape (`jigc unmanage`)
+/// drops that doc's forward edges along with its baseline, so "the referrer still
+/// resolves at the end" is the assertion that the re-landed doc rejoined the edge index
+/// rather than quietly dangling.
+fn corrupted_corpus_with_referrer(referrer: bool) -> TrialCorpus {
+    let corpus = clean_corpus_with_referrer(referrer);
+
+    // The hand break, out of band and committed — the CLI never wrote these bytes.
+    let path = corpus.repo().join(SPEC_PATH);
+    let body = fs::read_to_string(&path).expect("the committed spec is readable");
+    let broken = body.replace(
+        "A burst beyond the cap is rejected.\n",
+        &format!("A burst beyond the cap is rejected.\n\n{CORRUPT_HEADING}\n\n{CORRUPT_PROSE}\n"),
+    );
+    assert_ne!(body, broken, "the hand break must land");
+    fs::write(&path, broken).expect("write the hand-broken spec");
+    corpus.git(&["add", SPEC_PATH]);
+    corpus.git(&[
+        "commit",
+        "-q",
+        "-m",
+        "hand-edit the spec (pre-guard corruption)",
+    ]);
+    corpus
+}
+
+/// The same corpus **before** the hand break — one committed, conformant, managed `spec`,
+/// optionally grounded at a committed `prd`. The corrupted states above are this state plus
+/// one out-of-band edit, and the conflict control below needs it un-corrupted (a write to a
+/// non-reparseable doc is refused at the write, so a corrupted doc cannot reach
+/// `DRIFTED + TOUCHED` at all).
+fn clean_corpus_with_referrer(referrer: bool) -> TrialCorpus {
     let corpus = TrialCorpus::build(State::Fresh);
+    if referrer {
+        build_prd(&corpus);
+    }
     let task = corpus.start_workflow("plan", "spec the rate limiter");
     let id = corpus
         .jigc_ok(&[
@@ -71,6 +120,17 @@ fn corrupted_corpus() -> TrialCorpus {
         ])
         .trim_end_matches('\n')
         .to_string();
+    if referrer {
+        corpus.jigc_ok(&[
+            "doc",
+            "set-field",
+            &format!("{id}#derived-from"),
+            "--value",
+            PRD_ID,
+            "--task",
+            &task,
+        ]);
+    }
     corpus.jigc_stdin_ok(
         &[
             "doc",
@@ -120,24 +180,79 @@ fn corrupted_corpus() -> TrialCorpus {
         "A burst beyond the cap is rejected.",
     );
     corpus.finalize(&task, "spec", "spec the rate limiter", false);
-
-    // The hand break, out of band and committed — the CLI never wrote these bytes.
-    let path = corpus.repo().join(SPEC_PATH);
-    let body = fs::read_to_string(&path).expect("the committed spec is readable");
-    let broken = body.replace(
-        "A burst beyond the cap is rejected.\n",
-        &format!("A burst beyond the cap is rejected.\n\n{CORRUPT_HEADING}\n\n{CORRUPT_PROSE}\n"),
-    );
-    assert_ne!(body, broken, "the hand break must land");
-    fs::write(&path, broken).expect("write the hand-broken spec");
-    corpus.git(&["add", SPEC_PATH]);
-    corpus.git(&[
-        "commit",
-        "-q",
-        "-m",
-        "hand-edit the spec (pre-guard corruption)",
-    ]);
     corpus
+}
+
+/// The committed `prd` [`PRD_ID`] names, authored through its own driving workflow and
+/// finalized — so the spec's `derived-from` edge points at a real committed target and the
+/// store sweep's `ref-resolves` family has something to resolve.
+fn build_prd(corpus: &TrialCorpus) {
+    let task = corpus.start_workflow("project-setup", "the gateway limits brief");
+    let id = corpus
+        .jigc_ok(&[
+            "doc",
+            "create",
+            "prd",
+            "--title",
+            "Gateway limits",
+            "--task",
+            &task,
+        ])
+        .trim_end_matches('\n')
+        .to_string();
+    assert_eq!(
+        id, PRD_ID,
+        "the fixture PRD must mint the id the spec names"
+    );
+    corpus.jigc_stdin_ok(
+        &[
+            "doc",
+            "set-slot",
+            &format!("{id}#vision"),
+            "--from-file",
+            "-",
+            "--task",
+            &task,
+        ],
+        "Bound what the gateway lets through.",
+    );
+    corpus.jigc_stdin_ok(
+        &[
+            "doc",
+            "set-slot",
+            &format!("{id}#context"),
+            "--from-file",
+            "-",
+            "--task",
+            &task,
+        ],
+        "The gateway is unbounded today.",
+    );
+    let item = corpus
+        .jigc_ok(&[
+            "doc",
+            "add-item",
+            &format!("{id}#requirements"),
+            "--title",
+            "Bound bursts",
+            "--task",
+            &task,
+        ])
+        .trim_end_matches('\n')
+        .to_string();
+    corpus.jigc_stdin_ok(
+        &[
+            "doc",
+            "set-slot",
+            &format!("{item}/statement"),
+            "--from-file",
+            "-",
+            "--task",
+            &task,
+        ],
+        "Bursts beyond the cap are bounded.",
+    );
+    corpus.finalize(&task, "prd", "the gateway limits brief", false);
 }
 
 /// Both streams of an invocation, so a finding printed to stderr (the blocking read
@@ -430,4 +545,238 @@ fn add_item_at_that_address_still_answers_wrong_shape() {
         "the refusal must be the unrelated `write.wrong-shape`, which is what makes \
          naming the verb a lie; got:\n{text}"
     );
+}
+
+/// **Arm 1 — the repair chain, driven from the repo where the corruption happened**
+/// (M46 Increment 5 / T2).
+///
+/// The shipped chain (`jigc migrate <path> --as <type>` → `doc author` → `finalize
+/// --approve`) is what the *other* arms of this suite drive, and they drive it after a
+/// `jigc unmanage` — from a standing point with no recorded baseline, which is a fresh
+/// clone's. In the repo where the hand edit actually happened the baseline is present, so
+/// the on-disk drift plus the migration's own staged rewrite are `DRIFTED + TOUCHED`:
+/// finalize blocks at `reconciliation.conflict-block`, at **both** doors, and its route
+/// offered exactly two exits — retire the migration, or [`FORBIDDEN_ACT`], the act the
+/// adapter's routing sentence forbids over a managed doc.
+///
+/// So the route now carries a third exit for the one path it is true of: the migration's
+/// **own recorded source**. This test drives the whole chain and runs that exit **as
+/// printed** — the argv is lifted out of the emitted route text and executed verbatim, so
+/// what is proven is the bytes an agent would actually run, not a reconstruction of them.
+///
+/// The doc under repair is a live **referrer** (`derived-from → prd:gateway-limits`), and
+/// the exit drops its forward edges along with its baseline — so the chain ending clean is
+/// only half the claim; the edge resolving again at the end is the other half.
+#[test]
+fn the_conflict_route_names_an_exit_that_runs_where_the_corruption_happened() {
+    let corpus = corrupted_corpus_with_referrer(true);
+
+    // The corruption's slot-prose repair, at the depth the emitted diagnosis names — the
+    // same lift the sibling arm makes, so the chain starts from the state the diagnosis
+    // actually leaves an operator in.
+    let depth = demote_depth(&diagnosis("jigc validate", &store_carrier(&corpus)));
+    let path = corpus.repo().join(SPEC_PATH);
+    let body = fs::read_to_string(&path).expect("the corrupted spec is readable");
+    let demoted_heading = CORRUPT_HEADING.replacen("###", &depth, 1);
+    fs::write(&path, body.replace(CORRUPT_HEADING, &demoted_heading))
+        .expect("write the demoted heading");
+
+    // No `unmanage` first: this is the standing point the operator has, baseline and all.
+    let minted = corpus.jigc_ok(&["migrate", SPEC_PATH, "--as", "spec"]);
+    let task = minted
+        .lines()
+        .find_map(|l| l.strip_prefix("task minted: "))
+        .expect("`jigc migrate` mints a task")
+        .trim()
+        .to_string();
+    corpus.jigc_stdin_ok(
+        &["doc", "author", "spec", "--from-file", "-", "--task", &task],
+        &format!(
+            "title: \"Rate limiter\"\n\
+             sections:\n\
+             \x20 - id: meta\n\
+             \x20   set:\n\
+             \x20     derived-from: \"{PRD_ID}\"\n\
+             \x20 - id: goal\n\
+             \x20   set:\n\
+             \x20     goal: |-\n\
+             \x20       <<Cap bursts at the configured rate.>>\n\
+             \x20 - id: context\n\
+             \x20   set:\n\
+             \x20     context: |-\n\
+             \x20       <<The gateway has no limiter today.>>\n\
+             \x20 - id: criteria\n\
+             \x20   items:\n\
+             \x20     - title: \"Burst limit\"\n\
+             \x20       set:\n\
+             \x20         statement: |-\n\
+             \x20           <<A burst beyond the cap is rejected.\n\
+             \n\
+             \x20           {demoted_heading}\n\
+             \n\
+             \x20           {CORRUPT_PROSE}>>\n"
+        ),
+    );
+
+    // The block, at the door the operator reaches first.
+    let blocked = corpus.jigc(&["task", "finalize", &task]);
+    let text = both_streams(&blocked);
+    assert_eq!(
+        blocked.status.code(),
+        Some(3),
+        "the migration finalize must block on the conflict; got:\n{text}"
+    );
+    assert!(
+        text.contains("blocking · reconciliation.conflict-block"),
+        "the block must be the conflict, not the review hold; got:\n{text}"
+    );
+
+    // The exit, lifted out of the printed route and run verbatim.
+    let argv = route_argv(&text);
+    assert!(
+        argv.first().map(String::as_str) == Some("jigc"),
+        "the route's command span must be a `jigc` argv; got {argv:?}"
+    );
+    let run: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    let exit = corpus.jigc(&run);
+    assert!(
+        exit.status.success(),
+        "the printed route must run from here; `jigc {}` gave:\n{}",
+        run.join(" "),
+        both_streams(&exit)
+    );
+
+    // The chain completes from exactly where it stopped: the review hold, then the one
+    // destructive gate.
+    let hold = corpus.jigc(&["task", "finalize", &task]);
+    assert_eq!(
+        hold.status.code(),
+        Some(4),
+        "the re-run finalize must reach the migration review hold; got:\n{}",
+        both_streams(&hold)
+    );
+    let approved = corpus.jigc(&["task", "finalize", &task, "--approve"]);
+    assert!(
+        approved.status.success(),
+        "the approved migration must land; got:\n{}",
+        both_streams(&approved)
+    );
+
+    let swept = both_streams(&corpus.jigc(&["validate"]));
+    assert!(
+        swept.contains("no findings — the committed store validates clean"),
+        "the chain must leave the store clean; got:\n{swept}"
+    );
+    // The referrer edge the exit dropped is back — the re-landed doc rejoined the index
+    // rather than quietly dangling under a clean sweep.
+    let shown = both_streams(&corpus.jigc(&["doc", "show", "spec:rate-limiter"]));
+    assert!(
+        shown.contains(&format!("derived-from: {PRD_ID}")),
+        "the committed `derived-from` referrer must survive the chain; got:\n{shown}"
+    );
+    assert!(
+        shown.contains(&demoted_heading),
+        "the demoted heading must land as slot prose; got:\n{shown}"
+    );
+}
+
+/// **The negative control**: a task that is *not* migrating this doc gets no such exit.
+///
+/// The exit drops a file-state baseline — the guard whose absence turns "detected and
+/// routed, never silently merged" into an exit-0 merge ([storage.md] → What none of this
+/// buys). It is offered because a migration's staged rewrite *is* the replacement of that
+/// path, which is the one state where dropping the guard costs nothing the task did not
+/// already intend. An ordinary task's conflict has no such standing, so the general route
+/// stays what it was — one argv, mechanical, fully substituted.
+///
+/// [storage.md]: ../../../design/storage.md
+#[test]
+fn an_ordinary_tasks_conflict_is_offered_no_baseline_drop() {
+    let corpus = clean_corpus_with_referrer(false);
+
+    // `TOUCHED`: an ordinary task stages a write to the committed doc.
+    let task = corpus.start_workflow("plan", "extend the rate limiter spec");
+    corpus.jigc_stdin_ok(
+        &[
+            "doc",
+            "set-slot",
+            "spec:rate-limiter#goal",
+            "--from-file",
+            "-",
+            "--task",
+            &task,
+        ],
+        "Cap bursts, and shed load beyond the cap.",
+    );
+    // `DRIFTED`: a conformant external edit to the same doc. Both sides moved, and neither
+    // is a migration.
+    let path = corpus.repo().join(SPEC_PATH);
+    let body = fs::read_to_string(&path).expect("the committed spec is readable");
+    let drifted = body.replace(
+        "The gateway has no limiter today.",
+        "The gateway has no limiter today, and traffic is spiky.",
+    );
+    assert_ne!(body, drifted, "the external edit must land");
+    fs::write(&path, drifted).expect("write the external edit");
+
+    let blocked = corpus.jigc(&["task", "validate", &task]);
+    let text = both_streams(&blocked);
+    assert!(
+        text.contains("blocking · reconciliation.conflict-block"),
+        "an ordinary task writing a drifted doc must conflict-block; got:\n{text}"
+    );
+    let argv = route_argv(&text);
+    assert_eq!(
+        argv,
+        vec!["jigc", "task", "discard", task.as_str()],
+        "the general route stays the single-argv whole-task discard, with the real id"
+    );
+    let route = route_text(&text);
+    assert!(
+        !route.contains("unmanage"),
+        "no baseline drop is offered to a task that is not replacing the path; got:\n{route}"
+    );
+    assert!(
+        !route.contains('<'),
+        "no unsubstituted placeholder survives on a blocking route; got:\n{route}"
+    );
+    // The hand revert it still offers is the act the adapter forbids by default — so it
+    // carries the sanction that makes it the exception, rather than ordering it bare.
+    assert!(
+        route.contains(FORBIDDEN_ACT),
+        "the general route still offers the revert; got:\n{route}"
+    );
+    assert!(
+        route.contains("out-of-band"),
+        "and it must say why that revert is sanctioned here; got:\n{route}"
+    );
+}
+
+/// The `reconciliation.conflict-block` route line, as printed.
+fn route_text(output: &str) -> String {
+    let start = output
+        .find("reconciliation.conflict-block")
+        .unwrap_or_else(|| panic!("the output must carry a conflict-block; got:\n{output}"));
+    let rest = &output[start..];
+    let route = rest
+        .find("route: ")
+        .unwrap_or_else(|| panic!("the conflict-block must carry a route; got:\n{output}"));
+    let rest = &rest[route + "route: ".len()..];
+    let end = rest.find('\n').unwrap_or(rest.len());
+    rest[..end].trim_end().to_string()
+}
+
+/// The argv of the conflict-block route's **command span** — the backticked run of tokens
+/// the route text leads with, split as printed. Nothing is reconstructed: this is what the
+/// binary told the operator to type.
+fn route_argv(output: &str) -> Vec<String> {
+    let route = route_text(output);
+    let span = route
+        .strip_prefix('`')
+        .and_then(|rest| rest.split_once('`'))
+        .map(|(argv, _)| argv.to_string())
+        .unwrap_or_else(|| {
+            panic!("the conflict-block route must lead with a backticked argv; got:\n{route}")
+        });
+    span.split_whitespace().map(str::to_string).collect()
 }
