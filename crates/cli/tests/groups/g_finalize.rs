@@ -43,6 +43,8 @@ mod flow37_rename;
 mod freeze_enforcement;
 #[path = "../ledger_entry_seven_discharged.rs"]
 mod ledger_entry_seven_discharged;
+#[path = "../ledger_record_truth.rs"]
+mod ledger_record_truth;
 #[path = "../manifest_freeze_fence.rs"]
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]
