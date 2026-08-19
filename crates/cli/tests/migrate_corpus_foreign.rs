@@ -25,13 +25,17 @@
 //! file"*, and this suite does not pretend otherwise (`storage.md`'s placement census
 //! enumerates `location`/`placement` **consumers**, which is a different set). The honest
 //! subject set is derived: **`is_unadopted_foreign`'s call sites × the two home kinds**. Its
-//! call sites at the time of writing are `doc.rs` ×2 (the read-side reroute and `doc list`'s
-//! registration state), `file_state.rs` (the task-scope reconciler), `validate.rs` (the store
-//! sweep's fifth family, plus the `AdoptionInputs::unadopted` seam) and — as of this task —
-//! `migrate_corpus.rs`. The home kinds are the two a managed doc can have: a **placement**
-//! file (`CHANGELOG.md`, `VISION.md` — `location: None`, a literal path) and a **located**
-//! home (`docs/decisions/` — resolved through the `docs-root` knob). This suite iterates the
-//! last call site over both home kinds; the others carry their own suites.
+//! **five** direct call sites at the time of writing are `doc.rs` ×2 (the read-side reroute
+//! and `doc list`'s registration state), `file_state.rs` (the task-scope reconciler) and
+//! `validate.rs` ×2 (the store sweep's fifth family, and the `AdoptionInputs::unadopted`
+//! seam). `migrate_corpus.rs` is **not** a sixth: it reaches the discriminator **through**
+//! that seam — `AdoptionInputs::new` and `::unadopted` — which is the whole point of the
+//! fix, since a second constructor in the CLI is exactly how the two surfaces would disagree
+//! again. The subject set this suite drives is therefore *the five call sites plus the
+//! seam's consumer*. The home kinds are the two a managed doc can have: a **placement** file
+//! (`CHANGELOG.md`, `VISION.md` — `location: None`, a literal path) and a **located** home
+//! (`docs/decisions/` — resolved through the `docs-root` knob). This suite iterates the
+//! seam's consumer over both home kinds; the direct call sites carry their own suites.
 //!
 //! # The axis, and why it takes two fixture worlds
 //!
