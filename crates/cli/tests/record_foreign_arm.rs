@@ -102,11 +102,6 @@ const FALSIFIED: &[(&str, &str, &str)] = &[
          — the sentence a fixture author reads before planting a squatter",
     ),
     (
-        "design/corpus-migration.md",
-        "routes to `ingest` / `migrate --as`, and **stays exit-0**",
-        "the property census's foreign arm, carrying the exit condition T1 retired",
-    ),
-    (
         "design/worked-examples.md",
         "the brownfield first run stays GREEN",
         "flow 43's transcript, whose acceptance suite T1 already corrected",
@@ -117,6 +112,58 @@ const FALSIFIED: &[(&str, &str, &str)] = &[
         "flow 43 arm 2's prose, the same retired green",
     ),
 ];
+
+/// The retired **fact**, keyed as a fact rather than as one of its phrasings.
+///
+/// `FALSIFIED` above names byte-forms, which is what makes it readable — and what made it
+/// maskable: M46 Increment 3 asserted zero hits for the property census's phrasing of the
+/// retired exit-0 while the *same doc* stated the identical fact twice more, in the bullet
+/// that actually **owns** the property and in the detect flow's brownfield guard. So the
+/// retired token is swept over the whole file, and the **only** admissible occurrence is
+/// inside the sentence that withdraws it — a withdrawal must be free to quote the bytes it
+/// retires (`DECISIONS.md` → 2026-08-19; `design/validation.md` → the managed-arm bullet).
+///
+/// `(file, retired token, the withdrawal sentence that may carry it, why it is retired)`.
+const RETIRED_FACTS: &[(&str, &str, &str, &str)] = &[
+    (
+        "design/corpus-migration.md",
+        "stays exit-0",
+        "the *stays exit-0* this row carried is withdrawn",
+        "`schema-conformance.unadopted-instance` is `render::STORE_EXIT_FLIPS`' fifth \
+         member since M46 Inc 3 / T1 — a never-adopted file at a managed home flips the \
+         sweep's exit, in every home this doc states the property",
+    ),
+    (
+        "design/validation.md",
+        "stays exit-0",
+        "*and stays exit-0* — is withdrawn at M46",
+        "the same fact in the doc that owns the exit predicate; keyed here so a future \
+         pass cannot re-state it in a second home the way `corpus-migration.md` did",
+    ),
+];
+
+/// **The sweep, arm 3 — the retired fact appears nowhere but its own withdrawal.**
+///
+/// Strip the withdrawal sentences, then the token must be gone: not one phrasing of the
+/// fact, every occurrence of it.
+#[test]
+fn the_retired_fact_appears_nowhere_but_its_withdrawal() {
+    for (file, token, withdrawal, why) in RETIRED_FACTS {
+        let body = read_doc(file);
+        assert_eq!(
+            count(&body, withdrawal),
+            1,
+            "{file} must carry the withdrawal sentence `{withdrawal}` exactly once — a \
+             fact is retired where it was written, never annotated around",
+        );
+        let stripped = body.replace(withdrawal, "");
+        assert_eq!(
+            count(&stripped, token),
+            0,
+            "{file} still states the retired fact `{token}` outside its withdrawal — {why}",
+        );
+    }
+}
 
 /// The replacements, each asserted **exactly once** — a correction stated twice is the
 /// restatement rot, and a correction stated zero times is the swap never landing.
@@ -141,6 +188,11 @@ const REPLACEMENTS: &[(&str, &str)] = &[
     (
         "design/corpus-migration.md",
         "## The foreign arm — the file the verb is not for (M46)",
+    ),
+    ("design/corpus-migration.md", "flips the sweep's own exit"),
+    (
+        "design/corpus-migration.md",
+        "the sweep's verdict on its own run rather than a gate the advisory carries",
     ),
     ("design/worked-examples.md", "# M46: the GREEN is withdrawn"),
     (
