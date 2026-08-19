@@ -48,6 +48,8 @@ mod ingest;
 mod ingest_finding_keys;
 #[path = "../ingest_flow12.rs"]
 mod ingest_flow12;
+#[path = "../maps_to_test_caveat_fence.rs"]
+mod maps_to_test_caveat_fence;
 #[path = "../nested_add_item_on_create.rs"]
 mod nested_add_item_on_create;
 #[path = "../nested_item_addressing.rs"]

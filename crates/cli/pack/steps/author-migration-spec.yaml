@@ -35,6 +35,11 @@ spec with no test anchors finalizes clean. Wire `maps-to-test` (in the criterion
 `set:` block, as `maps-to-test: "<path>#<test-fn>"`) only when the foreign criterion
 already cites a concrete test symbol you can carry over verbatim.
 
+The `#<test-fn>` names the test symbol — a named test function. A closure-based test
+framework registers its tests with no named symbol, so there is nothing to carry over:
+drop the `#<test-fn>` and give the `<path>` alone. A file-only anchor is accepted — it
+resolves on the file's presence, no symbol required.
+
 A foreign "decided by ADR-X" / "see the auth ADR" reference has no structural edge in the
 spec schema (there is no `decided-by` relation) — fold it into the `context` prose instead;
 never invent a field for it.
