@@ -2913,16 +2913,26 @@ pub fn corpus_migration(
             } else {
                 format!(", {} not adopted", report.unadopted.len())
             };
+            // THE LOUDNESS CLAUSE (M46 Inc 4 / T2). A `set:`-derived leaf an added-field fold had
+            // no deterministic value for is left absent — conformantly — instead of blocking the
+            // doc, so the run states what it left undone rather than reporting a clean migration
+            // and nothing else. Absent entirely when nothing was left unfilled, so an ordinary
+            // run's bytes are unchanged.
+            let left_unfilled = if report.unfilled.is_empty() {
+                String::new()
+            } else {
+                format!(", {} left unfilled", report.unfilled.len())
+            };
             let mut out = if report.dry_run {
                 format!(
-                    "corpus migration (dry run — nothing written): {} would migrate, {recovery}{} already current, {} blocked{not_adopted}\n",
+                    "corpus migration (dry run — nothing written): {} would migrate, {recovery}{} already current, {} blocked{not_adopted}{left_unfilled}\n",
                     report.migrated.len(),
                     report.already_current.len(),
                     report.blocked.len(),
                 )
             } else {
                 format!(
-                    "corpus migration: {} migrated, {recovery}{} already current, {} blocked{not_adopted}\n",
+                    "corpus migration: {} migrated, {recovery}{} already current, {} blocked{not_adopted}{left_unfilled}\n",
                     report.migrated.len(),
                     report.already_current.len(),
                     report.blocked.len(),
@@ -2974,6 +2984,22 @@ pub fn corpus_migration(
                     .and_then(|l| l.address.as_deref())
                     .unwrap_or("<unaddressed>");
                 out.push_str(&format!("  unadopted  {path}\n"));
+                out.push_str(&format!("    {}: {}\n", finding.code, finding.message));
+                if let Some(route) = &finding.route {
+                    out.push_str(&format!("    route: {route}\n"));
+                }
+            }
+            // An unfilled `set:` leaf prints in the same three-line shape as a blocked or an
+            // unadopted one — address, then code + message, then route — because it *is* a real
+            // `Finding`: the address carries the leaf fragment (`<path>#<section>/<field>`), so a
+            // reader sees WHICH leaf, and the route says whether anyone may write it at all.
+            for finding in &report.unfilled {
+                let address = finding
+                    .location
+                    .as_ref()
+                    .and_then(|l| l.address.as_deref())
+                    .unwrap_or("<unaddressed>");
+                out.push_str(&format!("  unfilled   {address}\n"));
                 out.push_str(&format!("    {}: {}\n", finding.code, finding.message));
                 if let Some(route) = &finding.route {
                     out.push_str(&format!("    route: {route}\n"));

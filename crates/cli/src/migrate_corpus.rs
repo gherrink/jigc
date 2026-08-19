@@ -49,9 +49,9 @@ use crate::pack;
 use crate::render;
 use anyhow::{Context, Result};
 use engine::file_state::{FileStateRecord, hash_bytes};
-use engine::finding::{Finding, Findings, Location, Severity};
+use engine::finding::{Finding, Findings, Location, Route, Severity};
 use engine::packsource::PackSource;
-use engine::schema::{SCHEMA_VERSION_FIELD, Schema, SectionBody};
+use engine::schema::{Field, SCHEMA_VERSION_FIELD, Schema, SectionBody};
 use engine::schema_diff::{SchemaChange, schema_diff};
 use engine::transform::{CorpusDoc, CorpusMigration, DocOutcome, migrate_corpus};
 use std::collections::BTreeMap;
@@ -159,6 +159,27 @@ pub struct CorpusMigrationReport {
     /// records why the set is not re-derivable from [`Self::migrated`] / [`Self::already_current`]
     /// / [`Self::blocked`] (an excluded file is in none of them).
     pub unadopted: Findings,
+    /// The `set:`-derived leaves this run's migrations **left unfilled** — one advisory per
+    /// added leaf whose declaration carries a `set:` deriver and no `default:`
+    /// ([`unfilled_set_field_finding`]), derived once in the engine
+    /// ([`engine::schema_diff::unfilled_set_leaves`]) from each migrated doc's own change list.
+    /// Sorted by target, like [`Self::blocked`] and [`Self::unadopted`].
+    ///
+    /// **The loudness rider of M46 Increment 4** (`DECISIONS.md` → 2026-08-18 M46 planned). T1
+    /// stopped the fold refusing an absence that already conforms — a `set:`-derived field's
+    /// absence is conformance-clean, so no author can fill it and no re-run can change it. That
+    /// makes the fold a byte no-op, and a silent no-op is its own hazard: a doctype author who
+    /// adds a `set:`-bearing field expecting the corpus to carry a value would read `1 migrated`
+    /// and nothing else. The run names what it left undone instead.
+    ///
+    /// **Its own field, deliberately not [`Self::blocked`]** — whose emptiness *is* the exit rule
+    /// ([`run`]): nothing here is a refusal, the doc migrated, and the exit stays 0. The
+    /// [`Self::unadopted`] precedent, for the same structural reason.
+    ///
+    /// A key on a pinned envelope is **declared where its siblings are**, never merely shipped:
+    /// `design/command-output-contract.md` → the `migrate-corpus.*` sub-table (the code) and
+    /// Evolution posture, *The M46 additive key: `unfilled`* (the key).
+    pub unfilled: Findings,
     /// The short sha of the commit the verb landed its own migration in ([`commit_migration`]),
     /// or `None` when nothing was committed (nothing migrated, a re-run that staged no change,
     /// or a non-git worktree). Named in both surfaces — the operator/driver reads back *where*
@@ -576,6 +597,7 @@ pub(crate) fn migrate_committed_corpus(
         already_current: Vec::new(),
         blocked: Findings::default(),
         unadopted: Findings::default(),
+        unfilled: Findings::default(),
         commit: None,
         hook_output: String::new(),
         touched: Vec::new(),
@@ -909,6 +931,19 @@ pub(crate) fn migrate_committed_corpus(
                     report.already_current.retain(|k| k != target);
                 }
                 report.migrated.push(target.clone());
+                // THE LOUDNESS RIDER (M46 Inc-4 T2): what this doc's fold left unfilled. Derived
+                // **once, in the engine**, from this doc's own change list against the schema the
+                // fold actually used — `prep.to`, the stamp-defaulted clone, so the value the CLI
+                // threads in for the schema-version stamp is excluded by its `default:` rather
+                // than by a second list of exceptions. Reported at the destination the bytes
+                // landed at, so the address a reader follows is the file that now exists.
+                for leaf in engine::schema_diff::unfilled_set_leaves(&prep.to, &prep.changes) {
+                    report.unfilled.push(unfilled_set_field_finding(
+                        target,
+                        leaf.section,
+                        leaf.field,
+                    ));
+                }
                 // The self-commit's pathspec: **both** halves of the write — the destination
                 // just persisted and, for a relocation, the source just removed. Staging only
                 // the add half would land a half-migration (`design/corpus-migration.md` → The
@@ -957,6 +992,9 @@ pub(crate) fn migrate_committed_corpus(
     let mut unadopted = std::mem::take(&mut report.unadopted).into_vec();
     unadopted.sort_by(|a, b| a.key().target.cmp(&b.key().target));
     report.unadopted = unadopted.into();
+    let mut unfilled = std::mem::take(&mut report.unfilled).into_vec();
+    unfilled.sort_by(|a, b| a.key().target.cmp(&b.key().target));
+    report.unfilled = unfilled.into();
     // A stable, deduped pathspec (a destination shared by a completed interrupted move is
     // enumerated once) — the staging order never varies between runs.
     report.touched.sort();
@@ -1227,6 +1265,53 @@ fn blocked_finding(code: &str, path: &str, message: String, route: String) -> Fi
         message,
         Some(Location::addressed(path, 1, 1)),
         Some(route.into()),
+    )
+}
+
+/// **The loudness rider's advisory** (M46 Inc-4 T2): a migrated doc carried an added leaf whose
+/// declared field names a `set:` deriver and no `default:`, so the fold placed **no bytes** for
+/// it and left it absent — conformantly (`validate::is_author_required` never asks for a `set:`
+/// field, which is exactly why T1 stopped blocking the doc over it).
+///
+/// **Advisory, never blocking**, and it rides [`CorpusMigrationReport::unfilled`] rather than
+/// `blocked`: the doc migrated, and the run's exit is the refusal set's emptiness ([`run`]).
+///
+/// **Targeted at `<path>#<section>/<field>`** — the file-path form every `migrate-corpus.*`
+/// finding takes, carrying the leaf fragment so two unfilled leaves in one doc discriminate
+/// rather than collapsing onto one `(code, target)`.
+///
+/// **The route splits on the `set:` kind**, through the one authority
+/// ([`engine::schema::is_machine_maintained_absolute`]): a **machine-maintained absolute** (the
+/// freeze stamp, a milestone transition) is informational — no author write may set it, so
+/// naming an action would be a route nobody can take; an **author-overridable** `on-create` takes
+/// a **human** route naming the write path. Neither is mechanical: a `jigc doc set-field` argv
+/// needs a task id, and a migration report holds none — a mechanical route is a promise the
+/// command runs from where the reader stands.
+fn unfilled_set_field_finding(path: &str, section: &str, field: &Field) -> Finding {
+    let id = &field.id;
+    let set = field.set.as_deref().unwrap_or_default();
+    let route = if engine::schema::is_machine_maintained_absolute(field) {
+        Route::informational(format!(
+            "no action needed — `{id}` is machine-maintained (`set: {set}`): jigc derives its \
+             value and no `jigc doc` write may set it"
+        ))
+    } else {
+        Route::human(format!(
+            "`{id}` is author-overridable (`set: {set}`) — if this record warrants a value, set \
+             it inside a task with `jigc doc set-field <doc-address>#{section}/{id} <value> \
+             --task <task-id>`; this report holds no task id, so it composes no runnable command"
+        ))
+    };
+    Finding::graded(
+        Severity::Advisory,
+        "migrate-corpus.set-field-unfilled",
+        format!(
+            "`{path}` migrated with `{section}/{id}` left unfilled — the field declares \
+             `set: {set}` and no `default:`, so the migration had no deterministic value to \
+             place and invented none; its absence conforms"
+        ),
+        Some(Location::addressed(format!("{path}#{section}/{id}"), 1, 1)),
+        Some(route),
     )
 }
 

@@ -799,6 +799,84 @@ fn classify_added_item_field(section: &str, field: &Field) -> SchemaChange {
     }
 }
 
+/// One added leaf a fold left **unfilled** — the subject of the migration report's loudness
+/// rider ([`unfilled_set_leaves`]).
+#[derive(Clone, Copy, Debug)]
+pub struct UnfilledSetLeaf<'a> {
+    /// The id of the section the leaf was added to, borrowed from the **new** schema (never
+    /// from the change list), so the address a caller composes names a section that exists.
+    pub section: &'a str,
+    /// The declared field itself — the caller routes on its `set:` kind
+    /// ([`crate::schema::is_machine_maintained_absolute`]: an absolute nothing may write reads
+    /// differently from an author-overridable `on-create`).
+    pub field: &'a Field,
+}
+
+/// The added leaves of `changes` whose declaration in `to` carries a **`set:` deriver with no
+/// `default:`** — exactly what the fold placed no bytes for, at **both** loci
+/// ([`SchemaChange::AddedOptionalField`] and [`SchemaChange::AddedItemField`]), in change order.
+///
+/// **The one derivation, and it exists so there is not a fourth private one** (M46 Inc-4 T2).
+/// Since T1 an absence the conformance gate accepts folds to zero bytes rather than blocking the
+/// doc — correct, and *silent*: a doctype author who adds a `set:`-bearing field expecting the
+/// corpus to carry a value would read `1 migrated` and nothing else, because the doc conforms
+/// without it. This names what was left undone, and only that: an `optional:` leaf, an optional
+/// `ref` and a pack-declared type all fold to zero bytes too, but none of them *declares a value
+/// source*, so there is nothing unfilled about them.
+///
+/// **Feed it the schema the driver folded with**, not the raw pack shape: a caller that threads a
+/// deterministic value in does so **as a `default:`** (the CLI's `with_stamp_default`), and the
+/// `default.is_none()` clause is what makes such a leaf — the schema-version stamp — excluded by
+/// construction rather than by a second list of exceptions.
+pub fn unfilled_set_leaves<'a>(
+    to: &'a Schema,
+    changes: &[SchemaChange],
+) -> Vec<UnfilledSetLeaf<'a>> {
+    let mut out = Vec::new();
+    for change in changes {
+        let (section, field, item_locus) = match change {
+            SchemaChange::AddedOptionalField { section, field } => (section, field, false),
+            SchemaChange::AddedItemField { section, field } => (section, field, true),
+            _ => continue,
+        };
+        let Some((section, decl)) = declared_added_leaf(to, section, field, item_locus) else {
+            continue;
+        };
+        if decl.set.is_some() && decl.default.is_none() {
+            out.push(UnfilledSetLeaf {
+                section,
+                field: decl,
+            });
+        }
+    }
+    out
+}
+
+/// The declaration of an added leaf in the **new** schema, at the locus its change kind names —
+/// a simple/header section's `fields` for [`SchemaChange::AddedOptionalField`], a repeatable
+/// section's item block for [`SchemaChange::AddedItemField`]. Returns the section's own id
+/// alongside, so the borrow is the schema's rather than the change list's. `None` when the
+/// section or the leaf is not declared where the kind says it is (a caller pairing a change list
+/// with a schema it did not come from).
+fn declared_added_leaf<'a>(
+    to: &'a Schema,
+    section: &str,
+    field: &str,
+    item_locus: bool,
+) -> Option<(&'a str, &'a Field)> {
+    let sec = to.sections.iter().find(|s| s.id == section)?;
+    let decl = match (&sec.body, item_locus) {
+        (SectionBody::Simple { fields, .. }, false) => fields.iter().find(|f| f.id == field),
+        (SectionBody::Repeatable { repeatable }, true) => repeatable
+            .block
+            .iter()
+            .filter_map(item_field)
+            .find(|f| f.id == field),
+        _ => None,
+    }?;
+    Some((sec.id.as_str(), decl))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
