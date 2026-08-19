@@ -57,6 +57,14 @@ const RETIRED_VERB: &str = "jigc doc add-item";
 /// arm-1 chain must still resolve at the end.
 const PRD_ID: &str = "prd:gateway-limits";
 
+/// The operator's edit, made **after** `jigc migrate` minted — so the source seam the
+/// task recorded at mint cannot contain it, and no fidelity diff can show it.
+const POST_MINT_EDIT: &str = "Traffic is spiky on release days.";
+
+/// The clause the migration-source route carried when it shipped: it sent the operator
+/// to a review of bytes that review never renders.
+const FALSE_REVIEW_CLAIM: &str = "fidelity diff is where that replacement is reviewed";
+
 /// The act the conflict route ordered until M46 and the adapter has never sanctioned —
 /// `.jigc/AGENT.md`'s routing sentence forbids editing a managed doc directly, so a
 /// blocking route whose only in-repo exit is a hand revert is a route out of nothing.
@@ -750,6 +758,175 @@ fn an_ordinary_tasks_conflict_is_offered_no_baseline_drop() {
         route.contains("out-of-band"),
         "and it must say why that revert is sanctioned here; got:\n{route}"
     );
+}
+
+/// **Arm 2 — the migration-source route may not send an operator to a review that does
+/// not carry what the route is about to replace** (M46 Increment 5, validate→fix).
+///
+/// Arm 1 plants every external edit **before** `jigc migrate` mints, which is the one
+/// arrangement where the mint-time snapshot happens to contain the drift. The state an
+/// operator actually reaches is the other one: the migration is minted, the rewrite is
+/// authored against the source **as this task recorded it at mint**, and *then* a hand
+/// edit lands on that file — which is precisely the edit the `jigc unmanage` exit's
+/// finalize replaces.
+///
+/// The fidelity diff cannot review that edit: it renders the recorded source seam
+/// (`crates/cli/src/migrate.rs` persists it at mint; `task.rs` renders *that*), so a
+/// route telling the operator the `--approve` diff is where the replacement is reviewed
+/// is a law-1 lie whose consequence is a silent overwrite at exit 0.
+///
+/// This arm measures both halves through the real binary — the review's rendered bytes,
+/// then the route's — and finishes on the exit the route names for keeping the file:
+/// lifted out of the printed text and run verbatim, with the on-disk edit still there
+/// afterwards.
+#[test]
+fn the_migration_source_route_does_not_promise_a_review_it_does_not_get() {
+    let corpus = corrupted_corpus();
+
+    // The corruption's slot-prose repair, at the depth the emitted diagnosis names — the
+    // same standing point arm 1 starts from, baseline and all.
+    let depth = demote_depth(&diagnosis("jigc validate", &store_carrier(&corpus)));
+    let path = corpus.repo().join(SPEC_PATH);
+    let body = fs::read_to_string(&path).expect("the corrupted spec is readable");
+    let demoted_heading = CORRUPT_HEADING.replacen("###", &depth, 1);
+    fs::write(&path, body.replace(CORRUPT_HEADING, &demoted_heading))
+        .expect("write the demoted heading");
+
+    let minted = corpus.jigc_ok(&["migrate", SPEC_PATH, "--as", "spec"]);
+    let task = minted
+        .lines()
+        .find_map(|l| l.strip_prefix("task minted: "))
+        .expect("`jigc migrate` mints a task")
+        .trim()
+        .to_string();
+
+    // **After the mint** — the edit the recorded source cannot contain, and the one the
+    // operator means to keep.
+    let body = fs::read_to_string(&path).expect("the source is readable");
+    let edited = body.replace(
+        "The gateway has no limiter today.",
+        &format!("The gateway has no limiter today. {POST_MINT_EDIT}"),
+    );
+    assert_ne!(body, edited, "the post-mint edit must land");
+    fs::write(&path, edited).expect("write the post-mint edit");
+
+    corpus.jigc_stdin_ok(
+        &["doc", "author", "spec", "--from-file", "-", "--task", &task],
+        &format!(
+            "title: \"Rate limiter\"\n\
+             sections:\n\
+             \x20 - id: goal\n\
+             \x20   set:\n\
+             \x20     goal: |-\n\
+             \x20       <<Cap bursts at the configured rate.>>\n\
+             \x20 - id: context\n\
+             \x20   set:\n\
+             \x20     context: |-\n\
+             \x20       <<The gateway has no limiter today.>>\n\
+             \x20 - id: criteria\n\
+             \x20   items:\n\
+             \x20     - title: \"Burst limit\"\n\
+             \x20       set:\n\
+             \x20         statement: |-\n\
+             \x20           <<A burst beyond the cap is rejected.\n\
+             \n\
+             \x20           {demoted_heading}\n\
+             \n\
+             \x20           {CORRUPT_PROSE}>>\n"
+        ),
+    );
+
+    let blocked = corpus.jigc(&["task", "finalize", &task]);
+    let text = both_streams(&blocked);
+    assert_eq!(
+        blocked.status.code(),
+        Some(3),
+        "the migration finalize must block on the conflict; got:\n{text}"
+    );
+    let route = route_text(&text);
+    assert!(
+        route.contains("jigc unmanage"),
+        "this arm drives the migration-source exit; got:\n{route}"
+    );
+
+    // Half one, measured: run the exit as printed, reach the review the route talks
+    // about, and read what it actually renders.
+    let argv = route_argv(&text);
+    let run: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    let exit = corpus.jigc(&run);
+    assert!(
+        exit.status.success(),
+        "the printed route must run from here; `jigc {}` gave:\n{}",
+        run.join(" "),
+        both_streams(&exit)
+    );
+    let hold = corpus.jigc(&["task", "finalize", &task]);
+    let review = both_streams(&hold);
+    assert_eq!(
+        hold.status.code(),
+        Some(4),
+        "the re-run finalize must reach the migration review hold; got:\n{review}"
+    );
+    assert!(
+        review.contains(&demoted_heading),
+        "the review renders the source seam this task recorded at mint; got:\n{review}"
+    );
+    assert!(
+        !review.contains(POST_MINT_EDIT),
+        "the review does not carry the post-mint on-disk edit — if it ever does, this \
+         arm's premise changed and the route's wording is re-taken, not inherited; got:\n{review}"
+    );
+
+    // Half two: the route, held to what half one measured.
+    assert!(
+        !route.contains(FALSE_REVIEW_CLAIM),
+        "the route sends the operator to the `--approve` fidelity diff to review a \
+         replacement that diff never shows — the edit made after the mint is overwritten \
+         at exit 0 with no surface carrying it; got:\n{route}"
+    );
+    let preserving = route_jigc_spans(&text)
+        .into_iter()
+        .find(|argv| argv.get(1..3) == Some(&["task".to_string(), "discard".to_string()]))
+        .unwrap_or_else(|| {
+            panic!(
+                "the route must still name the exit that keeps the on-disk bytes — the \
+                 general route's whole-task discard, which the keyed presentation replaces \
+                 wholesale; got:\n{route}"
+            )
+        });
+    assert_eq!(
+        preserving,
+        vec!["jigc", "task", "discard", task.as_str()],
+        "the preserving exit carries the real task id, substituted"
+    );
+
+    // And it preserves: run it verbatim, the operator's edit is still on disk.
+    let run: Vec<&str> = preserving[1..].iter().map(String::as_str).collect();
+    let kept = corpus.jigc(&run);
+    assert!(
+        kept.status.success(),
+        "the preserving exit must run as printed; `jigc {}` gave:\n{}",
+        run.join(" "),
+        both_streams(&kept)
+    );
+    let on_disk = fs::read_to_string(&path).expect("the source is readable");
+    assert!(
+        on_disk.contains(POST_MINT_EDIT),
+        "the exit the route names as the one that keeps the file must keep it; got:\n{on_disk}"
+    );
+}
+
+/// Every backticked `` `jigc …` `` command span the conflict-block route prints, in the
+/// order printed and split as printed — so an exit named in the route's *tail* is run
+/// from the emitted bytes exactly like the leading argv is.
+fn route_jigc_spans(output: &str) -> Vec<Vec<String>> {
+    route_text(output)
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|span| span.starts_with("jigc "))
+        .map(|span| span.split_whitespace().map(str::to_string).collect())
+        .collect()
 }
 
 /// The `reconciliation.conflict-block` route line, as printed.

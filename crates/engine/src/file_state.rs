@@ -282,9 +282,14 @@ pub fn staged_copy_finding(dest: &str) -> Finding {
 ///
 /// A caller may also supply a **second, path-keyed** presentation (M46 inc-5 / T2), used in
 /// place of the general one when the conflict is on exactly that path — a migration task's
-/// own recorded source is the one path whose general exits are both dead ends. The
-/// classifier still adds nothing: it picks between two caller-composed pairs on the one fact
-/// it holds, the conflicting path ([`ConflictBlock::presentation`]).
+/// own recorded source is the one path whose general exits both fail it. The classifier
+/// still adds nothing: it picks between two caller-composed pairs on the one fact it holds,
+/// the conflicting path ([`ConflictBlock::presentation`]).
+///
+/// Because the keyed pair replaces the general one **wholesale**, a keyed route owes the
+/// operator every exit the general route gave them and it is still true of: the migration
+/// arm re-names the whole-task discard as the way to keep the on-disk bytes, since its own
+/// exit replaces them (M46 inc-5, validate→fix).
 #[derive(Clone, Debug)]
 pub struct ConflictBlock {
     /// The clause after ``conflict on `<path>`: `` — names what moved on the CLI side.
@@ -349,10 +354,17 @@ impl ConflictBlock {
                     .to_string(),
                 crate::finding::Route::mechanical(
                     ["jigc", "unmanage", source],
-                    " to drop the stale baseline on that path, then run this finalize again — \
-                     the guard is dropped for that path only and the bytes stay on disk; they \
-                     are not merged, this task's staged rewrite replaces them, and the \
-                     `--approve` fidelity diff is where that replacement is reviewed",
+                    format!(
+                        " to drop the stale baseline on that path, then run this finalize \
+                         again — the guard is dropped for that path only and the bytes stay \
+                         on disk; they are not merged, this task's staged rewrite replaces \
+                         them, and that rewrite was authored against the source as this task \
+                         recorded it at mint, so an edit made to the file since is replaced \
+                         without appearing in the `--approve` fidelity diff (which renders \
+                         the recorded source, not what is on disk now). To keep the file as \
+                         it stands, `jigc task discard {task_id}` retires the migration \
+                         instead and leaves it untouched"
+                    ),
                 ),
             ));
         }
@@ -1772,10 +1784,15 @@ Referrers must point at the new decision.
                 "`jigc unmanage {source}` to drop the stale baseline on that path, then run \
                  this finalize again — the guard is dropped for that path only and the bytes \
                  stay on disk; they are not merged, this task's staged rewrite replaces them, \
-                 and the `--approve` fidelity diff is where that replacement is reviewed"
+                 and that rewrite was authored against the source as this task recorded it at \
+                 mint, so an edit made to the file since is replaced without appearing in the \
+                 `--approve` fidelity diff (which renders the recorded source, not what is on \
+                 disk now). To keep the file as it stands, \
+                 `jigc task discard migrate-adr-decisions-cache` retires the migration instead \
+                 and leaves it untouched"
             ),
-            "the source arm routes at the baseline drop, with the path substituted and the \
-             cost stated"
+            "the source arm routes at the baseline drop, with the path substituted, the cost \
+             stated, and the exit that keeps the on-disk bytes still named"
         );
         assert!(
             matches!(route.kind(), crate::finding::RouteKind::Mechanical { .. }),
