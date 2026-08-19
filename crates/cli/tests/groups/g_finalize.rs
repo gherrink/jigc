@@ -9,6 +9,8 @@ mod support;
 mod anyhow_route_spans;
 #[path = "../docs_root.rs"]
 mod docs_root;
+#[path = "../doctype_map_versions.rs"]
+mod doctype_map_versions;
 #[path = "../file_state_concurrency.rs"]
 mod file_state_concurrency;
 #[path = "../file_state_history_gate.rs"]
