@@ -284,25 +284,24 @@ fn a_granted_but_unused_changelog_gate_advises_at_the_task_and_still_lands() {
         "every advisory carries a route (the universal advisory-route floor); got:\n{finding:#?}",
     );
 
-    // M43 pre-trial surface polish A6 — the route leads with the LANDED-state
-    // option: this advisory prints after the finalize commit lands, where the
-    // in-task `--task <id>` verbs are dead. The `record-change` route comes
-    // first; the in-task form follows, marked as the before-finalize option.
+    // M43 pre-trial surface polish A6 — the landed-state option — **revised at M46
+    // Inc 6 / T3**: A6 correctly saw that this advisory prints after the commit lands,
+    // where the in-task `--task <id>` verbs are dead, and then offered them anyway as
+    // the *"before finalize"* option, on the premise that they were live on the
+    // `task validate` preview. They were not: the advisory did not preview at all
+    // until T3. So the landing door now prints the landed-state form **alone** — the
+    // in-task verbs moved to the doors where the working area is still open (the
+    // preview, and a finalize the promoted gate refuses; `validate_previews_the_gate`
+    // drives both, running every printed argv verbatim).
     let route = finding["route"].as_str().expect("route is a string");
-    let landed_at = route
-        .find("jigc start --workflow record-change")
-        .unwrap_or_else(|| panic!("the route carries the landed-state form; got: {route}"));
-    let in_task_at = route
-        .find("jigc doc create changelog")
-        .unwrap_or_else(|| panic!("the route carries the in-task form; got: {route}"));
     assert!(
-        landed_at < in_task_at,
-        "the landed-state route must come FIRST (the advisory prints after the \
-         commit landed, when the in-task verbs are dead); got: {route}"
+        route.contains("jigc start --workflow record-change"),
+        "the landing door carries the landed-state form; got: {route}"
     );
     assert!(
-        route.contains("before finalize"),
-        "the in-task form must be marked as the before-finalize option; got: {route}"
+        !route.contains("--task"),
+        "the commit has landed and `.jigc/tasks/<id>/` is gone — an in-task argv \
+         printed here answers ``no task `<id>` `` at exit 1; got: {route}"
     );
 
     let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])

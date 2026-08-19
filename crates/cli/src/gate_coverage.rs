@@ -139,6 +139,17 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         token: "owner-artifact",
     },
     GateCoverage {
+        // The changelog-gate advisory (M46 Inc 6 / T3). It joined the previewed set
+        // last, and it is the member that shows why the set is a *table*: the check
+        // ran only on the committing path, so seven surfaces stated a coverage claim
+        // that was one member short of the truth and none of them knew it.
+        id: "changelog-gate",
+        door: Door::Previewed,
+        tiers: &[Tier::Previewed],
+        fragment: "the granted-but-unused changelog gate",
+        token: "changelog gate",
+    },
+    GateCoverage {
         id: "staged-set",
         door: Door::FinalizeOnly(NotPreviewable::LaterPhase),
         tiers: &[Tier::LaterSummary],
@@ -360,8 +371,9 @@ mod tests {
         assert_eq!(
             whats_left_coverage(),
             "previews part of the finalize gate: this task's content findings, the \
-             carryover gate, and the owner-artifact causes that need no staging; the \
-             staged set, promotion and the commit surface at finalize",
+             carryover gate, the owner-artifact causes that need no staging, and the \
+             granted-but-unused changelog gate; the staged set, promotion and the \
+             commit surface at finalize",
         );
     }
 

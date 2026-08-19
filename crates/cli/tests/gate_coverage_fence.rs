@@ -311,10 +311,12 @@ fn the_fence_reddens_when_a_site_drops_a_member() {
             checked += 1;
         }
     }
-    // The axis today is 45 cells (8 sites × the tiers each owes). The floor guards
-    // against it silently collapsing — a site whose region stopped resolving, or a
-    // tier that lost its members, would otherwise pass as a vacuous green.
-    assert!(checked >= 45, "the mutation axis ran only {checked} cells");
+    // The axis today is 51 cells (8 sites × the tiers each owes) — 45 before the
+    // changelog gate joined [`Tier::Previewed`], which is one cell per site owing that
+    // tier. The floor guards against it silently collapsing — a site whose region
+    // stopped resolving, or a tier that lost its members, would otherwise pass as a
+    // vacuous green.
+    assert!(checked >= 51, "the mutation axis ran only {checked} cells");
 }
 
 /// Remove **every** occurrence of `token` from the normalized view's perspective:

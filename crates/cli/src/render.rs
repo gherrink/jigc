@@ -252,8 +252,7 @@ fn minted_header(view: &Composition) -> String {
 ///
 /// - `resume:` — `jigc start --task <id>`, the designated recovery after context loss;
 /// - `what's-left:` — `jigc task validate <id>`, the preview of **part** of the
-///   finalize gate: this task's content findings, the carryover gate and the
-///   staging-independent `owner-artifact` causes (M47 Inc 4 T1/T2). It says so —
+///   finalize gate: the [`crate::gate_coverage::Tier::Previewed`] members. It says so —
 ///   the staged set, promotion and the commit itself are decided only at
 ///   `finalize`, and law 1 forbids the line implying otherwise. That clause is
 ///   **generated** from [`crate::gate_coverage`] (M46 Inc 6 / T2), not spelled
@@ -4512,12 +4511,11 @@ mod tests {
     /// M47 Inc 4 T4 (`surface-contract.md` → law 1): the `what's-left:` line is the
     /// **highest-traffic** promise surface — it renders on every id-carrying compose —
     /// and until M47 it claimed `jigc task validate` "previews the findings finalize
-    /// will gate on", flat. It does not: after Inc 4 T1/T2 the preview covers this
-    /// task's content findings, the carryover gate, and the six staging-independent
-    /// `owner-artifact` causes, while the staged set (`empty-commit`/`nothing-staged`),
-    /// promotion, `stage-failed`, the untracked owner-artifact cause and the commit /
-    /// hook rejection are decided only at `finalize`
-    /// ([baseline](../../../completions/artifacts/M47/baseline.md) §4b).
+    /// will gate on", flat. It does not: the preview covers the
+    /// [`crate::gate_coverage::Tier::Previewed`] members and no more, while the staged
+    /// set (`empty-commit`/`nothing-staged`), promotion, `stage-failed`, the untracked
+    /// owner-artifact cause and the commit / hook rejection are decided only at
+    /// `finalize` ([baseline](../../../completions/artifacts/M47/baseline.md) §4b).
     ///
     /// This assertion drives the **emitted** line — sliced out of the rendered agent
     /// text, not rebuilt here — so the fence is on the bytes an agent reads: the
@@ -4547,11 +4545,14 @@ mod tests {
             "the line must scope its claim, not re-assert the unscoped promise; \
              got:\n{line}",
         );
-        // It names each family the preview genuinely covers…
-        for covered in ["content findings", "carryover", "owner-artifact"] {
+        // It names each family the preview genuinely covers — read from the coverage
+        // table, never re-listed here: a hand-list beside the generated line is the
+        // ninth enumeration M46 Inc 6 / T2 exists to delete.
+        for covered in crate::gate_coverage::members(crate::gate_coverage::Tier::Previewed) {
             assert!(
-                line.contains(covered),
-                "the line must name `{covered}` as covered; got:\n{line}",
+                line.contains(covered.token),
+                "the line must name `{}` as covered; got:\n{line}",
+                covered.id,
             );
         }
         // …and where the rest is decided.

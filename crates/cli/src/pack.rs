@@ -2196,9 +2196,9 @@ mod tests {
 
         To see what's left before committing, run `jigc task validate {{task.id}}` — it
         previews part of what finalize gates on (this task's content findings, the
-        carryover gate, and the owner-artifact causes that need no staging), without
-        committing anything; the staged set, promotion and the commit itself are decided
-        at finalize.
+        carryover gate, the owner-artifact causes that need no staging, and the
+        granted-but-unused changelog gate), without committing anything; the staged set,
+        promotion and the commit itself are decided at finalize.
 
         {{ cli.finalize-task }}
         ");

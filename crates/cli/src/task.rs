@@ -546,10 +546,32 @@ fn run_bind(cwd: &Path, role: &str, addr: &str, id: &str, format: Format) -> Res
 /// provisioned under `commit:<task-id>`, so the commit slug is the task id.
 const COMMIT_TYPE: &str = "commit";
 
-/// The changelog doctype name — the create-gate the finalize-scope
-/// `changelog-recording.gate-granted-unused` check keys on (`design/validation.md` →
-/// The changelog-gate advisory). A `singleton`, so its slug is fixed to the type id.
+/// The changelog doctype name — the create-gate the
+/// [`CHANGELOG_GATE_CODE`] check keys on (`design/validation.md` → The changelog-gate
+/// advisory). A `singleton`, so its slug is fixed to the type id.
 const CHANGELOG_TYPE: &str = "changelog";
+
+/// The changelog-gate advisory's finding code — one source for the finding it grades,
+/// the cascade key its route names as the not-user-facing exit, and the severity probe
+/// that decides which route that is ([`TaskArea::changelog_gate_refuses`]).
+const CHANGELOG_GATE_CODE: &str = "changelog-recording.gate-granted-unused";
+
+/// Which **door** the changelog-gate advisory speaks for — the [`CarryoverBoundary`]
+/// mold (one decision, two doors, and the *route* differs because the verbs that run
+/// differ). Since M46 Inc 6 / T3 the advisory is reported at both doors, and a route
+/// naming an in-task verb at a door where the working area is already gone is not a
+/// hint but a dead end: `jigc doc create changelog --task <id>` printed after a landed
+/// finalize answers ``no task `<id>` `` at exit 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AdvisoryDoor {
+    /// `jigc task validate` — the preview. The working area is open by construction
+    /// here, so the in-task write verbs run and the route leads with them.
+    TaskPreview,
+    /// `jigc task finalize` — the committing door. When the advisory is **not**
+    /// promoted, this invocation lands the commit and deletes the working area, so the
+    /// route names only the landed-state form.
+    Finalize,
+}
 
 /// `jigc task finalize <id>` — execute the commit boundary (`design/finalize.md` →
 /// 5. Stage / 6. Commit / 7. Post-commit; `design/worked-examples.md` → flow #4).
@@ -970,6 +992,19 @@ impl TaskArea {
                 },
             )?,
         );
+        // The third member: the **changelog-gate advisory** (M46 Inc 6 / T3). It reads
+        // the task's recorded minting workflow and its staged changelog against that
+        // doc's un-authored baseline — no git shell-out, no staging, no mutation — and
+        // it is the one finalize-scope check whose whole state exists *before* the
+        // commit, so excluding it made `task validate` silent about a finding the very
+        // next invocation would print (and, promoted with one cascade line, refuse on).
+        // The committing door keeps computing it itself, at its own position — never
+        // merged twice ([`GatePreview::Off`]).
+        previewed.extend(self.changelog_gate_advisory(
+            &self.id,
+            schemas,
+            AdvisoryDoor::TaskPreview,
+        )?);
         if previewed.is_empty() {
             return Ok(report);
         }
@@ -1185,7 +1220,7 @@ impl TaskArea {
         // `blocking` with one cascade line actually gates on it (the M6 post-pass runs at
         // the single `ValidationReport::new` construction point, and is idempotent over
         // already-assigned findings).
-        let report = match self.changelog_gate_advisory(id, &schemas)? {
+        let report = match self.changelog_gate_advisory(id, &schemas, AdvisoryDoor::Finalize)? {
             None => report,
             Some(finding) => {
                 let mut findings = report.findings.into_vec();
@@ -1834,10 +1869,17 @@ impl TaskArea {
     /// unit*, so a `null` target would collapse every skipped changelog in the corpus
     /// onto one `(code, target)` key (`command-output-contract.md` → the form table, the
     /// work-unit row).
+    ///
+    /// **Reported at both doors, routed per door.** Since M46 Inc 6 / T3 the advisory
+    /// is a member of the previewed set ([`TaskArea::preview_gates`]), so `door`
+    /// selects the recovery whose verbs actually run there
+    /// ([`changelog_gate_route`]) — the M47 claim *`task validate` previews what
+    /// finalize gates on*, applied to the one finalize-scope check that was outside it.
     fn changelog_gate_advisory(
         &self,
         id: &str,
         schemas: &BTreeMap<String, Schema>,
+        door: AdvisoryDoor,
     ) -> Result<Option<Finding>> {
         // A pack-set shipping no `changelog` doctype cannot grant the gate.
         let Some(schema) = schemas.get(CHANGELOG_TYPE) else {
@@ -1887,28 +1929,40 @@ impl TaskArea {
 
         Ok(Some(Finding::graded(
             Severity::Advisory,
-            "changelog-recording.gate-granted-unused",
+            CHANGELOG_GATE_CODE,
             format!(
                 "workflow `{workflow_id}` grants the `changelog` create-gate and this \
                  task recorded no changelog entry",
             ),
             Some(work_unit_location(id)),
-            // The landed-state route leads (M43 pre-trial surface polish A6): this
-            // advisory prints after the finalize commit lands, where the in-task
-            // `--task <id>` verbs are dead — the in-task form follows, marked as
-            // the before-finalize option (it is live on the `task validate` preview).
-            Some(
-                format!(
-                    "if the change is user-facing, record it — `jigc start --workflow \
-                 record-change \"<what changed>\"` (or, before finalize, in-task: \
-                 `jigc doc create changelog --title Changelog --task {id}`, then \
-                 `jigc doc add-item changelog:changelog#unreleased-changes \
-                 --title <category> --task {id}`); if it is not user-facing, \
-                 no action is needed",
-                )
-                .into(),
-            ),
+            Some(changelog_gate_route(id, door, self.changelog_gate_refuses()?).into()),
         )))
+    }
+
+    /// Whether the resolved cascade has promoted this advisory to **blocking** — the
+    /// premise the route turns on at *either* door: a promoted gate refuses the
+    /// commit, which leaves the working area open, so the in-task verbs run and a
+    /// change that is *not* user-facing needs a stated exit (an advisory's *"no action
+    /// is needed"* is no exit at all from a blocking finding).
+    ///
+    /// Resolved through the report's **own** construction point — `ValidationReport::new`
+    /// runs the M6 post-pass including its inventory-membership test
+    /// (`design/validation.md` → Severity assignment) — over a throwaway probe finding,
+    /// never a second copy of the three-step key lookup: a route promising the wrong
+    /// recovery because it re-derived the severity differently is exactly the drift the
+    /// single construction point exists to prevent.
+    fn changelog_gate_refuses(&self) -> Result<bool> {
+        let probe = Finding::graded(
+            Severity::Advisory,
+            CHANGELOG_GATE_CODE,
+            String::new(),
+            None,
+            None,
+        );
+        Ok(
+            engine::result::ValidationReport::new(vec![probe], &self.severity_cascade()?)
+                .has_blocking(),
+        )
     }
 
     /// The **un-authored baseline** of this task's staged changelog: the bytes the
@@ -2007,6 +2061,47 @@ impl TaskArea {
         }
         Ok(out)
     }
+}
+
+/// The changelog-gate advisory's **route**, composed for the door that prints it
+/// (M46 Inc 6 / T3; `design/surface-contract.md` → law 1 and the universal
+/// advisory-route floor).
+///
+/// Three shapes, and each names only verbs that run where it is printed:
+///
+/// * **the preview door** — `.jigc/tasks/<id>/` is open by construction, so the
+///   in-task write verbs lead;
+/// * **the committing door, unpromoted** — this invocation lands the commit and
+///   removes the working area, so the entry becomes a task of its own and the in-task
+///   form is **not offered**: printed here it would answer ``no task `<id>` `` at exit
+///   1, which is the dead end M46's F-E names (the shipped text offered it as the
+///   *"before finalize"* option, on the false premise that it was live on a preview
+///   the advisory did not then reach);
+/// * **promoted to `blocking`, either door** — the gate refuses the commit, so the
+///   task survives and the in-task verbs run; the not-user-facing case gets the one
+///   exit that actually clears a blocking finding, since *"no action is needed"* does
+///   not clear one.
+fn changelog_gate_route(id: &str, door: AdvisoryDoor, refuses: bool) -> String {
+    let in_task = format!(
+        "`jigc doc create changelog --title Changelog --task {id}`, then \
+         `jigc doc add-item changelog:changelog#unreleased-changes --title <category> \
+         --task {id}`"
+    );
+    if refuses {
+        return format!(
+            "this project has promoted the gate to `blocking`, so record the entry in \
+             this task — {in_task}; if the change is not user-facing, lower the gate \
+             back with `jigc config set validation.{CHANGELOG_GATE_CODE}.severity \
+             advisory`"
+        );
+    }
+    let record = match door {
+        AdvisoryDoor::TaskPreview => format!("record it in this task — {in_task}"),
+        AdvisoryDoor::Finalize => {
+            "record it — `jigc start --workflow record-change \"<what changed>\"`".to_owned()
+        }
+    };
+    format!("if the change is user-facing, {record}; if it is not user-facing, no action is needed")
 }
 
 /// Which working-tree changes the finalize stage commits (`design/finalize.md` →

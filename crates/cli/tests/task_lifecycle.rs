@@ -35,17 +35,28 @@ blocking · schema-conformance.field-value-conformant — `commit:add-rate-limit
   route: `jigc doc set-field commit:add-rate-limiter#header/type --value <value>` to correct the value
 blocking · schema-conformance.required-slot-present — `commit:add-rate-limiter`: required slot in section `summary` is empty
   route: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -` to fill the empty slot
+advisory · changelog-recording.gate-granted-unused — workflow `single-task` grants the `changelog` create-gate and this task recorded no changelog entry
+  route: if the change is user-facing, record it in this task — `jigc doc create changelog --title Changelog --task add-rate-limiter`, then `jigc doc add-item changelog:changelog#unreleased-changes --title <category> --task add-rate-limiter`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 
 /// The **no-delta** `jigc task validate` rendered output over a conformant commit doc,
-/// byte for byte — the clean (exit-0) companion to `NO_DELTA_BROKEN_VALIDATE_GOLDEN`.
-/// The post-pass must perturb neither the blocking nor the clean validate render.
+/// byte for byte — the **exit-0** companion to `NO_DELTA_BROKEN_VALIDATE_GOLDEN`.
+/// The post-pass must perturb neither the blocking nor the exit-0 validate render.
 /// (M43 A14: the staged transient commit doc is file-state-silent — its display was
 /// the fictional `docs/commit:<id>.md` working-area key; a transient instance
 /// displays at its `<type>:<slug>` identity and mints no `file-state.*` finding.)
+///
+/// Since M46 Inc 6 / T3 neither render is *empty*: the changelog-gate advisory joined
+/// the previewed set, and `single-task` grants that gate, so a task which recorded no
+/// entry draws it here — advisory, so the exit code is still 0 and the *"validates
+/// clean"* empty-report line is gone (it is not clean, it is unblocked). Both literals
+/// were revised in place rather than scoped away: the claim this test makes is that
+/// the M6 post-pass moves no byte, and it can only make it over the render the binary
+/// actually emits.
 const NO_DELTA_CLEAN_VALIDATE_GOLDEN: &str = "\
-no findings — the task validates clean
+advisory · changelog-recording.gate-granted-unused — workflow `single-task` grants the `changelog` create-gate and this task recorded no changelog entry
+  route: if the change is user-facing, record it in this task — `jigc doc create changelog --title Changelog --task add-rate-limiter`, then `jigc doc add-item changelog:changelog#unreleased-changes --title <category> --task add-rate-limiter`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

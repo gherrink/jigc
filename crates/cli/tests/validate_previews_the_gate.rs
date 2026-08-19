@@ -123,6 +123,21 @@ fn ok(repo: &Path, home: &Path, args: &[&str], what: &str) {
     );
 }
 
+/// Run `jigc <args>` (no stdin), asserting exit 0 and returning trimmed stdout.
+fn ok_stdout(repo: &Path, home: &Path, args: &[&str], what: &str) -> String {
+    let out = jigc(repo, home, args, None);
+    assert!(
+        out.status.success(),
+        "`{what}` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8 stdout")
+        .trim_end_matches('\n')
+        .to_string()
+}
+
 /// Fill every author-required field/slot of the provisioned commit doc.
 fn fill_commit(repo: &Path, home: &Path, task: &str) {
     ok(
@@ -433,5 +448,369 @@ fn the_finalize_door_is_byte_identical() {
             && landed.lines().any(|l| l == "foreign-b.txt")
             && landed.lines().any(|l| l == "feature.rs"),
         "the declared carry-over still rides the whole-index commit; files:\n{landed}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M46 Increment 6 / T3 — the **changelog-gate advisory joins the previewed set**,
+// and each door names verbs that run at that door.
+// ---------------------------------------------------------------------------
+
+/// The changelog advisory's finding code — the member joining [`Tier::Previewed`].
+const CHANGELOG_CODE: &str = "changelog-recording.gate-granted-unused";
+
+/// The one finding carrying [`CHANGELOG_CODE`], or `None`.
+fn changelog_advisory(findings: &[serde_json::Value]) -> Option<serde_json::Value> {
+    findings
+        .iter()
+        .find(|f| f["code"] == CHANGELOG_CODE)
+        .cloned()
+}
+
+/// The route text of the changelog advisory in an envelope.
+fn advisory_route(findings: &[serde_json::Value], what: &str) -> String {
+    changelog_advisory(findings)
+        .unwrap_or_else(|| panic!("`{what}` carries the `{CHANGELOG_CODE}` advisory"))["route"]
+        .as_str()
+        .unwrap_or_else(|| panic!("`{what}`'s advisory carries a route string"))
+        .to_owned()
+}
+
+/// Split a backticked command into argv, honouring the double-quoted intent the route
+/// spells (`jigc start --workflow record-change "<what changed>"` is **three** args
+/// plus the quoted one, not five).
+fn argv_of(command: &str) -> Vec<String> {
+    let mut argv = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    for ch in command.chars() {
+        match ch {
+            '"' => quoted = !quoted,
+            c if c.is_whitespace() && !quoted => {
+                if !current.is_empty() {
+                    argv.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        argv.push(current);
+    }
+    argv
+}
+
+/// **The emitted argvs**, extracted from a route's backticked spans — the bytes an
+/// agent would actually run, never a reconstruction in test code.
+fn route_argvs(route: &str) -> Vec<Vec<String>> {
+    route
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|span| span.starts_with("jigc "))
+        .map(argv_of)
+        .collect()
+}
+
+/// Run **every** argv the route prints, verbatim and in order — the door-truth check:
+/// a route may not name a verb that is dead at the door that printed it.
+///
+/// Two assertions, and the split is the surface's own placeholder grammar rather than
+/// a convenience. **Every** argv must reach the task: an answer of ``no task `<id>` ``
+/// is the failure this task exists to kill, and it is a *door* failure — it does not
+/// depend on what an author would substitute. An argv carrying **no** `<…>`
+/// placeholder is additionally copy-runnable and must exit 0. A placeholder-bearing
+/// one is not claimed to be runnable as printed (`--title <category>` is an enum
+/// member the author picks — the CLI choosing it would be judgment inside the
+/// determinism boundary), so it is held to the door check alone.
+fn every_route_argv_runs(repo: &Path, home: &Path, route: &str, door: &str) {
+    let argvs = route_argvs(route);
+    assert!(
+        !argvs.is_empty(),
+        "{door}: the route prints no runnable command; got: {route}"
+    );
+    for argv in argvs {
+        assert_eq!(argv[0], "jigc", "{door}: the route's command is `jigc`");
+        let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+        let out = jigc(repo, home, &args, None);
+        let rendered = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            !rendered.contains("no task `"),
+            "{door}: `{}` is dead at this door — it answers `no task`:\n{rendered}",
+            argv.join(" "),
+        );
+        if !argv.iter().any(|arg| arg.contains('<')) {
+            assert!(
+                out.status.success(),
+                "{door}: `{}` carries no placeholder, so it must run verbatim; got exit \
+                 {:?}:\n{rendered}",
+                argv.join(" "),
+                out.status.code(),
+            );
+        }
+    }
+}
+
+/// Author a real changelog entry in `task` — the write-touch T1 keys the advisory on.
+fn record_a_change(repo: &Path, home: &Path, task: &str) {
+    ok(
+        repo,
+        home,
+        &[
+            "doc",
+            "create",
+            "changelog",
+            "--title",
+            "Changelog",
+            "--task",
+            task,
+        ],
+        "jigc doc create changelog",
+    );
+    let group = ok_stdout(
+        repo,
+        home,
+        &[
+            "doc",
+            "add-item",
+            "changelog:changelog#unreleased-changes",
+            "--title",
+            "Added",
+            "--task",
+            task,
+        ],
+        "jigc doc add-item (unreleased)",
+    );
+    let notes = jigc(
+        repo,
+        home,
+        &[
+            "doc",
+            "set-slot",
+            &format!("{group}/notes"),
+            "--from-file",
+            "-",
+            "--task",
+            task,
+        ],
+        Some(b"Per-client rate limiting at the gateway.\n"),
+    );
+    assert!(
+        notes.status.success(),
+        "set-slot notes must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&notes.stderr),
+    );
+}
+
+/// **The advisory previews.** A `single-task` grants the `changelog` create-gate; a
+/// task that wrote no entry draws the advisory at `jigc task validate` — exit **0**
+/// (it surfaces, it never refuses), keyed at the work unit, carrying a route.
+///
+/// And the route is **this door's**: the working area is open here, so the in-task
+/// verbs lead — and every argv it prints runs verbatim.
+#[test]
+fn a_granted_but_unused_changelog_gate_is_previewed_at_validate() {
+    let (repo, home) = corpus("changelog-unused", false);
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", TASK, "--format", "json"],
+        None,
+    );
+    assert_exit(&out, 0, "jigc task validate (changelog gate unused)");
+    let findings = findings(&out, "jigc task validate");
+    let finding = changelog_advisory(&findings).unwrap_or_else(|| {
+        panic!(
+            "`single-task` grants the changelog create-gate and this task recorded no \
+             entry — the advisory must preview at `task validate`; got:\n{findings:#?}"
+        )
+    });
+    assert_eq!(
+        finding["severity"], "advisory",
+        "the previewed member keeps its default severity; got: {finding}"
+    );
+    assert_eq!(
+        finding["key"]["target"],
+        serde_json::json!(format!("task:{TASK}")),
+        "the subject is the work unit; got: {finding}"
+    );
+
+    let route = advisory_route(&findings, "jigc task validate");
+    assert!(
+        route.contains("jigc doc create changelog"),
+        "the preview door's route leads with the in-task form — the verbs are live \
+         here; got: {route}"
+    );
+    every_route_argv_runs(repo.path(), home.path(), &route, "the `task validate` door");
+}
+
+/// **The write-touch suppresses it at the preview door too.** A task that recorded an
+/// entry draws no advisory — the same predicate the committing door reads (T1), read
+/// through the new one.
+#[test]
+fn a_task_that_recorded_a_change_draws_no_advisory_at_validate() {
+    let (repo, home) = corpus("changelog-recorded", false);
+    record_a_change(repo.path(), home.path(), TASK);
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", TASK, "--format", "json"],
+        None,
+    );
+    assert_exit(&out, 0, "jigc task validate (changelog recorded)");
+    let findings = findings(&out, "jigc task validate");
+    assert!(
+        changelog_advisory(&findings).is_none(),
+        "the task recorded an entry — no advisory may fire at either door; got:\n{findings:#?}"
+    );
+}
+
+/// **The omitting context stays inert at the new door.** `implement-from-spec` grants
+/// no changelog gate, so the preview mints nothing — the check keys on the *gate*.
+#[test]
+fn a_workflow_without_the_changelog_gate_previews_no_advisory() {
+    let repo = TempDir::new("changelog-gateless");
+    let home = TempDir::new("changelog-gateless-home");
+    init_repo(repo.path());
+    ok(repo.path(), home.path(), &["setup"], "jigc setup");
+    ok(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "implement-from-spec", INTENT],
+        "jigc start --workflow implement-from-spec",
+    );
+    fill_commit(repo.path(), home.path(), TASK);
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", TASK, "--format", "json"],
+        None,
+    );
+    assert_exit(&out, 0, "jigc task validate (no changelog gate)");
+    assert!(
+        changelog_advisory(&findings(&out, "jigc task validate")).is_none(),
+        "`implement-from-spec` grants no changelog create-gate — the preview is inert"
+    );
+}
+
+/// **One cascade line, and the preview exits 3 on the state finalize refuses.** The
+/// promoted key blocks at *both* doors — which is the whole point of previewing it —
+/// and the refusing route names verbs that run while the task is open, including the
+/// exit for a change that is not user-facing.
+#[test]
+fn the_promoted_gate_blocks_at_the_preview_and_at_finalize() {
+    let repo = TempDir::new("changelog-promoted");
+    let home = TempDir::new("changelog-promoted-home");
+    init_repo(repo.path());
+    ok(repo.path(), home.path(), &["setup"], "jigc setup");
+    ok(
+        repo.path(),
+        home.path(),
+        &[
+            "config",
+            "set",
+            "validation.changelog-recording.gate-granted-unused.severity",
+            "blocking",
+        ],
+        "jigc config set (promote to blocking)",
+    );
+    mint_and_work(repo.path(), home.path(), INTENT, TASK, "feature.rs");
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", TASK, "--format", "json"],
+        None,
+    );
+    assert_exit(&out, 3, "jigc task validate (promoted changelog gate)");
+    let previewed = findings(&out, "jigc task validate");
+    let finding = changelog_advisory(&previewed)
+        .unwrap_or_else(|| panic!("the promoted member previews; got:\n{previewed:#?}"));
+    assert_eq!(
+        finding["severity"], "blocking",
+        "the cascade promotion reaches the preview door; got: {finding}"
+    );
+
+    // The same state at the committing door: it refuses, and lands nothing.
+    let before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
+    let refused = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", TASK, "--format", "json"],
+        None,
+    );
+    assert_exit(&refused, 3, "jigc task finalize (promoted changelog gate)");
+    assert_eq!(
+        git(repo.path(), &["rev-list", "--count", "HEAD"]),
+        before,
+        "a refused finalize lands nothing"
+    );
+
+    // The refusing door's route: the task is still open, so it names the in-task
+    // verbs — plus the exit a change that is *not* user-facing needs, since "no
+    // action" is not an exit from a blocking finding.
+    let route = advisory_route(
+        &findings(&refused, "jigc task finalize"),
+        "jigc task finalize",
+    );
+    assert!(
+        route.contains("jigc doc create changelog"),
+        "a refused finalize leaves the task open — the in-task verbs run; got: {route}"
+    );
+    assert!(
+        route.contains(&format!(
+            "jigc config set validation.{CHANGELOG_CODE}.severity advisory"
+        )),
+        "a blocking finding names a recovery for the not-user-facing case; got: {route}"
+    );
+    every_route_argv_runs(
+        repo.path(),
+        home.path(),
+        &route,
+        "the refusing `task finalize` door",
+    );
+}
+
+/// **The landing door names no verb that died with the task.** Over a finalize that
+/// lands, the advisory rides the exit-0 envelope — and by then `.jigc/tasks/<id>/` is
+/// gone, so the in-task form is *not* offered: every argv the route prints still runs.
+///
+/// This is the arm that was red before T3: the shipped route offered
+/// `jigc doc create changelog --task <id>` here, and running it answered
+/// `no task <id>` at exit 1.
+#[test]
+fn the_landing_finalize_door_prints_no_dead_argv() {
+    let (repo, home) = corpus("changelog-landed", false);
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", TASK, "--format", "json"],
+        None,
+    );
+    assert_exit(
+        &out,
+        0,
+        "jigc task finalize (advisory rides the landed commit)",
+    );
+    let findings = findings(&out, "jigc task finalize");
+    let route = advisory_route(&findings, "jigc task finalize");
+    assert!(
+        !route.contains("--task"),
+        "the commit landed and the working area is gone — no in-task argv may be \
+         printed here; got: {route}"
+    );
+    every_route_argv_runs(
+        repo.path(),
+        home.path(),
+        &route,
+        "the landing `task finalize` door",
     );
 }

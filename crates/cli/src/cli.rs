@@ -1569,7 +1569,8 @@ fn tip_task_read_shaped() -> String {
         engine::finding::Route::mechanical(
             ["jigc", "task", "validate", "<task-id>"],
             " previews part of the finalize gate for one task — content findings, \
-             carryover, and the owner-artifact causes that need no staging",
+             carryover, the owner-artifact causes that need no staging, and the \
+             granted-but-unused changelog gate",
         )
         .as_str(),
     )
