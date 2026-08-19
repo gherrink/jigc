@@ -39,6 +39,8 @@ mod flow26_marquee;
 mod flow37_rename;
 #[path = "../freeze_enforcement.rs"]
 mod freeze_enforcement;
+#[path = "../ledger_entry_seven_discharged.rs"]
+mod ledger_entry_seven_discharged;
 #[path = "../manifest_freeze_fence.rs"]
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]
