@@ -47,11 +47,17 @@ by that spec's full address:
 jigc doc set-field commit:your-task-id#implements --value spec:<slug> --task your-task-id
 
 Read your write back before you move on — with `--task` the read serves THIS
-task's staged copy, the write you just made, which the committed store does not
-carry yet (the `--format json` read above is of the COMMITTED spec, so it does not
-show what you have staged):
+task's staged copy, the commit write you just made, which the committed store does
+not carry yet:
 
-jigc doc show spec:<slug> --task your-task-id
+jigc doc show commit:your-task-id --task your-task-id
+
+That read names the commit doc because the commit write above is the one this step
+always makes. The spec is staged by this task ONLY when you set `maps-to-test`: when
+you did, the same `--task` read serves that staged copy too — put the spec's address
+in place of the commit's. When you left `maps-to-test` off, this task stages nothing
+of the spec, and the task-less `--format json` read above — of the COMMITTED spec —
+is the one that serves it.
 
 A spec can leave a decision open — a question its prose raises but does not settle.
 When you settle one while implementing, record it before you finalize: this workflow

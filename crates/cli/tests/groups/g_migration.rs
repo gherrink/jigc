@@ -44,6 +44,8 @@ mod single_task_changelog_gate;
 mod spec_derived_from;
 #[path = "../spec_loop_prompts.rs"]
 mod spec_loop_prompts;
+#[path = "../spec_read_back_arms.rs"]
+mod spec_read_back_arms;
 #[path = "../surface_polish.rs"]
 mod surface_polish;
 #[path = "../upgrade.rs"]
