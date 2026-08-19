@@ -150,10 +150,12 @@ pub enum MilestoneCommand {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
-    /// The milestone commit boundary — run the by-task-id join, materialize its
-    /// suffix-resolved doc bodies into the parent staging area, and commit them as
-    /// one logical boundary with a CLI-synthesized message. A blocking join finding
-    /// (a same-doc clash, an unknown milestone) routes to stderr and commits nothing.
+    /// The milestone commit boundary — run the by-task-id join, then land BOTH halves
+    /// of the fan-out as one logical boundary with a CLI-synthesized message: the
+    /// join's suffix-resolved doc bodies, materialized into the parent staging area,
+    /// and the code staged in each sub-task worktree, folded in by task id. A blocking
+    /// join finding (a same-doc clash, an unknown milestone) routes to stderr and
+    /// commits nothing.
     Finalize {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,

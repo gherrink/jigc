@@ -421,3 +421,42 @@ fn both_minting_verbs_state_the_title_contract_before_the_write() {
         }
     }
 }
+
+/// M46 Increment 8, T2 (B2-3) — `jigc milestone finalize --help` stops contradicting
+/// itself. Its `about` enumerated only what the join produces (*"materialize its
+/// suffix-resolved **doc bodies** … and commit **them**"*), while `--carry-staged`,
+/// three lines below in the SAME help output, states *"the aggregate commit is built
+/// from the sub-task worktrees"* — so one screen described a docs-only boundary and a
+/// code-carrying one (RC-1.0-gate findings-verification §4; the boundary really lands
+/// both halves, pinned by
+/// `milestone_finalize_squash_true_genuine_reentry_materializes_transient_then_lands_aggregate`,
+/// which asserts the aggregate commit's tree carries two worktrees' code beside the
+/// merged docs). Law 1: the `about` names the fold it performs.
+///
+/// The fence is the **agreement**, not the presence — the `about` and the flag below it
+/// must name the same subject (`sub-task worktree`), so the one help output cannot drift
+/// back into describing two different boundaries.
+#[test]
+fn milestone_finalize_about_names_the_code_fold_beside_the_doc_bodies() {
+    let help = help_stdout(&["milestone", "finalize", "--help"]);
+    let about = about(&help);
+
+    for half in ["doc bodies", "code", "sub-task worktree"] {
+        assert!(
+            about.contains(half),
+            "`milestone finalize --help`'s about must name `{half}` — the boundary \
+             commits the join's doc bodies AND the code staged in each sub-task \
+             worktree, and the about enumerated only the docs; got:\n{about}"
+        );
+    }
+    let flag = help
+        .split_once("--carry-staged")
+        .expect("`milestone finalize --help` carries the `--carry-staged` flag")
+        .1;
+    assert!(
+        flag.contains("sub-task worktree"),
+        "`--carry-staged`'s help states the boundary is built from the sub-task \
+         worktrees; the about above it must name that same subject, or the one help \
+         output describes two boundaries again; got:\n{help}"
+    );
+}
