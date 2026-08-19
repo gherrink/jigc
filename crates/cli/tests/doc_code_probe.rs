@@ -902,3 +902,107 @@ fn run_two_file_fixture(
     );
     findings
 }
+
+// ----- M46 inc-7 / T1: the closure-framework cell, over the REAL probe binary -----
+
+/// The N-5 fixture, verbatim: a vitest file whose only test is registered by a **closure**,
+/// so the test's name is present in the file's text and declares no unit. The same shape
+/// three frameworks share (PHP/Pest, TS/vitest, `node:test`), reported by three parties.
+const CLOSURE_TEST_TS: &str = "\
+import { it, expect } from \"vitest\";
+
+it('rejects a burst beyond the cap', () => {
+    expect(true).toBe(true);
+});
+";
+
+/// The wire-byte proof of the text-present cell: the real probe binary, driven over the
+/// invoker + the engine's ingestion, emits a message that states the comparison it made (the
+/// text occurs in the root it read; no declared unit matched) and a route that leads with the
+/// **file-only fallback** and says what it buys. Asserted on the **emitted bytes**, not on a
+/// reconstruction — this is the sentence an agent reads.
+#[test]
+fn closure_registered_test_name_reports_what_the_probe_compared_not_an_absence() {
+    let probe = build_doc_code_probe();
+
+    let root = TempDir::new("closuretree");
+    fs::create_dir_all(root.path().join("tests")).expect("mk tests dir");
+    fs::write(
+        root.path().join("tests/rate_limit.test.ts"),
+        CLOSURE_TEST_TS.as_bytes(),
+    )
+    .expect("write the closure fixture");
+
+    let scratch = TempDir::new("closurescratch");
+    // Task scope: the root the engine hands over is the **materialized index**, which is why
+    // "the indexed blob contains it" is a fact about the tree the finding names.
+    let snapshot = EffectiveStateSnapshot::new(
+        vec![TargetAnchor {
+            address: "spec:rate-limiting#criteria/burst/maps-to-test".to_string(),
+            anchor_value: "tests/rate_limit.test.ts#rejects a burst beyond the cap".to_string(),
+            check_id: "criterion-maps-to-test".to_string(),
+        }],
+        root.path().to_path_buf(),
+        RootKind::StagedIndex,
+    );
+    let snapshot_path = scratch.path().join("snapshot.json");
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+
+    let request = ProbeRequest::new(
+        "doc-code",
+        "spec:rate-limiting#criteria/burst/maps-to-test",
+        snapshot_path,
+        serde_json::Map::new(),
+    );
+    let request_bytes = serde_json::to_vec(&request).expect("serialize request");
+
+    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
+        .expect("invoker drives the doc-code probe");
+    assert_eq!(
+        outcome.status,
+        ProbeStatus::Exited { code: Some(0) },
+        "a well-behaved probe exits 0: stdout={}",
+        String::from_utf8_lossy(&outcome.stdout),
+    );
+
+    let findings = ingest_probe_run("doc-code", &into_run(outcome));
+    assert_eq!(findings.len(), 1, "exactly one finding: {findings:?}");
+    let finding = &findings[0];
+
+    // The verdict does not move: the closure registration is still a non-resolution, and
+    // `validation.md`'s sanction (a name living only in a string never resolves) keeps it
+    // blocking, keyed and located exactly where it was.
+    assert_eq!(finding.severity, Severity::Blocking);
+    assert_eq!(finding.code, "doc-code.criterion-maps-to-test");
+    assert_eq!(finding.check, "criterion-maps-to-test");
+    assert_eq!(
+        finding.location.as_ref().and_then(|l| l.address.as_deref()),
+        Some("spec:rate-limiting#criteria/burst/maps-to-test"),
+    );
+
+    assert_eq!(
+        finding.message,
+        "anchor `tests/rate_limit.test.ts#rejects a burst beyond the cap` resolves to no symbol \
+         (the text `rejects a burst beyond the cap` occurs in `tests/rate_limit.test.ts` in the \
+         staged index, but declares nothing there — a name inside a string, a comment or a \
+         framework registration is not a declared unit)",
+        "the emitted message must state the comparison the probe made, never an absence the \
+         bytes it parsed contradict",
+    );
+    assert_eq!(
+        finding.route.as_deref(),
+        Some(
+            "cite `tests/rate_limit.test.ts` alone (drop `#rejects a burst beyond the cap`) — a \
+             file-only anchor is accepted and buys the file's presence, not that a test exists; \
+             or cite a unit the file declares (a function, class or method); if a declaration by \
+             that name is on disk but unstaged, `git add` it — finalize adjudicates the staged \
+             index, not the working tree"
+        ),
+        "the emitted route must lead with the repair that works, state what it does not buy, \
+         and keep the staging clause the probe's evidence leaves possible",
+    );
+}

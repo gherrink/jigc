@@ -184,16 +184,73 @@ impl Finding {
 
     /// One blocking `doc-code.<check_id>` finding for an anchor whose file is present but
     /// whose `#symbol` resolves to no named item (at any nesting) in the root read.
-    fn dangling_symbol(anchor: &TargetAnchor, root: RootKind, file: &str, symbol: &str) -> Self {
-        Self::dangling(
+    ///
+    /// **The diagnosis states the comparison the probe made** (M46 inc-7; the M47
+    /// `title-names-symbol` repair one check over, [validation.md] → The anchor grammar +
+    /// resolution). Non-resolution has two causes and they need different sentences:
+    ///
+    /// - the name is **not in the bytes at all** — the shipped absence sentence is true, and
+    ///   the shipped rename/restore repairs are the right ones;
+    /// - the name **is in the bytes** but declares nothing — the closure-framework case
+    ///   (PHP/Pest, TS/vitest, `node:test` all register a test as a string argument to a call,
+    ///   reported by three parties). Here *"`X` is absent from `f`"* is a claim the probe's own
+    ///   parsed bytes contradict, and every one of the shipped repairs is a repair of a change
+    ///   that never happened — an agent that follows them corrupts a correct citation.
+    ///
+    /// The **verdict does not move**: `validation.md`'s sanction is that a name living only in
+    /// a string or a comment must never false-resolve, so both cells stay blocking, keyed and
+    /// located identically ([`Finding::dangling`] builds both). Only the sentence and the
+    /// repairs split — on evidence the probe already holds, about the very root it names.
+    fn dangling_symbol(
+        anchor: &TargetAnchor,
+        root: RootKind,
+        file: &str,
+        symbol: &str,
+        text_present: bool,
+    ) -> Self {
+        if !text_present {
+            return Self::dangling(
+                anchor,
+                root,
+                format!(
+                    "anchor `{}` resolves to no symbol (`{symbol}` is absent from `{file}` in {})",
+                    anchor.anchor_value,
+                    root.tree(),
+                ),
+            );
+        }
+        let mut finding = Self::dangling(
             anchor,
             root,
             format!(
-                "anchor `{}` resolves to no symbol (`{symbol}` is absent from `{file}` in {})",
+                "anchor `{}` resolves to no symbol (the text `{symbol}` occurs in `{file}` in \
+                 {}, but declares nothing there — a name inside a string, a comment or a \
+                 framework registration is not a declared unit)",
                 anchor.anchor_value,
                 root.tree(),
             ),
-        )
+        );
+        // The route leads with the repair that **works** in this cell — the bare-path degrade
+        // `validation.md` declares — and states what it buys, because a recommendation of the
+        // quietest path owes its bound: a file-only anchor is checked at the coarser
+        // file-existence predicate, so under `criterion-maps-to-test` it never asserts that a
+        // test exists. The rename/restore repairs are dropped (the cited name never moved).
+        // The staging clause survives **only** on the staged index, and only as a possibility:
+        // the probe reads the index and cannot see the working tree, so a declaration by that
+        // name written on disk and never `git add`ed is invisible to it.
+        let fallback = format!(
+            "cite `{file}` alone (drop `#{symbol}`) — a file-only anchor is accepted and buys \
+             the file's presence, not that a test exists; or cite a unit the file declares (a \
+             function, class or method)"
+        );
+        finding.route = Some(match root {
+            RootKind::StagedIndex => format!(
+                "{fallback}; if a declaration by that name is on disk but unstaged, `git add` \
+                 it — finalize adjudicates the staged index, not the working tree"
+            ),
+            RootKind::WorkingTree => fallback,
+        });
+        finding
     }
 
     /// One blocking `doc-code.criterion-maps-to-test` finding for an anchor whose `#symbol`
@@ -210,7 +267,8 @@ impl Finding {
         );
         // A resolved-but-not-a-test symbol has its own repair: point the criterion at a
         // real test, not the symbol-restore route the floor's dangling cases carry.
-        finding.route = Some("point the criterion at a real test, or correct the cited symbol".to_string());
+        finding.route =
+            Some("point the criterion at a real test, or correct the cited symbol".to_string());
         finding
     }
 
@@ -351,6 +409,22 @@ impl Finding {
     }
 }
 
+/// Whether the symbol's **text** occurs in the bytes the probe parsed — the evidence that
+/// splits *"the name is not there"* from *"the name is there and declares nothing"*
+/// ([`Finding::dangling_symbol`]). It is a read of bytes already in hand: no git, no build, no
+/// wall-clock, so the probe stays inside its determinism contract and the resulting sentence
+/// is a fact about the root the finding names.
+///
+/// **The reading is a raw substring, deliberately.** Under a word-boundary reading a name that
+/// occurs only inside a longer identifier (`burst` inside `burst_rejected`) would take the
+/// *absence* sentence, which the bytes contradict — the exact lie this split exists to end.
+/// Raw `contains` keeps every sentence true: "the text occurs, and declares nothing" holds for
+/// a substring occurrence too, and the route it carries (cite the file alone, or cite a unit
+/// the file declares) is the right repair there as well.
+fn symbol_text_present(src: &str, symbol: &str) -> bool {
+    src.contains(symbol)
+}
+
 /// Split an anchor value into its file portion (before the first `#`) and an optional
 /// `#symbol` (a bare path has no `#`, so the symbol is `None`).
 fn split_anchor(anchor_value: &str) -> (&str, Option<&str>) {
@@ -378,7 +452,10 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
             // change-set). Rather than silently follow it — which would make the blast
             // radius miss that drift — surface it as an uncheckable citation (the
             // `unsupported-language` precedent): advisory, non-blocking, never a wrong pass.
-            if path.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+            if path
+                .symlink_metadata()
+                .is_ok_and(|m| m.file_type().is_symlink())
+            {
                 return Some(Finding::symlink_anchor(anchor, file));
             }
             if !path.exists() {
@@ -413,9 +490,17 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
                 resolve::symbol_exists(&src, symbol, grammar)
             };
             if !resolved {
-                // The symbol is absent — the floor of every `#symbol` check, including
-                // `criterion-maps-to-test` (whose predicate is symbol existence + is-a-test).
-                return Some(Finding::dangling_symbol(anchor, root, file, symbol));
+                // The symbol resolves to no declared unit — the floor of every `#symbol` check,
+                // including `criterion-maps-to-test` (whose predicate is symbol existence +
+                // is-a-test). The diagnosis splits on whether the name is in the bytes the probe
+                // just parsed; the verdict does not.
+                return Some(Finding::dangling_symbol(
+                    anchor,
+                    root,
+                    file,
+                    symbol,
+                    symbol_text_present(&src, symbol),
+                ));
             }
             // The symbol resolves. `criterion-maps-to-test` additionally requires the
             // is-a-test predicate (a `#[test]` fn); `symbol-exists` is satisfied here. The
@@ -937,5 +1022,167 @@ const setupConst = 1;
         assert_eq!(gone[0].severity, Severity::Blocking);
         assert_eq!(gone[0].check, "symbol-exists");
         assert_eq!(gone[0].code, "doc-code.symbol-exists");
+    }
+
+    // ----- M46 inc-7 / T1: the non-resolution diagnosis, over its whole axis -----
+
+    /// The **`RootKind` axis, read off the enum** — every root the engine can hand the probe.
+    /// [`root_kind_axis_is_exhaustive`] is the fence: a third variant makes that test fail to
+    /// compile until it is named, and naming it is what puts it in this array.
+    const ROOT_KINDS: [RootKind; 2] = [RootKind::StagedIndex, RootKind::WorkingTree];
+
+    /// The **check-id axis, hand-enumerated — with the reason it must be.** A check id is
+    /// *opaque wire data the schema supplies* (`field.check ?? field_type.check`, resolved
+    /// engine-side and handed over as a string); the probe holds no code-side registry of check
+    /// ids, so there is nothing to derive from and dressing two literals as a derived set would
+    /// be a fence that fences nothing. They are listed, and the reason is stated rather than
+    /// implied. Both must be covered because the emitting seam is **check-id-blind**: a
+    /// `symbol-exists` anchor over the same file and symbol emits byte-identical bytes.
+    const CHECK_IDS: [&str; 2] = ["symbol-exists", "criterion-maps-to-test"];
+
+    #[test]
+    fn root_kind_axis_is_exhaustive() {
+        // The fence for [`ROOT_KINDS`]: this `match` is exhaustive over the enum, so a new
+        // `RootKind` variant reddens here until it is named — and the cells below iterate the
+        // array, so naming it is what makes the axis cover it.
+        for kind in ROOT_KINDS {
+            match kind {
+                RootKind::StagedIndex | RootKind::WorkingTree => {}
+            }
+        }
+    }
+
+    /// A vitest file whose only test is registered by a **closure** — the shape three
+    /// frameworks share (PHP/Pest, TS/vitest, `node:test`): the test's name lives in a string
+    /// argument, so the name is present in the file's text while declaring no unit.
+    const CLOSURE_TEST_TS: &str = "\
+import { it, expect } from \"vitest\";
+
+it('rejects a burst beyond the cap', () => {
+    expect(true).toBe(true);
+});
+";
+
+    /// The closure fixture's file name, as every cell cites it.
+    const CLOSURE_FILE: &str = "rate_limit.test.ts";
+
+    /// Drive one axis cell — the closure fixture, one `<file>#<symbol>` anchor, an explicit
+    /// `check_id` and an explicit `RootKind` — and return its single finding.
+    fn check_cell(symbol: &str, check_id: &str, root_kind: RootKind) -> Finding {
+        let root = temp_root();
+        std::fs::write(root.join(CLOSURE_FILE), CLOSURE_TEST_TS).unwrap();
+        let snapshot = EffectiveStateSnapshot {
+            anchors: vec![anchor_with_check(
+                &format!("{CLOSURE_FILE}#{symbol}"),
+                check_id,
+            )],
+            working_tree_root: root,
+            root_kind,
+        };
+        let mut findings = check_anchors(&snapshot);
+        assert_eq!(findings.len(), 1, "exactly one finding, got {findings:?}");
+        findings.remove(0)
+    }
+
+    /// The verdict half, asserted **identically in every cell**: the split is a diagnosis
+    /// change, never a verdict change ([validation.md] → the anchor grammar's sanction that a
+    /// name living only in a string or comment must not resolve keeps this blocking).
+    fn assert_verdict_unmoved(finding: &Finding, check_id: &str) {
+        assert_eq!(finding.severity, Severity::Blocking, "severity is unmoved");
+        assert_eq!(finding.probe, "doc-code");
+        assert_eq!(finding.check, check_id, "the check id is unmoved");
+        assert_eq!(finding.code, format!("doc-code.{check_id}"), "code unmoved");
+        let location = finding.location.as_ref().expect("a located finding");
+        assert_eq!(location.address, "specs/s.md#criteria/c");
+        assert_eq!((location.line, location.col), (1, 1));
+    }
+
+    #[test]
+    fn non_resolving_symbol_states_the_comparison_over_check_id_root_and_text_presence() {
+        // The axis: check-id × RootKind × {text-present, text-absent}. The text-present cells
+        // are the repair (today they assert an absence the parsed bytes contradict); the
+        // text-absent cells are the shipped sentence and repairs, which must not move.
+        for check_id in CHECK_IDS {
+            for root in ROOT_KINDS {
+                let read = root.tree();
+                let unread = match root {
+                    RootKind::StagedIndex => RootKind::WorkingTree.tree(),
+                    RootKind::WorkingTree => RootKind::StagedIndex.tree(),
+                };
+                let cell = format!("[{check_id} × {read}]");
+
+                // --- text-ABSENT: the name is in neither the AST nor the bytes.
+                let absent = check_cell("totally_absent_name", check_id, root);
+                assert_verdict_unmoved(&absent, check_id);
+                assert!(
+                    absent
+                        .message
+                        .contains("`totally_absent_name` is absent from"),
+                    "{cell} a genuinely absent name keeps the shipped absence sentence: {}",
+                    absent.message,
+                );
+                assert!(
+                    absent.message.contains(read) && !absent.message.contains(unread),
+                    "{cell} the finding names the root it read, never the other: {}",
+                    absent.message,
+                );
+                let absent_route = absent.route.as_deref().unwrap_or_default();
+                assert!(
+                    absent_route.contains("update the citation to match the renamed/moved code"),
+                    "{cell} the shipped repairs stand where the code really did move: \
+                     {absent_route}",
+                );
+                assert_eq!(
+                    absent_route.contains("`git add`"),
+                    root == RootKind::StagedIndex,
+                    "{cell} the staging clause rides the staged index only: {absent_route}",
+                );
+
+                // --- text-PRESENT: the name is in the bytes the probe parsed, as a closure
+                // registration — so the finding may not claim it is absent from that root.
+                let present = check_cell("rejects a burst beyond the cap", check_id, root);
+                assert_verdict_unmoved(&present, check_id);
+                assert!(
+                    !present.message.contains("is absent from"),
+                    "{cell} the probe read the text in the very root it names — it must not \
+                     assert an absence it did not observe: {}",
+                    present.message,
+                );
+                assert!(
+                    present.message.contains("`rejects a burst beyond the cap`")
+                        && present.message.contains(&format!("`{CLOSURE_FILE}`")),
+                    "{cell} the message names both sides of the comparison: {}",
+                    present.message,
+                );
+                assert!(
+                    present.message.contains(read) && !present.message.contains(unread),
+                    "{cell} the finding names the root it read, never the other: {}",
+                    present.message,
+                );
+                let present_route = present.route.as_deref().unwrap_or_default();
+                assert!(
+                    present_route.starts_with(&format!("cite `{CLOSURE_FILE}` alone")),
+                    "{cell} the route leads with the file-only fallback — the repair that \
+                     works here: {present_route}",
+                );
+                assert!(
+                    present_route.contains("the file's presence, not that a test exists"),
+                    "{cell} the recommended fallback states what it does NOT buy: \
+                     {present_route}",
+                );
+                assert!(
+                    !present_route.contains("update the citation to match the renamed/moved code")
+                        && !present_route.contains("restore the cited symbol"),
+                    "{cell} the two rename/restore repairs are inapplicable in this cell — the \
+                     cited name never moved: {present_route}",
+                );
+                assert_eq!(
+                    present_route.contains("`git add`"),
+                    root == RootKind::StagedIndex,
+                    "{cell} the staging clause survives only where the probe's evidence leaves \
+                     it possible — it cannot see the working tree: {present_route}",
+                );
+            }
+        }
     }
 }
