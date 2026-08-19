@@ -1,0 +1,264 @@
+//! The record's own fence for M46 Increment 3 — the design of record gains the arm the
+//! verb never had, and stops stating the exit condition the increment retired (T3).
+//!
+//! Increment 3 changed two doors and therefore falsified the record in two directions:
+//!
+//!   * **`migrate-corpus` stops claiming a file that is not its subject** (T2). The verb
+//!     upgrades the *managed* corpus; a never-adopted foreign file at a managed home is
+//!     excluded before the fold and reported as the store door's advisory, verbatim.
+//!     [corpus-migration.md](../../../design/corpus-migration.md) had **no foreign arm at
+//!     all** — the walk section finds the file, and nothing said what the fold then does
+//!     with it. That gap is what let the verb block on it for four waves.
+//!   * **The store sweep's exit stops calling a never-adopted file harmless** (T1).
+//!     `schema-conformance.unadopted-instance` is `render::STORE_EXIT_FLIPS`' fifth
+//!     member, so a stock brownfield repo carrying an un-adopted file at a managed home
+//!     **exits non-zero**. M42 wrote the opposite here, with a rationale — and that
+//!     rationale is **engaged and withdrawn where it was written**, never annotated
+//!     around: with the foreign file out of `migrate-corpus`'s blocking set, the store
+//!     exit is the only surface left that makes a squatter audible at all.
+//!
+//! These are doc-content assertions by nature — the deliverable *is* the prose. The
+//! behaviour it describes is proven through the real binary elsewhere
+//! (`crates/cli/tests/managed_vs_foreign.rs` for the sweep's exit,
+//! `crates/cli/tests/migrate_corpus_foreign.rs` for the verb's exclusion axis), which is
+//! why this file asserts only that the record says what those suites drive.
+//!
+//! **The sweep is stated as one thing and asserted as one thing**: every falsified
+//! statement is named with the bytes it carried, so a green here means the record no
+//! longer carries them — and every replacement is asserted **exactly once**, because a
+//! correction restated in two homes is the rot this repo's own cross-reference rule
+//! exists to prevent.
+//!
+//! `worked-examples.md`'s flow-43 arm 2 is in the sweep although the increment brief's
+//! file list omitted it: it states the identical retired green, in the very doc whose
+//! acceptance suite T1 had already corrected. Scoping the sweep around it would have
+//! left the design of record contradicting its own acceptance test — the masking shape,
+//! not a scope boundary (`DECISIONS.md` → 2026-08-19 M46 Increment 3 / T3).
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root is two levels above crates/cli")
+        .to_path_buf()
+}
+
+fn read_doc(rel: &str) -> String {
+    let path = repo_root().join(rel);
+    fs::read_to_string(&path).unwrap_or_else(|_| panic!("{rel} must exist: {path:?}"))
+}
+
+fn count(haystack: &str, needle: &str) -> usize {
+    haystack.matches(needle).count()
+}
+
+/// The `## <heading>` section body — up to the next `## ` heading or EOF.
+fn section<'a>(body: &'a str, heading: &str) -> &'a str {
+    let marker = format!("## {heading}\n");
+    let start = body
+        .find(&marker)
+        .unwrap_or_else(|| panic!("the doc must carry a `## {heading}` section"));
+    let rest = &body[start + marker.len()..];
+    match rest.find("\n## ") {
+        Some(end) => &rest[..end],
+        None => rest,
+    }
+}
+
+/// The falsified statements, each with the file it lives in and why it is now false.
+/// Named with the bytes they carried so this list cannot quietly become a paraphrase.
+const FALSIFIED: &[(&str, &str, &str)] = &[
+    (
+        "design/validation.md",
+        "a foreign brownfield doc never flips it",
+        "M42's managed-arm condition decided which CODE fires; since M46 Inc 3 / T1 the \
+         exit no longer follows from it",
+    ),
+    (
+        "design/validation.md",
+        "| `jigc ingest` / `jigc migrate <path> --as <doctype>` | **0** |",
+        "the discriminator table's foreign row: the run's exit flips, though the finding \
+         stays advisory and gates nowhere",
+    ),
+    (
+        "design/validation.md",
+        "report-only, with three exit-flipping exceptions",
+        "the hand-count stood at three while the code carried five; the enumeration is \
+         `render::STORE_EXIT_FLIPS`, and prose must point at it rather than re-count",
+    ),
+    (
+        "design/validation.md",
+        "only the rename structural-integrity finding and the M42 version-currency break, \
+         below, flip the exit",
+        "the same stale hand-enumeration, one sentence further down the same paragraph",
+    ),
+    (
+        "design/storage.md",
+        "`changelog → changelog/`",
+        "R3: `changelog` left the located set at M38 for `placement: { file: CHANGELOG.md }` \
+         — the sentence a fixture author reads before planting a squatter",
+    ),
+    (
+        "design/corpus-migration.md",
+        "routes to `ingest` / `migrate --as`, and **stays exit-0**",
+        "the property census's foreign arm, carrying the exit condition T1 retired",
+    ),
+    (
+        "design/worked-examples.md",
+        "the brownfield first run stays GREEN",
+        "flow 43's transcript, whose acceptance suite T1 already corrected",
+    ),
+    (
+        "design/worked-examples.md",
+        "`validate` **stays exit 0**",
+        "flow 43 arm 2's prose, the same retired green",
+    ),
+];
+
+/// The replacements, each asserted **exactly once** — a correction stated twice is the
+/// restatement rot, and a correction stated zero times is the swap never landing.
+const REPLACEMENTS: &[(&str, &str)] = &[
+    (
+        "design/validation.md",
+        "not about the exit, and that is a M46 revision of what M42 wrote here",
+    ),
+    (
+        "design/validation.md",
+        "| `jigc ingest` / `jigc migrate <path> --as <doctype>` | **flips** (M46) |",
+    ),
+    (
+        "design/validation.md",
+        "with the exit-flipping exceptions `render::STORE_EXIT_FLIPS` enumerates",
+    ),
+    ("design/storage.md", "`changelog` is **not** among them"),
+    (
+        "design/corpus-migration.md",
+        "**gates nowhere**, and **flips the sweep's exit**",
+    ),
+    (
+        "design/corpus-migration.md",
+        "## The foreign arm — the file the verb is not for (M46)",
+    ),
+    ("design/worked-examples.md", "# M46: the GREEN is withdrawn"),
+    (
+        "design/worked-examples.md",
+        "`validate` raises **zero** blocking findings",
+    ),
+];
+
+/// **The sweep, arm 1 — nothing states the retired exit condition.**
+#[test]
+fn the_record_no_longer_states_the_exit_condition_the_increment_retired() {
+    for (file, needle, why) in FALSIFIED {
+        let body = read_doc(file);
+        assert_eq!(
+            count(&body, needle),
+            0,
+            "{file} still carries the falsified statement `{needle}` — {why}",
+        );
+    }
+}
+
+/// **The sweep, arm 2 — each replacement is stated once, in one home.**
+#[test]
+fn each_replacement_is_stated_exactly_once() {
+    for (file, needle) in REPLACEMENTS {
+        let body = read_doc(file);
+        assert_eq!(
+            count(&body, needle),
+            1,
+            "{file} must state `{needle}` exactly once (cross-reference, never restate)",
+        );
+    }
+}
+
+/// **R1 — the foreign arm exists, and cross-references the discriminator rather than
+/// restating it.** The verb's subject is stated once; the classifier's arms stay owned by
+/// `validation.md`, which is the property that keeps the two doors from disagreeing again.
+#[test]
+fn corpus_migration_states_the_foreign_arm_and_defers_the_discriminator_to_validation() {
+    let body = read_doc("design/corpus-migration.md");
+    let arm = section(
+        &body,
+        "The foreign arm — the file the verb is not for (M46)",
+    );
+
+    for needle in [
+        // The verb's subject, stated once.
+        "upgrades the *managed* corpus",
+        // The shipped discriminator, asked before the fold — named, not re-implemented.
+        "is_unadopted_foreign",
+        // Ownership of the arms stays with the other doc.
+        "The managed-vs-foreign discriminator",
+        // Reported, never silently skipped, and never in `blocked`.
+        "never a silent already-current",
+        "`blocked`, whose emptiness *is* the exit rule",
+        // The one-producer property that makes the two surfaces agree by construction.
+        "verbatim, from the one producer",
+    ] {
+        assert!(
+            arm.contains(needle),
+            "the foreign arm must carry `{needle}`; it reads:\n{arm}",
+        );
+    }
+
+    // It defers the arms rather than restating them: the three-arm table's own conditions
+    // live in `validation.md` and must not be copied here.
+    for restated in [
+        "parses against **no** known schema version",
+        "schema-version-ahead",
+    ] {
+        assert!(
+            !arm.contains(restated),
+            "the foreign arm restates `{restated}`, which `validation.md` owns",
+        );
+    }
+
+    // And `validation.md`'s claim about the other verb now names where it is enforced.
+    assert!(
+        read_doc("design/validation.md")
+            .contains("Since M46 that is true of the verb, not only of this route"),
+        "validation.md's `never to migrate-corpus` claim must name the verb-side enforcement",
+    );
+}
+
+/// **The declared behaviour change carries a TRIGGER, not a mention.** A stock brownfield
+/// repo that exits 0 on `jigc validate` today exits non-zero once un-adopted files sit at
+/// managed homes — which the next trial's protocol must read as a designed change rather
+/// than rediscover as a regression. `decisions-pending.md` is the home where an owed thing
+/// carries the condition that resurfaces it; a bare sentence anywhere else is the failure
+/// mode that file's own preamble names.
+#[test]
+fn the_declared_behaviour_change_is_keyed_to_the_next_trials_protocol() {
+    let body = read_doc("implementation/decisions-pending.md");
+    let heading = "### The trial that follows M46 — protocol inputs";
+    assert_eq!(
+        count(&body, heading),
+        1,
+        "decisions-pending.md must carry exactly one `{heading}` entry",
+    );
+
+    let start = body.find(heading).expect("the heading was just counted");
+    let rest = &body[start + heading.len()..];
+    let entry = match rest.find("\n### ") {
+        Some(end) => &rest[..end],
+        None => rest,
+    };
+
+    for needle in [
+        // The change itself, stated as the protocol will meet it.
+        "exits non-zero once un-adopted files sit at managed homes",
+        // The trigger — the whole point of this home.
+        "*Trigger:*",
+        // Named so the protocol can tell a designed change from a regression.
+        "a declared behaviour change, not a defect",
+    ] {
+        assert!(
+            entry.contains(needle),
+            "the entry must carry `{needle}`; it reads:\n{entry}",
+        );
+    }
+}

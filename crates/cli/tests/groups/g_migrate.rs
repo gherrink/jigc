@@ -51,6 +51,8 @@ mod migrate_seam;
 mod migrate_spec;
 #[path = "../migrate_workflow.rs"]
 mod migrate_workflow;
+#[path = "../record_foreign_arm.rs"]
+mod record_foreign_arm;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
 #[path = "../setup.rs"]
