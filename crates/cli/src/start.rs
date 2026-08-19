@@ -396,6 +396,20 @@ fn should_provision_commit_doc(def: &WorkflowDef) -> bool {
     def.creates_task
 }
 
+/// Whether `type_name` is the doctype a task composed on `def` **provisions for itself**
+/// — the task's commit doc, which *bypasses* the create-gate rather than being granted by
+/// it (`write-commands.md` → The create-gate: "Workflow-provisioned instances … bypass the
+/// gate"). Read by the absent-instance refusal, which must not name `jigc doc create` as
+/// the provisioning act for a doctype no gate grants (M46 Inc 8 T3, B2-1).
+///
+/// Both conjuncts are the facts the provisioning call sites already key on — the commit
+/// doctype [`FALLBACK_TYPE`] both provisioners load their schema by, and
+/// [`should_provision_commit_doc`], the single source of truth for the property — so this
+/// is a read of the provisioning rule, never a second copy of it.
+pub(crate) fn provisions_at_compose(def: &WorkflowDef, type_name: &str) -> bool {
+    type_name == FALLBACK_TYPE && should_provision_commit_doc(def)
+}
+
 /// Provision the sub-workflow's deterministic commit doc into the sub-task's
 /// working area **on first re-entry only** — `jigc workflow <W> --task <id>`'s
 /// deferred mirror of `jigc start`'s mint-time provisioning (`write-commands.md` →

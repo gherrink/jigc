@@ -4917,8 +4917,55 @@ impl ActiveTask {
             self.bind_role_on_copy_in(address)?;
             return Ok(EditBase::copied_in(read_staged(path, addr)?));
         }
-        // Neither staged nor committed → the unchanged absent-instance reject.
-        Ok(EditBase::staged(read_staged(path, addr)?))
+        // Neither staged nor committed → the absent-instance reject, naming the
+        // provisioning act this task actually has for the doctype (B2-1).
+        Ok(EditBase::staged(read_staged_routed(
+            path,
+            addr,
+            self.provision_route(address),
+        )?))
+    }
+
+    /// Which provisioning act the absent-instance refusal may honestly name for
+    /// `address`'s doctype **in this task** — the B2-1 repair: the shipped refusal
+    /// offered `jigc doc create <type>` unconditionally, and under a workflow whose
+    /// `allows-create:` gate forbids that doctype the offered command answers
+    /// `create.gate-blocked` (`design/surface-contract.md` → law 1 on printed routes).
+    ///
+    /// The gate arm is [`engine::state::create_admission`] — the very predicate
+    /// `create.gate-blocked` fires from — so the refusal and the create can never
+    /// disagree about what this task may create (M45's one-predicate rule; a second
+    /// membership test here would be the drift).
+    fn provision_route(&self, address: &Address) -> ProvisionRoute {
+        let type_name = address.r#type.as_str();
+        // Both reads are fallible and both own their own doors. A failure here must not
+        // convert an absent-instance refusal into a different failure — that would answer
+        // a question nobody asked — so an unreadable gate keeps the shipped hint.
+        let Ok(def) = self.workflow_gate() else {
+            return ProvisionRoute::Create;
+        };
+        let Ok(schemas) = self.schemas() else {
+            return ProvisionRoute::Create;
+        };
+        if engine::state::create_admission(&schemas, &def.allows_create, type_name).is_ok() {
+            return ProvisionRoute::Create;
+        }
+        if crate::start::provisions_at_compose(&def, type_name) {
+            return ProvisionRoute::AtCompose {
+                type_name: type_name.to_owned(),
+                task: self.id.clone(),
+            };
+        }
+        ProvisionRoute::GateForbids {
+            type_name: type_name.to_owned(),
+            task: self.id.clone(),
+            allowed: def
+                .allows_create
+                .iter()
+                .map(|e| e.doc_type.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        }
     }
 
     /// Bind the workflow's object-form `allows-create` role for `address`'s doctype
@@ -5181,31 +5228,88 @@ fn barrier_block(task_id: &str, address: &Address) -> Finding {
     )
 }
 
+/// The provisioning act an absent-instance refusal may honestly name — see
+/// [`ActiveTask::provision_route`], which derives it from the task's own create-gate.
+enum ProvisionRoute {
+    /// The task's gate admits the addressed doctype: the shipped create hint, unchanged.
+    Create,
+    /// The addressed doctype is the one the task's **compose** provisions (its commit
+    /// doc), which bypasses the gate rather than being granted by it — so no
+    /// `jigc doc create` exists for it in any task.
+    AtCompose { type_name: String, task: String },
+    /// The gate forbids the addressed doctype and compose provisions none: nothing in
+    /// this task can provision it at all.
+    GateForbids {
+        type_name: String,
+        task: String,
+        allowed: String,
+    },
+}
+
 /// Read the staged instance bytes, mapping an absent instance to an actionable
 /// error (the write verbs require the instance to already exist —
-/// `design/write-commands.md` → Instance provisioning).
-fn read_staged(path: &Path, addr: &str) -> Result<String> {
+/// `design/write-commands.md` → Instance provisioning). The provisioning route the
+/// refusal names is the caller's, because only the caller knows the task's gate; the
+/// callers that cannot raise (the instance is present by construction) pass
+/// [`ProvisionRoute::Create`] through [`read_staged`].
+fn read_staged_routed(path: &Path, addr: &str, route: ProvisionRoute) -> Result<String> {
     // `map_err`, not `with_context`: the latter chains the raw I/O error's `os error 2`
     // tail into `{err:#}` — a dead end. The absent-instance case is the expected reason
     // this read fails, so surface the provision route alone (M36 Inc-4).
-    std::fs::read_to_string(path).map_err(|_| {
-        let start = engine::finding::Route::mechanical(["jigc", "start"], "");
-        // The full, parseable form — the old bare `jigc doc create` span never parsed
-        // (required args short), which the T7 parse fence surfaced and forces honest.
-        // The sample title is **single**-quoted, the one form a shell expands nothing
-        // inside — the route fence's quoting half refuses the double-quoted span, because
-        // a reader who substitutes their own prose into a `"…"` span pastes live `$` and
-        // command substitution (M48 inc-2 triage).
-        let create = engine::finding::Route::mechanical(
-            ["jigc", "doc", "create", "<type>", "--title", "'X'"],
-            "",
-        );
-        anyhow!(
-            "no staged instance for `{addr}` — provision it first ({start} / {create}). \
-             Note: {create} derives the id from the title (`X` → slug), \
-             not the task id — address writes at that title-derived id"
-        )
+    std::fs::read_to_string(path).map_err(|_| match route {
+        ProvisionRoute::Create => {
+            let start = engine::finding::Route::mechanical(["jigc", "start"], "");
+            // The full, parseable form — the old bare `jigc doc create` span never parsed
+            // (required args short), which the T7 parse fence surfaced and forces honest.
+            // The sample title is **single**-quoted, the one form a shell expands nothing
+            // inside — the route fence's quoting half refuses the double-quoted span,
+            // because a reader who substitutes their own prose into a `"…"` span pastes
+            // live `$` and command substitution (M48 inc-2 triage).
+            let create = engine::finding::Route::mechanical(
+                ["jigc", "doc", "create", "<type>", "--title", "'X'"],
+                "",
+            );
+            anyhow!(
+                "no staged instance for `{addr}` — provision it first ({start} / {create}). \
+                 Note: {create} derives the id from the title (`X` → slug), \
+                 not the task id — address writes at that title-derived id"
+            )
+        }
+        // Compose already provisioned this doctype's one instance, at the task-derived id
+        // — so the honest next act is to read what the task holds, not to create a second
+        // one through a door that is closed to every workflow.
+        ProvisionRoute::AtCompose { type_name, task } => {
+            let list =
+                engine::finding::Route::mechanical(["jigc", "doc", "list", "--task", &task], "");
+            anyhow!(
+                "no staged instance for `{addr}` — task `{task}`'s workflow provisions its \
+                 `{type_name}` doc at compose and grants no in-task create for it; list what \
+                 task `{task}` stages with {list}"
+            )
+        }
+        // Nothing in this task provisions the doctype, so every in-task route is a dead
+        // end: name the gate that closed it and the catalog of workflows that open it.
+        ProvisionRoute::GateForbids {
+            type_name,
+            task,
+            allowed,
+        } => {
+            let start = engine::finding::Route::mechanical(["jigc", "start"], "");
+            anyhow!(
+                "no staged instance for `{addr}` — task `{task}`'s workflow grants no in-task \
+                 create for `{type_name}` (its `allows-create:` gate lists [{allowed}]), so \
+                 nothing in this task provisions it; create `{type_name}` from a task minted \
+                 on a workflow that grants it ({start} lists the catalog)"
+            )
+        }
     })
+}
+
+/// [`read_staged_routed`] for the call sites whose instance is present by construction
+/// (a just-created doc, a just-copied-in one) — the refusal is unreachable there, so the
+/// shipped create hint stands in.
+fn read_staged(path: &Path, addr: &str) -> Result<String> {
+    read_staged_routed(path, addr, ProvisionRoute::Create)
 }
 
 /// Persist the engine's returned buffer atomically into the working area.

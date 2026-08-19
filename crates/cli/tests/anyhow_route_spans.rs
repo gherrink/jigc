@@ -136,13 +136,20 @@ fn assert_error_contains(out: &std::process::Output, needles: &[&str]) {
 
 /// Mint a top-level `single-task` task with a controlled slug.
 fn mint_task(repo: &Path, home: &Path, slug: &str) {
+    mint_task_on(repo, home, "single-task", slug);
+}
+
+/// Mint a top-level task on a **named** workflow with a controlled slug — the
+/// create-gate arm needs both a granting workflow (`single-task`, `allows-create:
+/// [adr, changelog]`) and a forbidding one (`quick-fix`, `allows-create: []`).
+fn mint_task_on(repo: &Path, home: &Path, workflow: &str, slug: &str) {
     let out = jigc(
         repo,
         home,
         &[
             "start",
             "--workflow",
-            "single-task",
+            workflow,
             "--slug",
             slug,
             "Do the thing",
@@ -292,6 +299,224 @@ fn absent_staged_instance_names_the_full_create_form() {
          `jigc doc create <type> --title 'X'`). Note: `jigc doc create <type> --title 'X'` \
          derives the id from the title (`X` → slug), not the task id — address writes at \
          that title-derived id\n",
+    );
+}
+
+// ── the absent-instance refusal's create offer is gate-aware (M46 Inc 8, B2-1) ──────
+
+/// Lift every backticked `` `jigc …` `` span from a printed refusal, in order and
+/// deduplicated — the surface's *printed routes*, which is what a reader runs.
+fn jigc_spans(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for span in text.split('`').skip(1).step_by(2) {
+        if span.starts_with("jigc ") && !out.iter().any(|s| s == span) {
+            out.push(span.to_owned());
+        }
+    }
+    out
+}
+
+/// Split a printed span into argv, honouring the single quoting the route fence
+/// mandates (`--title 'X'` is one argument).
+fn span_argv(span: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut quoted = false;
+    for ch in span.chars() {
+        match ch {
+            '\'' => quoted = !quoted,
+            c if c.is_whitespace() && !quoted => {
+                if !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+            }
+            c => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+/// Run one lifted span from the state that raised it and assert it does **not** answer
+/// `create.gate-blocked` — the B2-1 defect: a refusal that routes to a create the task's
+/// own `allows-create:` gate refuses.
+fn assert_span_is_not_gate_blocked(repo: &Path, home: &Path, argv: &[String], cell: &str) {
+    let args: Vec<&str> = argv.iter().skip(1).map(String::as_str).collect();
+    let out = jigc(repo, home, &args);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("create.gate-blocked"),
+        "{cell}: the refusal's route `{}` answers create.gate-blocked:\n{stderr}",
+        argv.join(" "),
+    );
+}
+
+/// The absent-instance refusal never routes to a create this task cannot run.
+///
+/// Drives the 2×2 cell set {the gate admits the addressed doctype, it forbids it} ×
+/// {a `commit:<task>` address, a non-commit address}. The commit column collapses —
+/// `commit` sits in **no** shipped workflow's `allows-create:` (it is
+/// workflow-provisioned and *bypasses* the gate, `design/write-commands.md` → The
+/// create-gate) — so both workflows must answer the same thing there, and the test
+/// asserts that collapse rather than assuming it.
+///
+/// Each cell's emitted bytes are asserted, then **every** backticked `jigc …` span is
+/// lifted and run from the raising state: verbatim, and — when the span carries the
+/// `<type>` placeholder, which stands for the doctype the reader is addressing — again
+/// with that placeholder substituted, because a placeholder run literally answers
+/// `unknown doctype` and would mask the defect. No run may answer `create.gate-blocked`.
+struct Cell {
+    /// The cell's label in a failure message.
+    tag: &'static str,
+    /// The workflow the task is minted on — its `allows-create:` is the gate axis.
+    workflow: &'static str,
+    /// The task id (and its controlled slug).
+    task: &'static str,
+    /// The absent address the write verb addresses — its `<type>` head is the doctype axis.
+    address: &'static str,
+    /// The write verb that raises the refusal at `address`.
+    write: &'static [&'static str],
+    /// The refusal's emitted stderr bytes — the contract.
+    expected: &'static str,
+}
+
+#[test]
+fn absent_instance_refusal_never_routes_to_a_forbidden_create() {
+    let cells = [
+        Cell {
+            tag: "admits × non-commit",
+            workflow: "single-task",
+            task: "st",
+            address: "adr:ghost#options",
+            write: &[
+                "doc",
+                "add-item",
+                "adr:ghost#options",
+                "--title",
+                "An option",
+            ],
+            expected: "no staged instance for `adr:ghost#options` — provision it first (`jigc start` / \
+             `jigc doc create <type> --title 'X'`). Note: `jigc doc create <type> --title 'X'` \
+             derives the id from the title (`X` → slug), not the task id — address writes at \
+             that title-derived id\n",
+        },
+        Cell {
+            tag: "forbids × non-commit",
+            workflow: "quick-fix",
+            task: "qf",
+            address: "adr:ghost#options",
+            write: &[
+                "doc",
+                "add-item",
+                "adr:ghost#options",
+                "--title",
+                "An option",
+            ],
+            expected: "no staged instance for `adr:ghost#options` — task `qf`'s workflow grants no \
+             in-task create for `adr` (its `allows-create:` gate lists []), so nothing in this \
+             task provisions it; create `adr` from a task minted on a workflow that grants it \
+             (`jigc start` lists the catalog)\n",
+        },
+        Cell {
+            tag: "admits-other × commit",
+            workflow: "single-task",
+            task: "st",
+            address: "commit:ghost#type",
+            write: &["doc", "set-field", "commit:ghost#type", "--value", "feat"],
+            expected: "no staged instance for `commit:ghost#type` — task `st`'s workflow provisions its \
+             `commit` doc at compose and grants no in-task create for it; list what task `st` \
+             stages with `jigc doc list --task st`\n",
+        },
+        Cell {
+            tag: "forbids × commit",
+            workflow: "quick-fix",
+            task: "qf",
+            address: "commit:ghost#type",
+            write: &["doc", "set-field", "commit:ghost#type", "--value", "feat"],
+            expected: "no staged instance for `commit:ghost#type` — task `qf`'s workflow provisions its \
+             `commit` doc at compose and grants no in-task create for it; list what task `qf` \
+             stages with `jigc doc list --task qf`\n",
+        },
+    ];
+
+    for Cell {
+        tag,
+        workflow,
+        task,
+        address,
+        write,
+        expected,
+    } in cells
+    {
+        let repo = TempDir::new("gate-aware");
+        let home = TempDir::new("home");
+        init_repo(repo.path());
+        mint_task_on(repo.path(), home.path(), workflow, task);
+
+        let doctype = address.split(':').next().expect("a typed address");
+        let mut argv = write.to_vec();
+        argv.extend_from_slice(&["--task", task]);
+        let out = jigc(repo.path(), home.path(), &argv);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{tag}: expected a clean operational error; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let stderr = String::from_utf8(out.stderr.clone()).expect("utf-8 stderr");
+        assert_eq!(
+            stderr, expected,
+            "{tag}: the emitted bytes are the contract"
+        );
+
+        let spans = jigc_spans(&stderr);
+        assert!(!spans.is_empty(), "{tag}: a refusal must print a route");
+        for span in &spans {
+            let argv = span_argv(span);
+            assert_span_is_not_gate_blocked(repo.path(), home.path(), &argv, tag);
+            if argv.iter().any(|a| a == "<type>") {
+                let substituted: Vec<String> = argv
+                    .iter()
+                    .map(|a| {
+                        if a == "<type>" {
+                            doctype.to_owned()
+                        } else {
+                            a.clone()
+                        }
+                    })
+                    .collect();
+                assert_span_is_not_gate_blocked(repo.path(), home.path(), &substituted, tag);
+            }
+        }
+    }
+}
+
+/// The two claims the gate-aware refusal makes about *this* state are true here:
+/// composing really does provision the commit doc the `commit` cell names, and the
+/// catalog the forbidding cell points at really does list a workflow that grants `adr`.
+#[test]
+fn the_gate_aware_refusal_routes_land_where_they_claim() {
+    let repo = TempDir::new("gate-aware-truth");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    mint_task_on(repo.path(), home.path(), "quick-fix", "qf");
+
+    let listed = jigc(repo.path(), home.path(), &["doc", "list", "--task", "qf"]);
+    assert!(listed.status.success(), "`doc list --task qf` must exit 0");
+    let stdout = String::from_utf8_lossy(&listed.stdout);
+    assert!(
+        stdout.contains("commit:qf"),
+        "composing must provision the commit doc the refusal names; got:\n{stdout}",
+    );
+
+    let catalog = jigc(repo.path(), home.path(), &["start"]);
+    assert!(catalog.status.success(), "`jigc start` must exit 0");
+    let catalog = String::from_utf8_lossy(&catalog.stdout);
+    assert!(
+        catalog.contains("record-decision"),
+        "the catalog must list a workflow granting `adr`; got:\n{catalog}",
     );
 }
 
