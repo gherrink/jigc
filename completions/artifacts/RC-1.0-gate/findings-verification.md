@@ -206,20 +206,39 @@ list, because its route actively instructs a duplicate.
 
 ### Conversion ledger ([pinning.md](../../../implementation/pinning.md) §3)
 
-**`UNPINNED:`** the fact this verdict establishes *is the defect* — the predicate counts
-repeatable items, so a prose-only `set-slot` on an existing item fires the advisory. A standing
-test over that cell would pin the false positive as expected output ([pinning.md](../../../implementation/pinning.md)
-§5's rule: *"would pinning it now pin the bug?"*), and this trial ships no fix. What is fenced is the **correct** half, and only
-that half — verified by reading the assertions:
-`changelog_gate_advisory::a_granted_but_unused_changelog_gate_advises_at_the_task_and_still_lands`
-(a granted-and-genuinely-unused gate emits one advisory keyed `task:<id>`, carrying a route, and
-the commit still lands) · `::an_authored_unreleased_change_group_emits_no_advisory` (an
-`add-item`-authored group silences it) · `::a_created_but_unauthored_changelog_is_not_an_entry`
-(a skeleton with no item still fires — the item-count predicate, from the other side). **No arm
-touches the prose-only-edit cell, the `retitle-item`/`date` siblings, or the `task validate`
-omission.** The suite does assert the route's *ordering* (landed-form first, the in-task form
-marked "before finalize") — never that either option runs in the case that raises it, which is
-aggravation (a).
+**Converted 2026-08-19 (M46 Increment 6), from `UNPINNED` to a citation.** This row was
+`UNPINNED` on the ground that the fact it establishes *is the defect*: a standing test over the
+prose-only cell would have pinned the false positive as expected output
+([pinning.md](../../../implementation/pinning.md) §5's *"would pinning it now pin the bug?"*), and
+this trial shipped no fix. M46 Increment 6 shipped it, which is the rule's other half — the
+moment the bug is fixed, the cell that would have pinned it is the cell that pins the correct
+behaviour.
+
+`pinned-by: changelog_write_touch::every_doc_write_verb_reads_as_a_write_touch` — verified by
+reading the assertions: ten cells over the eight `["doc", …]` write verbs, each driven against a
+**committed** `CHANGELOG.md` inside a gate-granting task, asserting what the advisory does at that
+task's finalize. `set-slot` on an existing category, `retitle-item` on a cut release and
+`set-field` on a release `date` — the three count-stable writes this verdict measured, task 2
+above among them — assert **suppressed**; `create` over the committed doc, `create` with nothing
+committed, and a **refused** `set-field` (which copies in and then rejects, leaving the baseline's
+own bytes staged) assert **still fires**; `doc rename` is declared inapplicable with its refusal
+quoted. `changelog_write_touch::every_doc_write_verb_has_a_cell` fences that table against
+`cli::cli::VERB_KINDS` **both ways**, so the axis cannot lose a verb silently.
+
+**Aggravation (b)** — the `task validate` omission — is fenced by
+`validate_previews_the_gate::a_granted_but_unused_changelog_gate_is_previewed_at_validate`: the
+advisory previews at exit 0 keyed `task:<id>`, and every backticked `jigc …` span extracted from
+its **own printed route** is run verbatim at that door. The landing-door half is
+`the_landing_finalize_door_prints_no_dead_argv` in the same suite (cited in full at S-4 below) —
+the arm that was red at HEAD. **Aggravation (a)** loses its premise rather than its wording: a
+task that edited a category no longer draws the advisory at all, and the cycle the two routes
+formed is broken at the `set-slot` cell above — the hop `write.already-present` sends a worker to
+is now the hop that records the entry.
+
+**Deliberately not cited** ([pinning.md](../../../implementation/pinning.md) §3):
+`crates/cli/tests/changelog_gate_advisory.rs`, the suite this row cited before. Its three arms
+stayed green and byte-unmodified, but they touch none of the cells this finding is about — a
+citation that reads apt by name is exactly what §3 refuses.
 
 ---
 
@@ -1345,9 +1364,17 @@ internal doc comment, not a printed surface, so it is **not** a §1 finding — 
 premise behind the route half that sends a worker at in-task verbs it can no longer run, so it should
 be corrected alongside F-1 rather than separately.
 
-**`UNPINNED:`** an internal doc comment is not a product behaviour — there is nothing for a
-standing test to hold. Its *consequence* is F-1's route, whose disposition is recorded there. (Not
-one of the seventeen; carried here so no block in this file is silent.)
+**Converted 2026-08-19 (M46 Increment 6).**
+`pinned-by: validate_previews_the_gate::the_landing_finalize_door_prints_no_dead_argv` — the
+comment was corrected where it stood, and its *consequence* is fenced rather than argued. Verified
+by reading the assertions: the arm drives a landing `finalize`, pulls every backticked `jigc …`
+span out of the advisory's **own emitted route**, asserts none carries `--task` (the working area
+is gone by then) and runs each verbatim, failing on any answer containing ``no task ` `` — which is
+precisely the dead offer this false premise produced. The premise is no longer false either: the
+advisory does preview, pinned by
+`validate_previews_the_gate::a_granted_but_unused_changelog_gate_is_previewed_at_validate`. An
+internal doc comment still has no standing test of its own; what changed is that the behaviour it
+lied about has one. (Not one of the seventeen; carried here so no block in this file is silent.)
 
 ---
 
@@ -1378,7 +1405,7 @@ by a suite*, never *fenced*.
 
 | # | Row | Verdict | Disposition |
 |---|---|---|---|
-| 1 | F-1 changelog gate | CONFIRMED | `UNPINNED` — pinning the cell would pin the false positive; the correct half is cited |
+| 1 | F-1 changelog gate | CONFIRMED | `pinned-by` — the write-touch axis over every `doc` write verb · both preview doors (converted at M46 Inc 6) |
 | 2 | B2-1 sub-task step / create gate | PARTIAL | **mixed** — `pinned-by` both refuted halves · `UNPINNED` the gate-blind route |
 | 3 | B2-2 un-resumable sub-tasks | CONFIRMED | **mixed** — `pinned-by` the standing refusal · `UNPINNED` the mis-route + missing `next:` |
 | 4 | B2-3 `join`/`finalize` help | PARTIAL | **mixed** — `pinned-by` both behaviours · `UNPINNED` the help sentence |
@@ -1396,19 +1423,22 @@ by a suite*, never *fenced*.
 | S-2 | `describe <item>` | CONFIRMED | **mixed** — `pinned-by` the positional refusal · `UNPINNED` the absent tip |
 | S-3 | task-id predictability | **REFUTED** | `pinned-by` — `checkpoint_acceptance` (pre-existing) |
 
-**Counts.** 12 of 17 rows carry at least one `pinned-by:` citation; 5 are `UNPINNED` outright; 7
-of the 12 are **mixed** — a citation for the half that is verified-or-refuted behaviour, an
+**Counts** (as of the 2026-08-19 conversion below). 13 of 17 rows carry at least one
+`pinned-by:` citation; 4 are `UNPINNED` outright; 7 of the 13 are **mixed** — a citation for the half that is verified-or-refuted behaviour, an
 `UNPINNED` for the half that is an unfixed defect or a surface that does not exist yet. **All
 three REFUTED rows carry citations**, so §3's *"a refuted fact **has** a standing test"* obligation
 is discharged without minting a duplicate.
 
-**The shape of the five outright-`UNPINNED` rows is one shape, and it is the intended one.** Four
-(F-1, B1-1, PT-1, and 5a's absent flag) would, if fenced today, **pin the defect or the gap as
+**The shape of the four outright-`UNPINNED` rows is one shape, and it is the intended one.** Three
+(B1-1, PT-1, and 5a's absent flag) would, if fenced today, **pin the defect or the gap as
 expected output** — [pinning.md](../../../implementation/pinning.md) §5's *"would pinning it now
 pin the bug?"*, the rule the latent-surface sweep already applied once when the leftover
-re-`provision` left its scope. The fifth (D-1's discoverability half) is a measurement about pack
+re-`provision` left its scope. The fourth (D-1's discoverability half) is a measurement about pack
 content rather than a behaviour of the binary. Each routes to a wave, not to a test:
-[next-wave-scope.md](next-wave-scope.md) carries the dispositions.
+[next-wave-scope.md](next-wave-scope.md) carries the dispositions. **F-1 left this set on
+2026-08-19**, when M46 Increment 6 shipped its fix — the rule read from the other end: a row
+`UNPINNED` because pinning it would pin the bug converts the moment the bug is gone, and its
+citation is the fix's own axis-iterating suite (§1).
 
 
 ---
