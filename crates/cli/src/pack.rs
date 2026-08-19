@@ -828,7 +828,11 @@ pub const CONSTRAINT_REQUIRED_TOKENS: [(&str, &[&str]); 6] = [
 /// to a single space, every ASCII letter case-folded. Step prose is hard-wrapped
 /// and sentence-cased, so a fact's phrase legitimately spans a line break or opens
 /// capitalized; matching the raw bytes would fail on presentation, not on content.
-fn normalized_body(body: &str) -> String {
+///
+/// Shared with [`crate::gate_coverage`], whose token fence runs the same comparison
+/// over the same class of prose — one normalization, so a token authored for one
+/// table cannot mean something else in the other.
+pub(crate) fn normalized_body(body: &str) -> String {
     let mut out = String::new();
     let mut pending_space = false;
     for ch in body.chars() {

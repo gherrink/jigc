@@ -21,6 +21,10 @@ pub mod combine;
 pub mod config;
 pub mod describe;
 pub mod doc;
+// The gate-coverage table: one source for what `jigc task validate` previews and
+// what only `finalize` decides — generated into the composed line, fenced per token
+// everywhere else.
+pub mod gate_coverage;
 pub mod gitignore;
 pub mod ingest;
 pub mod invocation_log;

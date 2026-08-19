@@ -40,6 +40,8 @@ mod flow19_planning_encode;
 mod flow41_acceptance;
 #[path = "../flow44_acceptance.rs"]
 mod flow44_acceptance;
+#[path = "../gate_coverage_fence.rs"]
+mod gate_coverage_fence;
 #[path = "../ingest.rs"]
 mod ingest;
 #[path = "../ingest_finding_keys.rs"]

@@ -255,7 +255,11 @@ fn minted_header(view: &Composition) -> String {
 ///   finalize gate: this task's content findings, the carryover gate and the
 ///   staging-independent `owner-artifact` causes (M47 Inc 4 T1/T2). It says so —
 ///   the staged set, promotion and the commit itself are decided only at
-///   `finalize`, and law 1 forbids the line implying otherwise;
+///   `finalize`, and law 1 forbids the line implying otherwise. That clause is
+///   **generated** from [`crate::gate_coverage`] (M46 Inc 6 / T2), not spelled
+///   here: eight surfaces state this same split, and a member joining the
+///   previewed set has to reach all of them — this one by construction, the rest
+///   by the per-token fence;
 /// - `task scope:` — the B3 statement: `jigc doc` writes default to the **single**
 ///   active task, and the explicit `--task <id>` is the override that wins when
 ///   several are active (`crate::doc`'s task-resolution contract, stated where the
@@ -299,9 +303,13 @@ fn task_state_lines(view: &Composition) -> String {
                  finalizing here blocks and names the overlapping paths"
             .to_string(),
     };
+    // The coverage clause is **generated** from the gate-coverage table, never spelled
+    // here: this line and seven other surfaces state the same split, and a member that
+    // joins the previewed set must reach all eight or none (`crate::gate_coverage`).
+    let coverage = crate::gate_coverage::whats_left_coverage();
     format!(
         "resume: `jigc start --task {id}`   — re-composes this workflow if context is lost\n\
-         what's-left: `jigc task validate {id}`   — previews part of the finalize gate: this task's content findings, the carryover gate, and the owner-artifact causes that need no staging; the staged set, promotion and the commit surface at finalize\n\
+         what's-left: `jigc task validate {id}`   — {coverage}\n\
          task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; {divergence}\n"
     )
 }
