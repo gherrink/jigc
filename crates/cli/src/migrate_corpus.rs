@@ -53,7 +53,10 @@ use engine::finding::{Finding, Findings, Location, Route, Severity};
 use engine::packsource::PackSource;
 use engine::schema::{Field, SCHEMA_VERSION_FIELD, Schema, SectionBody};
 use engine::schema_diff::{SchemaChange, schema_diff};
-use engine::transform::{CorpusDoc, CorpusMigration, DocOutcome, migrate_corpus};
+use engine::transform::{
+    CorpusDoc, CorpusMigration, DocOutcome, HaltReason, TransformError, VALUE_REMAP_KIND,
+    migrate_corpus,
+};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -954,10 +957,12 @@ pub(crate) fn migrate_committed_corpus(
                 }
             }
             DocOutcome::Untouched { id, .. } => {
-                report.blocked.push(if result.halted_at == Some(i) {
-                    prose_needing_finding(id)
-                } else {
-                    deferred_finding(id)
+                // THE HALTED DOC IS TOLD WHAT HALTED IT (M46 Inc-4 T3). The run's *first* refusal
+                // carries its own cause out of the fold; every doc behind it is untouched for a
+                // different reason — it was never reached — and keeps the deferral.
+                report.blocked.push(match &result.halt_reason {
+                    Some(reason) if result.halted_at == Some(i) => halt_finding(id, reason),
+                    _ => deferred_finding(id),
                 });
             }
         }
@@ -1547,8 +1552,108 @@ fn docs_root_free(schema: &Schema, docs_root: &str) -> Schema {
     out
 }
 
-/// The Framing-A route for a doc whose migration minted an empty required slot: author the
-/// prose, then re-run — the stamp flips only once the doc gates clean.
+/// Render one halted doc's refusal from **its own cause** — the exhaustive match over
+/// [`HaltReason`] (M46 Inc-4 T3; `design/command-output-contract.md` → the `migrate-corpus.*`
+/// sub-table).
+///
+/// Exhaustive **on purpose**, at both levels: a fourth halt cause — or a transform error the
+/// driver learns to raise — cannot be added without deciding what the report says about it and
+/// what repair it names. The whole defect this closes is a catch-all that answered three
+/// questions with one sentence, two of them false.
+///
+/// The split is *who can repair it*:
+///
+/// - the **gate** — the fold produced conformant-shaped bytes and the doc broke its own
+///   conformance check. An author clears that from the doc, so it keeps the contract-pinned
+///   Framing-A waypoint and route ([`prose_needing_finding`]);
+/// - **anything else** — the transform arm refused, or its output does not parse. Nothing written
+///   into this doc changes that, so it takes [`fold_refused_finding`] and a **schema-authoring**
+///   route: the same treatment the pre-fold refusals (`unclassified-change`,
+///   `narrowed-cardinality`, `removed-field`) already get, on the same recorded reason — the
+///   fold's *"author the prose, then re-run"* route "would be a lie".
+fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
+    match reason {
+        HaltReason::Gate(findings) => prose_needing_finding(rel_key, findings),
+        // A parse failure always carries the diagnostics that say where the buffer broke
+        // (`parse_sections`: a non-empty finding set is what makes it an `Err`), so they are
+        // relayed here exactly as the gate's are.
+        HaltReason::Parse(findings) => fold_refused_finding(
+            rel_key,
+            format!(
+                "the bytes the fold produced do not parse under the new schema ({})",
+                relayed(findings)
+            ),
+            "repair the transform arm that produced them in `crates/engine/src/transform.rs`, \
+             then re-run `jigc migrate-corpus`"
+                .to_string(),
+        ),
+        HaltReason::Transform(err) => match err {
+            // The one refusal whose repair is a **migration input**, not an arm: the old→new map
+            // for an enum rename is unrecoverable from the schema pair, so the CLI authors it —
+            // and a committed value the map does not cover is a gap in *that table*.
+            TransformError::Unsupported { kind, section } if *kind == VALUE_REMAP_KIND => {
+                fold_refused_finding(
+                    rel_key,
+                    format!(
+                        "the migration renames the enum members of a field in `{section}`, and \
+                         this doc carries a committed value the authored old→new map does not \
+                         cover, so no deterministic rewrite of it exists"
+                    ),
+                    format!(
+                        "declare the missing old→new value mapping for `{section}` in \
+                         `crates/cli/src/migrate_corpus.rs` → `authored_remap`, then re-run \
+                         `jigc migrate-corpus`"
+                    ),
+                )
+            }
+            TransformError::Unsupported { kind, section } => fold_refused_finding(
+                rel_key,
+                format!(
+                    "the migration classifies a `{kind}` change in `{section}` that the transform \
+                     driver does not apply — an un-built arm, or one refused by design"
+                ),
+                format!(
+                    "build (or restore the schema shape behind) the `{kind}` arm in \
+                     `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then \
+                     re-run `jigc migrate-corpus`"
+                ),
+            ),
+            TransformError::Unclassified => fold_refused_finding(
+                rel_key,
+                "the schema pair moved its conformance-relevant structure but classifies no \
+                 transform kind, so there are no bytes to fold"
+                    .to_string(),
+                "build the transform kind for the change in `crates/engine/src/schema_diff.rs` + \
+                 `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
+                    .to_string(),
+            ),
+            TransformError::Generate(_) | TransformError::Splice(_) => fold_refused_finding(
+                rel_key,
+                "a structural splice primitive failed while folding it, so no migrated bytes were \
+                 produced"
+                    .to_string(),
+                "repair the transform arm in `crates/engine/src/transform.rs`, then re-run \
+                 `jigc migrate-corpus`"
+                    .to_string(),
+            ),
+        },
+    }
+}
+
+/// The engine findings' **own words**, joined — a relay, never a re-wording. Two surfaces
+/// describing one break in two vocabularies is the class this wave exists to close, and the
+/// migration report has no standing to re-diagnose what the gate (or the parser) already
+/// diagnosed.
+fn relayed(findings: &[Finding]) -> String {
+    findings
+        .iter()
+        .map(|finding| finding.message.as_str())
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The Framing-A route for a doc the conformance gate refused: author the prose, then re-run —
+/// the stamp flips only once the doc gates clean.
 fn prose_needing_route(rel_key: &str) -> String {
     format!(
         "author the new required prose in `{rel_key}` through the write verbs, then re-run \
@@ -1556,19 +1661,49 @@ fn prose_needing_route(rel_key: &str) -> String {
     )
 }
 
-/// A doc whose migration **minted an empty required slot** — the Framing-A prose handoff: the
+/// A doc whose folded bytes **broke the conformance gate** — the Framing-A prose handoff: the
 /// structural splice landed in the scratch buffer but the doc cannot gate clean until an agent
 /// authors the prose, so it rolls back byte-identical and is routed to the author.
-fn prose_needing_finding(rel_key: &str) -> Finding {
+///
+/// **The message relays the gate's findings** (M46 Inc-4 T3). It used to assert that the
+/// migration *"mints a new **required** prose slot"* — true for one of the states that reach here
+/// and false for the other, since the gate breaks just as readily on a slot the doc left empty
+/// long before this run, which no migration minted. The gate already says which slot and why; the
+/// report has that set in hand and repeats it rather than narrating over it.
+///
+/// **The route is unchanged**, and deliberately: it is the one halt cause an author can clear
+/// **from the doc**, which is exactly what the route directs them to do.
+fn prose_needing_finding(rel_key: &str, findings: &[Finding]) -> Finding {
     blocked_finding(
         "migrate-corpus.prose-needed",
         rel_key,
         format!(
-            "`{rel_key}`'s migration mints a new **required** prose slot, which no transform can \
-             fill (the CLI owns structure; the prose is the agent's — the determinism boundary), \
-             so the doc does not gate clean and its bytes are rolled back untouched"
+            "`{rel_key}` does not gate clean under its new schema, so its bytes are rolled back \
+             untouched — the conformance gate reports: {}",
+            relayed(findings)
         ),
         prose_needing_route(rel_key),
+    )
+}
+
+/// A doc the fold refused for a reason **the gate never saw** — the transform driver would not
+/// apply the change, or the bytes it produced do not parse (M46 Inc-4 T3).
+///
+/// Its route is a **schema-authoring** repair, never a doc instruction, for the reason the
+/// pre-fold refusals (`unclassified-change`, `narrowed-cardinality`, `removed-field`) are already
+/// refused before the fold can reach them: there is nothing an operator or agent can do *to this
+/// doc*. Routed at the fold's own route it was a **permanent dead end** — author prose that
+/// changes nothing, re-run into the identical refusal — which is the class M46 Increment 4 closes
+/// on the transform side and this closes on the report's.
+fn fold_refused_finding(rel_key: &str, cause: String, route: String) -> Finding {
+    blocked_finding(
+        "migrate-corpus.fold-refused",
+        rel_key,
+        format!(
+            "`{rel_key}` cannot be migrated: {cause}. This is a schema-authoring gap, not a doc \
+             problem — no prose authored into `{rel_key}` and no re-run changes it"
+        ),
+        route,
     )
 }
 

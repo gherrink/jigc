@@ -100,12 +100,20 @@
 //! this doc-comment is where their per-doc granularity + inventory are **pinned**.
 
 use crate::field_block::{Field, Value};
+use crate::finding::Finding;
 use crate::parse::parse_sections;
 use crate::schema::{Leaf, Schema, SectionBody};
 use crate::schema_diff::SchemaChange;
 use crate::validate::schema_conformance;
 use crate::write::{self, GenerateError, SpliceError};
 use std::collections::BTreeMap;
+
+/// The wire name [`TransformError::Unsupported`] carries for a **value remap** whose authored
+/// old→new map does not cover a committed value — the one refusal whose repair is a *migration
+/// input* (the map the CLI threads in) rather than a transform arm, which is why the CLI routes
+/// it differently from its siblings (M46 Inc-4 T3). Named at its construction site so that route
+/// cannot drift off the kind it claims to match.
+pub const VALUE_REMAP_KIND: &str = "value-remapped";
 
 /// A failure applying a classified diff to one instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -494,7 +502,7 @@ fn apply_value_remap(
 ) -> Result<String, TransformError> {
     fn unsupported(section: &str) -> TransformError {
         TransformError::Unsupported {
-            kind: "value-remapped",
+            kind: VALUE_REMAP_KIND,
             section: section.to_string(),
         }
     }
@@ -604,6 +612,34 @@ pub struct CorpusMigration {
     /// The index of the doc that halted the run (a blocked / non-conformant doc), or
     /// `None` if every doc migrated cleanly.
     pub halted_at: Option<usize>,
+    /// **Why** that doc could not commit — `Some` exactly when [`Self::halted_at`] is, and the
+    /// reason a caller renders instead of inventing one (M46 Inc-4 T3). The fold has three
+    /// distinct ways to refuse a doc and they need three different repairs; collapsing them into
+    /// one outcome is what let `migrate-corpus` print *"author the prose, then re-run"* over a
+    /// doc no prose and no re-run could clear.
+    pub halt_reason: Option<HaltReason>,
+}
+
+/// Why [`migrate_corpus`] could not commit one doc — the halt's own cause, carried out to the
+/// caller so the refusal it prints names the repair that exists (M46 Inc-4 T3;
+/// `design/command-output-contract.md` → the `migrate-corpus.*` sub-table).
+///
+/// The three variants are the three points [`try_migrate_doc`] can fail at, in order. Only the
+/// last is a break **in the doc** that an author can clear from the doc; the other two are
+/// **schema-authoring** gaps — the transform arm, or the migration input it was handed — where
+/// nothing written into this doc, and no number of re-runs, changes the outcome.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HaltReason {
+    /// The transform driver refused the change or a splice primitive failed: no v2 bytes were
+    /// produced at all.
+    Transform(TransformError),
+    /// The folded bytes do **not parse** under the new schema — carries the failed parse's own
+    /// findings, which are what say where and why the buffer broke.
+    Parse(Vec<Finding>),
+    /// The folded bytes parse but do **not conform**: the per-doc conformance gate's own
+    /// findings, verbatim. The Framing-A handoff lives here — a required slot the fold minted
+    /// empty is one of the breaks this set can carry, and so is one the doc already had.
+    Gate(Vec<Finding>),
 }
 
 /// Apply a transform across an **N-doc corpus**, per-doc gated and WIP-safe.
@@ -617,47 +653,57 @@ pub struct CorpusMigration {
 pub fn migrate_corpus(docs: &[CorpusDoc<'_>]) -> CorpusMigration {
     let mut out = Vec::with_capacity(docs.len());
     let mut halted_at: Option<usize> = None;
+    let mut halt_reason: Option<HaltReason> = None;
     for (i, doc) in docs.iter().enumerate() {
-        let migrated = if halted_at.is_some() {
+        let migrated = match halted_at {
             // After the halt: never touched — byte-identical v0.
-            None
-        } else {
-            try_migrate_doc(doc)
+            Some(_) => None,
+            None => match try_migrate_doc(doc) {
+                Ok(v2) => Some(v2),
+                // The first refusal halts the run, and its cause rides out with it — recorded
+                // here, at the one site that has it in hand.
+                Err(reason) => {
+                    halted_at = Some(i);
+                    halt_reason = Some(reason);
+                    None
+                }
+            },
         };
         match migrated {
             Some(v2) => out.push(DocOutcome::Migrated {
                 id: doc.id.to_string(),
                 v2,
             }),
-            None => {
-                if halted_at.is_none() {
-                    halted_at = Some(i);
-                }
-                out.push(DocOutcome::Untouched {
-                    id: doc.id.to_string(),
-                    v0: doc.source.to_string(),
-                });
-            }
+            None => out.push(DocOutcome::Untouched {
+                id: doc.id.to_string(),
+                v0: doc.source.to_string(),
+            }),
         }
     }
     CorpusMigration {
         docs: out,
         halted_at,
+        halt_reason,
     }
 }
 
 /// One doc's per-doc transaction: transform into a scratch buffer, then gate on
-/// conformance against the v2 schema. Returns the committed v2 bytes on a clean gate, or
-/// `None` (rollback — the doc stays v0) on any failure: a transform error, a parse
-/// failure under v2, or a non-empty conformance gate (the `prose-needing` mint-empty
-/// blocks here).
-fn try_migrate_doc(doc: &CorpusDoc<'_>) -> Option<String> {
-    let scratch = transform(doc.old_schema, doc.new_schema, doc.source, doc.changes).ok()?;
-    let parsed = parse_sections(doc.new_schema, &scratch).ok()?;
-    if schema_conformance(doc.new_schema, &scratch, &parsed).is_empty() {
-        Some(scratch)
+/// conformance against the v2 schema. Returns the committed v2 bytes on a clean gate, or the
+/// [`HaltReason`] that stopped it (rollback — the doc stays v0).
+///
+/// The three failure points **stay distinguishable** (M46 Inc-4 T3). They used to collapse into
+/// one `None`, and the caller had nothing left to render but its most common cause — so a doc
+/// refused by an un-built transform arm was told to author prose and re-run, which could never
+/// clear it.
+fn try_migrate_doc(doc: &CorpusDoc<'_>) -> Result<String, HaltReason> {
+    let scratch = transform(doc.old_schema, doc.new_schema, doc.source, doc.changes)
+        .map_err(HaltReason::Transform)?;
+    let parsed = parse_sections(doc.new_schema, &scratch).map_err(HaltReason::Parse)?;
+    let findings = schema_conformance(doc.new_schema, &scratch, &parsed);
+    if findings.is_empty() {
+        Ok(scratch)
     } else {
-        None
+        Err(HaltReason::Gate(findings))
     }
 }
 
@@ -2375,6 +2421,79 @@ sections:
 
         // Determinism.
         assert_eq!(transform(&v1, &v2, &src, &diff).expect("re-run"), out);
+    }
+
+    /// **A fold whose output does not parse halts as a PARSE failure, not as a gate break**
+    /// (M46 Inc-4 T3). The three ways one doc can refuse to commit need three different repairs,
+    /// so they stay distinguishable all the way out to the caller — and this is the variant no
+    /// shipped doctype pair reaches through the binary (it takes a source the *new* schema cannot
+    /// parse at all), which is why it is proven here at the seam and
+    /// `crates/cli/tests/migrate_corpus_halt_causes.rs` says so rather than implying a
+    /// real-binary cell for it.
+    ///
+    /// The change is a byte no-op (`WidenedCardinality`), so the transform commits its input
+    /// unchanged — and that input is missing the required `## Body` heading entirely, so the
+    /// post-fold parse rejects it before the conformance gate is ever consulted.
+    #[test]
+    fn a_fold_whose_output_does_not_parse_under_the_new_schema_halts_as_a_parse_failure() {
+        let schema = load_schema(
+            b"\
+type: note
+sections:
+  - id: body
+    slot: { hint: \"the note\" }
+",
+        )
+        .expect("the note schema loads");
+        let src = "\
+# A note
+
+prose, and no `## Body` heading at all
+"
+        .to_string();
+        assert!(
+            parse_sections(&schema, &src).is_err(),
+            "the fixture's whole point is a source this schema cannot parse",
+        );
+
+        let changes = [SchemaChange::WidenedCardinality {
+            section: "body".to_string(),
+            field: "rel".to_string(),
+        }];
+        assert_eq!(
+            transform(&schema, &schema, &src, &changes),
+            Ok(src.clone()),
+            "a widening folds to zero bytes — the transform itself never fails here",
+        );
+
+        let corpus = [CorpusDoc {
+            id: "note-a",
+            old_schema: &schema,
+            new_schema: &schema,
+            source: &src,
+            changes: &changes,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, Some(0), "the fold halts on the doc");
+        let Some(HaltReason::Parse(findings)) = &result.halt_reason else {
+            panic!(
+                "the halt is a PARSE failure, not a gate break — the two take different repairs; \
+                 got: {:?}",
+                result.halt_reason
+            );
+        };
+        assert!(
+            !findings.is_empty(),
+            "the parse's own diagnostics ride along — they are what say where the buffer broke",
+        );
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Untouched {
+                id: "note-a".to_string(),
+                v0: src,
+            }],
+            "and the doc stays byte-identical v0",
+        );
     }
 
     /// **A cardinality narrowing is REFUSED** (the recorded pick — `DECISIONS.md` → 2026-07-13
