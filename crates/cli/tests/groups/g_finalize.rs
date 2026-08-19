@@ -2,6 +2,9 @@
 // Each suite below keeps its own file; this root only makes them one cargo target,
 // so a source change relinks ~10 test binaries instead of 252.
 
+#[path = "../support/mod.rs"]
+mod support;
+
 #[path = "../anyhow_route_spans.rs"]
 mod anyhow_route_spans;
 #[path = "../docs_root.rs"]
@@ -40,6 +43,8 @@ mod freeze_enforcement;
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]
 mod mention_resolves;
+#[path = "../pre_guard_repair_route.rs"]
+mod pre_guard_repair_route;
 #[path = "../reconciliation_baseline_contrast.rs"]
 mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]

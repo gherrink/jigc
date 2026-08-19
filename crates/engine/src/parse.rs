@@ -1329,7 +1329,21 @@ fn trim_span(source: &str, start: usize, end: usize) -> Span {
 ///
 /// The two readings are **byte-identical** — stray slot prose that broke out, or a
 /// genuinely anchor-less new item — so the message carries **both** repairs rather
-/// than picking one. `item_level` is the reserved depth (the item heading level at
+/// than picking one.
+///
+/// **Both repairs are edits at the named line, and neither is a CLI write** (M46
+/// Increment 5). The corruption is precisely what stops the parse, so every write
+/// door refuses the doc: `jigc doc add-item` at the containing section — the verb
+/// this message named until M46 — answers an unrelated `write.wrong-shape` ("last
+/// item not present"), which is a law-1 lie on a blocking path. So the new-item
+/// reading names the `{#id}` anchor **to add at that line**, not a verb to run;
+/// driven, the anchored heading is a conformant out-of-band edit the reconciler
+/// absorbs. That is the same hand repair every carrier of this message already
+/// sanctions ([`crate::file_state`]'s hand-repair sanction on both
+/// `reconciliation.conformance-block` arms; `store.unparseable`'s *"fix the
+/// committed file so it conforms"*).
+///
+/// `item_level` is the reserved depth (the item heading level at
 /// this nesting); `prose_reserves_deeper` says the enclosing item's own ceiling sits
 /// one level deeper still (a multi-slot template's `#### <Leaf-Title>` sub-labels, or
 /// a nested repeatable's item headings — [`crate::write::slot_ceiling`]'s
@@ -1345,8 +1359,9 @@ fn unanchored_heading_message(
     format!(
         "`{depth} {heading}` sits at `{depth}`, the schema-reserved item depth here, so the \
          parser reads it as an item boundary — and it carries no `{{#id}}` anchor; if that \
-         line is slot prose, demote it to `{allowed}` or deeper; if it is a new item, mint it \
-         with `jigc doc add-item` (which writes the anchor)"
+         line is slot prose, demote it to `{allowed}` or deeper; if it is a new item, anchor \
+         it in place — `{depth} {heading}  {{#<id>}}` — with `<id>` a lowercase-kebab slug \
+         unique among this section's items"
     )
 }
 
@@ -2475,8 +2490,10 @@ Body.
             f.message
         );
         assert!(
-            f.message.contains("jigc doc add-item"),
-            "the mint repair is the second reading's: {:?}",
+            f.message
+                .contains("`### A criterion with no anchor  {#<id>}`"),
+            "the new-item repair is the anchor to write at that line — never a verb, \
+             which this state refuses (M46 Increment 5 / T1): {:?}",
             f.message
         );
         insta::assert_debug_snapshot!("unanchored_item_heading", f);

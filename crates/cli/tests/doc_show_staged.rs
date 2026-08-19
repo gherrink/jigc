@@ -779,8 +779,11 @@ fn a_ghost_heading_in_staged_item_prose_names_the_reserved_depth_cause() {
         "the staged read prints the cause; got:\n{printed}"
     );
     assert!(
-        printed.contains("`####`") && printed.contains("jigc doc add-item"),
-        "…with both repairs — demote the heading, or mint the item; got:\n{printed}"
+        printed.contains("`####`") && printed.contains("`### Ghost  {#<id>}`"),
+        "…with both repairs — demote the heading, or anchor it in place. Neither is a \
+         CLI write: the corruption is what stops the parse, so every write door refuses \
+         this doc (M46 Increment 5 / T1 — `crates/cli/tests/pre_guard_repair_route.rs`); \
+         got:\n{printed}"
     );
 }
 
