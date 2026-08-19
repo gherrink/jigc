@@ -1223,3 +1223,84 @@ fn describe_still_refuses_a_positional_argument() {
         );
     }
 }
+
+/// Pull every backticked `jigc …` span out of a tip line — the emitted spans an agent
+/// would copy, in the order the tip prints them.
+fn backticked_jigc_spans(tip: &str) -> Vec<String> {
+    tip.split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|span| span.starts_with("jigc "))
+        .map(str::to_string)
+        .collect()
+}
+
+/// **Law 2 — the designated recovery is named by the surface that produces the state.**
+/// The single-item form stays foreclosed (the arm above holds unmodified), but the
+/// refusal no longer stops at clap's bare `unexpected argument`: it now carries the
+/// answer `crates/cli/src/cli.rs`'s own `Describe` doc has recorded all along — the kind
+/// filters narrow the tour, and `jigc start --explain` is the resolution trace
+/// (`completions/artifacts/M46/razor-ledger.md` §1 S-2).
+///
+/// Driven through the **emitted bytes**: every `jigc …` span the tip prints is pulled out
+/// of the real binary's stderr and **run verbatim**, and each must exit 0 — a tip naming
+/// an affordance that does not run is law 1's lie moved into the tip slot.
+#[test]
+fn the_foreclosed_positional_refusal_names_what_answers_it() {
+    let repo = TempDir::new("positional-tip");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    for argv in [
+        vec!["describe", "adr"],
+        vec!["describe", "--workflows", "single-task"],
+    ] {
+        let shown = argv.join(" ");
+        let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(&argv)
+            .current_dir(repo.path())
+            .env("HOME", home.path())
+            .output()
+            .expect("run the jigc binary");
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let tip = stderr
+            .lines()
+            .find(|line| line.trim_start().starts_with("tip: "))
+            .unwrap_or_else(|| {
+                panic!("`jigc {shown}` must name what answers the foreclosed form; got:\n{stderr}")
+            })
+            .to_string();
+
+        for flag in ["--workflows", "--doctypes", "--commands"] {
+            assert!(
+                tip.contains(&format!("jigc describe {flag}")),
+                "`jigc {shown}`: the tip must name the `{flag}` kind filter; got:\n{tip}",
+            );
+        }
+        assert!(
+            tip.contains("jigc start --explain"),
+            "`jigc {shown}`: the tip must name the resolution trace `cli.rs` records; got:\n{tip}",
+        );
+
+        let spans = backticked_jigc_spans(&tip);
+        assert!(
+            !spans.is_empty(),
+            "`jigc {shown}`: the tip must name its affordances as runnable spans; got:\n{tip}",
+        );
+        for span in spans {
+            let words: Vec<&str> = span.split_whitespace().collect();
+            let run = Command::new(env!("CARGO_BIN_EXE_jigc"))
+                .args(&words[1..])
+                .current_dir(repo.path())
+                .env("HOME", home.path())
+                .output()
+                .expect("run the tip's own span verbatim");
+            assert!(
+                run.status.success(),
+                "`jigc {shown}`: the tip's span `{span}`, run verbatim, must exit 0; got {:?}\nstderr:\n{}",
+                run.status,
+                String::from_utf8_lossy(&run.stderr),
+            );
+        }
+    }
+}

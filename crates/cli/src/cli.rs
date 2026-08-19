@@ -1747,6 +1747,99 @@ pub fn unknown_subcommand_block(err: &clap::Error, argv: &[String]) -> Option<St
     Some(block)
 }
 
+/// A leaf verb whose **foreclosed positional form** already has an answer on record:
+/// the node's argv path below `jigc`, and the tip that names it.
+struct ForeclosedPositionalTip {
+    /// The leaf node the positional was typed at (`["describe"]` for `jigc describe adr`).
+    node: &'static [&'static str],
+    /// Builds the tip served at that node.
+    tip: fn() -> String,
+}
+
+/// The curated set — one row, by derivation rather than by convenience.
+///
+/// Nine leaf verbs take no positional at all (`task list`, `config list`, `setup`,
+/// `uninstall`, `upgrade`, `ingest`, `migrate-corpus`, `describe`, `validate`), and
+/// `describe` is the only one whose own definition **records the answer to the positional
+/// form**: [`Commands::Describe`]'s doc states the single-item form is not built and names
+/// what answers it instead. The eight siblings record no such answer — the nearest,
+/// `validate`'s "distinct from `jigc task validate <id>`", is a two-verb disambiguation,
+/// not a recovery for a typed positional — so law 2 leaves them with nothing to name and
+/// clap's own render stands.
+const FORECLOSED_POSITIONAL_TIPS: &[ForeclosedPositionalTip] = &[ForeclosedPositionalTip {
+    node: &["describe"],
+    tip: tip_describe_positional,
+}];
+
+/// The answer `describe`'s foreclosed single-item form has carried on record since M11:
+/// the kind filters narrow the menu, and `jigc start --explain` is the resolution trace
+/// (the two affordances [`Commands::Describe`]'s own doc names — said, now, where the
+/// refusal actually happens).
+fn tip_describe_positional() -> String {
+    format!(
+        "tip: describe is the whole menu — the single-item form is not built. Narrow it by \
+         kind: {}; {}; {}. For how one workflow resolves, {}",
+        engine::finding::Route::mechanical(
+            ["jigc", "describe", "--workflows"],
+            " tours the workflows alone",
+        )
+        .as_str(),
+        engine::finding::Route::mechanical(["jigc", "describe", "--doctypes"], " the doc-types")
+            .as_str(),
+        engine::finding::Route::mechanical(["jigc", "describe", "--commands"], " the command refs")
+            .as_str(),
+        engine::finding::Route::mechanical(
+            ["jigc", "start", "--explain"],
+            " is the resolution trace",
+        )
+        .as_str(),
+    )
+}
+
+/// jigc's own render of an **unexpected positional** typed at a leaf whose foreclosed form
+/// has a recorded answer — `None` for every other clap error, which keeps clap's own
+/// render untouched.
+///
+/// Same reasoning, shape and stream as [`unknown_subcommand_block`]: clap emits its block
+/// whole before anything of jigc's can speak, so a tip could only be appended *below* the
+/// bare refusal, and `design/surface-contract.md` → law 2 asks the surface that **produces**
+/// the state to name the designated recovery — not a later one the reader has to go find.
+/// `jigc describe adr` was a bare exit 2 while [`Commands::Describe`] recorded the answer
+/// three lines away (`completions/artifacts/M46/razor-ledger.md` §1, S-2).
+///
+/// The single-item lookup **stays foreclosed** (`DECISIONS.md` → 2026-08-13 the M48 Settle,
+/// `describe`: the filter only, not the positional form) — this names the answer, it does
+/// not build the form: the run still fails at [`crate::task::EXIT_USAGE`] with no menu.
+///
+/// The parts are read from the error clap already built, never re-derived: the rejected
+/// token (`ContextKind::InvalidArg`) and the node's usage (`ContextKind::Usage`). A
+/// rejected **flag** is left to clap — only a positional reaches the foreclosed form.
+pub fn unexpected_positional_block(err: &clap::Error, argv: &[String]) -> Option<String> {
+    use clap::error::{ContextKind, ContextValue};
+
+    if err.kind() != clap::error::ErrorKind::UnknownArgument {
+        return None;
+    }
+    let token = match err.get(ContextKind::InvalidArg)? {
+        ContextValue::String(token) => token.clone(),
+        _ => return None,
+    };
+    if token.starts_with('-') {
+        return None;
+    }
+    let node = parent_path(argv, &token);
+    let row = FORECLOSED_POSITIONAL_TIPS.iter().find(|row| {
+        row.node.len() == node.len() && row.node.iter().zip(&node).all(|(a, b)| *a == b.as_str())
+    })?;
+    let mut block = format!("error: unexpected argument '{token}' found\n");
+    block.push_str(&format!("\n  {}\n", (row.tip)()));
+    if let Some(ContextValue::StyledStr(usage)) = err.get(ContextKind::Usage) {
+        block.push_str(&format!("\n{usage}\n"));
+    }
+    block.push_str("\nFor more information, try '--help'.\n");
+    Some(block)
+}
+
 /// The **parent node's argv path** the guess was typed under — `[]` for a top-level
 /// guess (`jigc read`), `["doc"]` for `jigc doc cat`.
 ///
@@ -1856,6 +1949,35 @@ mod cli_parse {
             assert!(
                 tip.starts_with("tip: "),
                 "the tip is identifiable as a tip; got: {tip}"
+            );
+        }
+    }
+
+    /// Every [`FORECLOSED_POSITIONAL_TIPS`] row fires **at the node it names**, with the
+    /// route parse fence installed: the row's argv is typed with a positional, clap's real
+    /// error is the input, and the block carries the row's own tip. A row naming a node
+    /// that has since grown a positional stops erroring and fails here; a row whose tip
+    /// names a ghost verb panics on construction.
+    ///
+    /// Iterated from the table, so a second row joins the fence the day it lands — the
+    /// integration arm in `tests/describe.rs` drives `describe`'s bytes end to end, but it
+    /// knows only that one node.
+    #[test]
+    fn every_foreclosed_positional_row_fires_at_its_node() {
+        crate::route_fence::install();
+        for row in FORECLOSED_POSITIONAL_TIPS {
+            let mut argv: Vec<String> = std::iter::once("jigc".to_string())
+                .chain(row.node.iter().map(|token| (*token).to_string()))
+                .collect();
+            argv.push("some-positional".to_string());
+            let shown = argv.join(" ");
+            let err = Cli::try_parse_from(&argv)
+                .expect_err("a foreclosed-positional node must reject a positional");
+            let block = unexpected_positional_block(&err, &argv)
+                .unwrap_or_else(|| panic!("`{shown}` must render jigc's own block"));
+            assert!(
+                block.contains(&(row.tip)()),
+                "`{shown}` must carry the row's own tip; got:\n{block}",
             );
         }
     }

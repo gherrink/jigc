@@ -55,8 +55,16 @@ fn main() -> ExitCode {
             // DECISIONS.md 2026-08-13 the Settle, F8). Every other clap error kind
             // still prints clap's own render, did-you-mean included; the stream, the
             // plain-text form and the exit code are unchanged either way.
+            //
+            // The same takeover, for the same reason, covers an **unexpected positional**
+            // typed at a leaf whose foreclosed form has a recorded answer (M46 Inc 8 T5):
+            // `jigc describe adr` was a bare exit 2 while the command's own definition
+            // named what answers it (`cli_tree::unexpected_positional_block`; law 2 — the
+            // designated recovery is named by the surface that produces the state).
             let argv: Vec<String> = std::env::args().collect();
-            match cli_tree::unknown_subcommand_block(&err, &argv) {
+            let block = cli_tree::unknown_subcommand_block(&err, &argv)
+                .or_else(|| cli_tree::unexpected_positional_block(&err, &argv));
+            match block {
                 Some(block) => eprint!("{block}"),
                 None => {
                     let _ = err.print();
