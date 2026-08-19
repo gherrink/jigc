@@ -153,6 +153,11 @@ pub struct CorpusMigrationReport {
     /// Excluding it silently would be the sibling failure — this file's own *never a silent
     /// already-current* rule — so the set rides both surfaces: counted in the text headline and
     /// listed with its code and route, and serialized here for a driver.
+    ///
+    /// A key on a pinned envelope is **declared where its siblings are**, never merely shipped:
+    /// `design/command-output-contract.md` → Evolution posture, *The M46 additive key* — which
+    /// records why the set is not re-derivable from [`Self::migrated`] / [`Self::already_current`]
+    /// / [`Self::blocked`] (an excluded file is in none of them).
     pub unadopted: Findings,
     /// The short sha of the commit the verb landed its own migration in ([`commit_migration`]),
     /// or `None` when nothing was committed (nothing migrated, a re-run that staged no change,

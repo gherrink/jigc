@@ -29,6 +29,19 @@
 //! correction restated in two homes is the rot this repo's own cross-reference rule
 //! exists to prevent.
 //!
+//! **The third arm, added on the increment's completion audit: the envelope key T2 minted is
+//! declared where every sibling is declared.** T2 put a **new serialized key** (`unadopted`)
+//! on the `migrate-corpus` `--format json` report — an envelope the driver contract pins, and
+//! whose every prior additive key (`carried-over`, `hook_output`, `hook_file`, `committed`,
+//! `copied_in`, `committed_identity`, `milestone`/`no_docs_from`, `checked`) carries its own
+//! declaration paragraph in [command-output-contract.md](../../../design/command-output-contract.md)
+//! → Evolution posture. It had none — one wave after M48 refused a key on *this very envelope*
+//! on exactly that ground (`DECISIONS.md` → 2026-08-13 M48 Increment 9 / T4: *"No envelope key
+//! is minted — the additive window is spent"*). The key itself is proven on the wire by
+//! `crates/cli/tests/migrate_corpus_foreign.rs`; what was missing was the declaration, and the
+//! **premise the discharge closed the window on** — *M48 is the last pre-1.0 wave* — which M46
+//! falsified by existing. Both are asserted here, in both homes that carried the premise.
+//!
 //! `worked-examples.md`'s flow-43 arm 2 is in the sweep although the increment brief's
 //! file list omitted it: it states the identical retired green, in the very doc whose
 //! acceptance suite T1 had already corrected. Scoping the sweep around it would have
@@ -139,6 +152,22 @@ const RETIRED_FACTS: &[(&str, &str, &str, &str)] = &[
         "*and stays exit-0* — is withdrawn at M46",
         "the same fact in the doc that owns the exit predicate; keyed here so a future \
          pass cannot re-state it in a second home the way `corpus-migration.md` did",
+    ),
+    (
+        "design/command-output-contract.md",
+        "M48 is the last pre-1.0 wave",
+        "*M48 is the last pre-1.0 wave* was this paragraph's premise, and it is **withdrawn**",
+        "M46 — the combined pre-1.0 wave — follows M48, so a close keyed to a wave NAME was \
+         false the day that wave was chartered; the window closes at the 1.0 pin, and until \
+         then every spend is declared in its own paragraph",
+    ),
+    (
+        "design/doc-read-surface.md",
+        "M48 is the last pre-1.0 wave",
+        "*M48 is the last pre-1.0 wave* was its premise here too, and is **withdrawn**",
+        "the identical premise in the read side's half of the same discharge — retired in \
+         both homes, or the record contradicts itself across a cross-reference it already \
+         carries",
     ),
 ];
 
@@ -313,4 +342,50 @@ fn the_declared_behaviour_change_is_keyed_to_the_next_trials_protocol() {
             "the entry must carry `{needle}`; it reads:\n{entry}",
         );
     }
+}
+
+/// **The sweep, arm 4 — T2's new envelope key is declared where every sibling is declared.**
+///
+/// The `migrate-corpus` `--format json` report is governed by the pinned driver contract, and
+/// that contract's rule since M48 is that an addition to a pinned envelope is a **declaration**,
+/// never a field that merely ships. `unadopted` is that declaration; it must state what the key
+/// carries, why the set is not re-derivable from the three arrays already on the envelope, and
+/// why it is deliberately not `blocked`.
+#[test]
+fn the_new_envelope_key_is_declared_where_every_sibling_is_declared() {
+    let body = read_doc("design/command-output-contract.md");
+    let posture = section(&body, "Evolution posture (declared)");
+
+    for needle in [
+        // The declaration itself, in the sibling paragraphs' own form.
+        "**The M46 additive key: `unadopted` on the `migrate-corpus` report",
+        // What the key carries — the producer, named, so the two surfaces stay one fact.
+        "AdoptionInputs::unadopted",
+        // Why it is not re-derivable: an excluded file is in none of the three arrays.
+        "`migrated`, `already_current` and `blocked`",
+        "is in none of them",
+        // Why it is deliberately its own key rather than a member of `blocked`.
+        "whose emptiness *is* the exit rule",
+        // The window is re-keyed to the pin, and the rule that keeps it from being an open
+        // ledger until then — which is what this finding is an instance of.
+        "an undeclared key on a pinned envelope is a defect, not an addition",
+    ] {
+        assert!(
+            posture.contains(needle),
+            "the evolution posture must carry `{needle}` — a key on a pinned envelope is \
+             declared where its siblings are, or it is undeclared surface",
+        );
+    }
+
+    // The discharge's enumeration is M48's spend and stays M48's — the M46 key is declared in
+    // its own paragraph, not smuggled into the sentence that closed the previous wave.
+    assert_eq!(
+        count(
+            &body,
+            "plus one this paragraph declares as it ships: **`checked`**"
+        ),
+        1,
+        "M48's spend enumeration must survive intact — this fix re-keys the CLOSE, it does \
+         not rewrite what an earlier wave declared",
+    );
 }
