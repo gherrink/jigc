@@ -148,3 +148,314 @@ fn entry_twelve_row_states_the_basis_without_re_keying() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// T3 — no entry is left keyed at the fired M46 Settle, or resting on a count.
+//
+// The M46 Settle's own opening clause is a promise about this file: *"Every entry leaves
+// this ledger; none stays deferred on a count."* At HEAD the promise was unkept — the
+// Settle fired on 2026-08-18 and ten live items still routed their future to it, so the
+// next planner reading a trigger would be sent to a gate that has already closed. That is
+// the same rot entry 12's stale bound was struck for, one altitude up: a record that
+// describes a decision nobody can still take.
+//
+// The arm below enumerates the ledger's whole M46 surface — the twelve numbered capability
+// entries, the two `(D)` blocks that route to the Settle, and the four OUT-set items the
+// Settle re-keyed by name (`razor-ledger.md` §3) — and asserts two things of each:
+//
+//   * it **records its M46 disposition** where the entry itself is read, not only in the
+//     disposition table above it (a planner sizing work reads the entry's prose);
+//   * **no forward key it carries names the M46 Settle** — every `Trigger:` /
+//     `If it returns:` / `Re-opening condition:` clause routes somewhere still reachable.
+//
+// The forward key is read from its marker to the end of its line, so a re-key cannot be
+// written and then walked back later in the same sentence.
+//
+// One deliberate exclusion: the M47 manifest-hash fence entry keeps a spent
+// `"Trigger: the M46 Settle"` **inside quoted original text it explicitly labels spent**
+// — that is a dated record of what was written, and rewriting it would be the
+// falsification this suite exists to prevent. It is out of the enumerated set for that
+// reason, not by oversight.
+
+/// Where an enumerated item's text lives in the ledger.
+enum Block {
+    /// A numbered capability entry, taken with its `**Re-counted …**` continuation lines —
+    /// a re-key written on the continuation must count, and a stale one there must redden.
+    Numbered(u32),
+    /// A whole ledger line, found by its leading text.
+    Line(&'static str),
+    /// One ` · `-separated segment of the M46 Settle's refused-and-re-keyed paragraph.
+    /// The disposition is stated once for the paragraph; the forward key is per item.
+    Refused(&'static str),
+}
+
+struct Item {
+    /// What the failure message calls this row.
+    name: &'static str,
+    block: Block,
+    /// The M46 disposition the entry's own text must record.
+    disposition: &'static [&'static str],
+}
+
+/// The markers that open a forward key. `New trigger:` is caught by `trigger:`.
+const KEY_MARKERS: [&str; 4] = [
+    "Trigger:",
+    "trigger:",
+    "If it returns:",
+    "Re-opening condition:",
+];
+
+const FIRED: &str = "M46 Settle";
+
+/// The line that opens the M46 Settle's refused-and-re-keyed paragraph.
+const REFUSED_LEAD: &str =
+    "> **Refused with measured evidence behind them, re-keyed rather than dropped:**";
+
+fn line_starting<'a>(body: &'a str, prefix: &str) -> &'a str {
+    body.lines()
+        .find(|line| line.starts_with(prefix))
+        .unwrap_or_else(|| panic!("{LEDGER} must carry a line starting `{prefix}`"))
+}
+
+/// The capability-wave section only. The ledger carries several unrelated numbered lists
+/// (the M48 Settle agenda, the surface-contract laws, the rc.7 forks), so a bare `N. **`
+/// scan over the whole file reads the wrong list and silently fences nothing.
+fn capability_wave(body: &str) -> &str {
+    const HEADING: &str = "### The capability wave (M46)";
+    let start = body
+        .find(HEADING)
+        .unwrap_or_else(|| panic!("{LEDGER} must carry the `{HEADING}` section"));
+    let rest = &body[start + HEADING.len()..];
+    let end = rest
+        .find("\n### ")
+        .map(|i| start + HEADING.len() + i)
+        .unwrap_or(body.len());
+    &body[start..end]
+}
+
+/// A numbered entry plus every line up to the next numbered entry — its re-counts included.
+fn numbered_block(body: &str, number: u32) -> String {
+    let body = capability_wave(body);
+    let start = format!("{number}. **");
+    let end = if number == 12 {
+        "**Planning inputs from".to_string()
+    } else {
+        format!("{}. **", number + 1)
+    };
+    let mut taking = false;
+    let mut out = Vec::new();
+    for line in body.lines() {
+        if line.starts_with(&start) {
+            taking = true;
+        } else if taking && line.starts_with(&end) {
+            break;
+        }
+        if taking {
+            out.push(line);
+        }
+    }
+    assert!(
+        !out.is_empty(),
+        "{LEDGER} must carry a numbered capability entry `{start}…`",
+    );
+    out.join("\n")
+}
+
+/// `(where the disposition is read, where the forward keys are read)`, or the reason the
+/// item has no text to read at all — a missing item is one failure among the others, not a
+/// panic that hides the rest of the enumeration.
+fn scopes(body: &str, block: &Block) -> Result<(String, String), String> {
+    match block {
+        Block::Numbered(n) => {
+            let b = numbered_block(body, *n);
+            Ok((b.clone(), b))
+        }
+        Block::Line(prefix) => {
+            let l = line_starting(body, prefix).to_string();
+            Ok((l.clone(), l))
+        }
+        Block::Refused(anchor) => {
+            let paragraph = line_starting(body, REFUSED_LEAD);
+            match paragraph.split(" · ").find(|seg| seg.contains(anchor)) {
+                Some(segment) => Ok((paragraph.to_string(), segment.to_string())),
+                None => Err(format!(
+                    "the M46 Settle's refused paragraph does not name `{anchor}` — an \
+                     OUT-set item the razor disposed by name has to be readable here, or \
+                     the boundary's stated cost is stated nowhere a planner looks"
+                )),
+            }
+        }
+    }
+}
+
+/// Every forward key in `scope`, each read from its marker to the end of its line.
+fn forward_keys(scope: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    for line in scope.lines() {
+        let mut from = 0usize;
+        while from < line.len() {
+            let hit = KEY_MARKERS
+                .iter()
+                .filter_map(|m| line[from..].find(m).map(|i| from + i))
+                .min();
+            match hit {
+                Some(i) => {
+                    out.push(&line[i..]);
+                    from = i + 1;
+                }
+                None => break,
+            }
+        }
+    }
+    out
+}
+
+/// **The wave's claim, turned on the planning record.** Every M46 item states its own
+/// disposition, and routes forward to something that can still happen.
+#[test]
+fn no_m46_entry_is_keyed_at_the_fired_settle_or_rests_on_a_count() {
+    const ITEMS: &[Item] = &[
+        Item {
+            name: "entry 1 — gate-command / evidence rung",
+            block: Block::Numbered(1),
+            disposition: &["RE-KEYED"],
+        },
+        Item {
+            name: "entry 2 — checkpoint / planning-record",
+            block: Block::Numbered(2),
+            disposition: &["RE-KEYED, and taken off the schema window"],
+        },
+        Item {
+            name: "entry 3 — acknowledged-findings ledger",
+            block: Block::Numbered(3),
+            disposition: &["RETIRED as posed"],
+        },
+        Item {
+            name: "entry 4 — managed-doc read-side / search",
+            block: Block::Numbered(4),
+            disposition: &["RE-KEYED, post-1.0"],
+        },
+        Item {
+            name: "entry 5 — Pest / non-Rust is-a-test tier",
+            block: Block::Numbered(5),
+            disposition: &["SPLIT — the message ships, the tier RE-KEYED"],
+        },
+        Item {
+            name: "entry 6 — symbol-mention-sweep",
+            block: Block::Numbered(6),
+            disposition: &["RE-KEYED"],
+        },
+        Item {
+            name: "entry 7 — item-slot repair verb",
+            block: Block::Numbered(7),
+            disposition: &["RETIRED — the verb is not what is missing", "DISCHARGED"],
+        },
+        Item {
+            name: "entry 8 — file-state introspection",
+            block: Block::Numbered(8),
+            disposition: &["RETIRED"],
+        },
+        Item {
+            name: "entry 9 — store locking / lost updates",
+            block: Block::Numbered(9),
+            disposition: &["at the falsified predicate", "DISCHARGED"],
+        },
+        Item {
+            name: "entry 10 — durable \"was provisioned\"",
+            block: Block::Numbered(10),
+            disposition: &["RETIRED — residue empty, driven both arms"],
+        },
+        Item {
+            name: "entry 11 — dirty-worktree guard",
+            block: Block::Numbered(11),
+            disposition: &["DISPOSED at M46 Increment 2"],
+        },
+        Item {
+            name: "entry 12 — `setup --format json` `hook_file`",
+            block: Block::Numbered(12),
+            disposition: &["DISCHARGED"],
+        },
+        Item {
+            name: "(D) the M46 demand-counter re-count",
+            block: Block::Line("- **(D) The M46 demand-counter re-count"),
+            disposition: &["DISCHARGED"],
+        },
+        Item {
+            name: "(D) the frozen methodology-doctype schema bump",
+            block: Block::Line("> **(D) The frozen methodology-doctype schema bump"),
+            disposition: &["CLOSED — take neither"],
+        },
+        Item {
+            name: "OUT — `milestone finalize --dry-run`",
+            block: Block::Refused("`milestone finalize --dry-run`"),
+            disposition: &["re-keyed rather than dropped"],
+        },
+        Item {
+            name: "OUT — the `unadopted-instance` cap/collapse",
+            block: Block::Refused("`unadopted-instance`"),
+            disposition: &["re-keyed rather than dropped"],
+        },
+        Item {
+            name: "OUT — N-6, the text renderer dropping `location.address`",
+            block: Block::Refused("**N-6**"),
+            disposition: &["re-keyed rather than dropped"],
+        },
+        Item {
+            name: "OUT — S12, the repo publishing floor",
+            block: Block::Refused("**S12**"),
+            disposition: &["**S12**", "discharged by citation"],
+        },
+    ];
+
+    let body = read_ledger();
+    let mut failures: Vec<String> = Vec::new();
+
+    for item in ITEMS {
+        let (disposition_scope, key_scope) = match scopes(&body, &item.block) {
+            Ok(scopes) => scopes,
+            Err(why) => {
+                failures.push(format!("{}: {why}", item.name));
+                continue;
+            }
+        };
+
+        for needle in item.disposition {
+            if !disposition_scope.contains(needle) {
+                failures.push(format!(
+                    "{}: its own text does not record the M46 disposition `{needle}` — the \
+                     table above is what a planner *scans*, the entry is what a planner \
+                     *reads*, and only one of them is quoted back into a scope brief",
+                    item.name,
+                ));
+            }
+        }
+
+        let keys = forward_keys(&key_scope);
+        if keys.is_empty() {
+            failures.push(format!(
+                "{}: carries no forward key at all — a ledger entry with no `Trigger:` / \
+                 `If it returns:` / `Re-opening condition:` is a deferral with no way back, \
+                 which is the failure this file's own preamble names",
+                item.name,
+            ));
+        }
+        for key in keys {
+            if key.contains(FIRED) {
+                failures.push(format!(
+                    "{}: routes forward to the **fired** M46 Settle — it closed 2026-08-18, \
+                     so this key can never fire again and the entry is stranded, not \
+                     deferred\nkey was: {key}",
+                    item.name,
+                ));
+            }
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "the M46 Settle promised *\"Every entry leaves this ledger; none stays deferred on \
+         a count\"* — {} item(s) in {LEDGER} still contradict it:\n\n{}",
+        failures.len(),
+        failures.join("\n\n"),
+    );
+}
