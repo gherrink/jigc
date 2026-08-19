@@ -747,12 +747,22 @@ fn diff_fields(section: &str, old: &[Field], new: &[Field], out: &mut Vec<Schema
     removed_fields(section, old.iter(), new.iter(), out);
 }
 
-/// Classify a field present only in `v2`. A field the driver can place without
-/// new prose ([`placeable_without_prose`]) is [`SchemaChange::AddedOptionalField`]; a *required*
-/// field with no such default is [`SchemaChange::ProseNeeding`] (the design's "no deterministic
-/// default" boundary of the prose-needing kind).
+/// Classify a field present only in `v2`, on the one rule that governs every added leaf: **a
+/// leaf whose absence the conformance gate accepts needs no prose.** That is
+/// [`crate::validate::is_author_required`] — *the very predicate the gate's absent-field arm
+/// consults* — negated, exactly as [`optional_flag_change`] already consults it for a tightening,
+/// so classification and adjudication cannot drift. Not author-required ⇒
+/// [`SchemaChange::AddedOptionalField`] (the driver then splices a deterministic value if one
+/// exists, else folds to zero bytes); author-required ⇒ [`SchemaChange::ProseNeeding`], which
+/// routes to the agent.
+///
+/// The predicate is **wider than the `optional || default || set` re-derivation it replaces**
+/// (M46 Inc-4 T1), and each member it adds is a leaf a committed doc may conformantly omit: an
+/// **optional `ref`** and a **pack-declared type**. Classifying those `ProseNeeding` was a
+/// permanent dead end — the route says *author the prose, then re-run*, and neither authoring nor
+/// re-running can change a leaf the gate never asks for.
 fn classify_added_field(section: &str, field: &Field) -> SchemaChange {
-    if placeable_without_prose(field) {
+    if !crate::validate::is_author_required(field) {
         SchemaChange::AddedOptionalField {
             section: section.to_owned(),
             field: field.id.clone(),
@@ -766,16 +776,17 @@ fn classify_added_field(section: &str, field: &Field) -> SchemaChange {
 }
 
 /// Classify a leaf present only in `v2`'s **repeatable item block** — the item-locus twin of
-/// [`classify_added_field`], sharing its [`placeable_without_prose`] predicate so the two loci
-/// cannot drift (the M42 lesson: the two item/simple loops disagreeing is what produced the
-/// holes). The **same three arms**, and the driver splits the placeable one
+/// [`classify_added_field`], consulting the **same** [`crate::validate::is_author_required`] so
+/// the two loci cannot drift (the M42 lesson: the two item/simple loops disagreeing is what
+/// produced the holes). The **same two arms**, and the driver splits the placeable one
 /// (`design/corpus-migration.md` → The classifier's holes: `AddedItemField`):
-/// `default:`/`set:` → the value is spliced into every item lacking it; `optional:` with no
-/// default → a byte no-op (an item without the bullet already conforms); required with no
-/// default → [`SchemaChange::ProseNeeding`] `{ leaf: Some }`, which blocks and routes to the
-/// agent.
+/// `default:` → the value is spliced into every item lacking it; every other not-author-required
+/// shape (`optional:`, an optional `ref`, a pack type, a `set:`-derived leaf nobody threads a
+/// value into) → a byte no-op, since an item lacking the bullet already conforms and inventing
+/// one would fabricate a value; author-required with no default → [`SchemaChange::ProseNeeding`]
+/// `{ leaf: Some }`, which blocks and routes to the agent.
 fn classify_added_item_field(section: &str, field: &Field) -> SchemaChange {
-    if placeable_without_prose(field) {
+    if !crate::validate::is_author_required(field) {
         SchemaChange::AddedItemField {
             section: section.to_owned(),
             field: field.id.clone(),
@@ -786,14 +797,6 @@ fn classify_added_item_field(section: &str, field: &Field) -> SchemaChange {
             leaf: Some(field.id.clone()),
         }
     }
-}
-
-/// Whether an **added** field needs no new prose: it is `optional` (its absence conforms) or it
-/// carries a deterministic value source (`default` / `set` — e.g. the schema-version stamp's
-/// deriver). The one add rule, shared by both loci ([`classify_added_field`] /
-/// [`classify_added_item_field`]).
-fn placeable_without_prose(field: &Field) -> bool {
-    field.optional || field.default.is_some() || field.set.is_some()
 }
 
 #[cfg(test)]

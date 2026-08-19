@@ -28,9 +28,13 @@
 //! M34 Inc-3 T1 builds the **`added-optional-field` branch**: a defaulted field is
 //! spliced at its schema-ordered home — into an existing `---` header, or **introducing
 //! the fence** for a header-less doctype (the schema-version stamp's `prd`/`changelog`
-//! v0→v1 shape change). An `optional:` field with no default is a byte no-op (its
-//! absence conforms); a `set`-derived field with no default needs the caller-supplied
-//! value the T4 dogfood threads in (unbuilt here).
+//! v0→v1 shape change). With **no** default, the branch folds to a byte no-op for every
+//! leaf whose absence the conformance gate already accepts (M46 Inc-4 T1 — the shared
+//! [`crate::validate::is_author_required`] predicate: `optional:`, an optional `ref`, a
+//! pack-declared type, a `set:`-derived field). The caller-supplied deriver value the
+//! CLI threads in (`with_stamp_default`) remains the extension point, arriving as a
+//! schema `default`; only the *nobody-threaded-one-in* behaviour changed, from a block
+//! no author could clear into the conformant absence it already was.
 //!
 //! M36 Inc-3 T1 builds the **`added-optional-section` branch**: a wholly-new *optional*
 //! slot section is minted **empty** at its schema-ordered home via [`crate::write::generate_section`]
@@ -39,10 +43,10 @@
 //! handoff. The empty-slot section canonicalizes to exactly the v2 writer shape (proven by
 //! the byte-stability test).
 //!
-//! Two branches stay deferred, surfaced as [`TransformError::Unsupported`] rather than
+//! One branch stays deferred, surfaced as [`TransformError::Unsupported`] rather than
 //! silently skipped — an un-built branch must block, never drop a change: the
 //! `prose-needing` **field** sub-case (a new required *field*, not a slot — the transform
-//! mints slots, not fields) and the `set`-derived add-field value (M34 Inc-3 T4).
+//! mints slots, not fields).
 //!
 //! # The per-doc-gated corpus fold (M34 Inc-2 T5)
 //!
@@ -114,8 +118,7 @@ pub enum TransformError {
     Splice(SpliceError),
     /// A classified change kind the driver **will not apply** — either because its branch is
     /// **not built** (the `prose-needing` **field** sub-case, a new required field: T4 mints
-    /// only slots; a `set`-derived `added-optional-field` with no static default, whose value is
-    /// the deriver's, threaded in by M34 Inc-3 T4) or because it is **refused by design** (a
+    /// only slots) or because it is **refused by design** (a
     /// [`SchemaChange::NarrowedCardinality`] — content-affecting, and the recorded M42 pick is to
     /// refuse rather than restamp unchecked; a [`SchemaChange::RemovedField`] — the recorded M42
     /// pick is to refuse rather than strip committed values away). Surfaced, never silently
@@ -330,12 +333,22 @@ pub fn transform(
 /// fence for a header-less doctype) via [`write::insert_front_matter_field`]; a body
 /// field via [`write::insert_field`].
 ///
-/// Two sub-cases carry **no** static default:
-/// - **`optional:` with no default** — its absence already conforms, so there is
-///   nothing deterministic to place: a byte **no-op** (the widened-cardinality sibling).
-/// - **a `set`-derived field with no default** (the schema-version stamp) — its value is
-///   caller-supplied by the deriver M34 Inc-3 T4 threads in; unbuilt here, so it is
-///   surfaced as [`TransformError::Unsupported`] rather than silently dropped.
+/// **With no `default`, placement keys on the same predicate the classifier does** —
+/// [`crate::validate::is_author_required`], the conformance gate's own absent-field rule (M46
+/// Inc-4 T1). A leaf the gate never asks for (`optional:`, an optional `ref`, a pack-declared
+/// type, or a `set:`-derived field) is a byte **no-op**: its absence *already conforms*, so there
+/// is nothing deterministic to place and inventing a value would fabricate one. Only an
+/// author-required leaf reaching here is [`TransformError::Unsupported`] — and the classifier
+/// routes those to `ProseNeeding`, so the arm is the driver's belt-and-braces, never the corpus's
+/// dead end.
+///
+/// **The caller-threaded value stays the extension point — nothing about it is retired.** The
+/// CLI's `with_stamp_default` (and `authored_remap`'s sibling shape) hands the deriver's value in
+/// **as a schema `default`**, so the stamp still splices through the `Some` arm above. What
+/// changed is only the behaviour when **nobody threads a value in**: a `set:`-derived field is
+/// then left absent — conformantly — instead of blocking the doc with a route no author can
+/// follow. The migration report names what it left unfilled (M46 Inc-4 T2), so the no-op is
+/// **quiet, not silent**.
 fn apply_added_field(
     new_schema: &Schema,
     source: &str,
@@ -359,9 +372,9 @@ fn apply_added_field(
 
     let value = match &decl.default {
         Some(default) => default.clone(),
-        // No deterministic value: an optional field's absence stays conformant (no-op);
-        // a `set`-derived field needs the caller-supplied value (T4).
-        None if decl.optional => return Ok(source.to_string()),
+        // No deterministic value to place. An absence the conformance gate accepts is a byte
+        // no-op — the one predicate the classifier keys on, so the two cannot drift.
+        None if !crate::validate::is_author_required(decl) => return Ok(source.to_string()),
         None => return Err(unsupported()),
     };
 
@@ -394,12 +407,14 @@ fn apply_added_field(
 /// the skip is what makes the fold **idempotent** (the T2 re-run lesson, at the item locus; a
 /// whole-change filter in the CLI cannot express it, because one doc can hold items of both kinds).
 ///
-/// Two sub-cases carry **no** static default, mirroring [`apply_added_field`]:
-/// - **`optional:` with no default** — an item without the bullet already conforms and inventing an
-///   empty one would fabricate a value: a byte **no-op**.
-/// - **a `set`-derived leaf with no default** — its value is the caller-supplied deriver's (the
-///   `with_stamp_default` thread); unbuilt at the item locus, so it is surfaced as
-///   [`TransformError::Unsupported`] rather than silently dropped.
+/// **With no `default`, placement keys on [`crate::validate::is_author_required`]**, exactly as
+/// [`apply_added_field`] does at the simple locus (M46 Inc-4 T1): a leaf the conformance gate
+/// never asks for — `optional:`, an optional `ref`, a pack-declared type, or a `set:`-derived
+/// leaf — is a byte **no-op**, because an item lacking the bullet *already conforms* and
+/// inventing one would fabricate a value. The caller-threaded deriver value (`with_stamp_default`)
+/// is **untouched as an extension point**: it arrives as a schema `default` and still splices
+/// through the `Some` arm. Only an author-required leaf is [`TransformError::Unsupported`], and
+/// the classifier routes those to `ProseNeeding` before the driver ever sees them.
 fn apply_added_item_field(
     new_schema: &Schema,
     source: &str,
@@ -429,7 +444,9 @@ fn apply_added_item_field(
 
     let value = match &decl.default {
         Some(default) => default.clone(),
-        None if decl.optional => return Ok(source.to_string()),
+        // The simple locus's rule, verbatim: an absence the conformance gate accepts writes no
+        // bytes on any item.
+        None if !crate::validate::is_author_required(decl) => return Ok(source.to_string()),
         None => return Err(unsupported()),
     };
 
@@ -2967,5 +2984,192 @@ sections:
         // bullet, so there is nothing to insert).
         let again = transform(&v1, &v2, &out, &diff).expect("re-fold succeeds");
         assert_eq!(again, out, "the item-field fold converges");
+    }
+
+    // ---- (h) the conformance-clean-absence axis: ONE predicate, at BOTH loci ----
+
+    /// Load an inline v2 schema, resolving the dev pack's one declared field type
+    /// (`code-anchor`) so the **pack-typed** arm of the axis below is loadable at all.
+    fn load_v2(yaml: &str, label: &str) -> Schema {
+        crate::schema::load_schema_with_types(
+            yaml.as_bytes(),
+            &crate::schema::dev_pack_field_types(),
+        )
+        .unwrap_or_else(|err| panic!("{label} v2 loads: {err}"))
+    }
+
+    /// The **added-leaf axis of conformance-clean absence**, at the *simple* locus: the three
+    /// shapes whose absence already conforms for a reason other than `optional: true` — a
+    /// `set:`-derived field, an **optional `ref`**, and a **pack-declared type**.
+    /// [`crate::validate::is_author_required`] exempts all three, so `schema_conformance` never
+    /// asks a committed doc for them: there is nothing deterministic to write and **nothing to
+    /// refuse**. Each folds byte-identical and the corpus never halts.
+    ///
+    /// Red before M46 Inc-4 T1: the classifier's private re-derivation covered only
+    /// `optional || default || set`, so the ref and the pack type classified `ProseNeeding`, and
+    /// the `set:` arm reached the driver and returned `Unsupported` — three dead ends behind a
+    /// route that says *author the prose, then re-run*, where re-running changes nothing.
+    ///
+    /// The **controls** are the neighbouring tests, unchanged: a `default:`-bearing add still
+    /// splices (`added_field_into_an_existing_header_is_byte_stable_and_preserves_values`), and a
+    /// required leaf with neither `default:` nor `set:` still classifies `ProseNeeding`
+    /// (`added_required_item_field_with_no_default_blocks_the_doc`).
+    #[test]
+    fn a_conformance_clean_added_field_folds_byte_identical_at_the_simple_locus() {
+        let v1 = doca_v1();
+        let src = doca_v0_doc();
+        for (label, decl, field) in [
+            (
+                "set-derived",
+                "{ id: date, type: date, set: on-create }",
+                "date",
+            ),
+            (
+                "optional-ref",
+                "{ id: supersedes, type: ref, to: doca, card: \"0..*\" }",
+                "supersedes",
+            ),
+            (
+                "pack-typed",
+                "{ id: cites-code, type: code-anchor }",
+                "cites-code",
+            ),
+        ] {
+            let yaml = format!(
+                "\
+type: doca
+sections:
+  - id: meta
+    header: true
+    fields:
+      - {{ id: derived-from, type: ref, to: doca, card: \"0..1\" }}
+      - {decl}
+  - id: body
+    slot: {{ hint: \"the body\" }}
+"
+            );
+            let v2 = load_v2(&yaml, label);
+
+            // The real classifier emits the kind; the driver is exercised on the emitted
+            // classification, never a hand-built list.
+            let diff = schema_diff(&v1, &v2);
+            assert_eq!(
+                diff,
+                vec![SchemaChange::AddedOptionalField {
+                    section: "meta".to_string(),
+                    field: field.to_string(),
+                }],
+                "{label}: an absence that already conforms is placeable, not prose-needing"
+            );
+
+            let out = transform(&v1, &v2, &src, &diff)
+                .unwrap_or_else(|err| panic!("{label}: the fold must not refuse; got {err:?}"));
+            assert_eq!(out, src, "{label}: no value exists to invent — zero bytes");
+            assert_conforms(&v2, &out);
+            assert_byte_stable(&v2, &out);
+
+            let corpus = [CorpusDoc {
+                id: "doca-a",
+                old_schema: &v1,
+                new_schema: &v2,
+                source: &src,
+                changes: &diff,
+            }];
+            let result = migrate_corpus(&corpus);
+            assert_eq!(
+                result.halted_at, None,
+                "{label}: the corpus fold never halts"
+            );
+            assert_eq!(
+                result.docs,
+                vec![DocOutcome::Migrated {
+                    id: "doca-a".to_string(),
+                    v2: src.clone(),
+                }],
+                "{label}: the doc migrates byte-identical"
+            );
+        }
+    }
+
+    /// The **same axis at the item locus** — the twin loop that produced the M42 holes by
+    /// disagreeing with its sibling. The same three shapes, added to a repeatable item block,
+    /// fold byte-identical (no fabricated bullet on any item) and never halt the corpus.
+    #[test]
+    fn a_conformance_clean_added_item_field_folds_byte_identical_at_the_item_locus() {
+        let v1 = deferrals_v1();
+        let src = deferrals_doc(&v1, [None, None]);
+        for (label, decl, field) in [
+            (
+                "set-derived",
+                "{ id: date, type: date, set: on-create }",
+                "date",
+            ),
+            (
+                "optional-ref",
+                "{ id: supersedes, type: ref, to: deferrals, card: \"0..*\" }",
+                "supersedes",
+            ),
+            (
+                "pack-typed",
+                "{ id: cites-code, type: code-anchor }",
+                "cites-code",
+            ),
+        ] {
+            let yaml = format!(
+                "\
+type: deferrals
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - {{ id: title, type: string }}
+        - {{ id: trigger, type: string }}
+        - {decl}
+        - {{ id: body, slot: {{ hint: \"the deferral\" }} }}
+"
+            );
+            let v2 = load_v2(&yaml, label);
+
+            let diff = schema_diff(&v1, &v2);
+            assert_eq!(
+                diff,
+                vec![SchemaChange::AddedItemField {
+                    section: "entries".to_string(),
+                    field: field.to_string(),
+                }],
+                "{label}: the item locus classifies exactly as its simple-section twin"
+            );
+
+            let out = transform(&v1, &v2, &src, &diff)
+                .unwrap_or_else(|err| panic!("{label}: the fold must not refuse; got {err:?}"));
+            assert_eq!(
+                out, src,
+                "{label}: no item gains a fabricated bullet — zero bytes"
+            );
+            assert_conforms(&v2, &out);
+            assert_byte_stable(&v2, &out);
+
+            let corpus = [CorpusDoc {
+                id: "deferrals-a",
+                old_schema: &v1,
+                new_schema: &v2,
+                source: &src,
+                changes: &diff,
+            }];
+            let result = migrate_corpus(&corpus);
+            assert_eq!(
+                result.halted_at, None,
+                "{label}: the corpus fold never halts"
+            );
+            assert_eq!(
+                result.docs,
+                vec![DocOutcome::Migrated {
+                    id: "deferrals-a".to_string(),
+                    v2: src.clone(),
+                }],
+                "{label}: the doc migrates byte-identical"
+            );
+        }
     }
 }
