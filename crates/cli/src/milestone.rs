@@ -730,6 +730,12 @@ fn rollback_record_pre_image(repo_root: &Path, pre: &RecordPreImage) {
 /// engine mints refuse on a pre-existing id before creating anything, which is what makes the
 /// removal safe: an `area` reaching here is one *this* call minted, not one it found.
 ///
+/// The restore goes through `engine::state::persist` (temp + `rename`), never a plain
+/// `std::fs::write`: `tasks.json` is a **shared** workbench file every milestone door parses,
+/// and this rollback runs on a live door's failure path — so truncating it in place opened
+/// exactly the zero-byte window `engine::milestone::TASKS_FILE` → *Shared state* names, on the
+/// file that comment is written on (M46 completion-audit F4).
+///
 /// Best-effort, like every sibling rollback: the commit did **not** land, so a cleanup failure
 /// must not replace the door's real error (the hook's stderr stays the correction signal) — but
 /// it is noted on stderr rather than swallowed, because what survives is a workbench the operator
@@ -741,7 +747,7 @@ fn unwind_mint(area: &Path, restore: Option<(&Path, &[u8])>) {
         eprintln!("note: could not unwind the minted working area at {area:?}: {err:#}");
     }
     if let Some((path, bytes)) = restore
-        && let Err(err) = std::fs::write(path, bytes)
+        && let Err(err) = engine::state::persist(path, bytes)
     {
         eprintln!("note: could not restore {path:?} to its pre-append bytes: {err:#}");
     }
@@ -4065,6 +4071,7 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
 
 #[cfg(test)]
 mod tests {
+    use super::unwind_mint;
     use crate::start::{PackStepSource, execute_milestone_core};
     use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
     use std::collections::HashMap;
@@ -4209,5 +4216,57 @@ mod tests {
             composed.text, composed_rev.text,
             "the fan-out emit must be byte-identical across divergent feed orders (id-sorted on resolve)",
         );
+    }
+
+    /// **The fifth writer of `tasks.json`** (M46 completion-audit F4, the sweep's own
+    /// un-swept sibling): [`unwind_mint`] restores the milestone task list's pre-append bytes
+    /// when `add-task`'s record commit is rejected — a write into the *shared* milestone area
+    /// that every milestone door parses through `engine::milestone::read_task_list`.
+    ///
+    /// `engine::milestone::TASKS_FILE`'s doc-comment states the hazard and claims **all four
+    /// of its writers** persist through `engine::state::persist`; it enumerated the four
+    /// *engine* writers and missed this CLI-side restore, which truncated the file in place.
+    /// The rollback runs on the failure path of a live door, so a sibling door reading the
+    /// task list at that moment saw the same zero-byte window the comment names.
+    ///
+    /// Witnessed deterministically by the write's mechanism: a truncating `std::fs::write`
+    /// refills the existing inode, while temp + `rename` swaps a new one in — so `ino` must
+    /// change across the restore.
+    #[test]
+    fn the_task_list_restore_replaces_rather_than_truncates() {
+        use std::os::unix::fs::MetadataExt;
+
+        // A throwaway area (the project's no-tempfile pattern).
+        let area = std::env::temp_dir().join(format!(
+            "jigc-unwind-mint-{}-{}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        std::fs::create_dir_all(&area).expect("open a temp milestone area");
+        let list = area.join("tasks.json");
+        std::fs::write(&list, br#"{"tasks":["task:a","task:b"]}"#).expect("seed the task list");
+        let before = std::fs::metadata(&list).expect("the seeded list").ino();
+
+        // The mint half unwinds a sub-task area this call created; the restore half puts the
+        // task list back to its captured pre-append bytes.
+        let minted = area.join("minted-sub-task-area");
+        std::fs::create_dir_all(&minted).expect("stage the minted area");
+        let pre_append = br#"{"tasks":["task:a"]}"#;
+        unwind_mint(&minted, Some((list.as_path(), pre_append)));
+
+        assert!(!minted.exists(), "the minted area is unwound");
+        assert_eq!(
+            std::fs::read(&list).expect("the list survives"),
+            pre_append,
+            "the restore puts back the captured pre-append bytes",
+        );
+        assert_ne!(
+            before,
+            std::fs::metadata(&list).expect("the restored list").ino(),
+            "the restore must REPLACE the shared task list (temp + rename), not truncate-and-\
+             refill the inode a concurrent `read_task_list` may already have open",
+        );
+
+        let _ = std::fs::remove_dir_all(&area);
     }
 }

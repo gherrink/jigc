@@ -30,6 +30,12 @@ use std::path::{Path, PathBuf};
 
 /// The base-pin filename inside a milestone's area — the **single shared base**
 /// every sub-task inherits, in the same frozen byte form as a task's `base.json`.
+///
+/// A shared-workbench state file like its co-located [`TASKS_FILE`], and written under the
+/// same rule: [`read_base_pin`] serves every milestone door, so both its writers
+/// ([`mint_milestone`], [`reseed_cache_from_record`]) persist through
+/// [`crate::state::persist`]. See [`TASKS_FILE`] → *Shared state* for the class and why the
+/// rule is stated over it rather than over a writer list.
 const BASE_PIN_FILE: &str = "base.json";
 
 /// The task-list filename inside a milestone's area — the sub-task ids the
@@ -41,17 +47,41 @@ const BASE_PIN_FILE: &str = "base.json";
 ///
 /// # Shared state: atomic, and deliberately un-merged
 ///
-/// This file is the **second** shared, non-task-isolated engine state file (`file-state.json`
-/// is the first): every sub-task of a fan-out lives under one milestone area, and the whole
-/// worktree set shares one `.jigc/` (`design/team-ready-state.md` → The `.jigc` layer is shared
-/// across worktrees). So M45 Settle Decision 9's rationale for `file-state.json`
-/// ([`crate::file_state::FileStateRecord::save`]) applies to it verbatim, and **all four of its
-/// writers persist through [`crate::state::persist`]** (temp + `rename`): [`mint_milestone`],
-/// [`add_task`], [`drop_sub_tasks`], [`reseed_cache_from_record`]. A plain `std::fs::write`
-/// truncates the target and *then* fills it, so a concurrent [`read_task_list`] — including the
-/// one `add_task` and `drop_sub_tasks` do themselves — could read zero or partial bytes and fail
-/// to parse what is on disk (measured: the real `add_task` door raising `milestone.area-io`,
-/// *"EOF while parsing a value at line 1 column 0"*).
+/// This file is one member of the **shared, non-task-isolated `.jigc/` workbench**: every
+/// sub-task of a fan-out lives under one milestone area, and the whole worktree set shares one
+/// `.jigc/` (`design/team-ready-state.md` → The `.jigc` layer is shared across worktrees). So
+/// M45 Settle Decision 9's rationale for `file-state.json`
+/// ([`crate::file_state::FileStateRecord::save`]) applies verbatim.
+///
+/// **The rule is a property of the FILE CLASS, not of a writer list** (M46 completion-audit
+/// F4). Stated over the class: *every write of a gitignored, shared `.jigc/` workbench file
+/// that another door parses goes through [`crate::state::persist`]* — temp + `rename`, so the
+/// path only ever appears complete. A plain `std::fs::write` truncates (or creates) the target
+/// and *then* fills it, so a concurrent reader can read zero or partial bytes and fail to parse
+/// what is on disk (measured: the real `add_task` door raising `milestone.area-io`, *"EOF while
+/// parsing a value at line 1 column 0"*).
+///
+/// The class is derivable rather than remembered: `.jigc/` splits into a **committed** config
+/// surface (`config/`, `AGENT.md`, `version`) and a **gitignored** workbench (`index/`,
+/// `state/`, `milestones/`, `worktrees/`, `tasks/` — `design/storage.md` → the `.jigc` layout),
+/// of which `tasks/<id>/` is task-isolated single-writer by construction. What remains is
+/// `state/file-state.json` (merge + lock + persist), `index/edges.json` (lock + persist), and
+/// this area's `tasks.json` **and its co-located [`BASE_PIN_FILE`]** — read by
+/// [`read_base_pin`] from every milestone door.
+///
+/// *"That another door parses"* is the load-bearing clause, and it is what leaves this area's
+/// `merged/docs/*.md` out: [`materialize`] writes those bodies and `milestone finalize`'s
+/// promote sweep reads them back **inside the same call**, which clears the whole staging area
+/// first — no second door reads them, so there is no cross-door window to close (a second
+/// concurrent finalize destroys that area at directory granularity, a coarser problem than a
+/// byte-tear and not this one).
+///
+/// The first statement of this rule enumerated *four writers of `tasks.json`* and shipped the
+/// class un-swept: `base.json` was left truncating in two of the very functions that
+/// enumeration named, and a **fifth** writer of `tasks.json` — the CLI `add-task` door's
+/// rejected-commit restore (`cli/milestone.rs` → `unwind_mint`) — was outside the count
+/// entirely. Which is why the claim is now keyed to the class and pinned by a test that
+/// iterates it ([`shared_area_writers_replace_rather_than_truncate`]), never to a count.
 ///
 /// **The base-relative merge that guards `file-state.json` (M46 Increment 1) does NOT extend
 /// here — a decision on evidence, not an omission.** Three facts:
@@ -247,7 +277,7 @@ pub fn mint_milestone(
 
     let pin_path = dir.join(BASE_PIN_FILE);
     let pin_body = render_base_pin(&base);
-    std::fs::write(&pin_path, pin_body)
+    crate::state::persist(&pin_path, pin_body.as_bytes())
         .map_err(|err| io_finding(&id, "write the base pin", &err))?;
 
     // The empty task list — no sub-task minted yet.
@@ -919,8 +949,11 @@ pub fn reseed_cache_from_record(
     let (base, tasks) = read_back_record(schema, record_source)?;
     std::fs::create_dir_all(milestone_dir)
         .map_err(|err| io_finding(id, "open the milestone cache area", &err))?;
-    std::fs::write(milestone_dir.join(BASE_PIN_FILE), render_base_pin(&base))
-        .map_err(|err| io_finding(id, "re-seed the base pin cache", &err))?;
+    crate::state::persist(
+        &milestone_dir.join(BASE_PIN_FILE),
+        render_base_pin(&base).as_bytes(),
+    )
+    .map_err(|err| io_finding(id, "re-seed the base pin cache", &err))?;
     crate::state::persist(&milestone_dir.join(TASKS_FILE), tasks.to_bytes().as_bytes())
         .map_err(|err| io_finding(id, "re-seed the task list cache", &err))?;
     Ok(())
@@ -5255,5 +5288,193 @@ schema-version: 1
                 .expect_err("a settled record refuses even when a stale cache survived");
             assert_eq!(finding.code, "milestone.terminal");
         }
+    }
+
+    /// **The shared-workbench atomicity axis** (M46 completion-audit F4): every writer of a
+    /// file in the *gitignored, shared* `.jigc/` workbench that another door **parses** must
+    /// replace it atomically (temp + `rename`, [`crate::state::persist`]) — never truncate it
+    /// in place.
+    ///
+    /// The axis is derivable, not hand-picked: `.jigc/` splits into a **committed** config
+    /// surface (`config/`, `AGENT.md`, `version`) and a **gitignored** workbench (`index/`,
+    /// `state/`, `milestones/`, `worktrees/`, `tasks/` — `design/storage.md` → the `.jigc`
+    /// layout), and `tasks/<id>/` is task-isolated single-writer by construction. What remains
+    /// is the shared workbench, whose parsed state files are `state/file-state.json`
+    /// (merge + lock + persist), `index/edges.json` (lock + persist), and this module's
+    /// `milestones/<id>/{tasks,base}.json`.
+    ///
+    /// [`TASKS_FILE`]'s doc-comment stated the hazard and converted `tasks.json`'s writers —
+    /// and left the **co-located `base.json` unconverted in two of the same functions**, one
+    /// line above a converted `persist` in each. `base.json` is read by [`read_base_pin`] from
+    /// every milestone door, so the truncation window that comment names was live on it.
+    ///
+    /// The witness is the write's **mechanism**, deterministically: a truncating
+    /// `std::fs::write` refills the existing inode, while temp + `rename` swaps a new one in.
+    /// So `ino` **must change** across the write — that is exactly the property that makes a
+    /// concurrent reader see either the whole old file or the whole new one, and never a
+    /// zero-length window. The table iterates every writer of a shared-area cache file that
+    /// overwrites an existing target; [`mint_milestone`]'s fresh-create half is covered by
+    /// [`a_concurrent_reader_never_parses_a_half_written_shared_cache`].
+    #[test]
+    fn shared_area_writers_replace_rather_than_truncate() {
+        use std::os::unix::fs::MetadataExt;
+
+        let schema = milestone_record_schema();
+        let base = BasePin {
+            sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
+            short: "1f2e3d4".to_string(),
+        };
+
+        // Each arm: (what it writes, the writer door, the target file, the parsing reader).
+        type Arm = (
+            &'static str,
+            &'static str,
+            fn(&Path, &str, &crate::schema::Schema, &str) -> PathBuf,
+        );
+        let arms: &[Arm] = &[
+            (
+                "base.json ← reseed_cache_from_record",
+                BASE_PIN_FILE,
+                |jigc_root, id, schema, record| {
+                    let dir = milestone_dir(jigc_root, id);
+                    // Defeat the both-present early return so the re-seed actually rewrites
+                    // the base pin over the file already on disk.
+                    std::fs::remove_file(dir.join(TASKS_FILE)).expect("clear the task list");
+                    reseed_cache_from_record(&dir, schema, record).expect("re-seed the cache");
+                    dir.join(BASE_PIN_FILE)
+                },
+            ),
+            (
+                "tasks.json ← reseed_cache_from_record",
+                TASKS_FILE,
+                |jigc_root, id, schema, record| {
+                    let dir = milestone_dir(jigc_root, id);
+                    std::fs::remove_file(dir.join(BASE_PIN_FILE)).expect("clear the base pin");
+                    reseed_cache_from_record(&dir, schema, record).expect("re-seed the cache");
+                    dir.join(TASKS_FILE)
+                },
+            ),
+            (
+                "tasks.json ← add_task",
+                TASKS_FILE,
+                |jigc_root, id, _schema, _record| {
+                    add_task(jigc_root, id, "Warm the read cache", "single-task")
+                        .expect("add a sub-task");
+                    milestone_dir(jigc_root, id).join(TASKS_FILE)
+                },
+            ),
+            (
+                "tasks.json ← drop_sub_tasks",
+                TASKS_FILE,
+                |jigc_root, id, _schema, _record| {
+                    let added = add_task(jigc_root, id, "Evict cold entries", "single-task")
+                        .expect("add a sub-task");
+                    drop_sub_tasks(jigc_root, id, &[added.task.id]).expect("drop the sub-task");
+                    milestone_dir(jigc_root, id).join(TASKS_FILE)
+                },
+            ),
+        ];
+
+        for (label, _file, write) in arms {
+            let root = TempRoot::new("atomic-shared-area");
+            let minted = mint_milestone(root.path(), "Cache rework", base.clone())
+                .expect("mint the milestone");
+            let record = render_fresh_record(&schema, &minted.id, &base, 1);
+
+            let target = minted.dir.join(_file);
+            let before = std::fs::metadata(&target)
+                .unwrap_or_else(|err| panic!("{label}: the target must exist first: {err}"))
+                .ino();
+
+            let written = write(root.path(), &minted.id, &schema, &record);
+            assert_eq!(written, target, "{label}: the arm names its own target");
+
+            let after = std::fs::metadata(&target)
+                .unwrap_or_else(|err| panic!("{label}: the target survives the write: {err}"))
+                .ino();
+            assert_ne!(
+                before, after,
+                "{label}: the write must REPLACE the shared-area file (temp + rename), not \
+                 truncate-and-refill the inode a concurrent reader may already have open",
+            );
+
+            // The replacement is also a correct one — the reader parses what landed.
+            if *_file == BASE_PIN_FILE {
+                read_base_pin(&minted.dir).expect("the replaced base pin parses");
+            } else {
+                read_task_list(&minted.dir).expect("the replaced task list parses");
+            }
+        }
+    }
+
+    /// The **consequence** the axis above exists to prevent, driven through a real door:
+    /// while [`mint_milestone`] writes a milestone area, a concurrent [`read_base_pin`] must
+    /// never observe bytes that do not parse.
+    ///
+    /// This is the shape [`TASKS_FILE`]'s doc-comment records as *measured* — the real
+    /// `add_task` door raising `milestone.area-io`, *"EOF while parsing a value at line 1
+    /// column 0"* — turned on `base.json`, whose two writers the same increment left
+    /// truncating. A plain `std::fs::write` makes the path **exist before it has content**, so
+    /// a reader that opens in that window reads zero bytes and fails `InvalidData`. Under
+    /// temp + `rename` the path only ever appears complete.
+    ///
+    /// `NotFound` is a legitimate observation (the area is torn down between rounds) and is
+    /// **not** counted; only a file that exists and does not parse is the defect. The loop is
+    /// a race, so its *red* is probabilistic while its *green* is a guarantee (`rename` is
+    /// atomic) — which is why the deterministic inode witness above is the standing fence and
+    /// this test is the demonstration beside it.
+    #[test]
+    fn a_concurrent_reader_never_parses_a_half_written_shared_cache() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        let root = TempRoot::new("half-written-cache");
+        let jigc_root = root.path().to_path_buf();
+        let base = BasePin {
+            sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
+            short: "1f2e3d4".to_string(),
+        };
+        let dir = milestone_dir(&jigc_root, &mint_id("Cache rework"));
+
+        let done = AtomicBool::new(false);
+        let torn = AtomicUsize::new(0);
+        let reads = AtomicUsize::new(0);
+
+        std::thread::scope(|scope| {
+            let reader_dir = dir.clone();
+            let (done_r, torn_r, reads_r) = (&done, &torn, &reads);
+            scope.spawn(move || {
+                while !done_r.load(Ordering::Relaxed) {
+                    match read_base_pin(&reader_dir) {
+                        Ok(_) => {
+                            reads_r.fetch_add(1, Ordering::Relaxed);
+                        }
+                        // The area is legitimately absent between rounds.
+                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                        // The file EXISTS and does not parse — the truncation window.
+                        Err(_) => {
+                            torn_r.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                }
+            });
+
+            for _ in 0..2_000 {
+                let _ = std::fs::remove_dir_all(&dir);
+                mint_milestone(&jigc_root, "Cache rework", base.clone()).expect("mint the area");
+            }
+            done.store(true, Ordering::Relaxed);
+        });
+
+        assert!(
+            reads.load(Ordering::Relaxed) > 0,
+            "the reader must actually have observed the pin — a run that read nothing proves \
+             nothing (the vacuous pass)",
+        );
+        assert_eq!(
+            torn.load(Ordering::Relaxed),
+            0,
+            "a concurrent reader parsed a half-written base.json: the shared-area write must \
+             be temp + rename, never truncate-then-fill",
+        );
     }
 }
