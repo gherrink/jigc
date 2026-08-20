@@ -813,6 +813,15 @@ pub struct UnfilledSetLeaf<'a> {
     /// ([`crate::schema::is_machine_maintained_absolute`]: an absolute nothing may write reads
     /// differently from an author-overridable `on-create`).
     pub field: &'a Field,
+    /// Whether the leaf was added to the section's **item block**
+    /// ([`SchemaChange::AddedItemField`]) rather than to a simple/header section's `fields`
+    /// ([`SchemaChange::AddedOptionalField`]) — the discrimination a caller *must* carry into
+    /// what it says, because the two loci have different write addresses: a simple leaf is
+    /// written at `#<section>/<field>`, an item leaf only at `#<section>/<item-id>/<field>`.
+    /// Kept on the leaf rather than re-derived, because the change kind is the only place the
+    /// locus is stated and it is discarded here (M46 completion audit, finding F2: one
+    /// locus-blind renderer composed the simple form for both).
+    pub item_locus: bool,
 }
 
 /// The added leaves of `changes` whose declaration in `to` carries a **`set:` deriver with no
@@ -849,6 +858,7 @@ pub fn unfilled_set_leaves<'a>(
             out.push(UnfilledSetLeaf {
                 section,
                 field: decl,
+                item_locus,
             });
         }
     }

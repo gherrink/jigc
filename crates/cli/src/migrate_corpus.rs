@@ -51,7 +51,7 @@ use anyhow::{Context, Result};
 use engine::file_state::{FileStateRecord, hash_bytes};
 use engine::finding::{Finding, Findings, Location, Route, Severity};
 use engine::packsource::PackSource;
-use engine::schema::{Field, SCHEMA_VERSION_FIELD, Schema, SectionBody};
+use engine::schema::{SCHEMA_VERSION_FIELD, Schema, SectionBody};
 use engine::schema_diff::{SchemaChange, schema_diff};
 use engine::transform::{
     CorpusDoc, CorpusMigration, DocOutcome, HaltReason, TransformError, VALUE_REMAP_KIND,
@@ -941,11 +941,9 @@ pub(crate) fn migrate_committed_corpus(
                 // than by a second list of exceptions. Reported at the destination the bytes
                 // landed at, so the address a reader follows is the file that now exists.
                 for leaf in engine::schema_diff::unfilled_set_leaves(&prep.to, &prep.changes) {
-                    report.unfilled.push(unfilled_set_field_finding(
-                        target,
-                        leaf.section,
-                        leaf.field,
-                    ));
+                    report
+                        .unfilled
+                        .push(unfilled_set_field_finding(target, &leaf));
                 }
                 // The self-commit's pathspec: **both** halves of the write — the destination
                 // just persisted and, for a relocation, the source just removed. Staging only
@@ -1281,24 +1279,50 @@ fn blocked_finding(code: &str, path: &str, message: String, route: String) -> Fi
 /// **Advisory, never blocking**, and it rides [`CorpusMigrationReport::unfilled`] rather than
 /// `blocked`: the doc migrated, and the run's exit is the refusal set's emptiness ([`run`]).
 ///
-/// **Targeted at `<path>#<section>/<field>`** — the file-path form every `migrate-corpus.*`
-/// finding takes, carrying the leaf fragment so two unfilled leaves in one doc discriminate
-/// rather than collapsing onto one `(code, target)`.
+/// **Targeted at `<path>#<section>/<field>` at BOTH loci** — the file-path form every
+/// `migrate-corpus.*` finding takes (never the doc's URI, so it resolves through no verb in
+/// either locus), carrying the **declared leaf's schema locus** as its fragment so two unfilled
+/// leaves in one doc discriminate rather than collapsing onto one `(code, target)`. It is a key
+/// naming *the file to open and the leaf to look at*, not a write address — which is why the
+/// item locus keeps it rather than growing a form the key cannot fill (below).
+///
+/// **The locus is carried into what the finding SAYS, because the two loci have different write
+/// addresses** (M46 completion audit, finding F2). A simple/header leaf is written at
+/// `#<section>/<field>`; an item leaf only at `#<section>/<item-id>/<field>`, and this report
+/// holds **no item id**. It must not mint one per item either: a repeatable section carrying
+/// **zero** items still has an unfilled leaf, and a per-item finding would go silent on exactly
+/// the corpus a doctype author most needs to hear about — so the finding stays **one per leaf**
+/// and the route names the item-qualified *form* plus the read that enumerates the real ids
+/// (`jigc doc show`), the [`engine::store`] no-such-section precedent. It fabricates no address.
 ///
 /// **The route splits on the `set:` kind**, through the one authority
 /// ([`engine::schema::is_machine_maintained_absolute`]): a **machine-maintained absolute** (the
 /// freeze stamp, a milestone transition) is informational — no author write may set it, so
-/// naming an action would be a route nobody can take; an **author-overridable** `on-create` takes
-/// a **human** route naming the write path. Neither is mechanical: a `jigc doc set-field` argv
-/// needs a task id, and a migration report holds none — a mechanical route is a promise the
-/// command runs from where the reader stands.
-fn unfilled_set_field_finding(path: &str, section: &str, field: &Field) -> Finding {
+/// naming an action would be a route nobody can take, and the locus changes nothing about that;
+/// an **author-overridable** `on-create` takes a **human** route naming the write path *at its
+/// own locus*. Neither is mechanical: a `jigc doc set-field` argv needs a task id, and a
+/// migration report holds none — a mechanical route is a promise the command runs from where the
+/// reader stands.
+fn unfilled_set_field_finding(
+    path: &str,
+    leaf: &engine::schema_diff::UnfilledSetLeaf<'_>,
+) -> Finding {
+    let section = leaf.section;
+    let field = leaf.field;
     let id = &field.id;
     let set = field.set.as_deref().unwrap_or_default();
     let route = if engine::schema::is_machine_maintained_absolute(field) {
         Route::informational(format!(
             "no action needed — `{id}` is machine-maintained (`set: {set}`): jigc derives its \
              value and no `jigc doc` write may set it"
+        ))
+    } else if leaf.item_locus {
+        Route::human(format!(
+            "`{id}` is author-overridable (`set: {set}`) and is declared per **item** of \
+             `{section}`, so a write names the item: read the items back with `jigc doc show \
+             <doc-address>#{section} --task <task-id>`, then set one with `jigc doc set-field \
+             <doc-address>#{section}/<item-id>/{id} <value> --task <task-id>`; this report holds \
+             no task id, so it composes no runnable command"
         ))
     } else {
         Route::human(format!(
@@ -1307,14 +1331,23 @@ fn unfilled_set_field_finding(path: &str, section: &str, field: &Field) -> Findi
              --task <task-id>`; this report holds no task id, so it composes no runnable command"
         ))
     };
-    Finding::graded(
-        Severity::Advisory,
-        "migrate-corpus.set-field-unfilled",
+    let message = if leaf.item_locus {
+        format!(
+            "`{path}` migrated with `{section}`'s **item** field `{id}` left unfilled — the \
+             field declares `set: {set}` and no `default:`, so the migration placed no `{id}` in \
+             any item of `{section}` and invented none; their absence conforms"
+        )
+    } else {
         format!(
             "`{path}` migrated with `{section}/{id}` left unfilled — the field declares \
              `set: {set}` and no `default:`, so the migration had no deterministic value to \
              place and invented none; its absence conforms"
-        ),
+        )
+    };
+    Finding::graded(
+        Severity::Advisory,
+        "migrate-corpus.set-field-unfilled",
+        message,
         Some(Location::addressed(format!("{path}#{section}/{id}"), 1, 1)),
         Some(route),
     )

@@ -485,7 +485,38 @@ fn the_report_names_the_set_leaf_it_left_unfilled_at_the_item_locus() {
         pack.path(),
         &["migrate-corpus", "--dry-run", "--format", "json"],
     );
-    sole_unfilled(&json, "CHANGELOG.md#releases/date");
+    let finding = sole_unfilled(&json, "CHANGELOG.md#releases/date");
+
+    // **The advisory must not compose an address the item locus cannot have** (M46 completion
+    // audit, finding F2). `date` is declared per **item** of `releases`, so its write address is
+    // `#<section>/<item-id>/<field>` — a `#releases/date` names a section-level leaf that does
+    // not exist, and a reader copying it out of the route reaches nothing. The report holds no
+    // item id (and must not emit one per item: a repeatable section with **zero** items still has
+    // an unfilled leaf, and a per-item finding would go silent on exactly the corpus a doctype
+    // author most needs to hear about). So the route names the write-address **form** and routes
+    // at the read that enumerates the real ids — it fabricates no address.
+    let route = finding["route"].as_str().expect("a route");
+    assert!(
+        !route.contains("set-field <doc-address>#releases/date"),
+        "an item-locus leaf has no section-level write address — the route must not compose \
+         one; route: {route}",
+    );
+    assert!(
+        route.contains("#<section>/<item-id>/date") || route.contains("#releases/<item-id>/date"),
+        "the route names the item-qualified write-address form, so a reader knows the id hop \
+         is theirs to fill; route: {route}",
+    );
+    assert!(
+        route.contains("jigc doc show"),
+        "and routes at the read that enumerates the real item ids, since the report holds \
+         none; route: {route}",
+    );
+    let message = finding["message"].as_str().expect("a message");
+    assert!(
+        message.contains("item"),
+        "the message states the locus — the absence is per item of `releases`, not a \
+         section-level one; message: {message}",
+    );
 
     let out = jigc(repo.path(), home.path(), pack.path(), &["migrate-corpus"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
