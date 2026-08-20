@@ -270,17 +270,28 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
             // under `--format json`, the delimited stdout section on agent-text; the
             // hook_output producer axis).
             crate::task::relay_hook_output(format, &report.hook_output);
-            if report.blocked.is_empty() {
-                // Exit 0 — nothing blocked. The adoption advisories still carry their codes
-                // into the invocation log (`Outcome::with_findings(0, …)`): a run that
-                // declined to act on three files is not the same event as a run that found
-                // nothing, and the log is where that difference is readable after the fact.
-                Outcome::with_findings(0, &report.unadopted)
-            } else {
-                // Non-zero, carrying the refusal codes into the invocation log — the
-                // `validate` store-sweep precedent (`Outcome::with_findings`).
-                Outcome::with_findings(1, &report.blocked)
-            }
+            // The log carries **what the run decided** — every set the report speaks with,
+            // on both branches. A run that declined to act on three files is not the same
+            // event as a run that found nothing, a run that left two `set:`-derived leaves
+            // absent is not the same event as one that filled everything the schema
+            // declares, and a run that refused a doc is not the same event as one that
+            // landed it: the log is where those differences are readable after the fact.
+            // Selecting one set per branch made the record answer only part of that — the
+            // exit-0 branch was silent about `unfilled`, and the blocking branch dropped the
+            // adoption declines the exit-0 branch logs (M46 completion audit, finding F3).
+            let decided: Vec<Finding> = report
+                .blocked
+                .iter()
+                .chain(report.unadopted.iter())
+                .chain(report.unfilled.iter())
+                .cloned()
+                .collect();
+            // The **exit rule is unmoved** by that merge: `blocked`'s emptiness is the whole
+            // of it — 0 when nothing was refused, 1 when something was — and neither
+            // `unadopted` nor `unfilled` is a refusal (each field's own doc-comment records
+            // why it is deliberately not `blocked`). `Outcome::with_findings` carries the
+            // status alongside the codes, so the two are stated in one place, once.
+            Outcome::with_findings(u8::from(!report.blocked.is_empty()), &decided)
         }
         // The door's half of the survivable frame (M47 Inc 3 T7). `commit_migration` stages
         // the touched paths *before* it commits, so a rejection leaves the migrated bytes
