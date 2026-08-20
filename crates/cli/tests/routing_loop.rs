@@ -510,3 +510,166 @@ fn step_6_the_router_closing_text_names_the_fuller_catalog_and_that_read_answers
          out; got:\n{described_out}",
     );
 }
+
+/// The M46 completion audit's F1 — **the router's off-catalog promise, held over
+/// the whole set it names.**
+///
+/// The closing text names `jigc describe --workflows` and promises a reason for each
+/// workflow sitting off the catalog. But the catalog predicate is `creates-task &&
+/// selectable`, while M43's `suppressed:` pack-load fence binds only `selectable:
+/// false` — so the off-catalog set splits in two: a **hidden** half that owes, and
+/// carries, a declared reason, and a `creates-task: false` half that owes none and
+/// carries none (`router`, `ingest-existing`, `increment` at the time of writing). A
+/// promise over the union is a law-1 lie for the second half, and the repair is
+/// **scope** — name the half the fence buys, change no behaviour
+/// (`design/surface-contract.md` → law 1).
+///
+/// This iterates that axis rather than the reported instance: the off-catalog set is
+/// DERIVED from the emitted bytes of the two reads — the router's own catalog listing
+/// and the read it names, run verbatim — then split on the envelope's `router_hidden`
+/// key, with each half held to what the fence actually buys. Both halves must be
+/// non-empty over the shipped packs, or the arm proves nothing.
+#[test]
+fn the_routers_off_catalog_promise_is_scoped_to_the_half_that_owes_a_reason() {
+    let repo = TempDir::new("off-catalog-promise");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = run_start(repo.path(), home.path(), &["tidy up the cache keys"]);
+    assert!(
+        out.status.success(),
+        "bare `jigc start \"<intent>\"` must exit 0; streams:\n{}",
+        streams(&out),
+    );
+    let router = stdout_of(&out);
+
+    // The catalog, as the router itself printed it.
+    let catalog: Vec<String> = router
+        .lines()
+        .filter_map(|line| line.strip_prefix("- "))
+        .filter_map(|rest| rest.split_once(" — "))
+        .map(|(id, _)| id.trim().to_string())
+        .collect();
+    assert!(
+        !catalog.is_empty(),
+        "the router must print its catalog at all; got:\n{router}",
+    );
+
+    // The read it names, run VERBATIM as emitted — prose first, then the same argv
+    // through the machine envelope, which carries the suppression as a key.
+    let spans = backticked_spans(&router);
+    let read = spans
+        .iter()
+        .find(|span| span.starts_with("jigc describe"))
+        .unwrap_or_else(|| {
+            panic!("the closing text must name a `jigc describe` read; got:\n{router}")
+        });
+    let argv: Vec<&str> = read.split(' ').collect();
+    let run_read = |extra: &[&str]| -> String {
+        let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(&argv[1..])
+            .args(extra)
+            .current_dir(repo.path())
+            .env("HOME", home.path())
+            .output()
+            .expect("run the jigc binary");
+        assert!(
+            out.status.success(),
+            "the emitted read `{read}` {extra:?} must run clean; streams:\n{}",
+            streams(&out),
+        );
+        stdout_of(&out)
+    };
+    let listed = run_read(&[]);
+    let envelope: serde_json::Value =
+        serde_json::from_str(&run_read(&["--format", "json"])).expect("the envelope is JSON");
+    let definitions = envelope["definitions"]
+        .as_array()
+        .expect("the projection carries `definitions`")
+        .clone();
+
+    // The axis: every workflow the catalog leaves out, split on whether the fence
+    // buys it a reason — and each half checked against what the read actually says.
+    let mut with_reason: Vec<String> = Vec::new();
+    let mut without_reason: Vec<String> = Vec::new();
+    for definition in &definitions {
+        let id = definition["id"]
+            .as_str()
+            .expect("every definition carries an id");
+        // One paragraph per definition — the first is glued to the section's intro
+        // prose, so the entry starts at its own `<id> is …` opening.
+        let opening = format!("{id} is ");
+        let entry = listed
+            .split("\n\n")
+            .find_map(|paragraph| {
+                if paragraph.starts_with(&opening) {
+                    Some(paragraph)
+                } else {
+                    paragraph
+                        .find(&format!(" {opening}"))
+                        .map(|at| &paragraph[at + 1..])
+                }
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "the read must list EVERY workflow — `{id}` is missing from it; \
+                     got:\n{listed}"
+                )
+            });
+        let clause = "It is hidden from the router catalog: ";
+        match definition["router_hidden"].as_str() {
+            Some(reason) => {
+                assert!(
+                    entry.contains(clause) && entry.contains(reason),
+                    "`{id}` is hidden, so the read must carry its declared reason; \
+                     got:\n{entry}",
+                );
+                with_reason.push(id.to_string());
+            }
+            None => {
+                assert!(
+                    !entry.contains(clause),
+                    "`{id}` declares no suppression, so the read states no reason for it; \
+                     got:\n{entry}",
+                );
+                if !catalog.iter().any(|listed_id| listed_id == id) {
+                    without_reason.push(id.to_string());
+                }
+            }
+        }
+    }
+    assert!(
+        !with_reason.is_empty(),
+        "the shipped packs must carry a hidden workflow, or the promise has no subject",
+    );
+    assert!(
+        !without_reason.is_empty(),
+        "the shipped packs must carry a workflow that sits off the catalog while owing no \
+         reason (`creates-task: false`), or this arm proves nothing; catalog: {catalog:?}",
+    );
+
+    // The promise, taken from the emitted bytes: it may only range over the half that
+    // owes a reason — the ids in `without_reason` sit off the catalog and carry none.
+    let closing = router
+        .split_once("That catalog is the selectable subset")
+        .unwrap_or_else(|| panic!("the router must name its catalog as a subset; got:\n{router}"))
+        .1
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if let Some((_, tail)) = closing.split_once("the reason") {
+        let promise = tail.split('.').next().unwrap_or(tail);
+        assert!(
+            promise.contains("hidden"),
+            "the reason-promise must name the HIDDEN half as its scope — {} sit(s) off the \
+             catalog with no declared reason, so an unscoped promise lies about them; \
+             promise: {promise:?}\ngot:\n{router}",
+            without_reason.join(", "),
+        );
+        assert!(
+            !promise.contains("off the catalog") && !promise.contains("outside"),
+            "…and it may not re-extend itself to the whole off-catalog set, which is the \
+             union the fence does not cover; promise: {promise:?}\ngot:\n{router}",
+        );
+    }
+}
