@@ -25,7 +25,12 @@ and which cost a whole session before.
 | `driver/observe.py` | reads a finished session's channels off its own evidence |
 | `driver/cascade.py` | ordered outcomes, first match wins, apparatus failures **voided** |
 | `arms/adopt.sh` | adopts a naive corpus using the **container's** jigc, via `--exec` |
-| `test_observe.py` · `test_cascade.py` | the suites — `python3 run.py test` |
+| `driver/session.py` | seed a conversation once, freeze it, fork it N times |
+| `driver/plants.py` | wait for a plant's state and fire it, from outside the session |
+| `driver/interact.py` | answer from the key or halt; the operator log, written as it happens |
+| `driver/gate.py` | refuse a round the isolation record does not cover |
+| `walk.py` · `arms/walk/` | the operator walk as scripted arms, unrun ones visibly blank |
+| `test_*.py` | six suites — `python3 run.py test` |
 
 Driving happens through `../trial-harness/run-session.sh --headless`, not through a
 second container path. That is the flag's own stated rule for `--exec`: *"a control
@@ -99,6 +104,16 @@ session outcomes. Confirming or refuting a claim, writing repro blocks, and citi
 `pinned-by:` stay hand work — [pinning.md](../../implementation/pinning.md) §3
 refuses that automation by name, on the grounds that *a symbol-existence parser
 would be a finder wearing a fence's badge*.
+
+**Every module here was corrected by driving it.** Not one of the defects below was
+found by reading: the shadowed cascade row (by `check_examples()`), the missing
+`unmeasured` row and `doc author --help` (by the first live arm), the unreadable
+staged transcript, the blind seed-failure guard and the rig's evidence leaking into
+the corpus (by the first live chain), the plant's sibling body file (by the first
+poller run), `python3` being absent from a node image and a step whose stderr was
+never captured (by the first walk arm). The corpus gate's own self-test found, on
+its first run, that it had been matching pass labels against failure text and was
+reporting every bar dead.
 
 **A green suite is necessary and not sufficient.** Both defects the cascade has
 caught so far were caught by *running* it somewhere it had not been run — the
