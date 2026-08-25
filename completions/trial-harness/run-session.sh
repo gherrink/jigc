@@ -27,7 +27,11 @@ CID_FILE=""
 # A headless turn has no terminal, so its stdout IS the stream-json transcript and
 # its stderr is the only place a CLI-level failure appears. Captured to temps and
 # moved into $OUT after copy_out, because $OUT must not exist when the run starts.
-CAP_OUT="$(mktemp)"; CAP_ERR="$(mktemp)"
+#
+# Declared empty here and allocated only after the EXIT trap is armed: eight
+# refusal paths sit between this line and that trap, and allocating up here leaked
+# two temp files on every one of them.
+CAP_OUT=""; CAP_ERR=""
 
 while true; do
   case "${1:-}" in
@@ -75,8 +79,8 @@ if [ -n "$HOME_DIR" ] && [ ! -d "$HOME_DIR/.claude" ]; then
   exit 2
 fi
 
-CORPUS="${1:?usage: run-session.sh [--shell] [--strict-permissions] <corpus-dir> <out-dir> [tag]}"
-OUT="${2:?usage: run-session.sh [--shell] [--strict-permissions] <corpus-dir> <out-dir> [tag]}"
+CORPUS="${1:?usage: run-session.sh [--shell|--exec F|--headless] [--strict-permissions] [--cid-file P] <corpus-dir> <out-dir> [tag]}"
+OUT="${2:?usage: run-session.sh [--shell|--exec F|--headless] [--strict-permissions] [--cid-file P] <corpus-dir> <out-dir> [tag]}"
 TAG="${3:-jigc-gate:rc11}"
 
 # Pinned, and recorded. The CLI version is pinned in the Dockerfile with the argument
@@ -127,7 +131,7 @@ copy_out() {
 }
 
 cleanup() {
-  rm -f "$CAP_OUT" "$CAP_ERR" 2>/dev/null || true
+  rm -f "${CAP_OUT:-}" "${CAP_ERR:-}" 2>/dev/null || true
   if [ -n "$CID" ]; then
     if [ "$COPIED" = 0 ]; then
       # Retry unconditionally. The previous version skipped the retry whenever $OUT
@@ -147,6 +151,8 @@ cleanup() {
   rm -f "$ENVFILE"
 }
 trap cleanup EXIT
+# Safe to allocate from here: every exit below runs cleanup.
+CAP_OUT="$(mktemp)"; CAP_ERR="$(mktemp)"
 
 echo "image      : $TAG ($STAMP)"
 echo "jigc sha   : $SHA"
@@ -169,11 +175,13 @@ if [ "$MODE" = shell ]; then
 elif [ "$MODE" = exec ]; then
   [ -f "$EXEC_FILE" ] || { echo "refusing: no such script: $EXEC_FILE" >&2; exit 2; }
   CID="$(docker create --env-file "$ENVFILE" "$TAG" bash -lc 'bash /tmp/arm.sh')"
-else
-  CID="$(docker create -it --env-file "$ENVFILE" "$TAG" \
-          claude --model "$MODEL" --permission-mode "$PERMISSION_MODE")"
-fi
-if [ "$MODE" = headless ]; then
+elif [ "$MODE" = headless ]; then
+  # A BRANCH of this chain, not a second `if` after it. Written as a separate `if`
+  # it fell through the `else` first, created an interactive container, then created
+  # the real one and overwrote CID — so every headless run orphaned a container that
+  # was never started, never removed, and carries the OAuth token in its config.
+  # Eleven had accumulated before this was found.
+  #
   # `-p` with the prompt as an argument, and stream-json so the transcript is
   # parseable. No -t: a headless turn has no stdin, and attaching one that never
   # closes hangs the run.
@@ -181,6 +189,9 @@ if [ "$MODE" = headless ]; then
   CID="$(docker create --env-file "$ENVFILE" "$TAG" \
           claude -p "$PROMPT" --model "$MODEL" --permission-mode "$PERMISSION_MODE" \
           --output-format stream-json --verbose ${EXTRA[@]+"${EXTRA[@]}"})"
+else
+  CID="$(docker create -it --env-file "$ENVFILE" "$TAG" \
+          claude --model "$MODEL" --permission-mode "$PERMISSION_MODE")"
 fi
 docker cp "$CORPUS/." "$CID:/work/" >/dev/null
 [ "$MODE" = exec ] && docker cp "$EXEC_FILE" "$CID:/tmp/arm.sh" >/dev/null

@@ -16,8 +16,12 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from driver import channels
+from driver import cascade, channels
 from driver.observe import Read, observe, _segments, filesystem_reads
+
+#: The cascade row a VERB session lands on. Named once so the table below states
+#: an outcome rather than restating the cascade's wording four times.
+VERB_ROW = "read back through the fence's verb"
 
 EVIDENCE = (pathlib.Path(__file__).resolve().parents[1]
             / "artifacts" / "RC-1.0-gate" / "evidence")
@@ -25,10 +29,10 @@ EVIDENCE = (pathlib.Path(__file__).resolve().parents[1]
 #: `trial-record.md` §3's table, after its own logged correction to B1.
 #: (records, doc-show---task, task-diff/doc-list--task, task-validate, outcome)
 RECORD_TABLE = {
-    "harborlight":  (26, 3, 0, 2, channels.VERB),
-    "pinegrove":   (102, 4, 2, 7, channels.VERB),
-    "stonefly":     (94, 6, 0, 5, channels.VERB),
-    "rosewater":    (99, 7, 0, 6, channels.VERB),
+    "harborlight":  (26, 3, 0, 2, VERB_ROW),
+    "pinegrove":   (102, 4, 2, 7, VERB_ROW),
+    "stonefly":     (94, 6, 0, 5, VERB_ROW),
+    "rosewater":    (99, 7, 0, 6, VERB_ROW),
 }
 
 
@@ -47,7 +51,7 @@ class ReproducesTheArchive(unittest.TestCase):
                             EVIDENCE / f"{name}-transcript.jsonl")
                 self.assertEqual(o.records, recs, "record count")
                 self.assertEqual(o.verb, verb, "doc show … --task")
-                self.assertEqual(o.outcome, outcome, "§3.3 outcome")
+                self.assertEqual(cascade.grade(o).outcome, outcome, "§3.3 outcome")
                 # §3.3's VERB-ADJACENT is the record's two columns summed: it
                 # counts `task validate` too, and says so beneath the table.
                 self.assertEqual(o.adjacent, diff_list + validate,
@@ -157,6 +161,147 @@ class FalsePositivesStayDead(unittest.TestCase):
         self.assertIsNotNone(_looks_managed("/work/.jigc/tasks/some-task/docs/adr.md"))
 
 
+class CrossModelReviewFindings(unittest.TestCase):
+    """Fences for the defects an independent Codex review found.
+
+    Kept together and named, because each is a way the apparatus could have written
+    a wrong number into a trial record.
+    """
+
+    def test_an_excluded_path_does_not_suppress_a_managed_one_beside_it(self) -> None:
+        """Finding 8, the false NEGATIVE half.
+
+        Exclusions were applied to the whole command segment, so one worktree path
+        hid every managed path next to it — on the channel §3.3 says must not be
+        flattered.
+        """
+        from driver.observe import _looks_managed
+        both = ('grep -n "cap" /work/docs/decisions/x.md '
+                '/work/.jigc/worktrees/t/src/a.ts')
+        self.assertIsNotNone(_looks_managed(both),
+                             "the managed doc is still read, whatever sits beside it")
+
+    def test_a_worktree_only_command_is_still_excluded(self) -> None:
+        from driver.observe import _looks_managed
+        self.assertIsNone(_looks_managed("cat /work/.jigc/worktrees/t/src/store.ts"))
+
+    def test_a_bare_filename_with_no_slash_still_matches(self) -> None:
+        """`cat CHANGELOG.md` has no path-ish token; the fallback must keep it."""
+        from driver.observe import _looks_managed
+        self.assertIsNotNone(_looks_managed("cat CHANGELOG.md"))
+
+    def test_failed_reads_are_counted_and_reported_not_redefined(self) -> None:
+        """Finding 3.
+
+        §3.3 registers VERB as the command *appearing* in the log, and the record
+        counts it that way — rosewater's 7 includes two failed reads. The reader
+        must reproduce that, AND make the difference visible, because which of the
+        two is meant is the protocol's call and not the reader's.
+        """
+        ev = pathlib.Path(__file__).resolve().parents[1] / "artifacts" / "RC-1.0-gate" / "evidence"
+        if not ev.is_dir():
+            self.skipTest("archived evidence not present")
+        o = observe("rosewater", ev / "rosewater-invocations.jsonl", None)
+        self.assertEqual(o.verb, 7, "the registered count, as the record carries it")
+        self.assertEqual(o.verb_succeeded, 5)
+        self.assertEqual(o.failed_reads, 2)
+
+    def test_a_session_with_no_failed_reads_reports_no_gap(self) -> None:
+        ev = pathlib.Path(__file__).resolve().parents[1] / "artifacts" / "RC-1.0-gate" / "evidence"
+        if not ev.is_dir():
+            self.skipTest("archived evidence not present")
+        o = observe("harborlight", ev / "harborlight-invocations.jsonl", None)
+        self.assertEqual(o.failed_reads, 0)
+
+
+class TimingWindows(unittest.TestCase):
+    """`cue-card-postmortem.md` §2's table, computed rather than reconstructed.
+
+    That table is what established the cue card was *impossible* rather than
+    mistimed, and its own header says it was reconstructed from the archived logs
+    by hand, after the trial. Computing it is four lines and the answer decides
+    whether a designed occasion is worth building — so it should not wait for a
+    post-mortem.
+    """
+
+    EV = pathlib.Path(__file__).resolve().parents[1] / "artifacts" / "RC-1.0-gate" / "evidence"
+
+    def setUp(self) -> None:
+        if not self.EV.is_dir():
+            self.skipTest("archived evidence not present")
+
+    def test_b1_reproduces_the_post_mortem_figures_exactly(self) -> None:
+        """§2: B1's trigger is the 3rd `set slot adr:…` ack (`#consequences`),
+        its window is 14 s and the longest silence inside it is 4 s."""
+        from driver.observe import read_log, windows
+        recs = read_log(self.EV / "harborlight-invocations.jsonl")
+        slots = [r for r in recs if tuple(r.argv[:2]) == ("doc", "set-slot")]
+        third = slots[2]
+        self.assertIn("#consequences", " ".join(third.argv),
+                      "§2 names the third set-slot as the one on #consequences")
+        got = windows(recs, lambda r: r is third,
+                      lambda r: tuple(r.argv[:2]) == ("task", "finalize"))
+        self.assertEqual(len(got), 1)
+        _, _, span, silence = got[0]
+        self.assertEqual(span, 14.0)
+        self.assertEqual(silence, 4.0)
+
+    def test_a_window_that_never_closes_is_not_reported(self) -> None:
+        """An opener with no matching close yields nothing, rather than a fake span."""
+        from driver.observe import read_log, windows
+        recs = read_log(self.EV / "harborlight-invocations.jsonl")
+        self.assertEqual(windows(recs, lambda r: True, lambda r: False), [])
+
+
+class GlobalFlagsDoNotHideAnInvocation(unittest.TestCase):
+    """A silent-undercount defect, found by review and fixed before it fired.
+
+    clap propagates jigc's global options, so `jigc --format json doc show <addr>
+    --task <id>` is accepted and logged verbatim as
+    `["--format","json","doc","show",…]`. Matching `argv[:2]` made that invocation
+    invisible to VERB, VERB-ADJACENT and the authoring count at once — a worker
+    reading its staged work back in JSON scoring as never having read it back.
+
+    Verified against the real binary: `jigc --format json doc list` logs
+    `{"argv":["--format","json","doc","list"],…}`.
+    """
+
+    def test_format_json_before_the_verb_still_scores_verb(self) -> None:
+        self.assertTrue(channels.is_verb(
+            ["--format", "json", "doc", "show", "adr:x", "--task", "t"]))
+
+    def test_the_equals_form_too(self) -> None:
+        self.assertTrue(channels.is_verb(
+            ["--format=json", "doc", "show", "adr:x", "--task", "t"]))
+
+    def test_adjacent_and_authoring_are_normalised_as_well(self) -> None:
+        self.assertTrue(channels.is_adjacent(["--format", "json", "task", "validate", "t"]))
+        from driver.observe import _is_authoring
+        self.assertTrue(_is_authoring(["--format", "json", "doc", "create", "adr"]))
+
+    def test_a_terminal_global_flag_is_not_a_verb(self) -> None:
+        for argv in (["--help"], ["--version"], ["-V"], ["-h"]):
+            self.assertEqual(channels.verb_tokens(argv), [], argv)
+
+    def test_only_format_consumes_its_next_token(self) -> None:
+        """`--format` is the only global taking a value, per `jigc --help`.
+
+        A blanket "skip a token after every dash-flag" would eat the verb.
+        """
+        self.assertEqual(channels.verb_tokens(["--format", "json", "doc", "list"]),
+                         ["doc", "list"])
+        self.assertEqual(channels.verb_tokens(["--format=json", "doc", "list"]),
+                         ["doc", "list"])
+
+    def test_the_shipped_counter_is_deliberately_not_normalised(self) -> None:
+        """It models `run-session.sh:174`'s grep, which sees the raw JSON line.
+
+        Normalising it here would make the shipped counter look better than it is.
+        """
+        self.assertFalse(channels.is_shipped_adjacent(
+            ["--format", "json", "doc", "list", "--task", "t"]))
+
+
 class AuthoringWrites(unittest.TestCase):
     """What counts as having created a read-back occasion."""
 
@@ -257,8 +402,10 @@ class ChannelPredicates(unittest.TestCase):
     def test_unmeasured_is_not_neither(self) -> None:
         o = observe("x", pathlib.Path("/nonexistent/log.jsonl"), None)
         self.assertTrue(o.log_missing)
-        self.assertEqual(o.outcome, channels.UNMEASURED,
-                         "a missing log has not told us the worker declined to read")
+        verdict = cascade.grade(o)
+        self.assertTrue(verdict.void,
+                        "a missing log has not told us the worker declined to read")
+        self.assertEqual(verdict.outcome, "apparatus — no invocation log")
 
 
 if __name__ == "__main__":

@@ -54,6 +54,8 @@ def project_slug(path: str) -> str:
 
 CONTAINER_SLUG = project_slug(CONTAINER_WORKDIR)
 
+from . import gate as gate_mod
+
 REPO = pathlib.Path(__file__).resolve().parents[3]
 RUN_SESSION = REPO / "completions" / "trial-harness" / "run-session.sh"
 
@@ -98,6 +100,23 @@ class Frozen:
 
 def _sha16(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()[:16]
+
+
+def tree_digest(root: pathlib.Path) -> str:
+    """A content digest of a working tree, ignoring `.git` and the rig's evidence.
+
+    `.git` is excluded because the frozen fixture deliberately carries none, so a
+    restored tree's history comes from the template and can never match byte for
+    byte. What must match is the FILES the seed left behind.
+    """
+    h = hashlib.sha256()
+    skip = _EVIDENCE_NAMES | {".git"}
+    for p in sorted(root.rglob("*")):
+        if not p.is_file() or any(part in skip for part in p.parts):
+            continue
+        h.update(str(p.relative_to(root)).encode())
+        h.update(p.read_bytes())
+    return h.hexdigest()[:16]
 
 
 def _stage_home(stage: pathlib.Path, session_id: str,
@@ -196,9 +215,25 @@ def _drive(corpus: pathlib.Path, out: pathlib.Path, prompt: str, *,
     return rc
 
 
+def _gate_or_say_ungated(gate_record: "Optional[pathlib.Path]", tag: str) -> None:
+    """Refuse an uncovered round, or state plainly that it is ungated.
+
+    One helper for both doors, so `seed` and `fork` cannot come to disagree about
+    what "gated" means. Passing no record is allowed — a rehearsal does not need an
+    isolation proof — but it is never silent, because an ungated round that LOOKS
+    gated is the failure the record exists to prevent.
+    """
+    if gate_record is None:
+        print("  (ungated: no isolation record was supplied for this round)")
+        return
+    ident = gate_mod.gate(gate_record, tag)
+    print(f"  gated against {ident.image_id[:19]}… ({ident.jigc_version})")
+
+
 def seed(corpus: pathlib.Path, turns: Sequence[str], frozen: pathlib.Path, *,
          tag: str = "jigc-gate:rc11", work: Optional[pathlib.Path] = None,
-         strict: bool = False, force: bool = False) -> Frozen:
+         strict: bool = False, force: bool = False,
+         gate_record: "Optional[pathlib.Path]" = None) -> Frozen:
     """Drive `turns` as one conversation, then freeze it.
 
     Seeded **once**, because a conversation regenerated per repetition is a
@@ -209,6 +244,7 @@ def seed(corpus: pathlib.Path, turns: Sequence[str], frozen: pathlib.Path, *,
         raise SystemExit(f"{frozen} exists — pass force=True to re-seed (and record why)")
     if not turns:
         raise SystemExit("refusing: a seed with no turns is not a conversation")
+    _gate_or_say_ungated(gate_record, tag)
 
     work = work or frozen.parent / f"{frozen.name}-work"
     if work.exists():
@@ -274,6 +310,8 @@ def seed(corpus: pathlib.Path, turns: Sequence[str], frozen: pathlib.Path, *,
         "seed_marker": marker,
         "turns": len(turns),
         "corpus_src": str(corpus),
+        # What `fork` fences the restored corpus against.
+        "project_digest": tree_digest(frozen / "project"),
         "tag": tag,
         "permission_mode": "default" if strict else "bypassPermissions",
         "transport": "container",
@@ -289,25 +327,55 @@ def seed(corpus: pathlib.Path, turns: Sequence[str], frozen: pathlib.Path, *,
 
 def fork(fixture: Frozen, prompt: str, out: pathlib.Path, *,
          corpus: pathlib.Path, tag: str = "jigc-gate:rc11",
-         strict: bool = False) -> pathlib.Path:
+         strict: bool = False,
+         allow_tree_drift: bool = False,
+         gate_record: "Optional[pathlib.Path]" = None) -> "tuple[pathlib.Path, int]":
     """Resume the frozen conversation and drive one measured turn.
 
     `corpus` is restored by the caller — the fixture's `project/` holds the tree
     the seed left behind, and history is rebuilt from the template, because the
     frozen copy carries no `.git`.
     """
+    _gate_or_say_ungated(gate_record, tag)
     problems = fixture.verify()
     if problems:
         raise SystemExit("refusing to fork an unverified fixture:\n  "
                          + "\n  ".join(problems))
+
+    # The corpus must be the tree the seed left behind. `Frozen.verify` checks the
+    # CONVERSATION; nothing checked the TREE, so passing the pristine template — or
+    # another arm's corpus — forked a real conversation onto an unrelated project
+    # and scored it normally. The docstring called restoration "the caller's job",
+    # which is an unenforced assumption, which is the thing this package refuses.
+    want = fixture.manifest.get("project_digest")
+    if not want:
+        # Seeds frozen before the digest existed cannot be fenced. Said out loud
+        # rather than skipped quietly: a fence that is silently absent is worse
+        # than no fence, because the round looks fenced.
+        print("  (tree unfenced: this fixture predates `project_digest` — re-seed "
+              "to fence it)")
+    else:
+        got = tree_digest(corpus)
+        if got != want and not allow_tree_drift:
+            raise SystemExit(
+                f"refusing: {corpus} does not match the tree this conversation left "
+                f"behind (digest {got} != frozen {want}).\n"
+                "  Restore it from the fixture's `project/` over a fresh corpus, or "
+                "pass allow_tree_drift=True and say in the record why.")
+        if got != want:
+            print(f"  (tree drift accepted by request: {got} != {want})")
     stage = _stage_home(out.parent / f"{out.name}-stage",
                         fixture.session_id, fixture.transcript)
     rc = _drive(corpus, out, prompt, tag=tag,
                 extra=["--resume", fixture.session_id, "--fork-session"],
                 home=stage, strict=strict)
     if rc != 0:
-        print(f"  (the forked turn exited {rc} — that is data, not necessarily failure)")
-    return out
+        print(f"  (the forked turn exited {rc})")
+    # RETURNED, not merely printed. A printed exit code reaches a human reading a
+    # terminal; the caller needs it to set `rc_failed`, without which cascade row 1
+    # is unreachable through the real fork path and a CLI that died after one
+    # authoring call and one read scores as a clean product result.
+    return out, rc
 
 
 def forked_id(stream: pathlib.Path) -> Optional[str]:
@@ -325,4 +393,21 @@ def forked_id(stream: pathlib.Path) -> Optional[str]:
         got = event.get("session_id")
         if got:
             return str(got)
+    return None
+
+
+def arm_exit_code(out: pathlib.Path) -> "Optional[int]":
+    """The driven arm's own exit code, from the provenance the run wrote.
+
+    `run-session.sh` exits 0 even when the arm fails — deliberately, because for a
+    scripted arm that "is data, not necessarily failure". Any caller that wants to
+    know whether the CLI itself died has to read this, and a caller that does not
+    will score a dead session as a product result.
+    """
+    provenance = out / "PROVENANCE.txt"
+    if not provenance.is_file():
+        return None
+    for line in provenance.read_text().splitlines():
+        if line.startswith("exit-code"):
+            return int(line.split()[1])
     return None

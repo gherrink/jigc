@@ -27,14 +27,61 @@ class TheDefaultCascadeIsWellFormed(unittest.TestCase):
         """
         self.assertEqual(cascade.check_examples(), [])
 
-    def test_apparatus_rows_come_before_scored_rows(self) -> None:
-        """A voided run must never be scored, so no score may outrank a void."""
-        seen_score = False
+    #: Void rows that invalidate the WHOLE run: nothing measured is trustworthy, so
+    #: they must outrank every scored row. Named explicitly rather than derived from
+    #: `void`, because the two kinds of void are genuinely different.
+    RUN_INVALIDATING = {1, 2, 3, 4, 5, 6}
+
+    def test_run_invalidating_rows_come_before_every_scored_row(self) -> None:
+        """The invariant, in its corrected form.
+
+        It first read "no score may outrank a void", which was too strong and broke
+        the moment a second KIND of void arrived. Row 10 voids only the FILESYSTEM
+        channel's evidence, and it sits deliberately BELOW the positive rows so that
+        a session with a VERB result — measured on the invocation log, which is
+        present — is not thrown away because a secondary channel is absent.
+
+        So the real invariant is narrower: a void that invalidates the whole run
+        must precede every score; a void scoped to one channel's evidence need not.
+        """
+        first_score = min(r.n for r in DEFAULT_CASCADE if not r.void)
         for rule in DEFAULT_CASCADE:
-            if not rule.void:
-                seen_score = True
-            elif seen_score:
-                self.fail(f"void row {rule.n} sits below a scored row")
+            if rule.n in self.RUN_INVALIDATING:
+                self.assertTrue(rule.void, f"row {rule.n} should be a void row")
+                self.assertLess(rule.n, first_score,
+                                f"run-invalidating row {rule.n} sits below a score")
+
+    def test_every_void_row_is_either_run_invalidating_or_evidence_scoped(self) -> None:
+        """No third kind may appear without this test being revisited."""
+        evidence_scoped = {r.n for r in DEFAULT_CASCADE
+                           if r.void and r.n not in self.RUN_INVALIDATING}
+        self.assertEqual(evidence_scoped, {10},
+                         "a new void row needs a stated kind, not a silent one")
+
+
+class ThereIsOnlyOneScoringPath(unittest.TestCase):
+    """A regression fence, from a defect this package actually shipped.
+
+    `Observation` once carried an `outcome` property that re-implemented the
+    cascade's ordering privately. It knew nothing about `authoring_writes`,
+    `seed_inherited` or `rc_failed`, so on the first live strict arm it returned
+    `NEITHER` — a claim about the worker — while the cascade correctly voided the
+    run as `unmeasured — no authoring occasion existed`.
+
+    That is precisely what this module's docstring says cannot happen ("there is no
+    second place where a row can be applied"), so the absence is asserted rather
+    than trusted.
+    """
+
+    def test_an_observation_carries_facts_and_does_not_score(self) -> None:
+        self.assertFalse(hasattr(_obs(), "outcome"),
+                         "scoring belongs to cascade.grade(), in one list")
+
+    def test_the_shape_that_disagreed_is_voided(self) -> None:
+        """13 records, nothing authored — the live strict arm, in miniature."""
+        verdict = grade(_obs(records=13, authoring_writes=0))
+        self.assertTrue(verdict.void)
+        self.assertNotEqual(verdict.outcome, "proceeded without reading")
 
 
 class NoSilentBranch(unittest.TestCase):
@@ -105,6 +152,47 @@ class UnmeasuredIsNotNeither(unittest.TestCase):
         self.assertEqual(r.outcome, "read back through the fence's verb")
 
 
+class MissingEvidenceIsNotAVerdict(unittest.TestCase):
+    """Findings 1 and 2 of the cross-model review, as fences.
+
+    Both are the same shape: an apparatus failure reaching a row that makes a claim
+    about the worker.
+    """
+
+    def test_a_dead_cli_voids_even_with_a_clean_looking_log(self) -> None:
+        """Finding 1: the CLI exits 1 after one authoring call and one read.
+
+        The log survives and looks perfect. Before the fix, `do_fork` never set
+        `rc_failed`, so row 1 was unreachable through the real fork path and this
+        scored as `read back through the fence's verb`.
+        """
+        verdict = grade(_obs(rc_failed=True, records=12, authoring_writes=1, verb=1))
+        self.assertTrue(verdict.void)
+        self.assertEqual(verdict.outcome, "apparatus — the session did not run")
+
+    def test_a_missing_transcript_cannot_become_neither(self) -> None:
+        """Finding 2: NEITHER claims the worker read nothing ANYWHERE.
+
+        That needs both channels looked at, and FILESYSTEM lives only in the
+        transcript. With none, `filesystem == 0` because nothing was read, not
+        because nothing happened.
+        """
+        verdict = grade(_obs(authoring_writes=1, verb=0, adjacent=0,
+                             filesystem=0, transcript_missing=True))
+        self.assertTrue(verdict.void)
+        self.assertIn("no transcript", verdict.outcome)
+
+    def test_but_a_verb_result_survives_a_missing_transcript(self) -> None:
+        """The claim's own channel is the invocation log, which is present.
+
+        Voiding a good measurement because a secondary channel is absent would
+        throw away exactly what the trial is for.
+        """
+        verdict = grade(_obs(authoring_writes=1, verb=3, transcript_missing=True))
+        self.assertFalse(verdict.void)
+        self.assertEqual(verdict.outcome, "read back through the fence's verb")
+
+
 class RegistrationCorrespondence(unittest.TestCase):
     def test_the_code_matches_a_table_generated_from_it(self) -> None:
         table = "\n".join(
@@ -127,6 +215,21 @@ class RegistrationCorrespondence(unittest.TestCase):
         problems = cascade.check_registration(table)
         self.assertTrue(problems)
         self.assertTrue(any("position 1" in p for p in problems))
+
+    def test_a_table_inside_a_code_fence_does_not_certify(self) -> None:
+        """Finding 10: the regex scans lines, not Markdown.
+
+        An exact copy of an old table inside a ```fence``` was indistinguishable
+        from the live one, so the check could pass while the operative table said
+        something else — or had been deleted.
+        """
+        real = "\n".join(f"| {r.n} | `{r.outcome}` | {'void' if r.void else 'score'} |"
+                          for r in DEFAULT_CASCADE)
+        fenced_only = "Here is how the table used to look:\n\n```\n" + real + "\n```\n"
+        self.assertTrue(cascade.check_registration(fenced_only),
+                        "a table that is only an example must not certify")
+        self.assertEqual(cascade.check_registration(real), [],
+                         "the live table still does")
 
     def test_an_unregistered_cascade_is_refused(self) -> None:
         self.assertIn("registers no outcome table",

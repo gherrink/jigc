@@ -9,7 +9,12 @@ that shape:
     discipline of exactly the kind that let two apparatus defects reach
     publication.
 
-So the record is *read*, and a round that is not covered by one is refused.
+So the record is *read*, and a round that is not covered by one is refused —
+**by whatever calls `gate()`**. That last clause is load-bearing and was missing
+from an earlier version of this sentence, which claimed the property outright while
+nothing in a measuring path called it. `session.seed` and `session.fork` take a
+`gate_record` and refuse when it does not cover the image; `run.py --gate` passes
+one. A round driven without that argument is **ungated**, and says so.
 
 **Keyed on the image ID, never the tag.** A tag is mutable; a rebuild under the
 same tag is a different image, and `build-image.sh` bakes `JIGC_SHA` precisely

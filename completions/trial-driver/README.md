@@ -105,6 +105,25 @@ session outcomes. Confirming or refuting a claim, writing repro blocks, and citi
 refuses that automation by name, on the grounds that *a symbol-existence parser
 would be a finder wearing a fence's badge*.
 
+**It was reviewed twice, and the review found more than the driving did.** A
+self-review found one defect; an independent cross-model review (Codex) found ten,
+five of them able to turn apparatus failure, missing evidence, a failed read or the
+wrong fixture tree into a clean product verdict. Every one was checked against the
+code before being accepted — one was already fixed in the worktree, and the reviewer
+said so itself. The headline five:
+
+- **a dead CLI scored as a product result** — `fork()` printed the arm's exit code
+  and never returned it, so cascade row 1 was unreachable through the real path;
+- **a missing transcript became `NEITHER`** — a claim that the worker read nothing
+  anywhere, made with the FILESYSTEM channel unread;
+- **failed reads counted as read-backs** — `rosewater`'s registered 7 contains two
+  `doc show --task` calls that exited 1. Both counts now ship, because which one is
+  meant is the protocol's call, not the reader's;
+- **leading global flags hid every structured channel** — `jigc --format json doc
+  show … --task …` is accepted, logged verbatim, and matched nothing;
+- **every headless run orphaned a container holding the OAuth token** — `--headless`
+  fell through the `else` branch first. Eleven had accumulated.
+
 **Every module here was corrected by driving it.** Not one of the defects below was
 found by reading: the shadowed cascade row (by `check_examples()`), the missing
 `unmeasured` row and `doc author --help` (by the first live arm), the unreadable

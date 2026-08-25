@@ -11,8 +11,19 @@ The operator's job in a blind session is small but unforgiving. From
 
 That last one was missed once in the 1.0.0-gate trial and had to be recovered
 from a transcript afterwards, and the recovery **changed how a headline finding
-read**: an apparent adapter bypass turned out to be operator-approved. So the log
-is written here as a side effect of replying, not as a discipline.
+read**: an apparent adapter bypass turned out to be operator-approved.
+
+**What this module is, stated exactly.** It is the *mechanism* a driving loop
+composes: `answer()` has two branches and no third, `screen()` refuses rather than
+warns, and `OperatorLog.record()` writes as it happens. **No such loop ships in
+this package** — a headless `-p` turn has no channel to inject a reply into, so
+there is nothing here to drive one from, and the composition is deliberately left
+until a real trial protocol shapes it.
+
+Read that as the limit it is: nothing in this package currently guarantees that a
+reply reached a worker through `answer()`. An operator replying by another route
+gets no screen and no log entry. The guarantee is available to a caller that uses
+these functions, and it is not a property of the apparatus as a whole.
 
 **What a halt actually looks like, measured.** A headless turn that needs the
 operator ends at exit **0**, `subtype: success`, `is_error: false`, with an empty

@@ -105,10 +105,30 @@ DEFAULT_CASCADE: tuple[Rule, ...] = (
     Rule(8, "read back through jigc, by another verb", False,
          lambda o: o.adjacent > 0,
          _obs(authoring_writes=1, adjacent=1)),
-    Rule(9, "read around jigc, off the filesystem", False,
+    # The only row scored from the transcript, and the only one whose evidence is a
+    # heuristic. `observe.filesystem_reads` returns what it matched precisely so a
+    # human can check the call, and the outcome NAME carries that — a row title is
+    # what lands in a trial record, and "read around jigc" stated flatly would give
+    # a heuristic the authority of the two channels read from the invocation log.
+    # `Observation.filesystem_is_heuristic` exists to make this un-forgettable; this
+    # is the thing that reads it.
+    Rule(9, "read around jigc, off the filesystem (heuristic — verify the reads)",
+         False,
          lambda o: o.filesystem > 0,
          _obs(authoring_writes=1, filesystem=1)),
-    Rule(10, "proceeded without reading", False,
+    # A NEITHER verdict is the claim "the worker read nothing, anywhere". That
+    # requires BOTH channels to have been looked at, and the FILESYSTEM channel
+    # lives only in the transcript. With no transcript, `filesystem` is 0 because
+    # nothing was read, not because nothing happened — so the run would otherwise
+    # reach row 11 and assert something no evidence supports.
+    #
+    # Placed AFTER the three positive rows on purpose: a session with a VERB result
+    # is fully measured on the channel that carries the claim, and voiding it for a
+    # missing transcript would throw away a good measurement.
+    Rule(10, "unmeasured — no transcript, so the filesystem channel is blind", True,
+         lambda o: o.transcript_missing,
+         _obs(authoring_writes=1, transcript_missing=True)),
+    Rule(11, "proceeded without reading", False,
          lambda o: True,
          _obs(authoring_writes=1)),
 )
@@ -171,8 +191,19 @@ def check_registration(protocol_text: str,
         | 1 | `apparatus — the session did not run` | void |
         | 6 | `read back through the fence's verb`  | score |
     """
+    # Fenced blocks are stripped first. The regex scans lines, not Markdown, so an
+    # exact copy of an old table inside a ```example``` fence was indistinguishable
+    # from the live one — and would certify agreement while the operative table said
+    # something else, or had been deleted entirely.
+    body, fenced, out = protocol_text, False, []
+    for line in body.splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if not fenced:
+            out.append(line)
     registered = [(int(n), outcome, kind == "void")
-                  for n, outcome, kind in _ROW.findall(protocol_text)]
+                  for n, outcome, kind in _ROW.findall("\n".join(out))]
     if not registered:
         return ["the protocol registers no outcome table (no matching rows found)"]
     coded = [(r.n, r.outcome, r.void) for r in cascade]

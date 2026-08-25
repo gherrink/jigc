@@ -97,7 +97,11 @@ def do_observe(args: argparse.Namespace) -> int:
         log, transcript = _find(out)
         stream = out / "stream.jsonl"
         halted, why = halted_awaiting_human(stream)
-        o = observe(out.name, log, transcript, halted_for_human=halted)
+        # The CLI's own exit code, not run-session.sh's — it exits 0 on a failed arm
+        # by design, so without this a dead session scores as a product result.
+        arm_rc = session_mod.arm_exit_code(out)
+        o = observe(out.name, log, transcript, halted_for_human=halted,
+                    rc_failed=bool(arm_rc))
         print(_row(o))
         if halted:
             # The turn ended at exit 0, `subtype: success`, `is_error: false`.
@@ -105,8 +109,10 @@ def do_observe(args: argparse.Namespace) -> int:
             # is why the process exit code cannot be the completion signal.
             print(f"  HALTED awaiting the operator — {why}")
         if o.log_missing:
-            print(f"  ! no invocation log at {log} — outcome is "
-                  f"{channels.UNMEASURED}, not {channels.NEITHER}", file=sys.stderr)
+            # The cascade has already voided this row and the table says so; this
+            # line adds the path, which the outcome name cannot carry. It must not
+            # restate the verdict — that was the duplicate-scoring defect.
+            print(f"  ! no invocation log at {log}", file=sys.stderr)
             rc = 1
         if o.transcript_missing:
             print("  ! no transcript — the FILESYSTEM channel is unmeasured "
@@ -161,7 +167,8 @@ def do_seed(args: argparse.Namespace) -> int:
     fixture = session_mod.seed(
         pathlib.Path(args.corpus).expanduser().resolve(), turns,
         pathlib.Path(args.frozen).expanduser().resolve(),
-        tag=args.tag, force=args.force)
+        tag=args.tag, force=args.force,
+        gate_record=pathlib.Path(args.gate).expanduser().resolve() if args.gate else None)
     print(f"frozen at {fixture.root}")
     print(f"  session {fixture.session_id}")
     print(f"  sha     {fixture.manifest['session_sha']}")
@@ -178,16 +185,19 @@ def do_fork(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
     out = pathlib.Path(args.out).expanduser().resolve()
-    session_mod.fork(fixture, pathlib.Path(args.prompt).read_text(), out,
-                     corpus=pathlib.Path(args.corpus).expanduser().resolve(),
-                     tag=args.tag, strict=args.strict)
+    _, arm_rc = session_mod.fork(
+        fixture, pathlib.Path(args.prompt).read_text(), out,
+        corpus=pathlib.Path(args.corpus).expanduser().resolve(),
+        tag=args.tag, strict=args.strict,
+        gate_record=pathlib.Path(args.gate).expanduser().resolve() if args.gate else None)
     stream = out / "stream.jsonl"
     new = session_mod.forked_id(stream)
     log = out / ".jigc" / "logs" / "invocations.jsonl"
     transcript = session_mod._find_transcript(out, new) if new else None
     halted, why = halted_awaiting_human(stream)
     o = observe(out.name, log, transcript, seed_expected=True,
-                seed_marker=fixture.seed_marker, halted_for_human=halted)
+                seed_marker=fixture.seed_marker, halted_for_human=halted,
+                rc_failed=arm_rc != 0)
     _header()
     print(_row(o))
     if not o.seed_inherited:
@@ -259,6 +269,7 @@ def main(argv: list[str] | None = None) -> int:
     p_seed.add_argument("frozen")
     p_seed.add_argument("--tag", default="jigc-gate:rc11")
     p_seed.add_argument("--force", action="store_true")
+    p_seed.add_argument("--gate", help="an isolation record this round must be covered by")
     p_seed.set_defaults(fn=do_seed)
 
     p_fork = sub.add_parser("fork", help="resume a frozen conversation for one turn")
@@ -269,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
     p_fork.add_argument("--tag", default="jigc-gate:rc11")
     p_fork.add_argument("--strict", action="store_true",
                         help="--strict-permissions: the adopter's real condition")
+    p_fork.add_argument("--gate", help="an isolation record this round must be covered by")
     p_fork.set_defaults(fn=do_fork)
 
     p_plant = sub.add_parser("plant", help="wait for a plant's state, then fire it")

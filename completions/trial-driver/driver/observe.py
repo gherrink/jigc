@@ -32,7 +32,7 @@ import datetime as _dt
 import json
 import pathlib
 import re
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from . import channels
 
@@ -154,6 +154,22 @@ class Observation:
     #: session, where `seed_inherited` is meaningless and must not void anything.
     seed_expected: bool = False
 
+    #: VERB / VERB-ADJACENT calls that actually SUCCEEDED.
+    #:
+    #: `verb` counts what §3.3 registers — "`jigc doc show … --task …` **appears in
+    #: the invocation log**" — which is appearances, not successes. Two archived
+    #: sessions contain a failed `doc show … --task` (rosewater ×2, b3-bypass ×2),
+    #: and the 1.0.0-gate record counts them, so `verb` must too or the reader stops
+    #: reproducing the table it is checked against.
+    #:
+    #: But a failed read returns no document bytes, so counting it as a read-back is
+    #: a different measurement wearing the same name. Both are carried, the gap is
+    #: reported, and **the choice is the protocol's, not the reader's** — exactly as
+    #: with `adjacent_counter_gap`. A reader that quietly redefined a registered
+    #: measurement would be the failure this package exists to prevent.
+    verb_succeeded: int = 0
+    adjacent_succeeded: int = 0
+
     #: Successful doc-authoring writes. Zero means **no read-back occasion ever
     #: existed**, which §3.3 keeps distinct from NEITHER: "The session never reached
     #: an authoring step — no occasion existed; unmeasured, not NEITHER." Found
@@ -173,27 +189,28 @@ class Observation:
     #: looks identical, which is what makes a dead fixture yield a plausible arm.
     seed_inherited: bool = True
 
+    # NOTE: there is deliberately no `outcome` property here.
+    #
+    # There was one, and it was a genuine defect of exactly the kind `cascade.py`
+    # claims to have designed out: "there is no second place where a row can be
+    # applied". It WAS that second place — a private re-implementation of the
+    # cascade's ordering that knew nothing about `authoring_writes`,
+    # `seed_inherited` or `rc_failed`, so it scored the first live strict arm as
+    # `NEITHER` (a claim about the worker) while the cascade correctly voided it as
+    # `unmeasured — no authoring occasion existed`.
+    #
+    # An Observation is now facts only. Scoring belongs to `cascade.grade()`, in
+    # one list, in the registered order — which is the whole reason that module
+    # exists.
+
     @property
-    def outcome(self) -> str:
-        """The session's §3.3 outcome, first match wins, in the registered order.
+    def failed_reads(self) -> int:
+        """VERB calls that appear in the log but returned no document.
 
-        VERB outranks FILESYSTEM deliberately: §3.3 scores a session that did both
-        as VERB "for the claim, and flagged separately". The flag is
-        `filesystem` being non-zero, which stays readable beside the outcome.
-
-        Returns `unmeasured` where there is no evidence to score — §3.3 keeps that
-        distinct from NEITHER, because a session whose log is missing has not told
-        us it declined to read.
+        Non-zero means the registered count and the "a read-back happened" reading
+        of it disagree for this session. Reported, never resolved here.
         """
-        if self.log_missing or self.log_unreadable:
-            return channels.UNMEASURED
-        if self.verb:
-            return channels.VERB
-        if self.adjacent:
-            return channels.VERB_ADJACENT
-        if self.filesystem:
-            return channels.FILESYSTEM
-        return channels.NEITHER
+        return self.verb - self.verb_succeeded
 
     @property
     def adjacent_counter_gap(self) -> int:
@@ -224,7 +241,8 @@ def _is_authoring(argv: list[str]) -> bool:
     """
     if any(a in ("--help", "-h") for a in argv):
         return False
-    return any(tuple(argv[:2]) == p for p in _AUTHORING)
+    v = channels.verb_tokens(argv)
+    return any(tuple(v[:2]) == p for p in _AUTHORING)
 
 
 def _parse_ts(raw: str) -> _dt.datetime:
@@ -291,13 +309,35 @@ def _tool_uses(path: pathlib.Path) -> Iterable[tuple[str, dict]]:
                 yield str(block.get("name")), (block.get("input") or {})
 
 
+#: Roughly, a filesystem path inside a shell word. Used to test hints and
+#: exclusions PER PATH rather than against a whole command, which is the difference
+#: between "this segment mentions a worktree" and "every path in it is a worktree".
+_PATHISH = re.compile(r"[^\s'\"|;&<>()]*/[^\s'\"|;&<>()]*")
+
+
 def _looks_managed(text: str) -> Optional[str]:
-    """The hint this text matched, or None. Exclusions win over hints."""
-    if any(x in text for x in MANAGED_PATH_EXCLUSIONS):
-        return None
-    for hint in MANAGED_PATH_HINTS:
-        if hint in text:
-            return hint
+    """The hint a managed path in `text` matched, or None.
+
+    Exclusions are applied **per path, not per segment.** Testing the whole string
+    meant one excluded path suppressed every other path beside it, so
+
+        grep -n "cap" /work/docs/decisions/x.md /work/.jigc/worktrees/t/src/a.ts
+
+    scored as no managed read at all — a false NEGATIVE on the channel §3.3 says
+    must not be flattered. Found by the cross-model review, not by a failing test.
+    """
+    candidates = [w for w in _PATHISH.findall(text) if w]
+    # A bare filename with no slash (`cat CHANGELOG.md`) has no path-ish token, so
+    # fall back to the whole string — but only when nothing path-ish was found at
+    # all, or the fallback would reintroduce exactly the bug above.
+    if not candidates:
+        candidates = [text]
+    for candidate in candidates:
+        if any(x in candidate for x in MANAGED_PATH_EXCLUSIONS):
+            continue
+        for hint in MANAGED_PATH_HINTS:
+            if hint in candidate:
+                return hint
     return None
 
 
@@ -363,8 +403,12 @@ def observe(session: str, log: pathlib.Path,
         except (ValueError, KeyError):
             log_unreadable = True
 
-    verb_lines = tuple(r.line for r in records if channels.is_verb(list(r.argv)))
-    adj_lines = tuple(r.line for r in records if channels.is_adjacent(list(r.argv)))
+    verb_recs = [r for r in records if channels.is_verb(list(r.argv))]
+    adj_recs = [r for r in records if channels.is_adjacent(list(r.argv))]
+    verb_lines = tuple(r.line for r in verb_recs)
+    adj_lines = tuple(r.line for r in adj_recs)
+    verb_ok = sum(1 for r in verb_recs if r.exit_code == 0)
+    adj_ok = sum(1 for r in adj_recs if r.exit_code == 0)
     shipped = sum(1 for r in records if channels.is_shipped_adjacent(list(r.argv)))
 
     transcript_missing = transcript is None or not transcript.is_file()
@@ -379,6 +423,8 @@ def observe(session: str, log: pathlib.Path,
                      and seed_marker in transcript.read_text(errors="replace"))
 
     return Observation(
+        verb_succeeded=verb_ok,
+        adjacent_succeeded=adj_ok,
         authoring_writes=authoring,
         halted_for_human=halted_for_human,
         rc_failed=rc_failed,
@@ -433,3 +479,40 @@ def halted_awaiting_human(stream: pathlib.Path) -> tuple[bool, str]:
         return False, ""
     tools = sorted({str(d.get("tool_name")) for d in denials})
     return True, f"{len(denials)} denial(s) on {', '.join(tools)}: {result[:160]}"
+
+
+def windows(records: "list[Invocation]",
+            opens: "Callable[[Invocation], bool]",
+            closes: "Callable[[Invocation], bool]") -> "list[tuple[Invocation, Invocation, float, float]]":
+    """Every `(open, close, seconds, longest_silence)` interval in a session.
+
+    `cue-card-postmortem.md` §2 is a table of exactly this shape — the interval
+    between a trigger and the `task finalize` that closed the doc's staged life,
+    and the longest gap inside it — and it says in its own header that it was
+    "reconstructed from `<corpus>/.jigc/logs/invocations.jsonl` in each archived
+    corpus", by hand, after the trial.
+
+    That table is what established the instrument was impossible rather than
+    mistimed (11-19 seconds, longest silence 4-17). Computing it is four lines and
+    the answer decides whether a designed occasion is worth building at all, so it
+    should not wait for a post-mortem.
+
+    `longest_silence` is the largest gap between consecutive invocations inside the
+    window — the actual room an operator had, which is smaller than the window
+    whenever the worker was busy.
+    """
+    out = []
+    for i, rec in enumerate(records):
+        if not opens(rec):
+            continue
+        for j in range(i + 1, len(records)):
+            if not closes(records[j]):
+                continue
+            span = records[i:j + 1]
+            gaps = [(b.timestamp - a.timestamp).total_seconds()
+                    for a, b in zip(span, span[1:])]
+            out.append((rec, records[j],
+                        (records[j].timestamp - rec.timestamp).total_seconds(),
+                        max(gaps) if gaps else 0.0))
+            break
+    return out
