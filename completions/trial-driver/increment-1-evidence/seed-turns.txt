@@ -1,0 +1,2 @@
+Read src/store.ts and tell me in one sentence what MemoryStore does. Change nothing.
+We have decided the store must evict the oldest series once it hits a cap of 500. Treat that as settled; do not implement it yet.

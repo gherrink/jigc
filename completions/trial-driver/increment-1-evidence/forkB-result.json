@@ -1,0 +1,10 @@
+[
+  {
+    "type": "result",
+    "subtype": "success",
+    "is_error": false,
+    "num_turns": 2,
+    "session_id": "57f1b689-9c33-44ce-b5f3-ba20e8ef708b",
+    "result": "We settled that once the store hits 500 distinct series, it evicts the oldest (least-recently-updated) series to make room for a new one."
+  }
+]

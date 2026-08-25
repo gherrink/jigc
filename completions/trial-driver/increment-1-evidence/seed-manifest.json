@@ -1,0 +1,11 @@
+{
+  "session_id": "11880526-4c77-42d3-90d8-611482f63d6e",
+  "project_slug": "-work",
+  "session_sha": "1f257da6e2d0f766",
+  "seed_marker": "Read src/store.ts and tell me in one sentence what MemoryStore does. Change nothing.",
+  "turns": 2,
+  "corpus_src": "/private/tmp/claude-501/-Users-maurice-projects-gherrink-jigc/3517f4d4-f5ec-476d-96c1-8490897fb22b/scratchpad/millrace",
+  "tag": "jigc-gate:rc11",
+  "permission_mode": "bypassPermissions",
+  "transport": "container"
+}
