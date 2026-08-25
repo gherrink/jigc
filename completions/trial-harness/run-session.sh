@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# run-session.sh [--shell|--exec F|--headless] [--strict-permissions] <corpus-dir> <out-dir> [tag]
+# run-session.sh [--shell|--exec F|--headless] [--strict-permissions] [--cid-file P]
+#                <corpus-dir> <out-dir> [tag]
 #
 # Drive ONE session in isolation.
 #
@@ -22,6 +23,7 @@ EXEC_FILE=""
 PROMPT_FILE=""
 HOME_DIR=""
 EXTRA=()
+CID_FILE=""
 # A headless turn has no terminal, so its stdout IS the stream-json transcript and
 # its stderr is the only place a CLI-level failure appears. Captured to temps and
 # moved into $OUT after copy_out, because $OUT must not exist when the run starts.
@@ -50,6 +52,11 @@ while true; do
     # Appended to the `claude` command line, in order. Carries --session-id /
     # --resume / --fork-session without this script needing to know about them.
     --arg)                EXTRA+=("${2:?--arg needs a value}"); shift 2 ;;
+    # Where to write the container id, as soon as it exists. A mid-stream plant has
+    # to reach INTO the live container, and the id is printed to a terminal nobody
+    # is watching on an unattended run. Written before `docker start`, so a poller
+    # can be waiting before the session has done anything.
+    --cid-file)           CID_FILE="${2:?--cid-file needs a path}"; shift 2 ;;
     --strict-permissions) PERMISSION_MODE=default; shift ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) break ;;
@@ -182,6 +189,7 @@ docker cp "$CORPUS/." "$CID:/work/" >/dev/null
 # CLI sees neither the transcript nor anything else staged.
 [ -n "$HOME_DIR" ] && docker cp "$HOME_DIR/.claude" "$CID:/home/node/" >/dev/null
 
+if [ -n "$CID_FILE" ]; then mkdir -p "$(dirname "$CID_FILE")"; printf '%s\n' "$CID" > "$CID_FILE"; fi
 echo "container  : $CID"
 # -u node is required, not cosmetic: `docker exec` bypasses the ENTRYPOINT's gosu, so it
 # lands as root, and every git call in /work then dies on "detected dubious ownership".
