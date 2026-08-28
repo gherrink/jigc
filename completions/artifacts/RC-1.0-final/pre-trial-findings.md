@@ -63,3 +63,55 @@ not score it as the latter.
 
 Recorded here because it was observed **before** the trial, by workers who were not being asked
 about it, which is a cleaner observation than the same thing surfacing inside a scored arm.
+
+---
+
+## PT-C · The router's closing claim is true only under a definition the surface never states
+
+**Status: observation, deliberately not adjudicated.** It re-opens M46 Increment 8's own audit
+finding, which is why it is written carefully rather than filed as a defect.
+
+The composed router view closes with:
+
+> That catalog is the selectable subset. A workflow outside it is reached by name with the same
+> `--workflow` form — `jigc describe --workflows` lists every workflow, hidden ones included,
+> **and each hidden one carries the reason it is hidden.**
+
+Measured against `1.0.0-rc.12`, by deriving the population from the shipped binary rather than
+from the source (`arms/walk/09-increment-8-doors.sh`):
+
+```
+catalog: 12 selectable · absent: 21 · of those, WITHOUT a stated reason: 3
+without a reason: increment, ingest-existing, router
+```
+
+**Those three are exactly the `creates-task: false` workflows** — which is precisely the set
+M46's completion audit named when it caught this sentence's predecessor overclaiming
+(*"each with the reason it sits off the catalog"* is false for them, because M43's `suppressed:`
+fence binds only `selectable: false`). That finding was fixed as a law-1 scope repair, at a cost
+of 18 goldens.
+
+**Both readings, stated fairly:**
+
+- **The sentence is fine.** The catalog is *"the available work-workflows"*. A
+  `creates-task: false` workflow is not a work-workflow, so it is not *hidden* from the catalog
+  — it was never a candidate for it. Under this reading "hidden" means `selectable: false`,
+  every member of that set does carry its reason, and the claim holds exactly.
+- **The sentence still overclaims.** A reader has just been shown a catalog and told that
+  `describe --workflows` lists *"every workflow, hidden ones included"*. The natural referent of
+  "hidden" is *absent from what I was just shown*. Under that reading three are hidden without a
+  reason, and the repaired sentence has the same defect its predecessor had, one definition
+  further back.
+
+**What decides it is not in the output.** Nothing on either surface defines "hidden", so the
+sentence's truth depends on a distinction the reader has no way to make. That is the honest
+finding here — not that the claim is false, but that **it cannot be checked by the person it is
+addressed to.**
+
+Under [protocol.md](protocol.md) §1 this is at most a surface finding and would ship recorded.
+It is logged now because the trial should meet it as a known measurement rather than
+re-derive it, and because a blind session that trips over it will produce a *complaint*, and the
+record will need this to tell a real defect from a definitional one.
+
+**Reached by:** `arms/walk/09-increment-8-doors.sh` T6, which prints the derivation and
+explicitly declines to score it.
