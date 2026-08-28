@@ -137,6 +137,39 @@ arm needs no human, and is not treated as a substitute where an arm does.
 That gives the headline **N=2 across two transports**, which is a check on the new measurement
 rather than a bet on increment 0's n=1 on the old one.
 
+### Revised 2026-08-28, BEFORE the substituted sessions ran, with the cost stated
+
+**B1 and B2 were run headless instead of interactive.** This is a change to a pre-registered
+instrument, and it is recorded here in the shape §2's own isolation change was — before the runs,
+with what it forfeits — rather than explained afterwards.
+
+**What forced it.** Both arms were specified interactive because a *human* is required: B1 to
+deliver plant F's correction into the pause the hook creates, B2 so the transport does not move
+under the headline. No operator was available for this pass.
+
+**What the substitution costs, stated plainly:**
+
+- **The headline drops from N=2 across two transports to N=2 on one transport.** The
+  cross-transport check the original design bought is forfeited. What remains is a replication,
+  not a control.
+- **Plant F's utterance is not delivered at all.** R2 pre-registered this branch: the arm
+  **converts to observation-only**. The hook still plants and is still met — that is worth
+  reaching — but nothing is scored on an utterance that was never sent, and `doc rename` on B1
+  is reached by nothing.
+- **B1's answer-key path is untested.** A headless worker cannot be answered, so the key's six
+  entries remain exercised only against probe questions, never against a live session.
+
+**What makes the substitution defensible rather than merely convenient.** Plant E has now run
+headless three times (R1, R1b, B3) and been fully consumed in all three, so the *plant* is not
+what the transport puts at risk. And a headless question is not a silent branch: it ends the turn
+and is scored as a stop by `ended_asking`, which exists because R2 found the exact-detector blind
+to it.
+
+**What is still owed, and it is not cancelled by this.** An interactive B2 remains the stronger
+measurement, and an interactive B1 is the *only* way plant F's correction is delivered. Both
+should be run when an operator is available; the trial record must present the headline as
+**same-transport N=2** until then.
+
 **Why B3-strict is unscored, stated in advance.** Increment 0 drove it and it **truncated the
 arc**: 13 records, 0 authoring writes, `unmeasured`. All 13 jigc invocations executed and all 7
 denials were file writes — `jigc setup`'s `Bash(jigc:*)` allowlist is honoured, so the arm
