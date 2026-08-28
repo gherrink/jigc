@@ -1,0 +1,8 @@
+image        jigc-gate:rc12
+jigc-version jigc 1.0.0-rc.12
+jigc-sha     314f59ecc1c32c0ccf16685b83f2797fd2e13fc2
+model        claude-sonnet-5
+permissions  default
+corpus-src   /Users/maurice/ideas/stonecross-strict
+session-start 2026-08-28T07:26:58Z
+exit-code    0

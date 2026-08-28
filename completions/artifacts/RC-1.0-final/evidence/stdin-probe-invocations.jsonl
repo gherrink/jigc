@@ -1,0 +1,8 @@
+{"timestamp":"2026-08-28T07:56:03Z","argv":["validate","--format","json"],"exit_code":0,"duration_ms":21,"finding_codes":[],"output_bytes":112,"binary_version":"1.0.0-rc.12","error_code":null}
+{"timestamp":"2026-08-28T07:56:03Z","argv":["config","get","invocation-log"],"exit_code":0,"duration_ms":10,"finding_codes":[],"output_bytes":33,"binary_version":"1.0.0-rc.12","error_code":null}
+{"timestamp":"2026-08-28T07:56:04Z","argv":["start","--workflow","record-decision","probe"],"exit_code":0,"duration_ms":16,"finding_codes":[],"output_bytes":5786,"binary_version":"1.0.0-rc.12","error_code":null}
+{"timestamp":"2026-08-28T07:56:04Z","argv":["task","list"],"exit_code":0,"duration_ms":8,"finding_codes":[],"output_bytes":144,"binary_version":"1.0.0-rc.12","error_code":null}
+{"timestamp":"2026-08-28T07:56:12Z","argv":["start"],"exit_code":0,"duration_ms":12,"finding_codes":[],"output_bytes":2114,"binary_version":"1.0.0-rc.12","error_code":null}
+{"timestamp":"2026-08-28T07:56:15Z","argv":["--version"],"exit_code":0,"duration_ms":9,"finding_codes":[],"output_bytes":17,"binary_version":"1.0.0-rc.12","error_code":null}
+{"timestamp":"2026-08-28T07:56:17Z","argv":["doc","create","adr","--title","Probe one","--task","probe"],"exit_code":0,"duration_ms":16,"finding_codes":[],"output_bytes":14,"binary_version":"1.0.0-rc.12","error_code":null}
+{"timestamp":"2026-08-28T07:56:19Z","argv":["doc","set-slot","adr:probe-one#context","--from-file","-","--task","probe"],"exit_code":0,"duration_ms":11,"finding_codes":[],"output_bytes":42,"binary_version":"1.0.0-rc.12","error_code":null}
