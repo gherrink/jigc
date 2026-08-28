@@ -1271,7 +1271,12 @@ fn hand_repair_sanction() -> String {
 /// already exists here. So it is lifted out of its one consumer rather than retyped into
 /// the second — the M48 Inc 4 / T2 lesson, applied to its own const: two producers agreeing
 /// is not two producers sharing a source.
-const OUT_OF_BAND_SANCTION: &str =
+///
+/// A **fourth** producer joined at M49 Inc 1 / T3, one layer down: the parser's
+/// `conformance.duplicate-field` route ([`crate::parse`]) — a repeated declared field line
+/// is repaired by deleting it, which is a hand edit of a managed file for exactly this
+/// reason.
+pub(crate) const OUT_OF_BAND_SANCTION: &str =
     "the damage was made out-of-band, so it is repaired where it happened";
 
 /// The blocking **conformance-block** finding (`reconciliation.md` → OOB edit →

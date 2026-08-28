@@ -66,7 +66,7 @@ use std::ops::Range;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 
-use crate::finding::{Finding, Location};
+use crate::finding::{Finding, Location, Severity};
 use crate::schema::{Schema, SectionBody};
 
 /// A parsed document instance: the schema's sections, in document order, each with
@@ -724,6 +724,38 @@ fn unknown_field_message(key: &str, declared: &[String]) -> String {
     format!("unknown field key `{key}`{suggestion}")
 }
 
+/// The **repeated declared key** message (M49 Inc 1 T3). A declared field carries
+/// exactly one value, so a second line for one key is a defect the reader cannot
+/// adjudicate: the schema says which key, never which of the two values.
+///
+/// Its sibling one function up reports a repeated *undeclared* key; a repeated
+/// **declared** one had no check at all — `read_field_block_str` pushed every repeat into
+/// the parsed field list unchecked, so three values on a `0..1` enum were conformant to
+/// the tool and the pinned `doc show --format json` returned whichever `find` reached
+/// first, silently (`DECISIONS.md` → 2026-08-28 M49 Increment 1 planning: decomposition,
+/// T3).
+fn duplicate_field_message(key: &str) -> String {
+    format!(
+        "field `{key}` appears more than once in this field group — a declared field \
+         carries exactly one value, and which one this is cannot be read from the schema"
+    )
+}
+
+/// The repeated-key **route**. `conformance.*` is route-**exempt**, not route-forbidden
+/// ([`crate::finding::is_route_exempt`]) — the exemption covers diagnostics for which any
+/// route would be a guess — and this one is not a guess: the repair is to delete the
+/// stray line, and the sanction that makes hand-editing a managed file legitimate is
+/// already written and already shipped, so it is **lifted, never retyped**
+/// ([`crate::file_state::OUT_OF_BAND_SANCTION`], the M46 inc-5 / T2 lesson applied to its
+/// own const: two producers agreeing is not two producers sharing a source).
+fn duplicate_field_route(key: &str) -> String {
+    format!(
+        "delete the repeated `{key}:` line, keeping the one value you intend — this is \
+         the one case a managed file is yours to hand-edit: {}",
+        crate::file_state::OUT_OF_BAND_SANCTION,
+    )
+}
+
 /// A cheap nearness check: equal ignoring case, or a one-char length difference
 /// with a shared prefix. Just enough for a typo hint, never load-bearing.
 fn is_near(a: &str, b: &str) -> bool {
@@ -817,7 +849,7 @@ fn read_field_block_str(
 ) -> Vec<crate::field_block::Field> {
     match crate::field_block::parse(block) {
         Ok(fb) => {
-            let mut out = Vec::new();
+            let mut out: Vec<crate::field_block::Field> = Vec::new();
             // The undeclared keys already *reported* in this block. A **repeated** undeclared
             // key is **one** defect and **one** repair (delete the stray line), so it is
             // reported once — however many lines carry it — exactly as a duplicated `{#id}`
@@ -829,8 +861,32 @@ fn read_field_block_str(
             // and the contract's declared granularity for this code is per `(section, key)`,
             // not per line (`command-output-contract.md` → the parse-conformance sub-table).
             let mut reported_unknown: Vec<String> = Vec::new();
+            // The **declared** keys already reported as repeated, on the same
+            // once-per-key rule and for the same reason as `reported_unknown` below.
+            let mut reported_duplicate: Vec<String> = Vec::new();
             for field in fb.fields {
                 if declared.iter().any(|d| d == &field.key) {
+                    if out.iter().any(|f| f.key == field.key)
+                        && !reported_duplicate.iter().any(|k| k == &field.key)
+                    {
+                        findings.push(Finding::graded(
+                            Severity::Blocking,
+                            "conformance.duplicate-field",
+                            duplicate_field_message(&field.key),
+                            // The **field-key hop**, as the unknown-key sibling below —
+                            // `#<section>/<field-key>` after the outward assembly, the
+                            // granularity the contract declares for this locus.
+                            Some(Location::addressed(field.key.clone(), base_line, 1)),
+                            Some(duplicate_field_route(&field.key).into()),
+                        ));
+                        reported_duplicate.push(field.key.clone());
+                    }
+                    // The repeat stays in the parsed set: `parse → emit` is byte-exact
+                    // over the fields it read ([`crate::field_block`] → Round-trip), and
+                    // dropping a line here would make the reader lossy over exactly the
+                    // doc it is refusing. Every consumer resolves a key by first match
+                    // (`validate::check_field`), so the extra line changes no verdict but
+                    // this one.
                     out.push(field);
                 } else if !reported_unknown.iter().any(|k| k == &field.key) {
                     findings.push(Finding::blocking(
@@ -3304,6 +3360,119 @@ Fine.
              reporting per line emits two byte-identical `(code, target)` keys into one \
              emitted slice, which the membership test forbids: {findings:#?}",
         );
+    }
+
+    /// (M49 Inc 1 T3 — the read-side half of the item-region class) **A repeated
+    /// DECLARED field key is a blocking finding, reported once.** The sibling above
+    /// collapses a repeated *undeclared* key; a repeated *declared* one was pushed into
+    /// the parsed field list unchecked, so a field group carrying two `date:` lines — or
+    /// three values on a `0..1` enum — was **conformant to the tool**: `jigc task
+    /// validate` raised nothing at all, and the pinned `doc show --format json` returned
+    /// whichever value `find` reached first, with no diagnostic. That is the shape T1
+    /// stopped jigc's own writer from creating; this is the one that already exists on
+    /// disk (`DECISIONS.md` → 2026-08-28 M49 Increment 1 planning: decomposition, T3).
+    ///
+    /// Keyed at `#<section>/<field-key>` — the granularity
+    /// `conformance.unknown-field` and the duplicate-`{#id}` guard already use, and the
+    /// only one [`crate::finding::debug_assert_targets_declared`] admits: two lines
+    /// carrying one key address at one fragment **by construction**, so a per-line
+    /// finding would be a degenerate key.
+    #[test]
+    fn a_repeated_declared_field_key_blocks_once() {
+        let src = "\
+---
+status: proposed
+date: 2026-05-31
+date: 2026-06-01
+---
+
+# A decision
+
+## Context
+Forces.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+We decided.
+
+## Consequences
+Fine.
+";
+        let findings =
+            parse_sections(&adr_schema(), src).expect_err("a repeated declared key blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.duplicate-field"),
+            [Some("status/date")],
+            "the repeated declared key `date` is ONE defect and ONE repair (delete the \
+             stray line), keyed at its `#<section>/<field-key>`: {findings:#?}",
+        );
+        let f = findings
+            .iter()
+            .find(|f| f.code == "conformance.duplicate-field")
+            .expect("a duplicate-field finding");
+        assert_eq!(
+            f.severity,
+            crate::finding::Severity::Blocking,
+            "a field carrying two values is not a heads-up: {f:#?}",
+        );
+        assert!(
+            f.message.contains("date"),
+            "the message names the repeated key: {f:#?}",
+        );
+        // The route floor: `conformance.*` is route-EXEMPT, not route-forbidden, and
+        // this diagnostic does know a direction — the hand-repair sanction, the shipped
+        // route for a managed doc whose repair is a human edit (M48 Inc 4).
+        let route = f.route.as_ref().expect("a routed diagnostic").to_string();
+        assert!(
+            route.contains("date") && route.contains("hand-edit"),
+            "the route names the line to delete and sanctions the hand repair: {route}",
+        );
+        // And the emitted slice projects through the real key seam.
+        assert_seam_passes(&findings);
+    }
+
+    /// (M49 Inc 1 T3) The same defect at the **item** locus keys at
+    /// `#<section>/<item>/<field-key>` — the outward assembly's item hop — so a repeat
+    /// in one item does not collide with a repeat in its sibling.
+    #[test]
+    fn a_repeated_declared_item_field_key_keys_at_its_item() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds at 100/min  {#rate-limit}
+The gateway rejects the 101st request in a 60s window.
+
+<!-- fields -->
+- maps-to-test: `test/rate_limit_spec.rb#burst`
+- maps-to-test: `test/rate_limit_spec.rb#steady`
+
+### Burst allowance  {#burst-allowance}
+A short burst above the limit is tolerated for 2s.
+
+<!-- fields -->
+- maps-to-test: `test/burst_spec.rb#one`
+- maps-to-test: `test/burst_spec.rb#two`
+";
+        let findings =
+            parse_sections(&spec_schema(), src).expect_err("a repeated item field blocks");
+        assert_eq!(
+            fragments(&findings, "conformance.duplicate-field"),
+            [
+                Some("criteria/rate-limit/maps-to-test"),
+                Some("criteria/burst-allowance/maps-to-test")
+            ],
+            "each item's repeat keys under its OWN item hop, so two sibling items \
+             repeating one key do not collide on a single `(code, target)`: {findings:#?}",
+        );
+        assert_seam_passes(&findings);
     }
 
     /// (M42 Inc 9 T5) The parse-`conformance.*` sub-table, code by code

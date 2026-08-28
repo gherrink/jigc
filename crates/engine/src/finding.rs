@@ -253,7 +253,11 @@ pub fn is_declared_singleton(code: &str) -> bool {
 /// coordinate, where *the located message is the repair* (fix the named line; no CLI verb
 /// repairs a hand-broken byte) and any at-parse route would be a guess. Exemption means
 /// *may be route-less*: a parser diagnostic that does know a direction (the below-version
-/// parse failure routed `migrate`) still carries it.
+/// parse failure routed `migrate`) still carries it. A second such carrier since M49:
+/// `conformance.duplicate-field` — a declared key repeated in one field group is repaired
+/// by deleting the stray line, so the direction is not a guess, and its route is the
+/// shipped hand-repair sanction rather than a second wording of it
+/// ([`crate::file_state::OUT_OF_BAND_SANCTION`]).
 ///
 /// The **hook-rejection error identity** (`finalize.commit-rejected`) is the floor's other
 /// re-affirmed exemption, but it is an anyhow error path, not a [`Finding`] — git's

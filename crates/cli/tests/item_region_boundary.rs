@@ -549,3 +549,113 @@ fn a_malformed_anchor_on_a_deeper_heading_is_reported_not_guessed() {
          nothing is re-read as a missing sub-label:\n{findings}",
     );
 }
+
+// ============================================================================
+// T3 — the READ side of the same class: a repeated declared field bullet
+//
+// T1 stops jigc's own writer from creating the shape. This catches one that already
+// exists on disk — every corpus written by a pre-fix binary, and every out-of-band hand
+// edit that copies a bullet and forgets to change its key. Through `1.0.0-rc.12` a
+// declared key repeated in one sentinelled group had **no check at all**:
+// `read_field_block_str` reported a repeated *undeclared* key once and pushed every
+// repeat of a *declared* one into the parsed field list unchecked, so three values on a
+// `0..1` enum were conformant to the tool, `jigc task validate` said nothing, and the
+// pinned `doc show --format json` returned whichever value `find` reached first.
+//
+// The new `conformance.duplicate-field` is keyed per `(section/item, key)` — the
+// granularity `conformance.unknown-field` and the duplicate-`{#id}` guard already use —
+// and it **routes**: `conformance.*` is route-exempt rather than route-forbidden, and a
+// repeated line is not a diagnosis the reader has to guess a direction for.
+// ============================================================================
+
+/// (ix) A repeated declared field bullet **blocks**, through the real binary: `jigc task
+/// validate` exits non-zero, names the code once, and prints the repair as a route.
+#[test]
+fn a_repeated_declared_field_bullet_blocks_with_its_route() {
+    let pack = FixturePack::from_dev_pack("multi-slot-duplicate-field");
+    pack.write_schema("changelog", MULTI_SLOT_SCHEMA)
+        .write_workflow("log-finding", FIXTURE_WORKFLOW);
+    let (corpus, task, item) = multi_slot_corpus(&pack);
+    corpus.set_field(&format!("{item}/status"), &task, "draft");
+    // Author the task's own provisioned `commit` doc, so the gate's verdict below is
+    // attributable to the duplicate bullet and to nothing else: the exit **flips** on the
+    // hand edit rather than being non-zero all along.
+    corpus.set_field(&format!("commit:{task}#header/type"), &task, "feat");
+    corpus.set_slot(&format!("commit:{task}#summary"), &task, "record a finding");
+    let clean = corpus.jigc(&["task", "validate", &task]);
+    assert!(
+        clean.status.success(),
+        "the baseline task must validate clean, so the flip below is the duplicate's:\n{}{}",
+        String::from_utf8_lossy(&clean.stdout),
+        String::from_utf8_lossy(&clean.stderr),
+    );
+
+    // The out-of-band hand edit: a second bullet for the same declared key — the shape a
+    // human produces by copying a bullet, and the shape a pre-T1 binary wrote itself.
+    let path = corpus
+        .repo()
+        .join(format!(".jigc/tasks/{task}/docs/changelog:findings-log.md"));
+    let bytes = std::fs::read_to_string(&path).expect("read the staged copy");
+    let patched = bytes.replace("- status: draft\n", "- status: draft\n- status: done\n");
+    assert_ne!(bytes, patched, "the item's field group carries the bullet");
+    std::fs::write(&path, &patched).expect("write the hand-broken staged copy");
+
+    let out = corpus.jigc(&["task", "validate", &task]);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "a field carrying two values must FLIP the gate that passed one line earlier — \
+         through rc.12 it stayed green:\n{text}",
+    );
+    let lines: Vec<&str> = text.lines().collect();
+    let hits: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.contains("conformance.duplicate-field"))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "one repeated key is one defect and one repair, so it is reported ONCE:\n{text}",
+    );
+    let finding = lines[hits[0]];
+    assert!(
+        finding.starts_with("blocking · ") && finding.contains("`status`"),
+        "the finding blocks and names the repeated key: {finding}",
+    );
+    let route = lines
+        .get(hits[0] + 1)
+        .copied()
+        .unwrap_or_default()
+        .trim_start();
+    assert!(
+        route.starts_with("route: ")
+            && route.contains("`status:`")
+            && route.contains("yours to hand-edit"),
+        "the finding carries its route — delete the stray line, under the shipped \
+         hand-repair sanction: {route}",
+    );
+
+    // And the machine surface carries the same defect at a key that discriminates the
+    // field: `<type>:<slug>#<section>/<item>/<field-key>`.
+    let out = corpus.jigc(&["task", "validate", &task, "--format", "json"]);
+    let json = String::from_utf8_lossy(&out.stdout).to_string();
+    let value: serde_json::Value = serde_json::from_str(&json).expect("a findings envelope");
+    let targets: Vec<&str> = value["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .filter(|f| f["code"] == "conformance.duplicate-field")
+        .filter_map(|f| f["key"]["target"].as_str())
+        .collect();
+    assert_eq!(
+        targets,
+        vec![format!("{item}/status").as_str()],
+        "the key names the repeated field's own leaf:\n{json}",
+    );
+}
