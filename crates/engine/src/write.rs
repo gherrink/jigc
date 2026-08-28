@@ -1455,7 +1455,7 @@ fn field_sentinel_in(blocks: &[Block], region: Range<usize>) -> Option<Range<usi
 /// ([`locate_item_path`] narrowed by [`item_own_leaf_region`]) via
 /// [`field_value_in_lines`] over the item's sentinelled `- key: value` bullets
 /// (`bullet = true`). An absent item / field → [`SpliceError::NotPresent`].
-pub fn set_item_field(
+pub(crate) fn set_item_field(
     schema: &Schema,
     source: &str,
     section_id: &str,
@@ -1842,7 +1842,7 @@ fn set_nested_item_slot(
 /// [`GenerateError::MalformedValue`], an **undeclared** field leaf as
 /// [`GenerateError::UnknownField`]. A genuinely absent item / non-repeatable section →
 /// [`GenerateError`].
-pub fn set_nested_item_field_or_insert(
+pub(crate) fn set_nested_item_field_or_insert(
     schema: &Schema,
     source: &str,
     section_id: &str,
@@ -3349,7 +3349,7 @@ pub fn insert_field(
 /// bullet is appended
 /// after the item's present bullets, mirroring [`insert_field`]. A field key already
 /// present on the item → [`GenerateError::AlreadyPresent`] (route to [`set_item_field`]).
-pub fn insert_item_field(
+pub(crate) fn insert_item_field(
     schema: &Schema,
     source: &str,
     section_id: &str,
@@ -3460,7 +3460,7 @@ pub fn insert_item_field(
 /// bytes, so no write lands at an address the schema does not declare. A genuinely absent
 /// item surfaces as [`GenerateError::NotPresent`]; a non-repeatable section as
 /// [`GenerateError::WrongShape`].
-pub fn set_item_field_or_insert(
+pub(crate) fn set_item_field_or_insert(
     schema: &Schema,
     source: &str,
     section_id: &str,
@@ -6287,6 +6287,116 @@ fn locate_item_region(
     locate_item_path(schema, source, section_id, &physical)
 }
 
+/// The gated **item** `set-field` — the item-addressed sibling of [`set_field_validated`],
+/// and the seam every CLI item-field write passes through (top-level and nested, at every
+/// container depth). It runs the splice-or-generate primitive and then [`validate_after`]
+/// with the confinement target **derived from the pre-write source**, so the check asks
+/// where the write was *supposed* to land rather than accepting wherever it did.
+///
+/// **Why the item-field paths needed their own domain entry (M49 Increment 1, T5).** M45
+/// unified the item **slot** paths onto `validate_after`; the item **field** paths were
+/// never in it — they were called raw, with no re-parse and no confinement clause. T1 then
+/// widened an item's own leaf region to span its `#### <Leaf-Title>` prose *and* its
+/// trailing field group, and [`set_item_field`] locates its bullet by a **line scan** over
+/// that region: a slot-prose line that merely looks like a field bullet (`- status: …`,
+/// ordinary Markdown the determinism boundary puts on the agent's side) is matched first
+/// and the value spliced into the prose — acked at exit 0, with the pinned
+/// `doc show --format json` then returning the stale field-group value the ack had just
+/// contradicted. `dev-workflow.md` → *widen a guard's trigger, re-derive its response*.
+///
+/// **Clause (b)'s target, re-derived per path** ([`item_field_write_target`]) — the
+/// per-path rule `parsing.md`'s write-pipeline table already draws, applied to the field
+/// row it had never reached:
+///
+/// * a **present** bullet is a *surgical splice*, so the target is the item's own
+///   **field-group list** — the bytes a bullet edit belongs to. A splice into slot prose
+///   lands outside it and is rejected `write.target-escape`, nothing persisted;
+/// * an **absent** bullet with a field group present appends at that list's end — the same
+///   target, and the insert is confined by the same check;
+/// * an **absent** bullet with **no** field group yet re-renders the whole item
+///   ([`insert_item_field`]'s cold-fill arm), so the target is the **item region** — the
+///   shape `parsing.md` warns must never be leaf-narrowed;
+/// * the **nested** path always re-renders the addressed item, so its target is the item
+///   region too.
+///
+/// Clause (a) — the re-parse — rides every arm, and it is load-bearing only because T3
+/// landed first: a duplicate declared bullet is now a parse-level
+/// `conformance.duplicate-field`, so the T1 corruption shape can no longer re-parse clean.
+///
+/// **The gate is structural for the CLI, a convention inside the engine.** All four
+/// item-field write primitives — [`set_item_field_or_insert`],
+/// [`set_nested_item_field_or_insert`] and the [`set_item_field`] / [`insert_item_field`]
+/// halves they dispatch to — are `pub(crate)`, so no CLI caller can reach one ungated (the
+/// item-**slot** precedent, where the raw splices went private for the same reason). Three
+/// engine-internal callers still reach them directly and are named rather than glossed:
+/// [`crate::transform`]'s corpus-migration splices, under its own whole-document fidelity
+/// adjudication, and [`crate::milestone`]'s record writes.
+pub fn set_item_field_validated(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+    field_key: &str,
+    new_value: &str,
+) -> Result<String, Finding> {
+    // Derived BEFORE the write: after it, the bytes the target is meant to bound may have
+    // moved, and a target read off the edited buffer would confirm whatever happened.
+    let target = item_field_write_target(schema, source, section_id, item_ids);
+    let edited = match item_ids {
+        // A single-hop chain is a top-level item; deeper chains alternate item /
+        // nested-section ids and take the depth-aware path (the [`set_gated_item_slot`]
+        // dispatch, so the field and slot seams cannot disagree about what "nested" means).
+        [item] => set_item_field_or_insert(schema, source, section_id, item, field_key, new_value),
+        _ => set_nested_item_field_or_insert(
+            schema, source, section_id, item_ids, field_key, new_value,
+        ),
+    }
+    .map_err(|e| generate_error_finding(&e))?;
+    match target {
+        Some(target) => validate_after(schema, source, &edited, target)?,
+        // The address did not resolve against the schema or the bytes. The primitive
+        // above adjudicates that with its own diagnosis (an unknown section, a wrong
+        // shape, an absent item), so this arm is only reached if it somehow succeeded
+        // anyway — keep the (a) half rather than skipping the gate entirely.
+        None => reparse_or_reject(schema, &edited)?,
+    }
+    Ok(edited)
+}
+
+/// The validate-after confinement target of one item-**field** write, derived from the
+/// pre-write `source` — the per-path rule documented on [`set_item_field_validated`].
+/// `None` when the addressed item does not resolve (schema-side or in bytes).
+fn item_field_write_target(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+) -> Option<Range<usize>> {
+    let region = locate_item_region(schema, source, section_id, item_ids)?;
+    // The nested path re-renders the addressed item whole, so nothing narrower than its
+    // region bounds the bytes it legitimately rewrites.
+    if item_ids.len() > 1 {
+        return Some(region);
+    }
+    // A top-level write edits a bullet **inside the item's own field group** — the same
+    // group [`insert_item_field`] scans for, over the same schema-keyed leaf region, so
+    // the guard and the writer cannot disagree about which group is the item's own. With
+    // no group yet, the write is the cold-fill re-render and the region is the target.
+    let blocks = parse::scan_blocks(source);
+    let leaf = item_own_leaf_region(
+        schema,
+        source,
+        &blocks,
+        section_id,
+        item_ids,
+        region.clone(),
+    );
+    match field_group_list(&blocks, leaf) {
+        Some((list, _)) => Some(list),
+        None => Some(region),
+    }
+}
+
 /// The **section-slot** arm of [`set_slot_validated`] — splice the present section's
 /// slot (validate-after confined to the section body region) or generate the section's
 /// structural home when it is absent (re-parse only; generation is not a single-span
@@ -7278,11 +7388,15 @@ Each service drops its local limiter.
     /// is — and then the agent has nothing left to try. Both now name the shipped whole-task
     /// discard as well, with the re-run branch kept first where it genuinely applies.
     ///
-    /// A `target-escape` is unreachable through the real binary without an injected defect
-    /// (that is what the check is *for*), so its route is proven here; the reachable
-    /// `non-reparseable` sibling is proven end-to-end over a broken staged source in
-    /// `crates/cli/tests/write_not_present_route.rs` (arm (e)), where the CLI-installed
-    /// parse fence adjudicates the identical `jigc task discard <task-id>` argv live.
+    /// Both routes are pinned here at the map. `non-reparseable` is proven end-to-end over
+    /// a broken staged source in `crates/cli/tests/write_not_present_route.rs` (arm (e)),
+    /// where the CLI-installed parse fence adjudicates the identical
+    /// `jigc task discard <task-id>` argv live. `target-escape` was recorded at M45 as
+    /// *unreachable through the real binary without an injected defect*; **that stopped
+    /// being true at M49 Increment 1 T5** — [`set_item_field_validated`] gives the
+    /// item-field paths a confinement target, and a `set-field` whose located bullet is a
+    /// slot-prose line escapes it through the real binary
+    /// (`crates/cli/tests/item_region_boundary.rs`, the T5 arms).
     #[test]
     fn the_dead_end_write_routes_name_the_discard_escape_hatch() {
         for code in ["write.non-reparseable", "write.target-escape"] {

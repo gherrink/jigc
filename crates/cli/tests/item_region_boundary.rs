@@ -877,3 +877,423 @@ fn an_unset_at_a_missing_item_keeps_the_containing_section_route() {
         "the route, run verbatim, reveals the section's live item ids:\n{shown}",
     );
 }
+
+// ============================================================================
+// T5 — the item-FIELD write paths join validate-after, re-derived over the
+// widened region
+//
+// M45 unified the item **slot** paths onto `validate_after`; the item **field** paths
+// were never in its domain — `set_item_field_or_insert` and
+// `set_nested_item_field_or_insert` were called raw from `doc.rs`, with no re-parse and
+// no confinement clause. Widening the leaf region (T1) widens what those paths may
+// touch, so the guard's trigger moved and its response is re-derived here
+// (`implementation/dev-workflow.md` → *widen a guard's trigger, re-derive its
+// response*).
+//
+// **The write the widened region newly admits, measured before it was assumed.** On a
+// multi-slot item, the item's own leaf region now spans its `#### <Leaf-Title>` prose
+// *and* its trailing field group — and `set_item_field` locates the bullet by a **line
+// scan** over that region. So a slot-prose line that merely *looks* like a field bullet
+// (`- status: …`, ordinary Markdown an agent may legitimately write) is matched first,
+// and the value is spliced into the **prose**. Driven on this tree before the guard
+// existed: `doc set-field …/status --value done` acked at **exit 0**, the prose line
+// became `- status: done`, the real bullet still read `draft`, the pinned
+// `doc show --format json` returned `"draft"` — contradicting the ack — and
+// `jigc task validate` said nothing over the doc. The guard's response was *nothing*:
+// there was no guard.
+//
+// The same sequence on the shipped `1.0.0-rc.12` binary appends a duplicate bullet
+// instead (T1's reported corruption) and never touches the prose — so on a multi-slot
+// item this escape is **newly admitted by the widening**. On a *single-slot* item, whose
+// leaf region was always the whole item, rc.12 escapes into the prose exactly as HEAD
+// does: the class predates T1 there, and the guard closes both shapes at once.
+//
+// **The response, re-derived per path** (`implementation/parsing.md` → the write
+// pipeline, whose table already splits these paths):
+//   * a **present** bullet is a surgical splice, so the confinement target is the item's
+//     own **field-group list** — the bytes a bullet edit belongs to. A splice into slot
+//     prose lands outside it and is rejected `write.target-escape`, nothing persisted.
+//   * an **absent** bullet with a field group present appends at the list's end — the
+//     same target.
+//   * an **absent** bullet with no field group yet re-renders the whole item
+//     (`insert_item_field`'s cold-fill arm), so the target is the **item region** — the
+//     shape `parsing.md` warns must never be leaf-narrowed.
+//   * the **nested** path always re-renders the addressed item, so its target is the
+//     item region too.
+// Clause (a) — the re-parse — rides every one of them, and it is load-bearing only
+// because T3 landed first: a duplicate declared bullet is now a parse-level
+// `conformance.duplicate-field`, so the T1 corruption shape can no longer re-parse clean.
+//
+// The arms below sweep the shapes constructible at T5 — `{single-slot, multi-slot,
+// multi-slot ∧ nested}` on the top-level path, plus the nested path's own target — and
+// assert both directions on each: the escape blocks, and every legitimate write lands
+// and re-parses. The full `{single-slot, multi-slot, slotless} × {nested, not} ×
+// {insert, update, unset}` eighteen-cell space is **T6's**, which extends this sweep
+// rather than replacing it.
+// ============================================================================
+
+/// A `{single-slot, ¬nested}` item block carrying a settable field — the shape whose
+/// leaf region was always the whole item, so the prose escape below predates T1 there.
+const SINGLE_SLOT_SCHEMA: &str = "\
+type: changelog
+id-from: title
+description: A manufactured single-slot findings log — one prose leaf and one settable field per item.
+usage: the item-field guard's shape axis needs a single-slot item block carrying a settable field.
+sections:
+  - id: findings
+    repeatable:
+      id-from: label
+      block:
+        - { id: label, type: string }
+        - { id: status, type: string, optional: true }
+        - { id: statement, slot: { hint: \"The finding, stated.\" } }
+";
+
+/// A `{multi-slot, nested}` item block whose **parent** carries a settable field — the
+/// cell that exercises the parent's own field group against its anchored nested child.
+const MULTI_SLOT_NESTED_FIELD_SCHEMA: &str = "\
+type: changelog
+id-from: title
+description: A manufactured multi-slot-and-nested case log whose parent carries a settable field.
+usage: the item-field guard's shape axis needs a parent item that is BOTH multi-slot and nested AND carries a settable field.
+sections:
+  - id: findings
+    repeatable:
+      id-from: label
+      block:
+        - { id: label, type: string }
+        - { id: status, type: string, optional: true }
+        - { id: statement, slot: { hint: \"The finding, stated.\" } }
+        - { id: proves, slot: { hint: \"What the finding proves.\" } }
+        - id: notes
+          repeatable:
+            id-from: label
+            block:
+              - { id: label, type: string }
+              - { id: detail, slot: { hint: \"The note.\" } }
+";
+
+/// A `{single-slot, nested}` block whose **nested** item carries a settable field —
+/// the cell the nested write path (`set_nested_item_field_or_insert`, a whole-item
+/// re-render) is addressed at.
+const NESTED_FIELD_SCHEMA: &str = "\
+type: changelog
+id-from: title
+description: A manufactured nested findings log whose notes carry a settable field.
+usage: the item-field guard's shape axis needs a nested item block carrying a settable field.
+sections:
+  - id: findings
+    repeatable:
+      id-from: label
+      block:
+        - { id: label, type: string }
+        - { id: statement, slot: { hint: \"The finding, stated.\" } }
+        - id: notes
+          repeatable:
+            id-from: label
+            block:
+              - { id: label, type: string }
+              - { id: status, type: string, optional: true }
+              - { id: detail, slot: { hint: \"The note.\" } }
+";
+
+/// `jigc doc set-field <addr> --value <v>`'s success bit and full output — the raw
+/// spawn, because the arms below assert on a **rejected** write.
+fn set_field_raw(corpus: &TrialCorpus, address: &str, task: &str, value: &str) -> (bool, String) {
+    let out = corpus.jigc(&[
+        "doc",
+        "set-field",
+        address,
+        "--value",
+        value,
+        "--task",
+        task,
+    ]);
+    (
+        out.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        ),
+    )
+}
+
+/// The staged file's raw bytes — read off disk, not through a renderer, so
+/// "nothing partially lands" is a byte claim.
+fn staged_bytes(corpus: &TrialCorpus, task: &str, slug: &str) -> String {
+    std::fs::read_to_string(
+        corpus
+            .repo()
+            .join(format!(".jigc/tasks/{task}/docs/changelog:{slug}.md")),
+    )
+    .expect("read the staged copy")
+}
+
+/// (xiii) The escape the widened region newly admits, on the `{multi-slot, ¬nested}`
+/// shape: a `set-field` whose located bullet is a **slot-prose line** is rejected with
+/// the located blocking write finding, **nothing** is persisted, and the field keeps the
+/// value it had — so the ack and the pinned read can no longer contradict each other.
+#[test]
+fn an_item_field_write_that_escapes_its_field_group_is_rejected_and_lands_nothing() {
+    let pack = FixturePack::from_dev_pack("item-field-guard-multi");
+    pack.write_schema("changelog", MULTI_SLOT_SCHEMA)
+        .write_workflow("log-finding", FIXTURE_WORKFLOW);
+    let (corpus, task, item) = multi_slot_corpus(&pack);
+    let address = format!("{item}/status");
+
+    // The real bullet, written while nothing shadows it.
+    corpus.set_field(&address, &task, "draft");
+    // Ordinary Markdown prose that happens to carry a `key: value` bullet — LLM-owned
+    // content the determinism boundary puts entirely on the agent's side.
+    corpus.set_slot(
+        &format!("{item}/statement"),
+        &task,
+        "Notes:\n\n- status: from prose\n",
+    );
+    let before = staged_bytes(&corpus, &task, "findings-log");
+    assert!(
+        before.contains("- status: from prose") && before.contains("- status: draft"),
+        "precondition: the prose line shadows the real bullet:\n{before}",
+    );
+
+    let (ok, text) = set_field_raw(&corpus, &address, &task, "done");
+    assert!(
+        !ok,
+        "a write whose located bullet is slot prose must be REJECTED — before the guard \
+         it acked at exit 0 and spliced `done` into the prose while the field kept \
+         `draft`:\n{text}",
+    );
+    assert!(
+        text.contains("write.target-escape"),
+        "the reject names the confinement clause it failed:\n{text}",
+    );
+    assert!(
+        text.lines().any(|line| line.starts_with("blocking · ")),
+        "the finding blocks:\n{text}",
+    );
+    assert!(
+        text.lines()
+            .any(|line| line.trim_start().starts_with("route: ")),
+        "the blocking finding carries its route (the universal route floor):\n{text}",
+    );
+
+    assert_eq!(
+        staged_bytes(&corpus, &task, "findings-log"),
+        before,
+        "nothing partially lands: the staged bytes are byte-identical to before the \
+         rejected write",
+    );
+    let json = corpus.jigc_ok(&["doc", "show", &address, "--task", &task, "--format", "json"]);
+    assert_eq!(
+        json.trim(),
+        "\"draft\"",
+        "the field keeps the value the last ACCEPTED write gave it",
+    );
+}
+
+/// (xiv) The same class on the `{single-slot, ¬nested}` shape, where it predates the
+/// widening — the guard closes the axis, not the cell that reported it.
+#[test]
+fn the_field_group_confinement_holds_on_a_single_slot_item_too() {
+    let pack = FixturePack::from_dev_pack("item-field-guard-single");
+    pack.write_schema("changelog", SINGLE_SLOT_SCHEMA)
+        .write_workflow("log-finding", FIXTURE_WORKFLOW);
+    let corpus = TrialCorpus::build_with_pack(State::Fresh, &pack);
+    let task = corpus.start_workflow("log-finding", "record a finding");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "changelog",
+        "--title",
+        "Findings log",
+        "--task",
+        &task,
+    ]);
+    let item = corpus.add_item("changelog:findings-log#findings", "First finding", &task);
+    let address = format!("{item}/status");
+    corpus.set_field(&address, &task, "draft");
+    corpus.set_slot(
+        &format!("{item}/statement"),
+        &task,
+        "Notes:\n\n- status: from prose\n",
+    );
+    let before = staged_bytes(&corpus, &task, "findings-log");
+
+    let (ok, text) = set_field_raw(&corpus, &address, &task, "done");
+    assert!(
+        !ok,
+        "the single-slot shape escapes the same way and must be rejected the same \
+         way:\n{text}",
+    );
+    assert!(
+        text.contains("write.target-escape"),
+        "same code, same clause:\n{text}",
+    );
+    assert_eq!(
+        staged_bytes(&corpus, &task, "findings-log"),
+        before,
+        "nothing partially lands on the single-slot shape either",
+    );
+}
+
+/// (xv) The guard is **inert over every legitimate item-field write** — the other half
+/// of re-deriving a widened guard's response, and the reason a widened trigger is not
+/// allowed to buy its rejections with false ones. Three shapes
+/// (`{single-slot, multi-slot, multi-slot ∧ nested}`) × two write kinds (the cold-fill
+/// insert onto a group-less item, and the surgical update of a present bullet): each
+/// lands, each leaves exactly one bullet carrying the new value, and each doc re-parses
+/// — read back through `doc show` at exit 0 with no conformance finding over it.
+#[test]
+fn the_guard_is_inert_over_every_legitimate_item_field_write() {
+    for (label, schema, slots) in [
+        ("single-slot", SINGLE_SLOT_SCHEMA, &["statement"][..]),
+        (
+            "multi-slot",
+            MULTI_SLOT_SCHEMA,
+            &["statement", "proves"][..],
+        ),
+        (
+            "multi-slot-nested",
+            MULTI_SLOT_NESTED_FIELD_SCHEMA,
+            &["statement", "proves"][..],
+        ),
+    ] {
+        let pack = FixturePack::from_dev_pack(&format!("item-field-inert-{label}"));
+        pack.write_schema("changelog", schema)
+            .write_workflow("log-finding", FIXTURE_WORKFLOW);
+        let corpus = TrialCorpus::build_with_pack(State::Fresh, &pack);
+        let task = corpus.start_workflow("log-finding", "record a finding");
+        corpus.jigc_ok(&[
+            "doc",
+            "create",
+            "changelog",
+            "--title",
+            "Findings log",
+            "--task",
+            &task,
+        ]);
+        let item = corpus.add_item("changelog:findings-log#findings", "First finding", &task);
+        for slot in slots {
+            corpus.set_slot(&format!("{item}/{slot}"), &task, "Ordinary prose.");
+        }
+        if label == "multi-slot-nested" {
+            let nested = corpus.jigc_ok(&[
+                "doc",
+                "add-item",
+                &format!("{item}/notes"),
+                "--title",
+                "First note",
+                "--task",
+                &task,
+            ]);
+            // The nested note's own required slot: unfilled it is its own finding, and
+            // the arm below asserts the *absence* of findings over this doc.
+            corpus.set_slot(
+                &format!("{}/detail", nested.trim_end_matches('\n')),
+                &task,
+                "The note's prose.",
+            );
+        }
+        let address = format!("{item}/status");
+
+        // The cold-fill insert: the item carries no field group yet.
+        let (ok, text) = set_field_raw(&corpus, &address, &task, "draft");
+        assert!(ok, "[{label}] the cold-fill insert must land:\n{text}");
+        // The surgical update: the bullet is present now.
+        let (ok, text) = set_field_raw(&corpus, &address, &task, "done");
+        assert!(ok, "[{label}] the surgical update must land:\n{text}");
+
+        let bytes = staged_bytes(&corpus, &task, "findings-log");
+        let bullets: Vec<&str> = bytes
+            .lines()
+            .filter(|line| line.trim_start().starts_with("- status:"))
+            .collect();
+        assert_eq!(
+            bullets,
+            vec!["- status: done"],
+            "[{label}] exactly one bullet, carrying the second value:\n{bytes}",
+        );
+
+        // The doc re-parses: the staged read answers at exit 0 and the gate is silent
+        // over it.
+        let show = corpus.jigc(&["doc", "show", "changelog:findings-log", "--task", &task]);
+        assert!(
+            show.status.success(),
+            "[{label}] the written doc reads back at exit 0:\n{}{}",
+            String::from_utf8_lossy(&show.stdout),
+            String::from_utf8_lossy(&show.stderr),
+        );
+        let findings = validate_text(&corpus, &task);
+        let over_the_doc: Vec<&str> = findings
+            .lines()
+            .filter(|line| line.contains("conformance.") && line.contains("changelog:findings-log"))
+            .collect();
+        assert!(
+            over_the_doc.is_empty(),
+            "[{label}] the gate raises no conformance finding over the written doc: \
+             {over_the_doc:?}\n{findings}",
+        );
+    }
+}
+
+/// (xvi) The **nested** item-field path keeps its own confinement target — the item
+/// region, because that path re-renders the addressed item whole. A write on a nested
+/// item's own field lands, and the parent's prose and sibling bytes survive it.
+#[test]
+fn a_nested_item_field_write_is_confined_to_its_own_item_region() {
+    let pack = FixturePack::from_dev_pack("item-field-guard-nested");
+    pack.write_schema("changelog", NESTED_FIELD_SCHEMA)
+        .write_workflow("log-finding", FIXTURE_WORKFLOW);
+    let corpus = TrialCorpus::build_with_pack(State::Fresh, &pack);
+    let task = corpus.start_workflow("log-finding", "record a finding");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "changelog",
+        "--title",
+        "Findings log",
+        "--task",
+        &task,
+    ]);
+    let item = corpus.add_item("changelog:findings-log#findings", "First finding", &task);
+    corpus.set_slot(&format!("{item}/statement"), &task, "The parent's prose.");
+    let nested = corpus.jigc_ok(&[
+        "doc",
+        "add-item",
+        &format!("{item}/notes"),
+        "--title",
+        "First note",
+        "--task",
+        &task,
+    ]);
+    let nested = nested.trim_end_matches('\n').to_string();
+    corpus.set_slot(&format!("{nested}/detail"), &task, "The note's prose.");
+
+    let (ok, text) = set_field_raw(&corpus, &format!("{nested}/status"), &task, "draft");
+    assert!(ok, "the nested item-field write must land:\n{text}");
+    let (ok, text) = set_field_raw(&corpus, &format!("{nested}/status"), &task, "done");
+    assert!(ok, "and its surgical update too:\n{text}");
+
+    let bytes = staged_bytes(&corpus, &task, "findings-log");
+    let bullets: Vec<&str> = bytes
+        .lines()
+        .filter(|line| line.trim_start().starts_with("- status:"))
+        .collect();
+    assert_eq!(
+        bullets,
+        vec!["- status: done"],
+        "exactly one bullet on the nested item:\n{bytes}",
+    );
+    assert!(
+        bytes.contains("The parent's prose.") && bytes.contains("The note's prose."),
+        "both prose leaves survive a nested field write:\n{bytes}",
+    );
+    let show = corpus.jigc(&["doc", "show", "changelog:findings-log", "--task", &task]);
+    assert!(
+        show.status.success(),
+        "the doc re-parses after the nested field write:\n{}{}",
+        String::from_utf8_lossy(&show.stdout),
+        String::from_utf8_lossy(&show.stderr),
+    );
+}

@@ -26,8 +26,7 @@ use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::{FieldType, Leaf, Repeatable, Schema, SectionBody};
 use engine::state;
 use engine::write::{
-    SlotAddress, set_field_validated, set_item_field_or_insert, set_nested_item_field_or_insert,
-    set_slot_validated,
+    SlotAddress, set_field_validated, set_item_field_validated, set_slot_validated,
 };
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -752,16 +751,16 @@ fn apply_field_target(
             section,
             item,
             field,
-        } => set_item_field_or_insert(schema, source, &section, &item, &field, value)
-            .map_err(|e| block(&engine::write::generate_error_finding(&e), "set-field", uri))?,
+        } => set_item_field_validated(schema, source, &section, &[item.as_str()], &field, value)
+            .map_err(|f| block(&f, "set-field", uri))?,
         FieldTarget::NestedItem {
             section,
             items,
             field,
         } => {
             let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
-            set_nested_item_field_or_insert(schema, source, &section, &item_ids, &field, value)
-                .map_err(|e| block(&engine::write::generate_error_finding(&e), "set-field", uri))?
+            set_item_field_validated(schema, source, &section, &item_ids, &field, value)
+                .map_err(|f| block(&f, "set-field", uri))?
         }
     })
 }
