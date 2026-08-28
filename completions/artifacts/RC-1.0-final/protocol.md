@@ -693,17 +693,42 @@ Stated so the 1.0.0 record does not imply coverage that was never bought.
 
 ---
 
-## 10 · Still owed before a session runs
+## 10 · Readiness — what is discharged, and what is still owed
 
-Listed here rather than assumed. **A plant assumed to fire is not a plant.**
+**A plant assumed to fire is not a plant.** Every row below says how it was verified, not that it
+exists.
 
-- the three verbatim blind prompts, screened against §8's rule;
-- `plants/e-abandoned-task.sh` and its in-container presence bar, plus the discrepancy of §3.3
-  with its single sanctioned repair named;
-- the answer key for the forks a worker predictably raises, including B1's hook reply carrying
-  plant F's correction;
-- **R1 and R2 run** (§2.3);
-- walk arms 02–09 written **and each run once on a throwaway corpus** — this directory's own
-  history is that every defect in it was found by running, none by reading;
-- the rewritten `verify-pair.sh` (§5.1), failing on a same-image pair;
-- the rc.12 image built, `verify-image.sh` green on all seven, and its gate record written.
+### Discharged
+
+| item | how it was verified |
+|---|---|
+| the rc.12 image | built from `314f59e`; `verify-image.sh` **7 passed / 0 failed**; gate record written, and it refuses rc.11 by name |
+| `verify-pair.sh` | rewritten on behavioural probes (M46 shipped no new verb); **3/3 discriminate**; refuses a same-image pair; the `m48` set still verifies rc.10 → rc.11 |
+| **plant E** | driven through the container's binary, **11/11 bars**, survives the transport (asserted *inside* a fresh container), and **rehearsed against a live agent twice** — both instruments fired and were consumed ([rehearsal-R1.md](rehearsal-R1.md)) |
+| **plant F** | the pause is real on rc.12: a live agent stopped at the hook and declined to self-approve ([rehearsal-R2.md](rehearsal-R2.md)) |
+| the walk | **11 arms, every one written and driven**; arms 04 and 07 carry §5's standard for the two declared changes; arms 03/10 assert each flip against a *measured* rc.11 baseline |
+| the three blind prompts | written and **mechanically screened** (`interact.contaminates` — clean) |
+| the answer key | 6 entries, **screened at load**, each matched against a probe question; an unmatched question halts rather than being improvised |
+| plant F's correction | kept out of the answer key (it is a template, not send-as-is), with the same-slug no-op pre-send check inherited from `cue-cards.md` §0.7 |
+| the corpora | instantiated → **gated 11/11 → adopted → planted**, in that order; frozen state asserted; the preload split **verified two-sided** ([corpora.md](corpora.md)) |
+| the operator log | created before the first session, so *"logged as it happens"* is possible rather than aspirational |
+
+### Still owed
+
+- **§6's coverage table** — every changed surface in exactly one column. The arms now say what
+  they reach; three cells are already known to be **test-fenced, not trial-reached** and are
+  declared in the arms themselves rather than left to the table (Increment 5's conflict-block
+  migration arm, Increment 1's lock and merge, and Increments 9/10, which carry no verb, finding
+  or route at all). Increment 4 is schema-author-reachable and takes the same disposition unless
+  a `JIGC_PACK_DIR` arm is written for it.
+- **Running the sessions**, in the order §3.5 fixes: **walk arm 00 first**, and if the control
+  does not fire, no blind result may be read at all.
+- **The findings-verification pass** — every CONFIRMED *and* REFUTED verdict with a repro block
+  and a `pinned-by:` citation verified by reading what the cited test asserts (§7).
+
+### Carried into the trial as known, not discovered
+
+Two candidate findings are already recorded in [pre-trial-findings.md](pre-trial-findings.md),
+found while building the instrument and **deliberately not fixed** — fixing product surface here
+would be scope creep, and would remove findings the trial could legitimately produce. They are
+kept out of the trial's yield: an operator's discovery is not a blind session's.
