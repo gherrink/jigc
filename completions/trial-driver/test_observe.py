@@ -11,7 +11,9 @@ Run: python3 completions/trial-driver/test_observe.py
 from __future__ import annotations
 
 import pathlib
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -333,6 +335,77 @@ class GlobalFlagsDoNotHideAnInvocation(unittest.TestCase):
                         "§3.3 does count it — which is the residual gap, on purpose")
 
 
+class ThePlantIsNotTheWorker(unittest.TestCase):
+    """A rig-inflates-the-headline defect, found by running the R1 rehearsal.
+
+    `.jigc/logs/invocations.jsonl` lives INSIDE the corpus. Plant E drives the
+    real binary to build its state, and its end-state bar reads the doc back five
+    times — so every one of those calls landed in the channel the session is
+    scored on, timestamped before the session even started.
+
+    Measured on the uncorrected R1 evidence, 2026-08-28: `observe` reported
+    **VERB 6** where the worker had done **2**, and 13 authoring writes where the
+    worker had done 6. The error is 3x and it points the flattering way, which is
+    the direction nobody double-checks. Both plant-E arms carry the trial's
+    headline, so this would have inflated the headline measurement itself.
+
+    Two fixes, and this pins the reader half: `observe` splits on the
+    `session-start` stamp `run-session.sh` now writes into PROVENANCE.txt. (The
+    plant also clears the log as its last act — belt and braces, and the only
+    answer to a worker that reads the log and watches itself being planted.)
+    """
+
+    #: A plant's records, then the worker's. The plant's include the `doc show`
+    #: reads its own bar performs — the exact shape that did the inflating.
+    LOG = [
+        '{"timestamp":"2026-08-28T05:40:38Z","argv":["doc","create","adr","--title","X"],'
+        '"exit_code":0,"duration_ms":1,"finding_codes":[],"output_bytes":1,'
+        '"binary_version":"1.0.0-rc.12","error_code":null}',
+        '{"timestamp":"2026-08-28T05:40:38Z","argv":["doc","show","adr:x","--task","t"],'
+        '"exit_code":0,"duration_ms":1,"finding_codes":[],"output_bytes":1,'
+        '"binary_version":"1.0.0-rc.12","error_code":null}',
+        '{"timestamp":"2026-08-28T05:40:38Z","argv":["task","validate","t"],'
+        '"exit_code":3,"duration_ms":1,"finding_codes":[],"output_bytes":1,'
+        '"binary_version":"1.0.0-rc.12","error_code":null}',
+        '{"timestamp":"2026-08-28T05:41:20Z","argv":["doc","show","adr:x","--task","t"],'
+        '"exit_code":0,"duration_ms":1,"finding_codes":[],"output_bytes":1,'
+        '"binary_version":"1.0.0-rc.12","error_code":null}',
+    ]
+    START = "2026-08-28T05:41:12Z"
+
+    def _log(self) -> pathlib.Path:
+        d = pathlib.Path(tempfile.mkdtemp(prefix="jigc-presession-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        p = d / "invocations.jsonl"
+        p.write_text("\n".join(self.LOG) + "\n")
+        return p
+
+    def test_without_the_stamp_the_plant_is_scored_as_the_worker(self) -> None:
+        """The defect, preserved: this is what the uncorrected reader did."""
+        o = observe("uncorrected", self._log(), None)
+        self.assertEqual((o.records, o.verb, o.adjacent), (4, 2, 1))
+        self.assertEqual(o.pre_session_records, 0, "nothing is split without a stamp")
+
+    def test_with_the_stamp_only_the_worker_is_scored(self) -> None:
+        o = observe("corrected", self._log(), None, session_start=self.START)
+        self.assertEqual(o.records, 1, "one record is the worker's")
+        self.assertEqual(o.verb, 1, "the plant's read-back is not the worker's")
+        self.assertEqual(o.adjacent, 0)
+
+    def test_the_size_of_the_error_is_reported_not_hidden(self) -> None:
+        """Dropping them silently would be a second way to be wrong about it."""
+        o = observe("corrected", self._log(), None, session_start=self.START)
+        self.assertEqual(o.pre_session_records, 3)
+        self.assertEqual(o.pre_session_verb, 1)
+        self.assertEqual(o.pre_session_adjacent, 1)
+
+    def test_a_malformed_stamp_scores_the_session_rather_than_losing_it(self) -> None:
+        """Losing the worker's evidence is the worse of the two errors."""
+        o = observe("odd", self._log(), None, session_start="not-a-timestamp")
+        self.assertEqual(o.records, 4)
+        self.assertEqual(o.pre_session_records, 0)
+
+
 class AuthoringWrites(unittest.TestCase):
     """What counts as having created a read-back occasion."""
 
@@ -416,6 +489,52 @@ class IncrementZero(unittest.TestCase):
                              "no jigc invocation was denied")
         o = observe("b3-strict", self.EV / "b3-strict-invocations.jsonl", None)
         self.assertEqual(o.records, 13, "all 13 jigc calls executed")
+
+
+class ADocumentReadIsNotABookkeepingRead(unittest.TestCase):
+    """§3.3's FILESYSTEM row folds two acts together; a rehearsal split them.
+
+    Two runs of the SAME prompt against the SAME plant, 2026-08-28:
+
+      * R1  read the staged `.md` off disk  -> 2 document + 5 workbench reads
+      * R1b took the document only through `jigc doc show --task`
+                                            -> 0 document + 6 workbench reads
+
+    Both score `filesystem = 6` under one count and they are opposite results on
+    the axis 3A exists to measure. A document read off disk is the adapter bypass
+    the invariant is about; a read of `roles.json` or `base.json` is bookkeeping
+    no read verb exposes, and reporting it as evidence against VISION principle #3
+    would be scoring a capability gap as a channel violation.
+    """
+
+    def _read(self, path: str) -> Read:
+        return Read(tool="Bash", detail=f"cat {path}", path=path)
+
+    def test_a_staged_managed_doc_is_a_document_read(self) -> None:
+        self.assertTrue(self._read(
+            "/work/.jigc/tasks/t/docs/adr:x.md").is_document)
+
+    def test_a_committed_managed_doc_is_too(self) -> None:
+        self.assertTrue(self._read("docs/decisions/drop-the-oldest.md").is_document)
+
+    def test_the_workbench_bookkeeping_files_are_not(self) -> None:
+        for name in ("intent", "workflow", "roles.json", "base.json",
+                     "docs/provenance.json", "staged-snapshot.json"):
+            with self.subTest(file=name):
+                self.assertFalse(
+                    self._read(f"/work/.jigc/tasks/t/{name}").is_document,
+                    "no read verb exposes this — it is a capability gap, "
+                    "not an adapter bypass")
+
+    def test_the_two_rehearsal_runs_are_distinguishable(self) -> None:
+        """The property that matters: one count cannot tell these apart."""
+        r1 = [self._read("/work/.jigc/tasks/t/docs/adr:x.md"),
+              self._read("/work/.jigc/tasks/t/roles.json")]
+        r1b = [self._read("/work/.jigc/tasks/t/intent"),
+               self._read("/work/.jigc/tasks/t/roles.json")]
+        self.assertEqual(len(r1), len(r1b), "identical under the old count")
+        self.assertNotEqual(sum(r.is_document for r in r1),
+                            sum(r.is_document for r in r1b))
 
 
 class ChannelPredicates(unittest.TestCase):

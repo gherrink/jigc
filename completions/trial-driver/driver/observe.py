@@ -119,6 +119,29 @@ class Read:
     detail: str
     path: str
 
+    @property
+    def is_document(self) -> bool:
+        """Whether this read took a managed DOCUMENT, not workbench bookkeeping.
+
+        §3.3 folds two different acts into one FILESYSTEM row, and the plant-E
+        rehearsal showed they can diverge inside one arm. R1 read the staged
+        `.md` itself off disk; R1b read only `roles.json`, `base.json`, `intent`,
+        `workflow`, `provenance.json` and `staged-snapshot.json` — and took the
+        document exclusively through `jigc doc show --task`. Both score 6 under a
+        single count, and they are not the same result:
+
+          * a **document** read off disk is the adapter bypass the invariant is
+            about, and `.jigc/AGENT.md` states the rule it breaks;
+          * a **workbench** read is bookkeeping no read verb exposes — closer to a
+            capability gap than a channel violation, and it should not be reported
+            as evidence against VISION principle #3.
+
+        Still a heuristic, like everything on this channel: it keys on the file
+        being markdown, which is what every managed doc is and no workbench file
+        is. The human call stays the human's.
+        """
+        return self.path.lower().endswith(".md")
+
 
 @dataclasses.dataclass(frozen=True)
 class Observation:
@@ -144,6 +167,22 @@ class Observation:
     adjacent_lines: tuple[str, ...]
     filesystem_reads: tuple[Read, ...]
     filesystem_is_heuristic: bool = True
+
+    #: Records in the log OLDER than this session's start — written by the
+    #: adoption arm or by a plant, never by the worker.
+    #:
+    #: The invocation log lives **inside the corpus**, so anything that drove the
+    #: binary before the session left its records in the very channel the session
+    #: is scored on. Measured on the plant-E rehearsal, 2026-08-28: the plant
+    #: contributed **4 of a reported 6** VERB records — its own end-state bar
+    #: reads the doc back five times — so the uncorrected headline was 3x the
+    #: worker's real number, inflated in the direction that flatters the product.
+    #:
+    #: These are reported, never folded into the scored counts, and never
+    #: silently dropped either: the size of the error is the useful part.
+    pre_session_records: int = 0
+    pre_session_verb: int = 0
+    pre_session_adjacent: int = 0
 
     #: The CLI itself failed — a non-zero exit from the `claude` process, not from
     #: a jigc invocation inside it. Distinct from `nonzero_exits`, which counts
@@ -387,12 +426,26 @@ def observe(session: str, log: pathlib.Path,
             transcript: Optional[pathlib.Path] = None,
             *, rc_failed: bool = False, seed_expected: bool = False,
             seed_marker: Optional[str] = None,
-            halted_for_human: bool = False) -> Observation:
+            halted_for_human: bool = False,
+            session_start: Optional[str] = None) -> Observation:
     """Score one session from its archived channels.
 
     `seed_marker` is the seed's first turn text. When given, the forked
     transcript is searched for it and `seed_inherited` records the answer —
     the check that separates a real fork from one that began cold.
+
+    `session_start` (UTC, `YYYY-MM-DDTHH:MM:SSZ`) is the instant the session
+    began, from `PROVENANCE.txt`. **The invocation log lives in the corpus, so
+    anything that drove the binary before the session — the adoption arm, a
+    plant — left its records in the very channel the session is scored on.**
+    Measured on the plant-E rehearsal: the plant contributed **4 of a reported
+    6** VERB records, because its own end-state bar reads the doc back five
+    times. Without this split the headline is inflated by the rig, in the
+    direction that flatters the product, and nothing in the output says so.
+
+    When given, only records at or after it are scored; the older ones are
+    counted into `pre_session_records` and reported. When omitted (an archived
+    session, an older run) nothing is filtered and the behaviour is unchanged.
     """
     log_missing = not log.is_file()
     log_unreadable = False
@@ -402,6 +455,22 @@ def observe(session: str, log: pathlib.Path,
             records = read_log(log)
         except (ValueError, KeyError):
             log_unreadable = True
+
+    pre_records: list[Invocation] = []
+    if session_start:
+        # Lexicographic comparison is exact for this format, which is why the log
+        # writes it this way; parsing to datetimes would add a failure mode for
+        # nothing. A malformed stamp filters nothing rather than dropping the
+        # session's records, because losing the worker's evidence is the worse
+        # error of the two.
+        try:
+            cutoff = _dt.datetime.strptime(
+                session_start, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_dt.timezone.utc)
+        except (ValueError, TypeError):
+            cutoff = None
+        if cutoff is not None:
+            pre_records = [r for r in records if r.timestamp < cutoff]
+            records = [r for r in records if r.timestamp >= cutoff]
 
     verb_recs = [r for r in records if channels.is_verb(list(r.argv))]
     adj_recs = [r for r in records if channels.is_adjacent(list(r.argv))]
@@ -445,6 +514,9 @@ def observe(session: str, log: pathlib.Path,
         verb_lines=verb_lines,
         adjacent_lines=adj_lines,
         filesystem_reads=reads,
+        pre_session_records=len(pre_records),
+        pre_session_verb=sum(1 for r in pre_records if channels.is_verb(list(r.argv))),
+        pre_session_adjacent=sum(1 for r in pre_records if channels.is_adjacent(list(r.argv))),
     )
 
 

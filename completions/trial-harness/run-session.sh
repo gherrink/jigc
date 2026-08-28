@@ -217,10 +217,18 @@ if [ "$MODE" = exec ] || [ "$MODE" = headless ]; then
   # Captured rather than streamed, so both channels survive into the evidence. A
   # scripted arm is then replayed to the terminal; a headless turn is not, because
   # its stdout is a stream-json transcript and dumping it buries the summary.
+  # The instant the session begins, in UTC — the clock `.jigc/logs/invocations.jsonl`
+  # stamps its records with. Anything in that log OLDER than this was written by
+  # something other than this session: the adoption arm, or a plant. A rehearsal
+  # measured a plant contributing 4 of a reported 6 VERB records, so this is not
+  # hypothetical bookkeeping — it is the difference between the worker's number and
+  # the rig's. See driver/observe.py's pre_session_records.
+  SESSION_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   docker start -a "$CID" >"$CAP_OUT" 2>"$CAP_ERR" || RUN_RC=$?
   if [ "$MODE" = exec ]; then cat "$CAP_OUT"; cat "$CAP_ERR" >&2; fi
   [ "$RUN_RC" -ne 0 ] && echo "(the arm exited $RUN_RC — that is data, not necessarily failure)"
 else
+  SESSION_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   docker start -ai "$CID"
 fi
 echo "-------------------------------------------------------------"
@@ -248,6 +256,7 @@ jigc-sha     $SHA
 model        $MODEL
 permissions  $PERMISSION_MODE
 corpus-src   $CORPUS
+session-start ${SESSION_START:-unknown}
 exit-code    $RUN_RC
 EOF
 

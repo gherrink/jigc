@@ -2,6 +2,22 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-08-28 — R1: plant E meets a live agent, and the rehearsal finds two defects in the instrument rather than the product
+
+**Ran the rehearsal [cue-card-postmortem.md](completions/artifacts/RC-1.0-gate/cue-card-postmortem.md) rule 4 demands** — *rehearse on the axis you are uncertain about; the untested axis is the one that failed* — against plant E, which had never met a live agent ([rehearsal-R1.md](completions/artifacts/RC-1.0-final/rehearsal-R1.md)).
+
+**The plant works.** Two runs, two workers: both found the title↔prose contradiction unprompted, both ran `jigc doc rename`, and both applied **exactly the sanctioned repair** for the planted `status: superseded` (`set-field … --value accepted`) — §3.3's *acted* outcome, twice. One spawned a subagent to check `src/ingest.ts` and confirmed the committed source agrees with the ADR's content and not its title, which is the naming authority earning its place. All four of §5E's falsifiers held, and the two instruments are **independent**: a rename preserves the planted status, verified live, so a worker can fix the title and still miss the discrepancy.
+
+**Defect 1 — the plant was writing into the channel it is scored on.** `.jigc/logs/invocations.jsonl` lives *inside the corpus*, and plant E's own end-state bar reads the doc back five times. Measured on R1's raw evidence: **`observe` reported VERB 6 where the worker had done 2**, and 13 authoring writes where the worker had done 6 — a **3× inflation of the headline, pointing the flattering way**, on both arms that carry it. Fixed twice over: `run-session.sh` now stamps `session-start` into `PROVENANCE.txt` and the reader scores only records at or after it (reporting what it excluded and what they *would* have added — dropping them silently is a second way to be wrong); and the plant clears the log as its last act, because a worker that reads the log would otherwise **watch itself being planted**, which no session-start filter fixes.
+
+**Defect 2 — a managed-document read and a workbench-bookkeeping read were one number.** R1 and R1b are the same prompt against the same plant and they diverge on precisely the axis the headline measures: R1 read the staged `.md` off disk (**2** document reads — the invariant broke), R1b took the document only through `jigc doc show --task` (**0** — it held). Both are `filesystem = 6` under one count. Now reported split. **And the workbench reads are themselves a finding**: both workers reached for `roles.json`, `base.json`, `intent`, `workflow`, `provenance.json` and `staged-snapshot.json` — task state **no read verb exposes** — which is a capability gap, not a channel violation, and is the discoverability lens landing again on the instrument's own evidence.
+
+**Both defects were found by running, neither by reading**, which is this directory's whole history repeating. Both are pinned by tests that preserve the defect as it was (`ThePlantIsNotTheWorker`, `ADocumentReadIsNotABookkeepingRead`), and both are recorded in the protocol as settlements 3 and 4 rather than quietly patched.
+
+**Honest bound:** n=2, one transport, one model, one prompt, one day, `bypassPermissions` on — which is protocol §9's declared confound and bears directly on defect 2's numbers. The rehearsal establishes that the plant **produces the state, survives the rig, and that both instruments are reachable and independent**. It establishes no rate, and neither run is a scored result.
+
+**Also:** `run.py carry` exposes the `carry_forward` the driver has always had — the chain's out-dir must become the next step's corpus without the rig's own droppings, and doing that by hand three times in one afternoon is the signal a function nothing points at gets re-done.
+
 ## 2026-08-28 — The 1.0.0 trial's protocol: the cue card's replacement, two settlements, and a ledger caught one entry short
 
 **Written [completions/artifacts/RC-1.0-final/protocol.md](completions/artifacts/RC-1.0-final/protocol.md)** — the pre-registered protocol for the last instrument before the **1.0.0 call**, run on `1.0.0-rc.12` at `314f59e`, with the cue card replaced per [cue-card-postmortem.md](completions/artifacts/RC-1.0-gate/cue-card-postmortem.md).

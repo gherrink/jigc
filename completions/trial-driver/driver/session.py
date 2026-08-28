@@ -396,6 +396,25 @@ def forked_id(stream: pathlib.Path) -> Optional[str]:
     return None
 
 
+def session_start(out: pathlib.Path) -> "Optional[str]":
+    """When the session began, from the provenance the run wrote.
+
+    The invocation log ships inside the corpus, so records written before the
+    session — by the adoption arm, or by a plant — sit in the same file the
+    session is scored from. `observe` uses this to leave them out. Returns None
+    for a run predating the stamp, which means "do not filter": scoring a
+    session's own records is worth more than excluding a rig's.
+    """
+    provenance = out / "PROVENANCE.txt"
+    if not provenance.is_file():
+        return None
+    for line in provenance.read_text().splitlines():
+        if line.startswith("session-start"):
+            value = line.split(None, 1)[1].strip() if len(line.split(None, 1)) > 1 else ""
+            return value or None
+    return None
+
+
 def arm_exit_code(out: pathlib.Path) -> "Optional[int]":
     """The driven arm's own exit code, from the provenance the run wrote.
 

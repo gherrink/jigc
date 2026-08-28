@@ -101,13 +101,21 @@ def do_observe(args: argparse.Namespace) -> int:
         # by design, so without this a dead session scores as a product result.
         arm_rc = session_mod.arm_exit_code(out)
         o = observe(out.name, log, transcript, halted_for_human=halted,
-                    rc_failed=bool(arm_rc))
+                    rc_failed=bool(arm_rc),
+                    session_start=session_mod.session_start(out))
         print(_row(o))
         if halted:
             # The turn ended at exit 0, `subtype: success`, `is_error: false`.
             # Only the denials and the result text say it stopped mid-task, which
             # is why the process exit code cannot be the completion signal.
             print(f"  HALTED awaiting the operator — {why}")
+        if o.pre_session_records:
+            # The invocation log lives in the corpus, so a plant or the adoption
+            # arm writes into the channel the session is scored on. Printed rather
+            # than silently corrected: the size of the error is the useful part.
+            print(f"  note: {o.pre_session_records} record(s) predate this session "
+                  f"(plant/adoption) and are NOT scored — they would have added "
+                  f"{o.pre_session_verb} VERB and {o.pre_session_adjacent} adjacent")
         if o.log_missing:
             # The cascade has already voided this row and the table says so; this
             # line adds the path, which the outcome name cannot carry. It must not
@@ -119,8 +127,13 @@ def do_observe(args: argparse.Namespace) -> int:
                   "for this session", file=sys.stderr)
             rc = 1
         for r in o.filesystem_reads:
-            print(f"  fs? [{r.tool}] {r.detail[:110]}")
+            kind = "DOC " if r.is_document else "wkbn"
+            print(f"  fs? {kind} [{r.tool}] {r.detail[:104]}")
         if o.filesystem_reads:
+            docs = sum(1 for r in o.filesystem_reads if r.is_document)
+            print(f"  fs split: {docs} managed-document read(s), "
+                  f"{len(o.filesystem_reads) - docs} workbench-bookkeeping read(s) "
+                  f"— only the first is the adapter bypass the invariant is about")
             print("  (heuristic: check each against the corpus — an unregistered "
                   "foreign doc is not a managed one)")
         if o.adjacent_counter_gap:
@@ -158,6 +171,37 @@ def do_record_gate(args: argparse.Namespace) -> int:
     out = pathlib.Path(args.record).expanduser().resolve()
     gate_mod.write_record(out, ident, checks=checks, note=args.note or "")
     print(f"wrote {out} for image {ident.image_id[:19]}…")
+    return 0
+
+
+def do_carry(args: argparse.Namespace) -> int:
+    """Turn a finished run's out-dir into the corpus for the next step.
+
+    The chain is instantiate -> gate -> adopt -> plant -> session, and each step's
+    OUT is the next step's corpus. But `run-session.sh` writes its own evidence
+    INTO that directory (`PROVENANCE.txt`, `stream.jsonl`, `stderr.txt`,
+    `.session-transcript/`), so handing it straight on plants the rig's droppings
+    in the corpus a worker will read.
+
+    `session.carry_forward` has always done this for `seed`'s turn-to-turn
+    hand-off; nothing exposed it to the chain, so it was done by hand — three
+    times, in one afternoon, which is the signal.
+    """
+    out = pathlib.Path(args.out).expanduser().resolve()
+    dest = pathlib.Path(args.dest).expanduser().resolve()
+    if not out.is_dir():
+        print(f"refusing: no such run directory: {out}", file=sys.stderr)
+        return 2
+    if not (out / ".git").is_dir():
+        print(f"refusing: {out} has no .git — that is not a corpus, and copying "
+              f"it would hand the next step a tree with no history",
+              file=sys.stderr)
+        return 2
+    session_mod.carry_forward(out, dest)
+    left = sorted(p.name for p in out.iterdir()
+                  if p.name in session_mod._EVIDENCE_NAMES)
+    print(f"carried {out} -> {dest}")
+    print(f"  left behind: {', '.join(left) if left else '(no rig evidence found)'}")
     return 0
 
 
@@ -262,6 +306,12 @@ def main(argv: list[str] | None = None) -> int:
                        help="a check the verifier ran and its result; repeatable")
     p_rec.add_argument("--note", default="")
     p_rec.set_defaults(fn=do_record_gate)
+
+    p_carry = sub.add_parser(
+        "carry", help="make a finished run's out-dir the next step's corpus")
+    p_carry.add_argument("out")
+    p_carry.add_argument("dest")
+    p_carry.set_defaults(fn=do_carry)
 
     p_seed = sub.add_parser("seed", help="drive a turns file and freeze the conversation")
     p_seed.add_argument("corpus")
