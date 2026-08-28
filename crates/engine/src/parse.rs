@@ -256,8 +256,13 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
 
     // Body sections map to `##` (H2) section headings, in document order. The `# H1`
     // is the document *title* (rendered from `id-from`, `storage.md` → Identity), and
-    // any `####`+ heading is allowed slot-internal structure — both are excluded from
+    // every deeper heading is resolved *within* its section — both are excluded from
     // the section-heading list so index-based matching aligns sections to `##`s.
+    //
+    // Deeper is not a synonym for prose (M49 D4): a `###` opens an item, and below that
+    // a heading may be a declared slot sub-label, a nested item head, or a reserved-depth
+    // defect. Which one it is is a **schema** question, answered per item against its
+    // template ([`is_item_slot_sub_label`]) — never a depth this filter could read off.
     let headings: Vec<&Block> = blocks[block_cursor..]
         .iter()
         .filter(|b| {
@@ -610,8 +615,10 @@ fn item_level_num(depth: usize) -> usize {
 }
 
 /// The start offset of the next **`##` section heading** at or after `from`, if any.
-/// Deeper (`###`/`####`+) headings are *not* section boundaries — `###` opens a
-/// repeatable item (handled within the section), `####`+ is slot-internal structure.
+/// Deeper (`###`/`####`+) headings are *not* section boundaries: `###` opens a
+/// repeatable item, and anything below that is resolved **inside** the item against its
+/// template — a declared slot sub-label, a nested item head, or a defect — never by depth
+/// alone ([`first_nested_heading`] / [`is_item_slot_sub_label`], M49 D4).
 fn next_section_heading(blocks: &[Block], from: usize) -> Option<usize> {
     blocks
         .iter()
@@ -1142,16 +1149,18 @@ fn parse_items(
 }
 
 /// Split a **multi-slot** item body `[from, body_end)` into per-leaf slot spans by
-/// its `#### <Leaf-Title>` sub-headings, in schema block order.
+/// its `<Leaf-Title>` sub-headings, in schema block order.
 ///
-/// Each declared slot leaf's `#### <Leaf-Title>` heading (the leaf id title-cased,
-/// matching the writer) opens its slot; the slot's opaque prose runs from after that
-/// heading to the next `####` sub-heading (or `body_end`). `#####`+ headings stay
-/// opaque slot-internal content — only `####` at the leaf-label level delimits a
-/// slot (the same discipline by which `###` delimits items and `####`+ was
-/// slot-internal). A declared leaf whose `#### <Leaf-Title>` heading is absent is a
-/// located [`Severity::Blocking`] conformance finding (the skeleton the writer mints
-/// always carries every sub-heading, so an absent one is an out-of-band malformation).
+/// Each declared slot leaf's sub-heading (the leaf id title-cased, matching the writer)
+/// opens its slot at the **leaf-label level** — one deeper than the item
+/// (`item_level + 1`: `####` for a `###` item, `#####` for a nested `####` one); the
+/// slot's opaque prose runs from after that heading to the next sub-heading at that
+/// level (or `body_end`). A heading **deeper than the leaf-label level** stays opaque
+/// slot-internal content; only one *at* it delimits a slot — the same discipline by
+/// which the item level delimits items, one level down. A declared leaf whose
+/// sub-heading is absent is a located [`Severity::Blocking`] conformance finding (the
+/// skeleton the writer mints always carries every sub-heading, so an absent one is an
+/// out-of-band malformation).
 fn parse_item_slots(
     source: &str,
     blocks: &[Block],
@@ -1232,8 +1241,19 @@ fn parse_item_slots(
     // (`render(parse(x)) != x`). Detect each such stray `#### ` and emit a located
     // Blocking conformance finding, the same shadow-conformance discipline as the
     // reserved-marker checks (`run-marker-not-shadowed` &c.) — turning silent
-    // corruption into a clear, routed block. (`#####`+ is opaque slot-internal content
-    // and is never collected here, so it is unaffected.)
+    // corruption into a clear, routed block. (A heading deeper than the leaf-label
+    // level is opaque slot-internal content and is never collected here, so it is
+    // unaffected.)
+    //
+    // The message names the two depths **at this address** — the delimiter shadowed
+    // (`label_level`) and the shallowest free depth (`label_level + 1`) — the same
+    // context-derived repair [`ceiling_violations`] renders, and for the same reason it
+    // records there: *never a global `####`*. At a nested multi-slot item the delimiter
+    // is `#####`, so a message naming `####`/`#####` would send the author to demote a
+    // stray into a *second* shadowing delimiter (M49 Increment 1 T7 — the un-swept
+    // sibling of that fix).
+    let delimiter = "#".repeat(label_level);
+    let free = "#".repeat(label_level + 1);
     for (start, _, label) in &sub_heads {
         if !slot_ids
             .iter()
@@ -1242,9 +1262,9 @@ fn parse_item_slots(
             findings.push(Finding::blocking(
                 "conformance.item-slot-delimiter-shadowed",
                 format!(
-                    "`#### {}` in multi-slot item prose shadows the item-slot \
-                     delimiter; slot prose must not start a line with `#### ` \
-                     (use `#####`+ or rephrase)",
+                    "`{delimiter} {}` in multi-slot item prose shadows the item-slot \
+                     delimiter; slot prose must not start a line with `{delimiter} ` \
+                     (use `{free}`+ or rephrase)",
                     label.trim()
                 ),
                 Location::at(line_of(source, *start), 1),
@@ -2357,6 +2377,77 @@ Inc 1, Inc 2, Inc 3.
             .find(|f| f.code == "conformance.item-slot-delimiter-shadowed")
             .expect("an item-slot-delimiter-shadowed finding");
         insta::assert_debug_snapshot!("item_slot_delimiter_shadowed", f);
+    }
+
+    /// The shadow guard's **message** names the depth *at this address*, not a global
+    /// `####` (M49 Increment 1 T7 — the un-swept sibling of the ceiling message's own
+    /// fix, `ceiling_violations`' *"never a global `####`"*). A **nested** multi-slot
+    /// item sits at `####`, so its per-leaf delimiter is `#####` and the shallowest
+    /// free depth is `######`: a message naming `####`/`#####` there points the author
+    /// at the wrong two depths — and following it (demoting the stray to `#####`) would
+    /// mint a *second* shadowing delimiter rather than repair the first.
+    #[test]
+    fn nested_multi_slot_shadow_message_names_this_depth() {
+        let yaml = b"\
+type: changelog
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+              - { id: impact, slot: { hint: \"Who is affected.\" } }
+";
+        let schema =
+            crate::schema::load_schema(yaml).expect("nested multi-slot changelog schema loads");
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+##### Notes
+
+OAuth device-code flow.
+
+##### Stray
+
+This heading is prose, not a slot delimiter.
+
+##### Impact
+
+Everyone.
+";
+        let findings = parse_sections(&schema, src).expect_err("a shadowing `##### ` blocks");
+        let f = findings
+            .iter()
+            .find(|f| f.code == "conformance.item-slot-delimiter-shadowed")
+            .expect("an item-slot-delimiter-shadowed finding at the nested level");
+        assert!(
+            f.message.contains("`##### Stray`"),
+            "the message names the heading at ITS depth (`#####` for a `####` item): {:?}",
+            f.message
+        );
+        assert!(
+            f.message.contains("must not start a line with `##### `"),
+            "the delimiter it shadows is `#####` here, not `####`: {:?}",
+            f.message
+        );
+        assert!(
+            f.message.contains("(use `######`+"),
+            "the shallowest free depth here is `######`, and `#####` is the corrupting \
+             one — naming it would mint a second shadow: {:?}",
+            f.message
+        );
     }
 
     /// A `#### `-line-start in a **single-slot** item's prose is *not* a delimiter
