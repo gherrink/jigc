@@ -788,10 +788,18 @@ fn run_unset_field(
     let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     let ack_target = field_ack_target(&address, &target);
-    let edited = apply_unset_target(&schema, &source, target, &uri)
+    let outcome = apply_unset_target(&schema, &source, target, &uri)
         .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
 
-    persist(&path, &edited)?;
+    // The no-op writes nothing: the state the agent asked for already held, and the
+    // first-touch copy-in (announced by `copied_in`) is the only byte this call moved.
+    let (edited, already_absent) = match outcome {
+        engine::write::UnsetOutcome::Removed(edited) => {
+            persist(&path, &edited)?;
+            (edited, false)
+        }
+        engine::write::UnsetOutcome::AlreadyAbsent => (source, true),
+    };
     let findings = write_ack_findings(
         &schema,
         &edited,
@@ -805,6 +813,7 @@ fn run_unset_field(
             &render::DocAck::UnsetField {
                 address: addr.to_string(),
                 target: ack_target,
+                already_absent,
                 findings,
                 copied_in,
             },
@@ -815,15 +824,19 @@ fn run_unset_field(
 
 /// Apply a resolved `--unset` (field removal) to `source`, dispatching by target kind to
 /// the engine's byte-stable splice-remove — the `--unset` counterpart to
-/// [`apply_field_target`]. An ineligible-field / absent-field engine [`Finding`] surfaces
-/// through the shared block envelope (its guard route preserved, a routeless splice error
-/// given the generic retry route).
+/// [`apply_field_target`]. An ineligible-field engine [`Finding`] surfaces through the
+/// shared block envelope (its guard route preserved, a routeless splice error given the
+/// generic retry route).
+///
+/// An **already-absent** field is not a failure and never reaches that envelope: the
+/// engine answers [`engine::write::UnsetOutcome::AlreadyAbsent`] and the caller acks the
+/// no-op (M49 Increment 1 T4).
 fn apply_unset_target(
     schema: &Schema,
     source: &str,
     target: FieldTarget,
     uri: &str,
-) -> Result<String, DocFailure> {
+) -> Result<engine::write::UnsetOutcome, DocFailure> {
     let map = |f: &Finding| block(f, "set-field", uri);
     Ok(match target {
         FieldTarget::Section { section, field } => {
@@ -885,6 +898,15 @@ fn repoint_empty_value(failure: DocFailure, addr: &str, value: &str) -> DocFailu
 /// four M47 wired, two of them turned into not-present producers by T1's engine flip).
 /// **Adding a write verb means adding its call here** — the enumeration is fenced by that
 /// suite's row-per-cell axis, not by this comment.
+///
+/// **Narrowed at its other edge (M49 Inc 1 T4):** `--unset`'s **field**-miss cell no
+/// longer reaches here, because it is no longer a miss — an eligible field that is
+/// already absent is the state the caller asked for, so the engine answers
+/// [`engine::write::UnsetOutcome::AlreadyAbsent`] and the door acks the no-op. What used
+/// to arrive was a present item's absent bullet wearing the *item*-miss route: "show the
+/// section's item ids" over a section whose ids were fine, so the route terminated
+/// nowhere and the re-run reproduced the error. The item-miss cell is untouched — this
+/// enrichment is right for it, and only for it.
 ///
 /// The widened domain's response holds at its edge: a `write.not-present` raised over a
 /// **section-level** target (an absent structural home rather than an absent item id) gets

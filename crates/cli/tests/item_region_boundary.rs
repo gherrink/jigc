@@ -659,3 +659,221 @@ fn a_repeated_declared_field_bullet_blocks_with_its_route() {
         "the key names the repeated field's own leaf:\n{json}",
     );
 }
+
+// ============================================================================
+// T4 — `--unset` of an absent field stops dead-ending
+//
+// The same item region, asked the removal question. Through `1.0.0-rc.12`, on a
+// **present** item whose optional field is genuinely absent — the state a freshly
+// minted item is in — `jigc doc set-field <item>/<field> --unset` answered
+// `blocking · write.not-present — field group for field "status" is not present`,
+// routed at `jigc doc show <doc>#<section> --task <id>`. That route is M44's
+// **item-miss** route, and it is correct there: the agent addressed an item that was
+// never minted, and the section read reveals the live ids. Here the item exists, so
+// the route, followed verbatim, shows the item and changes nothing — re-running the
+// write reproduces the identical error. A dead end
+// (`design/surface-contract.md` → nothing dead-ends; `design/command-output-contract.md`
+// → the universal advisory/blocking route floor, which a route that cannot terminate
+// satisfies only on paper).
+//
+// The cause was never the route: `enrich_not_present_route` rewrites EVERY
+// `write.not-present` from a write door to the containing-section read, and the two
+// misses it cannot tell apart are the **item** miss (an id that was never minted) and
+// the **field** miss (a present item, no such bullet). The second is not a miss at all
+// — the state the agent asked for **already holds** — so it acks the no-op, the shipped
+// idempotent-`rename` precedent (M48: ack the no-op instead of dressing an empty result
+// as a failure), with an `already_absent` discriminator on both surfaces so the ack
+// distinguishes *removed* from *was never there* (`design/surface-contract.md` law 1,
+// the same shape as `create`'s `existed`).
+//
+// The axis is the **container depth** `--unset` addresses, not the reported repro:
+// `{section field, item field}` × `{present container, absent container}`. The item
+// arm is the repro; the section arm is its sibling one level out (a header scalar on
+// the shipped `adr`); the absent-container column keeps M44's route, asserted here
+// rather than assumed.
+// ============================================================================
+
+/// `jigc doc set-field <addr> --unset`'s success bit and full output.
+fn unset(corpus: &TrialCorpus, address: &str, task: &str) -> (bool, String) {
+    let out = corpus.jigc(&["doc", "set-field", address, "--unset", "--task", task]);
+    (
+        out.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        ),
+    )
+}
+
+/// (x) The repro, fixed: on a **present** item whose optional field is absent,
+/// `--unset` acks the no-op at exit 0, touches no bytes, is idempotent, and says on
+/// both surfaces that the field was already absent — while a real removal on the same
+/// leaf carries the discriminator's other value.
+#[test]
+fn an_unset_of_an_absent_item_field_acks_the_no_op() {
+    let pack = FixturePack::from_dev_pack("unset-absent-item-field");
+    pack.write_schema("changelog", MULTI_SLOT_SCHEMA)
+        .write_workflow("log-finding", FIXTURE_WORKFLOW);
+    let (corpus, task, item) = multi_slot_corpus(&pack);
+    let address = format!("{item}/status");
+
+    let before = staged_doc(&corpus, &task);
+    assert!(
+        !before.contains("- status:"),
+        "precondition: a freshly minted item carries no `status` bullet:\n{before}",
+    );
+
+    let (ok, text) = unset(&corpus, &address, &task);
+    assert!(
+        ok,
+        "`--unset` of an already-absent field on a PRESENT item is the state the agent \
+         asked for — it must ack, not block with a route that reproduces itself:\n{text}",
+    );
+    assert!(
+        text.contains(&address) && text.contains("already absent"),
+        "the ack distinguishes `already absent` from a removal that happened:\n{text}",
+    );
+    assert_eq!(
+        staged_doc(&corpus, &task),
+        before,
+        "a no-op changes no bytes",
+    );
+
+    // Idempotent: the second call reads exactly like the first.
+    let (ok_again, again) = unset(&corpus, &address, &task);
+    assert!(ok_again, "the no-op stays a no-op:\n{again}");
+    assert_eq!(again, text, "the no-op ack is stable across re-runs");
+
+    // The machine surface carries the same fact, keyed.
+    let json = corpus.jigc_ok(&[
+        "doc",
+        "set-field",
+        &address,
+        "--unset",
+        "--task",
+        &task,
+        "--format",
+        "json",
+    ]);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("the ack is JSON");
+    assert_eq!(value["op"], "set-field", "the op is unchanged:\n{json}");
+    assert_eq!(
+        value["unset"], true,
+        "the unset discriminator holds:\n{json}"
+    );
+    assert_eq!(
+        value["already_absent"], true,
+        "the envelope carries the fact the text prints:\n{json}",
+    );
+
+    // And a real removal on the same leaf answers the other value — so the key
+    // discriminates rather than being a constant.
+    corpus.set_field(&address, &task, "draft");
+    let json = corpus.jigc_ok(&[
+        "doc",
+        "set-field",
+        &address,
+        "--unset",
+        "--task",
+        &task,
+        "--format",
+        "json",
+    ]);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("the ack is JSON");
+    assert_eq!(
+        value["already_absent"], false,
+        "a removal that removed something is not `already absent`:\n{json}",
+    );
+    assert!(
+        !staged_doc(&corpus, &task).contains("- status:"),
+        "the removal really removed the bullet",
+    );
+}
+
+/// (xi) The sibling one container-level out: a **section**-level optional scalar on the
+/// shipped `adr` — absent on a freshly created doc — acks the same no-op. The class is
+/// the container depth `--unset` addresses, not the item block that reported it.
+#[test]
+fn an_unset_of_an_absent_section_field_acks_the_no_op() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = corpus.start_workflow("single-task", "clear an absent header scalar");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "Cache strategy",
+        "--task",
+        &task,
+    ]);
+    let address = "adr:cache-strategy#status/cites-code";
+
+    let before = corpus.jigc_ok(&["doc", "show", "adr:cache-strategy", "--task", &task]);
+    assert!(
+        !before.contains("cites-code"),
+        "precondition: the optional header scalar is absent:\n{before}",
+    );
+
+    let (ok, text) = unset(&corpus, address, &task);
+    assert!(
+        ok,
+        "the section arm of the same class must ack too — the field's absence is the \
+         requested end state at every container depth:\n{text}",
+    );
+    assert!(
+        text.contains("already absent"),
+        "the ack names the fact:\n{text}",
+    );
+    assert_eq!(
+        corpus.jigc_ok(&["doc", "show", "adr:cache-strategy", "--task", &task]),
+        before,
+        "a no-op changes no bytes",
+    );
+}
+
+/// (xii) The absent-container column, unchanged: an `--unset` at an item id that was
+/// never minted is still M44's **item miss** — `write.not-present` routed at the
+/// containing section — and the route, run verbatim, answers. The no-op above must not
+/// swallow this cell.
+#[test]
+fn an_unset_at_a_missing_item_keeps_the_containing_section_route() {
+    let pack = FixturePack::from_dev_pack("unset-missing-item");
+    pack.write_schema("changelog", MULTI_SLOT_SCHEMA)
+        .write_workflow("log-finding", FIXTURE_WORKFLOW);
+    let (corpus, task, _item) = multi_slot_corpus(&pack);
+
+    let (ok, text) = unset(
+        &corpus,
+        "changelog:findings-log#findings/9-9-9/status",
+        &task,
+    );
+    assert!(
+        !ok,
+        "an item id that was never minted is a real miss and still blocks:\n{text}",
+    );
+    assert!(
+        text.contains("write.not-present"),
+        "the item miss keeps its code:\n{text}",
+    );
+    let route = text
+        .lines()
+        .find(|line| line.trim_start().starts_with("route: "))
+        .unwrap_or_else(|| panic!("the block carries a route:\n{text}"));
+    let command = route
+        .split('`')
+        .nth(1)
+        .unwrap_or_else(|| panic!("the route leads with a backticked command: {route}"));
+    assert_eq!(
+        command,
+        format!("jigc doc show changelog:findings-log#findings --task {task}"),
+        "M44's containing-section route is unchanged: {route}",
+    );
+    // Run it verbatim — the route the agent is handed answers.
+    let args: Vec<&str> = command.split_whitespace().skip(1).collect();
+    let shown = corpus.jigc_ok(&args);
+    assert!(
+        shown.contains("First finding"),
+        "the route, run verbatim, reveals the section's live item ids:\n{shown}",
+    );
+}

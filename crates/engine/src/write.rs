@@ -5909,10 +5909,72 @@ pub fn set_field_validated(
     }
 }
 
+/// What a gated `--unset` did — the two conformant ends of a removal, kept apart so the
+/// ack can state which one it reached (`design/surface-contract.md` law 1: an ack that
+/// says "unset" distinguishes *removed* from *was never there*, exactly as `create`'s
+/// `existed` distinguishes minted from copied-in).
+///
+/// `AlreadyAbsent` carries **no buffer** on purpose: a no-op has nothing to persist, and
+/// handing back a copy of `source` would let a caller write bytes for a write that did
+/// not happen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnsetOutcome {
+    /// The field's line/bullet was removed; the buffer to persist.
+    Removed(String),
+    /// The field was **already absent** — the state the caller asked for already held,
+    /// so nothing was edited (M49 Increment 1 T4).
+    AlreadyAbsent,
+}
+
+/// Is the addressed field **already absent** from `source`? The presence question
+/// [`item_chain_absent`] asks of an item, asked of a leaf — and the whole of `--unset`'s
+/// no-op rule, at every container depth: an empty `item_ids` addresses the section's own
+/// field group, a non-empty one the (possibly nested) item's.
+///
+/// A **missing container** answers the section arm's question `true`: the field is absent
+/// because its optional section is, and "is this field present?" is the only question
+/// `--unset` asks. The item arm answers `false` instead, because an absent *item* is a
+/// real miss that [`unset_item_field_validated`] has already adjudicated a rank above —
+/// answering `true` here would swallow it into a silent no-op.
+///
+/// A source that no longer parses answers `false`: "cannot tell" is not a yes, so the
+/// splice path below keeps its `NotConformant` diagnosis.
+fn addressed_field_absent(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+    field_key: &str,
+) -> bool {
+    let Ok(doc) = parse::parse_sections(schema, source) else {
+        return false;
+    };
+    let fields = if item_ids.is_empty() {
+        match doc.sections.iter().find(|s| s.id == section_id) {
+            Some(section) => &section.fields,
+            None => return true,
+        }
+    } else {
+        match nested_parsed_item(schema, &doc, section_id, item_ids) {
+            Some(item) => &item.fields,
+            None => return false,
+        }
+    };
+    !fields.iter().any(|f| f.key == field_key)
+}
+
 /// The gated `set-field --unset` (header / simple-body field): apply the eligibility
-/// guard, then the byte-stable [`unset_field`] splice-remove, then re-parse the result.
-/// Returns the buffer to persist, or a blocking [`Finding`] (and **no** buffer) — an
-/// ineligible field, an unknown/absent field, or a non-reparseable result.
+/// guard, answer the presence question, then the byte-stable [`unset_field`]
+/// splice-remove and a re-parse of the result. Returns the [`UnsetOutcome`], or a
+/// blocking [`Finding`] (and **no** buffer) — an ineligible field, an unknown field, or
+/// a non-reparseable result.
+///
+/// **An eligible field that is already absent is a no-op, not a miss** (M49 Increment 1
+/// T4): the state the caller asked for already holds. Before, it fell through to the
+/// splice's `NotPresent` and the CLI's item-miss enrichment rewrote its route to *"show
+/// the containing section to see its current item ids"* — a route that, followed
+/// verbatim, showed a section that was fine and left the write reproducing its own error
+/// (`design/surface-contract.md` → nothing dead-ends).
 ///
 /// The determinism boundary is unmoved: the agent decides *which* optional field to
 /// clear; the CLI/engine owns the byte removal.
@@ -5921,7 +5983,7 @@ pub fn unset_field_validated(
     source: &str,
     section_id: &str,
     field_key: &str,
-) -> Result<String, Finding> {
+) -> Result<UnsetOutcome, Finding> {
     let field = field_schema(schema, section_id, field_key).ok_or_else(|| {
         blocking_write(
             "write.unknown-field",
@@ -5932,10 +5994,13 @@ pub fn unset_field_validated(
     if let Some(finding) = unset_eligibility_finding(field) {
         return Err(finding);
     }
+    if addressed_field_absent(schema, source, section_id, &[], field_key) {
+        return Ok(UnsetOutcome::AlreadyAbsent);
+    }
     let edited =
         unset_field(schema, source, section_id, field_key).map_err(|e| splice_error_finding(&e))?;
     reparse_or_reject(schema, &edited)?;
-    Ok(edited)
+    Ok(UnsetOutcome::Removed(edited))
 }
 
 /// Does the addressed item chain name an item that is **not present** in `source`? The
@@ -5979,13 +6044,19 @@ pub fn item_chain_absent(
 /// outranks both**: the chain is resolved against the schema first ([`physical_item_chain`]),
 /// so an undeclared or non-repeatable section keeps today's shape-question diagnosis. A
 /// source that no longer parses is left to the splice path below, which diagnoses the break.
+///
+/// **And the leaf's own presence is adjudicated last** (M49 Increment 1 T4): on a present
+/// item, an eligible field with no bullet is [`UnsetOutcome::AlreadyAbsent`] — a no-op —
+/// never the `NotPresent` whose CLI-side route told the agent to go read the section's
+/// item ids for an item that was right there. The rank order matters both ways: the miss
+/// still outranks, so an absent item never degrades into a silent no-op.
 pub fn unset_item_field_validated(
     schema: &Schema,
     source: &str,
     section_id: &str,
     item_ids: &[&str],
     field_key: &str,
-) -> Result<String, Finding> {
+) -> Result<UnsetOutcome, Finding> {
     // Rank 1 — the undeclared section outranks both presence and the field question
     // ([`undeclared_section_generate`]): `item_chain_absent` answers "not absent" for a
     // shape miss, so without this the door fell through to `write.unknown-field` and
@@ -6010,10 +6081,16 @@ pub fn unset_item_field_validated(
     if let Some(finding) = unset_eligibility_finding(field) {
         return Err(finding);
     }
+    // Rank 4 — the leaf's own presence. The item is present (rank 2) and the field is
+    // declared and eligible (rank 3), so an absent bullet is the requested end state
+    // rather than a miss: the no-op ([`addressed_field_absent`]).
+    if addressed_field_absent(schema, source, section_id, item_ids, field_key) {
+        return Ok(UnsetOutcome::AlreadyAbsent);
+    }
     let edited = unset_item_field(schema, source, section_id, item_ids, field_key)
         .map_err(|e| splice_error_finding(&e))?;
     reparse_or_reject(schema, &edited)?;
-    Ok(edited)
+    Ok(UnsetOutcome::Removed(edited))
 }
 
 /// The `--unset` eligibility guard: a field may be cleared only when its **absence is a
@@ -12695,10 +12772,35 @@ The gateway rejects the 101st request.
 
     #[test]
     fn validated_unset_clears_an_optional_header_scalar() {
-        let out = unset_field_validated(&adr_schema(), ADR_WITH_CITES, "status", "cites-code")
-            .expect("cites-code is eligible + present");
+        let UnsetOutcome::Removed(out) =
+            unset_field_validated(&adr_schema(), ADR_WITH_CITES, "status", "cites-code")
+                .expect("cites-code is eligible + present")
+        else {
+            panic!("a present field is removed, not already absent");
+        };
         assert!(!out.contains("cites-code"));
         assert_byte_stable(&adr_schema(), &out);
+    }
+
+    #[test]
+    fn validated_unset_of_an_already_absent_field_is_a_no_op() {
+        // `supersedes` is declared, eligible and absent from the fixture. The raw splice
+        // calls that `NotPresent` (above); the gated door calls it what it is — the state
+        // the caller asked for, already held (M49 Inc 1 T4).
+        let outcome = unset_field_validated(&adr_schema(), ADR_WITH_CITES, "status", "supersedes")
+            .expect("an already-absent eligible field is a no-op, not a miss");
+        assert_eq!(outcome, UnsetOutcome::AlreadyAbsent);
+    }
+
+    #[test]
+    fn validated_unset_of_an_absent_field_never_outranks_the_eligibility_guard() {
+        // `date` (`set: on-create`) is absent from a doc that never carried it, and the
+        // refusal still fires: the no-op is the *last* rank, never a way past the guard.
+        let source = ADR_WITH_CITES.replace("date: 2026-05-23\n", "");
+        assert!(!source.contains("date:"), "the fixture drops the date line");
+        let finding = unset_field_validated(&adr_schema(), &source, "status", "date")
+            .expect_err("a set-derived field cannot be unset, present or not");
+        assert_eq!(finding.code, "write.unset-ineligible");
     }
 
     #[test]

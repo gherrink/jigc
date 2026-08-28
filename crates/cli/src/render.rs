@@ -1558,9 +1558,18 @@ pub enum DocAck {
     },
     /// A `set-field --unset` cleared the field at `address`/`target` (its line/bullet
     /// removed). No `value` key — the effect is the field's absence, read back via `doc show`.
+    ///
+    /// `already_absent` is the **always-present** discriminator of which conformant end
+    /// the verb reached: `false` when a bullet/line was removed, `true` when the field was
+    /// never there and the call changed no bytes (M49 Increment 1 T4 — the no-op that used
+    /// to block with a route reproducing its own error). Law 1's *"an ack that says
+    /// 'created' distinguishes created from already-existed"*, applied to removal, and it
+    /// rides both surfaces: the agent-text line appends `(already absent — nothing
+    /// changed)` and the envelope carries the key.
     UnsetField {
         address: String,
         target: AckTarget,
+        already_absent: bool,
         findings: Findings,
         copied_in: bool,
     },
@@ -1688,9 +1697,13 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
                 }),
                 // `--unset` shares the `set-field` op, with `unset: true` in place of a value.
                 DocAck::UnsetField {
-                    target, findings, ..
+                    target,
+                    already_absent,
+                    findings,
+                    ..
                 } => serde_json::json!({
-                    "op": "set-field", "target": target, "unset": true, "findings": findings,
+                    "op": "set-field", "target": target, "unset": true,
+                    "already_absent": already_absent, "findings": findings,
                 }),
                 DocAck::Slot {
                     target,
@@ -1775,7 +1788,17 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
                 DocAck::Field { address, value, .. } => {
                     format!("set {address} = {}", ack_value_display(value))
                 }
-                DocAck::UnsetField { address, .. } => format!("unset {address}"),
+                DocAck::UnsetField {
+                    address,
+                    already_absent,
+                    ..
+                } => {
+                    if *already_absent {
+                        format!("unset {address} (already absent — nothing changed)")
+                    } else {
+                        format!("unset {address}")
+                    }
+                }
                 DocAck::Slot { address, chars, .. } => {
                     format!("set slot {address} ({chars} chars)")
                 }

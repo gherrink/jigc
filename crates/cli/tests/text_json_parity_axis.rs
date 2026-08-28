@@ -889,6 +889,7 @@ fn doc_ack_parity() {
         DocAck::UnsetField {
             address: address.clone(),
             target: target(),
+            already_absent: true,
             findings: Findings::from(Vec::new()),
             copied_in: true,
         },
@@ -977,12 +978,20 @@ fn doc_ack_parity() {
             DocAck::UnsetField {
                 address,
                 target,
+                already_absent,
                 findings,
                 copied_in,
             } => {
                 text_prints(&text, address, &label, "address");
                 carries_decomposed(&doc["target"], decomposed, &label, "address");
                 carries(&doc, "target", target, &label, "target");
+                carries(
+                    &doc,
+                    "already_absent",
+                    already_absent,
+                    &label,
+                    "already_absent",
+                );
                 carries(&doc, "findings", findings, &label, "findings");
                 carries(&doc, "copied_in", copied_in, &label, "copied_in");
             }
