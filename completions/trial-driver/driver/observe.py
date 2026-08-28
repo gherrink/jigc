@@ -599,9 +599,26 @@ def ended_asking(stream: pathlib.Path) -> tuple[bool, str]:
         if event.get("type") == "result":
             result = str(event.get("result") or "")
     tail = result.strip()
-    if not tail.endswith("?"):
+    # PRESENCE of a question, not a trailing one. The first version of this
+    # checked `endswith("?")` and MISSED B1, which asked its question and then
+    # added a closing sentence about what it would do once answered — the
+    # ordinary shape of a person asking for something. That is an incomplete fix
+    # to the defect R2 exposed, found the same way R2's was: by running it.
+    #
+    # Measured across the six sessions available when this was corrected —
+    # B1, B2, B3, B3-strict, r1b, r2 — presence separates perfectly (3 stopping
+    # sessions all contain one, 3 completing sessions contain none) where
+    # `endswith` caught 1 of 3.
+    #
+    # Still a heuristic, and its failure mode is now the opposite one: a
+    # completion summary containing a rhetorical question would score as a stop.
+    # None of the six does, but n is six. The caller gets the text around the
+    # question so the call stays checkable by a human.
+    q = tail.rfind("?")
+    if q < 0:
         return False, ""
-    return True, tail[-160:]
+    start = max(0, q - 200)
+    return True, tail[start:q + 1]
 
 
 def windows(records: "list[Invocation]",

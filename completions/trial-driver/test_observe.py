@@ -589,6 +589,31 @@ class TheOtherHaltShape(unittest.TestCase):
         asked, _ = observe_mod.ended_asking(self._stream(self.DONE))
         self.assertFalse(asked, "a completion summary is not a question")
 
+    #: B1's real shape: it asked, then added a closing sentence about what it
+    #: would do once answered. The first version of this detector checked
+    #: `endswith("?")` and scored it as a completed session — an incomplete fix
+    #: to the defect R2 exposed, found the same way R2's was, by running it.
+    ASKED_THEN_CLOSED = (
+        "I don't want to fabricate the sign-off myself. Can you either get that "
+        "sign-off recorded, or confirm you want me to bypass the hook? Once "
+        "either happens I'll re-run `jigc task finalize` to land it cleanly.")
+
+    def test_a_question_followed_by_a_closing_sentence_still_counts(self) -> None:
+        asked, tail = observe_mod.ended_asking(self._stream(self.ASKED_THEN_CLOSED))
+        self.assertTrue(asked, "the question is mid-text, which is how people ask")
+        self.assertIn("bypass the hook?", tail,
+                      "the returned text centres on the question, so the call "
+                      "stays checkable by a human")
+
+    def test_the_separation_measured_across_the_six_real_sessions(self) -> None:
+        """Presence separates 3/3 where `endswith` caught 1 of 3."""
+        stopping = [self.ASKED, self.ASKED_THEN_CLOSED]
+        completing = [self.DONE]
+        for t in stopping:
+            self.assertTrue(observe_mod.ended_asking(self._stream(t))[0])
+        for t in completing:
+            self.assertFalse(observe_mod.ended_asking(self._stream(t))[0])
+
     def test_the_two_signals_stay_separate(self) -> None:
         """One is exact and one is a guess; folding them loses which is which."""
         s = self._stream(self.ASKED, denials=2)

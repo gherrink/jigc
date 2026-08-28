@@ -1,0 +1,80 @@
+{
+ "is_error": false,
+ "duration_api_ms": 384046,
+ "num_turns": 70,
+ "stop_reason": "end_turn",
+ "session_id": "7da10ce7-cf79-47af-9df3-ebbd8f9b3328",
+ "total_cost_usd": 2.3100590000000008,
+ "usage": {
+  "input_tokens": 114,
+  "cache_creation_input_tokens": 80232,
+  "cache_read_input_tokens": 4436890,
+  "output_tokens": 26808,
+  "output_tokens_details": {
+   "thinking_tokens": 13236
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 80232,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "not_available",
+  "iterations": [
+   {
+    "input_tokens": 2,
+    "output_tokens": 701,
+    "cache_read_input_tokens": 109933,
+    "cache_creation_input_tokens": 278,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 278
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ },
+ "modelUsage": {
+  "claude-sonnet-5": {
+   "inputTokens": 114,
+   "outputTokens": 26808,
+   "cacheReadInputTokens": 4436890,
+   "cacheCreationInputTokens": 80232,
+   "webSearchRequests": 0,
+   "costUSD": 2.2149210000000004,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 64000,
+   "canonicalModel": "claude-sonnet-5",
+   "provider": "firstParty"
+  },
+  "claude-haiku-4-5-20251001": {
+   "inputTokens": 43358,
+   "outputTokens": 2356,
+   "cacheReadInputTokens": 0,
+   "cacheCreationInputTokens": 0,
+   "webSearchRequests": 4,
+   "costUSD": 0.095138,
+   "contextWindow": 200000,
+   "maxOutputTokens": 32000,
+   "canonicalModel": "claude-haiku-4-5",
+   "provider": "firstParty"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "Clean working tree, no open tasks. Three things landed:\n\n1. **Finished the abandoned task** (`docs/decisions/drop-the-oldest-sample-when.md`): the ADR's title/slug said \"reject the newest sample\" but its actual decision text \u2014 and the shipped code in `src/ingest.ts` \u2014 drop the *oldest*. Renamed it to match reality, fixed `status: superseded` \u2192 `accepted`, filled in the empty commit metadata, and finalized.\n\n2. **Researched comparable services** (`docs/research/how-comparable-time-series-services.md`): checked Prometheus, Grafana Mimir/Cortex, InfluxDB, and Datadog. The systems that carry the OOM risk themselves (Prometheus, Mimir, InfluxDB) all converge on a hard admission cap that rejects new series past a limit \u2014 costing them either operator tuning burden (Prometheus), real sharding/rejection machinery (Mimir), or silently-failed writes (InfluxDB). Datadog is the outlier, and only because cardinality becomes the customer's bill instead of Datadog's crash.\n\n3. **Recorded the bet** (`docs/decisions/bet-on-a-bounded-label.md`): `MemoryStore` has no cap on distinct series, and `POST /samples` (src/router.ts) accepts any caller's series string with zero auth. Rather than add a cap now, the decision records the actual bet being made: that every writer is a small, reviewed, internal instrumentation point \u2014 not user- or request-derived data \u2014 so cardinality stays bounded by convention, not enforcement. It names the trigger that invalidates this (an untrusted caller, or a series name derived from request/user data) and scopes the fallback (a `maxSeries` cap on `MemoryStore.put`, mirroring the industry pattern) for when that happens.\n\nWorth flagging: that third ADR is a judgment call I made on your behalf rather than something you'd already settled \u2014 it's fully reversible (revise it via `jigc start --workflow record-decision` again) if you'd rather cap it now instead of betting on upstream discipline.",
+ "ttft_ms": 2637,
+ "ttft_stream_ms": 1552,
+ "time_to_request_ms": 27,
+ "type": "result",
+ "duration_ms": 377706,
+ "uuid": "d33dc0fd-988e-476d-b95f-3984a744a9a1"
+}
