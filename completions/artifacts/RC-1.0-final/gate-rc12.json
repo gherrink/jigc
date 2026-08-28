@@ -1,0 +1,19 @@
+{
+  "identity": {
+    "tag": "jigc-gate:rc12",
+    "image_id": "sha256:d79c3db29f7b556189a8f31867fcf991585820d8bf2219195616055b5c27a9e2",
+    "jigc_sha": "314f59ecc1c32c0ccf16685b83f2797fd2e13fc2",
+    "jigc_version": "jigc 1.0.0-rc.12",
+    "cli_version": "2.1.233 (Claude Code)"
+  },
+  "checks": {
+    "isolation": true,
+    "workspace_trusted": true,
+    "version_stamp": true,
+    "doc_code_probe": true,
+    "history_roundtrip": true,
+    "transcript_recoverable": true,
+    "no_host_instructions": true
+  },
+  "note": "verify-image.sh jigc-gate:rc12 1.0.0-rc.12 => 7 passed / 0 failed, 2026-08-28; verify-pair.sh PAIR_PROBES=m46 rc11->rc12 => 3/3 behavioural probes discriminate"
+}
