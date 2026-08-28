@@ -115,3 +115,46 @@ record will need this to tell a real defect from a definitional one.
 
 **Reached by:** `arms/walk/09-increment-8-doors.sh` T6, which prints the derivation and
 explicitly declines to score it.
+
+---
+
+## PT-D · The trial corpus has a second accidental prose↔code contradiction, and plant E sits on it
+
+**Status: a finding about the FIXTURE, not the product.** Recorded so the sessions that follow do
+not each re-derive it, and so it is never mistaken for a product result.
+
+**Surfaced by B3**, unprompted, which found it while writing the architecture doc and reported it
+rather than describing the pipeline it expected to see. **Verified independently against the
+template before being believed** — an agent's report is a lead, not a measurement:
+
+```
+src/router.ts    Router.ingest → this.store.put(...)      # the queue is bypassed on the live path
+src/index.ts:37  tick(): drains the queue, prunes         # nothing calls tick()
+src/index.ts:45  main(): createService(), then reads store.series()   # never ticks
+grep 'queue\.' src/   →  exactly one hit, inside the dead tick()
+```
+
+So `IngestQueue` is constructed, exposed on the `Service` interface, and unit-tested in
+isolation — **and never fed by anything on a live path.** Its overflow policy is dead code.
+
+**Why this matters here specifically: plant E's whole subject is that dead code.** The planted
+ADR decides the ingest queue's overflow behaviour, and the committed naming authority the plant
+leans on is `src/ingest.ts`'s doc-comment about it.
+
+**It does not break the plant, and B3 is the evidence.** The plant's contradiction is *internal*
+— the H1 says "reject the newest", the `## Decision` says "drop the oldest" — and that holds
+whether or not the queue is wired up. B3 consumed both instruments correctly (`doc rename`, then
+the sanctioned `set-field`) and reported the dead code as a *separate* observation.
+
+**But it is exactly the noise `--clean-prose` exists to prevent.** The 1.0.0-gate protocol's own
+words about the first accidental contradiction: *"an accident that produces a finding you must
+then bound is noise that looks like signal."* This is a second one, in code rather than prose,
+and `--clean-prose` does not touch it.
+
+**Deliberately NOT fixed now.** B3 has already run on this corpus, and B1/B2 must run on the same
+fixture or the arms are not comparable. Changing the template mid-trial would be worse than the
+wart. **Owed after the trial:** either wire `tick()` into a live path in
+[trial-corpus-template](../../trial-corpus-template/), or move plant E's subject to a doctype
+whose code path is live — and add a bar to `check-corpus.sh` that fails when a template symbol
+the plants depend on is unreachable, so the next one is caught by the gate rather than by a
+worker.
