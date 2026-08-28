@@ -27,6 +27,8 @@ mod flow46_acceptance;
 mod item_anchor_slug_word_aware;
 #[path = "../item_authoring_acceptance.rs"]
 mod item_authoring_acceptance;
+#[path = "../item_region_boundary.rs"]
+mod item_region_boundary;
 #[path = "../item_slot_ceiling_axis.rs"]
 mod item_slot_ceiling_axis;
 #[path = "../item_slot_corruption_acceptance.rs"]

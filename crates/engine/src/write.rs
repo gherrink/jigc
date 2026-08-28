@@ -1344,7 +1344,7 @@ pub fn unset_item_field(
             what: format!("item {item_ids:?} in section {section_id:?}"),
         }
     })?;
-    let leaf_region = item_own_leaf_region(&blocks, region);
+    let leaf_region = item_own_leaf_region(schema, source, &blocks, section_id, item_ids, region);
     unset_group_field(source, &blocks, leaf_region, field_key)
 }
 
@@ -1479,14 +1479,17 @@ pub fn set_item_field(
     // The item's byte region — resolved through the parent-scoped path locator (a
     // single-element chain), then narrowed to the item's OWN leaf region so a nested
     // child's identically-keyed bullet is out of range (the parent's field swallowed by
-    // its child's field block — the corruption bug) just as a sibling item's is.
+    // its child's field block — the corruption bug) just as a sibling item's is. The
+    // narrowing is schema-keyed: the item's own multi-slot sub-labels are deeper
+    // headings too, and stopping at one would put the item's own field group out of
+    // range ([`item_own_leaf_region`]).
     let blocks = parse::scan_blocks(source);
     let region = locate_item_path(schema, source, section_id, &[item_id]).ok_or_else(|| {
         SpliceError::NotPresent {
             what: format!("item {item_id:?} block"),
         }
     })?;
-    let region = item_own_leaf_region(&blocks, region);
+    let region = item_own_leaf_region(schema, source, &blocks, section_id, &[item_id], region);
     let value_span = field_value_in_lines(source, region, field_key, true).ok_or_else(|| {
         SpliceError::NotPresent {
             what: format!("field {field_key:?} value line on item {item_id:?}"),
@@ -2391,19 +2394,44 @@ fn item_block_within(
     Some(start..end)
 }
 
-/// The single-level item's **own leaf region** — its full sub-tree `region` (from
+/// The item's **own leaf region** — its full sub-tree `region` (from
 /// [`locate_item_path`]) narrowed to `[region.start .. first nested child heading)`,
 /// i.e. the bytes the item owns *before* its first nested `####`+ child. A field-group
-/// scan/insert for a top-level field must be bounded to this, not the full sub-tree:
-/// the sub-tree spans the item's nested children, whose field blocks would otherwise be
-/// matched (the parent's field appended INTO a child's group — the corruption this
-/// guards). An item with no nested child keeps its whole region (no deeper heading
-/// inside it).
+/// scan/insert for this item's own field must be bounded to it, not to the full
+/// sub-tree: the sub-tree spans the item's nested children, whose field blocks would
+/// otherwise be matched (the parent's field appended INTO a child's group — the
+/// corruption this guards). An item with no nested child keeps its whole region.
 ///
-/// "First nested child" = the first heading inside `region` deeper than the item's own
-/// heading (the heading at `region.start`); a same-or-shallower heading would already be
-/// outside the item's sub-tree, so [`locate_item_path`] never includes one.
-fn item_own_leaf_region(blocks: &[Block], region: Range<usize>) -> Range<usize> {
+/// **The boundary is schema-keyed, not depth-keyed (M49 D3(A)).** "The first deeper
+/// heading" is the wrong test, because a **multi-slot** item's own `#### <Leaf-Title>`
+/// sub-labels *are* deeper headings: on any item block declaring ≥2 slots the region
+/// stopped at the item's own first sub-label, putting the item's own trailing field
+/// group outside it — so [`set_item_field`] found no bullet, [`set_item_field_or_insert`]
+/// fell through to the insert half, and [`insert_item_field`]'s cold-fill arm appended a
+/// **second bullet for the same key** at exit 0, invisible to `jigc validate`, with the
+/// pinned `doc show --format json` read returning the stale first value.
+///
+/// The rule the fix keys on — the context taken as a fence input rather than sniffed
+/// from bytes (`design/surface-contract.md`): a deeper heading that is a **declared slot
+/// sub-label of this item's template** ([`is_slot_sub_label`]) does not end the region;
+/// anything deeper that is not one does. An `{#id}` anchor is what identifies such a
+/// heading as a nested item rather than a defect, so an anchored heading ends the region
+/// even when its text matches a declared leaf title — without which a parent's leaf
+/// region would swallow its children's field groups, which is the same corruption in the
+/// other direction.
+///
+/// `item_ids` is the **section-qualified** chain (the one [`chain_repeatable`] walks), so
+/// the template resolved is the one the addressed item is an instance of; a chain the
+/// schema cannot walk yields no declared sub-labels — i.e. the depth-only boundary this
+/// widens, which is the conservative answer rather than a wider region.
+fn item_own_leaf_region(
+    schema: &Schema,
+    source: &str,
+    blocks: &[Block],
+    section_id: &str,
+    item_ids: &[&str],
+    region: Range<usize>,
+) -> Range<usize> {
     let own_level = blocks.iter().find_map(|b| match b {
         Block::Heading { level, range, .. } if range.start == region.start => {
             Some(level_num_of(*level))
@@ -2413,13 +2441,25 @@ fn item_own_leaf_region(blocks: &[Block], region: Range<usize>) -> Range<usize> 
     let Some(own_level) = own_level else {
         return region;
     };
+    let slot_ids = chain_repeatable(schema, section_id, item_ids)
+        .map(|repeatable| parse::ItemTemplate::from(repeatable).slot_ids)
+        .unwrap_or_default();
     let first_child = blocks
         .iter()
         .filter_map(|b| match b {
-            Block::Heading { level, range, .. }
-                if range.start > region.start
-                    && range.start < region.end
-                    && level_num_of(*level) > own_level =>
+            Block::Heading {
+                level, range, text, ..
+            } if range.start > region.start
+                && range.start < region.end
+                && level_num_of(*level) > own_level
+                && !is_slot_sub_label(
+                    source,
+                    range,
+                    level_num_of(*level),
+                    own_level,
+                    text,
+                    &slot_ids,
+                ) =>
             {
                 Some(range.start)
             }
@@ -2428,6 +2468,37 @@ fn item_own_leaf_region(blocks: &[Block], region: Range<usize>) -> Range<usize> 
         .min()
         .unwrap_or(region.end);
     region.start..first_child
+}
+
+/// Whether a heading inside an item's sub-tree is that item's own **declared slot
+/// sub-label** — the one deeper-heading kind that does *not* end the item's leaf region.
+///
+/// Three conjuncts, each load-bearing:
+/// - **exactly one level deeper** — the depth [`render_item_at`] emits sub-labels at
+///   (`item_level + 1`), which is also the depth a nested item renders at; a heading
+///   deeper still is slot-internal prose structure to the reader, and nothing at any
+///   other depth competes with a nested item,
+/// - **unanchored** — an `{#id}` anchor makes the heading a nested *item*, whose block
+///   the parent's leaf region must stop before (jigc's own writer always anchors an item
+///   heading; on a malformed corpus the discriminator is undefined for exactly the
+///   documents `conformance.item-heading-unanchored` exists to report, and the answer
+///   here leans to the *narrower* region — the safe side of the corruption),
+/// - **a declared leaf title** — matched through the parser's own
+///   [`parse::heading_matches_label`], so the reader's sub-label test and the writer's
+///   boundary test are one function and cannot disagree.
+fn is_slot_sub_label(
+    source: &str,
+    range: &Range<usize>,
+    level: usize,
+    own_level: usize,
+    text: &str,
+    slot_ids: &[String],
+) -> bool {
+    level == own_level + 1
+        && anchor_of(&source[range.clone()]).is_none()
+        && slot_ids
+            .iter()
+            .any(|leaf_id| parse::heading_matches_label(text, leaf_id))
 }
 
 /// The numeric ATX level of a heading (`H1`→1 … `H6`→6) — the writer-side dual of the
@@ -3319,9 +3390,11 @@ pub fn insert_item_field(
 
     // The item's byte region, resolved through the parent-scoped path locator (a
     // single-element chain). The field-group scan is bounded to the item's OWN leaf
-    // region (before its first nested `####` child) so a nested child's field group is
-    // never matched — without this the parent's field is appended INTO a child's group
-    // (the corruption) or the child's same key triggers a false `AlreadyPresent`. The
+    // region (before its first nested item heading — NOT before its first deeper
+    // heading, which on a multi-slot template is the item's own `#### <Leaf-Title>`
+    // sub-label; [`item_own_leaf_region`]) so a nested child's field group is never
+    // matched — without this the parent's field is appended INTO a child's group (the
+    // corruption) or the child's same key triggers a false `AlreadyPresent`. The
     // cold-fill re-render below uses the FULL sub-tree region (children preserved).
     let blocks = parse::scan_blocks(source);
     let region = locate_item_path(schema, source, section_id, &[item_id]).ok_or_else(|| {
@@ -3329,7 +3402,14 @@ pub fn insert_item_field(
             what: format!("item {item_id:?} in section {section_id:?} not present"),
         }
     })?;
-    let leaf_region = item_own_leaf_region(&blocks, region.clone());
+    let leaf_region = item_own_leaf_region(
+        schema,
+        source,
+        &blocks,
+        section_id,
+        &[item_id],
+        region.clone(),
+    );
 
     let bullet = format!("- {}", emit_one_field(field));
 

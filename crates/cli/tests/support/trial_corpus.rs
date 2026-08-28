@@ -19,6 +19,12 @@
 //! removed from every child environment — the built state composes the *embedded*
 //! packs the suites claim to sweep, whatever the developer's shell carries.
 //!
+//! **The one declared exception is a [`FixturePack`]** ([`TrialCorpus::build_with_pack`]):
+//! a corpus built over one points every child at *that* throwaway directory. The
+//! variable is still never inherited — it is set, from a pack this process built — and
+//! the reason it exists is that a shape space is not enumerable from the shipped
+//! registry (see [`FixturePack`]).
+//!
 //! **A built state is copied, not rebuilt, for a mutating arm** — the golden sweep's
 //! `start` arms mint task dirs, so each state is built once and
 //! [`TrialCorpus::copy_state`]'d per arm, and the copy's bytes carry the source's
@@ -190,6 +196,72 @@ impl State {
     }
 }
 
+/// A **manufactured fixture pack**: a throwaway copy of the embedded dev pack whose
+/// schemas a suite may reshape freely.
+///
+/// It exists because a *shape space* is not enumerable from the shipped registry. The
+/// item-region axis is `{single-slot, multi-slot, slotless} × {nested, not}`, and across
+/// both shipped packs `roadmap.milestones` is the only multi-slot item block and
+/// `changelog.releases/changes` the only nested one — **two of six cells**. A suite that
+/// iterated the registry would sweep those two and call the axis covered, so the
+/// remaining shapes are manufactured here rather than declared unreachable
+/// (`completions/artifacts/M49/settle-record.md` → *Acceptance — one correction to how
+/// the axis is built*).
+///
+/// **Why the freeze manifest is dropped.** A copied `config/schema-manifest.yaml`
+/// freeze-asserts each dev-pack schema's hash at pack-load, so a reshaped schema would
+/// block loudly (correctly — that is the frozen-v1 gate). A manifest-less constituent is
+/// freeze-exempt (`pack.rs` scopes the assert to constituents that ship one), so the
+/// fixture pack is a *different, unfrozen* pack rather than a forged v1 dev pack.
+///
+/// This is the declared exception to the module's `JIGC_PACK_DIR`-is-always-removed rule:
+/// a corpus built with [`TrialCorpus::build_with_pack`] points every child at **this**
+/// directory, explicitly, instead of inheriting whatever a developer's shell carries.
+pub struct FixturePack {
+    root: PathBuf,
+}
+
+impl FixturePack {
+    /// Copy the embedded dev pack tree into a throwaway directory and drop its freeze
+    /// manifest, leaving a loadable pack a caller may reshape.
+    pub fn from_dev_pack(label: &str) -> Self {
+        let root = unique_root(&format!("pack-{label}"));
+        let dev_pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack");
+        copy_tree(&dev_pack, &root);
+        fs::remove_file(root.join("config").join("schema-manifest.yaml"))
+            .expect("drop the copied freeze manifest");
+        FixturePack { root }
+    }
+
+    /// Write (or replace) one doctype schema, by its `<doctype>.yaml` file name.
+    pub fn write_schema(&self, doctype: &str, yaml: &str) -> &Self {
+        fs::write(
+            self.root.join("schemas").join(format!("{doctype}.yaml")),
+            yaml,
+        )
+        .unwrap_or_else(|e| panic!("write the {doctype} fixture schema: {e}"));
+        self
+    }
+
+    /// Write (or replace) one workflow definition, by its `<id>.yaml` file name.
+    pub fn write_workflow(&self, id: &str, yaml: &str) -> &Self {
+        fs::write(self.root.join("workflows").join(format!("{id}.yaml")), yaml)
+            .unwrap_or_else(|e| panic!("write the {id} fixture workflow: {e}"));
+        self
+    }
+
+    /// The directory every child of a fixture-pack corpus reads as `JIGC_PACK_DIR`.
+    pub fn path(&self) -> &Path {
+        &self.root
+    }
+}
+
+impl Drop for FixturePack {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
 /// A built corpus state in a throwaway directory that removes itself on drop.
 ///
 /// The directory holds a `repo/` (the git repo under test) and a `home/` (the
@@ -198,11 +270,27 @@ pub struct TrialCorpus {
     root: PathBuf,
     state: State,
     live_task: Option<String>,
+    /// The [`FixturePack`] every child composes, when this corpus was built with one
+    /// ([`Self::build_with_pack`]); `None` is the embedded-pack default.
+    pack: Option<PathBuf>,
 }
 
 impl TrialCorpus {
-    /// Build `state` in a fresh throwaway corpus.
+    /// Build `state` in a fresh throwaway corpus, over the **embedded** packs.
     pub fn build(state: State) -> Self {
+        Self::build_over(state, None)
+    }
+
+    /// Build `state` in a fresh throwaway corpus whose every child composes `pack`
+    /// instead of the embedded dev pack — the manufactured-shape entry point.
+    ///
+    /// The pack outlives the corpus by construction: the caller holds the
+    /// [`FixturePack`], which cleans itself up on drop.
+    pub fn build_with_pack(state: State, pack: &FixturePack) -> Self {
+        Self::build_over(state, Some(pack.path().to_path_buf()))
+    }
+
+    fn build_over(state: State, pack: Option<PathBuf>) -> Self {
         let root = unique_root(state.name());
         fs::create_dir_all(root.join("repo")).expect("create the corpus repo dir");
         fs::create_dir_all(root.join("home")).expect("create the corpus home dir");
@@ -211,6 +299,7 @@ impl TrialCorpus {
             root,
             state,
             live_task: None,
+            pack,
         };
         corpus.git_init();
         // Managed state through the binary: `setup` installs the `.jigc/` workbench,
@@ -258,6 +347,7 @@ impl TrialCorpus {
             root,
             state: self.state,
             live_task: self.live_task.clone(),
+            pack: self.pack.clone(),
         }
     }
 
@@ -285,19 +375,31 @@ impl TrialCorpus {
 
     /// Run `jigc <args>` against this corpus and return its raw [`Output`].
     ///
-    /// `cwd` is the repo, `$HOME` the corpus home, and `JIGC_PACK_DIR` is removed
-    /// so the child always composes the **embedded** packs — an inherited
-    /// `JIGC_PACK_DIR` would silently swap the pack under every sweep.
+    /// `cwd` is the repo, `$HOME` the corpus home, and `JIGC_PACK_DIR` is either
+    /// **removed** — so the child composes the **embedded** packs, an inherited
+    /// `JIGC_PACK_DIR` silently swapping the pack under every sweep — or set to this
+    /// corpus's own [`FixturePack`] when it was built with one. Either way the pack the
+    /// child reads is chosen here, never inherited.
     pub fn jigc(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_jigc"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+        command
             .args(args)
             .current_dir(self.repo())
             .env("HOME", self.home())
-            .env_remove("JIGC_PACK_DIR")
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .expect("spawn jigc")
+            .stderr(Stdio::piped());
+        self.select_pack(&mut command);
+        command.output().expect("spawn jigc")
+    }
+
+    /// Point one child at this corpus's pack: the fixture pack when built with one,
+    /// else no `JIGC_PACK_DIR` at all. The single seam both spawn helpers share, so a
+    /// fixture-pack corpus cannot compose the embedded pack through one of them.
+    fn select_pack(&self, command: &mut Command) {
+        match &self.pack {
+            Some(dir) => command.env("JIGC_PACK_DIR", dir),
+            None => command.env_remove("JIGC_PACK_DIR"),
+        };
     }
 
     /// Run `jigc <args>`, assert it succeeded, and return its stdout.
@@ -317,16 +419,16 @@ impl TrialCorpus {
     /// shape a suite needs when the invocation is *expected* to be refused (a
     /// gated slot write), where [`Self::jigc_stdin_ok`]'s assert would fire first.
     pub fn jigc_stdin(&self, args: &[&str], stdin: &str) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+        command
             .args(args)
             .current_dir(self.repo())
             .env("HOME", self.home())
-            .env_remove("JIGC_PACK_DIR")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn jigc");
+            .stderr(Stdio::piped());
+        self.select_pack(&mut command);
+        let mut child = command.spawn().expect("spawn jigc");
         child
             .stdin
             .take()
@@ -360,14 +462,14 @@ impl TrialCorpus {
     /// Add one repeatable item and return the address the binary **emitted** —
     /// driven verbatim downstream, never a test-side reconstruction of the slug
     /// rule (the same discipline [`Self::start_workflow`] applies to task ids).
-    fn add_item(&self, section: &str, title: &str, task: &str) -> String {
+    pub fn add_item(&self, section: &str, title: &str, task: &str) -> String {
         self.jigc_ok(&["doc", "add-item", section, "--title", title, "--task", task])
             .trim_end_matches('\n')
             .to_string()
     }
 
     /// Set one typed field.
-    fn set_field(&self, address: &str, task: &str, value: &str) {
+    pub fn set_field(&self, address: &str, task: &str, value: &str) {
         self.jigc_ok(&[
             "doc",
             "set-field",
@@ -380,7 +482,7 @@ impl TrialCorpus {
     }
 
     /// Set one prose slot from stdin.
-    fn set_slot(&self, address: &str, task: &str, prose: &str) {
+    pub fn set_slot(&self, address: &str, task: &str, prose: &str) {
         self.jigc_stdin_ok(
             &[
                 "doc",

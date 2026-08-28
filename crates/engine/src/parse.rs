@@ -1172,7 +1172,13 @@ fn parse_item_slots(
 /// against a slot leaf id — the multi-slot dual of [`heading_matches`] for sections.
 /// The writer title-cases the leaf id (`proves` → `Proves`); the read compare folds
 /// case so the title-cased heading maps back to the leaf id.
-fn heading_matches_label(label: &str, leaf_id: &str) -> bool {
+///
+/// `pub(crate)` since M49: the **writer's** item-leaf boundary
+/// ([`crate::write::item_own_leaf_region`]) asks the same question the reader does —
+/// *is this deeper heading one of this template's declared slot sub-labels?* — and the
+/// two answers must be one function, or a heading the parser reads as slot structure is
+/// a region boundary to the writer (the multi-slot field-duplication class, M49 D3(A)).
+pub(crate) fn heading_matches_label(label: &str, leaf_id: &str) -> bool {
     label.trim().eq_ignore_ascii_case(leaf_id.trim())
 }
 
