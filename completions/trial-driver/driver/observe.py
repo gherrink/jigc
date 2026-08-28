@@ -553,6 +553,57 @@ def halted_awaiting_human(stream: pathlib.Path) -> tuple[bool, str]:
     return True, f"{len(denials)} denial(s) on {', '.join(tools)}: {result[:160]}"
 
 
+def ended_asking(stream: pathlib.Path) -> tuple[bool, str]:
+    """Whether the turn ended by putting a question to the operator — HEURISTIC.
+
+    The sibling of `halted_awaiting_human`, and deliberately a separate function
+    with a separate signal, because the two halt shapes have different evidence
+    and only one of them is exact.
+
+      * `halted_awaiting_human` keys on `permission_denials`, which is a
+        structured field. A tool call was refused and the arc stopped. Exact.
+      * **This one keys on the shape of the final message**, because the arc can
+        also stop when the PRODUCT blocks it: a gate refuses, the worker has
+        nowhere to go, and it asks. `permission_denials` is **empty** in that
+        case — nothing was denied — so the exact detector says "not halted" about
+        a session that plainly stopped mid-task.
+
+    Found by running R2, 2026-08-28: a rejecting `pre-commit` hook refused a
+    doc-promoting `jigc task finalize`, the worker stopped and asked the operator
+    to record the sign-off, and `halted_awaiting_human` returned False. **That is
+    the exact shape plant F depends on** — the postmortem's "let a plant open the
+    door" — so a trial that cannot see it cannot tell a worker who stopped from
+    one who finished.
+
+    Heuristic, and labelled so at every call site. Measured across the three
+    rehearsal streams: the two that completed end on a statement, the one that
+    stopped ends on a question. That is a real signal and not a proof, so it is
+    reported beside the exact one, never folded into it.
+
+    This does NOT void a session. The channels it did reach are measured; what is
+    unmeasured is only the part after the stop — protocol §3.5's own wording.
+
+    Returns `(asked, tail)`.
+    """
+    if not stream.is_file():
+        return False, "no stream"
+    result = ""
+    for raw in stream.read_text(errors="replace").splitlines():
+        raw = raw.strip()
+        if not raw.startswith("{"):
+            continue
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "result":
+            result = str(event.get("result") or "")
+    tail = result.strip()
+    if not tail.endswith("?"):
+        return False, ""
+    return True, tail[-160:]
+
+
 def windows(records: "list[Invocation]",
             opens: "Callable[[Invocation], bool]",
             closes: "Callable[[Invocation], bool]") -> "list[tuple[Invocation, Invocation, float, float]]":

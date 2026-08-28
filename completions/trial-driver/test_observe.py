@@ -10,6 +10,7 @@ Run: python3 completions/trial-driver/test_observe.py
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import shutil
 import sys
@@ -19,6 +20,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from driver import cascade, channels
+from driver import observe as observe_mod
 from driver.observe import Read, observe, _segments, filesystem_reads
 
 #: The cascade row a VERB session lands on. Named once so the table below states
@@ -535,6 +537,67 @@ class ADocumentReadIsNotABookkeepingRead(unittest.TestCase):
         self.assertEqual(len(r1), len(r1b), "identical under the old count")
         self.assertNotEqual(sum(r.is_document for r in r1),
                             sum(r.is_document for r in r1b))
+
+
+class TheOtherHaltShape(unittest.TestCase):
+    """A halt the exact detector cannot see, found by running R2.
+
+    `halted_awaiting_human` keys on `permission_denials` — a tool call was
+    refused and the arc stopped. That is one halt shape and it is exact.
+
+    R2 hit the other one: a rejecting `pre-commit` hook refused a doc-promoting
+    `jigc task finalize`, the worker stopped and asked the operator to record the
+    sign-off, and **nothing was denied** — so `permission_denials` was empty and
+    the exact detector reported "not halted" about a session that plainly stopped
+    mid-task. That is the exact shape **plant F depends on**, so a trial that
+    cannot see it cannot tell a worker who stopped from one who finished.
+
+    Measured across the three rehearsal streams, which is all the evidence this
+    heuristic has and all it claims: the two that completed end on a statement,
+    the one that stopped ends on a question.
+    """
+
+    def _stream(self, result: str, denials: int = 0) -> pathlib.Path:
+        d = pathlib.Path(tempfile.mkdtemp(prefix="jigc-halt-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        p = d / "stream.jsonl"
+        event = {"type": "result", "subtype": "success", "is_error": False,
+                 "result": result,
+                 "permission_denials": [{"tool_name": "Write"}] * denials}
+        p.write_text(json.dumps(event) + "\n")
+        return p
+
+    #: R2's real tail, verbatim.
+    ASKED = ("Task `x` is intact, nothing lost. How would you like to proceed — "
+             "do you want to record that sign-off, or is there a different "
+             "process I should trigger?")
+    #: R1b's real tail, verbatim.
+    DONE = ("Landed as commit 4618907, which promoted the ADR to "
+            "`docs/decisions/drop-the-oldest-sample.md` and committed it.")
+
+    def test_the_exact_detector_does_not_see_a_product_blocked_halt(self) -> None:
+        """The defect, preserved: this is why the heuristic sibling exists."""
+        halted, _ = observe_mod.halted_awaiting_human(self._stream(self.ASKED))
+        self.assertFalse(halted, "nothing was denied, so the exact signal is silent")
+
+    def test_the_heuristic_sibling_does(self) -> None:
+        asked, tail = observe_mod.ended_asking(self._stream(self.ASKED))
+        self.assertTrue(asked)
+        self.assertIn("sign-off", tail)
+
+    def test_a_completed_session_is_not_reported_as_a_stop(self) -> None:
+        asked, _ = observe_mod.ended_asking(self._stream(self.DONE))
+        self.assertFalse(asked, "a completion summary is not a question")
+
+    def test_the_two_signals_stay_separate(self) -> None:
+        """One is exact and one is a guess; folding them loses which is which."""
+        s = self._stream(self.ASKED, denials=2)
+        self.assertTrue(observe_mod.halted_awaiting_human(s)[0])
+        self.assertTrue(observe_mod.ended_asking(s)[0])
+        done = self._stream(self.DONE, denials=2)
+        self.assertTrue(observe_mod.halted_awaiting_human(done)[0],
+                        "denials halt regardless of how the text reads")
+        self.assertFalse(observe_mod.ended_asking(done)[0])
 
 
 class ChannelPredicates(unittest.TestCase):

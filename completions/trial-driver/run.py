@@ -26,7 +26,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from driver import channels
 from driver import cascade, gate as gate_mod, plants as plants_mod, session as session_mod
-from driver.observe import Observation, halted_awaiting_human, observe
+from driver.observe import Observation, halted_awaiting_human, ended_asking, observe
 
 HERE = pathlib.Path(__file__).resolve().parent
 EVIDENCE = HERE.parent / "artifacts" / "RC-1.0-gate" / "evidence"
@@ -97,6 +97,7 @@ def do_observe(args: argparse.Namespace) -> int:
         log, transcript = _find(out)
         stream = out / "stream.jsonl"
         halted, why = halted_awaiting_human(stream)
+        asked, question = ended_asking(stream)
         # The CLI's own exit code, not run-session.sh's — it exits 0 on a failed arm
         # by design, so without this a dead session scores as a product result.
         arm_rc = session_mod.arm_exit_code(out)
@@ -109,6 +110,13 @@ def do_observe(args: argparse.Namespace) -> int:
             # Only the denials and the result text say it stopped mid-task, which
             # is why the process exit code cannot be the completion signal.
             print(f"  HALTED awaiting the operator — {why}")
+        if asked and not halted:
+            # The other halt shape: nothing was DENIED, the product blocked the
+            # arc and the worker asked. `permission_denials` is empty, so the
+            # exact detector cannot see it. Heuristic, and said so here.
+            print(f"  ENDED ASKING the operator (heuristic — the turn's last "
+                  f"message is a question, and nothing was denied):")
+            print(f"    …{question}")
         if o.pre_session_records:
             # The invocation log lives in the corpus, so a plant or the adoption
             # arm writes into the channel the session is scored on. Printed rather
