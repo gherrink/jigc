@@ -76,19 +76,45 @@ its idioms and stopped.
 steps print: `author-roadmap.yaml` (×3), `author-completion-record.yaml`, `author-research.yaml`,
 and more.
 
-**Measured, and its boundary stated.** What is measured is the denial set from this session: 11
-denials, 0 of them a bare `jigc` call, 8 of them attempts to feed `--from-file -`. What is *not*
-independently tested here is Claude Code's permission-matcher semantics — the conclusion that
-`Bash(jigc:*)` cannot match a piped form is **inferred from the denials**, not from a matcher
-test. That distinction is left in rather than smoothed over.
+### S-1 resolved to a DISCOVERABILITY finding, by a probe run rather than by argument
 
-**Why it may matter more than an unscored arm suggests.** `jigc setup` writes that allowlist. So
-the tool's own install produces a permission set under which the tool's own documented authoring
-path cannot be executed — an adopter who does not blanket-approve meets this on their first
-payload-authored doc. Whether that is a §1 **blocking dead end** (a printed route that cannot run,
-reaching any payload-authored doc including root managed ones) or a **surface finding** is an
-adjudication for the trial record, on evidence, per §1's own rule that the class is fixed before
-the consequence is looked up.
+The first write-up of S-1 left the mechanism inferred and flagged it as possibly a §1 **blocking
+dead end**. A four-command probe under `--strict-permissions` settles it, and **the severity comes
+down**:
+
+| command | result |
+|---|---|
+| `jigc --version` | permitted |
+| `jigc doc create adr --title "Probe one" --task probe` | permitted |
+| **`jigc doc set-slot adr:probe-one#context --from-file - --task probe <<'EOF'`** | **permitted** |
+| `cat <<'EOF' \| jigc doc set-slot adr:probe-one#decision --from-file - --task probe` | **denied** |
+
+The denial reason, verbatim from the worker: *"Contains shell syntax (pipeline) that cannot be
+statically analyzed."*
+
+**So the block is the pipeline, not `cat`, and not jigc's allowlist being too narrow.** A heredoc
+attached **directly to the `jigc` command** starts with `jigc`, matches `Bash(jigc:*)`, and is
+permitted. **The route can run.**
+
+**What is actually wrong is that nothing names that form.** The pack prints
+`jigc doc set-slot … --from-file -` and stops; no shipped step, help text or guide shows how to
+supply stdin in a shape the default permission set allows. So an agent reaches for the two idioms
+it knows — a pipe and a temp file — is denied on both, and halts one keystroke away from a
+permitted command.
+
+**This is the discoverability lens landing for a seventh consecutive trial, and it is the purest
+instance yet.** Not a missing capability, and not a wrong route: a **permitted syntax that no
+composed surface names**. `decided-task` was the prior benchmark — shipped, hidden behind a
+`selectable: false` whose expiry had fired. This is smaller and sharper.
+
+**Reclassified: surface/discoverability, SHIPS RECORDED under §1**, not a blocking dead end. The
+correction is recorded rather than the original quietly replaced, because a severity that moved
+on evidence is the part worth keeping.
+
+**The fix is pack-level and cheap** — name the heredoc form in the steps that print
+`--from-file -`. No binary change, no schema change, no version bump. Owed after the trial, not
+during it: B1 and B2 run under `bypassPermissions` and cannot meet this, so leaving it costs the
+trial nothing and fixing it mid-run would invalidate B3's comparability for no gain.
 
 **It confirms and sharpens increment 0**, which recorded *"all 7 denials were file writes"* and
 that the worker *"named the correct escape itself and still stopped to ask."* This run shows
