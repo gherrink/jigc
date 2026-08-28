@@ -626,28 +626,45 @@ fn next_section_heading(blocks: &[Block], from: usize) -> Option<usize> {
         .min()
 }
 
-/// The start offset of the first heading **deeper than** `item_level` in
-/// `[from, region_end)`, if any — the byte where this item's first nested sub-item
-/// (one level deeper) begins.
+/// The start offset where this item's **nested region** begins in `[from, region_end)`,
+/// if any — the byte its own leaves (slot prose, field group) stop at.
 ///
-/// An item at heading level `L` whose block nests a repeatable bounds its own
-/// leaves (slot/fields, which render *before* nested content) at the first heading
-/// of level `L + 1` (the first nested sub-item). `#####`+ headings inside a leading
-/// slot are a slot+nested combination the changelog avoids and the milestone defers
-/// — so the first deeper heading is the nested-region boundary here.
+/// **The boundary is schema-keyed, not depth-keyed (M49 D4).** It was *the first heading
+/// deeper than the item*, and on a template that is **both multi-slot and nested** the
+/// item's own `#### <Leaf-Title>` sub-label **is** such a heading: the leaf region ended
+/// at the item's first sub-label, so every declared leaf parsed as missing
+/// (`conformance.item-slot-label-missing`) and the sub-labels were then re-read as
+/// anchor-less nested item heads (`conformance.item-heading-unanchored`) — over bytes
+/// jigc's own writer had just emitted at exit 0.
+///
+/// So the rule is *the first deeper heading that is neither a declared slot sub-label of
+/// this item's template nor an anchored nested item* ([`is_item_slot_sub_label`], the one
+/// function the writer's boundary asks too). The combination is **fixed rather than
+/// fenced** (`completions/artifacts/M49/settle-record.md` → D4): a pack-load fence would
+/// be inert for exactly the manifest-less adopter packs it would need to bind.
 fn first_nested_heading(
+    source: &str,
     blocks: &[Block],
     from: usize,
     region_end: usize,
     item_level: usize,
+    template: &ItemTemplate,
 ) -> Option<usize> {
     blocks
         .iter()
         .filter_map(|b| match b {
-            Block::Heading { level, range, .. }
-                if range.start >= from
-                    && range.start < region_end
-                    && level_num(*level) > item_level =>
+            Block::Heading {
+                level, range, text, ..
+            } if range.start >= from
+                && range.start < region_end
+                && level_num(*level) > item_level
+                && !is_item_slot_sub_label(
+                    &source[range.clone()],
+                    level_num(*level),
+                    item_level,
+                    text,
+                    template,
+                ) =>
             {
                 Some(range.start)
             }
@@ -967,12 +984,22 @@ fn parse_items(
         let mut item_findings: Vec<Finding> = Vec::new();
 
         // When the item nests a repeatable, the item's *own* leaves (slot/fields)
-        // occupy only the region before the first nested sub-item heading (one level
-        // deeper). Bounding the parent's leaf region here keeps a nested `####` group
-        // out of the parent's slot span and out of its field-group scan; the nested
-        // region `[nested_start, item_end)` is then parsed recursively.
+        // occupy only the region before its nested content begins. Bounding the parent's
+        // leaf region here keeps a nested `####` group out of the parent's slot span and
+        // out of its field-group scan; the nested region `[leaf_end, item_end)` is then
+        // parsed recursively below. The boundary is schema-keyed, NOT "the first deeper
+        // heading" — a multi-slot template's own `#### <Leaf-Title>` sub-labels are
+        // deeper headings too ([`first_nested_heading`], M49 D4).
         let leaf_end = if item_template.has_nested() {
-            first_nested_heading(blocks, *content_start, item_end, item_level).unwrap_or(item_end)
+            first_nested_heading(
+                source,
+                blocks,
+                *content_start,
+                item_end,
+                item_level,
+                &item_template,
+            )
+            .unwrap_or(item_end)
         } else {
             item_end
         };
@@ -1021,15 +1048,19 @@ fn parse_items(
         );
 
         // Nested repeatables: each declared nested leaf parses its own items one
-        // level deeper, within this item's region. The schema loader caps the depth
-        // at H6, so the recursion terminates. Nested items render in document order
-        // (the recursive scan), each carrying its own parent-scoped `seen` set.
+        // level deeper, within this item's **nested** region `[leaf_end, item_end)` —
+        // never from `content_start`, which on a multi-slot template would read the
+        // item's own unanchored `#### <Leaf-Title>` sub-labels as anchor-less nested
+        // items. For a template whose leaves render no heading the two starts coincide,
+        // so the shipped nested corpora parse byte-identically. The schema loader caps
+        // the depth at H6, so the recursion terminates. Nested items render in document
+        // order (the recursive scan), each carrying its own parent-scoped `seen` set.
         let mut nested_items = Vec::new();
         for nested in &item_template.nested {
             nested_items.extend(parse_items(
                 source,
                 blocks,
-                *content_start,
+                leaf_end,
                 item_end,
                 nested,
                 depth + 1,
@@ -1182,6 +1213,51 @@ pub(crate) fn heading_matches_label(label: &str, leaf_id: &str) -> bool {
     label.trim().eq_ignore_ascii_case(leaf_id.trim())
 }
 
+/// Whether a heading inside an item's sub-tree is that item's own **declared slot
+/// sub-label** — the one deeper-heading kind that does *not* end the item's own leaf
+/// region, on either seam.
+///
+/// **One function, both seams (M49 D3(A)/D4).** The reader asks it to find where an
+/// item's nested region starts ([`first_nested_heading`]); the writer asks it to find
+/// where an item's field group may live ([`crate::write::item_own_leaf_region`]). Two
+/// implementations of one question is how the class opened: a heading the parser reads
+/// as slot structure was a region boundary to the writer.
+///
+/// Four conjuncts, each load-bearing:
+/// - **the template is multi-slot** — a single-slot item renders bare prose under no
+///   sub-heading, so nothing at any depth inside it is a sub-label; exempting its one
+///   leaf id would silently absorb a heading at a depth the write path reserves
+///   ([`crate::write::slot_ceiling`]'s `multi_slot || has_nested` arm),
+/// - **exactly one level deeper** — the depth `render_item_at` emits sub-labels at
+///   (`item_level + 1`), which is also the depth a nested item renders at; a heading
+///   deeper still is slot-internal prose structure, and nothing at any other depth
+///   competes with a nested item,
+/// - **unanchored** — an `{#id}` anchor is what makes the heading a nested *item*, whose
+///   block the parent's leaf region must stop before. **The declared bound:** on a
+///   malformed corpus the discriminator is undefined for exactly the documents
+///   `conformance.item-heading-unanchored` / `conformance.item-anchor-malformed` exist to
+///   report. jigc's own writer always anchors, so the write path never meets it; the read
+///   path answers with a **conformance finding rather than a guess** — an unanchored
+///   stray ends the region and is reported at its line, and a *malformed* anchor is still
+///   an anchor, so the heading is a broken nested item rather than a re-read sub-label.
+/// - **a declared leaf title** — matched through [`heading_matches_label`], the same
+///   compare [`parse_item_slots`] splits the body with.
+pub(crate) fn is_item_slot_sub_label(
+    raw_heading: &str,
+    level: usize,
+    item_level: usize,
+    text: &str,
+    template: &ItemTemplate,
+) -> bool {
+    template.is_multi_slot()
+        && level == item_level + 1
+        && matches!(extract_anchor(raw_heading), AnchorRead::Missing)
+        && template
+            .slot_ids
+            .iter()
+            .any(|leaf_id| heading_matches_label(text, leaf_id))
+}
+
 /// Title-case a single-word leaf id for the `#### <Leaf-Title>` sub-heading (mirrors
 /// the writer's `heading_text` for a single-word id). Leaf ids are single words
 /// (the same constraint section ids follow), so a single capitalization suffices.
@@ -1253,9 +1329,9 @@ impl ItemTemplate {
     ///
     /// `pub(crate)` since M45: it is the second discriminator of the slot
     /// heading-depth ceiling ([`crate::write::slot_ceiling`]) — a nested-bearing
-    /// item's leaves are bounded at the first heading deeper than the item
-    /// ([`first_nested_heading`]), so `2+d+1` is reserved there exactly as a
-    /// multi-slot sub-label reserves it.
+    /// item's leaves are bounded at the first deeper heading that is not one of the
+    /// item's own declared sub-labels ([`first_nested_heading`], M49 T2), so `2+d+1`
+    /// is reserved there exactly as a multi-slot sub-label reserves it.
     pub(crate) fn has_nested(&self) -> bool {
         !self.nested.is_empty()
     }

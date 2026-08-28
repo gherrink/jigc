@@ -208,9 +208,18 @@ fn render_item(item: &ItemContent) -> String {
 /// sub-heading (one level deeper than the item) in schema block order (M16). A
 /// **nested** item (`items` non-empty — the M22 multi-level lift) renders its
 /// children at `depth + 1` after the field group; the changelog's release item is the
-/// driving case (no slot, a `date` field, then nested `#### change-group` items). A
-/// slot/multi-slot AND nested children in one item is a deferred combination the
-/// changelog avoids, so the slot and nested paths never coincide here.
+/// driving case (no slot, a `date` field, then nested `#### change-group` items).
+///
+/// **The slot and nested paths DO coincide (M49 T2).** They are written here as
+/// independent stages — sub-labels, then field group, then children — and always were;
+/// what stood in the way was the *reader*, which bounded an item's leaves at the first
+/// deeper heading and so read a multi-slot item's own sub-labels as anchor-less nested
+/// items. With that boundary schema-keyed ([`parse::is_item_slot_sub_label`]) the
+/// combination is legal rather than banned, and this renderer needs no arm for it: a
+/// `{multi-slot, nested}` item emits its `#### <Leaf-Title>` leaves at `depth + 1` and
+/// its children's `#### <title>  {#id}` headings at the same depth, told apart by the
+/// anchor. The sentence this replaces claimed the two paths never coincide, and was
+/// false the moment the reader admitted the shape.
 fn render_item_at(item: &ItemContent, depth: usize) -> String {
     let item_hashes = "#".repeat(item_heading_level(depth));
     let mut out = String::new();
@@ -2413,12 +2422,16 @@ fn item_block_within(
 ///
 /// The rule the fix keys on — the context taken as a fence input rather than sniffed
 /// from bytes (`design/surface-contract.md`): a deeper heading that is a **declared slot
-/// sub-label of this item's template** ([`is_slot_sub_label`]) does not end the region;
-/// anything deeper that is not one does. An `{#id}` anchor is what identifies such a
-/// heading as a nested item rather than a defect, so an anchored heading ends the region
-/// even when its text matches a declared leaf title — without which a parent's leaf
-/// region would swallow its children's field groups, which is the same corruption in the
-/// other direction.
+/// sub-label of this item's template** ([`parse::is_item_slot_sub_label`]) does not end
+/// the region; anything deeper that is not one does. An `{#id}` anchor is what identifies
+/// such a heading as a nested item rather than a defect, so an anchored heading ends the
+/// region even when its text matches a declared leaf title — without which a parent's
+/// leaf region would swallow its children's field groups, which is the same corruption in
+/// the other direction.
+///
+/// The predicate is the **parser's own** (M49 T2), because the reader asks the identical
+/// question one seam over — where does this item's nested region begin — and two
+/// implementations of one question is how this class opened.
 ///
 /// `item_ids` is the **section-qualified** chain (the one [`chain_repeatable`] walks), so
 /// the template resolved is the one the addressed item is an instance of; a chain the
@@ -2441,9 +2454,7 @@ fn item_own_leaf_region(
     let Some(own_level) = own_level else {
         return region;
     };
-    let slot_ids = chain_repeatable(schema, section_id, item_ids)
-        .map(|repeatable| parse::ItemTemplate::from(repeatable).slot_ids)
-        .unwrap_or_default();
+    let template = chain_repeatable(schema, section_id, item_ids).map(parse::ItemTemplate::from);
     let first_child = blocks
         .iter()
         .filter_map(|b| match b {
@@ -2452,14 +2463,15 @@ fn item_own_leaf_region(
             } if range.start > region.start
                 && range.start < region.end
                 && level_num_of(*level) > own_level
-                && !is_slot_sub_label(
-                    source,
-                    range,
-                    level_num_of(*level),
-                    own_level,
-                    text,
-                    &slot_ids,
-                ) =>
+                && !template.as_ref().is_some_and(|template| {
+                    parse::is_item_slot_sub_label(
+                        &source[range.clone()],
+                        level_num_of(*level),
+                        own_level,
+                        text,
+                        template,
+                    )
+                }) =>
             {
                 Some(range.start)
             }
@@ -2468,37 +2480,6 @@ fn item_own_leaf_region(
         .min()
         .unwrap_or(region.end);
     region.start..first_child
-}
-
-/// Whether a heading inside an item's sub-tree is that item's own **declared slot
-/// sub-label** — the one deeper-heading kind that does *not* end the item's leaf region.
-///
-/// Three conjuncts, each load-bearing:
-/// - **exactly one level deeper** — the depth [`render_item_at`] emits sub-labels at
-///   (`item_level + 1`), which is also the depth a nested item renders at; a heading
-///   deeper still is slot-internal prose structure to the reader, and nothing at any
-///   other depth competes with a nested item,
-/// - **unanchored** — an `{#id}` anchor makes the heading a nested *item*, whose block
-///   the parent's leaf region must stop before (jigc's own writer always anchors an item
-///   heading; on a malformed corpus the discriminator is undefined for exactly the
-///   documents `conformance.item-heading-unanchored` exists to report, and the answer
-///   here leans to the *narrower* region — the safe side of the corruption),
-/// - **a declared leaf title** — matched through the parser's own
-///   [`parse::heading_matches_label`], so the reader's sub-label test and the writer's
-///   boundary test are one function and cannot disagree.
-fn is_slot_sub_label(
-    source: &str,
-    range: &Range<usize>,
-    level: usize,
-    own_level: usize,
-    text: &str,
-    slot_ids: &[String],
-) -> bool {
-    level == own_level + 1
-        && anchor_of(&source[range.clone()]).is_none()
-        && slot_ids
-            .iter()
-            .any(|leaf_id| parse::heading_matches_label(text, leaf_id))
 }
 
 /// The numeric ATX level of a heading (`H1`→1 … `H6`→6) — the writer-side dual of the
@@ -6322,11 +6303,11 @@ impl SlotCeiling {
 /// | an item whose block carries a **nested repeatable**, at depth `d` | `2+d+1` | `2+d+2` |
 ///
 /// The derivation keys on **`multi_slot || has_nested`**, never multi-slot alone: the
-/// parser bounds a nested-bearing item's leaf region at the first heading deeper than
-/// the item ([`parse::first_nested_heading`]), so a heading at `2+d+1` inside that
-/// item's prose reads as a nested item start exactly as a sub-label would. No shipped
-/// doctype is single-slot-with-nested today — which is precisely why the member is
-/// derived rather than enumerated.
+/// parser bounds a nested-bearing item's leaf region at the first deeper heading that is
+/// not one of the item's own declared slot sub-labels (M49 T2), so an *authored* heading
+/// at `2+d+1` inside that item's prose reads as a nested item start exactly as a
+/// sub-label would. No shipped doctype is single-slot-with-nested today — which is
+/// precisely why the member is derived rather than enumerated.
 ///
 /// `item_chain` is the **section-qualified** address chain ([`physical_item_chain`]):
 /// it alternates item id / nested-section id, so the item ids only contribute depth
