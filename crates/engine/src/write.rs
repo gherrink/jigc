@@ -1383,14 +1383,27 @@ fn unset_group_field(
     if items.len() == 1 {
         // The group's only field: drop the whole group. `append_field_group` always
         // emits exactly `\n\n<!-- fields -->` before the sentinel, so removing one of the
-        // two leading `\n` (at `sentinel.start - 1`) through the last bullet's newline
-        // (`list_range.end`) leaves the body terminated by a single `\n` — byte-identical
-        // to the canonical no-field form.
+        // two leading `\n` (at `sentinel.start - 1`) through the bullet's own newline
+        // leaves the body terminated by a single `\n` — byte-identical to the canonical
+        // no-field form.
+        //
+        // The end of that removal is **not** `list_range.end`: a `Block::List` range runs
+        // to the end of the blank line that separates the list from whatever follows it,
+        // and that separator is not the write's to take. Where the group is the last thing
+        // in the region the two coincide, which is why every shipped corpus looked right;
+        // where something follows it inside the region — a multi-slot item's nested
+        // repeatable, most sharply — taking it too glues the next `#### <heading>` onto the
+        // preceding prose, and clause 2 of the round-trip guarantees ("only that target's
+        // bytes differ", `implementation/parsing.md`) is broken by a splice path that is
+        // not the sanctioned re-render exception. So end at the last bullet's own newline,
+        // computed by trimming the newlines the list block reaches past.
         let sentinel =
             field_sentinel_in(blocks, region).ok_or_else(|| SpliceError::NotPresent {
                 what: format!("field-group sentinel for field {field_key:?}"),
             })?;
-        Ok(splice(source, (sentinel.start - 1)..list_range.end, ""))
+        let last_bullet_end =
+            (source[..list_range.end].trim_end_matches('\n').len() + 1).min(source.len());
+        Ok(splice(source, (sentinel.start - 1)..last_bullet_end, ""))
     } else {
         // A surviving sibling keeps the group: remove just this bullet's physical line
         // (scoped to the bullet list so a `- …:`-looking prose line is never matched).
