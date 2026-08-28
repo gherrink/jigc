@@ -73,6 +73,28 @@ migration.**
 | **F7** | should the **surface** say what the trial protocol briefs an observer about (`validate`'s exit flip, `task validate`'s advisory)? An adopter is not an unbriefed observer with a protocol — the ambush shape, one audience over | prose |
 | **D3 · D4** | the `milestone add-task` `next:` line; the `bind` ack's not-staged clause — both refused **as preference** | prose / code |
 
+### Tier 1 additions — from the self-hosting port question (2026-08-28)
+
+Asked: *does the Claude Code workflow keep working when this repo ports to jigc, and does anything
+have to move pre-1.0?* The port analysis found **two surfaces of exactly this wave's shape**.
+
+| | fix | kind | needs |
+|---|---|---|---|
+| **P1** | **Two shipped packs describe the same phase incompatibly.** `packs/methodology/steps/execute.yaml`: *"Run the tasks **strictly serially**: they share **one working tree**, each builds on the last."* `crates/cli/pack/steps/{provision-worktrees,implement-tasks}.yaml`: one **isolated detached worktree per sub-task**, `fan-out: over: {{milestone.tasks}}`, launched together. Both ship; both describe milestone execution | prose | pack text |
+| **P2** | **`robust-advocate` is named in ZERO pack files** (verified: 0 hits across both packs) while `milestone-planning-workflow.md` and `design/methodology-docs.md` treat it as a mandatory instrument before any defer recommendation | prose | pack text (`settle.yaml`, `triage.yaml`) |
+| **P3** | `validate.yaml` never states the **independence** requirement that is the point of the phase — *"by an agent that did not build it and cannot commit"* | prose | pack text |
+
+**P1 is the sharper one.** It is not a gap; it is a **contradiction between two shipped surfaces**,
+and `milestone-completion-workflow.md` records **two production incidents (M38, M42)** from
+violating the serial rule. A reader of one pack is misled about the other.
+
+**Verify at the Settle, do not assume — one claim from the port analysis is unverified.** The map
+asserts that `milestone add-task --workflow <other>` followed by `milestone execute` emits
+`Spawn: … jigc workflow sub-task --task <id>`, which the W-equality re-entry guard then refuses —
+*"two features individually correct and mutually unusable."* **This was not driven.** If true it is
+a routing dead end and belongs here; if it is a capability gap it does not. **Drive it before
+scoping it.**
+
 ### The now-or-never subset — decided in this wave or never
 
 The declared posture: *"additive keys are permitted **pre-1.0 only**; from the 1.0 pin the shape
@@ -106,6 +128,51 @@ That is a **capability gap** under §1. **Its prose half is IN as E2.**
 per-instance acknowledged-findings ledger (deferred to 1.1; *"purely additive… no one-way door"*).
 
 ---
+
+## The self-hosting port — analysed, and it changes nothing structural in this wave
+
+**The question:** this repo ports to jigc after 1.0, the Claude Code workflow keeps working, and
+agent prose shrinks because the pack carries it. Does that work, and does anything have to move
+**pre**-1.0?
+
+**It works, and the planning→execution handoff closes without a managed edge.** The chain is:
+`planning` authors the roadmap entry (prose decomposition) → `planning-finalize` names
+`milestone create` + `add-task` (**shipped at M48**) → an agent reads the decomposition and yields
+intents → `add-task` mints identity → `milestone-execution` + `sub-task` fan out → `milestone
+finalize` joins. **The prose→intent step is legitimately the LLM's** under the determinism
+boundary: the CLI owns structure, placement and identity; the LLM owns the prose. This repo
+already does exactly that with its `milestone-reader` agent.
+
+**Four shape items exist, and none of them belongs in this wave:**
+
+| | | why it is OUT |
+|---|---|---|
+| **S1** `roadmap.decomposition` slot → nested repeatable | the only one needing a **new engine transform kind** — *"Edit a nested repeatable … ⛔ **build the kind first.** No driver today; the backstop refuses the migration"* | a **feature**, and *build the kind first* is the documented working process — M41 built `ValueRemapped`, M42 built three, each when a bump needed one |
+| **S2** `milestone-record.tasks` gains a per-task `workflow` | the code prices it itself: *"a frozen-doctype schema bump — a one-way door, out of charter"* | schema change |
+| **S3** a task's `increment` · **S4** a milestone's `status` | both `AddedItemField` | schema changes |
+
+**Three reasons they stay out, and the third is the load-bearing one:**
+
+1. **They are schema changes**, and one needs a new engine kind. The wave excludes both by charter.
+2. **The blast-radius argument is weaker than it looks.** This repo is **not self-hosted** — no
+   `.jigc/`, no `docs/roadmap.md`, so **zero managed roadmap instances exist here**. There is no
+   cheap-now window being spent; the freeze already binds pre-1.0, so the bump costs the same
+   machinery either way. What grows post-1.0 is the adopter corpus that must migrate — and
+   migrating a corpus is what jigc is *for*, on a path M38, M40, M41 and M42 have each proven.
+3. **Taking them would break the razor.** They violate no stated rule, so they fail its first leg —
+   which means the razor could not refuse them, and a razor that cannot refuse is the failure the
+   claim is tested by. **Adding them would make the claim unfalsifiable**, which costs more than
+   the items are worth.
+
+**The honest counterweight, recorded because it argues against my own recommendation:** if the
+port lands soon after 1.0, S1–S4 get done anyway in the next wave, and doing them here would save
+one migration cycle over an adopter set that is small and self-selected. That is a real argument.
+It loses to reason 3 — but it should lose in the open.
+
+**What the pack does NOT do is lie about this.** `planning-finalize.yaml` states the gap verbatim:
+*"this milestone's breakdown is prose in the roadmap entry's `decomposition` slot, which carries no
+criteria — so there is nothing there for it to read, and the intents are retyped from your own
+decomposition."* A surface that states its own bound is not a surface this wave fixes.
 
 ## The razor
 
