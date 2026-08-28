@@ -120,24 +120,44 @@ class TheShippedCounterDisagrees(unittest.TestCase):
                 if tuple(a[:2]) == ("doc", "list") and not channels._has_task_scope(a)),
         }
 
-    def test_the_gap_decomposes_into_both_errors(self) -> None:
+    def test_the_two_errors_the_gap_used_to_decompose_into_are_both_gone(self) -> None:
+        """Settled 2026-08-28: the counter was aligned to §3.3, not §3.3 to it.
+
+        The gap used to be `validate_missed - bare_doc_list_overcounted`, and it was
+        2 / 5 / 5 / 5 across the four archived sessions. Both errors are fixed at the
+        source, so the decomposition must now evaluate to zero on both sides — the
+        assertion is kept in this shape rather than deleted, because it is the one
+        that would redden if either half regressed.
+        """
         for name in RECORD_TABLE:
             with self.subTest(session=name):
                 o = observe(name, EVIDENCE / f"{name}-invocations.jsonl", None)
                 c = self._counts(name)
+                self.assertGreater(
+                    c["validate_missed"] + c["bare_doc_list_overcounted"], -1,
+                    "the archived calls the gap was built from are still in the log")
                 self.assertEqual(
-                    o.adjacent_counter_gap,
-                    c["validate_missed"] - c["bare_doc_list_overcounted"],
-                    "net gap = what §3.3 includes and the counter misses, "
-                    "minus what the counter includes and §3.3 excludes")
+                    o.adjacent_counter_gap, 0,
+                    "the aligned counter counts `task validate` and skips a bare "
+                    "`doc list`, so neither half of the old gap survives")
 
-    def test_the_counter_undercounts_every_blind_session(self) -> None:
+    def test_the_counter_now_agrees_with_the_registration_on_every_session(self) -> None:
         gaps = {n: observe(n, EVIDENCE / f"{n}-invocations.jsonl", None).adjacent_counter_gap
                 for n in RECORD_TABLE}
-        self.assertEqual(gaps, {"harborlight": 2, "pinegrove": 5,
-                                "stonefly": 5, "rosewater": 5})
-        self.assertTrue(all(g > 0 for g in gaps.values()),
-                        "it is wrong in the same direction in all four sessions")
+        self.assertEqual(gaps, {"harborlight": 0, "pinegrove": 0,
+                                "stonefly": 0, "rosewater": 0})
+
+    def test_the_aligned_counter_reproduces_the_registered_adjacent_numbers(self) -> None:
+        """The shell and the reader are two implementations; they must agree.
+
+        Driven against the aligned shell grep on the archive, these were 2 / 9 / 5 / 6
+        — identical to §3.3 as this module computes it. That agreement is the whole
+        justification for leaving a counter in the shell at all.
+        """
+        got = {n: observe(n, EVIDENCE / f"{n}-invocations.jsonl", None).shipped_adjacent
+               for n in RECORD_TABLE}
+        self.assertEqual(got, {"harborlight": 2, "pinegrove": 9,
+                               "stonefly": 5, "rosewater": 6})
 
 
 class FalsePositivesStayDead(unittest.TestCase):
@@ -294,12 +314,23 @@ class GlobalFlagsDoNotHideAnInvocation(unittest.TestCase):
                          ["doc", "list"])
 
     def test_the_shipped_counter_is_deliberately_not_normalised(self) -> None:
-        """It models `run-session.sh:174`'s grep, which sees the raw JSON line.
+        """It models the shell's grep, which sees the raw JSON line.
 
         Normalising it here would make the shipped counter look better than it is.
+        The grep is a **substring** match, not an argv prefix, so a leading global
+        flag does not hide the pair from it — an earlier model here compared
+        `argv[:2]` and was stricter than the thing it claimed to model. What the
+        grep genuinely cannot see is the `--task=<id>` spelling: its pattern carries
+        the closing quote of `"--task"`, and `"--task=t"` does not contain it. That
+        divergence is left in, because surfacing it is what the gap is for.
         """
-        self.assertFalse(channels.is_shipped_adjacent(
-            ["--format", "json", "doc", "list", "--task", "t"]))
+        self.assertTrue(channels.is_shipped_adjacent(
+            ["--format", "json", "doc", "list", "--task", "t"]),
+            "the grep matches the pair wherever it sits in the line")
+        self.assertFalse(channels.is_shipped_adjacent(["doc", "list", "--task=t"]),
+                         "the shell's literal `\"--task\"` cannot match `--task=t`")
+        self.assertTrue(channels.is_adjacent(["doc", "list", "--task=t"]),
+                        "§3.3 does count it — which is the residual gap, on purpose")
 
 
 class AuthoringWrites(unittest.TestCase):

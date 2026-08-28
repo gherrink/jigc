@@ -19,6 +19,8 @@ does `session_outcome`.
 """
 from __future__ import annotations
 
+import json
+
 #: §3.3's names for the four channels, as a shared vocabulary for prose and
 #: messages. **Nothing scores with them.** Scoring is `cascade.grade()`, in one
 #: list, in the registered order — an earlier version of this package also carried
@@ -34,22 +36,34 @@ UNMEASURED = "unmeasured"
 #: *not* name. Each entry is (argv prefix, whether a --task scope is required).
 #:
 #: `task validate` is here because §3.3 lists it verbatim. The counter shipped in
-#: `trial-harness/run-session.sh:174` labels itself "(VERB-ADJACENT, §3.3)" and
-#: greps only `task diff` and `doc list` — so on the archived `harborlight` log
-#: it reports 0 where §3.3 scores 2. The disagreement is reported by
-#: `adjacent_counter_gap()` rather than silently resolved: which of the two is
-#: right is a protocol question, not a reader question.
+#: `trial-harness/run-session.sh` used to label itself "(VERB-ADJACENT, §3.3)" while
+#: grepping only `task diff` and `doc list` — so on the archived `harborlight` log it
+#: reported 0 where §3.3 scores 2. **Settled 2026-08-28 by the protocol that owns the
+#: question** (the RC-1.0-final protocol §3.3): the counter was aligned to §3.3 rather
+#: than §3.3 narrowed to the counter, and demoted to an indicative quick look. The gap
+#: is still measured — `adjacent_counter_gap()` is now the *regression* check on an
+#: answered question, and it reads 0 against the aligned counter.
 ADJACENT_VERBS: tuple[tuple[tuple[str, ...], bool], ...] = (
     (("task", "diff"), False),
     (("doc", "list"), True),
     (("task", "validate"), False),
 )
 
-#: What the shipped `run-session.sh` counter actually matches, kept so the gap
-#: between the two can be measured instead of argued about.
-SHIPPED_ADJACENT_VERBS: tuple[tuple[str, ...], ...] = (
-    ("task", "diff"),
-    ("doc", "list"),
+#: What the shipped `run-session.sh` counter actually matches, kept so the gap between
+#: the two can be measured instead of argued about. Each entry is (consecutive argv
+#: pair, a token that must also appear somewhere after it) — mirroring the shell
+#: alternation `"task","diff"|"task","validate"|"doc","list".*"--task"`.
+#:
+#: **These are substrings of the rendered JSON line, not argv prefixes.** An earlier
+#: model here compared `argv[:2]`, which is *stricter* than the grep it claimed to
+#: model: the shell sees `{"argv":["--format","json","doc","list","--task","t"], …}`
+#: and its pattern matches the pair wherever it sits. The archived logs carry no such
+#: call, so the two models happened to agree and the divergence was invisible — the
+#: same shape as the wart this constant exists to measure.
+SHIPPED_ADJACENT_VERBS: tuple[tuple[tuple[str, ...], str | None], ...] = (
+    (("task", "diff"), None),
+    (("task", "validate"), None),
+    (("doc", "list"), "--task"),
 )
 
 
@@ -114,8 +128,21 @@ def is_adjacent(argv: list[str]) -> bool:
 
 
 def is_shipped_adjacent(argv: list[str]) -> bool:
-    """What `run-session.sh:174` counts under the same §3.3 label."""
-    # Deliberately NOT normalised: this models what `run-session.sh:174`'s grep
-    # actually matches, and that grep sees the raw JSON line. Normalising here
-    # would make the shipped counter look better than it is.
-    return any(tuple(argv[: len(p)]) == p for p in SHIPPED_ADJACENT_VERBS)
+    """What `run-session.sh`'s own counter matches under the same §3.3 label.
+
+    Deliberately NOT normalised. The shell greps the raw JSON line, so this renders
+    argv the way the log writes it and substring-matches — including the grep's own
+    literal `"--task"`, which a `--task=<id>` call does not contain. That residual
+    divergence is left in on purpose: it is exactly what `adjacent_counter_gap` exists
+    to surface, and smoothing it here would make the shipped counter look better than
+    it is.
+    """
+    line = ",".join(json.dumps(a) for a in argv)
+    for pair, also in SHIPPED_ADJACENT_VERBS:
+        rendered = ",".join(json.dumps(a) for a in pair)
+        at = line.find(rendered)
+        if at < 0:
+            continue
+        if also is None or json.dumps(also) in line[at + len(rendered):]:
+            return True
+    return False

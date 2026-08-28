@@ -23,14 +23,20 @@ Run it once per corpus. Each instantiation is an independent git repo with a 7-c
 clean tree, so parallel blind sessions cannot contaminate each other.
 
 **Always run `check-corpus.sh` before a corpus is frozen and pointed at a session.** It asserts the
-starting state a trial protocol assumes and has never verified: 7 commits, clean tree, no
-`.jigc`/`.claude`/`CLAUDE.md` residue, `README.md` the only tracked `.md`, the suite green 23/23, and
-the `doc-code` anchor symbols still present. RC-pre-1.0 stated exactly that checklist as prose and
-nothing ever checked it — a corpus carrying a rehearsal's leftover `.jigc/` is not a cold start, and
-nothing a worker does in one measures what the protocol says it measures.
+starting state a trial protocol assumes and has never verified — **11 bars**, in script order:
+7 commits · clean working tree · no `.jigc`/`.claude`/`CLAUDE.md` residue **including a non-sample
+file in git's hooks dir** (a `pre-commit` survives `git reset --hard` and `git clean -fdx` and is
+invisible to `git status`) · no remote URL · `core.hooksPath` unset · a 7-entry reflog · on `main` ·
+`README.md` the only tracked `.md` · the suite green 23/23 · the `doc-code` anchor symbols present ·
+and, under `--clean-prose`, no surviving forwarding-shaped claim. RC-pre-1.0 stated a shorter version
+of that checklist as prose and nothing ever checked it — a corpus carrying a rehearsal's leftover
+`.jigc/` is not a cold start, and nothing a worker does in one measures what the protocol says it
+measures.
 
-Its bars are demonstrated to fail, not assumed to: a dirty tree, an already-adopted corpus, a second
-tracked `.md`, and a wart corpus asked for clean prose each trip the bar that targets them.
+Its bars are demonstrated to fail, not assumed to: `self-test.sh` runs **12 mutations** against the
+11 bars — including a dirty tree, an already-adopted corpus, a leftover hook, a second tracked `.md`,
+and a wart corpus asked for clean prose — and requires that the *named* bar is the one reporting
+FAIL, never merely that the gate went red.
 
 **Clean-room naming rule:** give blind corpora **product-plausible** names with no `trial`/`rc*`/
 `probe` token — a worker that reads its own `cwd` must learn nothing. Operator-walk corpora are not

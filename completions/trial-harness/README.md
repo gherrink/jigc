@@ -49,9 +49,9 @@ rather than inherited from the operator's `settings.json`.
 | Script | What it does |
 |---|---|
 | `build-image.sh <sha> [tag]` | Builds jigc for Linux from a `git archive` of that exact commit, then installs the pinned Claude CLI. Prints sha, version stamp and commit subject **before** building. |
-| `verify-image.sh [tag] [version]` | Five checks that the rig is sound. Run it before trusting any image. |
-| `verify-pair.sh [old] [new]` | Proves the two images are **different trees**, behaviourally. |
-| `run-session.sh <corpus> <out> [tag]` | Drives one interactive session: corpus in, session, everything back out, container destroyed. |
+| `verify-image.sh [tag] [version]` | **Seven** assertions that the rig is sound, in six numbered sections (§6 emits two). Run it before trusting any image. The list below enumerates five; the script is the authority. |
+| `verify-pair.sh [old] [new]` | Proves the two images are **different trees**, behaviourally. ⚠️ Its probes are the **three verbs M48 shipped**, asserted `old=absent`/`new=PRESENT`, and it is pinned to `EXPECT_OLD_SHA`. It is therefore vacuous on any pair where both sides carry those verbs — an rc.11/rc.12 pair included, since **M46 shipped no new verb**. A pair over a wave that changed only behaviour needs behavioural probes. |
+| `run-session.sh [opts] <corpus> <out> [tag]` | Drives one session: corpus in, session, everything back out, container destroyed. Options precede the positionals: `--shell` (a plain `bash -l`) · `--exec <script>` · `--headless` with `--prompt-file <f>` · `--home <dir>` and `--arg <v>` (repeatable — how `seed`/`fork` pass `--session-id`/`--resume`/`--fork-session`) · `--cid-file <path>` (written **before** `docker start`, so a plant poller can attach) · `--strict-permissions`. There is **no `--bypass-permissions`**: `bypassPermissions` is the default and an unknown `-*` exits 2. |
 
 ## What each check buys, and why it is there
 

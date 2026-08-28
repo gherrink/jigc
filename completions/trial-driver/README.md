@@ -51,16 +51,25 @@ corrected `3` rather than the running note's `5`.
 
 ## What it found, that a human had not
 
-- **`run-session.sh:174` is labelled `(VERB-ADJACENT, §3.3)` and is neither.** It
+- **`run-session.sh`'s adjacent counter was labelled `(VERB-ADJACENT, §3.3)` and was neither.**
+  **Settled and fixed 2026-08-28** by the protocol that owns the question: the counter is aligned to
+  §3.3 (`task validate` joins; a `doc list` without `--task` leaves) and demoted to an explicitly
+  indicative quick look pointing at `run.py observe`, so one registered measurement has one
+  authoritative implementation. The aligned grep reproduces this reader's §3.3 numbers exactly on all
+  four archived sessions (2 · 9 · 5 · 6, against the old counter's 0 · 4 · 0 · 1). What it was, kept
+  because the wart is why the fix exists — and note the line has since moved off `:174`, which is now
+  the `--shell` branch: it
   misses `jigc task validate` (§3.3 lists it) and counts a bare `jigc doc list`
   (§3.3 requires `--task`). Net undercount of 2–5 in all four blind sessions. The
   record was **not** misled — it broke `task validate` into its own column and said
   so beneath the table. This is a wart the humans compensated for by hand, and the
-  compensation is what the driver stops needing. Reported by
-  `Observation.adjacent_counter_gap`, never silently resolved: which of the two is
-  right is a protocol question.
+  compensation is what the driver stops needing. `Observation.adjacent_counter_gap`
+  still ships and still reports the delta — it is now the *regression* check on an
+  answered question rather than an open one, and it goes to zero against the aligned
+  counter.
 - **`grep -c` prints `0` twice.** It emits `0` *and* exits 1, so the `|| echo 0`
-  fallback fires too. Cosmetic; noted so it is not rediscovered.
+  fallback fires too. **Fixed 2026-08-28** in the same patch: the counter's `count()`
+  helper assigns on failure instead of falling through to a second `echo`.
 
 ## Bounds — read these before believing a number
 

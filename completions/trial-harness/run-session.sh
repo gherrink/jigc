@@ -253,14 +253,29 @@ EOF
 
 echo "evidence in $OUT (corpus + .session-transcript/ + PROVENANCE.txt)"
 LOG="$OUT/.jigc/logs/invocations.jsonl"
+# A QUICK LOOK, NOT THE MEASUREMENT. `completions/trial-driver/run.py observe "$OUT"`
+# is the authoritative reader: it normalises leading global flags (`jigc --format json
+# doc show …` is accepted and logged verbatim, and a raw grep matches none of it),
+# separates attempts from `VERB-effective` (exit 0), and reads the arm's real exit code
+# out of PROVENANCE.txt. Two implementations of one registered measurement is how the
+# 1.0.0-gate undercount happened; this one is deliberately the non-authoritative half.
+# The counts below were aligned to protocol §3.3 on 2026-08-28 (`task validate` joins;
+# a `doc list` without `--task` is a committed-store index read and leaves).
+count() {
+  # `grep -c` prints 0 AND exits 1 on no match, so `|| echo 0` used to emit two zeros.
+  local n
+  n="$(grep -cE "$1" "$LOG" 2>/dev/null)" || n=0
+  printf '%s' "${n:-0}"
+}
 if [ -f "$LOG" ]; then
   echo "  invocation records : $(wc -l < "$LOG" | tr -d ' ')"
   # protocol.md §3.3 scores the STAGED read-back, `doc show … --task …` — not any
   # `doc show`, which includes the committed-store lookup that has existed since M39
   # and is not what the wave's claim is about. Both are printed; only one is the claim.
-  echo "  doc show --task    : $(grep -c '"doc","show".*"--task"' "$LOG" 2>/dev/null || echo 0)"
-  echo "  doc show (any)     : $(grep -c '"doc","show"' "$LOG" 2>/dev/null || echo 0)"
-  echo "  task diff/doc list : $(grep -cE '"task","diff"|"doc","list"' "$LOG" 2>/dev/null || echo 0)   (VERB-ADJACENT, §3.3)"
+  echo "  doc show --task    : $(count '"doc","show".*"--task"')"
+  echo "  doc show (any)     : $(count '"doc","show"')"
+  echo "  §3.3 adjacent      : $(count '"task","diff"|"task","validate"|"doc","list".*"--task"')   (task diff · task validate · doc list --task)"
+  echo "  ^ indicative only — score with: completions/trial-driver/run.py observe \"$OUT\""
 else
   echo "  NO INVOCATION LOG — §3.3's primary channel is missing for this session"
 fi

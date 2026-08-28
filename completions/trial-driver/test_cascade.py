@@ -236,5 +236,43 @@ class RegistrationCorrespondence(unittest.TestCase):
                       " ".join(cascade.check_registration("no table here")))
 
 
+#: Every trial protocol that registers this cascade. `check_registration` existed
+#: from the start and was exercised only against synthetic tables — a fence nothing
+#: pointed at, which is the same failure mode as a tool nothing references. The
+#: RC-1.0-final protocol registers the table in its §3.6, so the comparison is now
+#: live: changing a row in either place without the other reddens here.
+#:
+#: A protocol that does not register a table is skipped, not failed — the earlier
+#: trials were written before the cascade existed and back-filling their protocols
+#: would be editing a pre-registered instrument after its trial ran.
+PROTOCOLS = sorted(
+    (pathlib.Path(__file__).resolve().parents[1] / "artifacts").glob(
+        "RC-*/protocol.md"))
+
+
+class TheRegisteredTableMatchesTheShippedCascade(unittest.TestCase):
+    """The protocol's own enumeration and the grader must agree, in order."""
+
+    def test_at_least_one_protocol_registers_the_table(self) -> None:
+        """Otherwise this whole class is green by vacuity."""
+        registering = [p for p in PROTOCOLS
+                       if "registers no outcome table" not in
+                       " ".join(cascade.check_registration(p.read_text()))]
+        self.assertTrue(registering,
+                        "no shipped protocol registers the cascade — the fence is "
+                        "pointing at nothing, which is how it started")
+
+    def test_every_registering_protocol_agrees_with_the_code(self) -> None:
+        for p in PROTOCOLS:
+            problems = cascade.check_registration(p.read_text())
+            if problems == ["the protocol registers no outcome table "
+                            "(no matching rows found)"]:
+                continue  # predates the cascade; see PROTOCOLS
+            with self.subTest(protocol=str(p.relative_to(p.parents[3]))):
+                self.assertEqual(problems, [],
+                                 "the protocol's registered outcomes and "
+                                 "cascade.py have drifted apart")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
