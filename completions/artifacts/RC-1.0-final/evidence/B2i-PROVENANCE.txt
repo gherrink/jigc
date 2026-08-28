@@ -1,0 +1,8 @@
+image        jigc-gate:rc12
+jigc-version jigc 1.0.0-rc.12
+jigc-sha     314f59ecc1c32c0ccf16685b83f2797fd2e13fc2
+model        claude-sonnet-5
+permissions  bypassPermissions
+corpus-src   /Users/maurice/ideas/pinewick-planted
+session-start 2026-08-28T11:00:40Z
+exit-code    0

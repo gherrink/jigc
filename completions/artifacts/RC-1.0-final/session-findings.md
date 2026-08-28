@@ -210,3 +210,77 @@ in both.
 **Stated with its bound: this is N=2 on ONE transport**, because §2.1's substitution forfeited the
 cross-transport check. It is a replication, not a control. An interactive B2 remains the stronger
 measurement, and an interactive B1 the only way plant F's correction is delivered.
+
+
+---
+
+## B1i / B2i — the interactive arms, and the substitution's cost recovered
+
+```
+B1i  recs 40 (worker) · authoring 9  · VERB 5 · adjacent 6 · fs 0
+B2i  recs 49          · authoring 14 · VERB 2 · adjacent 6 · fs 0
+```
+
+**Both VERB, both zero filesystem reads.** With B2 headless at VERB 2 / fs 0 and B2i interactive
+at VERB 2 / fs 0 on the same corpus and prompt, **the cross-transport control §2.1's substitution
+forfeited is recovered** — the transport does not move the result on this arm.
+
+**Plant F was delivered, and it is the first time in this project's trials that a mid-session
+correction has reached a live blind session.** The cue card fired 0 times in 4 sessions; this one
+fired on the first attempt, into a pause the *product* created.
+
+### S-4 · The identity verb pair misdirects on both wrong turns — a discoverability finding
+
+The worker took the correction and went looking for the rename. Its path, from the archived log:
+
+```
+11:47:22  exit=2  jigc rename adr:drop-the-oldest-sample --to "Shed…" --task <id>
+                  error: unexpected argument '--task' found
+                    tip: to pass '--task' as a value, use '-- --task'
+11:47:24  exit=1  jigc rename adr:drop-the-oldest-sample --to "Shed…"     (top-level, staged doc)
+11:47:32  exit=0  jigc doc rename --help                                  <- had to read the help
+11:47:34  exit=0  jigc doc rename adr:drop-the-oldest-sample --to "Shed…" --task <id>   <- T9
+```
+
+**The tip on the first refusal points the wrong way.** The worker did not want to pass `--task`
+*as a value*; it wanted the task-scoped rename verb. `-- --task` would produce nonsense. **Nothing
+in that error names `jigc doc rename`**, which is the answer — and `jigc rename` / `jigc doc
+rename` is precisely the confusable pair the whole identity split is built around.
+
+**This is the class M46 Increment 8 T5 already fixed once**, for `jigc describe <positional>`:
+clap printed a bare error, and the repair was a tip that routes. Here the tip exists **and
+misdirects**, which is worse than absent. Reproduced live in the container (see the operator
+contamination note below) — it is not read from source.
+
+**It resolved correctly**: `docs/decisions/shed-the-oldest-sample.md`, committed as
+`docs(ingest): record the decision to shed the oldest sample on ingest overflow`. **T9 reached** —
+the staged re-slug nothing else in this trial touches. So this is a **surface/discoverability
+finding**, not a dead end: the route exists, costs one help read, and no work was lost.
+
+### S-5 · I contaminated the evidence channel myself, and it is on the record
+
+Reproducing S-4's two refusals, I ran them with `docker exec` **into the live container**. Both
+landed in `.jigc/logs/invocations.jsonl` — the measurement channel — timestamped inside the
+session.
+
+```
+total records 42 · worker 40 · OPERATOR (mine) 2
+VERB      all=5  worker=5   operator contributed 0
+adjacent  all=6  worker=6   operator contributed 0
+```
+
+**The scored channels are unaffected**; only the record count moves, 42 → 40, and the trial record
+uses 40.
+
+**It is recorded because the rule I broke is one I had just written.**
+[plant-f-correction.md](plant-f-correction.md) says to derive the slug *"in a throwaway copy —
+never in the live corpus"*, and I obeyed that for the slug and then violated the same principle
+minutes later for the refusal repro. The generalisation is the one
+[rehearsal-R1.md](rehearsal-R1.md) already forced for plants: **anything that drives the binary
+against a live session's corpus writes into the channel that session is scored on** — plants,
+adoption arms, and now the operator's own curiosity.
+
+**Owed after the trial:** the `session-start` split handles records *before* a session; nothing
+handles records made *during* one by someone other than the worker. The cheap fix is discipline
+(reproduce in a copy), and the fence would be an operator-marker the reader can subtract — neither
+is built, and the gap is stated rather than assumed harmless.
