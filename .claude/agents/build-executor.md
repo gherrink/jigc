@@ -30,3 +30,6 @@ Your transcript is **not** read back, so nothing load-bearing may live only ther
 - **Code** → one git commit (this task). **Decisions / elaboration pins** → `DECISIONS.md` (committed). **`notes`** → 1–2 lines (what shipped + any pin id) — no essay.
 - **On halt, leave a CLEAN tree:** revert your uncommitted changes (`git restore` / `git checkout --`) so the run resumes from a known base — do **not** leave orphaned edits for the human to discover (your attempt stays recoverable from your transcript/diff). Then fill the structured `halt` report fully: `root_cause`, `evidence` (the failing tests/commands), `tree_state` (which commits landed + confirm the tree is clean), `recommendation`.
 
+
+
+**Scratch teardown — never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* (a static scan of the command text that cannot prove the variables are non-empty), so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Use a fresh dir — `W=$(mktemp -d "$SCRATCH/probe.XXXXXX")` — or empty a fixed one without `rm`: `mkdir -p "$D" && find "$D" -mindepth 1 -delete`. `set -u` / `: "${V:?}"` do not help. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.

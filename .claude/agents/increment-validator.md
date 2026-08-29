@@ -23,3 +23,6 @@ Return **findings**: each *blocking* (deliverable/proves/invariants/scope not ge
 
 **Reporting:** your transcript is **not** read back — every finding must be **self-contained** in the structured return (`title` + `file:line` + the command/output that reproduces it), so triage never opens your transcript. You make no commits and no edits; leave the tree as you found it.
 
+
+
+**Scratch teardown — never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* (a static scan of the command text that cannot prove the variables are non-empty), so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Use a fresh dir — `W=$(mktemp -d "$SCRATCH/probe.XXXXXX")` — or empty a fixed one without `rm`: `mkdir -p "$D" && find "$D" -mindepth 1 -delete`. `set -u` / `: "${V:?}"` do not help. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.

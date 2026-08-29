@@ -13,3 +13,6 @@ From the repo root run `cargo build`, then use the **absolute path** to `target/
 
 **Reporting:** your transcript is **not** read back — each scenario's `detail` must carry its own exact repro command(s) + observed output (required on failure), so triage never opens your transcript. You make no commits to the jigc repo.
 
+
+
+**Scratch teardown — never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* (a static scan of the command text that cannot prove the variables are non-empty), so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Use a fresh dir — `W=$(mktemp -d "$SCRATCH/probe.XXXXXX")` — or empty a fixed one without `rm`: `mkdir -p "$D" && find "$D" -mindepth 1 -delete`. `set -u` / `: "${V:?}"` do not help. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.

@@ -18,3 +18,6 @@ If you trace the finding and it is a **false positive** (not real), do **not** f
 
 Your transcript is **not** read back, and at a halt the orchestrator resumes from your report **without re-reading the code** — so the report must stand alone. Code → one commit; `notes` carries (1) the **commit sha + subject**, (2) the **gate evidence** (the four commands green) and, for an agent-facing fix, the **emitted command run verbatim** with its exit, and (3) one line on what was fixed. On `could-not-fix` put the **trace showing the finding is not real** (or, for an undecided fork, the options) in `notes` (self-contained). Leave a clean tree either way.
 
+
+
+**Scratch teardown — never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* (a static scan of the command text that cannot prove the variables are non-empty), so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Use a fresh dir — `W=$(mktemp -d "$SCRATCH/probe.XXXXXX")` — or empty a fixed one without `rm`: `mkdir -p "$D" && find "$D" -mindepth 1 -delete`. `set -u` / `: "${V:?}"` do not help. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.

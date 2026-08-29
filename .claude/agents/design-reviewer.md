@@ -25,3 +25,6 @@ Read for:
 A settled doc that survives an adversarial read is a sound basis for increments; an unreviewed one propagates its flaws into every increment cut from it.
 
 Return **severity-ranked findings as your final message** (the only thing handed back; your transcript is not read), each self-contained: the artifact + location, what's wrong, and a concrete suggested fix — tagged **blocking** (must bake back before decompose) or **advisory**. **Verify each finding is real** before reporting (a review is a hypothesis generator, not an oracle). You make **no edits** and settle nothing — the human accepts or rejects each finding, and accepted fixes are baked back through the design workflow.
+
+
+**Scratch teardown — never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* (a static scan of the command text that cannot prove the variables are non-empty), so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Use a fresh dir — `W=$(mktemp -d "$SCRATCH/probe.XXXXXX")` — or empty a fixed one without `rm`: `mkdir -p "$D" && find "$D" -mindepth 1 -delete`. `set -u` / `: "${V:?}"` do not help. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.
