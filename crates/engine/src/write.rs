@@ -3154,6 +3154,39 @@ pub fn promote_slot_to_repeatable(
     Ok(splice(source, region.start..region.end, &replacement))
 }
 
+/// The refusal [`insert_item_slot`] raises **beside** the shared [`GenerateError`]s: the
+/// committed item region carries bytes the parse does not model, so the reshape's whole-item
+/// re-render would destroy them.
+///
+/// It is its own type rather than a [`GenerateError`] variant because it is not a write-verb
+/// reject and answers none of the `write.*` route split's questions
+/// (`design/validation.md` → The `write.*` route split): no address missed, no declared shape
+/// was violated — the doc conforms, and the defect is that *conformance does not model every
+/// committed byte*. Its home is the migration report, which decides what to say about it
+/// (`crates/cli/src/migrate_corpus.rs` → `halt_finding`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ItemSlotError {
+    /// A shared generation failure (undeclared/non-repeatable section, an undeclared leaf).
+    Generate(GenerateError),
+    /// **The byte-fidelity refusal.** Re-rendering the item under the OLD template does not
+    /// reproduce its committed region, so the region holds bytes the parse does not carry and
+    /// the re-render would silently drop them. **No-data-loss** is a declared property of this
+    /// pair — [`crate::transform`] invokes it by name to refuse `RemovedItemSlot` for exactly
+    /// these bytes — so the fold refuses instead.
+    UnmodelledContent {
+        /// The repeatable section the item sits in.
+        section: String,
+        /// The item's `{#id}` anchor.
+        item: String,
+    },
+}
+
+impl From<GenerateError> for ItemSlotError {
+    fn from(err: GenerateError) -> Self {
+        ItemSlotError::Generate(err)
+    }
+}
+
 /// `added-item-slot` — the M49 migration primitive that **reshapes a repeatable item
 /// block's slot layout** from `old_schema`'s to `new_schema`'s, carrying every committed
 /// slot's prose verbatim and minting the newly declared leaf `leaf_id` **empty** at its
@@ -3194,14 +3227,15 @@ pub fn insert_item_slot(
     source: &str,
     section_id: &str,
     leaf_id: &str,
-) -> Result<String, GenerateError> {
+) -> Result<String, ItemSlotError> {
     let new_template = parse::ItemTemplate::from(item_block(new_schema, section_id)?);
     if !new_template.slot_ids.iter().any(|id| id == leaf_id) {
         return Err(GenerateError::WrongShape {
             what: format!(
                 "section {section_id:?} new item-template declares no slot leaf {leaf_id:?}"
             ),
-        });
+        }
+        .into());
     }
     // One declared slot renders bare — there are no sub-label bytes at this arity, so the
     // reshape is the identity.
@@ -3210,8 +3244,10 @@ pub fn insert_item_slot(
     }
     let old_template = parse::ItemTemplate::from(item_block(old_schema, section_id)?);
 
-    let doc = parse::parse_sections(old_schema, source).map_err(|_| GenerateError::WrongShape {
-        what: "source does not conform to the old schema".to_string(),
+    let doc = parse::parse_sections(old_schema, source).map_err(|_| {
+        ItemSlotError::Generate(GenerateError::WrongShape {
+            what: "source does not conform to the old schema".to_string(),
+        })
     })?;
     let Some(parsed) = doc.sections.iter().find(|s| s.id == section_id) else {
         // The instance omits the section — no items, nothing to reshape.
@@ -3228,6 +3264,34 @@ pub fn insert_item_slot(
             continue;
         }
         let mut content = item_content_from_parsed(item, source);
+        // **The byte-fidelity guard, asked before a single byte moves.** The reshape below
+        // replaces the item's **whole committed region** with a re-render of what the parse
+        // modelled, so any committed byte the parse does *not* model is destroyed by it —
+        // and one such byte is reachable by hand: jigc's canonical item order is
+        // slots-then-fields, so "append a sentence to the end of this entry" lands **after**
+        // the `<!-- fields -->` group, where the parse carries nothing, `doc show` renders
+        // the slot without it and `jigc validate` reports no finding about it.
+        //
+        // So the pre-image is checked: re-render the item under the OLD template (the shape
+        // the committed doc conforms to) and compare it to the committed region, modulo the
+        // separator discipline the splice re-applies below. Equal means the parse models
+        // every byte in the region and the re-render is faithful; unequal means it does not,
+        // and the doc is **refused** — **No-data-loss** is a declared property of this pair
+        // ([`crate::transform`] invokes it by name to refuse `RemovedItemSlot` for exactly
+        // these bytes, and a silent whole-item re-render is the larger exception).
+        //
+        // *Declared bound:* the check is byte equality, so a **conformant but non-canonical**
+        // item region (an extra blank line, a hand-spaced field bullet) is refused rather
+        // than re-canonicalized. That is the safe side of a check that cannot tell the two
+        // apart, and the refusal names the item, so the repair is a followable one-item edit.
+        if source[region.clone()].trim_end_matches('\n')
+            != render_item(&content).trim_end_matches('\n')
+        {
+            return Err(ItemSlotError::UnmodelledContent {
+                section: section_id.to_string(),
+                item: item.id.clone(),
+            });
+        }
         content.slots =
             reshaped_item_slots(&content, &old_template.slot_ids, &new_template.slot_ids);
         content.slot = None;

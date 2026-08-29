@@ -610,3 +610,257 @@ fn a_re_run_leaves_an_already_reshaped_item_byte_identical() {
     assert_byte_stable(pack.path(), "roadmap", &after);
     assert_validates_clean(repo.path(), home.path(), pack.path());
 }
+
+// ---------------------------------------------------------------------------------------------
+// Cells 6–8 — the **field-bearing** item block, the shape that can hold unmodelled bytes.
+//
+// Every cell above rewrites bytes over `roadmap`, whose item block declares **no fields** — so
+// no `<!-- fields -->` group exists in it, and the one committed shape that can carry prose the
+// parse does not model was never migrated at an arity that rewrites anything (`completion-record`
+// appears only at 0→1, where the fold writes zero bytes by construction). These cells close that
+// hole on the axis the kind claims: **arity × requiredness × whether the item block bears
+// fields**.
+// ---------------------------------------------------------------------------------------------
+
+/// Append a second **optional** `extra` slot leaf after the `detail` one — the 2→3 arity over a
+/// field-bearing block.
+fn with_optional_extra(body: &str) -> String {
+    let anchor =
+        "        - { id: detail, slot: { optional: true, hint: \"The entry in prose.\" } }\n";
+    let out = body.replacen(
+        anchor,
+        &format!(
+            "{anchor}        - {{ id: extra, slot: {{ optional: true, hint: \"The rest.\" }} }}\n"
+        ),
+        1,
+    );
+    assert_ne!(
+        out, body,
+        "the `detail` leaf must be present to append after"
+    );
+    out
+}
+
+/// A conformant, **v1-stamped** `completion-record` whose finding item carries its prose as the
+/// bare body of the single declared slot **and** a trailing `<!-- fields -->` group — jigc's own
+/// canonical order, slots-then-fields, for a field-bearing item block.
+const RECORD_V1_PROSE: &str = "\
+---
+verdict: green
+owner-artifact: completions/artifacts/M1/VERDICT.md
+schema-version: 1
+---
+
+# M1
+
+## Findings
+
+### A stray finding  {#a-stray-finding}
+
+The finding, in prose.
+
+<!-- fields -->
+- severity: advisory
+- disposition: fixed
+- evidence: the audit log
+";
+
+/// The same committed doc with **one hand-appended sentence after the field group** — where
+/// "append a sentence to the end of this entry" lands, because the canonical order puts the
+/// fields last. The parse does not model it: `doc show` renders the slot without it and
+/// `jigc validate` reports nothing about it.
+const RECORD_V1_TRAILING_PROSE: &str = "\
+---
+verdict: green
+owner-artifact: completions/artifacts/M1/VERDICT.md
+schema-version: 1
+---
+
+# M1
+
+## Findings
+
+### A stray finding  {#a-stray-finding}
+
+The finding, in prose.
+
+<!-- fields -->
+- severity: advisory
+- disposition: fixed
+- evidence: the audit log
+
+THE COMMITTED PROSE THAT MUST SURVIVE.
+";
+
+/// The 1→2 reshape over `completion-record`'s **field-bearing** finding block: prior = the
+/// shipped block plus an optional `detail` slot; current = plus an optional `extra` slot.
+fn record_one_to_two(tag: &str) -> TempDir {
+    pack_bumping(
+        tag,
+        "completion-record",
+        |shipped| with_optional_detail(shipped, RECORD_EVIDENCE),
+        |shipped| with_optional_extra(&with_optional_detail(shipped, RECORD_EVIDENCE)),
+    )
+}
+
+/// **Cell 6 — 1 → 2 over a field-bearing item block.** The committed bare prose rides under
+/// `#### Detail`, the new leaf mints empty at its schema-ordered offset, and the item's
+/// `<!-- fields -->` group survives byte-for-byte **after** both sub-labels: the canonical
+/// slots-then-fields order the writer emits.
+#[test]
+fn one_to_two_over_a_field_bearing_item_keeps_the_field_group() {
+    let home = TempDir::new("home");
+    let pack = record_one_to_two("pack");
+    let repo = repo_with(&[
+        ("completions/M1.md", RECORD_V1_PROSE),
+        ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
+    ]);
+
+    let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
+    assert_eq!(sole_migrated(&report, ok), "completions/M1.md");
+
+    let after = fs::read_to_string(repo.path().join("completions").join("M1.md"))
+        .expect("read the migrated record");
+    assert_eq!(
+        after,
+        "\
+---
+verdict: green
+owner-artifact: completions/artifacts/M1/VERDICT.md
+schema-version: 2
+---
+
+# M1
+
+## Findings
+
+### A stray finding  {#a-stray-finding}
+
+#### Detail
+
+The finding, in prose.
+
+#### Extra
+
+<!-- fields -->
+- severity: advisory
+- disposition: fixed
+- evidence: the audit log
+",
+        "the committed prose is re-keyed under its leaf, the new leaf mints empty, and the \
+         field group survives verbatim"
+    );
+    assert_byte_stable(pack.path(), "completion-record", &after);
+    assert_validates_clean(repo.path(), home.path(), pack.path());
+}
+
+/// **Cell 7 — the guard: an item carrying bytes the parse does not model is REFUSED, never
+/// rewritten.** The reshape is a whole-item re-render, so every committed byte the parse does
+/// not model would be silently destroyed by it — and prose after the `<!-- fields -->` group is
+/// reachable by hand-editing, invisible to `doc show` and to `jigc validate`.
+///
+/// **No-data-loss** is a declared property of this pair — `transform.rs` invokes it by name to
+/// refuse `RemovedItemSlot` for exactly these bytes — so the fold checks its own pre-image
+/// first: re-render the item under the OLD template and compare it to the committed region.
+/// Unequal means the parse does not model the region, and the doc is blocked with a located
+/// cause and its bytes rolled back untouched.
+#[test]
+fn an_item_carrying_unmodelled_bytes_is_refused_never_rewritten() {
+    let home = TempDir::new("home");
+    let pack = record_one_to_two("pack");
+    let repo = repo_with(&[
+        ("completions/M1.md", RECORD_V1_TRAILING_PROSE),
+        ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
+    ]);
+
+    let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
+    let finding = sole_blocked(&report, ok);
+    assert_eq!(
+        finding["code"], "migrate-corpus.item-unmodelled-content",
+        "the refusal names its own cause; finding:\n{finding:#}",
+    );
+    let message = finding["message"].as_str().expect("a message");
+    assert!(
+        message.contains("findings/a-stray-finding"),
+        "the cause locates the item it refused; message: {message}",
+    );
+    let route = finding["route"].as_str().expect("a route");
+    assert!(
+        !route.contains("crates/engine"),
+        "the repair is in the doc, not in a file no adopter can edit; route: {route}",
+    );
+
+    let after = fs::read_to_string(repo.path().join("completions").join("M1.md"))
+        .expect("read the refused record");
+    assert_eq!(
+        after, RECORD_V1_TRAILING_PROSE,
+        "a refused doc rolls back byte-identical — the committed prose survives and the stamp \
+         never moves"
+    );
+}
+
+/// **Cell 8 — the guard holds at the next arity too.** 2→3 over the same field-bearing block:
+/// the committed item is already multi-slot, and the trailing prose after its field group is
+/// still unmodelled — so the same refusal fires. The arity axis is iterated, not sampled.
+#[test]
+fn the_unmodelled_bytes_guard_holds_at_two_to_three() {
+    let home = TempDir::new("home");
+    let pack = pack_bumping(
+        "pack",
+        "completion-record",
+        |shipped| with_optional_extra(&with_optional_detail(shipped, RECORD_EVIDENCE)),
+        |shipped| {
+            with_optional_extra(&with_optional_detail(shipped, RECORD_EVIDENCE)).replacen(
+                "        - { id: extra, slot: { optional: true, hint: \"The rest.\" } }\n",
+                "        - { id: extra, slot: { optional: true, hint: \"The rest.\" } }\n        - { id: more, slot: { optional: true, hint: \"Still more.\" } }\n",
+                1,
+            )
+        },
+    );
+    let record = "\
+---
+verdict: green
+owner-artifact: completions/artifacts/M1/VERDICT.md
+schema-version: 1
+---
+
+# M1
+
+## Findings
+
+### A stray finding  {#a-stray-finding}
+
+#### Detail
+
+The finding, in prose.
+
+#### Extra
+
+The rest of it.
+
+<!-- fields -->
+- severity: advisory
+- disposition: fixed
+- evidence: the audit log
+
+THE COMMITTED PROSE THAT MUST SURVIVE.
+";
+    let repo = repo_with(&[
+        ("completions/M1.md", record),
+        ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
+    ]);
+
+    let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
+    let finding = sole_blocked(&report, ok);
+    assert_eq!(
+        finding["code"], "migrate-corpus.item-unmodelled-content",
+        "the same guard adjudicates the 2→3 arity; finding:\n{finding:#}",
+    );
+
+    let after = fs::read_to_string(repo.path().join("completions").join("M1.md"))
+        .expect("read the refused record");
+    assert_eq!(
+        after, record,
+        "a refused doc rolls back byte-identical at every arity"
+    );
+}

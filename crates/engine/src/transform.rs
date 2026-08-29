@@ -105,7 +105,7 @@ use crate::parse::parse_sections;
 use crate::schema::{Leaf, Schema, SectionBody};
 use crate::schema_diff::SchemaChange;
 use crate::validate::schema_conformance;
-use crate::write::{self, GenerateError, SpliceError};
+use crate::write::{self, GenerateError, ItemSlotError, SpliceError};
 use std::collections::BTreeMap;
 
 /// The wire name [`TransformError::Unsupported`] carries for a **value remap** whose authored
@@ -137,6 +137,18 @@ pub enum TransformError {
         /// The section the change concerns.
         section: String,
     },
+    /// The `added-item-slot` fold found an item whose **committed bytes the parse does not
+    /// model** — prose after its `<!-- fields -->` group is the reachable instance — so the
+    /// whole-item re-render the reshape performs would silently destroy them. **No-data-loss**
+    /// is a declared property of this pair (the reason [`SchemaChange::RemovedItemSlot`] is
+    /// refused rather than stripped, one arm up), so the fold refuses the doc instead of
+    /// rewriting it. Carries the located item, because the repair is a one-item edit.
+    UnmodelledItemContent {
+        /// The repeatable section the item sits in.
+        section: String,
+        /// The item's `{#id}` anchor.
+        item: String,
+    },
     /// The **empty-diff backstop** fired: the schema pair moved its conformance-relevant
     /// structural projection but classified **no transform kind**
     /// ([`SchemaChange::Unclassified`]). There are no bytes to fold — the repair is to
@@ -150,6 +162,17 @@ pub enum TransformError {
 impl From<GenerateError> for TransformError {
     fn from(err: GenerateError) -> Self {
         TransformError::Generate(err)
+    }
+}
+
+impl From<ItemSlotError> for TransformError {
+    fn from(err: ItemSlotError) -> Self {
+        match err {
+            ItemSlotError::Generate(err) => TransformError::Generate(err),
+            ItemSlotError::UnmodelledContent { section, item } => {
+                TransformError::UnmodelledItemContent { section, item }
+            }
+        }
     }
 }
 

@@ -1668,6 +1668,13 @@ fn docs_root_free(schema: &Schema, docs_root: &str) -> Schema {
 /// - the **gate** — the fold produced conformant-shaped bytes and the doc broke its own
 ///   conformance check. An author clears that from the doc, so it keeps the contract-pinned
 ///   Framing-A waypoint and route ([`prose_needing_finding`]);
+/// - the **unmodelled-content refusal** — the second cause an author clears from the doc, and
+///   the reason this list is a *split by repairer* rather than "the gate versus everything
+///   else": the `added-item-slot` fold found committed bytes inside an item that the parse does
+///   not model, so re-rendering the item would destroy them (M49). Nothing is wrong with the
+///   schema pair or with the transform arm, so `fold_refused_finding`'s schema-authoring route
+///   would itself be the lie this function exists to stop; the repair is to move those bytes
+///   into a declared leaf and re-run;
 /// - **anything else** — the transform arm refused, or its output does not parse. Nothing written
 ///   into this doc changes that, so it takes [`fold_refused_finding`] and a **schema-authoring**
 ///   route: the same treatment the pre-fold refusals (`unclassified-change`,
@@ -1717,6 +1724,28 @@ fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
                 format!(
                     "build (or restore the schema shape behind) the `{kind}` arm in \
                      `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then \
+                     re-run `jigc migrate-corpus`"
+                ),
+            ),
+            // The one refusal whose repair is **in the doc** without being the gate's: the
+            // committed item region carries bytes the parse does not model, so the reshape's
+            // whole-item re-render would destroy them and the fold refuses instead
+            // (No-data-loss). Nothing about the schema pair or the transform arm is wrong, so
+            // `fold-refused`'s schema-authoring route would be a lie; the operator moves the
+            // stray bytes into a declared leaf (or deletes them) and re-runs.
+            TransformError::UnmodelledItemContent { section, item } => blocked_finding(
+                "migrate-corpus.item-unmodelled-content",
+                rel_key,
+                format!(
+                    "`{rel_key}` carries content in item `{section}/{item}` that its schema does not \
+                     model — text outside the item's declared slots and field group, most \
+                     often a paragraph hand-appended after the `<!-- fields -->` group. The \
+                     migration reshapes that item by re-rendering it, which would drop those \
+                     bytes, so it refuses and leaves the file untouched"
+                ),
+                format!(
+                    "open `{rel_key}`, move the text in item `{section}/{item}` that sits outside \
+                     its declared slots into one of them (or delete it), commit that, then \
                      re-run `jigc migrate-corpus`"
                 ),
             ),
