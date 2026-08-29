@@ -207,7 +207,20 @@ pub(crate) fn mint_migration_in_repo(
     state::write_staged_snapshot(&minted.dir, &staged)
         .with_context(|| format!("could not write the staged snapshot for `{}`", minted.id))?;
     let pack = make_pack()?;
-    provision_migration_commit_doc(pack.as_ref(), &minted.dir, &minted.id, source_path, doctype)?;
+    // The commit form is provisioned from the **resolved** commit schema — the same
+    // resolution every read surface projects, so a project shadow cannot leave the
+    // migration's form contradicting `jigc doc schema commit`.
+    let project_config = jigc_root.join("config");
+    let resolved = resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    let defs = CascadeDefs::new(&resolved, &project_config);
+    provision_migration_commit_doc(
+        pack.as_ref(),
+        &defs,
+        &minted.dir,
+        &minted.id,
+        source_path,
+        doctype,
+    )?;
     Ok(minted)
 }
 
@@ -277,8 +290,13 @@ fn migration_task_id(doctype: &str, source_path: &str) -> String {
 /// slots provision empty and `set-slot` generates the section's home on demand —
 /// `write-commands.md` → Instance provisioning; `DECISIONS.md` 2026-05-31 → inc-4
 /// fillable-form provisioning.)
-fn provision_commit_doc(pack: &dyn PackSource, dir: &Path, id: &str) -> Result<()> {
-    let schema = load_commit_schema(pack)?;
+fn provision_commit_doc(
+    pack: &dyn PackSource,
+    defs: &CascadeDefs<'_>,
+    dir: &Path,
+    id: &str,
+) -> Result<()> {
+    let schema = load_commit_schema(pack, defs)?;
     let instance = fillable_form(&schema, id);
     persist_provisioned_commit(&schema, dir, id, &instance)
 }
@@ -291,22 +309,28 @@ fn provision_commit_doc(pack: &dyn PackSource, dir: &Path, id: &str) -> Result<(
 /// the commit doc (`auto-migration.md` → Hardening #4; `DECISIONS.md` S2 → bounded fill).
 fn provision_migration_commit_doc(
     pack: &dyn PackSource,
+    defs: &CascadeDefs<'_>,
     dir: &Path,
     id: &str,
     source_path: &str,
     doctype: &str,
 ) -> Result<()> {
-    let schema = load_commit_schema(pack)?;
+    let schema = load_commit_schema(pack, defs)?;
     let instance = migration_commit_form(&schema, id, source_path, doctype);
     persist_provisioned_commit(&schema, dir, id, &instance)
 }
 
-/// Load + parse the embedded `commit` schema — the one read both commit-doc
+/// Load the **cascade-resolved** `commit` schema — the one read both commit-doc
 /// provisioners share.
-fn load_commit_schema(pack: &dyn PackSource) -> Result<Schema> {
-    let bytes = read_pack(pack, PackResourceKind::Schemas, FALLBACK_TYPE)?;
-    crate::pack::load_pack_schema(pack, &bytes)
-        .map_err(|e| anyhow::anyhow!("the `{FALLBACK_TYPE}` schema is malformed: {e}"))
+///
+/// Resolved, not pack-read: `commit` is transient (no home to relocate), so a project
+/// shadow of it changes *shape*, and the form provisioned here is the only surface that
+/// can ever carry a header field — front-matter has no generate-a-line path, so a field
+/// missing from the form is a field the agent cannot fill. Read pack-only, this door
+/// handed out a form `jigc doc schema commit` contradicted.
+fn load_commit_schema(pack: &dyn PackSource, defs: &CascadeDefs<'_>) -> Result<Schema> {
+    defs.schema(pack, FALLBACK_TYPE)
+        .with_context(|| format!("the `{FALLBACK_TYPE}` schema is malformed"))
 }
 
 /// Render `instance` to the task's `docs/commit:<id>.md` and record the commit doc as
@@ -426,6 +450,7 @@ pub(crate) fn provisions_at_compose(def: &WorkflowDef, type_name: &str) -> bool 
 /// once, on the first entry that finds it missing.
 fn provision_on_first_entry(
     pack: &dyn PackSource,
+    defs: &CascadeDefs<'_>,
     def: &WorkflowDef,
     dir: &Path,
     id: &str,
@@ -439,7 +464,7 @@ fn provision_on_first_entry(
     if path.exists() {
         return Ok(());
     }
-    provision_commit_doc(pack, dir, id)
+    provision_commit_doc(pack, defs, dir, id)
 }
 
 /// Build the **fillable** empty instance for `schema`: the H1 title is the task id,
@@ -1185,7 +1210,7 @@ fn compose_core(
         // slots (`write-commands.md` → Instance provisioning → Workflow-
         // provisioned). The empty skeleton stages here, ready for the
         // `jigc doc set-field`/`set-slot` write loop.
-        provision_commit_doc(pack, &minted.dir, &minted.id)?;
+        provision_commit_doc(pack, defs, &minted.dir, &minted.id)?;
         // At mint there are no bound context roles yet (the agent binds them
         // in-task, e.g. an ADR via the create-gate); resume re-reads them.
         build_context(
@@ -2037,7 +2062,7 @@ fn compose_task_workflow(
     // entry only, `creates-task`-gated), so a resume / a `creates-task: false` `<W>` /
     // a second re-entry over an edited doc all leave the area untouched.
     if provision {
-        provision_on_first_entry(pack, &def, task_dir, id)?;
+        provision_on_first_entry(pack, &defs, &def, task_dir, id)?;
     }
     // The command catalog is read against the resumed workflow's **origin pack** — the
     // constituent that defines `workflow_id`'s top-level id — exactly as the fresh
@@ -3161,30 +3186,53 @@ impl<'a> CascadeDefs<'a> {
         read_workflow(pack, id)
     }
 
+    /// Read **one** doctype's schema through the cascade — the single production
+    /// schema-resolution seam, and the only place in `crates/cli/src` that reads schema
+    /// bytes for a *document* (fenced by
+    /// `tests/schema_resolution_unified.rs`; the pack layer's own reads — the loader, the
+    /// manifest, the freeze gate — are a different question and stay in `pack.rs`).
+    ///
+    /// The project `schemas/<id>.yaml` whole-file shadow wins when the project owns the
+    /// id, else the pack definition (no field-merge). **Docs-root is deliberately NOT
+    /// applied here**: both callers apply it exactly once over the schemas they return,
+    /// and [`apply_docs_root`] prefixes rather than sets, so applying it twice would nest
+    /// the home under the root twice over.
+    fn read_one(&self, pack: &dyn PackSource, id: &str) -> Result<Schema> {
+        let bytes = if self.project_owns(id) {
+            self.project_def("schemas", id)?
+        } else {
+            read_pack(pack, PackResourceKind::Schemas, id)?
+        };
+        // A schema's field-type names are body-references resolved against the
+        // **origin pack** — the constituent that defines this schema's top-level
+        // id — so a loser-pack doctype's `code-anchor` resolves from ITS OWN
+        // pack's `field-types.yaml`, never the precedence-winner's (which need
+        // not declare it). Same origin lookup the step/command-ref reads perform;
+        // for a single pack (or a project-owned id, whose `field_owner` made the
+        // composite return its only constituent) the origin *is* `pack`, so the
+        // read is byte-identical (`multi-pack.md` → Pack-local body-reference
+        // resolution → Field-types are the same rule, one definition kind over).
+        let origin = pack.origin_pack(PackResourceKind::Schemas, &ResourceId::from(id));
+        crate::pack::load_pack_schema(origin, &bytes)
+            .with_context(|| format!("the `{id}` schema is malformed"))
+    }
+
+    /// One doctype's cascade-resolved schema, its `location:` nested under the resolved
+    /// `docs-root` — the single-doctype twin of [`all_schemas`](Self::all_schemas), for
+    /// the surfaces that address one document rather than sweep the store.
+    pub(crate) fn schema(&self, pack: &dyn PackSource, ty: &str) -> Result<Schema> {
+        let mut schema = self.read_one(pack, ty)?;
+        apply_docs_root(self.resolved, std::iter::once(&mut schema));
+        Ok(schema)
+    }
+
     /// Load every cascade-resolved schema keyed by doctype: for each doctype the
     /// pack ships, read the project `schemas/<id>.yaml` shadow when the project
     /// owns the id, else the pack definition (whole-file shadow, no field-merge).
     pub(crate) fn all_schemas(&self, pack: &dyn PackSource) -> Result<BTreeMap<String, Schema>> {
         let mut out = BTreeMap::new();
         for id in pack.list(PackResourceKind::Schemas) {
-            let bytes = if self.project_owns(id.as_str()) {
-                self.project_def("schemas", id.as_str())?
-            } else {
-                read_pack(pack, PackResourceKind::Schemas, id.as_str())?
-            };
-            // A schema's field-type names are body-references resolved against the
-            // **origin pack** — the constituent that defines this schema's top-level
-            // id — so a loser-pack doctype's `code-anchor` resolves from ITS OWN
-            // pack's `field-types.yaml`, never the precedence-winner's (which need
-            // not declare it). Same origin lookup the step/command-ref reads perform;
-            // for a single pack (or a project-owned id, whose `field_owner` made the
-            // composite return its only constituent) the origin *is* `pack`, so the
-            // read is byte-identical (`multi-pack.md` → Pack-local body-reference
-            // resolution → Field-types are the same rule, one definition kind over).
-            let origin =
-                pack.origin_pack(PackResourceKind::Schemas, &ResourceId::from(id.as_str()));
-            let schema = crate::pack::load_pack_schema(origin, &bytes)
-                .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
+            let schema = self.read_one(pack, id.as_str())?;
             out.insert(schema.ty.clone(), schema);
         }
         // Surface A: nest every persisted doctype's `location:` under the resolved
@@ -3193,6 +3241,35 @@ impl<'a> CascadeDefs<'a> {
         apply_docs_root(self.resolved, out.values_mut());
         Ok(out)
     }
+}
+
+/// **The one schema resolution**, for a caller that holds only the project layer's path.
+///
+/// Every production surface that needs a doctype schema for a *document* resolves it
+/// here or through [`CascadeDefs`] directly — one answer per doctype, so no two doors of
+/// the binary can disagree about the same file. Seven surfaces used to read the pack
+/// directly (`design/overrides.md` → Resolution algorithm phase 2), which made a project
+/// `schemas/<ty>.yaml` shadow invisible to them: `jigc ingest` reported a document
+/// `jigc validate` was adjudicating as an `adr` as matching no schema at all, finalize
+/// promoted to a home `jigc doc show` could not read, and `jigc doc create` minted a
+/// blank skeleton over committed prose (M49 Increment 3 T2).
+pub(crate) fn resolved_schemas(
+    pack: &dyn PackSource,
+    project_config: &Path,
+) -> Result<BTreeMap<String, Schema>> {
+    let resolved = resolve_severity_cascade(pack, project_config)?;
+    CascadeDefs::new(&resolved, project_config).all_schemas(pack)
+}
+
+/// One doctype's cascade-resolved schema — the single-doctype twin of
+/// [`resolved_schemas`].
+pub(crate) fn resolved_schema(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    ty: &str,
+) -> Result<Schema> {
+    let resolved = resolve_severity_cascade(pack, project_config)?;
+    CascadeDefs::new(&resolved, project_config).schema(pack, ty)
 }
 
 /// Read a named workflow's bytes, mapping a **missing** workflow to a routed
@@ -4819,7 +4896,9 @@ mod tests {
         )
         .expect("single-task def loads");
 
-        provision_on_first_entry(&pack, &def, sub_dir, "add-rate-limiter")
+        let resolved = no_shadow_resolved();
+        let defs = CascadeDefs::new(&resolved, sub_dir);
+        provision_on_first_entry(&pack, &defs, &def, sub_dir, "add-rate-limiter")
             .expect("first entry provisions the commit doc");
 
         // The commit skeleton landed AND its `created` provenance is in the manifest
@@ -4837,7 +4916,7 @@ mod tests {
 
         // A second entry is first-entry-only (no re-provision) and write-once keeps
         // the provenance `created`.
-        provision_on_first_entry(&pack, &def, sub_dir, "add-rate-limiter")
+        provision_on_first_entry(&pack, &defs, &def, sub_dir, "add-rate-limiter")
             .expect("a second entry is a no-op");
         let again = ProvenanceRecord::load(sub_dir).expect("provenance manifest reloads");
         assert_eq!(

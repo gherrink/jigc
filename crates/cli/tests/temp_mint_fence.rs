@@ -42,12 +42,16 @@
 //! Both the region search and the mint search run over the file with **comments and
 //! string literals blanked out**, so a `temp_dir()` written in prose or quoted inside
 //! an assertion message is not an offender, and a `{` inside a string cannot throw the
-//! brace matching off.
+//! brace matching off. That reading — the blanking and the region search — lives in
+//! [`support::rust_source`](crate::support::rust_source), shared with the schema
+//! resolution fence (M49 Increment 3): the scanner is subtle enough that a second copy
+//! would be a second set of bugs.
 //!
 //! The `doc-code` probe is likewise outside by construction: it is its own workspace
 //! (`crates/cli/probes/doc-code`, excluded from the root manifest) and **cannot depend
 //! on `engine`**, so it carries a local `AtomicU32` instead.
 
+use crate::support::rust_source::{cfg_test_regions, code_only, is_test_domain};
 use std::path::{Path, PathBuf};
 
 /// The workspace root — two levels up from `crates/cli`.
@@ -64,10 +68,10 @@ fn workspace_root() -> PathBuf {
 /// Membership is the crate tree itself, so a file added tomorrow is swept without
 /// anyone remembering to list it.
 fn workspace_sources(root: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    for crate_dir in ["crates/engine", "crates/cli"] {
-        collect(&root.join(crate_dir), &mut out);
-    }
+    let mut out: Vec<PathBuf> = ["crates/engine", "crates/cli"]
+        .iter()
+        .flat_map(|crate_dir| crate::support::rust_source::rust_files(&root.join(crate_dir)))
+        .collect();
     // The `doc-code` probe is a detached workspace that cannot depend on `engine`.
     out.retain(|p| !p.components().any(|c| c.as_os_str() == "probes"));
     out.sort();
@@ -77,158 +81,6 @@ fn workspace_sources(root: &Path) -> Vec<PathBuf> {
         out.len(),
     );
     out
-}
-
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "target") {
-                continue;
-            }
-            collect(&path, out);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
-        }
-    }
-}
-
-/// The file with every comment and string literal blanked to spaces, byte offsets and
-/// line breaks preserved.
-///
-/// Everything downstream reads this rather than the raw bytes: prose that *mentions*
-/// the mint is not a mint, an assertion message quoting it is not a mint, and a brace
-/// inside a string literal must not be counted when matching a module body.
-fn code_only(body: &str) -> String {
-    #[derive(Clone, Copy, PartialEq)]
-    enum Mode {
-        Code,
-        Line,
-        Block(u32),
-        Str,
-        Raw(usize),
-    }
-
-    let src = body.as_bytes();
-    let mut out = vec![b' '; src.len()];
-    let mut mode = Mode::Code;
-    let mut i = 0;
-
-    while i < src.len() {
-        let b = src[i];
-        if b == b'\n' {
-            out[i] = b'\n';
-            if mode == Mode::Line {
-                mode = Mode::Code;
-            }
-            i += 1;
-            continue;
-        }
-        match mode {
-            Mode::Code => {
-                if b == b'/' && src.get(i + 1) == Some(&b'/') {
-                    mode = Mode::Line;
-                } else if b == b'/' && src.get(i + 1) == Some(&b'*') {
-                    mode = Mode::Block(1);
-                    i += 2;
-                    continue;
-                } else if b == b'"' {
-                    mode = Mode::Str;
-                } else if b == b'r' && matches!(src.get(i + 1), Some(b'"') | Some(b'#')) {
-                    // `r"…"` or `r#"…"#` — count the hashes so the closer matches.
-                    let mut hashes = 0;
-                    while src.get(i + 1 + hashes) == Some(&b'#') {
-                        hashes += 1;
-                    }
-                    if src.get(i + 1 + hashes) == Some(&b'"') {
-                        mode = Mode::Raw(hashes);
-                        i += 2 + hashes;
-                        continue;
-                    }
-                    out[i] = b;
-                } else {
-                    out[i] = b;
-                }
-            }
-            Mode::Line => {}
-            Mode::Block(depth) => {
-                if b == b'/' && src.get(i + 1) == Some(&b'*') {
-                    mode = Mode::Block(depth + 1);
-                    i += 2;
-                    continue;
-                }
-                if b == b'*' && src.get(i + 1) == Some(&b'/') {
-                    mode = if depth == 1 {
-                        Mode::Code
-                    } else {
-                        Mode::Block(depth - 1)
-                    };
-                    i += 2;
-                    continue;
-                }
-            }
-            Mode::Str => {
-                if b == b'\\' {
-                    i += 2;
-                    continue;
-                }
-                if b == b'"' {
-                    mode = Mode::Code;
-                }
-            }
-            Mode::Raw(hashes) => {
-                if b == b'"' && src[i + 1..].starts_with(&vec![b'#'; hashes][..]) {
-                    mode = Mode::Code;
-                    i += 1 + hashes;
-                    continue;
-                }
-            }
-        }
-        i += 1;
-    }
-
-    String::from_utf8(out).expect("blanking preserves utf-8 boundaries")
-}
-
-/// The byte ranges of every `#[cfg(test)]` module body in `code`.
-///
-/// Found by brace-matching from the module's opening `{`, so an inline test module
-/// followed by more production code (the `validate.rs` shape) bounds correctly instead
-/// of swallowing the rest of the file.
-fn cfg_test_regions(code: &str) -> Vec<(usize, usize)> {
-    let bytes = code.as_bytes();
-    let mut regions = Vec::new();
-
-    for (at, _) in code.match_indices("#[cfg(test)]") {
-        let Some(open) = code[at..].find('{').map(|o| at + o) else {
-            continue;
-        };
-        let mut depth = 0usize;
-        for (i, b) in bytes.iter().enumerate().skip(open) {
-            match b {
-                b'{' => depth += 1,
-                b'}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        regions.push((at, i + 1));
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    regions
-}
-
-/// Whether the mint at `offset` is test code: always, for a file in a `tests/` tree;
-/// otherwise only inside a `#[cfg(test)]` module.
-fn is_test_domain(path: &Path, regions: &[(usize, usize)], offset: usize) -> bool {
-    path.components().any(|c| c.as_os_str() == "tests")
-        || regions.iter().any(|(lo, hi)| offset >= *lo && offset < *hi)
 }
 
 /// The mint the fence requires every test-domain temp path to be named from.

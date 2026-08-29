@@ -173,9 +173,9 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
     let worktree = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let pack = make_pack()?;
-    let resolved =
-        crate::start::resolve_severity_cascade(pack.as_ref(), &jigc_home.join(".jigc/config"))?;
-    let schemas = load_schemas(pack.as_ref(), &resolved)?;
+    let project_config = jigc_home.join(".jigc/config");
+    let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    let schemas = load_schemas(pack.as_ref(), &project_config)?;
 
     // The adopt substrate: the committed edge index keyed to the current HEAD and the
     // file-state record. Adopt advances these in memory (`adopt` persists nothing
@@ -595,28 +595,24 @@ fn read_candidate_bytes(repo_root: &Path, rel_path: &str) -> Result<Vec<u8>> {
     std::fs::read(&path).with_context(|| format!("could not read the candidate at {path:?}"))
 }
 
-/// Load every shipped schema from the embedded pack — the persisted set the
-/// classifier runs each candidate against (the engine stays domain-empty; the CLI
-/// feeds the cascade in). Returned in pack-list order (the engine's discovery dedups
-/// + sorts independently).
+/// Every **cascade-resolved** schema — the persisted set the classifier runs each
+/// candidate against (the engine stays domain-empty; the CLI feeds the cascade in).
+/// Returned doctype-sorted (the engine's discovery dedups + sorts independently, so the
+/// order is the resolver's, not this surface's, concern).
+///
+/// Surface B: this is what makes `jigc ingest` / `jigc unmanage` discover and classify
+/// managed docs at the same parent the write surfaces promote them to. Read pack-only,
+/// `ingest` reported a document `jigc validate` was adjudicating as an `adr` — its
+/// fields, its sections, its baseline — as `unmanaged`, matching no schema at all; once
+/// the doc was conformant it did worse, routing the operator to move it **out of** the
+/// home the resolved cascade declares for it (M49 Increment 3 T2).
 pub(crate) fn load_schemas(
     pack: &dyn engine::packsource::PackSource,
-    resolved: &engine::cascade::Resolved,
+    project_config: &Path,
 ) -> Result<Vec<Schema>> {
-    let mut out = Vec::new();
-    for id in pack.list(PackResourceKind::Schemas) {
-        let bytes = pack
-            .read(PackResourceKind::Schemas, &id)
-            .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-        let schema = crate::pack::load_pack_schema(pack, &bytes)
-            .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
-        out.push(schema);
-    }
-    // Surface B: nest every persisted doctype's `location:` under the resolved
-    // `docs-root` so `jigc ingest` / `jigc unmanage` discover + classify managed docs at
-    // the same parent the write surfaces promote them to.
-    crate::start::apply_docs_root(resolved, out.iter_mut());
-    Ok(out)
+    Ok(crate::start::resolved_schemas(pack, project_config)?
+        .into_values()
+        .collect())
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the same locate

@@ -93,9 +93,7 @@ pub(crate) fn run(
 ) -> Result<RenameReport> {
     let repo_root = require_project_layer(cwd)?;
     let pack = make_pack()?;
-    let resolved =
-        crate::start::resolve_severity_cascade(pack.as_ref(), &repo_root.join(".jigc/config"))?;
-    let schemas = load_schemas(pack.as_ref(), &resolved)?;
+    let schemas = load_schemas(pack.as_ref(), &repo_root.join(".jigc/config"))?;
     let schema_map: BTreeMap<String, Schema> =
         schemas.iter().map(|s| (s.ty.clone(), s.clone())).collect();
 

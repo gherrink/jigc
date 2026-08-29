@@ -1500,19 +1500,7 @@ fn print_resume_route(
 /// write path).
 fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
     let pack = make_pack()?;
-    let mut out = BTreeMap::new();
-    for id in pack.list(PackResourceKind::Schemas) {
-        let bytes = pack
-            .read(PackResourceKind::Schemas, &id)
-            .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-        let schema = crate::pack::load_pack_schema(pack.as_ref(), &bytes)
-            .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
-        out.insert(schema.ty.clone(), schema);
-    }
-    let resolved =
-        crate::start::resolve_severity_cascade(pack.as_ref(), &repo_root.join(".jigc/config"))?;
-    crate::start::apply_docs_root(&resolved, out.values_mut());
-    Ok(out)
+    crate::start::resolved_schemas(pack.as_ref(), &repo_root.join(".jigc/config"))
 }
 
 /// **Re-derive the demoted `.jigc` milestone cache from the committed record when absent** —

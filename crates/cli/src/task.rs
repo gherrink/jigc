@@ -799,26 +799,18 @@ impl TaskArea {
         serde_json::from_slice(&bytes).with_context(|| format!("malformed base pin at {path:?}"))
     }
 
-    /// Load every shipped schema, keyed by doctype — the set the conformance sweep
-    /// resolves staged instances against (the engine stays domain-empty; the CLI
-    /// feeds the cascade in).
+    /// Every **cascade-resolved** schema, keyed by doctype — the set the conformance
+    /// sweep resolves staged instances against and the finalize promote destination is
+    /// read from (the engine stays domain-empty; the CLI feeds the cascade in).
+    ///
+    /// Surface C — the finalize-promote **write** path, and the one that made the
+    /// shadow-blind read destructive: read pack-only, `task validate` named the staged
+    /// copy at the pack's home, finalize promoted it there, and the read surfaces then
+    /// looked at the resolved home — `doc show` blocked `store.not-found` on a document
+    /// that had just been committed, while `jigc validate` called that store clean
+    /// (M49 Increment 3 T2).
     fn schemas(&self) -> Result<BTreeMap<String, Schema>> {
-        let mut out = BTreeMap::new();
-        for id in self.pack.list(PackResourceKind::Schemas) {
-            let bytes = self
-                .pack
-                .read(PackResourceKind::Schemas, &id)
-                .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-            let schema = crate::pack::load_pack_schema(self.pack.as_ref(), &bytes)
-                .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
-            out.insert(schema.ty.clone(), schema);
-        }
-        // Surface C — the finalize-promote write path: nest every persisted doctype's
-        // `location:` under the resolved `docs-root` so the conformance sweep + promotion
-        // destination agree with the read surfaces.
-        let resolved = self.severity_cascade()?;
-        crate::start::apply_docs_root(&resolved, out.values_mut());
-        Ok(out)
+        crate::start::resolved_schemas(self.pack.as_ref(), &self.project_config())
     }
 
     /// The task-scope **probe pre-flight** — the task twin of `cli.rs`'s store-scope

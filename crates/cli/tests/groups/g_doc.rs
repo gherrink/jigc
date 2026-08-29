@@ -55,6 +55,8 @@ mod increment_workflow_compose;
 mod roadmap_batch_author;
 #[path = "../roundtrip_registry_fence.rs"]
 mod roundtrip_registry_fence;
+#[path = "../schema_resolution_unified.rs"]
+mod schema_resolution_unified;
 #[path = "../uninstall.rs"]
 mod uninstall;
 #[path = "../unknown_subcommand_tip.rs"]

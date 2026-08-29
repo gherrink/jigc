@@ -638,7 +638,7 @@ fn run_set_field(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     // The **parsed** address in URI normal form — the target every block on this write keys
     // at (`design/command-output-contract.md` → the `write.*` row). Never the raw `addr`: a
     // bare singleton head is legal at the verb boundary, so `vision#thesis` would key a
@@ -776,7 +776,7 @@ fn run_unset_field(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "set-field --unset", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
@@ -1197,7 +1197,7 @@ fn run_set_slot(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "set-slot", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
@@ -1301,7 +1301,7 @@ fn run_add_item(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "add-item", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
@@ -1634,7 +1634,7 @@ fn run_remove_item(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "remove-item", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
@@ -1761,7 +1761,7 @@ fn run_retitle_item(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     let uri = address.to_string();
     let schema = task.schema(address.r#type.as_str())?;
     let target =
@@ -2245,7 +2245,7 @@ fn run_doc_rename(
         )));
     }
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     // Argument shape, above everything: `rename` addresses a whole doc. Without this the
     // trailing hop would be silently dropped and the verb would ack a rename of the
     // container the agent did not name — the exact "success over a silent no-op" shape
@@ -3235,8 +3235,14 @@ fn run_show(
         return run_show_staged(cwd, addr, task_id, format);
     }
     let pack = make_pack()?;
-    let address = parse_verb_addr(pack.as_ref(), addr)?;
+    // The project layer is located **before** the address is parsed: a bare singleton
+    // head expands only for a doctype the *resolved* cascade homes at a literal file, so
+    // the address grammar cannot be adjudicated without the layer that decides it. The
+    // one visible consequence is ordering — a malformed address in a repo that was never
+    // set up now reports the setup gate first, which is the fault the caller must fix
+    // first anyway.
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
+    let address = parse_verb_addr(pack.as_ref(), &jigc_home.join(".jigc").join("config"), addr)?;
     let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
     let read = match format {
         Format::Json => {
@@ -3345,7 +3351,7 @@ fn run_show_staged(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, Some(task_id))?;
-    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     let schemas = committed_schemas(task.pack.as_ref(), &task.jigc_home)?;
     let out = match format {
         Format::Json => show_json(
@@ -3437,10 +3443,7 @@ fn reroute_unadopted(
 /// pack from cwd, so a `[dev ▸ methodology]` repo's `vision`/`milestone-record` resolve
 /// alongside the dev doctypes.
 fn committed_schemas(pack: &dyn PackSource, jigc_home: &Path) -> Result<BTreeMap<String, Schema>> {
-    let project_config = jigc_home.join(".jigc").join("config");
-    let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
-    let defs = crate::start::CascadeDefs::new(&resolved, &project_config);
-    defs.all_schemas(pack)
+    crate::start::resolved_schemas(pack, &jigc_home.join(".jigc").join("config"))
 }
 
 /// `jigc doc schema <doctype>` — project the doctype's **resolved** schema, the
@@ -5040,47 +5043,29 @@ impl ActiveTask {
             .is_some())
     }
 
-    /// Resolve the project cascade for this task — the `docs-root` (and severity)
-    /// surface the schema-load applies. A missing project layer resolves to the
-    /// pack-default base (the no-override case).
-    fn resolved(&self) -> Result<engine::cascade::Resolved> {
-        crate::start::resolve_severity_cascade(
-            self.pack.as_ref(),
-            &self.jigc_home.join(".jigc/config"),
-        )
+    /// The project layer's committed config dir — the layer every schema read on this
+    /// task routes through.
+    fn project_config(&self) -> PathBuf {
+        self.jigc_home.join(".jigc").join("config")
     }
 
-    /// Load the schema for `type_name` from the embedded pack, nesting its `location:`
-    /// under the resolved `docs-root` (a schema-load surface — the copy-in resolves
-    /// `canonical_path` against this `location:`, so it must match the finalize-promote
-    /// write path or warm copy-in reads the wrong dir).
+    /// The **cascade-resolved** schema for `type_name` — a project `schemas/<ty>.yaml`
+    /// whole-file shadow wins, and the `location:` is nested under the resolved
+    /// `docs-root`.
+    ///
+    /// Resolved, not pack-read: the copy-in resolves `canonical_path` against this
+    /// `location:`, so a shadow-blind read here staged a **blank skeleton** over a
+    /// committed document whose prose the store still held — `doc create` acked a fresh
+    /// mint for a doc the read surfaces were serving (M49 Increment 3 T2).
     fn schema(&self, type_name: &str) -> Result<Schema> {
-        let bytes = self
-            .pack
-            .read(PackResourceKind::Schemas, &ResourceId::from(type_name))
-            .with_context(|| format!("unknown doctype `{type_name}`"))?;
-        let mut schema = crate::pack::load_pack_schema(self.pack.as_ref(), &bytes)
-            .with_context(|| format!("the `{type_name}` schema is malformed"))?;
-        crate::start::apply_docs_root(&self.resolved()?, std::iter::once(&mut schema));
-        Ok(schema)
+        crate::start::resolved_schema(self.pack.as_ref(), &self.project_config(), type_name)
+            .with_context(|| format!("unknown doctype `{type_name}`"))
     }
 
-    /// Load every shipped schema, keyed by doctype — the set `create_gated`
-    /// adjudicates the unknown-doctype check against. Nests each `location:` under the
-    /// resolved `docs-root` (a schema-load surface, kept consistent with `schema`).
+    /// Every cascade-resolved schema, keyed by doctype — the set `create_gated`
+    /// adjudicates the unknown-doctype check against.
     fn schemas(&self) -> Result<BTreeMap<String, Schema>> {
-        let mut out = BTreeMap::new();
-        for id in self.pack.list(PackResourceKind::Schemas) {
-            let bytes = self
-                .pack
-                .read(PackResourceKind::Schemas, &id)
-                .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-            let schema = crate::pack::load_pack_schema(self.pack.as_ref(), &bytes)
-                .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
-            out.insert(schema.ty.clone(), schema);
-        }
-        crate::start::apply_docs_root(&self.resolved()?, out.values_mut());
-        Ok(out)
+        crate::start::resolved_schemas(self.pack.as_ref(), &self.project_config())
     }
 
     /// Load the task's **bound** workflow definition — the create-gate's
@@ -5127,8 +5112,8 @@ fn parse_addr(addr: &str) -> Result<Address> {
 ///
 /// `engine::address::Address::parse` is **untouched**: the grammar is not widened, this is
 /// an expansion at the verb boundary — the one place a human/agent types an address.
-fn parse_verb_addr(pack: &dyn PackSource, addr: &str) -> Result<Address> {
-    Address::parse(&expand_bare_singleton(pack, addr)).map_err(|err| {
+fn parse_verb_addr(pack: &dyn PackSource, project_config: &Path, addr: &str) -> Result<Address> {
+    Address::parse(&expand_bare_singleton(pack, project_config, addr)).map_err(|err| {
         anyhow!(
             "malformed address `{addr}`: {err} — a doc is addressed as `<type>:<slug>`, \
              e.g. `adr:single-node-cache` (a singleton doctype like `changelog` or `vision` \
@@ -5145,12 +5130,12 @@ fn parse_verb_addr(pack: &dyn PackSource, addr: &str) -> Result<Address> {
 /// The singleton set is the **placement** doctypes (`design/storage.md` → Placement): their
 /// slug is fixed to the type id by construction — `engine::store::read_slice` refuses every
 /// *other* slug for one — so the bare type names the instance unambiguously.
-fn expand_bare_singleton(pack: &dyn PackSource, addr: &str) -> String {
+fn expand_bare_singleton(pack: &dyn PackSource, project_config: &Path, addr: &str) -> String {
     let (head, fragment) = match addr.split_once('#') {
         Some((head, fragment)) => (head, Some(fragment)),
         None => (addr, None),
     };
-    if head.contains(':') || !is_singleton_type(pack, head) {
+    if head.contains(':') || !is_singleton_type(pack, project_config, head) {
         return addr.to_string();
     }
     match fragment {
@@ -5162,11 +5147,14 @@ fn expand_bare_singleton(pack: &dyn PackSource, addr: &str) -> String {
 /// Does `ty` name a **placement** doctype — one whose single instance homes at a literal
 /// file and whose slug is therefore fixed to the type id? An unknown or malformed doctype
 /// answers `false`, so the address falls through to the grammar's own rejection.
-fn is_singleton_type(pack: &dyn PackSource, ty: &str) -> bool {
-    pack.read(PackResourceKind::Schemas, &ResourceId::from(ty))
-        .ok()
-        .and_then(|bytes| crate::pack::load_pack_schema(pack, &bytes).ok())
-        .is_some_and(|schema| schema.placement.is_some())
+///
+/// Asked of the **resolved** schema: `placement:` is a project-shadowable key, so a
+/// pack-only answer left the bare spelling refused as malformed for a doctype the
+/// cascade had made a singleton — while `<ty>:<ty>`, the spelling this expansion exists
+/// to save the caller from, read the document (M49 Increment 3 T2).
+fn is_singleton_type(pack: &dyn PackSource, project_config: &Path, ty: &str) -> bool {
+    crate::start::resolved_schema(pack, project_config, ty)
+        .is_ok_and(|schema| schema.placement.is_some())
 }
 
 /// The staged on-disk path of `address`'s instance within the task working area,
