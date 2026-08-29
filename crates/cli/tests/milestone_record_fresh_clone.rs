@@ -12,11 +12,14 @@
 //!   leaving the gitignored WIP `.jigc/milestones/` gone). Then:
 //!     (a) `jigc doc show milestone-record:<id> --format json` returns the pinned shape
 //!         (Inc 1's committed-record read — works without the cache); and
-//!     (b) a subsequent milestone op (`list-tasks`) **re-derives the cache from the record**
-//!         and continues (resume-from-scratch), rebuilding `.jigc/milestones/<id>/`.
+//!     (b) the fresh clone is **answered** without a workbench (`list-tasks` reads the ids
+//!         out of the committed record and materializes nothing — it is `VerbKind::Read`,
+//!         M49 Inc 2 T4) and a subsequent **operating** op (`provision`) **re-derives the
+//!         cache from the record** and continues (resume-from-scratch), rebuilding
+//!         `.jigc/milestones/<id>/`.
 //!
-//! Pre-fix, (b) fails: `list-tasks` bails "milestone does not exist" because the WIP cache
-//! is gone and nothing reseeds it from the committed record.
+//! Pre-fix, (b) failed at both halves: every milestone verb bailed "milestone does not exist"
+//! because the WIP cache was gone and nothing reseeded it from the committed record.
 //!
 //! ---
 //!
@@ -42,9 +45,10 @@
 //!       `PATH`, reaching a sub-task compose at exit 0 that carries the record's intent → stage
 //!       code in the worktrees → a re-run `finalize` that **lands** it;
 //!   (d) the entry-door axis: every milestone verb reaches the reseed through **one** shared
-//!       site, so each of `list-tasks` / `provision` / `execute` / `finalize` rebuilds the areas
-//!       as the *first* op on its own fresh clone (`finalize` too — the reseed runs before its
-//!       refusal);
+//!       site, so each of `provision` / `execute` / `finalize` rebuilds the areas as the
+//!       *first* op on its own fresh clone (`finalize` too — the reseed runs before its
+//!       refusal). `list-tasks` left this axis at M49 Inc 2 T4 — it is `VerbKind::Read` and
+//!       rebuilds nothing;
 //!   (e) the declared bound: `--workflow` is workbench-local and **not** fresh-clone-durable —
 //!       the reseed re-derives the pack default, so the operator's own overridden re-entry is
 //!       refused **loudly** by the shipped W-equality guard rather than composing the override.
@@ -285,27 +289,44 @@ fn fresh_clone_reseeds_cache_from_record_and_resumes() {
         "each task item's `id` is its minted item id; got:\n{json}",
     );
 
-    // (b) A subsequent milestone op re-derives the cache from the record and continues.
+    // (b) The fresh clone is answered — and the answer costs no workbench. `list-tasks` is
+    // `VerbKind::Read` (M49 Inc 2 T4): it reads the recorded ids and materializes nothing, so
+    // the re-seed is proven here by an **operating** door instead.
     let list = run_jigc(
         repo.path(),
         home.path(),
         &["milestone", "list-tasks", "cache-rework"],
     );
-    assert_ok(&list, "fresh-clone `list-tasks` (resume-from-scratch)");
+    assert_ok(&list, "fresh-clone `list-tasks` (the read answer)");
     let out = String::from_utf8(list.stdout).expect("utf-8 list-tasks stdout");
     assert!(
         out.contains("evict-cold-entries") && out.contains("warm-the-read-cache"),
-        "fresh-clone `list-tasks` emits the re-derived sub-task ids; got:\n{out}",
+        "fresh-clone `list-tasks` emits the recorded sub-task ids; got:\n{out}",
+    );
+    assert!(
+        !cache_dir(repo.path()).exists(),
+        "the read answered from the committed record — it must materialize no workbench \
+         (`crates/cli/tests/read_verb_acts_nothing.rs` sweeps that over the whole `Read` set)",
     );
 
-    // The op re-seeded the demoted cache from the committed record (resume, not WIP recovery).
+    // The operating op re-seeds the demoted cache from the committed record (resume, not WIP
+    // recovery).
+    let provisioned = run_jigc(
+        repo.path(),
+        home.path(),
+        &["milestone", "provision", "cache-rework"],
+    );
+    assert_ok(
+        &provisioned,
+        "fresh-clone `provision` (resume-from-scratch)",
+    );
     assert!(
         cache_dir(repo.path()).join("tasks.json").is_file()
             && cache_dir(repo.path()).join("base.json").is_file(),
         "the milestone op re-seeded `.jigc/milestones/cache-rework/{{base,tasks}}.json` from the record",
     );
 
-    // The committed record was not disturbed by the read-path reseed (it is the source of truth).
+    // The committed record was not disturbed by the reseed (it is the source of truth).
     assert_eq!(
         fs::read_to_string(record_path(repo.path())).expect("record still readable"),
         record_before,
@@ -588,8 +609,11 @@ fn every_milestone_entry_door_rebuilds_the_sub_task_areas_on_a_fresh_clone() {
     // The axis is the set of verbs that reach [`reseed_cache`]; `create` is excluded by design
     // (it targets an id no record may own yet, so it takes the opposite guard). `finalize` is
     // in even though it refuses — the reseed runs ahead of the refusal, which is precisely what
-    // makes the refusal's route followable.
-    for door in ["list-tasks", "provision", "execute", "finalize"] {
+    // makes the refusal's route followable. `list-tasks` is **out**: M49 Inc 2 T4 took the one
+    // `VerbKind::Read` milestone verb off the reseed, so it rebuilds nothing by design. The
+    // membership itself is fenced against the code in `subtask_discard_record.rs`
+    // (`doors_reaching_the_reseed_site`), which reddens if this set drifts from the call sites.
+    for door in ["provision", "execute", "finalize"] {
         let origin = TempDir::new(&format!("door-origin-{door}"));
         let home = TempDir::new("home");
         init_methodology_origin(origin.path());

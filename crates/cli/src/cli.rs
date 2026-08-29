@@ -1354,6 +1354,22 @@ fn run_orient(format: Format) -> Outcome {
 /// verbs whose read-shaped form is one flag among several (`jigc start` orients bare and
 /// mints with an intent; `jigc milestone execute` mints nothing yet reseeds the cache).
 ///
+/// **One carve-out, and it is what lets the rule above be enforced rather than aspired to**
+/// (M49 Increment 2, T4). A `Read` verb may materialize a **self-healing derived cache**:
+/// state that is a pure function of the committed store at HEAD, that carries the HEAD it was
+/// built against, and that is rebuilt from the store on any stamp miss. `jigc task validate`
+/// writes `.jigc/index/edges.json` on its first run against a new HEAD and is inert after
+/// (`engine::index::load_committed`, *"stamp-rebuildable by construction"*;
+/// `design/storage.md` → Edge index lifecycle, the *committed rebuild* site) — losing that
+/// file costs one rebuild, never a wrong answer. What a `Read` verb may **never** do is
+/// create, alter or resurrect state a later door reads as **authority**. A sub-task's
+/// `.jigc/tasks/<id>/` working area is authority — its `workflow` file decides what a
+/// re-entry composes — and `jigc milestone list-tasks` rebuilt exactly that from a committed
+/// record which carries no minting workflow at all, so an `--workflow`-overridden sub-task
+/// came back under the pack default: a read verb fabricating provenance. It reads the record
+/// and writes nothing now (`crate::milestone`'s `run_list_tasks`), and the whole `Read` set is
+/// swept over a state built to reveal a write by `tests/read_verb_acts_nothing.rs`.
+///
 /// It exists because *"a read intent must never be answered with a write verb"* is a
 /// claim about **every** leaf of the clap tree, not about the handful of guesses a trial
 /// happened to record — so the rule that enforces it reads this table rather than a

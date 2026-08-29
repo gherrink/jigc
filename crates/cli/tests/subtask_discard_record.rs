@@ -461,6 +461,11 @@ struct DoorArm {
 /// ([`doors_reaching_the_reseed_site`]); this table is only how each derived door is
 /// *driven*, so the two are checked to biject: a door added to (or removed from) the reseed
 /// site reddens the bijection rather than silently escaping the sweep.
+///
+/// `run_list_tasks` **left the axis** at M49 Increment 2, T4 — the one milestone verb
+/// classified `VerbKind::Read` no longer re-seeds anything at all, so it has no rebuild to
+/// skip. That it rebuilds nothing over exactly this state is asserted where the whole `Read`
+/// set is swept (`crates/cli/tests/read_verb_acts_nothing.rs`).
 const DOOR_ARMS: &[DoorArm] = &[
     DoorArm {
         func: "run_add_task",
@@ -474,10 +479,6 @@ const DOOR_ARMS: &[DoorArm] = &[
             MILESTONE_ID,
             "spec:rate-limit",
         ],
-    },
-    DoorArm {
-        func: "run_list_tasks",
-        argv: &["milestone", "list-tasks", MILESTONE_ID],
     },
     DoorArm {
         func: "run_provision",

@@ -59,6 +59,8 @@ mod pinned_facts;
 mod placement_acceptance;
 #[path = "../provision_leftover_guard.rs"]
 mod provision_leftover_guard;
+#[path = "../read_verb_acts_nothing.rs"]
+mod read_verb_acts_nothing;
 #[path = "../spawn_template_executes.rs"]
 mod spawn_template_executes;
 #[path = "../staged_snapshot.rs"]

@@ -417,7 +417,8 @@ fn f1_committed_vision_reads_and_recomposes_both_groundings() {
 /// the committed `milestone-record` with the base pin + both sub-tasks + the header flipped
 /// `joined`; a **fresh clone** (delete `.jigc/`) reads it via `jigc doc show
 /// milestone-record:<id> --format json` (the pinned 1.0 shape) and continues an **in-flight**
-/// milestone — a milestone op re-derives its demoted cache from the committed record.
+/// milestone — the read answers from the record without materializing a workbench, and an
+/// operating op re-derives the demoted cache from that same record.
 ///
 /// **Continuation is of the un-joined** (`design/team-ready-state.md` → Engine capability 2:
 /// *"resumes un-joined tasks from scratch — joined tasks are done"*). This arm used to demo the
@@ -587,19 +588,35 @@ fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
         "the pinned json `base` must be a structured object, not the space-joined scalar; got:\n{json}",
     );
 
-    // Continue — the IN-FLIGHT milestone: a milestone op on the fresh clone re-derives its
-    // demoted cache from the committed record and lists its sub-tasks (resume-from-scratch).
+    // Continue — the IN-FLIGHT milestone. The read answers first: `list-tasks` is
+    // `VerbKind::Read` (M49 Inc 2 T4), so it names the recorded sub-tasks straight out of the
+    // committed record and materializes no workbench at all.
     let list = jigc(
         repo.path(),
         home.path(),
         &["milestone", "list-tasks", "ship-the-cache"],
         None,
     );
-    assert_ok(&list, "fresh-clone `list-tasks` (resume the in-flight one)");
+    assert_ok(&list, "fresh-clone `list-tasks` (the read answer)");
     let out = stdout_of(&list);
     assert!(
         out.contains("ship-it"),
-        "fresh-clone `list-tasks` emits the re-derived sub-task ids; got:\n{out}",
+        "fresh-clone `list-tasks` emits the recorded sub-task ids; got:\n{out}",
+    );
+    assert!(
+        !live_cache.exists(),
+        "a read answers from the record — it must not materialize the workbench",
+    );
+    // …and an OPERATING op on the fresh clone re-derives the demoted cache from that same
+    // record and continues (resume-from-scratch).
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["milestone", "provision", "ship-the-cache"],
+            None,
+        ),
+        "fresh-clone `provision` (resume the in-flight one)",
     );
     assert!(
         live_cache.join("tasks.json").is_file() && live_cache.join("base.json").is_file(),

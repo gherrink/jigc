@@ -1519,8 +1519,9 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 /// the fresh-clone resume read-path arm (`design/team-ready-state.md` → Engine capability 2
 /// (read-back): "on a fresh clone (no `.jigc/` working state) the first milestone op parses the
 /// record back into `BasePin` + `TaskList` and re-seeds the cache"; "Continue" means resume, not
-/// WIP recovery; M39 T5). Every milestone-op **cache reader** (`add-task`/`provision`/`join`/
-/// `finalize`/`list-tasks`/`execute`) calls this before it reads through the demoted cache
+/// WIP recovery; M39 T5). Every milestone-op **cache reader** that *operates* — `add-task` /
+/// `add-from-spec` / `provision` / `execute` / `join` / `finalize` / `discard` — calls this
+/// before it reads through the demoted cache
 /// (`read_base_pin`/`read_task_list`) or its `dir.is_dir()` unknown-milestone guard, so a
 /// teammate on a fresh clone (the gitignored `.jigc/milestones/<id>/` WIP gone, the committed
 /// record present) re-derives the milestone shape from the source-of-truth record and resumes
@@ -1533,6 +1534,13 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 /// milestone-execution workflow's own emitted `Spawn:` line dead-ended on *"no task"* — routed
 /// straight back at `jigc milestone list-tasks`, a loop. Both halves hang off this one site, so
 /// the promise above holds for every verb that reaches it rather than for a hand-kept subset.
+///
+/// **The one read verb no longer reaches it** (M49 Increment 2, T4). `list-tasks` is
+/// [`crate::cli::VerbKind::Read`] and used to call this like the rest, so a *read* rebuilt
+/// every absent sub-task area under `DEFAULT_SUB_TASK_WORKFLOW` — the pack fact below, which
+/// for an `--workflow`-overridden sub-task is a fabrication, and which a later re-entry reads
+/// as authority. It reads the committed record directly now ([`read_record`]) and materializes
+/// nothing; the doors that go on to *operate* are unchanged.
 ///
 /// Gated twice so it stays inert where there is nothing to re-derive: (1) the `milestone-record`
 /// schema must be resolved (a `[dev ▸ methodology]` project) — dev-only (no methodology pack) has
@@ -1547,8 +1555,9 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 /// The lifecycle). Because *every* milestone verb calls this before its own guards, the engine's
 /// *"a record in a terminal state does not re-seed a workbench"* refusal is inherited by all of
 /// them at one site: a `discarded` or `joined` milestone is over, and `add-task` / `add-from-spec`
-/// / `list-tasks` / `provision` / `execute` / `join` / `finalize` / `discard` all block here with
-/// `milestone.terminal`, routed to the committed record's read surface. Before that refusal
+/// / `provision` / `execute` / `join` / `finalize` / `discard` all block here with
+/// `milestone.terminal`, routed to the committed record's read surface. (`list-tasks` refuses on
+/// the same predicate, read-only, at its own site — [`run_list_tasks`].) Before that refusal
 /// existed, this function was the **resurrection**: it rebuilt the workbench that `discard`'s
 /// teardown (and `finalize`'s) had just removed, straight out of the settled record.
 /// **Refuse a `create` whose id a record already owns** — the identity half of the
@@ -1718,23 +1727,44 @@ fn recorded_sub_tasks(
     Ok(Some(tasks.tasks))
 }
 
+/// **The committed record's schema and bytes — read, and nothing else.** The read-only half
+/// of [`reseed_cache`], factored out because M49's T4 needs the *read* without the write:
+/// `jigc milestone list-tasks` is a [`crate::cli::VerbKind::Read`] leaf and may not re-seed a
+/// workbench, but it still has to answer from the source of truth and still has to see a
+/// terminal record.
+///
+/// `None` covers the two cases in which there is no committed record to read, both ordinary:
+/// a dev-only project resolves no `milestone-record` doctype (the demoted cache is then the
+/// only home), and a genuinely-unknown milestone has no record file — so each caller's own
+/// unknown-milestone guard still fires.
+fn read_record<'a>(
+    jigc_home: &Path,
+    schemas: &'a BTreeMap<String, Schema>,
+    milestone_id: &str,
+) -> Result<Option<(&'a Schema, String)>> {
+    let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
+        return Ok(None);
+    };
+    let Some(record_path) = engine::store::canonical_path(jigc_home, schema, milestone_id) else {
+        return Ok(None);
+    };
+    if !record_path.exists() {
+        return Ok(None);
+    }
+    let source = std::fs::read_to_string(&record_path)
+        .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
+    Ok(Some((schema, source)))
+}
+
 fn reseed_cache(
     jigc_home: &Path,
     jigc_root: &Path,
     schemas: &BTreeMap<String, Schema>,
     milestone_id: &str,
 ) -> Result<()> {
-    let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
+    let Some((schema, source)) = read_record(jigc_home, schemas, milestone_id)? else {
         return Ok(());
     };
-    let Some(record_path) = engine::store::canonical_path(jigc_home, schema, milestone_id) else {
-        return Ok(());
-    };
-    if !record_path.exists() {
-        return Ok(());
-    }
-    let source = std::fs::read_to_string(&record_path)
-        .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
     let dir = milestone_dir(jigc_root, milestone_id);
     engine::milestone::reseed_cache_from_record(&dir, schema, &source).map_err(finding_to_err)?;
     // The sub-task working areas, rebuilt from the same record (M47 Inc 3 T3). Second, on
@@ -1747,30 +1777,65 @@ fn reseed_cache(
         .map_err(finding_to_err)
 }
 
-/// `jigc milestone list-tasks <milestone-id>` — read the milestone's persisted
-/// task list and emit its sub-task ids in **canonical id-sorted order** (the
-/// deterministic order the by-task-id join enumerates, surfaced through the
-/// binary, not just the internal enumerate fn). Returns the summary line; an
-/// unknown milestone (no area / unreadable list) surfaces as a context-wrapped
-/// error and exits non-zero.
+/// `jigc milestone list-tasks <milestone-id>` — read the milestone's task list and emit its
+/// sub-task ids in **canonical id-sorted order** (the deterministic order the by-task-id join
+/// enumerates, surfaced through the binary, not just the internal enumerate fn). Returns the
+/// summary line; an unknown milestone (no cache area, no committed record) surfaces as a
+/// context-wrapped error and exits non-zero.
+///
+/// **It reads, and it writes nothing** (M49 Increment 2, T4). This is the one milestone verb
+/// classified [`crate::cli::VerbKind::Read`], and it used to reach the shared
+/// [`reseed_cache`] site like every operating door — so a *read* rebuilt the milestone cache
+/// **and every absent sub-task working area**, each with a `workflow` file the committed
+/// record does not carry and therefore cannot source. An `--workflow`-overridden sub-task
+/// came back under the pack default: a read verb fabricating provenance that a later
+/// `jigc workflow <W> --task <id>` re-entry reads as authority (see [`crate::cli::VerbKind`],
+/// which states what a `Read` leaf may and may not materialize).
+///
+/// So both behaviours the re-seed was carrying here are kept, read-only:
+/// - **the fresh-clone answer** — with no `.jigc/` workbench the ids come straight from the
+///   committed record ([`engine::milestone::read_back_record`], the same parse the re-seed
+///   derives its cache with), so a teammate on a clone is answered without a workbench being
+///   materialized for a question that needed none; and
+/// - **the terminal refusal** — [`engine::milestone::terminal_status`] is a pure parse of the
+///   record, so a `discarded`/`joined` milestone is still refused with `milestone.terminal`
+///   and routed to the read surface that serves a settled record
+///   (`design/team-ready-state.md` → The terminal is terminal).
+///
+/// The live cache stays authoritative when it is present, exactly as before: the re-seed was
+/// itself a no-op in that case, so this changes nothing for a session that already has one.
 fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
     // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
-    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
-    // the `dir.is_dir()` guard, so `list-tasks` on a fresh clone re-derives the milestone shape
-    // and continues (`design/team-ready-state.md` → Engine capability 2 (read-back)).
     let schemas = shipped_schemas(&jigc_home)?;
-    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
-    let dir = milestone_dir(&jigc_root, milestone_id);
-    if !dir.is_dir() {
-        return Err(no_such_milestone(milestone_id));
+    let recorded = read_record(&jigc_home, &schemas, milestone_id)?;
+    // The terminal predicate, ahead of everything: a milestone that is over is read through
+    // its record, never operated — and that is a property of the record, not of the cache.
+    if let Some((schema, source)) = &recorded
+        && let Some(status) = engine::milestone::terminal_status(schema, source)
+    {
+        return Err(finding_to_err(
+            engine::milestone::terminal_milestone_finding(milestone_id, &status),
+        ));
     }
-    let list = read_task_list(&dir)
-        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
-    // Enumeration is id-sorted — the order the join reads, not the recorded
+    let dir = milestone_dir(&jigc_root, milestone_id);
+    // Enumeration is id-sorted on both paths — the order the join reads, not the recorded
     // insertion order.
-    let ids = list.enumerate();
+    let ids = if dir.is_dir() {
+        read_task_list(&dir)
+            .with_context(|| {
+                format!("could not read the task list for milestone `{milestone_id}`")
+            })?
+            .enumerate()
+    } else if let Some((schema, source)) = &recorded {
+        engine::milestone::read_back_record(schema, source)
+            .map_err(finding_to_err)?
+            .1
+            .enumerate()
+    } else {
+        return Err(no_such_milestone(milestone_id));
+    };
     Ok(format!(
         "milestone:{milestone_id} tasks ({}): {}",
         ids.len(),
