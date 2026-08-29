@@ -916,7 +916,7 @@ fn remove_pre_commit_hook(repo: &Path) {
 /// "it fails loudly" as the whole contract is what let this door sit outside the survivable
 /// frame for five waves while `jigc task finalize` had it since M42. The door's contract is
 /// now the axis's contract — state-truth, its own re-run, its own logged code — and the
-/// sweep that proves it over all nine doors lives in `tests/commit_rejected_axis.rs`; this arm
+/// sweep that proves it over every door lives in `tests/commit_rejected_axis.rs`; this arm
 /// keeps the door-local half, in the suite that owns `migrate-corpus`.
 #[test]
 fn migrate_corpus_frames_a_pre_commit_rejection_with_what_survived_and_its_own_rerun() {

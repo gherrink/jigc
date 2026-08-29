@@ -83,6 +83,10 @@ pub const ERROR_MILESTONE_ADD_FROM_SPEC_REJECTED: &str = "milestone-add-from-spe
 /// The **`jigc milestone discard`** door's rejection — the record-only settle commit.
 pub const ERROR_MILESTONE_DISCARD_REJECTED: &str = "milestone-discard.commit-rejected";
 
+/// The **`jigc task discard`** door's rejection — the record-only settle commit a milestone
+/// sub-task's discard lands before it removes the working area (M49 Inc 2 T3).
+pub const ERROR_TASK_DISCARD_REJECTED: &str = "task-discard.commit-rejected";
+
 /// The error identity of the **exit-4 migration review hold** (M43) — a migration finalize
 /// without `--approve` rendered the fidelity diff and stopped, committing nothing. A coded
 /// stop that named no *why* in the log before this: exit 4 with `error_code: null`.
@@ -112,7 +116,7 @@ pub struct CommittingDoor {
 ///   `debug_assert!`, compiled out of the release build a trial actually runs.
 ///
 /// It is the **rejecting sibling** of `tests/hook_output_axis.rs`' non-blocking enumeration
-/// (the same 9 doors, the same one exclusion: `jigc setup`'s install commit passes
+/// (the same door set, the same one exclusion: `jigc setup`'s install commit passes
 /// `--no-verify` by recorded design, so no hook runs and there is nothing to reject). Both
 /// read off the one hook-capable commit seam, `task::git_commit_capture`.
 ///
@@ -160,6 +164,10 @@ pub const COMMITTING_DOORS: &[CommittingDoor] = &[
         verb: "jigc milestone discard",
         error_code: ERROR_MILESTONE_DISCARD_REJECTED,
     },
+    CommittingDoor {
+        verb: "jigc task discard",
+        error_code: ERROR_TASK_DISCARD_REJECTED,
+    },
 ];
 
 /// The **error-code registry** — the closed vocabulary of route-exempt error identities an
@@ -175,8 +183,8 @@ pub const COMMITTING_DOORS: &[CommittingDoor] = &[
 /// silently overriding it** (`DECISIONS.md` → 2026-07-26 M47 the Settle, Decision 6). That
 /// rationale — *errored verbs already write records; close the registry at the identities the
 /// log genuinely could not distinguish without* — was sound while exactly one door framed its
-/// rejection. Once the frame sweeps all nine committing doors, reusing `finalize.commit-rejected`
-/// on the eight non-finalize ones would put a **lying** code in the log, on the very surface
+/// rejection. Once the frame sweeps every committing door, reusing `finalize.commit-rejected`
+/// on the non-finalize ones would put a **lying** code in the log, on the very surface
 /// M42 built to stop the log lying (law 1). So the vocabulary is per-**door**, not per-verb:
 /// it closes at [`COMMITTING_DOORS`] plus the one non-commit identity, and every member is
 /// still an identity the log could not otherwise distinguish.
@@ -190,6 +198,7 @@ pub const ERROR_CODE_REGISTRY: &[&str] = &[
     ERROR_MILESTONE_ADD_TASK_REJECTED,
     ERROR_MILESTONE_ADD_FROM_SPEC_REJECTED,
     ERROR_MILESTONE_DISCARD_REJECTED,
+    ERROR_TASK_DISCARD_REJECTED,
     ERROR_REVIEW_PENDING,
 ];
 
@@ -450,8 +459,8 @@ mod tests {
         );
         assert_eq!(
             declared.len(),
-            10,
-            "the declared vocabulary is the 9 committing doors + the review hold; a change \
+            11,
+            "the declared vocabulary is the 10 committing doors + the review hold; a change \
              here revises design/surface-contract.md's mirror in the same commit",
         );
 

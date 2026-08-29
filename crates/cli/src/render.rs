@@ -1396,7 +1396,7 @@ pub fn carried_over_advisory(carried: &[ManifestEntry]) -> String {
 /// consumer still parses it.
 ///
 /// **Generalized off the task idiom at M47 Inc 3 T7** (`DECISIONS.md` → 2026-07-26 M47 the
-/// Settle, Decision 6): the frame belongs to every one of the nine committing doors, not just
+/// Settle, Decision 6): the frame belongs to every one of the committing doors, not just
 /// `jigc task finalize`, so the two door-specific halves are parameters —
 ///
 /// - `survived`: the door's **state-truth** clause, no trailing period (this function adds

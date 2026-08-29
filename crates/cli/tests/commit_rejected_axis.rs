@@ -659,6 +659,29 @@ fn drive(verb: &str) -> DoorCase {
                 home,
             }
         }
+        "jigc task discard" => {
+            let (repo, home) = base_repo("task-discard", None);
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "add-task", "cache-rework", "Area low"],
+                "`jigc milestone add-task`",
+            );
+            install_rejecting_hook(repo.path());
+            DoorCase {
+                survived: "the task's working area is intact".to_string(),
+                expected_rerun: owned(&["jigc", "task", "discard", "area-low"]),
+                driven: owned(&["task", "discard", "area-low"]),
+                repo,
+                home,
+            }
+        }
         other => panic!(
             "`{other}` is a committing door with no arm in this suite — the axis is the \
              code-side `COMMITTING_DOORS` table, so a door added there owes its arm here",
@@ -672,8 +695,8 @@ fn drive(verb: &str) -> DoorCase {
 fn every_committing_door_frames_its_rejection_names_itself_and_recovers() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        9,
-        "the axis is 9 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+        10,
+        "the axis is 10 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
     );
 
     for door in COMMITTING_DOORS {
@@ -1411,6 +1434,40 @@ fn drive_empty(verb: &str) -> EmptyCase {
                 home,
             }
         }
+        // The repeated sub-task `discard`: the first one settled the record item AND removed
+        // the working area, so the repeat is refused at task resolution — ahead of the splice
+        // that would have re-written identical bytes. The `milestone discard` cell's shape,
+        // one level down.
+        "jigc task discard" => {
+            let (repo, home) = base_repo("empty-task-discard", None);
+            commit_everything(repo.path(), "settle the fixture");
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "add-task", "cache-rework", "Area low"],
+                "`jigc milestone add-task`",
+            );
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["task", "discard", "area-low"],
+                "`jigc task discard`",
+            );
+            EmptyCase {
+                driven: owned(&["task", "discard", "area-low"]),
+                exit: 1,
+                diagnosis: "no task `area-low`".to_string(),
+                finding: None,
+                repo,
+                home,
+            }
+        }
         other => panic!(
             "`{other}` is a committing door with no **empty-commit** cell in this suite — the \
              axis is the code-side `COMMITTING_DOORS` table, so a door added there owes its \
@@ -1425,8 +1482,8 @@ fn drive_empty(verb: &str) -> EmptyCase {
 fn no_committing_door_dresses_an_empty_commit_as_a_rejection() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        9,
-        "the axis is 9 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+        10,
+        "the axis is 10 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
     );
 
     for door in COMMITTING_DOORS {

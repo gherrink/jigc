@@ -269,7 +269,16 @@ impl TaskCommand {
             TaskCommand::Validate { id, carry_staged } => {
                 return run_validate(cwd, &id, format, carry_staged);
             }
-            TaskCommand::Discard { id } => run_discard(cwd, &id, format),
+            TaskCommand::Discard { id } => {
+                // Its own arm: a sub-task discard commits the record, so a rejecting hook is
+                // framed with this door's state-truth clause + re-run and names itself in the
+                // invocation log, instead of falling to the plain operational envelope.
+                let frame = discard_rejection_frame(&id);
+                return match run_discard(cwd, &id, format) {
+                    Ok(()) => Outcome::success(),
+                    Err(err) => surface_commit_rejection(format, &err, &frame),
+                };
+            }
             TaskCommand::Finalize {
                 id,
                 approve,
@@ -430,9 +439,30 @@ fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Out
 /// *removed* vs *was already gone* — already lives one layer up, in **exit 0 + this ack**
 /// vs **exit 1 + the error envelope** (`design/command-output-contract.md` §2 → the
 /// ⚠ correction).
+///
+/// **A milestone sub-task settles its committed record here** (M49 Increment 2 / T3;
+/// `design/team-ready-state.md` → The lifecycle). This door was workbench-local and knew
+/// nothing of milestones, so abandoning a sub-task removed its area at exit 0 while the
+/// committed record went on calling it `active` — the team-ready record lying about
+/// abandoned work. So it delegates to the record-only-door seam
+/// ([`crate::milestone::settle_discarded_sub_task`]), which is inert for an ordinary task
+/// and dev-only, and it runs **before** the removal: a rejected commit must leave the task
+/// exactly as this door's rejection frame says it did.
+///
+/// The captured non-blocking hook stream is **relayed** (`design/command-output-contract.md`
+/// → Stream discipline) rather than added to the ack envelope: the pre-1.0 additive-key
+/// window is closed (M48), and the relay delivers the hook's words on both surfaces without
+/// minting new contract shape.
 fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
     let dropped = dropped_staged_docs(&task);
+    let hook_output = crate::milestone::settle_discarded_sub_task(
+        &task.jigc_home,
+        &task.jigc_root,
+        id,
+        &task.dir,
+    )?
+    .unwrap_or_default();
     std::fs::remove_dir_all(&task.dir)
         .with_context(|| format!("could not discard task `{id}` at {:?}", task.dir))?;
     println!(
@@ -445,7 +475,27 @@ fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
             },
         )
     );
+    relay_hook_output(format, &hook_output);
     Ok(())
+}
+
+/// The `task discard` door's half of the **survivable frame** (M47 Inc 3 T7;
+/// `design/finalize.md` → 6. Commit) — a sub-task discard runs a hook-capable record-only
+/// commit, so it is a [`COMMITTING_DOORS`](invocation_log::COMMITTING_DOORS) member and owes
+/// its own state-truth clause, its own copy-runnable re-run, and its own error identity.
+///
+/// The clause is written to *this* door's truth: the record commit runs **before** the area
+/// is removed and restores its captured pre-image on rejection, so both the record and the
+/// task survive — which is what makes the re-run land what the rejected run would have.
+fn discard_rejection_frame(id: &str) -> RejectionFrame {
+    RejectionFrame {
+        code: crate::invocation_log::ERROR_TASK_DISCARD_REJECTED,
+        survived: format!(
+            "nothing was committed — the milestone record still names task:{id} as it did, \
+             and the task's working area is intact"
+        ),
+        rerun: format!("jigc task discard {}", shell_token(id)),
+    }
 }
 
 /// The sorted `<type>:<slug>` identities staged in a working area's `docs/` dir — the
@@ -1575,7 +1625,7 @@ impl TaskArea {
                 // route (the M41 advisory-route floor) and wrap the hook's stderr, which the
                 // design pins as verbatim and unwrapped.
                 // M47 Inc 3 T7 — the framing moved into the shared `surface_commit_rejection`
-                // so all nine committing doors say the same three things; this door's bytes
+                // so every committing door says the same three things; this door's bytes
                 // are unchanged, and the re-run echoes the flags a repeat run genuinely needs
                 // (`--approve` on a migration hold, `--carry-staged` past the carryover gate)
                 // so the printed line is followable, not just recognizable.
@@ -3051,9 +3101,10 @@ pub(crate) struct RejectionFrame {
 /// into the invocation log; every other (unstructured `anyhow`) failure keeps the plain
 /// operational-error envelope and carries no identity.
 ///
-/// The one place that downcasts [`CommitRejected`], shared by all nine doors — the per-task
-/// `finalize` arm, both milestone-finalize commit-model arms, `rename`, `migrate-corpus`, and
-/// the four record-only milestone doors. Before M47 only the task door framed anything and
+/// The one place that downcasts [`CommitRejected`], shared by every member of
+/// [`COMMITTING_DOORS`](invocation_log::COMMITTING_DOORS) — the per-task `finalize` arm, both
+/// milestone-finalize commit-model arms, `rename`, `migrate-corpus`, and the record-only doors
+/// (the four milestone ops, joined at M49 by a sub-task `jigc task discard`). Before M47 only the task door framed anything and
 /// the two milestone-finalize arms logged the *task* door's code; the requirement is about
 /// *a commit that did not land*, and the log's job is to say which door it was
 /// (`design/finalize.md` → "A failed finalize must be legible in the invocation log", widened

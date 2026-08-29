@@ -63,5 +63,7 @@ mod provision_leftover_guard;
 mod spawn_template_executes;
 #[path = "../staged_snapshot.rs"]
 mod staged_snapshot;
+#[path = "../subtask_discard_record.rs"]
+mod subtask_discard_record;
 #[path = "../uninstall_worktree_guard.rs"]
 mod uninstall_worktree_guard;

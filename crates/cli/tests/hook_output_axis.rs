@@ -26,6 +26,14 @@
 //!      `discard`, all through `commit_record_only`) — the arms HERE (create /
 //!      add-task / discard; `add-from-spec` shares the same `append_and_commit_record`
 //!      seam `add-task` drives).
+//!   7. **`jigc task discard` on a milestone sub-task** (the fifth record-only door, M49
+//!      Inc 2 T3 — it settles the record item and commits the record alone before removing
+//!      the working area) — the arm HERE. It is the one producer whose stream reaches the
+//!      caller through the **relay only**: the ack's envelope is the frozen `TaskAck` shape
+//!      and the pre-1.0 additive-key window closed at M48, so the captured string rides the
+//!      format-appropriate stream (the delimited stdout section on agent-text, stderr under
+//!      `--format json`, where the envelope owns stdout) exactly as the `left-out` and
+//!      carryover advisories do — surfaced, never dropped.
 //!
 //!   **Excluded with reason:** `jigc setup`'s install commit passes `--no-verify` by
 //!   recorded design (the hook it installs must not self-trigger on the commit that
@@ -34,7 +42,7 @@
 //!   fixture machinery.
 //!
 //! **This enumeration is prose; the machine-checked one is
-//! `cli::invocation_log::COMMITTING_DOORS`** (M47 Inc 3 T7) — the same nine doors with the
+//! `cli::invocation_log::COMMITTING_DOORS`** (M47 Inc 3 T7) — the same doors with the
 //! same one exclusion, as a code-side table with two consumers: the error-code registry
 //! mirror (`invocation_log.rs`) and the **rejecting** sibling of this suite,
 //! `tests/commit_rejected_axis.rs`. This file is the *non-blocking* half of the same axis;
@@ -345,4 +353,76 @@ fn milestone_record_ops_surface_hook_output_on_envelope_and_stderr() {
         &["--format", "json", "milestone", "discard", "cache-rework"],
     );
     assert_hook_surfaced_json(&discarded, "/hook_output", "`jigc milestone discard`");
+}
+
+/// **Producer 7 — `jigc task discard` on a milestone sub-task.** Its record-only settle
+/// commit runs the user's hooks, so a non-blocking hook's stream must reach the caller. This
+/// door surfaces it through the **relay** on both surfaces rather than an envelope key (the
+/// module header states why), so the assertion is on the relayed section itself: the
+/// delimited stdout block on agent-text, and stderr under `--format json` with the envelope
+/// left as exactly one parseable JSON document on stdout.
+#[test]
+fn sub_task_discard_relays_hook_output_on_both_surfaces() {
+    let repo = TempDir::new("task-discard");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write compose marker");
+    let created = jigc(
+        repo.path(),
+        home.path(),
+        &["milestone", "create", "Cache rework"],
+    );
+    assert!(
+        created.status.success(),
+        "`jigc milestone create` must exit 0"
+    );
+    for intent in ["Alpha fix", "Beta fix"] {
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &["milestone", "add-task", "cache-rework", intent],
+        );
+        assert!(
+            out.status.success(),
+            "`jigc milestone add-task` must exit 0"
+        );
+    }
+    install_marker_hook(repo.path());
+
+    // Agent-text: the delimited relay section on stdout.
+    let text = jigc(repo.path(), home.path(), &["task", "discard", "alpha-fix"]);
+    let stdout = String::from_utf8_lossy(&text.stdout).into_owned();
+    assert!(
+        text.status.success(),
+        "`jigc task discard` must exit 0 under a non-blocking hook; stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&text.stderr),
+    );
+    assert!(
+        stdout.contains(&format!("--- hook output ---\n{MARKER}")),
+        "the agent-text surface must relay the captured hook stream; got:\n{stdout}",
+    );
+
+    // `--format json`: the envelope stays exactly one document on stdout, the relay is stderr.
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "task", "discard", "beta-fix"],
+    );
+    let stdout = String::from_utf8_lossy(&json.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&json.stderr).into_owned();
+    assert!(
+        json.status.success(),
+        "`jigc --format json task discard` must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    serde_json::from_str::<serde_json::Value>(stdout.trim()).unwrap_or_else(|err| {
+        panic!("stdout must stay exactly one JSON document ({err}); got:\n{stdout}")
+    });
+    assert!(
+        stderr.contains(&format!("--- hook output ---\n{MARKER}")),
+        "under `--format json` the relay must ride stderr; got:\n{stderr}",
+    );
 }

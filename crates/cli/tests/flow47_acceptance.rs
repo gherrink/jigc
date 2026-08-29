@@ -15,7 +15,8 @@
 //!
 //!   (1) **A rejecting `pre-commit` hook leaves the repo recoverable at every
 //!       committing door** — the axis is the code-side
-//!       [`cli::invocation_log::COMMITTING_DOORS`] table (9 doors): each door exits
+//!       [`cli::invocation_log::COMMITTING_DOORS`] table (10 doors since M49 Inc 2 T3
+//!       joined `jigc task discard` to it): each door exits
 //!       non-zero, leaves `HEAD` where it found it, logs **its own** error code (all
 //!       nine pairwise distinct), and the re-run it printed — **lifted verbatim out of
 //!       its own frame** — lands at exit 0 once the hook is gone (Inc 2 + 3).
@@ -514,6 +515,14 @@ fn door_case(base: &TrialCorpus, verb: &str) -> DoorCase {
             corpus.jigc_ok(&["milestone", "create", "Cache-rework"]);
             owned(&["milestone", "discard", "cache-rework"])
         }
+        // The sub-task abandon path: its record-only settle commit runs BEFORE the working
+        // area is removed, so the rejection leaves both the record and the task intact.
+        "jigc task discard" => {
+            project_scalars(&corpus, None);
+            corpus.jigc_ok(&["milestone", "create", "Cache-rework"]);
+            corpus.jigc_ok(&["milestone", "add-task", "cache-rework", "Area-low"]);
+            owned(&["task", "discard", "area-low"])
+        }
         other => panic!(
             "`{other}` is a committing door with no fixture in this flow — the axis is the \
              code-side `COMMITTING_DOORS` table, so a door added there owes its arm here",
@@ -531,7 +540,7 @@ fn door_case(base: &TrialCorpus, verb: &str) -> DoorCase {
 /// derived from — so a door added there joins this sweep by construction and a door
 /// with no fixture is a hard panic, never a skip. Per door: the run exits non-zero,
 /// `HEAD` is exactly where it was, the hook's own complaint reaches the operator, the
-/// invocation log carries that door's identity (and the nine identities are pairwise
+/// invocation log carries that door's identity (and the identities are pairwise
 /// distinct), and the re-run **lifted verbatim out of the frame the door printed**
 /// exits 0 once the hook is removed — so "a re-run after any rejection recovers" is
 /// executed, not merely printed.
@@ -547,7 +556,7 @@ fn door_case(base: &TrialCorpus, verb: &str) -> DoorCase {
 fn every_committing_door_leaves_the_repo_recoverable() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        9,
+        10,
         "the axis is the code-side committing-door table (`jigc setup`'s install commit \
          is excluded by its recorded `--no-verify` reason)",
     );

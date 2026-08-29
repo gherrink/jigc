@@ -993,10 +993,16 @@ pub fn reseed_cache_from_record(
 /// records, rather than being composed as something else. Making the override durable means
 /// putting it in the record, i.e. a frozen-doctype schema bump — a one-way door, out of charter.
 ///
-/// Every item the record names is rebuilt: a record whose header is non-terminal has no settled
-/// items, because both terminals flip the header and every item in one write
-/// ([`flip_record_status_to_joined`] / [`discard_record`]), and a terminal header never reaches
-/// here — [`reseed_cache_from_record`] refuses it first.
+/// **An item the record has settled is not rebuilt** ([`is_terminal_status`] over the item's own
+/// `status` leaf). The rule the premise here used to rest on — *every item the record names is
+/// rebuilt, because both terminals flip the header and every item in one write, and a terminal
+/// header never reaches here* — was falsified the moment a **per-item** terminal existed: M49's
+/// `jigc task discard <sub-id>` settles one item to `discarded` while the milestone stays
+/// `active`, so filtering on the area's absence alone made every door reaching this site
+/// resurrect the area the discard had just removed. So the skip keys on the *item's* recorded
+/// status, through the same terminal vocabulary the header guard uses — an item that is over is
+/// over on both loci. An item with **no** status leaf is rebuilt, as before: a record that never
+/// claimed the sub-task settled cannot be read as claiming it.
 pub fn reseed_sub_task_areas(
     jigc_root: &Path,
     schema: &crate::schema::Schema,
@@ -1017,6 +1023,9 @@ pub fn reseed_sub_task_areas(
     };
     for item in &tasks.items {
         if jigc_root.join("tasks").join(&item.id).exists() {
+            continue;
+        }
+        if item_status(item).as_deref().is_some_and(is_terminal_status) {
             continue;
         }
         let intent = item
@@ -1403,6 +1412,57 @@ pub fn discard_record(
     Ok(flipped)
 }
 
+/// **Settle ONE `tasks` item to `discarded` in place** — the per-sub-task abandon arm
+/// (`design/team-ready-state.md` → The lifecycle; M49 Increment 2 / T3). Reads the
+/// **committed record** at `record_path`, splices that one item's machine-set `status` leaf
+/// to [`RECORD_STATUS_DISCARDED`], and writes it back — the same direct-record-file plumbing
+/// [`join_record`] / [`discard_record`] use, returning the settled bytes (the CLI commits
+/// them record-only).
+///
+/// The [`discard_record`] sibling narrowed from *the whole record* to **one item**: the
+/// milestone is still in flight, so the header `status` and every other item are left
+/// **byte-untouched**. `jigc task discard <sub-id>` removed the sub-task's working area while
+/// the record went on calling it `active` forever — a committed record lying about abandoned
+/// work, and (through [`reseed_sub_task_areas`]) an area the next milestone door happily
+/// rebuilt.
+///
+/// The flip is **unconditional on the item's current value**, unlike [`discard_record`]'s
+/// joined-item carve-out: this arm is reachable only while the sub-task has a live working
+/// area, and a `joined` item's area no longer exists (both terminals are written at
+/// `finalize`, whose teardown removes the workbench, after which the CLI door refuses at task
+/// resolution). A guard here would be code no state can reach.
+///
+/// An unknown `task_id`, a record that does not conform, or a vanished `status` leaf surfaces
+/// a routed blocking [`Finding`]; nothing is written unless the splice succeeds.
+pub fn discard_sub_task_item(
+    record_path: &Path,
+    schema: &crate::schema::Schema,
+    milestone_id: &str,
+    task_id: &str,
+) -> Result<String, Finding> {
+    let source = std::fs::read_to_string(record_path)
+        .map_err(|err| io_finding(milestone_id, "read the milestone record", &err))?;
+    let settled = crate::write::set_item_field(
+        schema,
+        &source,
+        RECORD_TASKS_SECTION,
+        task_id,
+        RECORD_STATUS_FIELD,
+        RECORD_STATUS_DISCARDED,
+    )
+    .map_err(|err| {
+        record_flip_finding(milestone_id, RECORD_STATUS_DISCARDED, "task discard", err)
+    })?;
+    std::fs::write(record_path, &settled).map_err(|err| {
+        io_finding(
+            milestone_id,
+            "write the settled sub-task's milestone record",
+            &err,
+        )
+    })?;
+    Ok(settled)
+}
+
 /// The pure in-place settle behind [`discard_record`]: read the committed `tasks` items
 /// from the record itself (the source of truth), select **only the non-joined** ones by
 /// their committed `status` leaf, splice each one's `status` to `discarded` via the
@@ -1456,10 +1516,18 @@ fn flip_record_status_to_discarded(
 /// landed cannot be read as claiming it), so it settles to `discarded` like any other
 /// non-joined item.
 fn item_is_joined(item: &crate::parse::ParsedItem) -> bool {
+    item_status(item).as_deref() == Some(RECORD_STATUS_JOINED)
+}
+
+/// One committed `tasks` item's `status` leaf as the record renders it, `None` when the item
+/// carries none. The single reader of a per-item status: the `discard` arm's joined carve-out
+/// ([`item_is_joined`]) and the reseed's settled-item skip ([`reseed_sub_task_areas`]) ask the
+/// same question of the same leaf, so neither can be secured while the other reads elsewhere.
+fn item_status(item: &crate::parse::ParsedItem) -> Option<String> {
     item.fields
         .iter()
         .find(|f| f.key == RECORD_STATUS_FIELD)
-        .is_some_and(|f| f.value.render() == RECORD_STATUS_JOINED)
+        .map(|f| f.value.render())
 }
 
 /// A blocking finding for a `status` splice failure while flipping a milestone record to

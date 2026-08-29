@@ -1579,6 +1579,110 @@ fn guard_record_free(jigc_home: &Path, schema: &Schema, title: &str) -> Result<(
     )))
 }
 
+/// **Settle one sub-task's record item to `discarded` and commit ONLY the record** — the
+/// `jigc task discard <sub-id>` half of the abandon path, and the **fifth record-only door**
+/// (`design/team-ready-state.md` → The lifecycle / the per-op record-only-door transaction;
+/// M49 Increment 2 / T3). Called by [`crate::task`]'s discard **before** it removes the
+/// working area, so a rejected commit leaves the task exactly as the frame says it did.
+///
+/// It carries the family's shipped discipline unchanged, because the discipline is a property
+/// of the seam and not of each caller remembering it: the reconcile preflight (an out-of-band
+/// edit to the machine-maintained record conflict-blocks rather than being clobbered), the
+/// captured pre-image, [`commit_record_transaction`] (which restores both axes when the hook
+/// rejects), and [`baseline_record`] on the landed bytes.
+///
+/// `msg_dir` is the caller's gitignored scratch for the commit message (the task's own working
+/// area, which is guaranteed to exist at this point and is about to be removed) — never the
+/// milestone area, which a fresh clone may not have.
+///
+/// **Inert in the omitting contexts**, and both are ordinary rather than exceptional: a
+/// dev-only project resolves no `milestone-record` doctype, and an ordinary task is named by no
+/// record. Both return `Ok(None)` — nothing to record, no commit, and the discard proceeds.
+/// Otherwise the landed record commit's captured non-blocking hook stream comes back for the
+/// caller to relay.
+pub(crate) fn settle_discarded_sub_task(
+    jigc_home: &Path,
+    jigc_root: &Path,
+    task_id: &str,
+    msg_dir: &Path,
+) -> Result<Option<String>> {
+    let schemas = shipped_schemas(jigc_home)?;
+    let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
+        return Ok(None);
+    };
+    let Some(milestone_id) = recording_milestone(jigc_home, schema, task_id)? else {
+        return Ok(None);
+    };
+    // The reconcile preflight, ahead of any mutation — the settle is a `set: on-transition`
+    // overwrite like every other record write ([`reconcile_record_preflight`]).
+    reconcile_record_preflight(jigc_home, jigc_root, schema, &milestone_id)?;
+    let record_path = engine::store::canonical_path(jigc_home, schema, &milestone_id)
+        .context("the `milestone-record` doctype declares no committed location")?;
+    // Captured BEFORE the settle writes — a rejected commit restores the pre-settle bytes AND
+    // the pre-settle index entry ([`RecordPreImage`]).
+    let pre = capture_record_pre_image(jigc_home, &record_path)?;
+    let settled =
+        engine::milestone::discard_sub_task_item(&record_path, schema, &milestone_id, task_id)
+            .map_err(finding_to_err)?;
+    let hook_output = commit_record_transaction(
+        jigc_home,
+        &record_path,
+        msg_dir,
+        &format!("chore(milestone): discard task:{task_id} on milestone:{milestone_id}\n"),
+        &pre,
+    )?;
+    baseline_record(jigc_root, schema, &milestone_id, settled.as_bytes());
+    Ok(Some(hook_output))
+}
+
+/// **The milestone whose COMMITTED RECORD names `task_id` as a sub-task** — the sub-task
+/// discriminator [`settle_discarded_sub_task`] keys on, and the reason it keys on the record:
+/// the committed `.md` is the source of truth and `.jigc/milestones/<id>/tasks.json` a
+/// rebuildable cache (`design/team-ready-state.md` → Engine capability 2), so the
+/// cache-reading [`engine::milestone::owning_milestone`] would answer *"no milestone"* for a
+/// fresh clone whose workbench was rebuilt from the record — and a `task discard` there would
+/// silently leave the record calling the sub-task `active`, which is the very defect this door
+/// exists to close. The same rule `add-from-spec`'s resume skip set already applies.
+///
+/// Scans the record home in **sorted file order**, so a task id that somehow appeared in two
+/// records resolves deterministically. A record that does not read or does not conform is
+/// **skipped** rather than propagated: an unrelated malformed record must not block an
+/// unrelated discard, and the record this door does need surfaces its own fault at the splice.
+fn recording_milestone(jigc_home: &Path, schema: &Schema, task_id: &str) -> Result<Option<String>> {
+    let Some(location) = schema.location.as_deref() else {
+        return Ok(None);
+    };
+    let Ok(entries) = std::fs::read_dir(jigc_home.join(location)) else {
+        return Ok(None);
+    };
+    let mut ids: Vec<String> = entries
+        .filter_map(std::result::Result::ok)
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.strip_suffix(".md"))
+                .map(str::to_owned)
+        })
+        .collect();
+    ids.sort();
+    for id in ids {
+        let Some(path) = engine::store::canonical_path(jigc_home, schema, &id) else {
+            continue;
+        };
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok((_, tasks)) = engine::milestone::read_back_record(schema, &source) else {
+            continue;
+        };
+        if tasks.tasks.iter().any(|t| t == task_id) {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
+}
+
 /// **The sub-task ids the COMMITTED RECORD names** — the source of truth for what a milestone
 /// already carries (`design/team-ready-state.md` → Engine capability 2 (read-back): the
 /// committed `.md` is the record, the `.jigc` JSON a rebuildable cache), read through the same

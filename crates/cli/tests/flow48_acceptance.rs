@@ -2651,6 +2651,26 @@ fn empty_case(verb: &str) -> EmptyCase {
                 "milestone.terminal",
             )
         }
+        // The repeated sub-task discard: the first call settled the record item AND removed
+        // the working area, so the repeat is refused at task resolution — ahead of the splice
+        // that would have re-written identical bytes.
+        "jigc task discard" => {
+            logging_project(repo.path(), None);
+            jigc(
+                &["milestone", "create", "Cache rework"],
+                "`milestone create`",
+            );
+            jigc(
+                &["milestone", "add-task", "cache-rework", "Area low"],
+                "`milestone add-task`",
+            );
+            jigc(&["task", "discard", "area-low"], "`task discard`");
+            (
+                owned(&["task", "discard", "area-low"]),
+                false,
+                "no task `area-low`",
+            )
+        }
         other => panic!(
             "`{other}` is a committing door with no empty-commit fixture in this flow — the \
              axis is the code-side `COMMITTING_DOORS` table, so a door added there owes its \
