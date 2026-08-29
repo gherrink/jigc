@@ -7,6 +7,8 @@ mod support;
 
 #[path = "../address_parse_error_axis.rs"]
 mod address_parse_error_axis;
+#[path = "../author_batch_scaling.rs"]
+mod author_batch_scaling;
 #[path = "../copy_in_ack.rs"]
 mod copy_in_ack;
 #[path = "../doc_author.rs"]

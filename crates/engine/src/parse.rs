@@ -202,7 +202,11 @@ impl Span {
 /// finding; findings are collected, not fail-fast. A non-empty finding set means
 /// *no* instance is returned.
 pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Finding>> {
-    let blocks = scan_blocks(source);
+    // One structural scan per parse — blocks, newline index, block order — shared by
+    // every helper below. See [`Scan`] for why the two whole-document rescans it
+    // replaces made this function quadratic in its own input.
+    let scan = Scan::new(source);
+    let blocks = scan.blocks();
     let mut findings = Vec::new();
     let mut parsed = Vec::new();
 
@@ -229,7 +233,13 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
         let header_fields = match blocks.first() {
             Some(Block::Metadata { content }) => {
                 block_cursor = 1;
-                read_field_block(source, content.clone(), &declared, &mut header_findings)
+                read_field_block(
+                    source,
+                    &scan,
+                    content.clone(),
+                    &declared,
+                    &mut header_findings,
+                )
             }
             // Absent front-matter is a finalize/field concern, not a block-structure
             // conformance error at this layer.
@@ -314,7 +324,7 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
         }
 
         // The section's region runs from after its heading to the next `##` (or EOF).
-        let region_end = next_section_heading(&blocks, *content_start).unwrap_or(source.len());
+        let region_end = next_section_heading(&scan, *content_start).unwrap_or(source.len());
 
         match &section.body {
             // A repeatable section: parse its `### …{#id}` items in the region.
@@ -323,7 +333,7 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
             SectionBody::Repeatable { repeatable } => {
                 let items = parse_items(
                     source,
-                    &blocks,
+                    &scan,
                     *content_start,
                     region_end,
                     repeatable,
@@ -341,15 +351,15 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
             SectionBody::Simple { slot, fields: _ } => {
                 // The slot span: from the byte after the heading to the next
                 // boundary (next `##`, a field-group sentinel, or EOF).
-                let slot_end = body_boundary(&blocks, *content_start, region_end);
-                let span = trim_span(source, *content_start, slot_end);
+                let slot_end = body_boundary(&scan, *content_start, region_end);
+                let span = trim_span(source, &scan, *content_start, slot_end);
 
                 // Heading-depth ceiling inside the located slot span. A section slot
                 // reserves `##` (sections) + `###` (items) — `reserved_max = 3`. The
                 // violation's subject is the section's own slot prose, so it takes no hop
                 // below the section (`command-output-contract.md` → the owning slot's
                 // address; declared non-unique, per slot).
-                for v in ceiling_violations(&blocks, span.start, span.end, 3) {
+                for v in ceiling_violations(&scan, span.start, span.end, 3) {
                     section_findings.push(v);
                 }
 
@@ -358,7 +368,7 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
                 let declared = declared_field_keys(section);
                 let section_fields = read_field_group(
                     source,
-                    &blocks,
+                    &scan,
                     *content_start,
                     region_end,
                     &declared,
@@ -494,6 +504,13 @@ pub(crate) fn strip_leading_bom(source: &mut String) {
 }
 
 pub(crate) fn scan_blocks(source: &str) -> Vec<Block> {
+    scan_blocks_with(source, &LineIndex::new(source))
+}
+
+/// [`scan_blocks`] over a [`LineIndex`] the caller already built — the form
+/// [`parse_sections`] uses, so one document is newline-indexed once per parse rather
+/// than once here and again there.
+fn scan_blocks_with(source: &str, lines: &LineIndex) -> Vec<Block> {
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
     opts.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
@@ -535,7 +552,7 @@ pub(crate) fn scan_blocks(source: &str) -> Vec<Block> {
                 let raw = &source[range.clone()];
                 let is_atx = raw.trim_start().starts_with('#');
                 let text = heading_text(raw, is_atx);
-                let line = line_of(source, range.start);
+                let line = lines.line_of(range.start);
                 blocks.push(Block::Heading {
                     level,
                     is_atx,
@@ -594,9 +611,121 @@ fn heading_text(raw: &str, is_atx: bool) -> String {
     }
 }
 
-/// The 1-based source line a byte offset falls on.
-fn line_of(source: &str, offset: usize) -> usize {
-    source[..offset].bytes().filter(|&b| b == b'\n').count() + 1
+/// Every `\n` offset in a source, ascending — so "which line is this byte on?" is a
+/// binary search instead of a rescan of the whole prefix.
+///
+/// **Why it exists (M49 Increment 5, T6).** The predecessor was a free
+/// `line_of(source, offset)` that counted the newlines in `source[..offset]`: O(offset)
+/// per call, and both hot loops call it **per structural element** — [`scan_blocks`]
+/// once per heading, [`parse_items`] once per item head and again per slot span. Over a
+/// document of n items that is O(n²) *inside a single parse*. It compounds at the
+/// [`crate::write`] batch seam, where `jigc doc author` re-parses the growing buffer
+/// three or four times per lowered leaf (`design/write-commands.md` → Batch authoring):
+/// the whole-document author every `migrate-*` workflow drives came out **cubic**, and a
+/// `sample(1)` profile of an 800-item run attributed **98 % of it to `line_of`**.
+///
+/// The answers are identical by construction, which is why this is a speedup and not a
+/// behaviour change: the count of newlines strictly before `offset` is exactly the number
+/// of recorded offsets less than it, which is [`slice::partition_point`]'s answer.
+struct LineIndex {
+    /// Byte offset of every `\n`, ascending (`source.bytes()` yields byte offsets, and
+    /// `\n` is never a UTF-8 continuation byte, so no char-boundary care is needed).
+    newlines: Vec<usize>,
+}
+
+impl LineIndex {
+    fn new(source: &str) -> Self {
+        LineIndex {
+            newlines: source
+                .bytes()
+                .enumerate()
+                .filter_map(|(at, b)| (b == b'\n').then_some(at))
+                .collect(),
+        }
+    }
+
+    /// The 1-based source line a byte offset falls on.
+    fn line_of(&self, offset: usize) -> usize {
+        self.newlines.partition_point(|&nl| nl < offset) + 1
+    }
+}
+
+/// The offset a block starts at — the key both [`Scan`] and its consumers order by.
+///
+/// A [`Block::Metadata`] carries only its **inner content** range; it is never matched by
+/// a range-scoped scan (they all key on a heading, a sentinel or a list), so using the
+/// content start keeps one total order without inventing a fence offset.
+fn block_start(block: &Block) -> usize {
+    match block {
+        Block::Metadata { content } => content.start,
+        Block::Heading { range, .. } => range.start,
+        Block::FieldSentinel { range } => range.start,
+        Block::List { range, .. } => range.start,
+    }
+}
+
+/// One source's structural **scan**: the [`Block`] projection plus the two indexes that
+/// make the parser's repeated questions cheap — newline offsets behind [`Scan::line_of`],
+/// and a start-ordered permutation behind [`Scan::blocks_in`], which turns *"which blocks
+/// lie in `[from, end)`?"* into a binary search.
+///
+/// **Why the order is a separate permutation and not a sort of `blocks` itself.** Every
+/// range-scoped scan in this module — the item heads, the field-group sentinel, the slot
+/// ceiling, the nested-region boundary — was a `blocks.iter().filter(range)` over the
+/// **whole** block list, and each runs **once per item**. Over a document of n items that
+/// is a second O(n²) inside one parse, sitting behind the [`LineIndex`] one; with the
+/// batch author re-parsing per lowered leaf, it is the term that keeps the whole-document
+/// author cubic once the newline rescan is gone. Sorting `blocks` in place would fix it
+/// too, but ~20 [`crate::write`] call sites consume [`scan_blocks`]' output in **document
+/// order**, so the order lives here instead, where only the parser sees it.
+///
+/// It cannot simply binary-search `blocks` as-is: [`scan_blocks`] pushes a
+/// [`Block::List`] at its **end** event, so a heading nested inside a list item is pushed
+/// *before* the list containing it. The vector is almost sorted, never guaranteed sorted
+/// — and "almost" is exactly the case a binary search answers wrongly and silently.
+struct Scan {
+    blocks: Vec<Block>,
+    lines: LineIndex,
+    /// Indices into `blocks`, ascending by [`block_start`].
+    order: Vec<usize>,
+}
+
+impl Scan {
+    fn new(source: &str) -> Self {
+        let lines = LineIndex::new(source);
+        let blocks = scan_blocks_with(source, &lines);
+        let mut order: Vec<usize> = (0..blocks.len()).collect();
+        order.sort_by_key(|&i| block_start(&blocks[i]));
+        Scan {
+            blocks,
+            lines,
+            order,
+        }
+    }
+
+    /// The block projection, in **document order** — what [`scan_blocks`] returns.
+    fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+
+    /// The 1-based source line a byte offset falls on.
+    fn line_of(&self, offset: usize) -> usize {
+        self.lines.line_of(offset)
+    }
+
+    /// The blocks starting in `[from, end)`, **in document order** — the same sequence
+    /// the whole-list filter it replaces yielded, reached in `O(log n + hits)`. Callers
+    /// that took `.min()` over the filtered starts take the first hit instead: ordered,
+    /// the first *is* the minimum.
+    fn blocks_in(&self, from: usize, end: usize) -> impl Iterator<Item = &Block> + '_ {
+        let at = self
+            .order
+            .partition_point(|&i| block_start(&self.blocks[i]) < from);
+        self.order[at..]
+            .iter()
+            .map(move |&i| &self.blocks[i])
+            .take_while(move |b| block_start(b) < end)
+    }
 }
 
 /// The 1-based heading-level number (`H1` → 1, …, `H6` → 6) — the depth arithmetic
@@ -619,18 +748,15 @@ fn item_level_num(depth: usize) -> usize {
 /// repeatable item, and anything below that is resolved **inside** the item against its
 /// template — a declared slot sub-label, a nested item head, or a defect — never by depth
 /// alone ([`first_nested_heading`] / [`is_item_slot_sub_label`], M49 D4).
-fn next_section_heading(blocks: &[Block], from: usize) -> Option<usize> {
-    blocks
-        .iter()
-        .filter_map(|b| match b {
-            Block::Heading {
-                level: HeadingLevel::H2,
-                range,
-                ..
-            } if range.start >= from => Some(range.start),
-            _ => None,
-        })
-        .min()
+fn next_section_heading(scan: &Scan, from: usize) -> Option<usize> {
+    scan.blocks_in(from, usize::MAX).find_map(|b| match b {
+        Block::Heading {
+            level: HeadingLevel::H2,
+            range,
+            ..
+        } => Some(range.start),
+        _ => None,
+    })
 }
 
 /// The start offset where this item's **nested region** begins in `[from, region_end)`,
@@ -651,48 +777,39 @@ fn next_section_heading(blocks: &[Block], from: usize) -> Option<usize> {
 /// be inert for exactly the manifest-less adopter packs it would need to bind.
 fn first_nested_heading(
     source: &str,
-    blocks: &[Block],
+    scan: &Scan,
     from: usize,
     region_end: usize,
     item_level: usize,
     template: &ItemTemplate,
 ) -> Option<usize> {
-    blocks
-        .iter()
-        .filter_map(|b| match b {
-            Block::Heading {
-                level, range, text, ..
-            } if range.start >= from
-                && range.start < region_end
-                && level_num(*level) > item_level
-                && !is_item_slot_sub_label(
-                    &source[range.clone()],
-                    level_num(*level),
-                    item_level,
-                    text,
-                    template,
-                ) =>
-            {
-                Some(range.start)
-            }
-            _ => None,
-        })
-        .min()
+    scan.blocks_in(from, region_end).find_map(|b| match b {
+        Block::Heading {
+            level, range, text, ..
+        } if level_num(*level) > item_level
+            && !is_item_slot_sub_label(
+                &source[range.clone()],
+                level_num(*level),
+                item_level,
+                text,
+                template,
+            ) =>
+        {
+            Some(range.start)
+        }
+        _ => None,
+    })
 }
 
 /// The byte offset where a simple section's slot prose ends: the first field-group
 /// sentinel in `[from, region_end)`, else `region_end`. The sentinel marks where
 /// the trailing field group begins, so the slot prose stops there.
-fn body_boundary(blocks: &[Block], from: usize, region_end: usize) -> usize {
-    blocks
-        .iter()
-        .filter_map(|b| match b {
-            Block::FieldSentinel { range } if range.start >= from && range.start < region_end => {
-                Some(range.start)
-            }
+fn body_boundary(scan: &Scan, from: usize, region_end: usize) -> usize {
+    scan.blocks_in(from, region_end)
+        .find_map(|b| match b {
+            Block::FieldSentinel { range } => Some(range.start),
             _ => None,
         })
-        .min()
         .unwrap_or(region_end)
 }
 
@@ -712,11 +829,12 @@ fn declared_field_keys(section: &crate::schema::Section) -> Vec<String> {
 /// located [`Severity::Blocking`] finding; valid fields are returned.
 fn read_field_block(
     source: &str,
+    scan: &Scan,
     content: Range<usize>,
     declared: &[String],
     findings: &mut Vec<Finding>,
 ) -> Vec<crate::field_block::Field> {
-    let base_line = line_of(source, content.start);
+    let base_line = scan.line_of(content.start);
     read_field_block_str(&source[content], base_line, declared, findings)
 }
 
@@ -786,21 +904,19 @@ fn is_near(a: &str, b: &str) -> bool {
 /// Field-group delineation: "one rule, both places").
 fn read_field_group(
     source: &str,
-    blocks: &[Block],
+    scan: &Scan,
     from: usize,
     end: usize,
     declared: &[String],
     findings: &mut Vec<Finding>,
 ) -> Vec<crate::field_block::Field> {
-    let Some(sentinel) = blocks.iter().find_map(|b| match b {
-        Block::FieldSentinel { range } if range.start >= from && range.start < end => {
-            Some(range.clone())
-        }
+    let Some(sentinel) = scan.blocks_in(from, end).find_map(|b| match b {
+        Block::FieldSentinel { range } => Some(range.clone()),
         _ => None,
     }) else {
         return Vec::new();
     };
-    read_marked_field_group(source, blocks, &sentinel, declared, findings)
+    read_marked_field_group(source, scan, &sentinel, declared, findings)
 }
 
 /// Read the bullet list immediately following a `<!-- fields -->` `sentinel` as a
@@ -809,15 +925,17 @@ fn read_field_group(
 /// No following list → orphaned-sentinel finding.
 fn read_marked_field_group(
     source: &str,
-    blocks: &[Block],
+    scan: &Scan,
     sentinel: &Range<usize>,
     declared: &[String],
     findings: &mut Vec<Finding>,
 ) -> Vec<crate::field_block::Field> {
-    let list = blocks.iter().find_map(|b| match b {
-        Block::List { range, items } if range.start >= sentinel.end => Some((range.clone(), items)),
-        _ => None,
-    });
+    let list = scan
+        .blocks_in(sentinel.end, usize::MAX)
+        .find_map(|b| match b {
+            Block::List { range, items } => Some((range.clone(), items)),
+            _ => None,
+        });
     // The list must immediately follow the sentinel (only blank-line whitespace
     // between), else the sentinel is orphaned.
     let following = list.filter(|(range, _)| source[sentinel.end..range.start].trim().is_empty());
@@ -825,7 +943,7 @@ fn read_marked_field_group(
         findings.push(Finding::blocking(
             "conformance.orphaned-sentinel",
             "`<!-- fields -->` sentinel without a following bullet list".to_string(),
-            Location::at(line_of(source, sentinel.start), 1),
+            Location::at(scan.line_of(sentinel.start), 1),
         ));
         return Vec::new();
     };
@@ -842,7 +960,7 @@ fn read_marked_field_group(
         block.push_str(bare.trim_start());
         block.push('\n');
     }
-    read_field_block_str(&block, line_of(source, sentinel.end), declared, findings)
+    read_field_block_str(&block, scan.line_of(sentinel.end), declared, findings)
 }
 
 /// [`read_field_block`] over an owned, already-de-framed string (used for body /
@@ -940,7 +1058,7 @@ fn read_field_block_str(
 /// parent block — review finding C1).
 fn parse_items(
     source: &str,
-    blocks: &[Block],
+    scan: &Scan,
     from: usize,
     region_end: usize,
     repeatable: &crate::schema::Repeatable,
@@ -951,18 +1069,15 @@ fn parse_items(
     // The item headings at this nesting depth's level, in document order. Deeper
     // headings are sub-items (handled within their parent's region by recursion);
     // shallower ones are excluded by `region_end` (the parent/section bound).
-    let item_heads: Vec<(usize, usize, &str)> = blocks
-        .iter()
+    let item_heads: Vec<(usize, usize, &str)> = scan
+        .blocks_in(from, region_end)
         .filter_map(|b| match b {
             Block::Heading {
                 level,
                 range,
                 content_start,
                 ..
-            } if level_num(*level) == item_level
-                && range.start >= from
-                && range.start < region_end =>
-            {
+            } if level_num(*level) == item_level => {
                 Some((range.start, *content_start, &source[range.clone()]))
             }
             _ => None,
@@ -983,7 +1098,7 @@ fn parse_items(
     let mut reported_duplicate: Vec<String> = Vec::new();
 
     for (idx, (head_start, content_start, raw)) in item_heads.iter().enumerate() {
-        let head_line = line_of(source, *head_start);
+        let head_line = scan.line_of(*head_start);
         // The item body runs to the next same-level item or the region end.
         let item_end = item_heads
             .get(idx + 1)
@@ -1056,7 +1171,7 @@ fn parse_items(
         let leaf_end = if item_template.has_nested() {
             first_nested_heading(
                 source,
-                blocks,
+                scan,
                 *content_start,
                 item_end,
                 item_level,
@@ -1071,11 +1186,11 @@ fn parse_items(
         // `<Leaf-Title>` sub-headings one level deeper (one span per slot leaf,
         // schema order); a single-slot template keeps the whole leaf region as one
         // bare-prose span.
-        let body_end = body_boundary(blocks, *content_start, leaf_end);
+        let body_end = body_boundary(scan, *content_start, leaf_end);
         let (single_slot, multi_slots) = if item_template.is_multi_slot() {
             let slots = parse_item_slots(
                 source,
-                blocks,
+                scan,
                 *content_start,
                 body_end,
                 item_level,
@@ -1084,11 +1199,11 @@ fn parse_items(
             );
             (None, slots)
         } else if item_template.has_slot() {
-            let span = trim_span(source, *content_start, body_end);
+            let span = trim_span(source, scan, *content_start, body_end);
             // A single-slot item's prose belongs to its one slot leaf, so a ceiling
             // violation carries that **leaf hop** — the owning slot's address
             // (`command-output-contract.md` → the parse-conformance sub-table).
-            let mut ceiling = ceiling_violations(blocks, span.start, span.end, item_level);
+            let mut ceiling = ceiling_violations(scan, span.start, span.end, item_level);
             prefix_hop(&mut ceiling, &item_template.slot_ids[0]);
             item_findings.append(&mut ceiling);
             (Some(span), Vec::new())
@@ -1103,7 +1218,7 @@ fn parse_items(
         // silently committed bytes (M40 triage; the simple-section path's discipline).
         let item_fields = read_field_group(
             source,
-            blocks,
+            scan,
             *content_start,
             leaf_end,
             &item_template.field_keys,
@@ -1122,7 +1237,7 @@ fn parse_items(
         for nested in &item_template.nested {
             nested_items.extend(parse_items(
                 source,
-                blocks,
+                scan,
                 leaf_end,
                 item_end,
                 nested,
@@ -1163,7 +1278,7 @@ fn parse_items(
 /// out-of-band malformation).
 fn parse_item_slots(
     source: &str,
-    blocks: &[Block],
+    scan: &Scan,
     from: usize,
     body_end: usize,
     item_level: usize,
@@ -1173,8 +1288,8 @@ fn parse_item_slots(
     // The per-leaf sub-headings sit one level deeper than the item (`item_level + 1`
     // — `####` for a `###` item), in document order: `(start, content_start, label)`.
     let label_level = item_level + 1;
-    let sub_heads: Vec<(usize, usize, String)> = blocks
-        .iter()
+    let sub_heads: Vec<(usize, usize, String)> = scan
+        .blocks_in(from, body_end)
         .filter_map(|b| match b {
             Block::Heading {
                 level,
@@ -1182,10 +1297,7 @@ fn parse_item_slots(
                 content_start,
                 text,
                 ..
-            } if level_num(*level) == label_level
-                && range.start >= from
-                && range.start < body_end =>
-            {
+            } if level_num(*level) == label_level => {
                 Some((range.start, *content_start, text.clone()))
             }
             _ => None,
@@ -1209,7 +1321,7 @@ fn parse_item_slots(
                 // The **leaf hop** — several declared leaves can be missing from one item,
                 // so each keys at its own `(item, leaf)` (`command-output-contract.md` →
                 // the parse-conformance sub-table). [`parse_items`] prefixes the item hop.
-                Location::addressed(leaf_id.clone(), line_of(source, from), 1),
+                Location::addressed(leaf_id.clone(), scan.line_of(from), 1),
             ));
             continue;
         };
@@ -1219,7 +1331,7 @@ fn parse_item_slots(
             .get(pos + 1)
             .map(|(s, _, _)| *s)
             .unwrap_or(body_end);
-        let span = trim_span(source, content_start, slot_end);
+        let span = trim_span(source, scan, content_start, slot_end);
         // Heading-depth ceiling inside this leaf's slot prose. A multi-slot item's
         // `#### <Leaf-Title>` sub-labels sit one level deeper than the item, so its
         // slot prose reserves through `item_level + 1` — the same context-derived
@@ -1228,7 +1340,7 @@ fn parse_item_slots(
         // write would have rejected (the read/parse-side sibling of the single-slot
         // scan). A `#### ` line-start is the delimiter itself (never inside a span);
         // the shadow guard below handles a stray one.
-        let mut ceiling = ceiling_violations(blocks, span.start, span.end, item_level + 1);
+        let mut ceiling = ceiling_violations(scan, span.start, span.end, item_level + 1);
         prefix_hop(&mut ceiling, leaf_id);
         findings.append(&mut ceiling);
         slots.push((leaf_id.clone(), span));
@@ -1267,7 +1379,7 @@ fn parse_item_slots(
                      (use `{free}`+ or rephrase)",
                     label.trim()
                 ),
-                Location::at(line_of(source, *start), 1),
+                Location::at(scan.line_of(*start), 1),
             ));
         }
     }
@@ -1453,7 +1565,7 @@ fn extract_anchor(raw: &str) -> AnchorRead {
 /// the recorded span is exactly the prose bytes (boundary integrity). Leading and
 /// trailing ASCII whitespace produced by the canonical blank line after a heading
 /// and before the next boundary is excluded; interior bytes are untouched.
-fn trim_span(source: &str, start: usize, end: usize) -> Span {
+fn trim_span(source: &str, scan: &Scan, start: usize, end: usize) -> Span {
     let slice = &source[start..end];
     let leading = slice.len() - slice.trim_start().len();
     let trimmed_len = slice.trim_end().len();
@@ -1467,7 +1579,7 @@ fn trim_span(source: &str, start: usize, end: usize) -> Span {
         return Span {
             start: new_start,
             end: new_start,
-            start_line: line_of(source, new_start),
+            start_line: scan.line_of(new_start),
         };
     }
     let new_start = start + leading;
@@ -1475,7 +1587,7 @@ fn trim_span(source: &str, start: usize, end: usize) -> Span {
     Span {
         start: new_start,
         end: new_end,
-        start_line: line_of(source, new_start),
+        start_line: scan.line_of(new_start),
     }
 }
 
@@ -1538,22 +1650,15 @@ fn is_reserved_depth(level: HeadingLevel, reserved_max: usize) -> bool {
 /// ATX heading at or shallower than `reserved_max`, or any Setext heading, located
 /// by source line. `reserved_max` is the enclosing item's heading level (or `3` for
 /// a section slot) — depth-aware so a nested item's slot has a deeper ceiling.
-fn ceiling_violations(
-    blocks: &[Block],
-    start: usize,
-    end: usize,
-    reserved_max: usize,
-) -> Vec<Finding> {
-    blocks
-        .iter()
+fn ceiling_violations(scan: &Scan, start: usize, end: usize, reserved_max: usize) -> Vec<Finding> {
+    scan.blocks_in(start, end)
         .filter_map(|b| match b {
             Block::Heading {
                 level,
                 is_atx,
-                range,
                 line,
                 ..
-            } if range.start >= start && range.start < end => {
+            } => {
                 if !is_atx {
                     // Name the depth that is free **at this address** — `reserved_max +
                     // 1`, the same context-derived first-allowed the write twin renders
@@ -3982,6 +4087,27 @@ mod prop_tests {
                 // The span re-slices to the trimmed prose; the canonical fixture
                 // places the prose contiguously, so trimmed == the prose itself.
                 prop_assert_eq!(got, expected.trim());
+            }
+        }
+    }
+
+    proptest! {
+        /// The equivalence [`LineIndex`] rests on, asserted rather than asserted in
+        /// prose: for **every** byte offset in an arbitrary source, the binary search
+        /// returns exactly what the counting definition it replaced returned.
+        ///
+        /// The M49 Increment 5 speedup is a speedup only if the answers do not move,
+        /// and the answers are line numbers on located findings — user-visible bytes.
+        /// The predecessor is written out inline below, so this test carries its own
+        /// specification and does not lean on a function that no longer exists.
+        #[test]
+        fn the_line_index_agrees_with_counting_the_prefix(
+            source in "(?s)[a-z \n]{0,200}",
+        ) {
+            let index = LineIndex::new(&source);
+            for offset in 0..=source.len() {
+                let counted = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+                prop_assert_eq!(index.line_of(offset), counted, "at offset {}", offset);
             }
         }
     }
