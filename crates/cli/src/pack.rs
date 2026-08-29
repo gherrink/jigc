@@ -365,9 +365,21 @@ fn assert_project_schema_shadows(
         })?;
         let actual = engine::manifest::schema_hash(&schema);
         if actual != entry.schema_hash {
+            // The `route:` span is the **only** stated exit from a state in which every
+            // door exits non-zero, and it is bytes an operator pastes into a shell — so
+            // the one interpolated token in it is rendered through the same
+            // [`crate::task::shell_token`] the mechanical route fence demands of every
+            // emitted argv token (`crates/cli/src/route_fence.rs` → "every token must be
+            // shell-safe as emitted"). This bail is a plain `anyhow::bail!` naming `rm`,
+            // not `jigc`, so it sits outside that fence's domain by construction and
+            // nothing else catches it: interpolated raw, a repo under `~/my repo` emitted
+            // an exit that silently `rm`'d nothing and left every door blocked. The
+            // *prose* occurrence below stays bare, as its two sibling bails in this
+            // function do — it names a location, not a command line.
+            let route_path = crate::task::shell_token(&path.display().to_string());
             anyhow::bail!(
                 "pack-load freeze check failed: doctype `{ty}`: schema-hash mismatch                  (manifest declares `{expected}`, recomputed `{actual}`) — the project                  schema shadow {path} changes the shape of a frozen doctype, which the                  freeze forbids at every layer (`design/corpus-migration.md` → The freeze)
-                 route: `rm {path}` restores the frozen shape — a project schema shadow may                  only reword the authored presentation keys (`description:`, `usage:`, a slot                  `hint:`); changing the shape or the home of a manifest-governed doctype means                  bumping its `schema-version` in the owning pack's                  `config/schema-manifest.yaml` and shipping a corpus migration",
+                 route: `rm {route_path}` restores the frozen shape — a project schema shadow may                  only reword the authored presentation keys (`description:`, `usage:`, a slot                  `hint:`); changing the shape or the home of a manifest-governed doctype means                  bumping its `schema-version` in the owning pack's                  `config/schema-manifest.yaml` and shipping a corpus migration",
                 expected = entry.schema_hash,
                 path = path.display(),
             );

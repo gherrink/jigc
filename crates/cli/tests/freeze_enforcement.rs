@@ -31,6 +31,27 @@ impl TempDir {
         TempDir(path)
     }
 
+    /// A throwaway directory **whose path carries shell metacharacters** — one space
+    /// and one apostrophe, the two bytes that break an unquoted and a naively
+    /// single-quoted command line respectively.
+    ///
+    /// Every route this file follows is `sh -c`'d verbatim, so a route that
+    /// interpolates a repo-relative-to-absolute path raw runs *correctly* under
+    /// [`TempDir::new`] (whose name is drawn from `std::env::temp_dir()` plus an
+    /// inert `jigc-freeze-<tag>-<pid>-<nanos>` segment — never a space) and
+    /// *silently wrong* here. The fixture axis is the point: an assertion that "the
+    /// emitted route must run" certifies only the path shapes it is handed.
+    fn new_metachar(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "jigc freeze's {tag}-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
     fn path(&self) -> &Path {
         &self.0
     }
@@ -946,60 +967,76 @@ fn route_command(stderr: &str) -> String {
 /// `schema-version` for a shape nothing froze. Each door must name *what* drifted
 /// (`adr`, the hash mismatch), *where* (the shadow's own path), and *how to fix it* —
 /// with a route that runs.
+///
+/// **Two axes, both iterated.** The shape axis is the freeze's own (`field` × `home`).
+/// The second is the *fixture's*: the emitted route interpolates the shadow's absolute
+/// path, so its runnability is a property of the **path shape**, not of the drift — and
+/// a fixture drawn only from `std::env::temp_dir()` plus an inert segment can never see
+/// it. Each shape therefore runs under both an inert path and a
+/// [metacharacter-carrying one](TempDir::new_metachar), and the `sh -c <route>` arm
+/// below is what distinguishes them.
 #[test]
 fn a_shape_changing_project_schema_shadow_blocks_every_door() {
-    for (tag, body) in [
+    for (shape_tag, body) in [
         ("shadow-owner", adr_shadow_with_owner()),
         ("shadow-home", adr_shadow_relocated()),
     ] {
-        let repo = TempDir::new(&format!("{tag}-repo"));
-        let home = TempDir::new(&format!("{tag}-home"));
-        init_repo(repo.path());
-        let shadow = install_schema_shadow(repo.path(), "adr", &body);
+        for (path_tag, metachar) in [("inert-path", false), ("metachar-path", true)] {
+            let body = body.clone();
+            let tag = format!("{shape_tag}/{path_tag}");
+            let repo = if metachar {
+                TempDir::new_metachar(&format!("{shape_tag}-repo"))
+            } else {
+                TempDir::new(&format!("{shape_tag}-repo"))
+            };
+            let home = TempDir::new(&format!("{shape_tag}-{path_tag}-home"));
+            init_repo(repo.path());
+            let shadow = install_schema_shadow(repo.path(), "adr", &body);
 
-        let mut route = String::new();
-        for door in FREEZE_DOORS {
-            let out = run_listed(repo.path(), home.path(), door);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            assert!(
-                !out.status.success(),
-                "[{tag}] `jigc {}` must exit non-zero over a shape-changing project schema shadow; stdout:\n{}\nstderr:\n{stderr}",
-                door.join(" "),
-                String::from_utf8_lossy(&out.stdout),
-            );
-            for needle in ["schema-hash mismatch", "adr", &shadow.display().to_string()] {
+            let mut route = String::new();
+            for door in FREEZE_DOORS {
+                let out = run_listed(repo.path(), home.path(), door);
+                let stderr = String::from_utf8_lossy(&out.stderr);
                 assert!(
-                    stderr.contains(needle),
-                    "[{tag}] `jigc {}` stderr must name {needle:?}; got:\n{stderr}",
+                    !out.status.success(),
+                    "[{tag}] `jigc {}` must exit non-zero over a shape-changing project schema shadow; stdout:\n{}\nstderr:\n{stderr}",
                     door.join(" "),
+                    String::from_utf8_lossy(&out.stdout),
+                );
+                for needle in ["schema-hash mismatch", "adr", &shadow.display().to_string()] {
+                    assert!(
+                        stderr.contains(needle),
+                        "[{tag}] `jigc {}` stderr must name {needle:?}; got:\n{stderr}",
+                        door.join(" "),
+                    );
+                }
+                route = route_command(&stderr);
+            }
+
+            // The route is followed **verbatim**, through a real shell, and it must clear
+            // the block — a route that names the wrong file (or no file) reddens here.
+            let ran = Command::new("sh")
+                .arg("-c")
+                .arg(&route)
+                .current_dir(repo.path())
+                .env("HOME", home.path())
+                .output()
+                .expect("spawn sh to follow the route");
+            assert!(
+                ran.status.success(),
+                "[{tag}] the emitted route `{route}` must run; stderr:\n{}",
+                String::from_utf8_lossy(&ran.stderr),
+            );
+            for door in FREEZE_DOORS {
+                let out = run_listed(repo.path(), home.path(), door);
+                assert!(
+                    out.status.success(),
+                    "[{tag}] `jigc {}` must run clean once the emitted route has been followed; stdout:\n{}\nstderr:\n{}",
+                    door.join(" "),
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr),
                 );
             }
-            route = route_command(&stderr);
-        }
-
-        // The route is followed **verbatim**, through a real shell, and it must clear
-        // the block — a route that names the wrong file (or no file) reddens here.
-        let ran = Command::new("sh")
-            .arg("-c")
-            .arg(&route)
-            .current_dir(repo.path())
-            .env("HOME", home.path())
-            .output()
-            .expect("spawn sh to follow the route");
-        assert!(
-            ran.status.success(),
-            "[{tag}] the emitted route `{route}` must run; stderr:\n{}",
-            String::from_utf8_lossy(&ran.stderr),
-        );
-        for door in FREEZE_DOORS {
-            let out = run_listed(repo.path(), home.path(), door);
-            assert!(
-                out.status.success(),
-                "[{tag}] `jigc {}` must run clean once the emitted route has been followed; stdout:\n{}\nstderr:\n{}",
-                door.join(" "),
-                String::from_utf8_lossy(&out.stdout),
-                String::from_utf8_lossy(&out.stderr),
-            );
         }
     }
 }
