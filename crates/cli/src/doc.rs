@@ -1337,6 +1337,7 @@ fn run_add_item(
         &uri,
         title,
         slug_override,
+        &task.id,
         task.is_migration()?,
     )
     .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
@@ -1395,6 +1396,7 @@ fn apply_add_item_target(
     uri: &str,
     title: &str,
     slug_override: Option<&str>,
+    task_id: &str,
     migration: bool,
 ) -> Result<(String, String), DocFailure> {
     // Write-time id-from-enum reject (`design/auto-migration.md` → Hardening #3;
@@ -1406,7 +1408,10 @@ fn apply_add_item_target(
     {
         return Err(DocFailure::block(finding));
     }
-    Ok(match target {
+    // The collision locus, captured before the apply consumes `target` — the section and
+    // the parent-scoped chain prefix an `already-present` reject's recovery needs.
+    let locus = add_item_locus(schema, &target, title, slug_override);
+    let applied = match target {
         AddItemTarget::TopLevel { section } => {
             // Materialize the item block's `set: on-create` fields at mint, mirroring the
             // doc-level on-create contract: a `date` leaf declared `set: on-create` inside
@@ -1426,9 +1431,9 @@ fn apply_add_item_target(
                 None,
                 &on_create,
             )
-            .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", uri))?;
+            .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", uri));
             let minted = format!("{}/{}", section, minted_item_id(title, slug_override));
-            (edited, minted)
+            edited.map(|edited| (edited, minted))
         }
         AddItemTarget::Nested {
             section,
@@ -1462,7 +1467,7 @@ fn apply_add_item_target(
                 None,
                 &on_create,
             )
-            .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", uri))?;
+            .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", uri));
             // The minted nested item address is the **section-qualified** chain: the
             // section, the parent-scoped id chain, the nested-section name, then the
             // slugger-minted anchor — `#section/parent/.../nested-section/<slug>`. This is
@@ -1477,9 +1482,177 @@ fn apply_add_item_target(
                 nested_section,
                 minted_item_id(title, slug_override),
             );
-            (edited, minted)
+            edited.map(|edited| (edited, minted))
         }
+    };
+    applied.map_err(|failure| {
+        enrich_already_present_route(failure, schema, source, locus.as_ref(), uri, task_id)
     })
+}
+
+/// Where an `add-item` mint lands, in the vocabulary an **`already-present`** reject's
+/// recovery needs: the section, the parent-scoped chain **prefix** above the new item
+/// (empty for a top-level mint; `parents… + <nested-section>` for a nested one, the
+/// section-qualified form [`engine::write::item_chain_absent`] takes), the id the call
+/// **minted**, and the `--title` as one shell-safe token.
+struct AddItemLocus {
+    section: String,
+    prefix: Vec<String>,
+    minted: String,
+    title_token: String,
+}
+
+/// Resolve the [`AddItemLocus`] of a mint, or `None` where a `--slug` recovery **is not
+/// available** — which is the whole point of asking: an enum `id-from` block's heading IS
+/// the member and its anchor equals it, so an override there is refused as an identity
+/// change ([`slug_override_enum_refusal`]). Emitting a `--slug` route into that block
+/// would hand back a command that blocks when run, which is the un-followable route the
+/// write-verb × miss-shape axis exists to forbid — so the collision keeps its shipped
+/// human route there ("edit it in place"), which is the true answer when the id *is* the
+/// category. An unresolvable destination yields `None` for the same reason.
+fn add_item_locus(
+    schema: &Schema,
+    target: &AddItemTarget,
+    title: &str,
+    slug_override: Option<&str>,
+) -> Option<AddItemLocus> {
+    let (repeatable, _) = add_item_destination(schema, target)?;
+    if id_from_is_enum(&repeatable) {
+        return None;
+    }
+    let (section, prefix) = match target {
+        AddItemTarget::TopLevel { section } => (section.clone(), Vec::new()),
+        AddItemTarget::Nested {
+            section,
+            parents,
+            nested_section,
+        } => {
+            let mut prefix = parents.clone();
+            prefix.push(nested_section.clone());
+            (section.clone(), prefix)
+        }
+    };
+    Some(AddItemLocus {
+        section,
+        prefix,
+        minted: minted_item_id(title, slug_override),
+        title_token: crate::task::shell_token(title),
+    })
+}
+
+/// Enrich a `write.already-present` **item** collision's route into the mint that
+/// actually recovers it (M49 Increment 5, T5) — the [`enrich_not_present_route`] sibling,
+/// applied at the one shared site both doors funnel through
+/// ([`apply_add_item_target`]), so the per-leaf `add-item` verb and the `doc author`
+/// batch cannot disagree about it.
+///
+/// The shipped route was a [`engine::finding::Route::human`] — *"the target already
+/// exists — edit it in place"* — which is the right answer for a **correction** and the
+/// wrong one for a **second, distinct entry**: two genuinely different titles can slug
+/// alike (`1-3-0` and `1.3.0` mint one id), and until `add-item` gained `--slug` (T4 of
+/// this increment) there was no command that recovered it at all. From inside a
+/// `doc author` payload — rejected whole, nothing staged — it was worse than unhelpful:
+/// un-runnable advice about an unnamed one of N payload items. The route is now the same
+/// mint under the **first free** `<minted>-N` id, argv-complete and copy-runnable, with
+/// the edit-in-place branch kept as the tail's alternative rather than dropped.
+///
+/// Deliberately narrow at three edges. It fires only on `write.already-present`; only
+/// where the collision is **confirmed** to be the minted item id (the reject's other
+/// possible subject — a structural home the generator found present — is left with the
+/// route it has); and only where a `--slug` would actually be accepted (`locus` is `None`
+/// over an enum `id-from`, see [`add_item_locus`]). The **doc-level** `create` collision
+/// is a different subject with its own meaning and its own text, and never reaches here.
+fn enrich_already_present_route(
+    failure: DocFailure,
+    schema: &Schema,
+    source: &str,
+    locus: Option<&AddItemLocus>,
+    uri: &str,
+    task_id: &str,
+) -> DocFailure {
+    let DocFailure::Block(mut finding) = failure else {
+        return failure;
+    };
+    if finding.code != "write.already-present" {
+        return DocFailure::Block(finding);
+    }
+    if let Some(locus) = locus
+        && let Some(free) = first_free_item_id(schema, source, locus)
+    {
+        finding.route = Some(engine::finding::Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "add-item",
+                uri,
+                "--title",
+                &locus.title_token,
+                "--slug",
+                &free,
+                "--task",
+                task_id,
+            ],
+            " mints it beside the item already there under an id of your own — `--slug` \
+             drives the item id verbatim, so two titles that slug alike can coexist. If \
+             this is a correction of that item rather than a second entry, edit it in \
+             place with `jigc doc set-slot` / `jigc doc set-field` instead",
+        ));
+    }
+    DocFailure::Block(finding)
+}
+
+/// The first free `<minted>-N` sibling id at `locus`, or `None`.
+///
+/// `None` is the **honest** answer twice over, and both matter: when the minted id is not
+/// in fact present the reject was about something other than an item collision, so a
+/// route offering a fresh item id would be inventing a diagnosis; and when no suffix in
+/// the probed range is free the route would name an id that itself collides — a command
+/// that blocks when run. Presence is asked through the shared
+/// [`engine::write::item_chain_absent`], the same predicate the item-miss doors rank on,
+/// so "taken" means here exactly what it means there. Runs on the **reject** path only.
+fn first_free_item_id(schema: &Schema, source: &str, locus: &AddItemLocus) -> Option<String> {
+    let taken = |id: &str| {
+        let mut chain: Vec<&str> = locus.prefix.iter().map(String::as_str).collect();
+        chain.push(id);
+        !engine::write::item_chain_absent(schema, source, &locus.section, &chain)
+    };
+    if !taken(&locus.minted) {
+        return None;
+    }
+    (2..=99)
+        .map(|n| format!("{}-{n}", locus.minted))
+        .find(|candidate| !taken(candidate))
+}
+
+/// The destination repeatable an [`AddItemTarget`] mints into, with the address **tail**
+/// naming it (`<section>` for a top-level mint, the section-qualified
+/// `<section>/<parents…>/<nested-section>` chain for a nested one) — the navigation the
+/// mint path itself uses (the section's own body, or the engine's
+/// [`engine::write::nested_repeatable`]). `None` when the address names no declared
+/// repeatable, leaving that diagnosis to the splice path.
+fn add_item_destination(schema: &Schema, target: &AddItemTarget) -> Option<(Repeatable, String)> {
+    match target {
+        AddItemTarget::TopLevel { section } => {
+            let body = &schema.sections.iter().find(|s| &s.id == section)?.body;
+            let SectionBody::Repeatable { repeatable } = body else {
+                return None;
+            };
+            Some((repeatable.clone(), section.clone()))
+        }
+        AddItemTarget::Nested {
+            section,
+            parents,
+            nested_section,
+        } => {
+            let parent_ids: Vec<&str> = parents.iter().map(String::as_str).collect();
+            let repeatable =
+                engine::write::nested_repeatable(schema, section, &parent_ids, nested_section)?;
+            Some((
+                repeatable,
+                format!("{section}/{}/{nested_section}", parents.join("/")),
+            ))
+        }
+    }
 }
 
 /// The write-time id-from reject for an `add-item` mint (`design/auto-migration.md` →
@@ -1505,28 +1678,7 @@ fn id_from_enum_block(
     title: &str,
     slug_override: Option<&str>,
 ) -> Option<Finding> {
-    let (repeatable, prefix) = match target {
-        AddItemTarget::TopLevel { section } => {
-            let body = &schema.sections.iter().find(|s| &s.id == section)?.body;
-            let SectionBody::Repeatable { repeatable } = body else {
-                return None;
-            };
-            (repeatable.clone(), section.clone())
-        }
-        AddItemTarget::Nested {
-            section,
-            parents,
-            nested_section,
-        } => {
-            let parent_ids: Vec<&str> = parents.iter().map(String::as_str).collect();
-            let repeatable =
-                engine::write::nested_repeatable(schema, section, &parent_ids, nested_section)?;
-            (
-                repeatable,
-                format!("{section}/{}/{nested_section}", parents.join("/")),
-            )
-        }
-    };
+    let (repeatable, prefix) = add_item_destination(schema, target)?;
     // The **override** refusal, ahead of the membership test and independent of the
     // title: where the id-source is an enum, the heading IS the member and the anchor
     // equals it, so a `--slug` is a second identity beside the member — the same
@@ -3257,7 +3409,7 @@ fn run_author(
     // unchanged either way.
     let mut buffer = read_staged(&created.path, &created.address)?;
     for leaf in &plan.leaves {
-        match apply_leaf(schema, &buffer, &created.address, leaf, migration) {
+        match apply_leaf(schema, &buffer, &created.address, leaf, &task.id, migration) {
             Ok(edited) => buffer = edited,
             Err(failure) => {
                 created.rollback();
@@ -3295,6 +3447,7 @@ fn apply_leaf(
     source: &str,
     head: &str,
     leaf: &crate::author::Leaf,
+    task_id: &str,
     migration: bool,
 ) -> Result<String, DocFailure> {
     use crate::author::Leaf;
@@ -3307,8 +3460,9 @@ fn apply_leaf(
             // No `slug_override`: the batch payload grammar carries no `slug:` key —
             // `--slug` is the per-leaf `add-item` flag, and a payload collision is
             // routed at it rather than silently overridden here.
-            let (edited, _minted) =
-                apply_add_item_target(schema, source, target, &addr, title, None, migration)?;
+            let (edited, _minted) = apply_add_item_target(
+                schema, source, target, &addr, title, None, task_id, migration,
+            )?;
             Ok(edited)
         }
         Leaf::SetField { fragment, value } => {

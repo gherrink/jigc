@@ -82,6 +82,19 @@
 //! and earns `write.title-ignored`. Both route at `jigc doc rename` — a route that is
 //! itself a write, so it is run verbatim against a **private** fixture in the same state.
 //!
+//! **M49 adds the collision column.** Every column above is a *miss* — an address that
+//! names nothing. This one is the opposite: the address is right, the shape is right, and
+//! the **minted id is taken**. Two genuinely different titles can slug alike (`1-3-0` and
+//! `1.3.0` mint the same id), and until M49 the reject's route was a `Route::human` —
+//! *"the target already exists — edit it in place"* — which is wrong for a second, distinct
+//! entry, and is not runnable at all, let alone from inside the `doc author` batch it
+//! rejects whole. With `--slug` on `add-item` (T4 of this increment) the recovery **is** a
+//! command, so the route is mechanical: the same mint under a free id. Two rows, because
+//! the collision reaches an agent through two doors that must not disagree — the per-leaf
+//! verb and the batch — and both inherit the one CLI-seam enrichment at
+//! `apply_add_item_target`. The route is run **verbatim** and must *land the second item*,
+//! not merely exit 0.
+//!
 //! **Declared bound.** The two *section-level* address forms — `set-slot` / `set-field` at
 //! `#<undeclared-section>` with no item hop — are **not** cells of this matrix: the CLI
 //! address resolver refuses to resolve a slot/field target inside an undeclared section and
@@ -470,6 +483,28 @@ enum RouteCheck {
     /// **private** fixture in the same state, because running it on the shared one would
     /// move the very bytes the next row diffs against.
     MutatingWrite(&'static str),
+    /// A **collision** (M49): the minted item id is already taken, so the recovery is the
+    /// same mint under a distinct `--slug`. Proven on a **private** fixture in the same
+    /// state, and proven to *land* — a route that exits 0 without minting would pass a
+    /// bare followability check while leaving the agent exactly where it was.
+    Collides {
+        /// The minted id the reject's message must name — which of the payload's items
+        /// collided, the question the batch door left unanswered.
+        minted: &'static str,
+        /// The expected route argv (`{addr}` substituted).
+        argv: &'static str,
+        /// The section the landing is read back from …
+        section: &'static str,
+        /// … and the `{#id}` anchor the second item must carry there afterwards.
+        landed: &'static str,
+    },
+    /// The collision column's **omitting context**: a destination whose `id-from` is an
+    /// **enum**, where the heading IS the member and `--slug` is refused as an identity
+    /// change. The collision must stay on its shipped human route — "edit it in place",
+    /// which is the true answer when the id *is* the category — so this asserts the whole
+    /// route string verbatim. A mechanical `--slug` route here would name a command that
+    /// blocks when run, which is the un-followable route this suite exists to forbid.
+    StaysHuman(&'static str),
 }
 
 /// The item [`provision`] mints in each showable section — what the emitted route, run
@@ -763,6 +798,56 @@ const CELLS: &[Cell] = &[
             "jigc doc rename {addr} --to 'Changelog!' --task log-the-release",
         ),
     },
+    // ---- The **collision** column (M49 Increment 5, T5). Not a miss: the section is
+    // declared, the shape is right, and the id the title mints is simply taken — the
+    // fixture already holds release `1-3-0`, and the distinct title `1.3.0` mints the same
+    // id. The shipped route said *"edit it in place"*, which is the answer for a
+    // correction and the wrong answer for a second, distinct entry — and is not runnable,
+    // so from inside a `doc author` payload (rejected whole, nothing staged) it terminated
+    // nowhere. Both doors carry the same row because both funnel through the one
+    // `apply_add_item_target` enrichment; a fix at only one of them leaves the other lying.
+    Cell {
+        what: "add-item at a title that mints a taken id",
+        args: &["doc", "add-item", "{addr}#releases", "--title", "1.3.0"],
+        stdin: None,
+        code: "write.already-present",
+        route: RouteCheck::Collides {
+            minted: "1-3-0",
+            argv: "jigc doc add-item {addr}#releases --title 1.3.0 --slug 1-3-0-2 \
+                   --task log-the-release",
+            section: "releases",
+            landed: "1-3-0-2",
+        },
+    },
+    Cell {
+        what: "doc author batch carrying an item title that mints a taken id",
+        args: &["doc", "author", "changelog", "--from-file", "-"],
+        stdin: Some(
+            b"title: Changelog\nsections:\n  - id: releases\n    items:\n      - title: \"1.3.0\"\n",
+        ),
+        code: "write.already-present",
+        route: RouteCheck::Collides {
+            minted: "1-3-0",
+            argv: "jigc doc add-item {addr}#releases --title 1.3.0 --slug 1-3-0-2 \
+                   --task log-the-release",
+            section: "releases",
+            landed: "1-3-0-2",
+        },
+    },
+    Cell {
+        // The omitting context, driven rather than reasoned about: `#staged`'s `id-from`
+        // is an **enum**, so the same slug-alike collision (`Changed` is live; `changed`
+        // mints the same id) must NOT be handed a `--slug` — that override is refused as
+        // an identity change, so the route would block when run.
+        what: "add-item at a taken enum id-from member (the omitting context)",
+        args: &["doc", "add-item", "{addr}#staged", "--title", "changed"],
+        stdin: None,
+        code: "write.already-present",
+        route: RouteCheck::StaysHuman(
+            "the target already exists — edit it in place (`set-field`/`set-slot`) \
+             instead of re-creating it",
+        ),
+    },
 ];
 
 #[test]
@@ -799,6 +884,18 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
             .unwrap_or_else(|e| panic!("`{}` stderr is JSON: {e}; got:\n{stderr}", cell.what));
         let got = report["findings"][0]["code"].as_str().unwrap_or("<absent>");
         let named_its_miss = got == cell.code;
+
+        // A **collision** must name the colliding minted id in its own message: an
+        // `already-present` inside a batch is otherwise silent about WHICH of the
+        // payload's items collided, and the whole payload is what got rejected.
+        if let RouteCheck::Collides { minted, .. } = &cell.route {
+            let message = report["findings"][0]["message"].as_str().unwrap_or("");
+            assert!(
+                message.contains(&format!("{minted:?}")),
+                "`{}`: the reject names the colliding minted id {minted:?}; got:\n{message}",
+                cell.what,
+            );
+        }
         if !named_its_miss {
             broken.push(format!(
                 "  {}: expected `{}`, got `{}` (route: {})",
@@ -828,6 +925,26 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
             let route = report["findings"][0]["route"]
                 .as_str()
                 .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", cell.what));
+            // The one non-command row shape: the omitting context, whose route must stay
+            // the shipped human direction. Adjudicated on the WHOLE route string, before
+            // `backticked` — which would panic on it, since a human route carries no
+            // leading backticked command (that panic is exactly the red this column
+            // opened with, and it must not fire on the row that is correct as it stands).
+            if let RouteCheck::StaysHuman(expected) = cell.route {
+                if route != expected {
+                    broken.push(format!(
+                        "  {}: expected the human route `{}`, got `{}`",
+                        cell.what, expected, route
+                    ));
+                }
+                let after = fs::read_to_string(&staged).expect("read the staged changelog");
+                assert_eq!(
+                    after, before,
+                    "`{}` persisted nothing — the staged bytes are unchanged",
+                    cell.what,
+                );
+                continue;
+            }
             let cmd = backticked(route, cell.what);
             let expected = match cell.route {
                 RouteCheck::Show(section) => {
@@ -835,6 +952,8 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
                 }
                 RouteCheck::Schema => "jigc doc schema changelog".to_owned(),
                 RouteCheck::MutatingWrite(argv) => argv.replace("{addr}", &addr),
+                RouteCheck::Collides { argv, .. } => argv.replace("{addr}", &addr),
+                RouteCheck::StaysHuman(_) => unreachable!("adjudicated above"),
             };
             if cmd != expected {
                 broken.push(format!(
@@ -866,6 +985,34 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
                     RouteCheck::MutatingWrite(_) => {
                         provision().run_route(cmd, cell.what);
                     }
+                    RouteCheck::Collides {
+                        section, landed, ..
+                    } => {
+                        assert!(
+                            cmd.contains(" --slug "),
+                            "`{}`: the collision route names `--slug` — the flag that \
+                             decouples the id from the title; got `{cmd}`",
+                            cell.what,
+                        );
+                        // Run verbatim on a private fixture in the same state, then read
+                        // the section back: the second item must have LANDED beside the
+                        // first, not merely exited 0.
+                        let private = provision();
+                        private.run_route(cmd, cell.what);
+                        let shown = private.run_route(
+                            &format!("jigc doc show {addr}#{section} --task {TASK_ID}"),
+                            cell.what,
+                        );
+                        for anchor in [live_item(section), landed] {
+                            assert!(
+                                shown.contains(&format!("{{#{anchor}}}")),
+                                "`{}`: after the route ran, `{{#{anchor}}}` stands in \
+                                 `#{section}`; got:\n{shown}",
+                                cell.what,
+                            );
+                        }
+                    }
+                    RouteCheck::StaysHuman(_) => unreachable!("adjudicated above"),
                 }
             }
         }
