@@ -65,6 +65,8 @@ mod migrate_workflow;
 mod record_foreign_arm;
 #[path = "../record_item_slot_kind.rs"]
 mod record_item_slot_kind;
+#[path = "../record_nesting_cap.rs"]
+mod record_nesting_cap;
 #[path = "../record_set_splice_retired.rs"]
 mod record_set_splice_retired;
 #[path = "../registry_seam.rs"]
