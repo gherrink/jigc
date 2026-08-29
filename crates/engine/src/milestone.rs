@@ -993,8 +993,8 @@ pub fn reseed_cache_from_record(
 /// records, rather than being composed as something else. Making the override durable means
 /// putting it in the record, i.e. a frozen-doctype schema bump — a one-way door, out of charter.
 ///
-/// **An item the record has settled is not rebuilt** ([`is_terminal_status`] over the item's own
-/// `status` leaf). The rule the premise here used to rest on — *every item the record names is
+/// **An item the record has settled is not rebuilt** ([`item_is_settled`], the shared predicate
+/// over the item's own `status` leaf). The rule the premise here used to rest on — *every item the record names is
 /// rebuilt, because both terminals flip the header and every item in one write, and a terminal
 /// header never reaches here* — was falsified the moment a **per-item** terminal existed: M49's
 /// `jigc task discard <sub-id>` settles one item to `discarded` while the milestone stays
@@ -1025,7 +1025,7 @@ pub fn reseed_sub_task_areas(
         if jigc_root.join("tasks").join(&item.id).exists() {
             continue;
         }
-        if item_status(item).as_deref().is_some_and(is_terminal_status) {
+        if item_is_settled(item) {
             continue;
         }
         let intent = item
@@ -1331,11 +1331,20 @@ pub fn join_record(
 }
 
 /// The pure in-place status flip behind [`join_record`]: read the committed `tasks` item
-/// ids from the record itself (the source of truth), splice **each** item's `status`
-/// value to `joined` via the byte-stable item-leaf splice threading the updated bytes
-/// item by item, then splice the header `status` (front-matter, block-order-first). A
+/// ids from the record itself (the source of truth), splice each **unsettled** item's
+/// `status` value to `joined` via the byte-stable item-leaf splice threading the updated
+/// bytes item by item, then splice the header `status` (front-matter, block-order-first). A
 /// non-conformant record, or a `status` leaf the splice cannot locate, is a
 /// [`SpliceError`](crate::write::SpliceError) the caller routes.
+///
+/// **An item the record has already settled is left byte-untouched** ([`item_is_settled`]) —
+/// the mirror of [`discard_sub_task_item`]'s joined carve-out, and the same rule stated on
+/// the same predicate: a settled item is over, and a terminal the milestone boundary did not
+/// produce is not the boundary's to overwrite. Without it a `jigc task discard <sub-id>` was
+/// undone by the very next `milestone finalize`, which wrote `joined` over the abandoned
+/// sub-task — the record lying about abandoned work, which is the defect the discard door
+/// exists to close. An already-`joined` item is skipped for the same reason and to the same
+/// bytes (its splice was a no-op).
 fn flip_record_status_to_joined(
     schema: &crate::schema::Schema,
     source: &str,
@@ -1346,7 +1355,13 @@ fn flip_record_status_to_joined(
         .sections
         .iter()
         .find(|s| s.id == RECORD_TASKS_SECTION)
-        .map(|s| s.items.iter().map(|i| i.id.clone()).collect())
+        .map(|s| {
+            s.items
+                .iter()
+                .filter(|i| !item_is_settled(i))
+                .map(|i| i.id.clone())
+                .collect()
+        })
         .unwrap_or_default();
 
     let mut body = source.to_string();
@@ -1521,13 +1536,60 @@ fn item_is_joined(item: &crate::parse::ParsedItem) -> bool {
 
 /// One committed `tasks` item's `status` leaf as the record renders it, `None` when the item
 /// carries none. The single reader of a per-item status: the `discard` arm's joined carve-out
-/// ([`item_is_joined`]) and the reseed's settled-item skip ([`reseed_sub_task_areas`]) ask the
-/// same question of the same leaf, so neither can be secured while the other reads elsewhere.
+/// ([`item_is_joined`]) and the settled predicate every other locus keys on
+/// ([`item_is_settled`]) ask the same question of the same leaf, so none can be secured while
+/// another reads elsewhere.
 fn item_status(item: &crate::parse::ParsedItem) -> Option<String> {
     item.fields
         .iter()
         .find(|f| f.key == RECORD_STATUS_FIELD)
         .map(|f| f.value.render())
+}
+
+/// Whether a committed `tasks` item has **settled** — its own `status` leaf reads a terminal
+/// ([`is_terminal_status`]: `joined` or `discarded`). The per-item sibling of the header's
+/// [`terminal_status`], and the single predicate every locus that must not treat a settled
+/// sub-task as live asks: the reseed's rebuild skip ([`reseed_sub_task_areas`]), the operating
+/// doors' enumeration ([`settled_sub_task_ids`]), and the `join` flip's carve-out
+/// ([`flip_record_status_to_joined`]). An item with **no** status leaf is not settled — a
+/// record that never claimed the sub-task was over cannot be read as claiming it.
+fn item_is_settled(item: &crate::parse::ParsedItem) -> bool {
+    item_status(item).as_deref().is_some_and(is_terminal_status)
+}
+
+/// **The sub-task ids the committed record has settled** — every `tasks` item whose own
+/// `status` leaf is terminal ([`item_is_settled`]). The set the milestone's *operating* doors
+/// subtract from their enumeration: a settled sub-task owns no working area (the discard
+/// removed it and [`reseed_sub_task_areas`] never rebuilds it), so enumerating it as live is
+/// how a door emits work nobody can do — the `Spawn:` line that dead-ends on *"no task"* and
+/// routes straight back at `jigc milestone list-tasks`, which names it again. A **loop**, and
+/// the same one the reseed skip exists to close, reached through the other seam.
+///
+/// Pure over the bytes, like its [`read_back_record`] sibling: a record that does not parse
+/// carries no settled ids, so an unreadable record subtracts nothing and every caller's own
+/// read-back guard still surfaces the fault.
+///
+/// The **teardown** doors deliberately do not subtract this set: a sub-task discard removes
+/// the working area and leaves the provisioned worktree standing, so the milestone's abandon
+/// and finalize teardowns stay the last doors able to remove it.
+pub fn settled_sub_task_ids(
+    schema: &crate::schema::Schema,
+    source: &str,
+) -> std::collections::BTreeSet<String> {
+    let Ok(doc) = crate::parse::parse_sections(schema, source) else {
+        return std::collections::BTreeSet::new();
+    };
+    doc.sections
+        .iter()
+        .find(|s| s.id == RECORD_TASKS_SECTION)
+        .map(|s| {
+            s.items
+                .iter()
+                .filter(|i| item_is_settled(i))
+                .map(|i| i.id.clone())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// A blocking finding for a `status` splice failure while flipping a milestone record to

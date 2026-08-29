@@ -764,3 +764,365 @@ fn an_unreadable_record_fails_closed_for_an_ordinary_task_and_clears_once_restor
         "the restored record clears the way and the ordinary discard proceeds",
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// Arm 5 — the ENUMERATION axis: no operating door acts on a settled sub-task.
+// ---------------------------------------------------------------------------------------
+
+/// A sub-task's provisioned fan-out worktree.
+fn worktree(repo: &Path, sub_id: &str) -> PathBuf {
+    repo.join(".jigc").join("worktrees").join(sub_id)
+}
+
+/// Settle the suite's discarded sub-task through the real door.
+fn discard_the_sub_task(repo: &Path, home: &Path) {
+    ok(
+        repo,
+        home,
+        &["task", "discard", DISCARDED_SUB_ID],
+        "task discard <sub-id>",
+    );
+}
+
+/// Every `` Spawn: `…` `` span of a composed milestone-execution view, **verbatim** — each is
+/// a shell line (`cd <worktree> && jigc workflow <W> --task <id>`), run as emitted below
+/// (the `milestone_record_fresh_clone` suite's shape: an agent-facing emitted artifact is
+/// proven by running its bytes, never by reconstructing them).
+fn spawn_spans(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.strip_prefix("Spawn: `"))
+        .filter_map(|rest| rest.strip_suffix('`'))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Install a `jigc` shim on a throwaway `PATH` entry, so an emitted `Spawn:` span — which
+/// names the bare command `jigc`, as an agent would run it — resolves to the binary under
+/// test.
+fn install_jigc_shim(dir: &Path) -> PathBuf {
+    let bin = dir.join("shim-bin");
+    fs::create_dir_all(&bin).expect("mk the shim bin dir");
+    let shim = bin.join("jigc");
+    fs::write(
+        &shim,
+        format!("#!/bin/sh\nexec {:?} \"$@\"\n", env!("CARGO_BIN_EXE_jigc")),
+    )
+    .expect("write the jigc shim");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&shim).expect("shim metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&shim, perms).expect("chmod the shim");
+    }
+    bin
+}
+
+/// Run an emitted shell span verbatim through `sh -c`, with the `jigc` shim first on `PATH`.
+fn run_span(cwd: &Path, home: &Path, shim_bin: &Path, span: &str) -> std::process::Output {
+    let path = match std::env::var("PATH") {
+        Ok(rest) => format!("{}:{rest}", shim_bin.display()),
+        Err(_) => shim_bin.display().to_string(),
+    };
+    Command::new("sh")
+        .arg("-c")
+        .arg(span)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .env("PATH", path)
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the emitted span")
+}
+
+/// One door of the **enumeration** axis: the enclosing `run_*` function in
+/// `crates/cli/src/milestone.rs` that reads the milestone's sub-task list, paired with what
+/// that door owes over an item the record has settled. Each `check` drives its own door
+/// through the real binary from the shared two-sub-task starting state, and does its own
+/// `task discard` at the moment its door needs it.
+struct EnumArm {
+    /// The enclosing function name the call-site enumeration reports.
+    func: &'static str,
+    /// The door's obligation, driven and asserted through the binary.
+    check: fn(&Path, &Path),
+}
+
+/// **The arms of the enumeration axis.** The *axis* is derived from the code
+/// ([`doors_reading_the_task_list`]); this table is only how each derived door is *driven*,
+/// so the two are checked to biject: a door added to (or removed from) the task-list read
+/// site reddens the bijection rather than silently escaping the sweep.
+///
+/// Five doors **operate** on the sub-task set and owe the settled item's exclusion. The
+/// sixth, `run_discard`, is the milestone's **teardown** and owes the opposite — a sub-task
+/// discard leaves the provisioned worktree standing (verified in its arm), so the abandon
+/// path has to keep covering the settled member or the worktree is orphaned.
+const ENUM_ARMS: &[EnumArm] = &[
+    EnumArm {
+        func: "run_list_tasks",
+        check: list_tasks_omits_the_settled_sub_task,
+    },
+    EnumArm {
+        func: "run_provision",
+        check: provision_omits_the_settled_sub_task,
+    },
+    EnumArm {
+        func: "run_execute",
+        check: execute_omits_the_settled_sub_task,
+    },
+    EnumArm {
+        func: "run_join",
+        check: join_omits_the_settled_sub_task,
+    },
+    EnumArm {
+        func: "run_milestone_finalize",
+        check: finalize_omits_the_settled_sub_task,
+    },
+    EnumArm {
+        func: "run_discard",
+        check: discard_still_tears_down_the_settled_sub_task,
+    },
+];
+
+/// **The axis, read off the code**: every function in `crates/cli/src/milestone.rs` that
+/// reads the milestone's persisted sub-task list (`read_task_list(`). Enumerated from the
+/// source rather than hand-listed — the sweep's subject is *the doors that enumerate the
+/// sub-tasks*, and only the code knows that set.
+fn doors_reading_the_task_list() -> BTreeSet<String> {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("milestone.rs"),
+    )
+    .expect("read crates/cli/src/milestone.rs");
+    let mut current = String::new();
+    let mut doors = BTreeSet::new();
+    for line in source.lines() {
+        if let Some(rest) = line.strip_prefix("fn ") {
+            current = rest
+                .split(['(', '<'])
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            continue;
+        }
+        let code = line.trim_start();
+        if code.starts_with("//") {
+            continue;
+        }
+        if code.contains("read_task_list(") && !current.is_empty() {
+            doors.insert(current.clone());
+        }
+    }
+    doors
+}
+
+/// `jigc milestone list-tasks` answers with the **live** sub-tasks: a settled item is neither
+/// named nor counted, so the route every dead end prints cannot hand the operator back the
+/// sub-task that is over.
+fn list_tasks_omits_the_settled_sub_task(repo: &Path, home: &Path) {
+    discard_the_sub_task(repo, home);
+    let out = ok(
+        repo,
+        home,
+        &["milestone", "list-tasks", MILESTONE_ID],
+        "milestone list-tasks",
+    );
+    assert!(
+        out.contains(&format!(
+            "milestone:{MILESTONE_ID} tasks (1): {SIBLING_SUB_ID}"
+        )),
+        "the live sub-task is named and counted; got:\n{out}",
+    );
+    assert!(
+        !out.contains(DISCARDED_SUB_ID),
+        "a settled sub-task is not a live sub-task; got:\n{out}",
+    );
+}
+
+/// `jigc milestone provision` lays down a worktree per **live** sub-task — a settled one owns
+/// no work, and its area is deliberately never rebuilt, so a worktree for it is a checkout
+/// nothing can ever run in.
+fn provision_omits_the_settled_sub_task(repo: &Path, home: &Path) {
+    discard_the_sub_task(repo, home);
+    let out = ok(
+        repo,
+        home,
+        &["milestone", "provision", MILESTONE_ID],
+        "milestone provision",
+    );
+    assert!(
+        out.contains("provisioned 1 worktree(s)") && !out.contains(DISCARDED_SUB_ID),
+        "provision names and counts the live sub-tasks only; got:\n{out}",
+    );
+    assert!(
+        !worktree(repo, DISCARDED_SUB_ID).exists(),
+        "a settled sub-task gets no worktree",
+    );
+    assert!(
+        worktree(repo, SIBLING_SUB_ID).is_dir(),
+        "the live sibling still gets its worktree",
+    );
+}
+
+/// `jigc milestone execute` emits one `Spawn:` line per **live** sub-task — and the emitted
+/// bytes are proven by running them, not by reading them: the settled sub-task's line is
+/// absent (it would dead-end on *"no task"* and route straight back at `list-tasks`, which
+/// names it again — the loop the reseed exists to close), and the line that IS emitted runs
+/// verbatim at exit 0.
+fn execute_omits_the_settled_sub_task(repo: &Path, home: &Path) {
+    discard_the_sub_task(repo, home);
+    ok(
+        repo,
+        home,
+        &["milestone", "provision", MILESTONE_ID],
+        "milestone provision",
+    );
+    let view = ok(
+        repo,
+        home,
+        &["milestone", "execute", MILESTONE_ID],
+        "milestone execute",
+    );
+    let spans = spawn_spans(&view);
+    assert_eq!(
+        spans,
+        vec![format!(
+            "cd .jigc/worktrees/{SIBLING_SUB_ID} && jigc workflow sub-task --task {SIBLING_SUB_ID}"
+        )],
+        "exactly one `Spawn:` line, for the live sub-task; the composed view was:\n{view}",
+    );
+    let shim = install_jigc_shim(home);
+    let out = run_span(repo, home, &shim, &spans[0]);
+    assert!(
+        out.status.success(),
+        "the emitted `Spawn:` line must run verbatim; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// `jigc milestone join` reports over the **live** sub-tasks — a settled one is not a
+/// contributor that merely staged nothing.
+fn join_omits_the_settled_sub_task(repo: &Path, home: &Path) {
+    discard_the_sub_task(repo, home);
+    let out = ok(
+        repo,
+        home,
+        &["milestone", "join", MILESTONE_ID],
+        "milestone join",
+    );
+    assert!(
+        out.contains(SIBLING_SUB_ID),
+        "the live sub-task is still named; got:\n{out}",
+    );
+    assert!(
+        !out.contains(DISCARDED_SUB_ID),
+        "a settled sub-task is not a doc-less contributor; got:\n{out}",
+    );
+}
+
+/// `jigc milestone finalize` lands the boundary over the **live** sub-tasks: the synthesized
+/// message credits only what landed, the manifest names only live members, and — the sharpest
+/// half — the record's settled item is **not** flipped back to `joined`, which would make the
+/// committed record lie about abandoned work all over again.
+fn finalize_omits_the_settled_sub_task(repo: &Path, home: &Path) {
+    discard_the_sub_task(repo, home);
+    ok(
+        repo,
+        home,
+        &["milestone", "provision", MILESTONE_ID],
+        "milestone provision",
+    );
+    let wt = worktree(repo, SIBLING_SUB_ID);
+    fs::write(wt.join("feature.txt"), "work\n").expect("write the sub-task's code");
+    git(&wt, &["add", "feature.txt"]);
+
+    let out = ok(
+        repo,
+        home,
+        &["milestone", "finalize", MILESTONE_ID],
+        "milestone finalize",
+    );
+    assert!(
+        !out.contains(DISCARDED_SUB_ID),
+        "the landing manifest never credits a settled sub-task; got:\n{out}",
+    );
+    let message = git(repo, &["log", "-1", "--format=%B"]);
+    assert!(
+        message.contains("(1 sub-task)") && message.contains(&format!("- {SIBLING_SUB_ID}")),
+        "the synthesized message lists the sub-tasks that landed; got:\n{message}",
+    );
+    assert!(
+        !message.contains(DISCARDED_SUB_ID),
+        "the synthesized message never lists a settled sub-task; got:\n{message}",
+    );
+    assert_eq!(
+        shown_statuses(&shown_record(repo, home)),
+        vec![
+            (DISCARDED_SUB_ID.to_string(), "discarded".to_string()),
+            (SIBLING_SUB_ID.to_string(), "joined".to_string()),
+        ],
+        "the join flip settles the live sub-task and leaves the settled one settled",
+    );
+}
+
+/// `jigc milestone discard` is the **teardown**, and owes the opposite obligation: a sub-task
+/// discard leaves its provisioned worktree standing (asserted here), so the abandon path has
+/// to keep covering the settled member — excluding it would orphan a registered worktree the
+/// milestone's own teardown is the last door able to remove.
+fn discard_still_tears_down_the_settled_sub_task(repo: &Path, home: &Path) {
+    ok(
+        repo,
+        home,
+        &["milestone", "provision", MILESTONE_ID],
+        "milestone provision",
+    );
+    discard_the_sub_task(repo, home);
+    assert!(
+        worktree(repo, DISCARDED_SUB_ID).is_dir(),
+        "a sub-task discard removes the working area, not the provisioned worktree — which is \
+         why the teardown below must still cover it",
+    );
+    ok(
+        repo,
+        home,
+        &["milestone", "discard", MILESTONE_ID, "--force"],
+        "milestone discard --force",
+    );
+    assert!(
+        !worktree(repo, DISCARDED_SUB_ID).exists(),
+        "the abandon path tears down the settled member's worktree too",
+    );
+    assert!(
+        !worktree(repo, SIBLING_SUB_ID).exists(),
+        "and its live sibling's",
+    );
+}
+
+/// **Arm 5 — the enumeration skip, over the whole door axis.** For every door that reads the
+/// milestone's sub-task list: an item the record settles to `discarded` is not enumerated as
+/// a live sub-task — it gets no worktree, no `Spawn:` line, no place in the count, no credit
+/// in the landing manifest and no flip back to `joined` — while the teardown door still
+/// covers it.
+///
+/// The axis is derived from the call sites rather than hand-listed, so a new door reading the
+/// task list reddens the bijection instead of silently escaping the sweep.
+#[test]
+fn no_door_reading_the_task_list_enumerates_a_settled_sub_task() {
+    let derived = doors_reading_the_task_list();
+    let armed: BTreeSet<String> = ENUM_ARMS.iter().map(|a| a.func.to_string()).collect();
+    assert_eq!(
+        derived, armed,
+        "the axis is the set of functions calling `read_task_list(` in \
+         crates/cli/src/milestone.rs — a door added there owes an arm in `ENUM_ARMS`, and a \
+         door that no longer reads the task list owes its arm's removal",
+    );
+
+    for arm in ENUM_ARMS {
+        let (repo, home) = base_repo(&format!("live-{}", arm.func.replace('_', "-")));
+        let (repo, home) = (repo.path(), home.path());
+        milestone_with_two_sub_tasks(repo, home);
+        (arm.check)(repo, home);
+    }
+}

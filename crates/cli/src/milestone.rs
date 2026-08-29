@@ -1836,6 +1836,43 @@ fn read_record<'a>(
     Ok(Some((schema, source)))
 }
 
+/// **The sub-task ids a milestone's OPERATING doors act on** — the milestone's enumerated
+/// sub-tasks minus the ones the **committed record** has settled
+/// ([`engine::milestone::settled_sub_task_ids`]; M49 Increment 2, the enumeration half of the
+/// discarded-sub-task sweep).
+///
+/// The reseed's rebuild skip closed one seam — a settled sub-task's working area is never
+/// rebuilt — and that is exactly what makes this one blocking: a door still enumerating the
+/// settled item emits work against an area that is deliberately absent. `milestone execute`
+/// printed a `` Spawn: `cd .jigc/worktrees/<sub> && jigc workflow sub-task --task <sub>` ``
+/// line for it that, run verbatim, dead-ends on *"no task"* and routes back at
+/// `jigc milestone list-tasks`, which names that same sub-task — the very loop
+/// `design/team-ready-state.md` says the reseed exists to close, reached through the other
+/// seam. So the terminal predicate sweeps the enumeration too: one settled item, one answer,
+/// at every operating door.
+///
+/// **Ordered by the caller's enumeration** (id-sorted at every site — the order the join
+/// reads), and inert in the two ordinary omitting contexts [`read_record`] names: a dev-only
+/// project resolves no `milestone-record` doctype and a milestone with no committed record
+/// subtracts nothing, so the demoted cache's full list stands exactly as before.
+///
+/// **The teardown doors are NOT callers, and that is a checked exclusion**: a
+/// `jigc task discard <sub-id>` removes the sub-task's working area and leaves its provisioned
+/// worktree standing, so `milestone discard`'s and `milestone finalize`'s teardowns are the
+/// last doors able to remove it — they keep enumerating the full recorded set.
+fn live_sub_task_ids(
+    jigc_home: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    milestone_id: &str,
+    ids: Vec<String>,
+) -> Result<Vec<String>> {
+    let Some((schema, source)) = read_record(jigc_home, schemas, milestone_id)? else {
+        return Ok(ids);
+    };
+    let settled = engine::milestone::settled_sub_task_ids(schema, &source);
+    Ok(ids.into_iter().filter(|id| !settled.contains(id)).collect())
+}
+
 fn reseed_cache(
     jigc_home: &Path,
     jigc_root: &Path,
@@ -1916,6 +1953,11 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
     } else {
         return Err(no_such_milestone(milestone_id));
     };
+    // The **live** set on both branches: a sub-task the record has settled is not one of the
+    // milestone's live sub-tasks, and this listing is the route every milestone dead end
+    // prints — naming a settled sub-task here is how the operator is handed back the unit
+    // that is over ([`live_sub_task_ids`]).
+    let ids = live_sub_task_ids(&jigc_home, &schemas, milestone_id, ids)?;
     Ok(format!(
         "milestone:{milestone_id} tasks ({}): {}",
         ids.len(),
@@ -1968,8 +2010,11 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
     guard_base_live(&repo_root, milestone_id, &base)?;
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
-    // Id-sorted ids — the deterministic order the fan-out spawns its sub-agents.
-    let ids = list.enumerate();
+    // Id-sorted ids — the deterministic order the fan-out spawns its sub-agents — minus the
+    // sub-tasks the record has settled: a settled unit owns no working area (the reseed never
+    // rebuilds one), so a worktree for it is a checkout nothing can ever run in
+    // ([`live_sub_task_ids`]).
+    let ids = live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?;
 
     let paths = provision_worktrees(&repo_root, &jigc_home, milestone_id, &base.sha, &ids, force)?;
     Ok(format!(
@@ -2839,8 +2884,10 @@ fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Compositi
     }
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
-    // Enumeration is id-sorted — the order the fan-out emits its `Spawn:` directives.
-    let ids = list.enumerate();
+    // Enumeration is id-sorted — the order the fan-out emits its `Spawn:` directives — and it
+    // is the **live** set: a `Spawn:` line for a settled sub-task dead-ends on *"no task"* and
+    // routes back at the listing that names it again ([`live_sub_task_ids`]).
+    let ids = live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?;
     crate::start::execute_milestone_in_repo(&repo_root, MILESTONE_EXECUTION_WORKFLOW, &ids)
 }
 
@@ -2948,6 +2995,13 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<(JoinOutcome, Vec<String>)
     // (id-sorted) for the ack's doc-less-member line (C3).
     let list = read_task_list(&milestone_dir(&jigc_root, milestone_id))
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+    // The **live** set: a sub-task the record has settled is not a contributor that merely
+    // staged nothing, and the code left in its worktree can never land (the finalize combine
+    // folds the live set too), so it neither joins the doc-less line nor contends in the
+    // cross-worktree collision read ([`live_sub_task_ids`]).
+    let list = engine::milestone::TaskList {
+        tasks: live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?,
+    };
 
     // Cross-worktree code collisions surface HERE, not only at finalize: two sub-tasks
     // staging the SAME path in their isolated fan-out worktrees is a clash the combine
@@ -3069,9 +3123,18 @@ fn run_milestone_finalize(
     // knob-independent, so its inputs sit above the record flip and the `squash` read).
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+    // The boundary lands the **live** sub-tasks: a settled one contributed nothing by
+    // definition — its area is gone and never rebuilt — so it is credited in no manifest, named
+    // in no synthesized message, and its worktree's staged code is not folded into the commit
+    // ([`live_sub_task_ids`]). The **full** `list` stays the teardown's subject below: a
+    // sub-task discard leaves the provisioned worktree standing, and this is one of the two
+    // doors that can still remove it.
+    let live = engine::milestone::TaskList {
+        tasks: live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?,
+    };
     // The subject is the **path**, classified once (M46 Inc 2 T1) and shared by the gate,
     // the combine channel and the manifest's contribution facts below.
-    let subtasks = subtask_worktrees(&repo_root, &jigc_home, &list);
+    let subtasks = subtask_worktrees(&repo_root, &jigc_home, &live);
     let worktrees = live_worktrees(&subtasks);
     let staging_dir = materialized
         .docs_dir
@@ -3120,7 +3183,7 @@ fn run_milestone_finalize(
     let record_pathspec = record_flip.as_ref().map(|f| f.pathspec.clone());
 
     // Step 2 — the CLI-synthesized message (a milestone has no commit doc to render).
-    let message = synthesized_message(milestone_id, &list);
+    let message = synthesized_message(milestone_id, &live);
 
     // The `finalize.fan-out.squash` knob (`design/finalize.md` → `fan-out` finalize) shapes
     // the commit. Resolve it from the project cascade (a missing `.jigc/config/` layer
