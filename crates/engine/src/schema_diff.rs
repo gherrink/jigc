@@ -307,6 +307,31 @@ pub enum SchemaChange {
         field: String,
     },
 
+    /// A **slot leaf** the old schema declared in a repeatable item block and the new one
+    /// **drops** — the leaf-kind twin of [`Self::RemovedField`], and the [`Self::AddedItemSlot`]
+    /// direction the item filter still dropped on the floor after M49 T1.
+    ///
+    /// **Refused, on [`Self::RemovedField`]'s recorded reasoning and one sharper than it**
+    /// (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T5, the pick — *refuse, not strip*): what a strip
+    /// arm would splice away here is **authored prose**, not a field line, so the exception to
+    /// **No-data-loss** — a declared property of this pair — would be the larger one.
+    /// [`crate::transform::transform`] surfaces
+    /// [`crate::transform::TransformError::Unsupported`]; `jigc migrate-corpus` blocks the doc
+    /// before the fold with a **schema-authoring** route naming the dropped *slot*. Additive to
+    /// build later, exactly as the field strip is.
+    ///
+    /// The kind exists rather than riding the [`Self::Unclassified`] residual for the reason
+    /// [`Self::RemovedField`] records: the backstop is a **residual**, so a removal arriving
+    /// alongside any classified change leaves the diff non-empty and would be **silently
+    /// dropped** — the doc restamped while every item still carries prose under a sub-label the
+    /// schema no longer declares.
+    RemovedItemSlot {
+        /// The repeatable section whose item block dropped the slot leaf.
+        section: String,
+        /// The dropped slot leaf's id.
+        leaf: String,
+    },
+
     /// A change **outside the conformance-relevant structural projection** — a delta a
     /// committed doc's bytes *cannot* violate, so it is a **byte no-op** (the
     /// [`Self::WidenedCardinality`] / [`Self::Relocated`] shape: classify → fold to zero
@@ -512,33 +537,21 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
                     section: id.to_owned(),
                     leaf: None,
                 }),
-                // THE SLOT-LEVEL `optional` FLAG DELTA (the sixth hole — the [`optional_flag_change`]
-                // rule at the slot locus). A slot carries no `default:`/`set:`, so a **tightening**
-                // (`true → false`) is *always* a real `ProseNeeding`: a doc that legitimately left
-                // the optional slot empty now breaks `required-slot-present`. A **relaxation** is
-                // the byte no-op kind. Either way it names itself — before T4 the delta was
-                // invisible here and fell through to the backstop's residual.
+                // THE SLOT-LEVEL `optional` FLAG DELTA (the sixth hole), through the **one**
+                // slot rule both loci now share ([`slot_flag_change`]) — a section's slot is
+                // anonymous, so it names no leaf. Before T4 the delta was invisible here and
+                // fell through to the backstop's residual; before M49 Inc-4 T2 the *item* locus
+                // still was, which is what made the rule worth having one home.
                 (Some(old), Some(new)) if old.optional != new.optional => {
-                    out.push(if new.optional {
-                        SchemaChange::OptionalRelaxed {
-                            section: id.to_owned(),
-                            leaf: None,
-                        }
-                    } else {
-                        SchemaChange::ProseNeeding {
-                            section: id.to_owned(),
-                            leaf: None,
-                        }
-                    });
+                    out.push(slot_flag_change(id, None, new.optional));
                 }
                 _ => {}
             }
             diff_fields(id, old_fields, new_fields, out);
         }
-        // Both repeatable: the only supported change is an **enum member rename** on an
-        // item-block field (`value-remapped`). Every other item-block change (an added
-        // leaf, a card widen, a nested-repeatable edit) stays unclassified — the narrow
-        // minimalism bound (`design/corpus-migration.md` → the value-remap kind).
+        // Both repeatable: the item locus, whose whole leaf surface [`diff_item_fields`]
+        // classifies — an added or removed field or slot, an existing leaf's `card` / `of` /
+        // `optional:` delta, and a nested-repeatable delta named as the backstop kind.
         (
             SectionBody::Repeatable {
                 repeatable: old_rep,
@@ -678,38 +691,127 @@ fn card_bounds(card: Option<&str>) -> Option<(u32, Option<u32>)> {
     }
 }
 
-/// Diff a repeatable section's item-block leaves, in `new`'s document order: an added `Field`
-/// leaf ([`classify_added_item_field`] — the item locus of the add rule), an added `Slot` leaf
-/// ([`SchemaChange::AddedItemSlot`] — M49), the same existing-leaf rule the simple locus applies
-/// to a leaf present in both ([`diff_leaf`] — the `card` direction and the enum `of:` direction),
-/// then the `Field` leaves `new` **drops** ([`removed_fields`] — the second locus of the removal
-/// kind).
+/// Diff a repeatable section's item-block leaves — **every leaf kind, at both passes**.
 ///
-/// **Still unclassified here, and named so rather than implied:** a *removed* slot leaf, a
-/// nested-repeatable delta, and a slot's own `optional:` delta. Each rides the
-/// [`SchemaChange::Unclassified`] residual, which catches it only when the diff is otherwise
-/// empty — the residual's declared bound.
+/// The added pass walks `new`'s document order: an added `Field` leaf
+/// ([`classify_added_item_field`] — the item locus of the add rule), an added `Slot` leaf
+/// ([`SchemaChange::AddedItemSlot`]), a leaf present in both under the same existing-leaf rule
+/// the simple locus applies ([`diff_leaf`] for a field's `card`/`of` direction, and
+/// [`slot_flag_change`] for a slot's `optional:` delta — the one rule, at the one place, for
+/// both loci). The removed pass then walks `old`'s document order, kind by kind: the fields
+/// `new` drops ([`removed_fields`] — the removal rule stays *shared* with the simple locus
+/// rather than re-implemented here), then its slots ([`SchemaChange::RemovedItemSlot`]).
+///
+/// A **nested repeatable** leaf — added, dropped, or reshaped inside the conformance-relevant
+/// projection — has no transform kind built for it, so it emits [`SchemaChange::Unclassified`]
+/// **explicitly**. That is the whole of its handling and deliberately so (M49 Inc-4 T2): the
+/// backstop is a *residual*, which fires only over an otherwise-empty diff, so a nested delta
+/// riding alongside any classified change was **silently dropped** and the doc restamped. Naming
+/// itself makes it refuse in every diff, and building `AddedNestedRepeatable` stays a separate,
+/// still-deferred decision (`completions/artifacts/M49/settle-record.md` → T1-2). The comparison
+/// is over the **erased projection** ([`projected_leaf`]), so a hint reword inside a nested block
+/// stays the out-of-projection no-op it is instead of becoming a false refusal.
+///
+/// Nothing is dropped on the floor here any more — every leaf kind, in both directions, either
+/// classifies a kind or names the backstop (`design/corpus-migration.md`:188 — *the kind must
+/// exist rather than ride the backstop*).
 fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<SchemaChange>) {
     let old_fields: Vec<&Field> = old.iter().filter_map(item_field).collect();
     let old_by_id: HashMap<&str, &Field> = old_fields.iter().map(|f| (f.id.as_str(), *f)).collect();
-    let old_slot_ids: Vec<&str> = old.iter().filter_map(item_slot_id).collect();
+    let old_slots: HashMap<&str, &Leaf> = old
+        .iter()
+        .filter_map(|leaf| item_slot_id(leaf).map(|id| (id, leaf)))
+        .collect();
+    let old_nested: HashMap<&str, &Leaf> = old
+        .iter()
+        .filter_map(|leaf| item_nested_id(leaf).map(|id| (id, leaf)))
+        .collect();
     for leaf in new {
         match leaf {
             Leaf::Field(field) => match old_by_id.get(field.id.as_str()) {
                 Some(prev) => diff_leaf(section, prev, field.as_ref(), out),
                 None => out.push(classify_added_item_field(section, field.as_ref())),
             },
-            Leaf::Slot { id, .. } if !old_slot_ids.contains(&id.as_str()) => {
-                out.push(SchemaChange::AddedItemSlot {
+            Leaf::Slot { id, slot } => match old_slots.get(id.as_str()) {
+                Some(Leaf::Slot { slot: prev, .. }) => {
+                    if prev.optional != slot.optional {
+                        out.push(slot_flag_change(section, Some(id.clone()), slot.optional));
+                    }
+                }
+                _ => out.push(SchemaChange::AddedItemSlot {
                     section: section.to_owned(),
                     leaf: id.clone(),
-                });
+                }),
+            },
+            Leaf::Repeatable { id, .. } => {
+                let unchanged = old_nested
+                    .get(id.as_str())
+                    .is_some_and(|prev| projected_leaf(prev) == projected_leaf(leaf));
+                if !unchanged {
+                    out.push(SchemaChange::Unclassified);
+                }
             }
-            _ => {}
         }
     }
     let new_fields: Vec<&Field> = new.iter().filter_map(item_field).collect();
     removed_fields(section, old_fields.into_iter(), new_fields.into_iter(), out);
+    for leaf in old {
+        match leaf {
+            Leaf::Slot { id, .. } if !new.iter().any(|l| item_slot_id(l) == Some(id.as_str())) => {
+                out.push(SchemaChange::RemovedItemSlot {
+                    section: section.to_owned(),
+                    leaf: id.clone(),
+                });
+            }
+            Leaf::Repeatable { id, .. }
+                if !new.iter().any(|l| item_nested_id(l) == Some(id.as_str())) =>
+            {
+                out.push(SchemaChange::Unclassified);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Classify an `optional`-flag delta on a **slot** present in both schemas — [`optional_flag_change`]'s
+/// leaf-kind twin, and the **one** rule for both loci: a section's own anonymous slot
+/// (`leaf: None`) and a repeatable item block's named slot leaf (`leaf: Some(id)`).
+///
+/// A slot carries **no value source** — no `default:`, no `set:`, no pack-declared type — so
+/// [`crate::validate::is_author_required`]'s exemptions cannot apply to one and the field rule's
+/// refinement collapses: a **relaxation** is always the byte no-op
+/// ([`SchemaChange::OptionalRelaxed`]), a **tightening** is always a real
+/// [`SchemaChange::ProseNeeding`] (a doc that legitimately left the slot empty now breaks
+/// `required-slot-present`, and the per-doc conformance gate adjudicates it — the Framing-A
+/// handoff, never a build instruction). The flag is **inside** the conformance-relevant
+/// projection, so either direction must name itself or the backstop refuses it
+/// (`design/corpus-migration.md` → The structural projection: the two flag deltas get named
+/// kinds).
+fn slot_flag_change(section: &str, leaf: Option<String>, new_optional: bool) -> SchemaChange {
+    let section = section.to_owned();
+    if new_optional {
+        SchemaChange::OptionalRelaxed { section, leaf }
+    } else {
+        SchemaChange::ProseNeeding { section, leaf }
+    }
+}
+
+/// One leaf with its **out-of-projection keys erased** — [`erase_out_of_projection`]'s per-leaf
+/// form, built on [`erase_block`] so the erasure recurses to any nesting depth. Two leaves'
+/// projections compare equal exactly when no committed doc's bytes can tell them apart.
+fn projected_leaf(leaf: &Leaf) -> Leaf {
+    let mut one = vec![leaf.clone()];
+    erase_block(&mut one);
+    one.remove(0)
+}
+
+/// The id of an item block's **nested repeatable** leaf, if this leaf is one — [`item_slot_id`]'s
+/// sibling, one leaf-kind over.
+fn item_nested_id(leaf: &Leaf) -> Option<&str> {
+    match leaf {
+        Leaf::Repeatable { id, .. } => Some(id.as_str()),
+        _ => None,
+    }
 }
 
 /// The id of an item block's `Slot` leaf, if this leaf is one — [`item_field`]'s sibling, one
@@ -2418,5 +2520,67 @@ sections:
 ",
         );
         assert_eq!(schema_diff(&s, &s), vec![]);
+    }
+
+    /// The **nested-repeatable base fixture**: an item block carrying a scalar field and a
+    /// nested repeatable whose own block carries a slot — the shape the two tests below reshape
+    /// in opposite directions (inside the projection, and outside it).
+    const NESTED: &str = "\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - id: notes
+          repeatable:
+            id-from: title
+            block:
+              - { id: title, type: string }
+              - { id: body, slot: { hint: \"HINT\" } }
+";
+
+    /// **A hint reword *inside* a nested repeatable stays the out-of-projection no-op it is** —
+    /// `[PresentationOnly]`, never the backstop. The nested comparison is over the **erased**
+    /// projection, so naming the nested delta cannot turn a change no committed doc's bytes can
+    /// violate into a false refusal (the failure direction this classifier is built to avoid).
+    #[test]
+    fn a_hint_reword_inside_a_nested_repeatable_is_not_a_refusal() {
+        let v1 = load(NESTED.replace("HINT", "why").as_bytes());
+        let v2 = load(NESTED.replace("HINT", "why, in one line").as_bytes());
+        assert_eq!(schema_diff(&v1, &v2), vec![SchemaChange::PresentationOnly]);
+    }
+
+    /// **A nested-repeatable delta names itself beside a classified change.** The added optional
+    /// item field leaves the diff non-empty, so the [`SchemaChange::Unclassified`] *residual*
+    /// never fires — which is exactly why the delta must emit the kind itself, or the doc
+    /// restamps at a version whose nested shape it does not carry.
+    #[test]
+    fn a_nested_repeatable_delta_names_the_backstop_beside_a_classified_change() {
+        let v1 = load(NESTED.replace("HINT", "why").as_bytes());
+        let v2 = load(
+            NESTED
+                .replace("HINT", "why")
+                .replace(
+                    "        - id: notes\n",
+                    "        - { id: owner, type: string, optional: true }\n        - id: notes\n",
+                )
+                .replace(
+                    "              - { id: title, type: string }\n",
+                    "              - { id: title, type: string }\n              - { id: weight, type: string }\n",
+                )
+                .as_bytes(),
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![
+                SchemaChange::AddedItemField {
+                    section: "entries".into(),
+                    field: "owner".into(),
+                },
+                SchemaChange::Unclassified,
+            ],
+        );
     }
 }

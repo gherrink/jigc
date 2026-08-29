@@ -752,6 +752,19 @@ pub(crate) fn migrate_committed_corpus(
                             ));
                             continue;
                         }
+                        // THE ITEM-SLOT REMOVAL REFUSAL — the same pick at the item locus,
+                        // routed separately because what it names is a **prose slot**, not a
+                        // field line: telling an author to restore a field they never declared
+                        // is a route that cannot be followed.
+                        if let Some(SchemaChange::RemovedItemSlot { section, leaf }) = diff
+                            .iter()
+                            .find(|c| matches!(c, SchemaChange::RemovedItemSlot { .. }))
+                        {
+                            report.blocked.push(removed_item_slot_finding(
+                                &rel_key, &dt.ty, section, leaf, k, dt.version,
+                            ));
+                            continue;
+                        }
                         // The v1→v2 path is the only one that can surface a `ValueRemapped`
                         // (an enum member rename needs two *different* declared enum sets;
                         // the stamp-absent path diffs `strip_stamp(to)` against `to`, whose
@@ -1088,6 +1101,7 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
             | SchemaChange::WidenedCardinality { .. }
             | SchemaChange::NarrowedCardinality { .. }
             | SchemaChange::RemovedField { .. }
+            | SchemaChange::RemovedItemSlot { .. }
             | SchemaChange::EnumWidened { .. }
             | SchemaChange::ValueRemapped { .. }
             | SchemaChange::FixedSlotToRepeatable { .. }
@@ -1509,6 +1523,46 @@ fn removed_field_finding(
             "restore `{section}.{field}` to the schema, or build the field-removal (strip) arm \
              with a deliberate data-loss opt-in in `crates/engine/src/schema_diff.rs` + \
              `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
+        ),
+    )
+}
+
+/// The **item-slot removal** refusal's route: the doctype dropped a repeatable item block's
+/// **prose slot** between the two versions, so every committed item may still carry prose under
+/// a sub-label the current schema no longer declares (`design/corpus-migration.md`:188 — *the
+/// kind must exist rather than ride the backstop*; the pick — *refuse, not strip* — is
+/// [`removed_field_finding`]'s, recorded in `DECISIONS.md` → 2026-07-13 M42 Inc-5 T5).
+///
+/// It is [`removed_field_finding`]'s sibling and not a reuse of it, because the two name
+/// different things: a field line carries a *value*, an item slot carries the entry's **authored
+/// prose**, and a route telling an author to restore a field the schema never declared is one
+/// nobody can follow. The doc's bytes are left alone either way — **No-data-loss** is a declared
+/// property of this pair — so the repair is a **schema-authoring** one: restore the slot, or
+/// build the strip arm with a deliberate data-loss opt-in.
+fn removed_item_slot_finding(
+    rel_key: &str,
+    ty: &str,
+    section: &str,
+    leaf: &str,
+    from: u32,
+    to: u32,
+) -> Finding {
+    blocked_finding(
+        "migrate-corpus.removed-item-slot",
+        rel_key,
+        format!(
+            "`{ty}` drops the declared prose slot `{section}.{leaf}` from its repeatable item \
+             block between schema-version {from} and {to}, so `{rel_key}` cannot be migrated: \
+             committed items still carry their prose under that slot, and the migration never \
+             strips authored prose (no data loss) — migrating would stamp the doc {to} while it \
+             keeps prose the schema no longer declares. This is a schema-authoring gap, not a \
+             doc problem"
+        ),
+        format!(
+            "restore the `{section}.{leaf}` slot to the schema, or build the item-slot removal \
+             (strip) arm with a deliberate data-loss opt-in in \
+             `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then re-run \
+             `jigc migrate-corpus`"
         ),
     )
 }

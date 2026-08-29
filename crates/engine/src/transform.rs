@@ -215,6 +215,18 @@ pub fn transform(
                     section: section.clone(),
                 });
             }
+            SchemaChange::RemovedItemSlot { section, .. } => {
+                // THE REMOVAL PICK, at the item locus — refuse, not strip, on the same recorded
+                // reasoning as [`SchemaChange::RemovedField`] and one sharper than it: the bytes
+                // a strip arm would splice away here are the item's **authored prose**, so the
+                // exception to **No-data-loss** would be the larger one. Refusing closes the
+                // silent hole (a removal riding alongside a classified change never reaches the
+                // backstop) at zero risk, and leaves the opt-in strip arm additive.
+                return Err(TransformError::Unsupported {
+                    kind: "removed-item-slot",
+                    section: section.clone(),
+                });
+            }
             SchemaChange::OptionalRelaxed { .. } => {
                 // Instance-byte identity: a leaf relaxed to `optional: true` admits every doc the
                 // strict rule admitted — nothing can have become non-conformant, so there is
