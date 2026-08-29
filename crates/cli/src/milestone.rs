@@ -1609,6 +1609,14 @@ fn guard_record_free(jigc_home: &Path, schema: &Schema, title: &str) -> Result<(
 /// record. Both return `Ok(None)` — nothing to record, no commit, and the discard proceeds.
 /// Otherwise the landed record commit's captured non-blocking hook stream comes back for the
 /// caller to relay.
+///
+/// **An absent answer is not the same as a negative one.** `Ok(None)` is reserved for
+/// *"every record read, none names this task"*; when a record could not be read or did not
+/// conform, [`recording_milestone`] hands back that set and this door **refuses**
+/// ([`unreadable_record_refusal`]) rather than taking the benign branch. Before that split
+/// existed, one out-of-band byte in the record made the whole door silent: the caller deleted
+/// the sub-task's working area at exit 0 while the record went on calling it `active` — the
+/// very lie this door exists to close, and the one state in which the door cannot see it.
 pub(crate) fn settle_discarded_sub_task(
     jigc_home: &Path,
     jigc_root: &Path,
@@ -1619,8 +1627,21 @@ pub(crate) fn settle_discarded_sub_task(
     let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
         return Ok(None);
     };
-    let Some(milestone_id) = recording_milestone(jigc_home, schema, task_id)? else {
-        return Ok(None);
+    let (recorded, unreadable) = recording_milestone(jigc_home, schema, task_id)?;
+    let milestone_id = match recorded {
+        Some(id) => id,
+        // No record claims the task AND every record was read: an ordinary task, inert.
+        None if unreadable.is_empty() => return Ok(None),
+        // No record claims the task but one could not be read — fail closed, routed.
+        None => {
+            return Err(unreadable_record_refusal(
+                jigc_home,
+                jigc_root,
+                schema,
+                task_id,
+                &unreadable,
+            ));
+        }
     };
     // The reconcile preflight, ahead of any mutation — the settle is a `set: on-transition`
     // overwrite like every other record write ([`reconcile_record_preflight`]).
@@ -1654,15 +1675,28 @@ pub(crate) fn settle_discarded_sub_task(
 /// exists to close. The same rule `add-from-spec`'s resume skip set already applies.
 ///
 /// Scans the record home in **sorted file order**, so a task id that somehow appeared in two
-/// records resolves deterministically. A record that does not read or does not conform is
-/// **skipped** rather than propagated: an unrelated malformed record must not block an
-/// unrelated discard, and the record this door does need surfaces its own fault at the splice.
-fn recording_milestone(jigc_home: &Path, schema: &Schema, task_id: &str) -> Result<Option<String>> {
+/// records resolves deterministically.
+///
+/// **A record that does not read or does not conform is collected, never skipped** — it rides
+/// back in the second return as `(claiming id, unreadable ids)`. The earlier rule ("skipped
+/// rather than propagated ... the record this door does need surfaces its own fault at the
+/// splice") could not hold, and the code could not honour it: an unreadable record is exactly
+/// the one whose task list is unknown, so walking past it turns *"I could not tell"* into
+/// *"no milestone names this task"*, the caller never reaches a splice, and the discard
+/// proceeds silently. The caller decides — [`unreadable_record_refusal`] — and it fails closed,
+/// which does mean an unrelated unreadable record refuses an unrelated discard: that is the
+/// price of the discrimination being unavailable, and it is paid loudly and with a route
+/// instead of silently and destructively.
+fn recording_milestone(
+    jigc_home: &Path,
+    schema: &Schema,
+    task_id: &str,
+) -> Result<(Option<String>, Vec<String>)> {
     let Some(location) = schema.location.as_deref() else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
     let Ok(entries) = std::fs::read_dir(jigc_home.join(location)) else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
     let mut ids: Vec<String> = entries
         .filter_map(std::result::Result::ok)
@@ -1675,21 +1709,67 @@ fn recording_milestone(jigc_home: &Path, schema: &Schema, task_id: &str) -> Resu
         })
         .collect();
     ids.sort();
+    let mut unreadable = Vec::new();
     for id in ids {
         let Some(path) = engine::store::canonical_path(jigc_home, schema, &id) else {
+            unreadable.push(id);
             continue;
         };
         let Ok(source) = std::fs::read_to_string(&path) else {
+            unreadable.push(id);
             continue;
         };
         let Ok((_, tasks)) = engine::milestone::read_back_record(schema, &source) else {
+            unreadable.push(id);
             continue;
         };
         if tasks.tasks.iter().any(|t| t == task_id) {
-            return Ok(Some(id));
+            return Ok((Some(id), unreadable));
         }
     }
-    Ok(None)
+    Ok((None, unreadable))
+}
+
+/// **The refusal when no record claims the task and one could not be read** — the fail-closed
+/// half of [`recording_milestone`]'s two-valued answer.
+///
+/// Names the record the demoted `.jigc/milestones/<id>/tasks.json` cache attributes the task to
+/// when that record is itself one of the unreadable ones ([`engine::milestone::owning_milestone`]
+/// — a hint, never the truth, so it only *chooses among* suspects and never clears one), else
+/// the first in the same sorted order the scan walked, so the message is deterministic.
+///
+/// The diagnosis is the shipped one, not a new code: the overwhelmingly common cause is an
+/// out-of-band edit to a machine-maintained record, which [`reconcile_record_preflight`] answers
+/// with `reconciliation.conflict-block` and its restore route — the identical finding every
+/// sibling milestone door raises over the same bytes, which is the whole point (this door was
+/// the only one silent about it). A record that is unreadable *without* having drifted — a
+/// hand-written file that jigc never wrote — falls through to the record's own read-back fault
+/// at the splice ([`engine::milestone::read_back_record`]), and an unreadable-by-I/O record to a
+/// plain operational error naming the path.
+fn unreadable_record_refusal(
+    jigc_home: &Path,
+    jigc_root: &Path,
+    schema: &Schema,
+    task_id: &str,
+    unreadable: &[String],
+) -> anyhow::Error {
+    let suspect = engine::milestone::owning_milestone(jigc_root, task_id)
+        .filter(|id| unreadable.iter().any(|u| u == id))
+        .unwrap_or_else(|| unreadable[0].clone());
+    if let Err(drifted) = reconcile_record_preflight(jigc_home, jigc_root, schema, &suspect) {
+        return drifted;
+    }
+    let path = engine::store::canonical_path(jigc_home, schema, &suspect);
+    match path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|source| engine::milestone::read_back_record(schema, &source).err())
+    {
+        Some(finding) => finding_to_err(finding),
+        None => anyhow::anyhow!(
+            "could not read the milestone record `{suspect}`, so whether it names task              `{task_id}` as a sub-task is unknown — restore it to what jigc last wrote, then              re-run this command"
+        ),
+    }
 }
 
 /// **The sub-task ids the COMMITTED RECORD names** — the source of truth for what a milestone

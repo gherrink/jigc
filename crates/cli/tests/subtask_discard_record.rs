@@ -620,3 +620,147 @@ fn no_door_reaching_the_reseed_site_rebuilds_a_discarded_sub_task() {
         );
     }
 }
+
+/// **The axis the door's silent `Ok(None)` swallowed** — the two ways a committed record
+/// refuses to answer *"does any record name this task?"*, i.e. the two `continue` arms
+/// `crate::milestone::recording_milestone` walked past: the bytes do not **read** (not UTF-8)
+/// and the bytes do not **conform** (a leading BOM the `milestone-record` schema rejects).
+///
+/// Each is a byte prefix spliced onto the record jigc itself wrote, so the corruption is an
+/// out-of-band edit to a machine-maintained doc — the state every sibling milestone door
+/// already answers with `reconciliation.conflict-block`.
+const UNREADABLE_RECORD_KINDS: &[(&str, &[u8])] = &[
+    ("bytes that are not UTF-8", b"\xff\xfe"),
+    ("a non-conforming leading BOM", b"\xef\xbb\xbf"),
+];
+
+/// The finding every milestone door raises over an out-of-band edit to the machine-maintained
+/// record — asserted by code, so the arm binds to the shipped identity and not to prose.
+const RECORD_CONFLICT_CODE: &str = "reconciliation.conflict-block";
+
+/// Splice `prefix` onto the front of the committed record — one out-of-band edit, no commit.
+fn corrupt_record(repo: &Path, prefix: &[u8]) {
+    let path = repo.join(RECORD_SPEC);
+    let mut bytes = prefix.to_vec();
+    bytes.extend_from_slice(&fs::read(&path).expect("read the record"));
+    fs::write(&path, bytes).expect("write the corrupted record");
+}
+
+/// Mint an ordinary (milestone-less) task and return its id.
+fn ordinary_task(repo: &Path, home: &Path) -> String {
+    let minted = ok(
+        repo,
+        home,
+        &["start", "--workflow", "quick-fix", "Tidy the cache module"],
+        "jigc start --workflow quick-fix <intent>",
+    );
+    minted
+        .lines()
+        .find_map(|line| line.strip_prefix("task minted: "))
+        .expect("`jigc start` names the minted task id")
+        .trim()
+        .to_string()
+}
+
+/// **Arm 4 — an unreadable record is never read as "no record names this task".** Driven at
+/// `3778161`, where `recording_milestone` `continue`d past a record it could not read or
+/// parse, returned `Ok(None)`, and `task discard` deleted the sub-task's working area **at
+/// exit 0** while the committed record went on calling it `status: active` — the exact lie
+/// this door exists to close, surviving on the door itself, and silently, while every sibling
+/// milestone door blocked over the same bytes.
+///
+/// So the refusal is asserted over the whole cause axis ([`UNREADABLE_RECORD_KINDS`]): the
+/// door exits non-zero with the shipped `reconciliation.conflict-block` and its route, the
+/// record's bytes are untouched, nothing is committed, and — the half that makes the
+/// rejection frame's state-truth clause true — the working area is still there.
+#[test]
+fn an_unreadable_record_refuses_the_sub_task_discard_instead_of_deleting_its_area() {
+    for (what, prefix) in UNREADABLE_RECORD_KINDS {
+        let (repo, home) = base_repo(&format!("unreadable-{}", prefix.len() + prefix[0] as usize));
+        let (repo, home) = (repo.path(), home.path());
+        milestone_with_two_sub_tasks(repo, home);
+        corrupt_record(repo, prefix);
+
+        let head_before = git(repo, &["rev-parse", "HEAD"]);
+        let record_before = fs::read(repo.join(RECORD_SPEC)).expect("read the record");
+
+        let out = jigc(repo, home, &["task", "discard", DISCARDED_SUB_ID]);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let context = format!(
+            "[{what}] stdout:\n{}\nstderr:\n{stderr}",
+            String::from_utf8_lossy(&out.stdout),
+        );
+
+        assert!(
+            !out.status.success(),
+            "a record that cannot be read cannot clear a sub-task discard\n{context}",
+        );
+        assert!(
+            stderr.contains(RECORD_CONFLICT_CODE),
+            "the refusal must be the shipped `{RECORD_CONFLICT_CODE}` every sibling door \
+             raises over the same bytes\n{context}",
+        );
+        assert!(
+            stderr.contains("route:"),
+            "a blocking finding carries a route\n{context}",
+        );
+        assert!(
+            task_area(repo, DISCARDED_SUB_ID).is_dir(),
+            "the working area must survive a refused discard — the rejection frame says it \
+             does\n{context}",
+        );
+        assert_eq!(
+            fs::read(repo.join(RECORD_SPEC)).expect("read the record"),
+            record_before,
+            "a refused discard never touches the record's bytes\n{context}",
+        );
+        assert_eq!(
+            git(repo, &["rev-parse", "HEAD"]),
+            head_before,
+            "a refused discard lands no commit\n{context}",
+        );
+    }
+}
+
+/// **Arm 5 — the refusal is fail-closed, not owner-keyed.** An *ordinary* task's discard is
+/// refused too while a record cannot be read, because "no record names this task" is exactly
+/// the answer an unreadable record makes unavailable: the door cannot tell an ordinary task
+/// from a sub-task of the record it could not parse, and guessing the benign branch is what
+/// deleted the area at exit 0 in the first place. The route restores the record, after which
+/// the ordinary discard proceeds — which this arm drives to the end.
+#[test]
+fn an_unreadable_record_fails_closed_for_an_ordinary_task_and_clears_once_restored() {
+    let (repo, home) = base_repo("unreadable-ordinary");
+    let (repo, home) = (repo.path(), home.path());
+    milestone_with_two_sub_tasks(repo, home);
+    let ordinary = ordinary_task(repo, home);
+    let ordinary = ordinary.as_str();
+
+    let pristine = fs::read(repo.join(RECORD_SPEC)).expect("read the record");
+    corrupt_record(repo, UNREADABLE_RECORD_KINDS[1].1);
+
+    let out = jigc(repo, home, &["task", "discard", ordinary]);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        !out.status.success() && stderr.contains(RECORD_CONFLICT_CODE),
+        "an unreadable record fails closed at this door; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        task_area(repo, ordinary).is_dir(),
+        "the ordinary task's area survives the refusal",
+    );
+
+    // The route: restore what jigc last wrote, then re-run.
+    fs::write(repo.join(RECORD_SPEC), &pristine).expect("restore the record");
+    ok(
+        repo,
+        home,
+        &["task", "discard", ordinary],
+        "task discard <ordinary-id> once the record reads again",
+    );
+    assert!(
+        !task_area(repo, ordinary).exists(),
+        "the restored record clears the way and the ordinary discard proceeds",
+    );
+}
