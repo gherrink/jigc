@@ -63,6 +63,8 @@ mod migrate_spec;
 mod migrate_workflow;
 #[path = "../record_foreign_arm.rs"]
 mod record_foreign_arm;
+#[path = "../record_item_slot_kind.rs"]
+mod record_item_slot_kind;
 #[path = "../record_set_splice_retired.rs"]
 mod record_set_splice_retired;
 #[path = "../registry_seam.rs"]
