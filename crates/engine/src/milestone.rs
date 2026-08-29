@@ -1292,7 +1292,18 @@ pub fn append_task_item(
             value: Value::Scalar(RECORD_STATUS_ACTIVE.to_string()),
         },
     ];
-    crate::write::add_item(schema, source, RECORD_TASKS_SECTION, task_id, None, &fields)
+    // No `slug_override` and no `slot` pre-fill: a record item's `{#id}` IS the
+    // sub-task's work-unit id (`id-from: task-id`), so the mint must slug it, never
+    // take an override.
+    crate::write::add_item(
+        schema,
+        source,
+        RECORD_TASKS_SECTION,
+        task_id,
+        None,
+        None,
+        &fields,
+    )
 }
 
 /// **Flip a `milestone-record` to `joined` in place** — the `join` write arm

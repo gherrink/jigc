@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+#[path = "../add_item_slug.rs"]
+mod add_item_slug;
 #[path = "../carryover_gate.rs"]
 mod carryover_gate;
 #[path = "../corpus_migration.rs"]

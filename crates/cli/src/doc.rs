@@ -91,7 +91,9 @@ fn add_item_long_about() -> String {
     format!(
         "Mint a repeatable item into a section, id-slugged from `--title`.\n\n\
          The section is addressed `<type>:<slug>#<section>`; the CLI mints the \
-         `{{#id}}` anchor + appends the item block. The `--title` is {}.",
+         `{{#id}}` anchor + appends the item block. The `--title` is {} (`--slug` \
+         overrides the mint, except where the block's `id-from` is an enum — there \
+         the heading IS the member and the anchor equals it).",
         engine::slug::mint_statement("the item `{#id}` anchor"),
     )
 }
@@ -197,6 +199,14 @@ pub enum DocCommand {
         /// item's slot/fields are filled by later `set-slot`/`set-field` writes).
         #[arg(long)]
         title: String,
+        /// Override the minted item `{#id}`, decoupling the item's id from its heading
+        /// text. Taken **verbatim** and validated as a well-formed slug — a malformed
+        /// value is rejected, never silently re-slugified (`design/write-commands.md`
+        /// → `jigc rename`'s `--slug` precedent). Refused where the block's `id-from`
+        /// is an ENUM: there the heading IS the member and the anchor equals it, so an
+        /// override would be an identity change.
+        #[arg(long)]
+        slug: Option<String>,
         /// The active task to scope the write to. Optional: explicit wins; else the
         /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
@@ -508,9 +518,12 @@ impl DocCommand {
                 task.as_deref(),
                 format,
             ),
-            DocCommand::AddItem { addr, title, task } => {
-                run_add_item(cwd, &addr, &title, task.as_deref(), format)
-            }
+            DocCommand::AddItem {
+                addr,
+                title,
+                slug,
+                task,
+            } => run_add_item(cwd, &addr, &title, slug.as_deref(), task.as_deref(), format),
             DocCommand::RemoveItem { addr, task } => {
                 run_remove_item(cwd, &addr, task.as_deref(), format)
             }
@@ -1297,9 +1310,11 @@ fn run_add_item(
     cwd: &Path,
     addr: &str,
     title: &str,
+    slug_override: Option<&str>,
     task_id: Option<&str>,
     format: Format,
 ) -> Result<(), DocFailure> {
+    reject_malformed_slug(slug_override)?;
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     let uri = address.to_string();
@@ -1313,11 +1328,18 @@ fn run_add_item(
 
     // The decomposed ack target, before `target` is consumed by the apply: `section` +
     // the **minted** leaf-most item id (the new item — contract §2).
-    let ack_target = add_item_ack_target(&address, &target, title);
+    let ack_target = add_item_ack_target(&address, &target, title, slug_override);
 
-    let (edited, minted_path) =
-        apply_add_item_target(&schema, &source, target, &uri, title, task.is_migration()?)
-            .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
+    let (edited, minted_path) = apply_add_item_target(
+        &schema,
+        &source,
+        target,
+        &uri,
+        title,
+        slug_override,
+        task.is_migration()?,
+    )
+    .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -1365,12 +1387,14 @@ fn run_add_item(
 /// changelog release block today, but M25 generalizes this path to adr/spec/prd) still
 /// materializes under migration. Authoring (`migration = false`) keeps stamping today; an
 /// explicit `set-field date` is a separate leaf, unaffected either way.
+#[allow(clippy::too_many_arguments)]
 fn apply_add_item_target(
     schema: &Schema,
     source: &str,
     target: AddItemTarget,
     uri: &str,
     title: &str,
+    slug_override: Option<&str>,
     migration: bool,
 ) -> Result<(String, String), DocFailure> {
     // Write-time id-from-enum reject (`design/auto-migration.md` → Hardening #3;
@@ -1378,7 +1402,8 @@ fn apply_add_item_target(
     // is an enum the `--title` re-slugs outside, block here — fast feedback at the point
     // of the mistake, not deferred to finalize. The batch (`apply_leaf`) inherits this
     // by sharing this path.
-    if let Some(finding) = id_from_enum_block(schema, doc_head(uri), &target, title) {
+    if let Some(finding) = id_from_enum_block(schema, doc_head(uri), &target, title, slug_override)
+    {
         return Err(DocFailure::block(finding));
     }
     Ok(match target {
@@ -1392,9 +1417,17 @@ fn apply_add_item_target(
             // false-history date) inside the deriver, leaving any other create-time
             // field materializing normally.
             let on_create = on_create_item_fields(schema, &section, migration);
-            let edited = engine::write::add_item(schema, source, &section, title, None, &on_create)
-                .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", uri))?;
-            let minted = format!("{}/{}", section, engine::slug::slugify(title));
+            let edited = engine::write::add_item(
+                schema,
+                source,
+                &section,
+                title,
+                slug_override,
+                None,
+                &on_create,
+            )
+            .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", uri))?;
+            let minted = format!("{}/{}", section, minted_item_id(title, slug_override));
             (edited, minted)
         }
         AddItemTarget::Nested {
@@ -1425,6 +1458,7 @@ fn apply_add_item_target(
                 &parent_ids,
                 &nested_section,
                 title,
+                slug_override,
                 None,
                 &on_create,
             )
@@ -1441,7 +1475,7 @@ fn apply_add_item_target(
                 section,
                 parents.join("/"),
                 nested_section,
-                engine::slug::slugify(title)
+                minted_item_id(title, slug_override),
             );
             (edited, minted)
         }
@@ -1469,6 +1503,7 @@ fn id_from_enum_block(
     doc: &str,
     target: &AddItemTarget,
     title: &str,
+    slug_override: Option<&str>,
 ) -> Option<Finding> {
     let (repeatable, prefix) = match target {
         AddItemTarget::TopLevel { section } => {
@@ -1492,6 +1527,23 @@ fn id_from_enum_block(
             )
         }
     };
+    // The **override** refusal, ahead of the membership test and independent of the
+    // title: where the id-source is an enum, the heading IS the member and the anchor
+    // equals it, so a `--slug` is a second identity beside the member — the same
+    // adjudication `retitle-item` makes on the same block shape
+    // ([`retitle_id_from_refusal`]), converging on the shipped `write.identity-change`
+    // rather than minting a code (`design/write-commands.md` → Identity divergence).
+    if let Some(slug) = slug_override
+        && id_from_is_enum(&repeatable)
+    {
+        return Some(slug_override_enum_refusal(
+            doc,
+            &prefix,
+            &repeatable.id_from,
+            title,
+            slug,
+        ));
+    }
     let violation = engine::validate::id_from_enum_violation(&repeatable, title, &schema.ty)?;
     // The route floor (M43): every arm names a followable repair. A **shape** violation's
     // fix is the `--title` value itself (a human correction jigc cannot execute); an
@@ -1543,6 +1595,61 @@ fn id_from_enum_block(
         )),
         Some(route),
     ))
+}
+
+/// Whether a repeatable's `id-from` names an **enum** field of its own block — the one
+/// predicate both enum-id-from refusals read, so the two doors cannot disagree about
+/// what an enum id-source is: `add-item`'s `--slug` refusal ([`id_from_enum_block`])
+/// and `retitle-item`'s member-change refusal ([`retitle_id_from_refusal`]). A block
+/// that does not declare its own id-from leaf (the loader never requires it) is not an
+/// enum source — the inert answer both doors already took.
+fn id_from_is_enum(repeatable: &engine::schema::Repeatable) -> bool {
+    repeatable.block.iter().any(|leaf| match leaf {
+        engine::schema::Leaf::Field(f) => {
+            f.id == repeatable.id_from && f.ty == engine::schema::FieldType::Enum
+        }
+        _ => false,
+    })
+}
+
+/// The `add-item --slug` refusal over an **enum** id-source. `prefix` is the
+/// destination block's address tail (the section for a top-level mint, the
+/// section-qualified nested chain for a nested one), so `<doc>#<prefix>` is exactly the
+/// address the call named and the route is the same mint minus the override — a
+/// mechanical re-run, argv-checked like every other mechanical route.
+fn slug_override_enum_refusal(
+    doc: &str,
+    prefix: &str,
+    id_from: &str,
+    title: &str,
+    slug: &str,
+) -> Finding {
+    let dest = format!("{doc}#{prefix}");
+    Finding::graded(
+        Severity::Blocking,
+        "write.identity-change",
+        format!(
+            "add-item rejected: `{prefix}` derives its item id from enum field \
+             `{id_from}`, so the heading IS the member and the anchor equals it — \
+             `--slug {slug}` would mint a second identity beside the member, not an id"
+        ),
+        Some(Location::addressed(
+            format!("{doc}#{prefix}/{slug}/{id_from}"),
+            1,
+            1,
+        )),
+        Some(engine::finding::Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "add-item",
+                &dest,
+                "--title",
+                &crate::task::shell_token(title),
+            ],
+            " mints the member itself; a name of your own belongs in the item's prose",
+        )),
+    )
 }
 
 /// The commit-trailer key-shape refusal both title-writing doors compose — `add-item`
@@ -1892,8 +1999,6 @@ fn retitle_id_from_refusal(
     addr: &str,
     title: &str,
 ) -> Option<Finding> {
-    use engine::schema::FieldType;
-
     // The repeatable the item lives in, its item path (for the finding address), and
     // the add-item destination the route re-mints under.
     let doc = format!("{}:{}", address.r#type.as_str(), address.slug.as_str());
@@ -1924,11 +2029,7 @@ fn retitle_id_from_refusal(
             )
         }
     };
-    let field = repeatable.block.iter().find_map(|leaf| match leaf {
-        engine::schema::Leaf::Field(f) if f.id == repeatable.id_from => Some(f),
-        _ => None,
-    });
-    if !field.is_some_and(|f| f.ty == FieldType::Enum) {
+    if !id_from_is_enum(&repeatable) {
         // The non-enum arm — the commit-trailer key-shape refusal (sibling-hunt
         // finding 6): run the SAME shared adjudicator the add-item door runs
         // ([`id_from_enum_block`]), over the engine-trimmed title (the engine
@@ -2237,13 +2338,7 @@ fn run_doc_rename(
     task_id: Option<&str>,
     format: Format,
 ) -> Result<(), DocFailure> {
-    if let Some(slug) = slug_override
-        && !engine::slug::is_slug(slug)
-    {
-        return Err(DocFailure::Orchestration(anyhow!(
-            "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
-        )));
-    }
+    reject_malformed_slug(slug_override)?;
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_verb_addr(task.pack.as_ref(), &task.project_config(), addr)?;
     // Argument shape, above everything: `rename` addresses a whole doc. Without this the
@@ -2979,6 +3074,28 @@ fn title_ignored_refusal(
     )
 }
 
+/// The `--slug` grammar reject the three `jigc doc` mint doors share — `create`,
+/// `rename` and `add-item`. An override **drives the minted id verbatim** and is
+/// therefore never silently re-slugified: a value that is not a well-formed slug is
+/// refused **before** the door resolves a task or reads a byte, so a rejected mint
+/// stages nothing (`design/write-commands.md` → `jigc rename`'s `--slug` precedent;
+/// `DECISIONS.md` 2026-07-06 M39 planning → Slug (G6)). `None` is inert.
+///
+/// One function rather than a per-door copy: the three doors state the same grammar,
+/// and a fourth spelling of "what a slug is" is exactly the drift the surface contract
+/// forbids. (`jigc start` / `jigc migrate` mint **work-unit** ids through their own
+/// crates and keep their own copies — the same rule, a different family.)
+fn reject_malformed_slug(slug_override: Option<&str>) -> Result<(), DocFailure> {
+    if let Some(slug) = slug_override
+        && !engine::slug::is_slug(slug)
+    {
+        return Err(DocFailure::Orchestration(anyhow!(
+            "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
+        )));
+    }
+    Ok(())
+}
+
 /// `jigc doc create <type> --title <…>` (optional `--slug`) — agent-initiated,
 /// create-gated mint. A `--slug` override drives the minted doc id verbatim
 /// (decoupled from the title); it is validated here as a well-formed slug and
@@ -2994,13 +3111,7 @@ fn run_create(
     format: Format,
 ) -> Result<(), DocFailure> {
     machine_maintained_guard(type_name, "create", type_name)?;
-    if let Some(slug) = slug_override
-        && !engine::slug::is_slug(slug)
-    {
-        return Err(DocFailure::Orchestration(anyhow!(
-            "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
-        )));
-    }
+    reject_malformed_slug(slug_override)?;
     let task = ActiveTask::resolve(cwd, task_id)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
@@ -3193,8 +3304,11 @@ fn apply_leaf(
             let address = parse_addr(&addr)?;
             let target = add_item_target(&address)
                 .with_context(|| format!("no section addressed by `{addr}`"))?;
+            // No `slug_override`: the batch payload grammar carries no `slug:` key —
+            // `--slug` is the per-leaf `add-item` flag, and a payload collision is
+            // routed at it rather than silently overridden here.
             let (edited, _minted) =
-                apply_add_item_target(schema, source, target, &addr, title, migration)?;
+                apply_add_item_target(schema, source, target, &addr, title, None, migration)?;
             Ok(edited)
         }
         Leaf::SetField { fragment, value } => {
@@ -4766,6 +4880,7 @@ fn add_item_ack_target(
     address: &Address,
     target: &AddItemTarget,
     title: &str,
+    slug_override: Option<&str>,
 ) -> render::AckTarget {
     let section = match target {
         AddItemTarget::TopLevel { section } | AddItemTarget::Nested { section, .. } => {
@@ -4775,9 +4890,24 @@ fn add_item_ack_target(
     ack_target(
         address,
         Some(section),
-        Some(engine::slug::slugify(title)),
+        Some(minted_item_id(title, slug_override)),
         None,
     )
+}
+
+/// The id an `add-item` mints, **CLI-side**: `slug_override` verbatim when supplied,
+/// else [`engine::slug::slugify`] of the title — the same derivation the engine's
+/// `mint_item_id` runs, kept in ONE place here because three CLI sites re-spell the
+/// minted id after the write returns (the acked `target.item`, the acked top-level
+/// address, and the acked nested chain). Before the override existed all three read
+/// `slugify(title)` directly; an override that moved the anchor but not those three
+/// would ack an address the doc does not hold — a write-verb miss the read surface
+/// could not answer (`design/command-output-contract.md` §2).
+fn minted_item_id(title: &str, slug_override: Option<&str>) -> String {
+    match slug_override {
+        Some(slug) => slug.to_owned(),
+        None => engine::slug::slugify(title),
+    }
 }
 
 /// The decomposed ack target of a freshly created/authored **whole doc** (`create`/`author`):

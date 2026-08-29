@@ -1934,7 +1934,8 @@ pub(crate) fn set_nested_item_field_or_insert(
 /// [`GenerateError::AlreadyPresent`]; an unslugable title → [`GenerateError::UnslugableTitle`];
 /// an **undeclared section** → [`GenerateError::UnknownSection`]
 /// ([`undeclared_section_generate`], rank 1, ahead of the parse), a declared-but-wrong
-/// shape → [`GenerateError::WrongShape`].
+/// shape → [`GenerateError::WrongShape`]. `slug_override` drives the minted `{#id}`
+/// verbatim exactly as at top level ([`mint_item_id`]).
 #[allow(clippy::too_many_arguments)]
 pub fn add_nested_item(
     schema: &Schema,
@@ -1943,6 +1944,7 @@ pub fn add_nested_item(
     parent_item_ids: &[&str],
     nested_section_id: &str,
     title: &str,
+    slug_override: Option<&str>,
     slot: Option<&str>,
     fields: &[Field],
 ) -> Result<String, GenerateError> {
@@ -1985,14 +1987,9 @@ pub fn add_nested_item(
             ),
         })?;
 
-    // The mint-side anchor-injection reject, as top-level [`add_item`]'s.
-    reject_malformed_title(title)?;
-    let id = crate::slug::slugify(title);
-    if id.is_empty() {
-        return Err(GenerateError::UnslugableTitle {
-            title: title.to_string(),
-        });
-    }
+    // The mint, through the same shared derivation top-level [`add_item`] uses —
+    // anchor-injection reject, then `slugify(title)` or the verbatim `slug_override`.
+    let id = mint_item_id(title, slug_override)?;
     if parent.items.iter().any(|i| i.id == id) {
         return Err(GenerateError::AlreadyPresent {
             what: format!("nested item {id:?} under {parent_item_ids:?}"),
@@ -2541,6 +2538,36 @@ fn reject_malformed_title(title: &str) -> Result<(), GenerateError> {
     Ok(())
 }
 
+/// The `{#id}` an `add-item` mints, the ONE derivation both mint doors share
+/// ([`add_item`] and [`add_nested_item`]): `slugify(title)` unless the caller supplies
+/// an explicit `slug_override`, in which case that value **drives the id verbatim**
+/// (`design/write-commands.md` → `jigc rename`'s `--slug` precedent — the same
+/// override discipline [`crate::state::mint_task`] carries for a work-unit id).
+///
+/// [`reject_malformed_title`] runs **either way**: the title still becomes the
+/// heading's visible text, so an embedded `{#…}` would out-shadow the minted anchor
+/// whether the anchor was slugged or supplied. The unslugable-title reject is the
+/// **derivation's** floor and so fires only on the derived arm — an override is
+/// exactly what lets a title with no slug-able content mint at all.
+///
+/// The override is validated at the CLI boundary (via [`crate::slug::is_slug`]) and
+/// used as-is here, so a malformed one never reaches the splice and a colliding one
+/// rejects through the same [`GenerateError::AlreadyPresent`] route a colliding
+/// slugged title takes.
+fn mint_item_id(title: &str, slug_override: Option<&str>) -> Result<String, GenerateError> {
+    reject_malformed_title(title)?;
+    if let Some(slug) = slug_override {
+        return Ok(slug.to_owned());
+    }
+    let id = crate::slug::slugify(title);
+    if id.is_empty() {
+        return Err(GenerateError::UnslugableTitle {
+            title: title.to_string(),
+        });
+    }
+    Ok(id)
+}
+
 /// Re-scan a `### …` heading's raw source for its `{#id}` anchor, returning the inner
 /// slug if present and well-formed (mirrors the parser's anchor read). Used only to
 /// match an item by id; malformed anchors won't match any present item.
@@ -2881,11 +2908,16 @@ pub fn generate_section(
 /// is a separate verb). If the repeatable section's own `##` home is absent, it is
 /// materialized first at its schema-ordered position, then the item generated into it.
 /// A minted id colliding with a present item → [`GenerateError::AlreadyPresent`].
+///
+/// `slug_override` drives the minted `{#id}` **verbatim** when `Some`, decoupling the
+/// item's identity from its heading text ([`mint_item_id`]); `None` mints from the
+/// title, today's behaviour.
 pub fn add_item(
     schema: &Schema,
     source: &str,
     section_id: &str,
     title: &str,
+    slug_override: Option<&str>,
     slot: Option<&str>,
     fields: &[Field],
 ) -> Result<String, GenerateError> {
@@ -2902,18 +2934,11 @@ pub fn add_item(
         });
     }
 
-    // Mint the item anchor from the id-source (the title) via slugify. `slugify` is
-    // total: a title with no slug-able content maps to `""`, which would emit a
-    // malformed empty `{#}` anchor — reject it here (the only place it can be caught).
-    // A title embedding `{#…}` would out-shadow the minted anchor on re-parse — the
-    // anchor-injection reject ([`reject_malformed_title`]).
-    reject_malformed_title(title)?;
-    let id = crate::slug::slugify(title);
-    if id.is_empty() {
-        return Err(GenerateError::UnslugableTitle {
-            title: title.to_string(),
-        });
-    }
+    // Mint the item anchor through the one shared derivation ([`mint_item_id`]):
+    // `slugify(title)` — total, so a title with no slug-able content is rejected there
+    // rather than emitting a malformed empty `{#}` anchor — or `slug_override`
+    // verbatim. Either way the title itself is anchor-injection-rejected first.
+    let id = mint_item_id(title, slug_override)?;
 
     // A **multi-slot** template mints the FULL ordered `#### <Leaf-Title>` skeleton
     // (every slot leaf, empty body, schema order) — the M13 create→fill seam: a later
@@ -4854,6 +4879,7 @@ A short burst is tolerated.
             src,
             "criteria",
             "Add a rate limiter",
+            None,
             Some("The gateway rejects the 101st request."),
             &[scalar("maps-to-test", "`test/rate_limit_spec.rb#burst`")],
         )
@@ -4891,6 +4917,7 @@ Holds at 100/min.
             src,
             "criteria",
             "Rate limit",
+            None,
             Some("x"),
             &[],
         )
@@ -4915,13 +4942,122 @@ title: Auth flow
 ## Criteria
 ";
         for title in ["", "###", "!!!___---"] {
-            let err = add_item(&spec_schema(), src, "criteria", title, Some("x"), &[])
+            let err = add_item(&spec_schema(), src, "criteria", title, None, Some("x"), &[])
                 .expect_err("an unslugable title must not mint an empty anchor");
             assert!(
                 matches!(err, GenerateError::UnslugableTitle { .. }),
                 "title {title:?} should be UnslugableTitle, got {err:?}"
             );
         }
+    }
+
+    /// The `--slug` override's engine seam ([`mint_item_id`]): the minted `{#id}` is
+    /// the caller's value **verbatim**, the heading keeps the title's own bytes, and
+    /// the result still round-trips (`render(parse(out)) == out`). Two titles that
+    /// slug alike therefore coexist — the limit the override exists to remove.
+    #[test]
+    fn add_item_slug_override_drives_the_anchor_verbatim() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        let schema = spec_schema();
+        let one = add_item(
+            &schema,
+            src,
+            "criteria",
+            "Retry policy (v2)",
+            None,
+            None,
+            &[],
+        )
+        .expect("the slugged mint");
+        let two = add_item(
+            &schema,
+            &one,
+            "criteria",
+            "Retry policy v2",
+            Some("retry-policy-v2-plain"),
+            None,
+            &[],
+        )
+        .expect("the overridden mint of a title that slugs identically");
+        assert!(
+            two.contains("### Retry policy (v2)  {#retry-policy-v2}"),
+            "the slugged item is untouched; got:\n{two}",
+        );
+        assert!(
+            two.contains("### Retry policy v2  {#retry-policy-v2-plain}"),
+            "the override drives the anchor while the heading keeps its own text; got:\n{two}",
+        );
+        let reparsed = instance_from_source(&schema, &two).expect("the result conforms");
+        assert_eq!(
+            render(&schema, &reparsed),
+            two,
+            "the override is byte-stable"
+        );
+    }
+
+    /// A title with **no slug-able content** mints under an override — the reject is
+    /// the *derivation's* floor, and an override skips the derivation. (Without one it
+    /// is still [`GenerateError::UnslugableTitle`]; see the test above.)
+    #[test]
+    fn add_item_slug_override_admits_an_unslugable_title() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        let out = add_item(
+            &spec_schema(),
+            src,
+            "criteria",
+            "!!!___---",
+            Some("the-punctuation-one"),
+            None,
+            &[],
+        )
+        .expect("an override supplies the id the title cannot");
+        assert!(
+            out.contains("### !!!___---  {#the-punctuation-one}"),
+            "got:\n{out}"
+        );
+    }
+
+    /// The anchor-injection reject fires **with** an override too: the title is still
+    /// the heading's visible text, so an embedded `{#…}` would out-shadow the supplied
+    /// anchor on re-parse exactly as it out-shadows a slugged one.
+    #[test]
+    fn add_item_slug_override_still_rejects_an_anchor_injecting_title() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        let err = add_item(
+            &spec_schema(),
+            src,
+            "criteria",
+            "Evil {#other-anchor} title",
+            Some("supplied-anchor"),
+            None,
+            &[],
+        )
+        .expect_err("an anchor-carrying title must not mint, override or not");
+        assert!(matches!(err, GenerateError::WrongShape { .. }));
     }
 
     /// `add-item` with a title carrying the `{#` anchor pattern is rejected as
@@ -4946,6 +5082,7 @@ title: Auth flow
             src,
             "criteria",
             "Evil {#other-anchor} title",
+            None,
             Some("x"),
             &[],
         )
@@ -4972,7 +5109,7 @@ title: Auth flow
 ## Criteria
 ";
         for title in ["A\nB", "A\tB"] {
-            let err = add_item(&spec_schema(), src, "criteria", title, Some("x"), &[])
+            let err = add_item(&spec_schema(), src, "criteria", title, None, Some("x"), &[])
                 .expect_err("a control-char title must not splice a multi-line heading");
             assert!(
                 matches!(err, GenerateError::WrongShape { .. }),
@@ -5005,6 +5142,7 @@ title: Auth flow
             src,
             "criteria",
             "Rate limit holds",
+            None,
             None,
             &[],
         )
@@ -5067,7 +5205,7 @@ sections:
 
 ## Unreleased Changes
 ";
-        let out = add_item(&schema, src, "unreleased-changes", "Fixed", None, &[])
+        let out = add_item(&schema, src, "unreleased-changes", "Fixed", None, None, &[])
             .expect("item appends under the present multi-word section");
         assert_eq!(
             out.matches("## Unreleased Changes").count(),
@@ -5113,7 +5251,7 @@ sections:
 
 ## In Scope
 ";
-        let out = add_item(&schema, src, "in-scope", "Read path", None, &[])
+        let out = add_item(&schema, src, "in-scope", "Read path", None, None, &[])
             .expect("item appends under the present edge-stopword section");
         assert_eq!(
             out.matches("## In Scope").count(),
@@ -5290,10 +5428,26 @@ title: Auth flow
 ## Criteria
 ";
         // Mint two empty items (mint-empty: heading + empty slot span, no bullets).
-        let one = add_item(&schema, base, "criteria", "Rate limit holds", None, &[])
-            .expect("first item minted empty");
-        let two = add_item(&schema, &one, "criteria", "Burst allowance", None, &[])
-            .expect("second item minted empty");
+        let one = add_item(
+            &schema,
+            base,
+            "criteria",
+            "Rate limit holds",
+            None,
+            None,
+            &[],
+        )
+        .expect("first item minted empty");
+        let two = add_item(
+            &schema,
+            &one,
+            "criteria",
+            "Burst allowance",
+            None,
+            None,
+            &[],
+        )
+        .expect("second item minted empty");
         assert!(
             !two.contains(FIELD_SENTINEL),
             "minted items carry no field group",
@@ -5550,10 +5704,26 @@ title: Auth flow
 ## Criteria
 ";
         // Mint two empty items (heading + empty slot span, no bullets).
-        let one =
-            add_item(&schema, base, "criteria", "Rate limit holds", None, &[]).expect("first mint");
-        let two =
-            add_item(&schema, &one, "criteria", "Burst allowance", None, &[]).expect("second mint");
+        let one = add_item(
+            &schema,
+            base,
+            "criteria",
+            "Rate limit holds",
+            None,
+            None,
+            &[],
+        )
+        .expect("first mint");
+        let two = add_item(
+            &schema,
+            &one,
+            "criteria",
+            "Burst allowance",
+            None,
+            None,
+            &[],
+        )
+        .expect("second mint");
 
         // Fill the FIRST (non-trailing) mint-empty item's slot.
         let out = set_item_slot(
@@ -5594,10 +5764,26 @@ title: Auth flow
 
 ## Criteria
 ";
-        let one =
-            add_item(&schema, base, "criteria", "Rate limit holds", None, &[]).expect("first mint");
-        let out =
-            add_item(&schema, &one, "criteria", "Burst allowance", None, &[]).expect("second mint");
+        let one = add_item(
+            &schema,
+            base,
+            "criteria",
+            "Rate limit holds",
+            None,
+            None,
+            &[],
+        )
+        .expect("first mint");
+        let out = add_item(
+            &schema,
+            &one,
+            "criteria",
+            "Burst allowance",
+            None,
+            None,
+            &[],
+        )
+        .expect("second mint");
 
         // Round-trips byte-identical: render(parse(out)) == out.
         let reparsed = instance_from_source(&schema, &out).expect("result conforms");
@@ -11359,8 +11545,16 @@ sections:
         );
 
         // Mint the milestone item (mint-empty skeleton).
-        let minted = add_item(&schema, &empty, "milestones", "M16 self-hosting", None, &[])
-            .expect("add_item mints a two-slot item");
+        let minted = add_item(
+            &schema,
+            &empty,
+            "milestones",
+            "M16 self-hosting",
+            None,
+            None,
+            &[],
+        )
+        .expect("add_item mints a two-slot item");
         assert_byte_stable(&schema, &minted);
 
         // Fill the first slot leaf (`proves`).
@@ -11419,7 +11613,7 @@ sections:
             &instance_from_source(&schema, "# Roadmap\n\n## Milestones\n")
                 .expect("empty roadmap parses"),
         );
-        let minted = add_item(&schema, &empty, "milestones", "Alpha", None, &[])
+        let minted = add_item(&schema, &empty, "milestones", "Alpha", None, None, &[])
             .expect("add_item mints the skeleton");
 
         // The minted skeleton carries BOTH empty sub-headings in schema order.
@@ -11932,6 +12126,7 @@ OAuth device-code flow.
             "changes",
             "Evil {#added} group",
             None,
+            None,
             &[],
         )
         .expect_err("an anchor-carrying nested title must not mint");
@@ -11970,6 +12165,31 @@ OAuth device-code flow.
         assert_byte_stable(&schema, &out);
     }
 
+    /// The `--slug` override reaches the **nested** mint too, through the same shared
+    /// derivation: the supplied anchor lands at the nested heading depth, scoped to the
+    /// addressed parent, and the result round-trips.
+    #[test]
+    fn nested_add_item_slug_override_drives_the_anchor_verbatim() {
+        let schema = changelog_schema();
+        let out = add_nested_item(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0"],
+            "changes",
+            "Changed",
+            Some("changed-under-1-2-0"),
+            None,
+            &[],
+        )
+        .expect("nested add-item with an override");
+        assert!(
+            out.contains("#### Changed  {#changed-under-1-2-0}"),
+            "the nested anchor is the override; got:\n{out}",
+        );
+        assert_byte_stable(&schema, &out);
+    }
+
     /// A nested `add-item` mints a change-group into the addressed release's `changes`
     /// nested repeatable, scoped to that parent; the result round-trips byte-stable and
     /// the new group is reachable by the parent-scoped locator.
@@ -11983,6 +12203,7 @@ OAuth device-code flow.
             &["1-2-0"],
             "changes",
             "Changed",
+            None,
             None,
             &[],
         )
@@ -12073,6 +12294,7 @@ OAuth device-code flow.
             &["1-2-0"],
             "changes",
             "Changed",
+            None,
             Some("Token refresh window widened."),
             &[],
         )
@@ -13639,7 +13861,7 @@ OAuth device-code flow.
             &schema,
             &instance_from_source(&schema, "# Roadmap\n\n## Milestones\n").expect("empty parses"),
         );
-        let minted = add_item(&schema, &empty, "milestones", "Alpha", None, &[])
+        let minted = add_item(&schema, &empty, "milestones", "Alpha", None, None, &[])
             .expect("the mint-empty skeleton");
         let filled = accept(
             &schema,

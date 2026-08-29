@@ -154,6 +154,10 @@ Splits by leaf kind, falling straight out of the slot/field distinction:
 
 `add-item` follows the same rule: the id-source field is supplied inline so the slug can mint, the call returns the new item's address, and the item's prose slots are filled by follow-up `set-slot <item-addr>#<leaf>`. One slot per call; bulk fill is the **batch path's** job (`jigc doc author --from-file`, above), not a back-door all-at-once `add-item`.
 
+**`add-item --slug` — an item's id, decoupled from its heading (M49).** The mint-time `--slug <explicit>` `jigc start` / `jigc doc create` / `jigc migrate` carry (above) is `add-item`'s too, for the same reason and under the same discipline: taken **verbatim**, validated as a well-formed slug before any byte moves, never silently re-slugified, and colliding through the shipped `write.already-present` route. Without it an item's identity **was** `slugify(<heading>)` and nothing else, so two genuinely different headings that slug alike could not coexist in one section — the second was refused, and in a `doc author` payload that refusal rejects the whole batch. The override moves the `{#id}` only: the heading keeps its own text, `retitle-item` still freezes the anchor, and the acked address carries the override (the three ack sites read one CLI-side derivation, so an ack can never name an id the doc does not hold).
+
+The one refusal is an **enum `id-from`** (`changelog`'s change-groups): there the heading IS the member and the anchor equals it, so an override is a second identity beside the member rather than an id for it — the same adjudication `jigc doc retitle-item` makes on the same block shape, converging on the shipped **`write.identity-change`** and routing at the same mint minus the override. Both doors read one `id-from`-is-enum predicate, so they cannot disagree about what an enum id-source is. The **batch payload grammar gains no `slug:` key**: `--slug` is the per-leaf flag, and a payload collision routes at it.
+
 ## Task origination
 
 The front door is `jigc start`. The agent — knowing only the bootstrap ([bootstrap.md](bootstrap.md)) — runs it; the CLI does the rest. Four forms, all deterministic:
