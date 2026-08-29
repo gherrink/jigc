@@ -370,6 +370,14 @@ pub const ROUTE_PLACEHOLDERS: &[RoutePlaceholder] = &[
                  doc target carries one (the `jigc config get <key>` positional, reached \
                  by the read-shaped `config show` tip)",
     },
+    RoutePlaceholder {
+        token: "<workflow-id>",
+        derivable: false,
+        reason: "a workflow is not a property of the address — it is the door's own \
+                 argument, and the finding that carries this token concerns no document at \
+                 all. The set it must be filled from is named in the message instead, which \
+                 is the only place the caller's choice can come from",
+    },
 ];
 
 /// Whether `token` is a placeholder a finding's own `key.target` determines

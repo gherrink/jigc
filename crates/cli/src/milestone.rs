@@ -27,7 +27,7 @@ use crate::task::git_head;
 use anyhow::{Context, Result, bail};
 use engine::file_state::{FileStateRecord, hash_bytes, reconcile_committed};
 use engine::finalize::plan_milestone_finalize;
-use engine::finding::{Finding, Location, Severity};
+use engine::finding::{Finding, Location, Route, Severity};
 use engine::index::{EdgeIndex, load_committed};
 use engine::milestone::{
     JoinOutcome, MintedMilestone, TASKS_FILE, add_from_spec, add_task, join, materialize,
@@ -92,7 +92,9 @@ pub enum MilestoneCommand {
         /// The sub-task intent — slugged into the sub-task id.
         intent: String,
         /// The minting workflow recorded for the sub-task (read back on re-entry,
-        /// which asserts equality against it). Defaults to `sub-task`.
+        /// which asserts equality against it). Defaults to `sub-task`. Must name a
+        /// workflow the loaded packs provide — an id they do not is refused before
+        /// anything mints, naming the set.
         #[arg(long, default_value = DEFAULT_SUB_TASK_WORKFLOW)]
         workflow: String,
     },
@@ -105,7 +107,9 @@ pub enum MilestoneCommand {
         /// The committed spec's address (`spec:<slug>`) to enumerate criteria from.
         spec_addr: String,
         /// The minting workflow recorded for every seeded sub-task (read back on
-        /// re-entry, which asserts equality against it). Defaults to `sub-task`.
+        /// re-entry, which asserts equality against it). Defaults to `sub-task`. Must
+        /// name a workflow the loaded packs provide — an id they do not is refused
+        /// before anything mints or seeds, naming the set.
         #[arg(long, default_value = DEFAULT_SUB_TASK_WORKFLOW)]
         workflow: String,
     },
@@ -1053,6 +1057,62 @@ fn guard_base_live(repo_root: &Path, milestone_id: &str, base: &BasePin) -> Resu
     Ok(())
 }
 
+/// Validate a caller-supplied `--workflow <id>` against the loaded packs **before** the
+/// door mutates anything — the `read_workflow` mint-after-validate discipline stated at
+/// [`crate::migrate`]'s `ensure_migratable`, applied to the two doors that mint a milestone
+/// sub-task under a caller-supplied workflow (`add-task` / `add-from-spec`).
+///
+/// Until M49 a bogus id was accepted at exit 0: the sub-task minted, its area recorded the
+/// bogus workflow, and the committed record named it `status: active`. The sub-task was then
+/// permanently unreachable — `jigc workflow <bogus> --task <sub>` blocks on the unknown
+/// workflow, `jigc workflow <real> --task <sub>` blocks on the re-entry W-equality guard, and
+/// no verb rewrites a recorded workflow — so `jigc task discard` was its only exit. A door
+/// reported success for a state it had left broken.
+///
+/// Membership is the **cascade-resolved** definition read: the loaded packs' workflow ids
+/// first (no I/O), then [`crate::start::CascadeDefs::read_workflow`], since a project layer's
+/// whole-file definition shadow may own an id no pack ships. A read that fails for any other
+/// reason (an unreadable project shadow) is not distinguished here — it is equally a workflow
+/// this repository cannot compose, and the rejection names the pack-provided set it is absent
+/// from, so the message stays true either way.
+///
+/// The rejection **names the provided set** rather than routing at a catalog: `jigc start`'s
+/// catalog lists only `selectable: true` work-workflows, and a sub-task's own default
+/// (`sub-task`) is deliberately not one of them, so routing there would name a set the door's
+/// default is missing from (`design/surface-contract.md` → law 1: nothing lies). `rerun` is
+/// the calling door's own argv — built into a checked [`Route`] only on the reject path, so
+/// the parse fence costs nothing on the passing one.
+fn ensure_workflow_provided(jigc_home: &Path, workflow: &str, rerun: Vec<String>) -> Result<()> {
+    let pack = make_pack()?;
+    let pack = pack.as_ref();
+    let mut provided: Vec<String> = pack
+        .list(PackResourceKind::Workflows)
+        .iter()
+        .map(|id| id.as_str().to_owned())
+        .collect();
+    if provided.iter().any(|id| id == workflow) {
+        return Ok(());
+    }
+    let project_config = jigc_home.join(".jigc").join("config");
+    let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
+    if crate::start::CascadeDefs::new(&resolved, &project_config)
+        .read_workflow(pack, workflow)
+        .is_ok()
+    {
+        return Ok(());
+    }
+    provided.sort();
+    let set = provided.join(", ");
+    Err(finding_to_err(Finding::block(
+        "workflow-refs.unknown-workflow",
+        format!(
+            "no workflow `{workflow}` — a sub-task's `--workflow` must name a workflow the \
+             loaded packs provide: {set}"
+        ),
+        Route::mechanical(rerun, " — nothing was minted, recorded or committed"),
+    )))
+}
+
 /// `jigc milestone add-task <milestone-id> "<intent>"` — mint a sub-task pinned to
 /// the milestone's shared base in its own isolated area and append it. Returns the
 /// summary line; an unknown milestone or a within-milestone collision surfaces as
@@ -1065,6 +1125,23 @@ fn run_add_task(
 ) -> Result<(String, String)> {
     // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    // The `--workflow` membership check (M49 Inc 2 T2), ahead of EVERY mutation this door
+    // makes — the reconcile preflight, the fresh-clone reseed, the mint and the record commit
+    // all sit below it, so a bogus id strands no sub-task area and leaves the committed record
+    // byte-identical ([`ensure_workflow_provided`]).
+    ensure_workflow_provided(
+        &jigc_home,
+        workflow,
+        vec![
+            "jigc".to_string(),
+            "milestone".to_string(),
+            "add-task".to_string(),
+            crate::task::shell_token(milestone_id),
+            "\"<intent>\"".to_string(),
+            "--workflow".to_string(),
+            "<workflow-id>".to_string(),
+        ],
+    )?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 
@@ -1204,6 +1281,22 @@ fn run_add_from_spec(
     // The committed spec read + the `.jigc/` sub-task mint both bind to jigc_home (the
     // main checkout); no git read here (sub-tasks pin to the milestone's stored base).
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    // The `--workflow` membership check (M49 Inc 2 T2), ahead of every mutation — the same
+    // check the sibling `add-task` door runs, before the spec is even read, so a bogus id
+    // seeds nothing ([`ensure_workflow_provided`]).
+    ensure_workflow_provided(
+        &jigc_home,
+        workflow,
+        vec![
+            "jigc".to_string(),
+            "milestone".to_string(),
+            "add-from-spec".to_string(),
+            crate::task::shell_token(milestone_id),
+            crate::task::shell_token(spec_addr),
+            "--workflow".to_string(),
+            "<workflow-id>".to_string(),
+        ],
+    )?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 

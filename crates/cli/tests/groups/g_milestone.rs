@@ -49,6 +49,8 @@ mod milestone_record_stale_base;
 mod milestone_task_list_concurrency;
 #[path = "../milestone_teardown_loss.rs"]
 mod milestone_teardown_loss;
+#[path = "../milestone_workflow_membership.rs"]
+mod milestone_workflow_membership;
 #[path = "../milestone_zero_contribution.rs"]
 mod milestone_zero_contribution;
 #[path = "../pinned_facts.rs"]

@@ -49,6 +49,10 @@ const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[
     // The knob-key positional of `jigc config get <key>` — the read rung the read-shaped
     // `config show` tip routes to (M48 inc-6 T3). A declared knob key, so the dummy is one.
     ("<key>", "docs-root"),
+    // The `--workflow <workflow-id>` value of the milestone sub-task doors' re-run route
+    // (`milestone.rs` → `ensure_workflow_provided`): the caller picks from the provided set
+    // the rejection names, so the dummy is the doors' own default.
+    ("<workflow-id>", "sub-task"),
 ];
 
 /// Install the parse fence into the engine's `Route::mechanical` constructor hook.
