@@ -2,6 +2,17 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-08-29 — M49 Increment 3 / T3: a mis-keyed schema leaf is refused, not absorbed
+
+`engine::schema` now runs a **shape pass** over the raw value — after `include:` expansion, before deserialization — refusing an unknown key at every mapping the model cannot deny, with a located `SchemaError::MalformedAt` naming the `<type>#<section>[/<leaf>]` site and the key. The design doc's *"golden-locked (`engine::schema`, `deny_unknown_fields`)"* was **false at four mappings** and is corrected in place; so is the `Section` doc-comment, which stated the hole as a delegation (*"still caught by the leaf structs' own guards"*).
+
+**The axis is every mapping the model does not already deny, not the reported repro.** `Section` cannot carry `deny_unknown_fields` beside its flattened `SectionBody` (serde forbids it), and an **untagged** variant absorbs unknown keys silently — so `SectionBody::Simple`, `Leaf::Slot` and `Leaf::Repeatable` join it. The ledger's instance (a `patern:` typo on `commit.trailers.key`) is the *worse* half: `Field`'s own guard fires, which fails the whole `repeatable:` body, and `Simple`'s two keys both `default` — so the section fell through to `Simple { slot: None, fields: [] }`, **erased from every surface at exit 0**. Driving the axis found the sibling the ledger has not: a stray key beside a slot leaf's `slot:` loads clean and keeps the typo. Nine engine arms walk the axis; six real-binary arms drive it through `jigc doc schema`.
+
+**Two elaborations.**
+
+- **The two leaves that already deny are delegated, never re-listed.** `Field` and `Slot` are handed to serde (`from_value`) at a known locus, so their key sets are stated once in the model and the refusal reads in serde's own *"unknown field …, expected one of …"* phrasing. Only the four un-denyable mappings carry a hand-written key slice, and each is the model's own shape keys — a set that cannot drift silently, since every shipped schema loads through the same door.
+- **The fixture is a manifest-less pack, because the freeze is what hid this.** All 16 shipped doctypes are manifest-governed, so on a shipped pack the typo moves the `schema-hash` and the freeze gate blocks second-hand — which is exactly why the defect survived to 1.0. The exposure is the pack the freeze does **not** govern (the project layer, a third-party pack), so the suite mutates a dev-pack copy with `config/schema-manifest.yaml` dropped. No re-pin: both packs' 16 schemas and all 4 versioned snapshots load unchanged, asserted as its own arm.
+
 ## 2026-08-29 — M49 Increment 3 / T2: one schema resolution, so no two doors answer differently about the same document
 
 The seven pack-only, shadow-blind schema-load surfaces now resolve through `CascadeDefs`, joining the one that already did (`all_schemas`). The single-doctype twin `CascadeDefs::schema` is new; both share `read_one`, the sole place in `crates/cli/src` that reads schema bytes for a *document*. Two free entry points (`start::resolved_schema` / `::resolved_schemas`) serve callers holding only the project layer's path; `load_commit_schema` and the two provisioners take the `CascadeDefs` **itself**, not a path to re-resolve from, so compose does not resolve the cascade twice and the `form_d_pack` unit tests keep working over a knob-less fixture pack.

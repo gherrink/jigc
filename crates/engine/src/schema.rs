@@ -148,8 +148,13 @@ pub struct Placement {
 /// heading) — `design/storage.md` → Anatomy.
 // NOTE: no `deny_unknown_fields` here — serde forbids it alongside the
 // `#[serde(flatten)]` of `body` below (the flattened untagged enum must be free
-// to consume the section's shape keys). Unknown *value* errors (bad field type,
-// bad section shape) are still caught by the leaf structs' own guards.
+// to consume the section's shape keys). That is a *hole*, not a delegation: the
+// leaf structs' own guards do not cover it, and until M49 the sentence here
+// claimed they did. An unknown key was absorbed by whichever untagged variant
+// matched, and a leaf whose guard *did* fire failed the `Repeatable` variant and
+// fell through to `SectionBody::Simple` — an empty section, no error. The denial
+// is restored by hand in `check_schema_shape`, which runs before deserialization
+// over every mapping this model cannot deny (`SchemaError::MalformedAt`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Section {
     /// The section's stable id (and the source of its schema-fixed heading).
@@ -616,6 +621,35 @@ pub enum SchemaError {
         /// The unhonored spelling the field named.
         set: String,
     },
+
+    /// A schema mapping is malformed **at a position serde alone cannot refuse**:
+    /// an unknown key on a mapping the model cannot deny, or a leaf whose own
+    /// denying model rejected it inside an untagged variant.
+    ///
+    /// Four mappings carry no `deny_unknown_fields`: [`Section`] (serde forbids it
+    /// beside the flattened `body`) and the untagged struct variants it flattens
+    /// into ([`SectionBody::Simple`], [`Leaf::Slot`], [`Leaf::Repeatable`]) — an
+    /// untagged variant **absorbs** an unknown key silently. Worse, a leaf whose own
+    /// guard *does* fire (a `patern:` typo on a [`Field`], a stray key inside a
+    /// [`Slot`]) fails the whole `SectionBody::Repeatable` variant, and
+    /// `SectionBody::Simple`'s two keys both `default` — so the section fell through
+    /// to `Simple { slot: None, fields: [] }`: **erased from every surface, at exit
+    /// 0**. Verified before the repair: a `patern:` typo on `commit.trailers.key`
+    /// made `jigc doc schema commit` list `summary`, `body` and no `trailers`.
+    ///
+    /// [`check_schema_shape`] restores the denial by hand over that whole axis and
+    /// reports it here, **located** — naming the mapping's `<type>#<section>[/<leaf>]`
+    /// site and the offending key, in place of serde's twice-repeated *"data did not
+    /// match any variant of untagged enum SectionBody"*.
+    #[error("malformed schema at `{site}`: {detail}")]
+    MalformedAt {
+        /// The offending mapping's locus — `<type>#<section>`, plus `/<leaf>` for a
+        /// leaf inside a section's `fields:` or a repeatable's `block:`.
+        site: String,
+        /// What is wrong with it, in serde's own `unknown field ..., expected one of
+        /// ...` phrasing.
+        detail: String,
+    },
 }
 
 /// The maximum repeatable nesting depth: a section is `##`, so a repeatable at
@@ -853,6 +887,11 @@ pub fn load_schema_with_types(
     // `fragments:` map passes through structurally unchanged).
     let raw: serde_yaml_ng::Value = serde_yaml_ng::from_str(text)?;
     let expanded = expand_fragment_includes(raw)?;
+    // Shape pass: refuse an unknown key at any mapping the model cannot deny,
+    // *before* serde's untagged fall-through can absorb it (or erase the whole
+    // section). It runs on the **expanded** value, so a fragment's mis-keyed leaf
+    // is caught exactly like an inline one.
+    check_schema_shape(&expanded)?;
     let mut schema: Schema = serde_yaml_ng::from_value(expanded)?;
     for section in &mut schema.sections {
         match &mut section.body {
@@ -1075,6 +1114,166 @@ fn include_target(item: &serde_yaml_ng::Value) -> Option<&str> {
     item.as_mapping()
         .and_then(|m| m.get("include"))
         .and_then(serde_yaml_ng::Value::as_str)
+}
+
+/// Every key a `sections:` entry may carry — the union of [`Section`]'s own keys
+/// and the shape keys its flattened [`SectionBody`] consumes.
+///
+/// Hand-listed because the model cannot deny them itself: serde forbids
+/// `deny_unknown_fields` beside a `#[serde(flatten)]`, and an **untagged** enum
+/// variant absorbs unknown keys silently. This slice is that denial, restored.
+const SECTION_KEYS: &[&str] = &["id", "header", "slot", "fields", "repeatable"];
+
+/// Every key a repeatable **template** mapping may carry ([`Repeatable`]). The
+/// struct denies unknown keys itself, but its refusal fails the untagged
+/// `SectionBody::Repeatable` variant and falls through to an empty simple section
+/// — so the key set is checked here, before serde ever sees it.
+const REPEATABLE_KEYS: &[&str] = &["id-from", "block"];
+
+/// Every key a [`Leaf::Slot`] block leaf may carry — the untagged variant's own
+/// keys, which it would otherwise absorb an unknown sibling beside.
+const SLOT_LEAF_KEYS: &[&str] = &["id", "slot"];
+
+/// Every key a [`Leaf::Repeatable`] block leaf may carry — the untagged variant's
+/// own keys, same reason.
+const REPEATABLE_LEAF_KEYS: &[&str] = &["id", "repeatable"];
+
+/// Refuse a mis-keyed schema mapping **before** deserialization, over the whole
+/// axis of mappings the model cannot deny.
+///
+/// Walks the (include-expanded) raw value: every `sections:` entry, its `slot:` /
+/// `fields:` / `repeatable:` body, and recursively every block leaf — checking each
+/// mapping's keys against the model's own, and delegating the two leaves that *do*
+/// carry `deny_unknown_fields` ([`Field`], [`Slot`]) to serde so their key sets are
+/// never duplicated here. Every refusal is a located [`SchemaError::MalformedAt`].
+///
+/// A mapping this walk cannot interpret (a non-mapping section, an absent
+/// `sections:`) is left alone: deserialization reports it. The walk **adds** a
+/// refusal, it never substitutes for the model.
+fn check_schema_shape(value: &serde_yaml_ng::Value) -> Result<(), SchemaError> {
+    use serde_yaml_ng::Value;
+    let Some(map) = value.as_mapping() else {
+        return Ok(());
+    };
+    let ty = map.get("type").and_then(Value::as_str).unwrap_or("schema");
+    let Some(sections) = map.get("sections").and_then(Value::as_sequence) else {
+        return Ok(());
+    };
+    for section in sections {
+        let Some(section_map) = section.as_mapping() else {
+            continue;
+        };
+        let site = format!("{ty}#{}", mapping_id(section));
+        check_keys(section_map, SECTION_KEYS, &site)?;
+        if let Some(slot) = section_map.get("slot") {
+            check_slot(slot, &site)?;
+        }
+        if let Some(Value::Sequence(fields)) = section_map.get("fields") {
+            for field in fields {
+                check_field(field, &leaf_site(&site, field))?;
+            }
+        }
+        if let Some(repeatable) = section_map.get("repeatable") {
+            check_repeatable(repeatable, &site)?;
+        }
+    }
+    Ok(())
+}
+
+/// Check one repeatable **template** mapping and every leaf of its block.
+fn check_repeatable(value: &serde_yaml_ng::Value, owner: &str) -> Result<(), SchemaError> {
+    use serde_yaml_ng::Value;
+    let Some(map) = value.as_mapping() else {
+        return Ok(());
+    };
+    check_keys(map, REPEATABLE_KEYS, owner)?;
+    if let Some(Value::Sequence(block)) = map.get("block") {
+        for leaf in block {
+            check_leaf(leaf, owner)?;
+        }
+    }
+    Ok(())
+}
+
+/// Check one block leaf, discriminated exactly as [`Leaf`]'s untagged variants are
+/// — by which key is present — so an unknown sibling key is refused instead of
+/// absorbed, and a nested repeatable is walked to any depth.
+fn check_leaf(value: &serde_yaml_ng::Value, owner: &str) -> Result<(), SchemaError> {
+    let Some(map) = value.as_mapping() else {
+        return Ok(());
+    };
+    let site = leaf_site(owner, value);
+    if let Some(slot) = map.get("slot") {
+        check_keys(map, SLOT_LEAF_KEYS, &site)?;
+        check_slot(slot, &site)?;
+    } else if let Some(repeatable) = map.get("repeatable") {
+        check_keys(map, REPEATABLE_LEAF_KEYS, &site)?;
+        check_repeatable(repeatable, &site)?;
+    } else {
+        check_field(value, &site)?;
+    }
+    Ok(())
+}
+
+/// Delegate a field-shaped mapping to [`Field`]'s own `deny_unknown_fields` guard,
+/// reporting its refusal **located** — the guard already fires, but inside an
+/// untagged variant its failure erased the section instead of surfacing.
+fn check_field(value: &serde_yaml_ng::Value, site: &str) -> Result<(), SchemaError> {
+    serde_yaml_ng::from_value::<Field>(value.clone())
+        .map(|_| ())
+        .map_err(|err| SchemaError::MalformedAt {
+            site: site.to_owned(),
+            detail: err.to_string(),
+        })
+}
+
+/// Delegate a `slot:` mapping to [`Slot`]'s own guard, located the same way.
+fn check_slot(value: &serde_yaml_ng::Value, site: &str) -> Result<(), SchemaError> {
+    serde_yaml_ng::from_value::<Slot>(value.clone())
+        .map(|_| ())
+        .map_err(|err| SchemaError::MalformedAt {
+            site: site.to_owned(),
+            detail: err.to_string(),
+        })
+}
+
+/// Refuse any key of `map` outside `known`, in serde's own phrasing so a hand-held
+/// key set and a delegated one read identically.
+fn check_keys(map: &serde_yaml_ng::Mapping, known: &[&str], site: &str) -> Result<(), SchemaError> {
+    for key in map.keys() {
+        let name = key
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("{key:?}"));
+        if !known.contains(&name.as_str()) {
+            let expected = known
+                .iter()
+                .map(|k| format!("`{k}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(SchemaError::MalformedAt {
+                site: site.to_owned(),
+                detail: format!("unknown field `{name}`, expected one of {expected}"),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// A mapping's declared `id`, or a placeholder when it carries none (serde reports
+/// the missing key; this only has to name the locus).
+fn mapping_id(value: &serde_yaml_ng::Value) -> &str {
+    value
+        .as_mapping()
+        .and_then(|m| m.get("id"))
+        .and_then(serde_yaml_ng::Value::as_str)
+        .unwrap_or("<no id>")
+}
+
+/// The locus of a leaf inside `owner` — `<owner>/<leaf id>`, the address grammar's
+/// own shape.
+fn leaf_site(owner: &str, value: &serde_yaml_ng::Value) -> String {
+    format!("{owner}/{}", mapping_id(value))
 }
 
 fn is_false(b: &bool) -> bool {
@@ -2331,6 +2530,237 @@ sections:
         assert!(
             matches!(&err, SchemaError::CyclicFragment { name } if name == "a"),
             "expected CyclicFragment for `a`, got {err:?}",
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // The mis-keyed schema leaf (M49 Increment 3, T3)
+    //
+    // Four mappings in the model cannot carry `deny_unknown_fields`: `Section`
+    // (serde forbids it beside the flattened `body`) and the three untagged
+    // struct variants it flattens into (`SectionBody::Simple`,
+    // `SectionBody::Repeatable`'s `repeatable` key, `Leaf::Slot`,
+    // `Leaf::Repeatable`) — an untagged variant absorbs unknown keys silently.
+    // Worse, a leaf whose *own* denying model rejects a stray key makes the
+    // whole `Repeatable` variant fail, and `SectionBody::Simple`'s two keys both
+    // `default`, so the section falls through to an **empty simple section** —
+    // erased from every surface at exit 0. The arms below walk that whole axis:
+    // every mapping the model does not already deny, each × an unknown key.
+    // -----------------------------------------------------------------------
+
+    /// Assert a schema fails to load with a **located** refusal: the message
+    /// names the offending mapping's locus and the stray key, and never falls
+    /// back on serde's untagged `data did not match any variant` non-message.
+    fn expect_located_refusal(yaml: &[u8], site: &str, key: &str) {
+        let err = load_schema(yaml).expect_err("a mis-keyed schema mapping must fail to load");
+        assert!(
+            matches!(err, SchemaError::MalformedAt { .. }),
+            "expected the located MalformedAt refusal, got {err:?}",
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains(site),
+            "the refusal must name the `{site}` locus; got: {msg}",
+        );
+        assert!(
+            msg.contains(key),
+            "the refusal must name the offending `{key}` key; got: {msg}",
+        );
+        assert!(
+            !msg.contains("did not match any variant"),
+            "the refusal must not fall back on serde's untagged non-message; got: {msg}",
+        );
+    }
+
+    /// The **section mapping**, repeatable-shaped: a stray key beside
+    /// `repeatable:` was absorbed by the untagged `SectionBody::Repeatable`
+    /// variant. It is now a located refusal naming the section and the key.
+    #[test]
+    fn unknown_key_on_a_repeatable_section_mapping_is_refused() {
+        let yaml = b"\
+type: t
+sections:
+  - id: s
+    bogus: 1
+    repeatable:
+      id-from: a
+      block:
+        - { id: a, type: string }
+";
+        expect_located_refusal(yaml, "t#s", "bogus");
+    }
+
+    /// The **`SectionBody::Simple`** variant: a stray key beside `slot:` was
+    /// absorbed by the untagged simple variant, whose two keys both `default`.
+    #[test]
+    fn unknown_key_on_a_simple_section_mapping_is_refused() {
+        let yaml = b"\
+type: t
+sections:
+  - id: s
+    bogus: 1
+    slot: { hint: h }
+";
+        expect_located_refusal(yaml, "t#s", "bogus");
+    }
+
+    /// The **`Leaf::Slot`** variant: a stray key beside a block leaf's `slot:`
+    /// was absorbed silently, so the schema loaded with the typo intact.
+    #[test]
+    fn unknown_key_on_a_slot_leaf_is_refused() {
+        let yaml = b"\
+type: t
+sections:
+  - id: s
+    repeatable:
+      id-from: a
+      block:
+        - { id: a, type: string }
+        - { id: note, slot: { hint: h }, bogus: 1 }
+";
+        expect_located_refusal(yaml, "t#s/note", "bogus");
+    }
+
+    /// The **`Leaf::Repeatable`** variant: a stray key beside a nested
+    /// repeatable's `repeatable:` was absorbed silently the same way.
+    #[test]
+    fn unknown_key_on_a_nested_repeatable_leaf_is_refused() {
+        let yaml = b"\
+type: t
+sections:
+  - id: s
+    repeatable:
+      id-from: a
+      block:
+        - { id: a, type: string }
+        - id: inner
+          bogus: 1
+          repeatable:
+            id-from: b
+            block:
+              - { id: b, type: string }
+";
+        expect_located_refusal(yaml, "t#s/inner", "bogus");
+    }
+
+    /// The **repeatable template** mapping: a stray key beside `id-from:` /
+    /// `block:` made the whole `Repeatable` variant fail and the section fall
+    /// through to an empty simple section.
+    #[test]
+    fn unknown_key_on_a_repeatable_template_is_refused() {
+        let yaml = b"\
+type: t
+sections:
+  - id: s
+    repeatable:
+      id-from: a
+      bogus: 1
+      block:
+        - { id: a, type: string }
+";
+        expect_located_refusal(yaml, "t#s", "bogus");
+    }
+
+    /// The **reported repro** at the engine seam: a `patern:` typo on a
+    /// repeatable block's field leaf. `Field` denies it, so the `Repeatable`
+    /// variant failed and the section fell through to `Simple { slot: None,
+    /// fields: [] }` — **the whole section erased, no error**. It is now a
+    /// located refusal, and the load fails rather than returning a schema whose
+    /// section lost its body.
+    #[test]
+    fn mis_keyed_field_leaf_in_a_repeatable_block_is_refused_not_erased() {
+        let yaml = b"\
+type: t
+sections:
+  - id: s
+    repeatable:
+      id-from: key
+      block:
+        - { id: key, type: string, patern: x }
+";
+        expect_located_refusal(yaml, "t#s/key", "patern");
+    }
+
+    /// The **simple-section sibling** of the same typo: it errored before, but
+    /// as serde's twice-repeated "data did not match any variant of untagged
+    /// enum SectionBody", naming neither the section nor the key. It now reports
+    /// the *same* located message the repeatable case does.
+    #[test]
+    fn mis_keyed_field_in_a_simple_section_reports_the_located_message() {
+        let yaml = b"\
+type: t
+sections:
+  - id: s
+    header: true
+    fields:
+      - { id: key, type: string, patern: x }
+";
+        expect_located_refusal(yaml, "t#s/key", "patern");
+    }
+
+    /// A stray key **inside a `slot:` mapping** of a block leaf: `Slot` denies
+    /// it, which failed the `Repeatable` variant and erased the section. Located
+    /// at the leaf that carries the slot.
+    #[test]
+    fn unknown_key_inside_a_block_leaf_slot_mapping_is_refused() {
+        let yaml = b"\
+type: t
+sections:
+  - id: s
+    repeatable:
+      id-from: a
+      block:
+        - { id: a, type: string }
+        - { id: note, slot: { hint: h, bogus: 1 } }
+";
+        expect_located_refusal(yaml, "t#s/note", "bogus");
+    }
+
+    /// The shape check runs on the **include-expanded** value, so a fragment's
+    /// mis-keyed leaf is caught exactly like an inline one — the fence cannot be
+    /// bypassed by hiding the typo behind an `include:`.
+    #[test]
+    fn the_shape_check_runs_on_the_include_expanded_value() {
+        let yaml = b"\
+type: t
+fragments:
+  shared:
+    - { id: a, type: string, patern: x }
+sections:
+  - id: s
+    repeatable:
+      id-from: a
+      block:
+        - include: shared
+";
+        expect_located_refusal(yaml, "t#s/a", "patern");
+    }
+
+    /// The **omitting context**: a clean `include:` still resolves. The shape
+    /// check runs after expansion and refuses nothing a conformant schema
+    /// carries — the fragment's leaves load spliced in place.
+    #[test]
+    fn a_clean_include_still_resolves_under_the_shape_check() {
+        let yaml = b"\
+type: t
+fragments:
+  shared:
+    - { id: b, type: string }
+sections:
+  - id: s
+    repeatable:
+      id-from: a
+      block:
+        - { id: a, type: string }
+        - include: shared
+";
+        let schema = load_schema(yaml).expect("a clean include loads");
+        let SectionBody::Repeatable { repeatable } = &schema.sections[0].body else {
+            panic!("s is repeatable");
+        };
+        assert_eq!(
+            repeatable.block.iter().map(leaf_id).collect::<Vec<_>>(),
+            vec!["a", "b"],
         );
     }
 
