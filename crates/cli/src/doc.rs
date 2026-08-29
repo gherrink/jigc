@@ -1339,6 +1339,9 @@ fn run_add_item(
         slug_override,
         &task.id,
         task.is_migration()?,
+        // The staged instance was read (or copied in) above and a rejected write persists
+        // nothing, so it is still there for the reject's route to name.
+        RejectDestination::Reachable,
     )
     .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
 
@@ -1398,6 +1401,7 @@ fn apply_add_item_target(
     slug_override: Option<&str>,
     task_id: &str,
     migration: bool,
+    destination: RejectDestination,
 ) -> Result<(String, String), DocFailure> {
     // Write-time id-from-enum reject (`design/auto-migration.md` → Hardening #3;
     // write-commands.md → Two check times): when the destination repeatable's `id-from`
@@ -1486,7 +1490,15 @@ fn apply_add_item_target(
         }
     };
     applied.map_err(|failure| {
-        enrich_already_present_route(failure, schema, source, locus.as_ref(), uri, task_id)
+        enrich_already_present_route(
+            failure,
+            schema,
+            source,
+            locus.as_ref(),
+            uri,
+            task_id,
+            destination,
+        )
     })
 }
 
@@ -1540,6 +1552,34 @@ fn add_item_locus(
     })
 }
 
+/// **What becomes of the destination doc once this write's failure is unwound** — the
+/// one input an `already-present` reject's recovery cannot derive from the buffer it was
+/// handed, and must therefore be told.
+///
+/// The enriched route is a *mint into a doc*, so it is only a recovery while there is a
+/// doc to mint into. That holds at the per-leaf `add-item` verb by construction (it read
+/// or copied in the staged instance, and a rejected write persists nothing, so the
+/// instance stands) — and it does **not** hold on `doc author`'s **create** arm, whose
+/// whole-or-nothing rollback removes the very file the create provisioned
+/// ([`engine::state::CreatedDoc::rollback`]). The batch is the shape every `migrate-*`
+/// workflow drives, and there the shipped enrichment printed a copy-runnable-looking
+/// command that exits 1 — `surface-contract.md` law 1, in a route (M49 Increment 5, the
+/// T5 triage).
+///
+/// Asked at the caller because only the caller knows: `create_gated`'s `existed`
+/// discriminator answers it for the batch (a same-identity **staged** copy is restored
+/// from its pre-image; a **committed** instance is still at its canonical home for
+/// copy-on-first-touch; a fresh mint leaves neither), and it is a constant at the verb.
+#[derive(Clone, Copy)]
+enum RejectDestination {
+    /// The doc is still addressable after the reject — staged, or committed at its
+    /// canonical home. A mint route naming it runs.
+    Reachable,
+    /// The write provisioned the doc itself and its failure discards it: nothing is
+    /// staged and nothing is committed, so **no** route naming that doc runs.
+    Discarded,
+}
+
 /// Enrich a `write.already-present` **item** collision's route into the mint that
 /// actually recovers it (M49 Increment 5, T5) — the [`enrich_not_present_route`] sibling,
 /// applied at the one shared site both doors funnel through
@@ -1550,11 +1590,18 @@ fn add_item_locus(
 /// exists — edit it in place"* — which is the right answer for a **correction** and the
 /// wrong one for a **second, distinct entry**: two genuinely different titles can slug
 /// alike (`1-3-0` and `1.3.0` mint one id), and until `add-item` gained `--slug` (T4 of
-/// this increment) there was no command that recovered it at all. From inside a
-/// `doc author` payload — rejected whole, nothing staged — it was worse than unhelpful:
-/// un-runnable advice about an unnamed one of N payload items. The route is now the same
-/// mint under the **first free** `<minted>-N` id, argv-complete and copy-runnable, with
-/// the edit-in-place branch kept as the tail's alternative rather than dropped.
+/// this increment) there was no command that recovered it at all. Where the destination
+/// survives the reject the route is now that same mint under the **first free**
+/// `<minted>-N` id, argv-complete and copy-runnable, with the edit-in-place branch kept
+/// as the tail's alternative rather than dropped.
+///
+/// **Where it does not survive, no command is offered at all** ([`RejectDestination`],
+/// the T5 triage): `doc author`'s create arm rejects the batch whole and rolls its own
+/// provisioning back, so the mint — like the shipped edit-in-place — would name a doc
+/// that is not there. That arm is told the recovery that exists, which is the payload's.
+/// The batch was the case this enrichment was written *for*, and it was verified only
+/// over a pre-provisioned doc; the create arm, which every `migrate-*` workflow drives,
+/// got a copy-runnable-looking command that exits 1.
 ///
 /// Deliberately narrow at three edges. It fires only on `write.already-present`; only
 /// where the collision is **confirmed** to be the minted item id (the reject's other
@@ -1569,11 +1616,28 @@ fn enrich_already_present_route(
     locus: Option<&AddItemLocus>,
     uri: &str,
     task_id: &str,
+    destination: RejectDestination,
 ) -> DocFailure {
     let DocFailure::Block(mut finding) = failure else {
         return failure;
     };
     if finding.code != "write.already-present" {
+        return DocFailure::Block(finding);
+    }
+    // A discarded destination out-ranks the mint: no command naming that doc runs, so
+    // both the mint and the shipped *"edit it in place"* would be advice about a file
+    // that is not there. The recovery that does exist is the payload's — the batch landed
+    // nothing, so revising it and re-running is a complete repair, and it is stated
+    // without asserting which subject collided (an earlier payload item, or a body the
+    // create copied in), because the route is emitted for both.
+    if let RejectDestination::Discarded = destination {
+        finding.route = Some(engine::finding::Route::human(
+            "nothing landed — `jigc doc author` rejects the batch whole and discards the \
+             doc it provisioned, so there is nothing staged to edit in place or to mint \
+             beside: revise the payload so this write lands (an item id is slugged from \
+             its title, so two titles that slug alike claim one id) and re-run the whole \
+             `jigc doc author`",
+        ));
         return DocFailure::Block(finding);
     }
     if let Some(locus) = locus
@@ -3408,8 +3472,27 @@ fn run_author(
     // agent to re-run; M47 Increment 6, the triage fix). The block finding propagates
     // unchanged either way.
     let mut buffer = read_staged(&created.path, &created.address)?;
+    // What the rollback above leaves behind, for a reject's route to be adjudicated
+    // against ([`RejectDestination`]): `existed` is exactly that question — it is `true`
+    // for both branches that find a body already there (a staged copy handed back as
+    // found, restored from its pre-image; a committed instance copied in, still at its
+    // canonical home for copy-on-first-touch) and `false` for the fresh mint, whose file
+    // this call wrote and the rollback removes.
+    let destination = if created.existed {
+        RejectDestination::Reachable
+    } else {
+        RejectDestination::Discarded
+    };
     for leaf in &plan.leaves {
-        match apply_leaf(schema, &buffer, &created.address, leaf, &task.id, migration) {
+        match apply_leaf(
+            schema,
+            &buffer,
+            &created.address,
+            leaf,
+            &task.id,
+            migration,
+            destination,
+        ) {
             Ok(edited) => buffer = edited,
             Err(failure) => {
                 created.rollback();
@@ -3449,6 +3532,7 @@ fn apply_leaf(
     leaf: &crate::author::Leaf,
     task_id: &str,
     migration: bool,
+    destination: RejectDestination,
 ) -> Result<String, DocFailure> {
     use crate::author::Leaf;
     match leaf {
@@ -3461,7 +3545,15 @@ fn apply_leaf(
             // `--slug` is the per-leaf `add-item` flag, and a payload collision is
             // routed at it rather than silently overridden here.
             let (edited, _minted) = apply_add_item_target(
-                schema, source, target, &addr, title, None, task_id, migration,
+                schema,
+                source,
+                target,
+                &addr,
+                title,
+                None,
+                task_id,
+                migration,
+                destination,
             )?;
             Ok(edited)
         }

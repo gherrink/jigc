@@ -95,6 +95,17 @@
 //! `apply_add_item_target`. The route is run **verbatim** and must *land the second item*,
 //! not merely exit 0.
 //!
+//! **The batch door has a second axis, and the column shipped over one point of it** (the
+//! T5 triage — [`a_batch_collision_route_runs_from_every_provisioning_state`]). A mint
+//! route is a recovery only while there is a doc to mint into, and `doc author` has two
+//! provisioning states: over a doc the task already staged the whole-or-nothing rollback
+//! restores it, while on the **create** arm — the batch's own `create` is the doc's first
+//! write, the shape every `migrate-*` workflow drives — the rollback removes the file the
+//! create provisioned, so the emitted command exited 1. The batch row below runs on
+//! [`provision`]'s pre-created doc, which is the state the implementation handled, so the
+//! column greened over the dominant one it did not. The axis is driven in its own test
+//! rather than as a `CELLS` row, because a row is defined against the one shared fixture.
+//!
 //! **Declared bound.** The two *section-level* address forms — `set-slot` / `set-field` at
 //! `#<undeclared-section>` with no item hop — are **not** cells of this matrix: the CLI
 //! address resolver refuses to resolve a slot/field target inside an undeclared section and
@@ -1032,4 +1043,144 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
         CELLS.len(),
         broken.join("\n"),
     );
+}
+
+/// A fixture in the state the collision column never drove: `setup` + `start` and **no
+/// `doc create`**, so the `doc author` batch's own `create` is the doc's first write.
+/// This is the shape every `migrate-*` workflow drives — the pack's own step prose says
+/// *"the CLI creates the record and places every field and prose slot over a single
+/// staged buffer"* (`crates/cli/pack/steps/author-migration-spec.yaml`) — and it is the
+/// arm the batch's whole-or-nothing rollback **discards**: nothing is staged when the
+/// reject prints, so a route naming that doc cannot run.
+///
+/// `slug` is the id `--title Changelog` mints (the same derivation [`provision`] reads
+/// back off `doc create`), so [`Fixture::staged`] addresses the file the rollback must
+/// have removed.
+fn unprovisioned() -> Fixture {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    let pack = fixture_pack();
+    init_repo(repo.path());
+    let fx = Fixture {
+        repo,
+        home,
+        pack,
+        slug: "changelog".to_owned(),
+    };
+    ok_stdout(fx.run(&["setup"], None), "jigc setup");
+    ok_stdout(
+        fx.run(
+            &["start", "--workflow", "log-change", "log the release"],
+            None,
+        ),
+        "jigc start --workflow log-change",
+    );
+    fx
+}
+
+/// The leading backticked command of a route (`` `<cmd>`<tail> ``), or `None` for a
+/// route that presents no command at all — the non-panicking [`backticked`], because
+/// *whether* the surface presents a command is the question here, not what it says.
+fn leading_command(route: &str) -> Option<&str> {
+    route
+        .strip_prefix('`')
+        .and_then(|rest| rest.split('`').next())
+}
+
+/// One arm of the batch collision's **provisioning axis**.
+struct BatchOrigin {
+    what: &'static str,
+    /// The corpus state the batch runs against.
+    fixture: fn() -> Fixture,
+    /// The payload whose second item mints an id the buffer already holds — supplied by
+    /// the fixture on the staged arm, by an **earlier leaf of the payload itself** where
+    /// the batch is the doc's first write.
+    payload: &'static [u8],
+    /// Whether a staged instance survives the reject — the fact the emitted route is
+    /// adjudicated against, asserted rather than assumed.
+    staged_after: bool,
+}
+
+/// **The batch collision's provisioning axis** (M49 Increment 5, the T5 triage). The
+/// `write.already-present` enrichment hands back a mint into a doc — and `doc author`
+/// has two provisioning states, only one of which leaves that doc there to be written:
+/// over a **staged** doc the whole-or-nothing rollback restores the pre-image, while on
+/// the **create** arm it removes the file the batch itself provisioned, so nothing at all
+/// is staged when the reject prints. The column that shipped was authored in the first
+/// state only (`CELLS`' batch row runs on [`provision`]'s pre-created doc), and the
+/// second — the arm every `migrate-*` workflow drives — got a copy-runnable-looking
+/// command that exits 1 (`design/surface-contract.md` law 1: nothing lies).
+///
+/// The property is stated over the axis rather than over either fix: **a route that
+/// presents a command must run.** It holds for the mechanical mint where the destination
+/// survives, and it holds for whatever a discarded destination is told instead — so a
+/// later payload-level recovery (a `slug:` key) can make this arm mechanical again
+/// without rewriting the test.
+#[test]
+fn a_batch_collision_route_runs_from_every_provisioning_state() {
+    const ORIGINS: &[BatchOrigin] = &[
+        BatchOrigin {
+            what: "doc author batch over a doc this task already staged",
+            fixture: provision,
+            payload: b"title: Changelog\nsections:\n  - id: releases\n    items:\n      - title: \"1.3.0\"\n",
+            staged_after: true,
+        },
+        BatchOrigin {
+            what: "doc author batch whose own create is the doc's first write",
+            fixture: unprovisioned,
+            payload: b"title: Changelog\nsections:\n  - id: releases\n    items:\n      - title: \"1.3.0\"\n      - title: \"1-3-0\"\n",
+            staged_after: false,
+        },
+    ];
+
+    for origin in ORIGINS {
+        let fx = (origin.fixture)();
+        let out = fx.run(
+            &[
+                "doc",
+                "author",
+                "changelog",
+                "--from-file",
+                "-",
+                "--format",
+                "json",
+            ],
+            Some(origin.payload),
+        );
+        assert!(
+            !out.status.success(),
+            "`{}` must block (non-zero exit); stdout:\n{}",
+            origin.what,
+            String::from_utf8_lossy(&out.stdout),
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let report: serde_json::Value = serde_json::from_str(stderr.trim())
+            .unwrap_or_else(|e| panic!("`{}` stderr is JSON: {e}; got:\n{stderr}", origin.what));
+        assert_eq!(
+            report["findings"][0]["code"].as_str(),
+            Some("write.already-present"),
+            "`{}` blocks on the collision; got:\n{stderr}",
+            origin.what,
+        );
+        // The fact the route is adjudicated against: the batch persists nothing, and on
+        // the create arm "nothing" includes the doc the create provisioned.
+        assert_eq!(
+            fx.staged().exists(),
+            origin.staged_after,
+            "`{}`: a staged instance {} the reject",
+            origin.what,
+            if origin.staged_after {
+                "survives"
+            } else {
+                "must not survive"
+            },
+        );
+        let route = report["findings"][0]["route"]
+            .as_str()
+            .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", origin.what));
+        // Law 1: a route that presents a copy-runnable command must be one.
+        if let Some(cmd) = leading_command(route) {
+            fx.run_route(cmd, origin.what);
+        }
+    }
 }
