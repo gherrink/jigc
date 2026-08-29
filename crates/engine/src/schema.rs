@@ -595,6 +595,27 @@ pub enum SchemaError {
         /// The declaring site — `leaf` (a block leaf) or `id-from`.
         site: String,
     },
+
+    /// A field's `set:` names a deriver **outside the honored vocabulary**
+    /// ([`SetKind`]). `set:` is a free string on the wire, and until M49 nothing ever
+    /// read its *value*: a typo (`on-creat`) loaded clean, was serialized back by the
+    /// pinned `jigc doc schema --format json` contract as a real deriver, and
+    /// **permanently exempted the field from `required-field-present`**
+    /// ([`crate::validate::is_author_required`] keys on presence). Since the value sits
+    /// inside the doctype's `schema-hash`, the mistake then froze. Rejected loudly at
+    /// load, naming the field, the offending spelling and the honored set (the
+    /// [`UnknownFieldType`](SchemaError::UnknownFieldType) sibling pattern) — so every
+    /// schema-loading door refuses it, not the pack-load sweep alone.
+    #[error(
+        "field `{field}` names undeclared `set:` deriver `{set}` (honored: {})",
+        SetKind::honored()
+    )]
+    UnknownSetKind {
+        /// The field id whose `set:` value is unhonored.
+        field: String,
+        /// The unhonored spelling the field named.
+        set: String,
+    },
 }
 
 /// The maximum repeatable nesting depth: a section is `##`, so a repeatable at
@@ -635,11 +656,70 @@ pub fn load_schema(bytes: &[u8]) -> Result<Schema, SchemaError> {
 /// deriver (the `status`/`date` model — in-schema field, engine/CLI-set value).
 pub const SCHEMA_VERSION_FIELD: &str = "schema-version";
 
+/// The **closed vocabulary** a field's `set:` may name — the three derivers the CLI
+/// actually runs. `set:` deserializes as a free string, so this enum is what makes the
+/// vocabulary closed: [`load_schema_with_types`] refuses any other spelling with a typed
+/// [`SchemaError::UnknownSetKind`], and the two predicates that read a `set:` value
+/// ([`is_machine_maintained_absolute`] and [`crate::validate::is_author_required`]) match
+/// it **exhaustively**, so a fourth kind cannot be added without being dispositioned at
+/// both. Before M49 the value was never inspected anywhere: `set: on-creat` loaded clean,
+/// exempted the field from `required-field-present` forever, and froze into the doctype's
+/// `schema-hash` (`implementation/roadmap.md` → M49 Increment 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetKind {
+    /// The clock deriver: the CLI **defaults** the value at mint (a `date` stamped on
+    /// create). Author-overridable — the changelog migration's historical-date path
+    /// legitimately writes over it (`design/auto-migration.md` → no false history).
+    OnCreate,
+    /// The milestone-transition deriver: the milestone verbs stamp `base` / `status` /
+    /// `intent` at create/join (`crates/engine/src/milestone.rs`;
+    /// `design/team-ready-state.md`). A machine-maintained absolute.
+    OnTransition,
+    /// The freeze-stamp deriver filling [`SCHEMA_VERSION_FIELD`] with the doctype's
+    /// current active schema version at create. A machine-maintained absolute.
+    SchemaVersion,
+}
+
+impl SetKind {
+    /// Every honored kind, in the order the refusal message lists them.
+    pub const ALL: [SetKind; 3] = [
+        SetKind::OnCreate,
+        SetKind::OnTransition,
+        SetKind::SchemaVersion,
+    ];
+
+    /// The kind's on-disk spelling — the `set:` value a schema declares.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SetKind::OnCreate => "on-create",
+            SetKind::OnTransition => "on-transition",
+            SetKind::SchemaVersion => "schema-version",
+        }
+    }
+
+    /// The kind an on-disk `set:` value names, or `None` for a spelling outside the
+    /// vocabulary — the single resolution every consumer shares.
+    pub fn parse(set: &str) -> Option<SetKind> {
+        SetKind::ALL.into_iter().find(|kind| kind.as_str() == set)
+    }
+
+    /// The honored spellings, rendered for a refusal message — generated from
+    /// [`ALL`](SetKind::ALL), so a kind added to the vocabulary joins the message it is
+    /// judged against.
+    pub fn honored() -> String {
+        SetKind::ALL
+            .iter()
+            .map(|kind| format!("`{}`", kind.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 /// The `set:` deriver marker naming the [`SCHEMA_VERSION_FIELD`]'s value source —
 /// the CLI's "current active schema version" deriver fills it at create, the version
 /// analog of the `set: on-create` clock deriver for dates. A field carrying it is
 /// CLI-derived (never author-required) just like a `set: on-create` date.
-pub const SCHEMA_VERSION_SET: &str = "schema-version";
+pub const SCHEMA_VERSION_SET: &str = SetKind::SchemaVersion.as_str();
 
 /// The `set:` deriver naming a **milestone transition** as a field's value source —
 /// the milestone verbs stamp `base` / `status` / `intent` at create/join
@@ -647,7 +727,12 @@ pub const SCHEMA_VERSION_SET: &str = "schema-version";
 /// it is a machine-maintained absolute the author never overwrites, exactly like the
 /// [`SCHEMA_VERSION_SET`] stamp — the second member of the "the CLI is the sole author"
 /// `set:` kind (`design/write-commands.md` → The set-field machine-maintained guard).
-pub const SET_ON_TRANSITION: &str = "on-transition";
+pub const SET_ON_TRANSITION: &str = SetKind::OnTransition.as_str();
+
+/// The `set:` deriver naming the **create-time clock** as a field's value source — the
+/// `date` a doctype stamps at mint. The one honored kind the author may still overwrite
+/// through a `jigc doc` write ([`is_machine_maintained_absolute`] is false for it).
+pub const SET_ON_CREATE: &str = SetKind::OnCreate.as_str();
 
 /// Whether `field` is a **machine-maintained absolute**: its value is CLI-derived and
 /// the author may **never** overwrite it through a `jigc doc` write — the `set:`-kind
@@ -665,10 +750,13 @@ pub const SET_ON_TRANSITION: &str = "on-transition";
 /// `--unset` eligibility guard: *cannot be unset* (every `set:`-derived field) is a
 /// strictly wider set than *may not be overwritten* (the absolutes only).
 pub fn is_machine_maintained_absolute(field: &Field) -> bool {
-    matches!(
-        field.set.as_deref(),
-        Some(SCHEMA_VERSION_SET | SET_ON_TRANSITION)
-    )
+    // Exhaustive over the closed vocabulary ([`SetKind`]): a fourth kind cannot be added
+    // without being dispositioned here. An unhonored spelling reaches this predicate only
+    // from a hand-built `Field` — `load_schema_with_types` refuses it — and buys nothing.
+    match field.set.as_deref().and_then(SetKind::parse) {
+        Some(SetKind::SchemaVersion | SetKind::OnTransition) => true,
+        Some(SetKind::OnCreate) | None => false,
+    }
 }
 
 /// The id of the header section [`inject_schema_version_stamp`] creates for a
@@ -770,7 +858,7 @@ pub fn load_schema_with_types(
         match &mut section.body {
             SectionBody::Simple { fields, .. } => {
                 for field in fields {
-                    resolve_field_type(field, pack_types)?;
+                    resolve_field(field, pack_types)?;
                 }
             }
             // A repeatable section's items render at `###` (nesting-depth 1);
@@ -837,7 +925,7 @@ fn resolve_block(
     }
     for leaf in &mut repeatable.block {
         match leaf {
-            Leaf::Field(field) => resolve_field_type(field, pack_types)?,
+            Leaf::Field(field) => resolve_field(field, pack_types)?,
             Leaf::Repeatable { id, repeatable } => {
                 let owner = id.clone();
                 resolve_block(repeatable, &owner, depth + 1, pack_types)?;
@@ -856,10 +944,26 @@ fn leaf_id(leaf: &Leaf) -> &str {
     }
 }
 
-/// Resolve one field's (possibly unresolved) [`FieldType::Pack`] against the
-/// pack-declared set: bind the adjudicator if declared, else
-/// [`SchemaError::UnknownFieldType`]. Native types are already resolved.
-fn resolve_field_type(field: &mut Field, pack_types: &[PackTypeDecl]) -> Result<(), SchemaError> {
+/// Resolve one field against the pack's declarations, and hold it to the two closed
+/// vocabularies it may name:
+///
+/// - its (possibly unresolved) [`FieldType::Pack`] is bound to the pack-declared
+///   adjudicator, else [`SchemaError::UnknownFieldType`] (native types are already
+///   resolved);
+/// - its `set:` must name an honored [`SetKind`], else [`SchemaError::UnknownSetKind`].
+///
+/// Both live here, on the **load** path, so every schema-loading door refuses — the
+/// shipped pack, a versioned snapshot, a project shadow — rather than the pack-load
+/// freeze sweep alone.
+fn resolve_field(field: &mut Field, pack_types: &[PackTypeDecl]) -> Result<(), SchemaError> {
+    if let Some(set) = &field.set
+        && SetKind::parse(set).is_none()
+    {
+        return Err(SchemaError::UnknownSetKind {
+            field: field.id.clone(),
+            set: set.clone(),
+        });
+    }
     if let FieldType::Pack(pack) = &mut field.ty {
         match pack_types.iter().find(|d| d.name == pack.name) {
             Some(decl) => {

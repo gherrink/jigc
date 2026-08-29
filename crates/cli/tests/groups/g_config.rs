@@ -60,6 +60,8 @@ mod pack_source_determinism;
 mod planning_checklist_sanction;
 #[path = "../read_back_fence.rs"]
 mod read_back_fence;
+#[path = "../set_kind_vocabulary.rs"]
+mod set_kind_vocabulary;
 #[path = "../slug_override.rs"]
 mod slug_override;
 #[path = "../stated_at_fence.rs"]

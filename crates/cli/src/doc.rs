@@ -2004,7 +2004,9 @@ fn on_create_block_field(
     // [`on_create_doc_fields`] (it needs the doctype's manifest version, which the
     // item/nested derivers that also call this helper never carry), so this shared
     // leaf materializer handles only the `set: on-create` date + literal `default:`.
-    let value = if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create") {
+    let value = if field.ty == FieldType::Date
+        && field.set.as_deref() == Some(engine::schema::SET_ON_CREATE)
+    {
         if migration {
             return None;
         }

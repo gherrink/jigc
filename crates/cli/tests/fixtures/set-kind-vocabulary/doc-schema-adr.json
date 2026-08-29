@@ -1,0 +1,77 @@
+{
+  "contract-version": 5,
+  "type": "adr",
+  "schema-version": 2,
+  "fields": [
+    {
+      "id": "status",
+      "type": "enum",
+      "of": [
+        "proposed",
+        "accepted",
+        "superseded"
+      ],
+      "required": true,
+      "author-required": false,
+      "default": "proposed",
+      "section": "status",
+      "set-field": "adr:<slug>#status/status"
+    },
+    {
+      "id": "date",
+      "type": "date",
+      "required": true,
+      "author-required": false,
+      "set": "on-create",
+      "section": "status",
+      "set-field": "adr:<slug>#status/date"
+    },
+    {
+      "id": "supersedes",
+      "type": "ref",
+      "required": false,
+      "author-required": false,
+      "section": "status",
+      "set-field": "adr:<slug>#status/supersedes"
+    },
+    {
+      "id": "cites-code",
+      "type": "code-anchor",
+      "required": false,
+      "author-required": false,
+      "section": "status",
+      "set-field": "adr:<slug>#status/cites-code"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "status"
+    }
+  ],
+  "sections": [
+    {
+      "id": "context",
+      "kind": "slot",
+      "set-slot": "adr:<slug>#context"
+    },
+    {
+      "id": "options",
+      "kind": "slot",
+      "optional": true,
+      "set-slot": "adr:<slug>#options"
+    },
+    {
+      "id": "decision",
+      "kind": "slot",
+      "set-slot": "adr:<slug>#decision"
+    },
+    {
+      "id": "consequences",
+      "kind": "slot",
+      "set-slot": "adr:<slug>#consequences"
+    }
+  ]
+}

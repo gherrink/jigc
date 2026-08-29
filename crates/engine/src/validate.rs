@@ -42,7 +42,7 @@ use crate::finding::{Finding, Location, Route, Severity};
 use crate::parse::{Document, ParsedItem, ParsedSection, parse_sections};
 use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, RootKind, ingest_probe_run};
 use crate::result::ValidationReport;
-use crate::schema::{Field as SchemaField, FieldType, Schema, Section, SectionBody};
+use crate::schema::{Field as SchemaField, FieldType, Schema, Section, SectionBody, SetKind};
 use crate::target_surface::{enumerate_committed_surface, enumerate_target_surface};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -2882,7 +2882,20 @@ pub fn is_author_required(field: &SchemaField) -> bool {
     // finalize-time #5 owner-artifact gate keeps owning the named file's path-safety
     // + durable presence (`design/methodology-docs.md` → The engine work, item 3
     // amendment 2026-06-12).
-    field.default.is_none() && field.set.is_none()
+    // The `set:` exemption is keyed on the **closed vocabulary**, exhaustively: every
+    // honored [`SetKind`] names a deriver the CLI actually runs, so a field carrying one
+    // is filled without the author. Before M49 this read `field.set.is_none()`, and a
+    // typo bought the exemption forever — `set: on-creat` names no deriver, nothing fills
+    // the field, and `required-field-present` stopped asking (`implementation/roadmap.md`
+    // → M49 Increment 2). `load_schema_with_types` now refuses that spelling outright;
+    // matching the kind rather than presence means the predicate states the truth on its
+    // own, and a fourth kind must be dispositioned here.
+    if let Some(kind) = field.set.as_deref().and_then(SetKind::parse) {
+        match kind {
+            SetKind::OnCreate | SetKind::OnTransition | SetKind::SchemaVersion => return false,
+        }
+    }
+    field.default.is_none()
 }
 
 /// Whether `field` is an **optional `ref`** — a `ref` whose forward cardinality has
