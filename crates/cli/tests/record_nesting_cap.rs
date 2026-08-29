@@ -1,5 +1,5 @@
-//! The record's own fence for M49 Increment 5 — the four docs stop stating a nesting cap
-//! the tool does not enforce (T2).
+//! The record's own fence for M49 Increment 5 — the record stops stating a nesting cap the
+//! tool does not enforce (T2).
 //!
 //! T1 made [`engine::schema::MAX_NESTING_DEPTH`] a **derived** number: it is computed as
 //! `(engine::address::MAX_FRAGMENT_HOPS − 1) / 2`, the deepest nesting level whose *leaf
@@ -16,9 +16,11 @@
 //! nesting levels* line under *What stays deferred*), `implementation/parsing.md` (the
 //! heading-depth ceiling's derivation, whose `schema.rs:584` citation was stale as well as
 //! wrong), and `implementation/decisions-pending.md` (the graduated multi-level-repetition
-//! entry, and the nesting-beyond-2 trigger). Both halves of the fact are now false: the
-//! **number** is 2, not 4, and the **reason** is the address hop budget, not the `H6` render
-//! ceiling — which is the *other*, now non-binding, cap.
+//! entry, and the nesting-beyond-2 trigger) and, unenumerated until 2026-08-30, in a fifth —
+//! `design/worked-examples.md` (flow 24's honest bound). All three halves of the fact are now
+//! false: the **number** is 2, not 4, the **reason** is the address hop budget, not the `H6`
+//! render ceiling (the *other*, now non-binding, cap), and depth past the cap is **refused at
+//! pack-load**, not a capability sitting unexercised.
 //!
 //! These are doc-content assertions by nature — the deliverable *is* the prose. The
 //! behaviour it describes is driven through the real binary by the manufactured-shape arms
@@ -30,14 +32,23 @@
 //! **A *fact* sweep, not a phrasing sweep** — the `record_item_slot_kind.rs` /
 //! `record_set_splice_retired.rs` precedent. The retired fact is a **conjunction**: a line
 //! that names the nesting-cap subject *and* states either the retired **number** (arm 2) or
-//! the retired **reason** (arm 3). Keying on the conjunction rather than on a byte-form is
-//! what makes the sweep unmaskable — a future pass cannot re-state the retired fact in fresh
+//! the retired **reason** (arm 3), or that names depth past the cap *and* calls it something
+//! the engine affords (arm 8). Keying on the conjunction rather than on a byte-form is what
+//! makes the sweep unmaskable — a future pass cannot re-state the retired fact in fresh
 //! words. Naming `H6` at all is deliberately **not** the trigger: the new prose names it, as
 //! the render ceiling the address budget now runs out ahead of. What arm 3 refuses is `H6`
 //! presented as *the* cap on nesting.
 //!
+//! **The first derivation of this sweep was itself incomplete, twice over (2026-08-30).** It
+//! enumerated four homes when five were live, and its number needles were six byte-forms that
+//! happened to exist that day — so `3-4-level nesting is a capability the engine *supports*`
+//! walked straight through a subject match, and a whole file walked through by never being
+//! listed. Both holes are closed the way the sweep already claimed to work: over the fact
+//! (hyphenated and ranged forms of the number; availability as its own conjunction), not over
+//! the strings that were there.
+//!
 //! **Two files are deliberately out of the sweep**, by name and with the reason —
-//! [`EXCLUDED_HISTORICAL`]. Arm 6 fences that exclusion structurally so it stays a stated
+//! [`EXCLUDED_HISTORICAL`]. Arm 7 fences that exclusion structurally so it stays a stated
 //! decision rather than an oversight, without asserting the historical text itself (which
 //! would pin a retired fact as expected output).
 
@@ -63,12 +74,17 @@ fn count(haystack: &str, needle: &str) -> usize {
     haystack.matches(needle).count()
 }
 
-/// The four **live** record files the retired fact is swept over.
+/// The **live** record files the retired fact is swept over.
+///
+/// `design/worked-examples.md` joined on 2026-08-30: flow 24's honest-bound line stated the
+/// retired fact in a fifth home the first derivation never enumerated, and neither the number
+/// sweep nor the reason sweep could see a file that was not in this list.
 const SWEPT: &[&str] = &[
     "design/structural-grammar.md",
     "design/changelog.md",
     "implementation/parsing.md",
     "implementation/decisions-pending.md",
+    "design/worked-examples.md",
 ];
 
 /// The dated, append-only logs held **out** of the sweep, each with why. They record what was
@@ -126,6 +142,17 @@ const FALSIFIED: &[(&str, &str, &str)] = &[
         "general recursion (up to 4 levels)",
         "the nesting-beyond-2 trigger, whose own condition depends on the real ceiling",
     ),
+    (
+        "design/changelog.md",
+        "3\u{2013}4-level nesting is a capability the engine *supports*",
+        "the *does not prove* bound — it named the retired ceiling in a hyphenated range no \
+         needle carried, and sold depth 3 as a capability the loader refuses",
+    ),
+    (
+        "design/worked-examples.md",
+        "nesting beyond 2 levels is supported-but-unexercised",
+        "flow 24's honest bound, in the fifth home the first sweep never enumerated",
+    ),
 ];
 
 /// The subject: the repeatable **nesting cap**, however the record names it.
@@ -151,6 +178,14 @@ const RETIRED_NUMBER: &[&str] = &[
     "max 4",
     "up to 4",
     "MAX_NESTING_DEPTH = 4",
+    // The hyphenated and ranged forms the first set walked past: `3–4-level nesting` names
+    // the retired ceiling without ever writing "4 levels" (2026-08-30).
+    "4-level",
+    "four-level",
+    "3\u{2013}4",
+    "3-4",
+    "depth 4",
+    "depth of 4",
 ];
 
 /// The retired **reason** — `H6` presented as *the* cap on nesting. Naming `H6` as the render
@@ -164,6 +199,33 @@ const RETIRED_REASON: &[&str] = &[
     "(H6)",
     "H6 →",
     "H6) →",
+];
+
+/// Depth **past the cap**, however a home refers to it. Half of the third retired fact.
+const DEEPER_NESTING: &[&str] = &[
+    "beyond 2 levels",
+    "beyond two levels",
+    "past 2 levels",
+    "past two levels",
+    "deeper nesting",
+    "deeper than 2",
+    "third nesting level",
+    "3rd+ nesting level",
+    "3\u{2013}4-level",
+    "3-4-level",
+];
+
+/// The other half: that depth presented as something the engine **has**. Naming a deeper
+/// level as *deferred*, *refused*, or *not built* is the true statement and must stay sayable
+/// — which is why the deferral ledger's own entry (`Repeatable nesting beyond 2 levels`,
+/// carrying no availability word) passes this arm while `supported-but-unexercised` does not.
+const RETIRED_AVAILABILITY: &[&str] = &[
+    "support",
+    "unexercised",
+    "unproven",
+    "available",
+    "capability the engine",
+    "the engine has",
 ];
 
 /// The binding constraint, however a home names it — every swept file must state the reason
@@ -223,6 +285,39 @@ fn the_nesting_cap_is_never_attributed_to_the_heading_ceiling() {
                  address hop budget runs out first, and H6 is the other, now non-binding, cap \
                  (M49 Inc-5 T1). Naming H6 as the render ceiling is fine; naming it as *the* \
                  cap is the retired fact.\n  {line}",
+                n + 1,
+            );
+        }
+    }
+}
+
+/// **Arm 8 — deeper nesting is never sold as a capability that merely goes unused.**
+///
+/// The third half of the retired fact, and the one that survived the first sweep: two homes
+/// said depth past the cap was *supported* / *supported-but-unexercised* — false at HEAD,
+/// where a schema declaring it is refused at pack-load with a typed error (driven through the
+/// real binary by `crates/cli/tests/doc_read_surface.rs`'s one-level-deeper pack arm). Neither
+/// line named the retired **number** in any form the number sweep carried, and one of the two
+/// files was not swept at all, so the miss was two independent holes in one sentence.
+///
+/// The conjunction is deliberate: the *deferral* of a third level is a live, true statement
+/// (`implementation/decisions-pending.md` → the multi-level-repetition entry) and stays
+/// sayable; what this arm refuses is that depth described as something the engine already
+/// affords.
+#[test]
+fn deeper_nesting_is_never_stated_as_an_existing_capability() {
+    for file in SWEPT {
+        let body = read_doc(file);
+        for (n, line) in body.lines().enumerate() {
+            let deeper = DEEPER_NESTING.iter().any(|d| line.contains(d));
+            let afforded = RETIRED_AVAILABILITY.iter().any(|a| line.contains(a));
+            assert!(
+                !(deeper && afforded),
+                "{file}:{} states that nesting past the cap is a capability the engine has. \
+                 It is not: the loader admits {MAX_NESTING_DEPTH} nesting levels and refuses \
+                 a schema declaring one more (M49 Inc-5 T1). A deeper level is *deferred* \
+                 pending a wider address grammar — say that, not that it is supported and \
+                 merely unexercised.\n  {line}",
                 n + 1,
             );
         }
