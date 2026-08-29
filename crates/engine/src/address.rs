@@ -13,8 +13,9 @@
 //!
 //! The grammar *permits* every depth uniformly; the schema *determines* which
 //! depths are valid for a given unit. So this parser is purely structural: it
-//! splits a fragment by hop count (1 = unit, 2 = unit/leaf, 3 = unit/item/leaf)
-//! and records the typed hops, without consulting any schema. Parse → `Display`
+//! splits a fragment by hop count (1 = unit, 2 = unit/leaf, 3 = unit/item/leaf, and from
+//! 4 up to [`MAX_FRAGMENT_HOPS`] a role-less nested path) and records the typed hops,
+//! without consulting any schema. Parse → `Display`
 //! reproduces the input byte-for-byte for every grammar form.
 
 use std::fmt;
@@ -107,6 +108,12 @@ pub struct Address {
 }
 
 /// A failure to parse an address string against the grammar.
+///
+/// The variants split 3/3 on **whose fault it is**, and the CLI's verb boundary answers
+/// each half differently (`crates/cli/src/doc.rs` → `address_parse_guidance`): the first
+/// three are faults of the `<type>:<slug>` **head**, the last three faults of the `#…`
+/// **fragment** over a head that already parsed. Adding a variant here obliges an author to
+/// give it a message and a route there — that mapping is an exhaustive match.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum ParseError {
     /// The `type` hop before `:` was empty.
@@ -124,7 +131,9 @@ pub enum ParseError {
     /// A hop within the fragment was empty (e.g. a trailing or doubled `/`).
     #[error("empty fragment hop")]
     EmptyHop,
-    /// The fragment had more than the three permitted hops.
+    /// The fragment carried more than [`MAX_FRAGMENT_HOPS`] hops — the depth budget, not a
+    /// fixed three: the chain alternates item id and nested-section id, so the ceiling this
+    /// breaks is a **nesting depth** ([`crate::schema::MAX_NESTING_DEPTH`], derived from it).
     #[error("too many fragment hops")]
     TooManyHops,
 }
@@ -132,9 +141,10 @@ pub enum ParseError {
 impl Fragment {
     /// Parse the text *after* `#` into a typed [`Fragment`].
     ///
-    /// Splits by `/` into 1–3 hops (unit, unit/leaf, unit/item/leaf) per the
-    /// addressing grammar; an empty input, an empty hop, or more than three hops
-    /// is a [`ParseError`]. This is the single fragment recognizer the data-value
+    /// Splits by `/` into 1–3 hops (unit, unit/leaf, unit/item/leaf), or — from 4 up to
+    /// [`MAX_FRAGMENT_HOPS`] — a role-less [`Fragment::Deep`] nested path, per the addressing
+    /// grammar; an empty input, an empty hop, or a hop count over that budget is a
+    /// [`ParseError`]. This is the single fragment recognizer the data-value
     /// path grammar ([`crate::data_value`]) also reuses for its `#fragment` slice.
     pub fn parse(frag: &str) -> Result<Self, ParseError> {
         if frag.is_empty() {

@@ -5110,17 +5110,116 @@ fn parse_addr(addr: &str) -> Result<Address> {
 /// slug-less address keeps the actionable route (the `<type>:<slug>` form + the
 /// `jigc describe` pointer — the M41 V12 repair, which reached `rename` only).
 ///
+/// A rejection is adjudicated per fault by [`address_parse_guidance`], never flattened into
+/// one sentence: the doctype hop it hands over is read off the **expanded** address, which a
+/// fragment fault has already parsed (see that function's own note).
+///
 /// `engine::address::Address::parse` is **untouched**: the grammar is not widened, this is
 /// an expansion at the verb boundary — the one place a human/agent types an address.
 fn parse_verb_addr(pack: &dyn PackSource, project_config: &Path, addr: &str) -> Result<Address> {
-    Address::parse(&expand_bare_singleton(pack, project_config, addr)).map_err(|err| {
-        anyhow!(
-            "malformed address `{addr}`: {err} — a doc is addressed as `<type>:<slug>`, \
-             e.g. `adr:single-node-cache` (a singleton doctype like `changelog` or `vision` \
-             may be named bare)\n  route: run {} for the doctype surface",
-            engine::finding::Route::mechanical(["jigc", "describe"], ""),
-        )
+    let expanded = expand_bare_singleton(pack, project_config, addr);
+    Address::parse(&expanded).map_err(|err| {
+        let (explanation, route) = address_parse_guidance(&err, head_doctype(&expanded));
+        anyhow!("malformed address `{addr}`: {err} — {explanation}\n  route: {route}")
     })
+}
+
+/// The `<type>` hop of an address whose **head** parsed — `""` when it did not.
+///
+/// The three fragment faults are reached only after `<type>:<slug>` was accepted
+/// (`engine::address::Address::parse` splits on `#`, adjudicates the head, and parses the
+/// fragment last), so each of them has a real doctype in hand for its route. The three head
+/// faults never read this.
+fn head_doctype(expanded: &str) -> &str {
+    expanded
+        .split('#')
+        .next()
+        .and_then(|head| head.split_once(':'))
+        .map(|(ty, _)| ty)
+        .unwrap_or_default()
+}
+
+/// The explanation + route for one address [`engine::address::ParseError`], split on **whose
+/// fault it is** (`design/surface-contract.md` → law 1 + the route floor; the M47 write-verb
+/// × miss-shape precedent applied to the addressing seam).
+///
+/// The match is **exhaustive over the enum by construction**: a seventh variant cannot
+/// compile without an author choosing its sentence and its route — which is the whole repair,
+/// since all six previously shared one of each.
+///
+///   * The **head** faults (`EmptyType` / `MissingColon` / `EmptySlug`) are about
+///     `<type>:<slug>`, so they keep the `<type>:<slug>` form and the `jigc describe`
+///     doctype surface — true and followable where the caller got the head wrong.
+///   * The **fragment** faults (`EmptyFragment` / `EmptyHop` / `TooManyHops`) sit over a head
+///     that already parsed, so that sentence describes a part the caller typed correctly and
+///     `jigc describe` — which lists doctypes, never addresses — answers nothing. They state
+///     the fragment grammar and route at `jigc doc schema <type>`: the surface that, since
+///     M49 Increment 5 T1, lists only addresses the write path accepts. `TooManyHops` names
+///     the **depth budget** it actually broke, generated from the two constants T1 tied
+///     together, so the sentence cannot go stale the day the grammar moves.
+fn address_parse_guidance(err: &engine::address::ParseError, doctype: &str) -> (String, String) {
+    use engine::address::ParseError;
+
+    let head = || {
+        (
+            "a doc is addressed as `<type>:<slug>`, e.g. `adr:single-node-cache` (a singleton \
+             doctype like `changelog` or `vision` may be named bare)"
+                .to_owned(),
+            format!(
+                "run {} for the doctype surface",
+                engine::finding::Route::mechanical(["jigc", "describe"], ""),
+            ),
+        )
+    };
+    let fragment = |explanation: String| {
+        (
+            explanation,
+            format!(
+                "run {} for the addresses this doctype accepts",
+                engine::finding::Route::mechanical(doc_schema_argv(doctype), ""),
+            ),
+        )
+    };
+
+    match err {
+        ParseError::EmptyType | ParseError::MissingColon | ParseError::EmptySlug => head(),
+        ParseError::EmptyFragment => fragment(
+            "the `#` fragment names a place inside the doc: `#<section>`, \
+             `#<section>/<field>` or `#<section>/<item>/<field>` — drop the `#` to address \
+             the whole doc"
+                .to_owned(),
+        ),
+        ParseError::EmptyHop => fragment(
+            "a fragment is `#<section>`, `#<section>/<field>` or \
+             `#<section>/<item>/<field>`, with no doubled and no trailing `/`"
+                .to_owned(),
+        ),
+        ParseError::TooManyHops => fragment(format!(
+            "the grammar admits at most {} hops: a section, then two per nesting level \
+             (the item id and the nested section that declares the next block), then the \
+             leaf — so the deepest addressable leaf write is {} nesting levels deep",
+            engine::address::MAX_FRAGMENT_HOPS,
+            engine::schema::MAX_NESTING_DEPTH,
+        )),
+    }
+}
+
+/// The `jigc doc schema <doctype>` argv a fragment fault routes at.
+///
+/// The doctype hop is **user bytes** — it comes out of the address the caller typed — and a
+/// mechanical route's text is `argv.join(" ")`, i.e. bytes an agent pastes into a shell. So
+/// it is rendered through [`crate::task::shell_token`], and a token that re-lexes as a
+/// **flag** (reachable as `jigc doc show -- -x:slug#`) is placed after clap's `--`
+/// end-of-flags separator, so the emitted line runs as printed instead of failing the route
+/// fence's own argv parse.
+fn doc_schema_argv(doctype: &str) -> Vec<String> {
+    let token = crate::task::shell_token(doctype);
+    let mut argv = vec!["jigc".to_owned(), "doc".to_owned(), "schema".to_owned()];
+    if token.starts_with('-') {
+        argv.push("--".to_owned());
+    }
+    argv.push(token);
+    argv
 }
 
 /// Expand a bare **singleton** head to its canonical `<type>:<type>` spelling, carrying any
