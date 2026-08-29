@@ -406,6 +406,22 @@ fn list_packs(repo: &Path, packs: &[&Path]) {
         .expect("write packs.yaml naming the listed packs");
 }
 
+/// The door enumeration every pack-load fence arm sweeps — the read/report verbs
+/// plus the orient front door. Factored into one constant so a *new* fence arm
+/// cannot silently sweep a narrower set than the one before it: the M42 Inc 6
+/// headline is that the freeze assert lives in the pack-source factory, so **every**
+/// door is the claim, and each arm below iterates this same list rather than
+/// re-typing its own.
+const FREEZE_DOORS: [&[&str]; 5] = [
+    &["validate"],
+    &["describe"],
+    &["doc", "schema", "adr"],
+    &["migrate-corpus"],
+    // The orient front door (bare `jigc start` — no workflow, no intent): distinct
+    // from the composing `jigc start --workflow …` the assert already guarded.
+    &["start"],
+];
+
 /// A repo + home + listed **drifted** dev-pack copy (with the methodology pack
 /// composed for the `milestone-record` doctype). Every door run against it must
 /// block, naming [`needles`](DriftedProject::needles).
@@ -473,14 +489,9 @@ impl DriftedProject {
 fn every_read_door_blocks_on_a_drifted_frozen_schema() {
     let project = DriftedProject::new("doors");
 
-    project.door_blocks(&["validate"]);
-    project.door_blocks(&["describe"]);
-    project.door_blocks(&["doc", "schema", "adr"]);
-    project.door_blocks(&["migrate-corpus"]);
-    // The orient front door (bare `jigc start` — no workflow, no intent): a sixth
-    // door, distinct from the composing `jigc start --workflow …` the assert already
-    // guarded.
-    project.door_blocks(&["start"]);
+    for door in FREEZE_DOORS {
+        project.door_blocks(door);
+    }
 }
 
 /// Rewrite the copied manifest's declared `slug-rule.hash` to a well-formed but
@@ -528,11 +539,9 @@ fn a_drifted_slug_rule_blocks_every_door() {
         &["the slug rule changed", "bump slug-rule-version + re-pin"],
     );
 
-    project.door_blocks(&["validate"]);
-    project.door_blocks(&["describe"]);
-    project.door_blocks(&["doc", "schema", "adr"]);
-    project.door_blocks(&["migrate-corpus"]);
-    project.door_blocks(&["start"]);
+    for door in FREEZE_DOORS {
+        project.door_blocks(door);
+    }
 }
 
 /// **Delete** the copied manifest's whole `slug-rule:` block — the third silencer,
@@ -591,11 +600,9 @@ fn a_manifest_omitting_the_slug_rule_blocks_every_door() {
         &["declares no `slug-rule:` block", "slug-rule:"],
     );
 
-    project.door_blocks(&["validate"]);
-    project.door_blocks(&["describe"]);
-    project.door_blocks(&["doc", "schema", "adr"]);
-    project.door_blocks(&["migrate-corpus"]);
-    project.door_blocks(&["start"]);
+    for door in FREEZE_DOORS {
+        project.door_blocks(door);
+    }
 }
 
 /// The control (the omitting context's twin): an **unmutated** listed pack — whose
@@ -827,6 +834,228 @@ fn manifest_less_pack_is_unaffected() {
     assert!(
         out.status.success(),
         "a manifest-less pack must be unaffected by the freeze gate; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The project layer (M49 Increment 3, T1)
+//
+// The freeze gate read the **pack** and nothing else, so `.jigc/config/schemas/
+// <ty>.yaml` — the whole-file definition shadow `design/overrides.md` documents —
+// changed a frozen doctype's shape at every surface while the gate stayed silent:
+// the corpus validated clean at exit 0, `jigc doc schema` reported the frozen
+// `schema-version` for an unfrozen shape, and `doc create` wrote a third. The fence
+// now hashes the **resolved** schema for a project-owned id, so the freeze binds at
+// every layer that can change a schema — and the *documented* capability survives
+// intact, because the presentation keys are outside the hash by M47's projection.
+// ---------------------------------------------------------------------------
+
+/// The shipped `adr` schema's bytes — read from the pack tree, never re-typed, so a
+/// shadow built from it differs from the frozen shape in **exactly** the mutation
+/// under test (and a schema edit elsewhere cannot leave these arms asserting over a
+/// stale copy).
+fn shipped_adr_schema() -> String {
+    fs::read_to_string(embedded_pack_tree().join("schemas").join("adr.yaml"))
+        .expect("read the shipped adr.yaml")
+}
+
+/// The shipped `adr` shape with a required `owner` header field added — a schema
+/// **shape** change made from the project layer.
+fn adr_shadow_with_owner() -> String {
+    let body = shipped_adr_schema();
+    let shadowed = body.replacen(
+        "      - { id: cites-code, type: code-anchor }\n",
+        "      - { id: cites-code, type: code-anchor }\n      - { id: owner, type: string }\n",
+        1,
+    );
+    assert_ne!(body, shadowed, "adr.yaml must declare the cites-code field");
+    shadowed
+}
+
+/// The shipped `adr` shape relocated `decisions/` → `adrs/` — a **home** change,
+/// version-gated exactly like a shape change since M38 (`location:` is inside the
+/// `schema-hash`).
+fn adr_shadow_relocated() -> String {
+    let body = shipped_adr_schema();
+    let shadowed = body.replacen("\nlocation: decisions/\n", "\nlocation: adrs/\n", 1);
+    assert_ne!(
+        body, shadowed,
+        "adr.yaml must declare `location: decisions/` as a top-level key"
+    );
+    shadowed
+}
+
+/// The reworded `description:` the presentation-only arm asserts is visible through
+/// `jigc describe` — authored prose, outside the frozen hash since M47.
+const REWORDED_ADR_DESCRIPTION: &str =
+    "A dated architectural decision record, in this project's own words.";
+
+/// The shipped `adr` shape with only its authored `description:` reworded — the
+/// capability `design/overrides.md` → *Authored metadata on a definition resolves by
+/// whole-file shadow* documents, which must keep working.
+fn adr_shadow_reworded() -> String {
+    let body = shipped_adr_schema();
+    let mut out = String::new();
+    let mut hit = false;
+    for line in body.lines() {
+        if !hit && line.starts_with("description: ") {
+            out.push_str(&format!("description: {REWORDED_ADR_DESCRIPTION}"));
+            hit = true;
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    assert!(hit, "adr.yaml must declare a top-level `description:`");
+    out
+}
+
+/// Write a project-layer whole-file schema shadow at
+/// `<repo>/.jigc/config/schemas/<ty>.yaml` and return its path.
+fn install_schema_shadow(repo: &Path, ty: &str, body: &str) -> PathBuf {
+    let dir = repo.join(".jigc").join("config").join("schemas");
+    fs::create_dir_all(&dir).expect("mk .jigc/config/schemas/");
+    let path = dir.join(format!("{ty}.yaml"));
+    fs::write(&path, body).expect("write the project schema shadow");
+    path
+}
+
+/// The first backtick-delimited span of a rendered `route:` line — the command an
+/// operator would paste.
+fn route_command(stderr: &str) -> String {
+    let line = stderr
+        .lines()
+        .find(|l| l.trim_start().starts_with("route:"))
+        .unwrap_or_else(|| panic!("the block must render a `route:` line; got:\n{stderr}"));
+    let mut parts = line.split('`');
+    parts.next();
+    parts
+        .next()
+        .unwrap_or_else(|| panic!("the route must carry a backticked command; got: {line}"))
+        .to_owned()
+}
+
+/// **The T1 headline** — a project-layer shadow that changes a manifest-governed
+/// doctype's *shape* blocks every door, over both shape axes the freeze covers
+/// (`design/corpus-migration.md` → The freeze — declared *and* enforced): a **field**
+/// added, and the **home** moved (`location:` is inside the `schema-hash` since M38).
+///
+/// Before this fence the same shadow made `jigc validate` exit **0** over a corpus it
+/// had just made non-conformant, while `jigc doc schema adr` reported the frozen
+/// `schema-version` for a shape nothing froze. Each door must name *what* drifted
+/// (`adr`, the hash mismatch), *where* (the shadow's own path), and *how to fix it* —
+/// with a route that runs.
+#[test]
+fn a_shape_changing_project_schema_shadow_blocks_every_door() {
+    for (tag, body) in [
+        ("shadow-owner", adr_shadow_with_owner()),
+        ("shadow-home", adr_shadow_relocated()),
+    ] {
+        let repo = TempDir::new(&format!("{tag}-repo"));
+        let home = TempDir::new(&format!("{tag}-home"));
+        init_repo(repo.path());
+        let shadow = install_schema_shadow(repo.path(), "adr", &body);
+
+        let mut route = String::new();
+        for door in FREEZE_DOORS {
+            let out = run_listed(repo.path(), home.path(), door);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(
+                !out.status.success(),
+                "[{tag}] `jigc {}` must exit non-zero over a shape-changing project schema shadow; stdout:\n{}\nstderr:\n{stderr}",
+                door.join(" "),
+                String::from_utf8_lossy(&out.stdout),
+            );
+            for needle in ["schema-hash mismatch", "adr", &shadow.display().to_string()] {
+                assert!(
+                    stderr.contains(needle),
+                    "[{tag}] `jigc {}` stderr must name {needle:?}; got:\n{stderr}",
+                    door.join(" "),
+                );
+            }
+            route = route_command(&stderr);
+        }
+
+        // The route is followed **verbatim**, through a real shell, and it must clear
+        // the block — a route that names the wrong file (or no file) reddens here.
+        let ran = Command::new("sh")
+            .arg("-c")
+            .arg(&route)
+            .current_dir(repo.path())
+            .env("HOME", home.path())
+            .output()
+            .expect("spawn sh to follow the route");
+        assert!(
+            ran.status.success(),
+            "[{tag}] the emitted route `{route}` must run; stderr:\n{}",
+            String::from_utf8_lossy(&ran.stderr),
+        );
+        for door in FREEZE_DOORS {
+            let out = run_listed(repo.path(), home.path(), door);
+            assert!(
+                out.status.success(),
+                "[{tag}] `jigc {}` must run clean once the emitted route has been followed; stdout:\n{}\nstderr:\n{}",
+                door.join(" "),
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+    }
+}
+
+/// The omitting context's twin, and the reason the fence hashes the **resolved**
+/// schema rather than refusing a shadow by name: a shadow that reworks only the
+/// *authored prose* changes no frozen byte (M47's presentation projection erases
+/// `description:` / `usage:` / slot `hint:`), so it composes clean at exit 0 — and the
+/// reworded prose is genuinely live, visible through `jigc describe`. Refusing the
+/// shadow by name would have deleted the capability `design/overrides.md` documents
+/// for all sixteen shipped doctypes.
+#[test]
+fn a_presentation_only_project_schema_shadow_composes_clean() {
+    let repo = TempDir::new("shadow-prose-repo");
+    let home = TempDir::new("shadow-prose-home");
+    init_repo(repo.path());
+    install_schema_shadow(repo.path(), "adr", &adr_shadow_reworded());
+
+    for door in FREEZE_DOORS {
+        let out = run_listed(repo.path(), home.path(), door);
+        assert!(
+            out.status.success(),
+            "`jigc {}` must compose clean over a presentation-only schema shadow; stdout:\n{}\nstderr:\n{}",
+            door.join(" "),
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+
+    let describe = run_listed(repo.path(), home.path(), &["describe"]);
+    let stdout = String::from_utf8_lossy(&describe.stdout);
+    assert!(
+        stdout.contains(REWORDED_ADR_DESCRIPTION),
+        "the shadow's reworded `description:` must be live through `jigc describe`; got:\n{stdout}",
+    );
+}
+
+/// The wholesale opt-out reaches the project layer too: a shadow of a doctype whose
+/// **owning pack ships no manifest** is unchecked, exactly as that pack's own schemas
+/// are ([`manifest_less_pack_is_unaffected`]). The freeze records what a pack
+/// *declares* frozen; a pack that declares nothing freezes nothing, at either layer.
+#[test]
+fn a_project_shadow_of_a_manifest_less_pack_doctype_loads_clean() {
+    let repo = TempDir::new("shadow-nomanifest-repo");
+    let home = TempDir::new("shadow-nomanifest-home");
+    let pack = dev_pack_copy("shadow-nomanifest-pack");
+    init_repo(repo.path());
+    fs::remove_file(pack.path().join("config").join("schema-manifest.yaml"))
+        .expect("drop the freeze manifest");
+    install_schema_shadow(repo.path(), "adr", &adr_shadow_with_owner());
+
+    let out = run_start(repo.path(), home.path(), pack.path());
+    assert!(
+        out.status.success(),
+        "a project shadow of a manifest-less pack's doctype must load clean; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
 }

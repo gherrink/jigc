@@ -20,9 +20,18 @@
 //!
 //! Drives the built `jigc` binary through the real store-scope `jigc validate` so the
 //! asserted bytes are the ones an operator actually sees (the route lines the renderer
-//! emits), never a reconstructed equivalent. The freeze-gate is respected: the schema-shape
-//! change is a **project-layer schema shadow**, never a pack-schema edit.
+//! emits), never a reconstructed equivalent.
+//!
+//! The freeze gate is **satisfied, not dodged** (M49 Increment 3). The schema-shape change
+//! used to be a project-layer `.jigc/config/schemas/adr.yaml` shadow, described here as
+//! *"never a pack-schema edit"* as though that respected the freeze; it did not — the gate
+//! hashed each pack's own schemas and never the cascade-resolved one, so the project layer
+//! reshaped a frozen doctype in silence. That is now blocked, and the device is an on-disk
+//! pack copy whose `adr` schema gains the field **with its manifest entry re-pinned**
+//! (`support::frozen_pack`) — the declared `schema-version` held at 2, so the stamp
+//! fixtures below (absent / 0 / 2) keep meaning v0, below-version and at-version.
 
+use crate::support::frozen_pack;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -104,13 +113,29 @@ fn git(repo: &Path, args: &[&str]) -> String {
 
 /// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and the real `doc-code` probe.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_jigc"))
+    jigc_with_pack(repo, home, None, args)
+}
+
+/// [`jigc`], with `pack` selecting an on-disk pack tree via `JIGC_PACK_DIR` — the seam the
+/// reshaped-schema arms drive (`support::frozen_pack`). `None` scrubs the variable, so a
+/// developer's stray `JIGC_PACK_DIR` never reaches the shipped-pack arms.
+fn jigc_with_pack(
+    repo: &Path,
+    home: &Path,
+    pack: Option<&Path>,
+    args: &[&str],
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
-        .output()
-        .expect("run the jigc binary")
+        .env("JIGC_DOC_CODE_PROBE", doc_code_probe());
+    match pack {
+        Some(dir) => command.env("JIGC_PACK_DIR", dir),
+        None => command.env_remove("JIGC_PACK_DIR"),
+    };
+    command.output().expect("run the jigc binary")
 }
 
 /// Assert a `jigc` invocation succeeded, surfacing its streams on failure.
@@ -181,37 +206,21 @@ fn commit_adr(repo: &Path, slug: &str, title: &str, stamp: Option<u32>) {
     git(repo, &["commit", "-q", "-m", "seed adr"]);
 }
 
-/// Install a **project-layer schema shadow** of the `adr` doctype that adds a required
-/// `owner` header field (the simulated schema-shape change — never a pack-schema edit). The
-/// shadow omits the `schema-version` stamp on purpose; the pack loader injects it uniformly.
-fn shadow_adr_schema(repo: &Path) {
-    let dir = repo.join(".jigc").join("config").join("schemas");
-    fs::create_dir_all(&dir).expect("mk .jigc/config/schemas/");
-    let shadow = "\
-type: adr
-location: decisions/
-id-from: title
-sections:
-  - id: status
-    header: true
-    fields:
-      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
-      - { id: date, type: date, set: on-create }
-      - { id: supersedes, type: ref, to: adr, card: \"0..*\", inverse: superseded-by }
-      - { id: cites-code, type: code-anchor }
-      - { id: owner, type: string }
-  - id: context
-    slot: { hint: Forces. }
-  - id: options
-    slot: { optional: true, hint: Alternatives. }
-  - id: decision
-    slot: { hint: What. }
-  - id: consequences
-    slot: { hint: Effects. }
-";
-    fs::write(dir.join("adr.yaml"), shadow).expect("write adr schema shadow");
-    git(repo, &["add", "."]);
-    git(repo, &["commit", "-q", "-m", "shadow adr schema"]);
+/// Build an on-disk dev-pack copy at `root` whose `adr` schema gains a required `owner`
+/// header field — the simulated schema-shape change, with the copy's manifest entry
+/// **re-pinned** so the pack passes its own freeze gate and its declared
+/// `schema-version` held at 2. The field is spliced into the **shipped** `adr.yaml`, so
+/// the reshaped schema differs from the frozen one in exactly that field.
+fn reshape_adr_pack(root: &Path) {
+    frozen_pack::reshaped_dev_pack(root, "adr", |body| {
+        let out = body.replacen(
+            "      - { id: cites-code, type: code-anchor }\n",
+            "      - { id: cites-code, type: code-anchor }\n      - { id: owner, type: string }\n",
+            1,
+        );
+        assert_ne!(body, out, "adr.yaml must declare the cites-code field");
+        out
+    });
 }
 
 /// Count non-overlapping occurrences of `needle` in `haystack`.
@@ -219,7 +228,7 @@ fn count(haystack: &str, needle: &str) -> usize {
     haystack.matches(needle).count()
 }
 
-/// (routing) Under a schema shadow that adds a required field, three committed ADRs — one
+/// (routing) Under a reshaped schema that adds a required field, three committed ADRs — one
 /// unstamped (v0), one stamped below the current version (0 < 2), one at the current version
 /// (2) — each surface a `required-field-present` break. The two below-current/absent docs
 /// route `migrate`; the at-version doc routes `corrupt`. `jigc validate` still exits 0.
@@ -235,6 +244,7 @@ fn count(haystack: &str, needle: &str) -> usize {
 fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
     let repo = TempDir::new("route");
     let home = TempDir::new("home");
+    let pack = TempDir::new("route-pack");
     setup_repo(repo.path(), home.path());
 
     // stamp-absent (the v0 corpus state) ⇒ migrate.
@@ -244,9 +254,9 @@ fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
     // stamped at the current manifest version (2) but non-conformant ⇒ corrupt.
     commit_adr(repo.path(), "gamma-decision", "Gamma decision", Some(2));
 
-    shadow_adr_schema(repo.path());
+    reshape_adr_pack(pack.path());
 
-    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let out = jigc_with_pack(repo.path(), home.path(), Some(pack.path()), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
@@ -293,7 +303,7 @@ fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
     );
 }
 
-/// (file-attribution, M36) Two committed ADRs made non-conformant by the same schema shadow
+/// (file-attribution, M36) Two committed ADRs made non-conformant by the same reshaped schema
 /// each surface one `required-field-present` break — and each **rendered finding line names
 /// its own doc address** (`decisions/<slug>.md`), never the sibling's. Pre-attribution the two
 /// message lines were byte-identical and named no doc at all, so the adoption ingest→validate
@@ -304,12 +314,13 @@ fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
 fn store_sweep_attributes_each_conformance_finding_to_its_own_doc() {
     let repo = TempDir::new("attribute");
     let home = TempDir::new("home");
+    let pack = TempDir::new("attribute-pack");
     setup_repo(repo.path(), home.path());
     commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(1));
     commit_adr(repo.path(), "beta-decision", "Beta decision", Some(1));
-    shadow_adr_schema(repo.path());
+    reshape_adr_pack(pack.path());
 
-    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let out = jigc_with_pack(repo.path(), home.path(), Some(pack.path()), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     // Both ADRs are stamped v1 under the v2 manifest, so this corpus is unmigrated and the sweep
@@ -349,8 +360,9 @@ fn store_sweep_attributes_each_conformance_finding_to_its_own_doc() {
     );
 }
 
-/// (conformant) With **no** schema shadow the committed ADRs conform — no schema-conformance
-/// finding, no route line, exit 0. The false-positive guard for the routing path.
+/// (conformant) Under the **shipped** schema the committed ADRs conform — no
+/// schema-conformance finding, no route line, exit 0. The false-positive guard for the
+/// routing path.
 #[test]
 fn store_sweep_clean_and_unrouted_on_conformant_store() {
     let repo = TempDir::new("clean");

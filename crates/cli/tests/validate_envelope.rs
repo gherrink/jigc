@@ -139,6 +139,19 @@ fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     jigc_with_probe(repo, home, args, doc_code_probe())
 }
 
+/// Run `jigc <args>` against an on-disk pack tree (`JIGC_PACK_DIR`), otherwise identical
+/// to [`jigc`].
+fn jigc_with_pack(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env("JIGC_PACK_DIR", pack)
+        .output()
+        .expect("run the jigc binary")
+}
+
 /// Run `jigc <args>` with an explicit `JIGC_DOC_CODE_PROBE` — lets the operational-error
 /// control point the override at a path that does not resolve to an executable.
 fn jigc_with_probe(repo: &Path, home: &Path, args: &[&str], probe: &Path) -> std::process::Output {
@@ -188,15 +201,27 @@ fn assert_ok(out: &std::process::Output, what: &str) {
 /// Make `root` a real git repo with identity, then run `jigc setup` over it (the
 /// project layer + probe extraction). Returns once the store is a clean, set-up repo.
 fn setup_repo(repo: &Path, home: &Path) {
+    init_repo(repo);
+    let out = jigc(repo, home, &["setup"]);
+    assert_ok(&out, "`jigc setup`");
+}
+
+/// [`setup_repo`], installing over an **on-disk pack tree** selected by `JIGC_PACK_DIR`
+/// — the seam the freeze-exempt cascade arm drives (`support::frozen_pack`).
+fn setup_repo_with_pack(repo: &Path, home: &Path, pack: &Path) {
+    init_repo(repo);
+    let out = jigc_with_pack(repo, home, pack, &["setup"]);
+    assert_ok(&out, "`jigc setup`");
+}
+
+/// A real git repo with identity and one commit — the shared preamble of both setups.
+fn init_repo(repo: &Path) {
     git(repo, &["init", "-q"]);
     git(repo, &["config", "user.email", "test@example.com"]);
     git(repo, &["config", "user.name", "Test"]);
     fs::write(repo.join("README.md"), "hello\n").expect("write file");
     git(repo, &["add", "."]);
     git(repo, &["commit", "-q", "-m", "initial"]);
-
-    let out = jigc(repo, home, &["setup"]);
-    assert_ok(&out, "`jigc setup`");
 }
 
 /// Fill an ADR's author-required prose slots so a finalize over it validates clean.
@@ -443,20 +468,32 @@ fn validate_unresolvable_probe_still_exits_non_zero_with_one_error() {
 /// doctype's `location:` must be honored by the store sweep — schemas resolve through
 /// the cascade (`project > team > pack-default` for ALL customization), not pack-only.
 ///
-/// Seed a clean store, then drop a project `schemas/adr.yaml` whole-file shadow that
-/// relocates `adr` from the pack's `decisions/` to `adrs/`. The cascade auto-shadows the
-/// id (`file_owner(adr) == Project`), so the resolved `adr` schema's `location:` is now
-/// `adrs/`. Commit an `adr` doc at the **project-shadowed** location `adrs/cache.md` with
-/// no baseline record. The file↔CLI-state twin enumerates committed docs by walking each
-/// resolved schema's `location:`, so a cascade-aware sweep walks `adrs/`, finds the
-/// un-baselined doc, and surfaces a `file-state.un-baselined` advisory naming it. A
-/// **pack-only** sweep walks the pack's `decisions/` instead, never sees `adrs/cache.md`,
-/// and emits no such finding — the regression this guards. Content-only, so exit 0.
+/// **The pack under test ships no freeze manifest** (M49 Increment 3). A `location:` is
+/// inside the `schema-hash` since M38, so relocating a *manifest-governed* doctype from
+/// the project layer is now refused at pack-load — the freeze binds at every layer that
+/// can change a schema, and this arm used to relocate a frozen `adr` in silence, which
+/// was the hole rather than the capability. What survives, and is what this guards, is
+/// the cascade itself: a pack that declares nothing frozen freezes nothing at either
+/// layer, so its doctype's home is the project's to move (`support::frozen_pack` →
+/// [`manifest_less_dev_pack`](crate::support::frozen_pack::manifest_less_dev_pack)).
+///
+/// Seed a clean store over that pack, then drop a project `schemas/adr.yaml` whole-file
+/// shadow that relocates `adr` from the pack's `decisions/` to `adrs/`. The cascade
+/// auto-shadows the id (`file_owner(adr) == Project`), so the resolved `adr` schema's
+/// `location:` is now `adrs/`. Commit an `adr` doc at the **project-shadowed** location
+/// `adrs/cache.md` with no baseline record. The file↔CLI-state twin enumerates committed
+/// docs by walking each resolved schema's `location:`, so a cascade-aware sweep walks
+/// `adrs/`, finds the un-baselined doc, and surfaces a `file-state.un-baselined` advisory
+/// naming it. A **pack-only** sweep walks the pack's `decisions/` instead, never sees
+/// `adrs/cache.md`, and emits no such finding — the regression this guards. Content-only,
+/// and the manifest-less pack declares no version to be stale against, so exit 0.
 #[test]
 fn validate_honors_project_schema_location_shadow_in_store_sweep() {
     let repo = TempDir::new("schema-shadow");
     let home = TempDir::new("home");
-    setup_repo(repo.path(), home.path());
+    let pack = TempDir::new("schema-shadow-pack");
+    crate::support::frozen_pack::manifest_less_dev_pack(pack.path());
+    setup_repo_with_pack(repo.path(), home.path(), pack.path());
 
     // The project schema shadow: the shipped `adr` schema body verbatim EXCEPT its
     // `location:` is relocated `decisions/` → `adrs/`. A whole-file shadow the cascade
@@ -513,16 +550,16 @@ fn validate_honors_project_schema_location_shadow_in_store_sweep() {
     )
     .expect("commit the adr at the shadowed location");
 
-    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let out = jigc_with_pack(repo.path(), home.path(), pack.path(), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    // The exit is non-zero because the hand-committed fixture ADR is unstamped — the corpus is
-    // *unmigrated*, the M42 third exit-flipping exception (`design/validation.md` → Exit
-    // semantics) — never because of the un-baselined advisory this arm is about.
+    // Content-only and freeze-exempt: the manifest-less pack declares no `schema-version`
+    // for the fixture to be stale against, so the M42 unmigrated-corpus exit flip
+    // (`design/validation.md` → Exit semantics) never fires and the sweep exits 0.
     assert!(
-        stdout.contains("schema-conformance.schema-version-current"),
-        "the v0-era fixture corpus is unmigrated — the reason the exit flips; \
+        out.status.success(),
+        "a content-only sweep over a freeze-exempt pack exits 0; \
          stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert!(

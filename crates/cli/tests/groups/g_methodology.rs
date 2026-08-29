@@ -2,6 +2,9 @@
 // Each suite below keeps its own file; this root only makes them one cargo target,
 // so a source change relinks ~10 test binaries instead of 252.
 
+#[path = "../support/mod.rs"]
+mod support;
+
 #[path = "../add_item_on_create.rs"]
 mod add_item_on_create;
 #[path = "../adr_schema_conformance_store.rs"]

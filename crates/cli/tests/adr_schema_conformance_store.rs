@@ -12,24 +12,31 @@
 //! This drives the built `jigc` binary through the real store-scope `jigc validate` (the
 //! M10 invocation-path-masking lesson: drive the bytes an operator would actually run):
 //!
-//! - **(non-conformant under a schema shadow)** — a committed ADR conformant under the
-//!   pack adr schema, with a **project-layer schema shadow** that adds a required `owner`
-//!   header field (the schema change), surfaces a `schema-conformance.required-field-present`
-//!   finding at store scope **with its bytes unchanged**; `jigc validate` still exits 0
-//!   (report-only — the intrinsic-blocking severity is a finalize verdict, *listed* under
-//!   the read-only store sweep).
-//! - **(conformant store)** — the same committed ADR with **no** shadow surfaces **no**
-//!   schema-conformance finding and exits 0.
+//! - **(non-conformant under a reshaped schema)** — a committed ADR conformant under the
+//!   shipped adr schema, read against a pack whose adr schema gained a required `owner`
+//!   header field (the schema change), surfaces a
+//!   `schema-conformance.required-field-present` finding at store scope **with its bytes
+//!   unchanged**; `jigc validate` still exits 0 (report-only — the intrinsic-blocking
+//!   severity is a finalize verdict, *listed* under the read-only store sweep).
+//! - **(conformant store)** — the same committed ADR under the **shipped** schema
+//!   surfaces **no** schema-conformance finding and exits 0.
 //!
-//! The freeze-gate is respected: the schema change is simulated with a **project-layer
-//! schema shadow**, never a pack-schema edit (the M33 pack-load freeze assertion would
-//! reject a frozen-doctype shape change without a manifest bump + migration).
+//! The freeze gate is **satisfied, not dodged** (M49 Increment 3). This suite used to
+//! simulate the schema change with a project-layer `.jigc/config/schemas/adr.yaml`
+//! shadow, on the recorded rationale that *"the M33 pack-load freeze assertion is
+//! respected"* — which was false: the gate hashed each pack's own schemas and never the
+//! cascade-resolved one, so the project layer reshaped a frozen doctype in silence. That
+//! is now blocked, and the device moves to where a shape change legitimately lives: an
+//! on-disk pack copy whose `adr` schema gains the field **and whose manifest entry is
+//! re-pinned** (`support::frozen_pack`), which is the act a pack author actually
+//! performs.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp repo
 //! is a real `git init` + `jigc setup`, the probe is the real built `doc-code` (so the
 //! `jigc validate` pre-flight resolves), and a self-cleaning `TempDir` keeps the test off
 //! the developer's repo.
 
+use crate::support::frozen_pack;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -111,15 +118,31 @@ fn git(repo: &Path, args: &[&str]) -> String {
 }
 
 /// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and the real `doc-code` probe
-/// selected via `JIGC_DOC_CODE_PROBE` so the validate pre-flight resolves.
+/// selected via `JIGC_DOC_CODE_PROBE` so the validate pre-flight resolves. The shipped
+/// (embedded) pack — a developer's stray `JIGC_PACK_DIR` is scrubbed.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_jigc"))
+    jigc_with_pack(repo, home, None, args)
+}
+
+/// [`jigc`], with `pack` selecting an on-disk pack tree via `JIGC_PACK_DIR` — the seam
+/// the reshaped-schema arm drives (`support::frozen_pack`).
+fn jigc_with_pack(
+    repo: &Path,
+    home: &Path,
+    pack: Option<&Path>,
+    args: &[&str],
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
-        .output()
-        .expect("run the jigc binary")
+        .env("JIGC_DOC_CODE_PROBE", doc_code_probe());
+    match pack {
+        Some(dir) => command.env("JIGC_PACK_DIR", dir),
+        None => command.env_remove("JIGC_PACK_DIR"),
+    };
+    command.output().expect("run the jigc binary")
 }
 
 /// Assert a `jigc` invocation succeeded, surfacing its streams on failure.
@@ -188,38 +211,24 @@ fn commit_adr(repo: &Path) {
     git(repo, &["commit", "-q", "-m", "seed adr"]);
 }
 
-/// Install a **project-layer schema shadow** of the `adr` doctype that adds a required
-/// `owner` header field (the simulated schema-shape change — never a pack-schema edit, so
-/// the M33 pack-load freeze assertion is respected). A whole-file shadow at
-/// `<repo>/.jigc/config/schemas/adr.yaml` wins over the pack definition.
-fn shadow_adr_schema(repo: &Path) {
-    let dir = repo.join(".jigc").join("config").join("schemas");
-    fs::create_dir_all(&dir).expect("mk .jigc/config/schemas/");
-    let shadow = "\
-type: adr
-location: decisions/
-id-from: title
-sections:
-  - id: status
-    header: true
-    fields:
-      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
-      - { id: date, type: date, set: on-create }
-      - { id: supersedes, type: ref, to: adr, card: \"0..*\", inverse: superseded-by }
-      - { id: cites-code, type: code-anchor }
-      - { id: owner, type: string }
-  - id: context
-    slot: { hint: Forces. }
-  - id: options
-    slot: { optional: true, hint: Alternatives. }
-  - id: decision
-    slot: { hint: What. }
-  - id: consequences
-    slot: { hint: Effects. }
-";
-    fs::write(dir.join("adr.yaml"), shadow).expect("write adr schema shadow");
-    git(repo, &["add", "."]);
-    git(repo, &["commit", "-q", "-m", "shadow adr schema"]);
+/// Build an on-disk dev-pack copy at `root` whose `adr` schema gains a required `owner`
+/// header field — the simulated schema-shape change, with the copy's manifest entry
+/// **re-pinned** so the pack passes its own freeze gate (the version is held at 2, so the
+/// committed fixture's `schema-version: 2` stamp stays *at-version*).
+///
+/// The added field is spliced into the **shipped** `adr.yaml`, so the reshaped schema
+/// differs from the frozen one in exactly that field — a hand-copied body would drift
+/// from the pack the moment `adr` changed.
+fn reshape_adr_pack(root: &Path) {
+    frozen_pack::reshaped_dev_pack(root, "adr", |body| {
+        let out = body.replacen(
+            "      - { id: cites-code, type: code-anchor }\n",
+            "      - { id: cites-code, type: code-anchor }\n      - { id: owner, type: string }\n",
+            1,
+        );
+        assert_ne!(body, out, "adr.yaml must declare the cites-code field");
+        out
+    });
 }
 
 /// Count non-overlapping occurrences of `needle` in `haystack`.
@@ -227,19 +236,20 @@ fn count(haystack: &str, needle: &str) -> usize {
     haystack.matches(needle).count()
 }
 
-/// (non-conformant under a schema shadow) A committed ADR conformant under the pack schema,
-/// with a project-layer shadow adding a required `owner` field, surfaces exactly one
-/// `schema-conformance.required-field-present` finding at store scope **with its bytes
-/// unchanged**; `jigc validate` still exits 0 (report-only).
+/// (non-conformant under a reshaped schema) A committed ADR conformant under the shipped
+/// schema, read against a pack whose `adr` gained a required `owner` field, surfaces
+/// exactly one `schema-conformance.required-field-present` finding at store scope **with
+/// its bytes unchanged**; `jigc validate` still exits 0 (report-only).
 #[test]
-fn store_sweep_surfaces_schema_conformance_break_under_shadow() {
+fn store_sweep_surfaces_schema_conformance_break_under_reshaped_schema() {
     let repo = TempDir::new("break");
     let home = TempDir::new("home");
+    let pack = TempDir::new("break-pack");
     setup_repo(repo.path(), home.path());
     commit_adr(repo.path());
-    shadow_adr_schema(repo.path());
+    reshape_adr_pack(pack.path());
 
-    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let out = jigc_with_pack(repo.path(), home.path(), Some(pack.path()), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
@@ -252,13 +262,13 @@ fn store_sweep_surfaces_schema_conformance_break_under_shadow() {
     assert_eq!(
         count(&stdout, "schema-conformance.required-field-present"),
         1,
-        "a committed doc made non-conformant by the schema shadow (a now-required `owner` \
+        "a committed doc made non-conformant by the reshaped schema (a now-required `owner` \
          field its unchanged bytes lack) must surface EXACTLY ONE required-field-present \
          finding at store scope; stdout:\n{stdout}",
     );
 }
 
-/// (conformant store) The same committed ADR with **no** schema shadow surfaces **no**
+/// (conformant store) The same committed ADR under the **shipped** schema surfaces **no**
 /// schema-conformance finding and exits 0 — the false-positive guard for the fifth family.
 #[test]
 fn store_sweep_clean_on_conformant_store() {

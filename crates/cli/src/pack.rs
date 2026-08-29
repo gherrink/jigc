@@ -13,7 +13,7 @@ use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
 use engine::schema::{PackTypeDecl, Schema, SchemaError, load_schema_with_types};
 use include_dir::{Dir, include_dir};
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The `config/` resource id of the pack's field-type declarations (the M10
 /// extension axis). A pack listing `(name, adjudicator)` entries here makes those
@@ -127,12 +127,22 @@ fn own_manifest(pack: &dyn PackSource) -> Option<engine::manifest::Manifest> {
 /// the origin pack ships no valid manifest, or its manifest omits `ty` — the
 /// freeze-exempt case.
 fn governing_version(pack: &dyn PackSource, ty: &str) -> Option<u32> {
+    governing_entry(pack, ty).map(|entry| entry.schema_version)
+}
+
+/// The doctype's **governing manifest entry** — the whole declaration
+/// ([`engine::manifest::ManifestEntry`]: version *and* frozen hash), resolved by the
+/// same per-origin-pack rule [`governing_version`] projects the version out of. Split
+/// out because the project-layer freeze arm ([`assert_project_schema_shadows`]) needs
+/// the declared **hash**, and asking the same question twice through two resolutions
+/// is how the M40 split-brain happened. `None` when the origin pack ships no valid
+/// manifest, or its manifest omits `ty` — the freeze-exempt case.
+fn governing_entry(pack: &dyn PackSource, ty: &str) -> Option<engine::manifest::ManifestEntry> {
     let owner = pack.origin_pack(PackResourceKind::Schemas, &ResourceId::from(ty));
     own_manifest(owner)?
         .doctypes
         .into_iter()
         .find(|e| e.ty == ty)
-        .map(|e| e.schema_version)
 }
 
 /// The composed pack-set's `doctype → schema-version` map — the "current manifest
@@ -231,8 +241,22 @@ const SCHEMA_MANIFEST_ID: &str = "schema-manifest";
 /// that shadows a frozen doctype with a divergent shape (the methodology pack's own
 /// `commit`) does not perturb the dev pack's freeze, and vice versa. Schemas load
 /// through the field-type-resolving [`load_pack_schema`] against their own owning
-/// pack, and the read is shadow- / `docs-root`-independent (it reads the pack
-/// directly, not the project-resolved [`crate::start::CascadeDefs::all_schemas`]).
+/// pack, and the read is `docs-root`-independent (the manifest stores the raw
+/// declared `location:`, so the hash is taken before
+/// [`crate::start::apply_docs_root`] ever nests it).
+///
+/// **The project layer is checked too** ([`assert_project_schema_shadows`], M49).
+/// This comment used to state the *opposite* — that the read is
+/// "shadow-independent" — and offered it as a feature. It was a hole: a whole-file
+/// definition shadow at `.jigc/config/schemas/<ty>.yaml` (`design/overrides.md` →
+/// Authored metadata on a definition resolves by whole-file shadow) is the resolved
+/// schema at **every** surface, so it could drop four sections from a frozen doctype
+/// and leave `jigc validate` at exit 0, `jigc doc schema` reporting the frozen
+/// `schema-version` for an unfrozen shape, and `doc create` writing a third. The
+/// freeze binds at every layer that can change a schema, so a project-owned id is
+/// hashed **resolved**. The documented capability is untouched: M47's presentation
+/// projection erases `description:` / `usage:` / slot `hint:`, so a prose reword
+/// still shadows cleanly — the shape may not move.
 ///
 /// An **absent** manifest is skipped (no owners → `Ok(())`) — the
 /// field-types-absent precedent ([`pack_field_types`]): a seeded / composed pack
@@ -242,7 +266,10 @@ const SCHEMA_MANIFEST_ID: &str = "schema-manifest";
 /// an omitted block is [`engine::manifest::ManifestError::SlugRuleUndeclared`], not a
 /// second, quieter opt-out (M42 audit; `design/storage.md` → Identity → *The slug rule
 /// is itself a versioned rule*).
-pub fn assert_schema_freeze(pack: &dyn PackSource) -> anyhow::Result<()> {
+pub fn assert_schema_freeze(
+    pack: &dyn PackSource,
+    project_config: Option<&Path>,
+) -> anyhow::Result<()> {
     use anyhow::Context;
 
     let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
@@ -271,6 +298,80 @@ pub fn assert_schema_freeze(pack: &dyn PackSource) -> anyhow::Result<()> {
 
         engine::manifest::check(&manifest, &schemas)
             .map_err(|err| anyhow::anyhow!("pack-load freeze check failed: {err}"))?;
+    }
+
+    assert_project_schema_shadows(pack, project_config)
+}
+
+/// The **project-layer arm** of the freeze assertion: a whole-file schema shadow at
+/// `<project_config>/schemas/<ty>.yaml` is hashed **as resolved** and compared to the
+/// governing manifest entry, so a project cannot change a frozen doctype's shape from
+/// the layer that outranks every pack (M49 Increment 3; `design/corpus-migration.md` →
+/// The freeze — declared *and* enforced; `design/overrides.md` → Authored metadata on
+/// a definition resolves by whole-file shadow).
+///
+/// **Why hashed rather than refused by name.** `overrides.md` makes the whole-file
+/// schema shadow the *stated* mechanism for overriding a doctype's authored
+/// `description:` / `usage:` / slot `hint:`, and M47's presentation projection already
+/// erases exactly those three keys from the hash. Hashing the resolved schema
+/// therefore refuses precisely what the pack layer already forbids and permits
+/// precisely what the pack layer already permits — one rule, both layers — where a
+/// refusal by name would delete a documented capability for all sixteen shipped
+/// doctypes.
+///
+/// **Scope, on the same opt-in as the pack arm.** A doctype is checked iff (a) some
+/// pack in the set actually ships the id — a project schema no pack ships is not a
+/// shadow and is invisible to `CascadeDefs::all_schemas`, which enumerates pack ids —
+/// and (b) its **origin pack** (the constituent whose definition the shadow displaces)
+/// declares it in a manifest ([`governing_entry`], the M40 per-origin rule). So a
+/// shadow of a manifest-less pack's doctype stays unchecked, exactly as that pack's
+/// own schemas do: the freeze records what a pack *declares* frozen, at either layer.
+///
+/// `None` (no discoverable project config) is the cold-start floor — nothing to check.
+fn assert_project_schema_shadows(
+    pack: &dyn PackSource,
+    project_config: Option<&Path>,
+) -> anyhow::Result<()> {
+    let Some(project_config) = project_config else {
+        return Ok(());
+    };
+    for ty in crate::start::project_schema_ids(project_config) {
+        let id = ResourceId::from(ty.as_str());
+        // (a) Only a genuine *shadow* — an id the pack set ships — resolves through
+        // the cascade at all.
+        if pack.read(PackResourceKind::Schemas, &id).is_err() {
+            continue;
+        }
+        // (b) Only a doctype its origin pack declares frozen is governed.
+        let Some(entry) = governing_entry(pack, &ty) else {
+            continue;
+        };
+        let path = project_config.join("schemas").join(format!("{ty}.yaml"));
+        let bytes = std::fs::read(&path).map_err(|err| {
+            anyhow::anyhow!(
+                "the project schema shadow {} is unreadable: {err}",
+                path.display()
+            )
+        })?;
+        // Field types + the schema-version stamp resolve against the **origin** pack,
+        // exactly as `CascadeDefs::all_schemas` loads a shadow, so the hash compared
+        // here is the hash of the schema every other surface will use.
+        let origin = pack.origin_pack(PackResourceKind::Schemas, &id);
+        let schema = load_pack_schema(origin, &bytes).map_err(|err| {
+            anyhow::anyhow!(
+                "the project schema shadow {} is malformed: {err}",
+                path.display()
+            )
+        })?;
+        let actual = engine::manifest::schema_hash(&schema);
+        if actual != entry.schema_hash {
+            anyhow::bail!(
+                "pack-load freeze check failed: doctype `{ty}`: schema-hash mismatch                  (manifest declares `{expected}`, recomputed `{actual}`) — the project                  schema shadow {path} changes the shape of a frozen doctype, which the                  freeze forbids at every layer (`design/corpus-migration.md` → The freeze)
+                 route: `rm {path}` restores the frozen shape — a project schema shadow may                  only reword the authored presentation keys (`description:`, `usage:`, a slot                  `hint:`); changing the shape or the home of a manifest-governed doctype means                  bumping its `schema-version` in the owning pack's                  `config/schema-manifest.yaml` and shipping a corpus migration",
+                expected = entry.schema_hash,
+                path = path.display(),
+            );
+        }
     }
     Ok(())
 }
@@ -1160,26 +1261,30 @@ pub fn read_compose_marker(project_config_dir: &std::path::Path) -> anyhow::Resu
 /// multi-pack surface started reading pack *directories* from `packs.yaml`). Inert
 /// for a manifest-less pack.
 pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
-    let listed = discover_pack_list().unwrap_or_else(|err| {
+    // Discovered **once** and threaded to all three consumers (the `packs:` list, the
+    // compose marker, and the project-layer freeze arm) — one walk, one answer.
+    let project_config = discover_project_config();
+    let listed = discover_pack_list(project_config.as_deref()).unwrap_or_else(|err| {
         // A malformed `packs.yaml` is a real authoring fault; surface it rather
         // than silently falling back to the base. (An *absent* file is `Ok(vec![])`
         // from `read_pack_list`, so this arm fires only on genuine corruption.)
         eprintln!("warning: {err:#}");
         Vec::new()
     });
-    let compose_methodology = discover_compose_marker().unwrap_or_else(|err| {
-        // Same fail-loud-but-don't-abort posture as the list discovery above: a
-        // malformed `packs.yaml` is surfaced, then treated as no marker (the floor).
-        eprintln!("warning: {err:#}");
-        false
-    });
+    let compose_methodology =
+        discover_compose_marker(project_config.as_deref()).unwrap_or_else(|err| {
+            // Same fail-loud-but-don't-abort posture as the list discovery above: a
+            // malformed `packs.yaml` is surfaced, then treated as no marker (the floor).
+            eprintln!("warning: {err:#}");
+            false
+        });
     let pack_dir = std::env::var_os(PACK_DIR_ENV);
     // A purely in-binary pack-set — exactly `[dev]` or `[dev ▸ methodology]`,
     // no filesystem constituent — is immutable in-process, so the eager
     // front-matter sweep below memoizes per composition shape.
     let embedded_only = listed.is_empty() && pack_dir.as_ref().is_none_or(|dir| dir.is_empty());
     let pack = make_pack_from_marker(pack_dir, listed, compose_methodology)?;
-    assert_schema_freeze(pack.as_ref())?;
+    assert_schema_freeze(pack.as_ref(), project_config.as_deref())?;
 
     // The eager front-matter sweeps (M43, `design/surface-contract.md` → The
     // fences): the workflow sweep (suppression + catalog shape) and the step
@@ -1218,43 +1323,38 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     Ok(pack)
 }
 
-/// CWD-discover the project's pre-cascade pack-set: walk up from the process CWD to
-/// the repo root (the dir holding `.git`), then read `<root>/.jigc/config/packs.yaml`
-/// via [`read_pack_list`]. No repo / no `.jigc/config/` is the empty pack-set
-/// (`Ok(vec![])`) — the cold-start floor — not an error; only a malformed
-/// `packs.yaml` is an `Err`.
-fn discover_pack_list() -> anyhow::Result<Vec<PathBuf>> {
-    let Ok(cwd) = std::env::current_dir() else {
-        return Ok(Vec::new());
-    };
-    let Some(repo_root) = cwd.ancestors().find(|dir| dir.join(".git").exists()) else {
-        return Ok(Vec::new());
-    };
+/// CWD-discover the project's `.jigc/config/` layer: walk up from the process CWD to
+/// the repo root (the dir holding `.git`) and return `<root>/.jigc/config` when it is
+/// a directory. No repo / no `.jigc/config/` is `None` — the cold-start floor, never an
+/// error. The **single** walk behind [`make_pack`]'s three project-layer reads (the
+/// `packs:` list, the compose marker, and the freeze gate's project arm).
+fn discover_project_config() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let repo_root = cwd.ancestors().find(|dir| dir.join(".git").exists())?;
     let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        return Ok(Vec::new());
-    }
-    read_pack_list(&project_config)
+    project_config.is_dir().then_some(project_config)
 }
 
-/// CWD-discover the project's **compose marker** — the same `packs.yaml` walk as
+/// The project's pre-cascade pack-set, read from the discovered project layer's
+/// `packs.yaml` via [`read_pack_list`]. No project layer is the empty pack-set
+/// (`Ok(vec![])`) — the cold-start floor — not an error; only a malformed
+/// `packs.yaml` is an `Err`.
+fn discover_pack_list(project_config: Option<&Path>) -> anyhow::Result<Vec<PathBuf>> {
+    let Some(project_config) = project_config else {
+        return Ok(Vec::new());
+    };
+    read_pack_list(project_config)
+}
+
+/// The project's **compose marker** — the same discovered `packs.yaml` as
 /// [`discover_pack_list`], reading the `compose-embedded-methodology` key via
-/// [`read_compose_marker`]. No repo / no `.jigc/config/` is no marker (`Ok(false)`)
-/// — the single-pack floor — not an error; only a malformed `packs.yaml` is an
-/// `Err`. No second filesystem walk is introduced: the factory reads the file it
-/// already discovers for the listed-pack set.
-fn discover_compose_marker() -> anyhow::Result<bool> {
-    let Ok(cwd) = std::env::current_dir() else {
+/// [`read_compose_marker`]. No project layer is no marker (`Ok(false)`) — the
+/// single-pack floor — not an error; only a malformed `packs.yaml` is an `Err`.
+fn discover_compose_marker(project_config: Option<&Path>) -> anyhow::Result<bool> {
+    let Some(project_config) = project_config else {
         return Ok(false);
     };
-    let Some(repo_root) = cwd.ancestors().find(|dir| dir.join(".git").exists()) else {
-        return Ok(false);
-    };
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        return Ok(false);
-    }
-    read_compose_marker(&project_config)
+    read_compose_marker(project_config)
 }
 
 /// The marker-aware testable core of [`make_pack`]: assemble the composite from
@@ -4163,11 +4263,11 @@ sections:
             #[test]
             fn assert_schema_freeze_enforces_every_manifest_shipping_constituent() {
                 let clean = two_manifest_composite(hash_of(NOTE_B.as_bytes()));
-                assert_schema_freeze(&clean)
+                assert_schema_freeze(&clean, None)
                     .expect("a composite whose every manifest holds composes clean");
 
                 let drifted = two_manifest_composite("0".repeat(64));
-                let err = assert_schema_freeze(&drifted)
+                let err = assert_schema_freeze(&drifted, None)
                     .expect_err("the loser pack's manifest must be enforced too");
                 let msg = format!("{err:#}");
                 assert!(
