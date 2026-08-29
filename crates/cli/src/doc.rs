@@ -1340,8 +1340,9 @@ fn run_add_item(
         &task.id,
         task.is_migration()?,
         // The staged instance was read (or copied in) above and a rejected write persists
-        // nothing, so it is still there for the reject's route to name.
-        RejectDestination::Reachable,
+        // nothing, so it is still there for the reject's route to name — with exactly
+        // these bytes, since this verb writes once and the reject is before that write.
+        RejectDestination::Reachable { surviving: &source },
     )
     .map_err(|e| enrich_not_present_route(e, &uri, &task.id))?;
 
@@ -1401,7 +1402,7 @@ fn apply_add_item_target(
     slug_override: Option<&str>,
     task_id: &str,
     migration: bool,
-    destination: RejectDestination,
+    destination: RejectDestination<'_>,
 ) -> Result<(String, String), DocFailure> {
     // Write-time id-from-enum reject (`design/auto-migration.md` → Hardening #3;
     // write-commands.md → Two check times): when the destination repeatable's `id-from`
@@ -1570,11 +1571,22 @@ fn add_item_locus(
 /// discriminator answers it for the batch (a same-identity **staged** copy is restored
 /// from its pre-image; a **committed** instance is still at its canonical home for
 /// copy-on-first-touch; a fresh mint leaves neither), and it is a constant at the verb.
+///
+/// The reachable arm carries the surviving **bytes**, not merely the fact of survival:
+/// *which item ids are there afterwards* is the second thing the recovery cannot derive
+/// from the buffer it was handed, and it is a different question. The batch chains its
+/// leaves over one in-progress buffer, so an id an **earlier payload item** minted is in
+/// that buffer and is **not** in the doc the rollback restores — probing the buffer both
+/// asserts an item that is not there and suffixes around a bare id that is free (M49
+/// Increment 5, the T5 triage's own validation finding). The caller supplies the batch's
+/// **pre-chain** buffer, which is exactly what the rollback leaves: the pre-image it
+/// restores over a staged copy, and the still-untouched committed body it copied in.
 #[derive(Clone, Copy)]
-enum RejectDestination {
+enum RejectDestination<'a> {
     /// The doc is still addressable after the reject — staged, or committed at its
-    /// canonical home. A mint route naming it runs.
-    Reachable,
+    /// canonical home — and `surviving` is its content **as of then**. A mint route
+    /// naming it runs, and is probed against these bytes.
+    Reachable { surviving: &'a str },
     /// The write provisioned the doc itself and its failure discards it: nothing is
     /// staged and nothing is committed, so **no** route naming that doc runs.
     Discarded,
@@ -1595,13 +1607,25 @@ enum RejectDestination {
 /// `<minted>-N` id, argv-complete and copy-runnable, with the edit-in-place branch kept
 /// as the tail's alternative rather than dropped.
 ///
-/// **Where it does not survive, no command is offered at all** ([`RejectDestination`],
-/// the T5 triage): `doc author`'s create arm rejects the batch whole and rolls its own
-/// provisioning back, so the mint — like the shipped edit-in-place — would name a doc
-/// that is not there. That arm is told the recovery that exists, which is the payload's.
-/// The batch was the case this enrichment was written *for*, and it was verified only
-/// over a pre-provisioned doc; the create arm, which every `migrate-*` workflow drives,
-/// got a copy-runnable-looking command that exits 1.
+/// **Every claim the mint makes is adjudicated against the bytes the reject leaves
+/// behind** ([`RejectDestination`]), never the buffer the write was attempted on — for
+/// `doc author` those are two different documents, and the enrichment shipped probing the
+/// wrong one. Two arms fall out, and both were live defects the batch reached (the T5
+/// triage and its validation finding):
+///
+///   * the destination does not survive at all — `doc author`'s create arm rejects the
+///     batch whole and rolls its own provisioning back, so the mint (like the shipped
+///     edit-in-place) would name a doc that is not there;
+///   * the destination survives but the **colliding id does not** — the id was minted by
+///     an earlier item of this same payload, which the rollback took with it, so *"beside
+///     the item already there"* is false and the `-N` suffix is derived around a bare id
+///     that is free. Run verbatim it exits 0 and lands one mis-suffixed item while the
+///     rest of the payload stays unauthored. This is the deliverable's own headline case
+///     (890 titles minting 884 slugs), and the acceptance was shaped around the other one.
+///
+/// Both are told the recovery that exists, which is the payload's: the batch landed
+/// nothing, so revising it and re-running is the complete repair, where a single mint
+/// would be a partial one.
 ///
 /// Deliberately narrow at three edges. It fires only on `write.already-present`; only
 /// where the collision is **confirmed** to be the minted item id (the reject's other
@@ -1616,7 +1640,7 @@ fn enrich_already_present_route(
     locus: Option<&AddItemLocus>,
     uri: &str,
     task_id: &str,
-    destination: RejectDestination,
+    destination: RejectDestination<'_>,
 ) -> DocFailure {
     let DocFailure::Block(mut finding) = failure else {
         return failure;
@@ -1630,37 +1654,62 @@ fn enrich_already_present_route(
     // nothing, so revising it and re-running is a complete repair, and it is stated
     // without asserting which subject collided (an earlier payload item, or a body the
     // create copied in), because the route is emitted for both.
-    if let RejectDestination::Discarded = destination {
-        finding.route = Some(engine::finding::Route::human(
-            "nothing landed — `jigc doc author` rejects the batch whole and discards the \
-             doc it provisioned, so there is nothing staged to edit in place or to mint \
-             beside: revise the payload so this write lands (an item id is slugged from \
-             its title, so two titles that slug alike claim one id) and re-run the whole \
-             `jigc doc author`",
-        ));
-        return DocFailure::Block(finding);
-    }
+    let surviving = match destination {
+        RejectDestination::Discarded => {
+            finding.route = Some(engine::finding::Route::human(
+                "nothing landed — `jigc doc author` rejects the batch whole and discards \
+                 the doc it provisioned, so there is nothing staged to edit in place or \
+                 to mint beside: revise the payload so this write lands (an item id is \
+                 slugged from its title, so two titles that slug alike claim one id) and \
+                 re-run the whole `jigc doc author`",
+            ));
+            return DocFailure::Block(finding);
+        }
+        RejectDestination::Reachable { surviving } => surviving,
+    };
+    // The collision is only *this* enrichment's subject where the minted id is what the
+    // write actually hit — asked against `source`, the buffer the reject was adjudicated
+    // on. Everything after is asked against `surviving`, because everything after is a
+    // claim about the doc the agent will find.
     if let Some(locus) = locus
-        && let Some(free) = first_free_item_id(schema, source, locus)
+        && item_taken(schema, source, locus, &locus.minted)
     {
-        finding.route = Some(engine::finding::Route::mechanical(
-            [
-                "jigc",
-                "doc",
-                "add-item",
-                uri,
-                "--title",
-                &locus.title_token,
-                "--slug",
-                &free,
-                "--task",
-                task_id,
-            ],
-            " mints it beside the item already there under an id of your own — `--slug` \
-             drives the item id verbatim, so two titles that slug alike can coexist. If \
-             this is a correction of that item rather than a second entry, edit it in \
-             place with `jigc doc set-slot` / `jigc doc set-field` instead",
-        ));
+        if !item_taken(schema, surviving, locus, &locus.minted) {
+            // The id is taken in the buffer and free in what survives: the duplicate came
+            // from an **earlier item of this same payload**, which the whole-or-nothing
+            // rollback took with it. There is nothing to mint beside, the bare id is not
+            // in fact claimed, and a single `add-item` would land one item of the payload
+            // under a suffix nothing asked for while the rest stayed unauthored — so the
+            // recovery offered is the payload's, the same one the discarded arm prints.
+            finding.route = Some(engine::finding::Route::human(
+                "nothing from this payload landed — `jigc doc author` rejects the batch \
+                 whole and unwinds it, and the id that collided is not in the doc it \
+                 leaves behind: the duplicate is inside the payload itself (an item id is \
+                 slugged from its title, so two titles that slug alike claim one id). \
+                 Revise the payload so each item mints its own id and re-run the whole \
+                 `jigc doc author`",
+            ));
+        } else if let Some(free) = first_free_item_id(schema, surviving, locus) {
+            finding.route = Some(engine::finding::Route::mechanical(
+                [
+                    "jigc",
+                    "doc",
+                    "add-item",
+                    uri,
+                    "--title",
+                    &locus.title_token,
+                    "--slug",
+                    &free,
+                    "--task",
+                    task_id,
+                ],
+                " mints it beside the item already there under an id of your own — \
+                 `--slug` drives the item id verbatim, so two titles that slug alike can \
+                 coexist. If this is a correction of that item rather than a second \
+                 entry, edit it in place with `jigc doc set-slot` / `jigc doc set-field` \
+                 instead",
+            ));
+        }
     }
     DocFailure::Block(finding)
 }
@@ -1675,17 +1724,24 @@ fn enrich_already_present_route(
 /// [`engine::write::item_chain_absent`], the same predicate the item-miss doors rank on,
 /// so "taken" means here exactly what it means there. Runs on the **reject** path only.
 fn first_free_item_id(schema: &Schema, source: &str, locus: &AddItemLocus) -> Option<String> {
-    let taken = |id: &str| {
-        let mut chain: Vec<&str> = locus.prefix.iter().map(String::as_str).collect();
-        chain.push(id);
-        !engine::write::item_chain_absent(schema, source, &locus.section, &chain)
-    };
-    if !taken(&locus.minted) {
+    if !item_taken(schema, source, locus, &locus.minted) {
         return None;
     }
     (2..=99)
         .map(|n| format!("{}-{n}", locus.minted))
-        .find(|candidate| !taken(candidate))
+        .find(|candidate| !item_taken(schema, source, locus, candidate))
+}
+
+/// Is `id` occupied at `locus` in `source`? Asked through the shared
+/// [`engine::write::item_chain_absent`], the same predicate the item-miss doors rank on,
+/// so "taken" means here exactly what it means there. The **source is a parameter on
+/// purpose**: the collision's subject is adjudicated against the buffer the write hit,
+/// while every claim the route makes is adjudicated against the bytes the reject leaves
+/// behind, and for the batch those are two different documents.
+fn item_taken(schema: &Schema, source: &str, locus: &AddItemLocus, id: &str) -> bool {
+    let mut chain: Vec<&str> = locus.prefix.iter().map(String::as_str).collect();
+    chain.push(id);
+    !engine::write::item_chain_absent(schema, source, &locus.section, &chain)
 }
 
 /// The destination repeatable an [`AddItemTarget`] mints into, with the address **tail**
@@ -3478,8 +3534,18 @@ fn run_author(
     // found, restored from its pre-image; a committed instance copied in, still at its
     // canonical home for copy-on-first-touch) and `false` for the fresh mint, whose file
     // this call wrote and the rollback removes.
+    //
+    // And *with which content*: the *pre-chain* buffer, captured here before the first
+    // leaf edits it. Over a staged copy that is byte-for-byte the pre-image
+    // [`CreatedDoc::rollback`] restores (the create wrote nothing); over a committed
+    // copy-in it is the committed body, which the rollback leaves at its canonical home
+    // untouched. Either way it is the doc an agent finds after the reject — which is not
+    // the in-progress `buffer`, and the difference is exactly one payload's own items.
+    let surviving = buffer.clone();
     let destination = if created.existed {
-        RejectDestination::Reachable
+        RejectDestination::Reachable {
+            surviving: &surviving,
+        }
     } else {
         RejectDestination::Discarded
     };
@@ -3532,7 +3598,7 @@ fn apply_leaf(
     leaf: &crate::author::Leaf,
     task_id: &str,
     migration: bool,
-    destination: RejectDestination,
+    destination: RejectDestination<'_>,
 ) -> Result<String, DocFailure> {
     use crate::author::Leaf;
     match leaf {

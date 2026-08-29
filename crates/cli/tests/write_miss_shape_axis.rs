@@ -95,16 +95,22 @@
 //! `apply_add_item_target`. The route is run **verbatim** and must *land the second item*,
 //! not merely exit 0.
 //!
-//! **The batch door has a second axis, and the column shipped over one point of it** (the
-//! T5 triage — [`a_batch_collision_route_runs_from_every_provisioning_state`]). A mint
-//! route is a recovery only while there is a doc to mint into, and `doc author` has two
-//! provisioning states: over a doc the task already staged the whole-or-nothing rollback
-//! restores it, while on the **create** arm — the batch's own `create` is the doc's first
-//! write, the shape every `migrate-*` workflow drives — the rollback removes the file the
-//! create provisioned, so the emitted command exited 1. The batch row below runs on
-//! [`provision`]'s pre-created doc, which is the state the implementation handled, so the
-//! column greened over the dominant one it did not. The axis is driven in its own test
-//! rather than as a `CELLS` row, because a row is defined against the one shared fixture.
+//! **The batch door has a destination axis of its own, and the column shipped over one
+//! cell of it** (the T5 triage and its validation fix —
+//! [`a_batch_collision_route_describes_the_state_it_leaves_behind`]). The enrichment hands
+//! back a mint *into a doc, beside an item*, and both halves are claims about a state the
+//! batch has already unwound by the time the route prints. Two questions decide it:
+//! **provisioning** (over a doc the task already staged the whole-or-nothing rollback
+//! restores the pre-image; on the **create** arm — the shape every `migrate-*` workflow
+//! drives — it removes the file the create provisioned, so the emitted command exited 1)
+//! and **duplicate origin** (the id is taken by the corpus, or by an earlier item of the
+//! same payload, which the rollback takes with it). The `CELLS` batch row below drives
+//! staged × corpus-taken — the state the implementation was written against — so the
+//! column greened over the deliverable's own headline case, *890 titles minting 884
+//! slugs*, where the collision is **inside the payload**: the probe ran against the
+//! discarded in-progress buffer, so the route asserted an item that is not there and
+//! suffixed `-2` around a bare id that is free. The axis is driven in its own test rather
+//! than as `CELLS` rows, because a row is defined against the one shared fixture.
 //!
 //! **Declared bound.** The two *section-level* address forms — `set-slot` / `set-field` at
 //! `#<undeclared-section>` with no item hop — are **not** cells of this matrix: the CLI
@@ -1087,54 +1093,88 @@ fn leading_command(route: &str) -> Option<&str> {
         .and_then(|rest| rest.split('`').next())
 }
 
-/// One arm of the batch collision's **provisioning axis**.
-struct BatchOrigin {
+/// One cell of the batch collision's **destination axis** — the two questions that
+/// together decide what the reject leaves behind, and therefore what its route may say.
+struct BatchCell {
     what: &'static str,
-    /// The corpus state the batch runs against.
+    /// The corpus state the batch runs against (**provisioning**: does a doc survive the
+    /// whole-or-nothing rollback at all?).
     fixture: fn() -> Fixture,
-    /// The payload whose second item mints an id the buffer already holds — supplied by
-    /// the fixture on the staged arm, by an **earlier leaf of the payload itself** where
-    /// the batch is the doc's first write.
+    /// The payload carrying the collision (**duplicate origin**: does the id it collides
+    /// with come from the corpus, or from an earlier item of this same payload?).
     payload: &'static [u8],
-    /// Whether a staged instance survives the reject — the fact the emitted route is
-    /// adjudicated against, asserted rather than assumed.
+    /// The id the colliding title mints — the subject the reject's message must name.
+    minted: &'static str,
+    /// **Whether that id stands in the doc the reject leaves behind.** This is the fact
+    /// the enriched route asserts in as many words (*"beside the item already there"*)
+    /// and the fact its `--slug <minted>-N` suffix is derived from, so it is asserted
+    /// here against the product's own read-back rather than assumed from the payload.
+    minted_survives: bool,
+    /// Whether a staged instance survives the reject at all.
     staged_after: bool,
 }
 
-/// **The batch collision's provisioning axis** (M49 Increment 5, the T5 triage). The
-/// `write.already-present` enrichment hands back a mint into a doc — and `doc author`
-/// has two provisioning states, only one of which leaves that doc there to be written:
-/// over a **staged** doc the whole-or-nothing rollback restores the pre-image, while on
-/// the **create** arm it removes the file the batch itself provisioned, so nothing at all
-/// is staged when the reject prints. The column that shipped was authored in the first
-/// state only (`CELLS`' batch row runs on [`provision`]'s pre-created doc), and the
-/// second — the arm every `migrate-*` workflow drives — got a copy-runnable-looking
-/// command that exits 1 (`design/surface-contract.md` law 1: nothing lies).
+/// **The batch collision's destination axis** (M49 Increment 5, the T5 triage and its
+/// validation fix). The `write.already-present` enrichment hands back a mint *into a doc,
+/// beside an item*, and both halves of that sentence are claims about a state the batch
+/// has already unwound by the time the route prints. Two independent questions decide it,
+/// so the axis is their product rather than either one alone:
 ///
-/// The property is stated over the axis rather than over either fix: **a route that
-/// presents a command must run.** It holds for the mechanical mint where the destination
-/// survives, and it holds for whatever a discarded destination is told instead — so a
-/// later payload-level recovery (a `slug:` key) can make this arm mechanical again
-/// without rewriting the test.
+///   * **provisioning** — over a doc the task already staged the whole-or-nothing
+///     rollback restores the pre-image, while on the **create** arm (the batch's own
+///     `create` is the doc's first write — the shape every `migrate-*` workflow drives)
+///     it removes the file the create provisioned, so nothing at all is staged;
+///   * **duplicate origin** — the id may be taken by the **corpus** (an item that is
+///     genuinely still there afterwards), or by an **earlier item of this same payload**
+///     (which the rollback takes with it, so nothing is there afterwards).
+///
+/// The column shipped over one cell of the four (staged × corpus-taken) and the
+/// implementation probed the **in-progress batch buffer** — the one state that is
+/// discarded — so the deliverable's own headline case, *890 titles minting 884 slugs*,
+/// got a route asserting an item that is not there and a `-2` suffix around a **free**
+/// bare id: run verbatim it exits 0 and lands a mis-suffixed orphan while the rest of the
+/// payload stays unauthored (`design/surface-contract.md` law 1: nothing lies).
+///
+/// The property is stated over the axis rather than over either fix: **the route
+/// describes the state the reject leaves behind.** Where the colliding id survives, a
+/// command is offered and it must run *and land beside that item*; where it does not,
+/// no command is offered — the recovery is the payload's, and a single mint would be a
+/// partial repair under an id nothing asked for.
+///
+/// One cell of the 2×2 is **excluded, with reason**: *create arm × corpus-taken* cannot
+/// exist, because the doc the create provisions is empty — there is no corpus item in it
+/// for a payload title to collide with. The three reachable cells are driven.
 #[test]
-fn a_batch_collision_route_runs_from_every_provisioning_state() {
-    const ORIGINS: &[BatchOrigin] = &[
-        BatchOrigin {
-            what: "doc author batch over a doc this task already staged",
+fn a_batch_collision_route_describes_the_state_it_leaves_behind() {
+    const CELLS: &[BatchCell] = &[
+        BatchCell {
+            what: "staged doc × an id the corpus already holds",
             fixture: provision,
             payload: b"title: Changelog\nsections:\n  - id: releases\n    items:\n      - title: \"1.3.0\"\n",
+            minted: "1-3-0",
+            minted_survives: true,
             staged_after: true,
         },
-        BatchOrigin {
-            what: "doc author batch whose own create is the doc's first write",
+        BatchCell {
+            what: "staged doc × a duplicate inside the payload itself",
+            fixture: provision,
+            payload: b"title: Changelog\nsections:\n  - id: releases\n    items:\n      - title: \"2.0.0\"\n      - title: \"2-0-0\"\n",
+            minted: "2-0-0",
+            minted_survives: false,
+            staged_after: true,
+        },
+        BatchCell {
+            what: "the batch's own create × a duplicate inside the payload itself",
             fixture: unprovisioned,
             payload: b"title: Changelog\nsections:\n  - id: releases\n    items:\n      - title: \"1.3.0\"\n      - title: \"1-3-0\"\n",
+            minted: "1-3-0",
+            minted_survives: false,
             staged_after: false,
         },
     ];
 
-    for origin in ORIGINS {
-        let fx = (origin.fixture)();
+    for cell in CELLS {
+        let fx = (cell.fixture)();
         let out = fx.run(
             &[
                 "doc",
@@ -1145,42 +1185,112 @@ fn a_batch_collision_route_runs_from_every_provisioning_state() {
                 "--format",
                 "json",
             ],
-            Some(origin.payload),
+            Some(cell.payload),
         );
         assert!(
             !out.status.success(),
             "`{}` must block (non-zero exit); stdout:\n{}",
-            origin.what,
+            cell.what,
             String::from_utf8_lossy(&out.stdout),
         );
         let stderr = String::from_utf8_lossy(&out.stderr);
         let report: serde_json::Value = serde_json::from_str(stderr.trim())
-            .unwrap_or_else(|e| panic!("`{}` stderr is JSON: {e}; got:\n{stderr}", origin.what));
+            .unwrap_or_else(|e| panic!("`{}` stderr is JSON: {e}; got:\n{stderr}", cell.what));
         assert_eq!(
             report["findings"][0]["code"].as_str(),
             Some("write.already-present"),
             "`{}` blocks on the collision; got:\n{stderr}",
-            origin.what,
+            cell.what,
         );
-        // The fact the route is adjudicated against: the batch persists nothing, and on
-        // the create arm "nothing" includes the doc the create provisioned.
+        let message = report["findings"][0]["message"].as_str().unwrap_or("");
+        assert!(
+            message.contains(&format!("{:?}", cell.minted)),
+            "`{}`: the reject names the colliding minted id {:?}; got:\n{message}",
+            cell.what,
+            cell.minted,
+        );
+        // The facts the route is adjudicated against, read back through the product: the
+        // batch persists nothing, and on the create arm "nothing" includes the doc the
+        // create provisioned — so the id it collided with is there afterwards only when
+        // the **corpus** held it.
+        let addr = format!("changelog:{}", fx.slug);
         assert_eq!(
             fx.staged().exists(),
-            origin.staged_after,
+            cell.staged_after,
             "`{}`: a staged instance {} the reject",
-            origin.what,
-            if origin.staged_after {
+            cell.what,
+            if cell.staged_after {
                 "survives"
             } else {
                 "must not survive"
             },
         );
+        if cell.staged_after {
+            let shown = fx.run_route(
+                &format!("jigc doc show {addr}#releases --task {TASK_ID}"),
+                cell.what,
+            );
+            assert_eq!(
+                shown.contains(&format!("{{#{}}}", cell.minted)),
+                cell.minted_survives,
+                "`{}`: after the reject, `{{#{}}}` {} `#releases`; got:\n{shown}",
+                cell.what,
+                cell.minted,
+                if cell.minted_survives {
+                    "stands in"
+                } else {
+                    "is absent from"
+                },
+            );
+        }
         let route = report["findings"][0]["route"]
             .as_str()
-            .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", origin.what));
-        // Law 1: a route that presents a copy-runnable command must be one.
-        if let Some(cmd) = leading_command(route) {
-            fx.run_route(cmd, origin.what);
+            .unwrap_or_else(|| panic!("`{}` carries a route; got:\n{stderr}", cell.what));
+        match leading_command(route) {
+            Some(cmd) => {
+                // A command is offered only where there is an item to mint beside — and
+                // then law 1 binds twice: it must run, and it must land the second entry
+                // **next to** the one the route says is already there.
+                assert!(
+                    cell.minted_survives,
+                    "`{}`: no command is offered where the colliding id {:?} is not in \
+                     the doc the reject leaves behind — the duplicate is inside the \
+                     payload, and one mint would be a partial repair under an id nothing \
+                     asked for; got the route: {route}",
+                    cell.what, cell.minted,
+                );
+                fx.run_route(cmd, cell.what);
+                let shown = fx.run_route(
+                    &format!("jigc doc show {addr}#releases --task {TASK_ID}"),
+                    cell.what,
+                );
+                for anchor in [cell.minted.to_owned(), format!("{}-2", cell.minted)] {
+                    assert!(
+                        shown.contains(&format!("{{#{anchor}}}")),
+                        "`{}`: after the route ran, `{{#{anchor}}}` stands in \
+                         `#releases`; got:\n{shown}",
+                        cell.what,
+                    );
+                }
+            }
+            None => {
+                assert!(
+                    !cell.minted_survives,
+                    "`{}`: the colliding id {:?} is still there, so the mint beside it \
+                     is a command the agent can be handed; got the route: {route}",
+                    cell.what, cell.minted,
+                );
+                // What is left is the payload's own recovery, and it must be named: the
+                // batch landed nothing, so revising the payload and re-running the whole
+                // `doc author` is the complete repair.
+                let said = route.to_lowercase();
+                assert!(
+                    said.contains("revise the payload") && said.contains("re-run"),
+                    "`{}`: with no doc-side mint to offer, the route names the payload \
+                     revision and the re-run that completes it; got: {route}",
+                    cell.what,
+                );
+            }
         }
     }
 }
