@@ -89,8 +89,9 @@ pub enum Fragment {
     /// -repeatable (the M22 multi-level lift; review finding S1). The parser is purely
     /// structural, so this carries the raw hop strings in order, *without* assigning
     /// unit/item/leaf roles (the write-side parent-scoped locator + the schema do that
-    /// when the address is resolved). The depth is bounded by the H6 nesting cap
-    /// (section + up to four item hops + a leaf = six hops).
+    /// when the address is resolved). The depth is bounded by [`MAX_FRAGMENT_HOPS`],
+    /// which is in turn what bounds the schema loader's nesting cap
+    /// ([`crate::schema::MAX_NESTING_DEPTH`]).
     Deep(Vec<String>),
 }
 
@@ -153,9 +154,8 @@ impl Fragment {
                 Item::from(item.to_string()),
                 Leaf::from(leaf.to_string()),
             ),
-            // ≥4 hops is a **nested** path (the M22 multi-level lift). The depth cap is
-            // the H6 nesting ceiling: a section hop, up to four item hops, and a leaf —
-            // six hops; anything deeper overflows the addressable grammar.
+            // ≥4 hops is a **nested** path (the M22 multi-level lift), bounded by
+            // `MAX_FRAGMENT_HOPS`; anything deeper overflows the addressable grammar.
             _ if hops.len() <= MAX_FRAGMENT_HOPS => {
                 Fragment::Deep(hops.iter().map(|h| h.to_string()).collect())
             }
@@ -164,10 +164,28 @@ impl Fragment {
     }
 }
 
-/// The maximum number of `/`-separated fragment hops the grammar admits: a section
-/// hop, up to four item hops (the H6 nesting cap — items at `###`/`####`/`#####`/
-/// `######`), and a leaf hop. Deeper than this overflows ([`ParseError::TooManyHops`]).
-const MAX_FRAGMENT_HOPS: usize = 6;
+/// The maximum number of `/`-separated fragment hops the grammar admits. Deeper than
+/// this overflows ([`ParseError::TooManyHops`]).
+///
+/// **Each nesting level costs two hops, not one.** The chain the write path walks
+/// (`write::physical_item_chain`) **alternates** an item id and the nested
+/// section id that declares the next block, so an address into a repeatable at nesting
+/// depth `D` is:
+///
+/// ```text
+/// section / item / nested-section / item / … / leaf
+/// │        └──────── 2D − 1 hops ────────┘   └ 1 hop
+/// └ 1 hop
+/// ```
+///
+/// — a **leaf write** at depth `D` is `1 + (2D − 1) + 1 = 2D + 1` hops, and a mint or
+/// retitle at depth `D` is `2D`. Against this budget of six that is `D ≤ 2` for leaf
+/// writes: the number [`crate::schema::MAX_NESTING_DEPTH`] is **derived** from, so the
+/// loader can never again admit a depth whose addresses this grammar rejects. (This
+/// comment previously modelled the budget as *"a section hop, up to four item hops, and
+/// a leaf"* — one hop per level — which is how a loader cap of 4 and a write path of 2
+/// sat side by side unnoticed; `DECISIONS.md` → 2026-08-28.)
+pub const MAX_FRAGMENT_HOPS: usize = 6;
 
 impl Address {
     /// Parse an address string against the URI grammar.
@@ -300,8 +318,8 @@ mod tests {
             ("adr:foo#", ParseError::EmptyFragment),
             ("adr:foo#u/", ParseError::EmptyHop),
             ("adr:foo#/u", ParseError::EmptyHop),
-            // The depth cap stays real: section + up to four item hops (the H6
-            // nesting cap) + leaf = at most six hops, so a seventh overflows.
+            // The depth cap stays real: `MAX_FRAGMENT_HOPS` is six (two hops per
+            // nesting level, plus the section and leaf hops), so a seventh overflows.
             ("adr:foo#a/b/c/d/e/f/g", ParseError::TooManyHops),
         ] {
             assert_eq!(

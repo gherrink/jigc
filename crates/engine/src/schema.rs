@@ -221,10 +221,11 @@ pub enum Leaf {
     },
     /// A nested repeatable: an ID'd sub-list of item blocks within a parent
     /// item's block (e.g. a release's `changes` change-groups). Its items
-    /// render one heading level deeper than the parent's, bounded by the H6
-    /// cap (`design/changelog.md` → engine work #1; `design/structural-grammar.md`
-    /// → Repetition). The leaf `id` is the section's stable id; the inner
-    /// `repeatable` carries the sub-list's `id-from` + block.
+    /// render one heading level deeper than the parent's, bounded by the
+    /// addressable depth cap ([`MAX_NESTING_DEPTH`];
+    /// `design/structural-grammar.md` → Repetition). The leaf `id` is the
+    /// section's stable id; the inner `repeatable` carries the sub-list's
+    /// `id-from` + block.
     Repeatable {
         /// The leaf id (and the source of the nested section's heading).
         id: String,
@@ -543,13 +544,23 @@ pub enum SchemaError {
         name: String,
     },
 
-    /// A repeatable nests deeper than the heading-depth cap. Items render at
-    /// heading level `2 + nesting-depth`; the cap is **H6 → 4 nesting levels**
-    /// ([`MAX_NESTING_DEPTH`]). A 5th level would render at `H7`, which Markdown
-    /// has no heading for — so it is rejected loudly at load (a **documented
-    /// cap, not silent truncation**), naming the offending depth.
+    /// A repeatable nests deeper than the **addressable** cap
+    /// ([`MAX_NESTING_DEPTH`], derived from [`crate::address::MAX_FRAGMENT_HOPS`]).
+    /// A leaf write at nesting depth `D` takes `2D + 1` address hops, so a level past
+    /// the cap is one whose own leaf addresses the address grammar rejects — the
+    /// projection would advertise a write nothing could take. Rejected loudly at load
+    /// (a **documented cap, not silent truncation**), naming the depth it read and the
+    /// number a pack author must meet.
+    ///
+    /// The `H6` render ceiling (items render at heading level `2 + depth`, and Markdown
+    /// has no `H7`) is the *other*, now non-binding, cap: the address budget runs out
+    /// first.
     #[error(
-        "repeatable nests to depth {depth}, deeper than the H6 cap (max {} levels)",
+        "repeatable nests to depth {depth}, deeper than the addressable cap of {} \
+         levels (a leaf write at depth D takes 2D+1 address hops, and the address \
+         grammar admits {}) — declare at most {} nesting levels",
+        MAX_NESTING_DEPTH,
+        crate::address::MAX_FRAGMENT_HOPS,
         MAX_NESTING_DEPTH
     )]
     NestingTooDeep {
@@ -565,7 +576,7 @@ pub enum SchemaError {
     /// with the first group's under **every** declared block id on the read
     /// surfaces. Rejected loudly at load, naming the block and both nested ids
     /// (the freeze-assert sibling pattern). Nesting stays **depth**-general
-    /// (the H6 cap); breadth per block is capped at 1
+    /// (to [`MAX_NESTING_DEPTH`]); breadth per block is capped at 1
     /// (`design/structural-grammar.md` → Repetition).
     #[error(
         "block `{block}` declares more than one nested repeatable (`{first}`, `{second}`): \
@@ -652,13 +663,23 @@ pub enum SchemaError {
     },
 }
 
-/// The maximum repeatable nesting depth: a section is `##`, so a repeatable at
-/// nesting-depth `d` renders its items at heading level `2 + d`. The deepest
-/// Markdown heading is `H6`, so `d` caps at **4** (top-level items `###` = depth
-/// 1, the changelog's nested change-groups `####` = depth 2, …, `######` = depth
-/// 4). A documented cap, enforced at load (`design/changelog.md` → engine work
-/// #1; `design/structural-grammar.md` → Repetition).
-pub const MAX_NESTING_DEPTH: usize = 4;
+/// The maximum repeatable nesting depth — **derived, never declared** (M49 Increment 5,
+/// T1).
+///
+/// A nesting level is addressable only if the write path can address its leaves, and a
+/// leaf write at depth `D` takes `2D + 1` address hops (the chain alternates item id and
+/// nested-section id — [`crate::address::MAX_FRAGMENT_HOPS`] carries the arithmetic), so
+/// the deepest addressable depth is `(MAX_FRAGMENT_HOPS − 1) / 2`. Computing it here
+/// instead of writing the number down is what keeps the loader and the grammar from
+/// drifting apart again: they did, for three milestones, with the loader admitting **4**
+/// while a leaf write reached **2**, and `doc schema` advertising the difference
+/// (`DECISIONS.md` → 2026-08-28).
+///
+/// The `H6` render ceiling (items at heading level `2 + d`, and Markdown has no `H7`) is
+/// the *other* cap on this number and is no longer the binding one — the address budget
+/// runs out first. A documented cap, enforced at load (`design/structural-grammar.md` →
+/// Repetition).
+pub const MAX_NESTING_DEPTH: usize = (crate::address::MAX_FRAGMENT_HOPS - 1) / 2;
 
 /// The item key **reserved** on every repeatable block: the pinned `jigc doc show
 /// --format json` item object keys the item's minted, frozen id under `id` — the
@@ -902,7 +923,7 @@ pub fn load_schema_with_types(
             }
             // A repeatable section's items render at `###` (nesting-depth 1);
             // its block walks recursively, resolving nested field types and
-            // enforcing the H6 depth cap.
+            // enforcing the addressable depth cap.
             SectionBody::Repeatable { repeatable } => {
                 let owner = section.id.clone();
                 resolve_block(repeatable, &owner, 1, pack_types)?;
@@ -913,7 +934,7 @@ pub fn load_schema_with_types(
 }
 
 /// Recursively resolve every field type in a repeatable block and enforce the
-/// two structural caps: the [`MAX_NESTING_DEPTH`] **depth** cap and the
+/// two structural caps: the [`MAX_NESTING_DEPTH`] **addressable depth** cap and the
 /// one-nested-repeatable-per-block **breadth** cap
 /// ([`SchemaError::MultipleNestedRepeatables`]). `owner` is the id of the
 /// block's declaring unit (the section, or the nested-repeatable leaf), used to
@@ -2153,80 +2174,80 @@ sections:
         );
     }
 
-    /// (M22 inc-1 T1, done-criterion (iii)) Nesting deeper than the **H6 / 4
-    /// levels** cap fails to load with a typed `SchemaError::NestingTooDeep`
-    /// naming the offending **depth** (a documented cap, not silent
-    /// truncation). A top-level repeatable's items are `###` (depth 1), so a
-    /// 5th nested level would render at `H7` — rejected loudly.
+    /// A schema nesting exactly `depth` repeatable levels, **generated** from the
+    /// depth so the two cap tests below follow [`MAX_NESTING_DEPTH`] instead of
+    /// restating it — the drift this constant's derivation exists to prevent
+    /// (M49 Increment 5, T1) cannot re-enter through a hand-written fixture.
+    fn nested_to_depth(depth: usize) -> Vec<u8> {
+        let mut yaml = String::from(
+            "type: deep\nsections:\n  - id: l1\n    repeatable:\n      id-from: f1\n      block:\n",
+        );
+        // The block-item indent of level 1; each nested level sits six deeper.
+        let mut indent = 8usize;
+        for level in 1..=depth {
+            let pad = " ".repeat(indent);
+            yaml.push_str(&format!("{pad}- {{ id: f{level}, type: string }}\n"));
+            if level < depth {
+                let next = level + 1;
+                yaml.push_str(&format!("{pad}- id: l{next}\n"));
+                yaml.push_str(&format!("{pad}  repeatable:\n"));
+                yaml.push_str(&format!("{pad}    id-from: f{next}\n"));
+                yaml.push_str(&format!("{pad}    block:\n"));
+                indent += 6;
+            }
+        }
+        yaml.into_bytes()
+    }
+
+    /// The deepest address a repeatable at nesting depth `depth` puts on the write
+    /// surface: a leaf write, `2·depth + 1` hops — the chain alternating item id and
+    /// nested-section id. Built here so the cap tests can ask the **address grammar**
+    /// whether the depth is addressable, rather than trusting a second number.
+    fn deepest_leaf_address(depth: usize) -> String {
+        let mut addr = String::from("deep:probe#l1");
+        for level in 1..=depth {
+            addr.push_str("/item");
+            if level < depth {
+                addr.push_str(&format!("/l{}", level + 1));
+            }
+        }
+        addr.push_str("/leaf");
+        addr
+    }
+
+    /// (M22 inc-1 T1, done-criterion (iii); re-derived M49 Increment 5, T1) Nesting
+    /// **one level past** [`MAX_NESTING_DEPTH`] fails to load with a typed
+    /// `SchemaError::NestingTooDeep` naming the offending **depth** (a documented cap,
+    /// not silent truncation) — and the reason it is refused is checked against the
+    /// **address grammar itself**: that depth's leaf write does not fit the fragment
+    /// hop budget, so admitting it would put an unaddressable address on the write
+    /// surface.
     #[test]
-    fn nesting_deeper_than_h6_is_a_typed_depth_error() {
-        // Five repeatable levels: depths 1..=5; the 5th (H7) breaches the cap.
-        let yaml = b"\
-type: deep
-sections:
-  - id: l1
-    repeatable:
-      id-from: a
-      block:
-        - { id: a, type: string }
-        - id: l2
-          repeatable:
-            id-from: b
-            block:
-              - { id: b, type: string }
-              - id: l3
-                repeatable:
-                  id-from: c
-                  block:
-                    - { id: c, type: string }
-                    - id: l4
-                      repeatable:
-                        id-from: d
-                        block:
-                          - { id: d, type: string }
-                          - id: l5
-                            repeatable:
-                              id-from: e
-                              block:
-                                - { id: e, type: string }
-";
-        let err = load_schema(yaml).expect_err("over-deep nesting errors");
+    fn nesting_deeper_than_the_addressable_cap_is_a_typed_depth_error() {
+        let too_deep = MAX_NESTING_DEPTH + 1;
+        let err = load_schema(&nested_to_depth(too_deep)).expect_err("over-deep nesting errors");
         assert!(
-            matches!(&err, SchemaError::NestingTooDeep { depth } if *depth == 5),
-            "expected NestingTooDeep naming depth 5, got {err:?}",
+            matches!(&err, SchemaError::NestingTooDeep { depth } if *depth == too_deep),
+            "expected NestingTooDeep naming depth {too_deep}, got {err:?}",
+        );
+        assert!(
+            crate::address::Address::parse(&deepest_leaf_address(too_deep)).is_err(),
+            "the refused depth's leaf address `{}` parses — the loader cap sits BELOW \
+             the grammar's budget rather than being derived from it",
+            deepest_leaf_address(too_deep),
         );
     }
 
-    /// (M22 inc-1 T1) The boundary holds: nesting **at** the cap (4 levels, the
-    /// deepest items rendering at `H6`) loads cleanly — the cap is on the 5th
-    /// level, not the 4th (a documented cap, exercised at its edge).
+    /// (M22 inc-1 T1; re-derived M49 Increment 5, T1) The boundary holds: nesting **at**
+    /// [`MAX_NESTING_DEPTH`] loads cleanly — the cap is on the level past it — and that
+    /// depth's leaf write is addressable, so nothing the loader admits is beyond the
+    /// grammar's reach.
     #[test]
-    fn nesting_at_the_h6_cap_loads() {
-        let yaml = b"\
-type: deep
-sections:
-  - id: l1
-    repeatable:
-      id-from: a
-      block:
-        - { id: a, type: string }
-        - id: l2
-          repeatable:
-            id-from: b
-            block:
-              - { id: b, type: string }
-              - id: l3
-                repeatable:
-                  id-from: c
-                  block:
-                    - { id: c, type: string }
-                    - id: l4
-                      repeatable:
-                        id-from: d
-                        block:
-                          - { id: d, type: string }
-";
-        load_schema(yaml).expect("4-level nesting (deepest items at H6) loads");
+    fn nesting_at_the_addressable_cap_loads() {
+        load_schema(&nested_to_depth(MAX_NESTING_DEPTH))
+            .expect("nesting at the addressable cap loads");
+        crate::address::Address::parse(&deepest_leaf_address(MAX_NESTING_DEPTH))
+            .expect("the deepest admitted depth's leaf address parses — the cap is addressable");
     }
 
     /// (M40 audit fix) A block declaring **two** nested repeatables is rejected

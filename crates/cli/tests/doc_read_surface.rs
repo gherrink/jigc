@@ -42,11 +42,12 @@ use std::collections::BTreeSet;
 use std::process::Output;
 
 use serde_json::{Value, json};
-use support::trial_corpus::{State, TrialCorpus};
+use support::trial_corpus::{FixturePack, State, TrialCorpus};
 
 use cli::pack::{CompositePack, EmbeddedPack, load_pack_schema};
+use engine::address::Address;
 use engine::packsource::{PackResourceKind, PackSource};
-use engine::schema::{Leaf, Schema, SectionBody};
+use engine::schema::{Leaf, MAX_NESTING_DEPTH, Schema, SectionBody};
 
 // ---------------------------------------------------------------------------
 // The doctype set — every doctype both packs ship, split by pack so the two
@@ -867,4 +868,234 @@ fn projection_leaf_set_matches_the_engine_loaded_schema() {
             schema.ty,
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// The nesting ceiling — a MANUFACTURED SHAPE SPACE, not a registry enumeration
+// (M49 Increment 5, T1). See the module doc's *The nesting ceiling* section for
+// why the shipped registry cannot supply this arm's set.
+// ---------------------------------------------------------------------------
+
+/// The workflow whose create-gate admits the manufactured doctype — `creates-task:
+/// true`, so `jigc start --workflow` mints the task the writes below address.
+const NESTING_WORKFLOW: &str = "\
+---
+when: probe the nesting ceiling
+description: Author the nesting probe.
+usage: the address grammar's depth ceiling needs a doctype nested to the cap.
+creates-task: true
+allows-create: [{type: changelog, as: probe}]
+---
+{{ include: step:finalize }}
+";
+
+/// A doctype schema nested to exactly `depth` repeatable levels, **generated** from the
+/// depth rather than hand-written — so the fixture follows
+/// [`engine::schema::MAX_NESTING_DEPTH`] instead of restating it.
+///
+/// Every level carries the block's `id-from` leaf (`label`) and one directly settable
+/// field (`note`); the deepest level also carries a prose slot (`detail`), so the arm
+/// drives an advertised `set-slot` address at full depth. A slot is declared **only**
+/// at the deepest level: a leading bare-prose slot on a block that also nests would
+/// swallow the nested item headings (`crates/cli/pack/schemas/changelog.yaml` → review
+/// finding B1), which is a rendering question, not a ceiling one.
+///
+/// It is written over the dev pack's `changelog` slot — a fixture pack **replaces** a
+/// schema rather than registering a new doctype, so nothing outside the schema file has
+/// to be manufactured too.
+fn nested_schema(depth: usize) -> String {
+    let mut yaml = String::from(
+        "type: changelog
+id-from: title
+description: A manufactured nesting probe — one repeatable per level, to the cap.
+usage: the address grammar's depth ceiling needs a doctype nested to the cap.
+sections:
+  - id: level-1
+    repeatable:
+      id-from: label
+      block:
+",
+    );
+    // The block-item indent of level 1; each nested level sits six spaces deeper.
+    let mut indent = 8usize;
+    for level in 1..=depth {
+        let pad = " ".repeat(indent);
+        yaml.push_str(&format!("{pad}- {{ id: label, type: string }}\n"));
+        yaml.push_str(&format!(
+            "{pad}- {{ id: note, type: string, optional: true }}\n"
+        ));
+        if level == depth {
+            yaml.push_str(&format!(
+                "{pad}- {{ id: detail, slot: {{ hint: \"The note.\" }} }}\n"
+            ));
+        } else {
+            let next = level + 1;
+            yaml.push_str(&format!("{pad}- id: level-{next}\n"));
+            yaml.push_str(&format!("{pad}  repeatable:\n"));
+            yaml.push_str(&format!("{pad}    id-from: label\n"));
+            yaml.push_str(&format!("{pad}    block:\n"));
+            indent += 6;
+        }
+    }
+    yaml
+}
+
+/// Every address the projection advertises, collected from the **emitted** json by the
+/// write-verb keys that carry one — so a new address key joins this walk by existing,
+/// never by being listed here.
+fn advertised_addresses(proj: &Value) -> Vec<String> {
+    const ADDRESS_KEYS: &[&str] = &["set-field", "set-slot", "add-item", "retitle-item"];
+    fn walk(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                for (key, child) in map {
+                    match child.as_str() {
+                        Some(addr) if ADDRESS_KEYS.contains(&key.as_str()) => {
+                            out.push(addr.to_string())
+                        }
+                        _ => walk(child, out),
+                    }
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|item| walk(item, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(proj, &mut out);
+    out
+}
+
+/// The `/`-separated hop count of an address's fragment — the budget the grammar caps.
+fn fragment_hops(addr: &str) -> usize {
+    addr.split_once('#')
+        .map(|(_, frag)| frag.split('/').count())
+        .unwrap_or(0)
+}
+
+/// A doctype nested **to the cap** advertises only addresses the grammar admits — and
+/// every one of them round-trips `set` → `show` on the real binary.
+///
+/// The tightness of the cap is proven against the **grammar itself**, not a second
+/// constant: the leaf address a doctype one level deeper would advertise is refused by
+/// [`Address::parse`]. So the ceiling is exactly where the addressing budget runs out,
+/// and a loader that admitted one more level would be advertising a dead address.
+#[test]
+fn a_doctype_nested_to_the_cap_advertises_only_addressable_addresses() {
+    let pack = FixturePack::from_dev_pack("nesting-at-cap");
+    pack.write_schema("changelog", &nested_schema(MAX_NESTING_DEPTH))
+        .write_workflow("nest-probe", NESTING_WORKFLOW);
+    let corpus = TrialCorpus::build_with_pack(State::Fresh, &pack);
+    let task = corpus.start_workflow("nest-probe", "probe the nesting ceiling");
+    let created = corpus
+        .jigc_ok(&[
+            "doc",
+            "create",
+            "changelog",
+            "--title",
+            "Nesting probe",
+            "--task",
+            &task,
+        ])
+        .trim()
+        .to_string();
+    let slug = created
+        .strip_prefix("changelog:")
+        .unwrap_or_else(|| {
+            panic!("`doc create changelog` emits `changelog:<slug>`; got `{created}`")
+        })
+        .to_string();
+
+    let proj = projection(&corpus, "changelog");
+    let advertised = advertised_addresses(&proj);
+    assert!(
+        !advertised.is_empty(),
+        "the manufactured projection advertises no address at all — the fixture is not \
+         exercising the ceiling",
+    );
+
+    // Law 1, at the grammar: nothing advertised is unaddressable.
+    for addr in &advertised {
+        Address::parse(addr).unwrap_or_else(|e| {
+            panic!(
+                "`doc schema changelog --format json` advertises `{addr}`, which the \
+                 address grammar REJECTS ({e}) — the projection is offering an address \
+                 no write path can take"
+            )
+        });
+    }
+
+    // The fixture really reaches the cap: the deepest advertised address is a leaf
+    // write at `MAX_NESTING_DEPTH` (a section hop, two hops per level, a leaf).
+    let deepest = advertised
+        .iter()
+        .max_by_key(|addr| fragment_hops(addr))
+        .expect("a non-empty advertised set has a deepest member")
+        .clone();
+    assert_eq!(
+        fragment_hops(&deepest),
+        2 * MAX_NESTING_DEPTH + 1,
+        "the deepest advertised address `{deepest}` is not a leaf write at the cap — \
+         the generated fixture drifted from `MAX_NESTING_DEPTH`",
+    );
+
+    // And the cap is TIGHT: one level deeper is refused by the grammar itself.
+    let parent = deepest
+        .rsplit_once('/')
+        .expect("the deepest address has a leaf hop")
+        .0;
+    let one_deeper = format!("{parent}/level-deeper/<id>/note");
+    assert!(
+        Address::parse(&one_deeper).is_err(),
+        "`{one_deeper}` — the leaf address a doctype one level deeper would advertise — \
+         parses, so the loader cap is BELOW the grammar's budget rather than derived \
+         from it",
+    );
+
+    // Both halves of this suite, over the manufactured shape: every advertised address
+    // round-trips set → show, and the settability parity holds at every depth.
+    walk_doctype(&corpus, &task, "changelog", &slug, &proj);
+}
+
+/// A doctype nested **one level past the cap** is refused at pack-load, and the refusal
+/// names the depth it read, the number a pack author must meet, and the constraint that
+/// binds — the **address hop budget**, not the `H6` render ceiling (which stopped being
+/// the binding cap when the loader was derived from the grammar).
+#[test]
+fn a_doctype_nested_one_level_deeper_is_refused_at_pack_load() {
+    let pack = FixturePack::from_dev_pack("nesting-past-cap");
+    // Build the corpus over a pack that LOADS (at the cap), then reshape it: the
+    // refusal under test is pack-load's, on the next invocation, not `setup`'s.
+    pack.write_schema("changelog", &nested_schema(MAX_NESTING_DEPTH))
+        .write_workflow("nest-probe", NESTING_WORKFLOW);
+    let corpus = TrialCorpus::build_with_pack(State::Fresh, &pack);
+    pack.write_schema("changelog", &nested_schema(MAX_NESTING_DEPTH + 1));
+
+    let out = corpus.jigc(&["doc", "schema", "changelog"]);
+    assert!(
+        !out.status.success(),
+        "a pack nested past the cap loaded at exit 0:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let depth = MAX_NESTING_DEPTH + 1;
+    assert!(
+        stderr.contains(&format!("depth {depth}")),
+        "the refusal names the offending depth ({depth}); got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!("{MAX_NESTING_DEPTH} levels")),
+        "the refusal names the number a pack author must meet ({MAX_NESTING_DEPTH} \
+         levels); got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("address hops"),
+        "the refusal names the constraint that BINDS — the address hop budget — so a \
+         pack author reads why the cap is where it is; got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("H6"),
+        "the refusal no longer blames the H6 render ceiling: it is not the binding cap \
+         (a leaf write runs out of address hops first); got:\n{stderr}",
+    );
 }
