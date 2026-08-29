@@ -149,6 +149,38 @@ pub enum SchemaChange {
         field: String,
     },
 
+    /// A **slot leaf** added to a repeatable item block — the leaf-kind twin of
+    /// [`Self::AddedItemField`], and the kind that makes *item prose* reachable at all: before
+    /// M49 the item-block loop classified `Field` leaves only, so a doctype whose entries needed
+    /// a prose leaf had **no legal path at any arity**, and the backstop's route named a file in
+    /// the jigc source tree — which is not a bound on an adopter's lock-in cost but the absence
+    /// of one (`design/corpus-migration.md` → The classifier's holes;
+    /// `completions/artifacts/M49/settle-record.md` → D3(B)).
+    ///
+    /// **One kind for both requirednesses, and the per-doc gate adjudicates.** The byte work is
+    /// identical either way — the item's committed prose moves under the old leaf's
+    /// `#### <Leaf-Title>` sub-label and the new leaf mints empty — so splitting it across two
+    /// kinds would split one relabel in half. An **optional** added slot leaves every item
+    /// conformant and the doc migrates; a **required** one leaves the minted leaf empty, the
+    /// conformance gate breaks on it, and `migrate-corpus` routes the doc at
+    /// `migrate-corpus.prose-needed` — the doc-authorable Framing-A handoff, never a
+    /// build-the-kind route ([`crate::transform::HaltReason::Gate`]).
+    ///
+    /// The driver folds it through [`crate::write::insert_item_slot`], which reads the committed
+    /// prose through the **old** schema (a v1-shaped instance does not parse under a v2
+    /// multi-slot template) and writes **zero bytes** below two declared slots, where a slot
+    /// renders bare under no sub-heading.
+    ///
+    /// The kind exists rather than riding the [`Self::Unclassified`] residual for the reason
+    /// [`Self::RemovedField`] records: the backstop is a **residual**, so an added slot arriving
+    /// alongside any classified change would leave the diff non-empty and be silently dropped.
+    AddedItemSlot {
+        /// The repeatable section whose item block gained the slot leaf.
+        section: String,
+        /// The added slot leaf's id.
+        leaf: String,
+    },
+
     /// A wholly-new **optional** slot section in `v2` — an added `## Heading` whose
     /// body is a simple `slot: { optional: true }` (the adr `options` shape). The
     /// driver mints the empty `## Heading` at its schema-ordered offset; an empty
@@ -646,25 +678,47 @@ fn card_bounds(card: Option<&str>) -> Option<(u32, Option<u32>)> {
     }
 }
 
-/// Diff a repeatable section's **item-block Field leaves** (matching by id): the added leaves
-/// ([`classify_added_item_field`] — the item locus of the add rule), the same existing-leaf rule
-/// the simple locus applies ([`diff_leaf`] — the `card` direction and the enum `of:` direction),
-/// then the leaves `new` **drops** ([`removed_fields`] — the second locus of the removal kind).
-/// Non-`Field` leaves (slots, nested repeatables) are left unclassified — a nested-repeatable edit
-/// is its own unbuilt kind and rides the backstop's residual.
+/// Diff a repeatable section's item-block leaves, in `new`'s document order: an added `Field`
+/// leaf ([`classify_added_item_field`] — the item locus of the add rule), an added `Slot` leaf
+/// ([`SchemaChange::AddedItemSlot`] — M49), the same existing-leaf rule the simple locus applies
+/// to a leaf present in both ([`diff_leaf`] — the `card` direction and the enum `of:` direction),
+/// then the `Field` leaves `new` **drops** ([`removed_fields`] — the second locus of the removal
+/// kind).
+///
+/// **Still unclassified here, and named so rather than implied:** a *removed* slot leaf, a
+/// nested-repeatable delta, and a slot's own `optional:` delta. Each rides the
+/// [`SchemaChange::Unclassified`] residual, which catches it only when the diff is otherwise
+/// empty — the residual's declared bound.
 fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<SchemaChange>) {
     let old_fields: Vec<&Field> = old.iter().filter_map(item_field).collect();
     let old_by_id: HashMap<&str, &Field> = old_fields.iter().map(|f| (f.id.as_str(), *f)).collect();
+    let old_slot_ids: Vec<&str> = old.iter().filter_map(item_slot_id).collect();
     for leaf in new {
-        if let Some(field) = item_field(leaf) {
-            match old_by_id.get(field.id.as_str()) {
-                Some(prev) => diff_leaf(section, prev, field, out),
-                None => out.push(classify_added_item_field(section, field)),
+        match leaf {
+            Leaf::Field(field) => match old_by_id.get(field.id.as_str()) {
+                Some(prev) => diff_leaf(section, prev, field.as_ref(), out),
+                None => out.push(classify_added_item_field(section, field.as_ref())),
+            },
+            Leaf::Slot { id, .. } if !old_slot_ids.contains(&id.as_str()) => {
+                out.push(SchemaChange::AddedItemSlot {
+                    section: section.to_owned(),
+                    leaf: id.clone(),
+                });
             }
+            _ => {}
         }
     }
     let new_fields: Vec<&Field> = new.iter().filter_map(item_field).collect();
     removed_fields(section, old_fields.into_iter(), new_fields.into_iter(), out);
+}
+
+/// The id of an item block's `Slot` leaf, if this leaf is one — [`item_field`]'s sibling, one
+/// leaf-kind over.
+fn item_slot_id(leaf: &Leaf) -> Option<&str> {
+    match leaf {
+        Leaf::Slot { id, .. } => Some(id.as_str()),
+        _ => None,
+    }
 }
 
 /// The `Field` leaf of an item block, if this leaf is one (a slot / nested repeatable is not).

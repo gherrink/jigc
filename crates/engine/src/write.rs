@@ -3154,6 +3154,210 @@ pub fn promote_slot_to_repeatable(
     Ok(splice(source, region.start..region.end, &replacement))
 }
 
+/// `added-item-slot` — the M49 migration primitive that **reshapes a repeatable item
+/// block's slot layout** from `old_schema`'s to `new_schema`'s, carrying every committed
+/// slot's prose verbatim and minting the newly declared leaf `leaf_id` **empty** at its
+/// schema-ordered offset.
+///
+/// The reshape is a per-item **re-render + splice**, not a new renderer: [`render_item`]
+/// already emits a multi-slot item's `#### <Leaf-Title>` sub-labels in the caller's `slots`
+/// order, so the primitive's whole job is to hand it the new order with the old prose in
+/// it. [`set_item_slot`] cannot do this — it is **update-only**, refusing when
+/// `slot_span(leaf_id)` is absent, which is every committed item by definition of this
+/// change (the `set_item_field_or_insert` split, one leaf-kind over).
+///
+/// **The read goes through `old_schema`.** A v1-shaped instance does **not** parse under a
+/// v2 multi-slot template — every declared sub-label is missing, which is a blocking
+/// `conformance.item-slot-label-missing` — so the committed prose is re-derived through the
+/// shape the doc actually conforms to, exactly as [`promote_slot_to_repeatable`] does.
+///
+/// **Below two declared slots this writes zero bytes, by construction.** A single-slot item
+/// renders its prose *bare*, under no sub-heading ([`render_item_at`]), and an item whose one
+/// slot is empty renders identically to a slot-less one — so a 0→1 add needs no splice at
+/// all, and inventing one would only re-canonicalize bytes the change does not touch.
+///
+/// **The idempotency guard is per item**, because one doc can hold an item that already
+/// carries the added sub-label beside one that does not (a re-run after a refused commit, a
+/// hand-authored entry): such an item is left byte-identical
+/// ([`carries_leaf_sub_label`]). *Declared bound:* an item whose committed bare prose
+/// happens to carry a `#### <Added-Leaf-Title>` heading of its own reads as already
+/// migrated; that ambiguity is inherent to the shape being migrated *from* (bare prose is
+/// opaque), and the conservative answer — leave the bytes alone — is the one that cannot
+/// destroy committed prose.
+///
+/// Errors (typed, never a panic): the section is not declared / not repeatable under either
+/// schema, `leaf_id` is not a declared slot leaf of the new item template, or the source
+/// does not conform to `old_schema`.
+pub fn insert_item_slot(
+    old_schema: &Schema,
+    new_schema: &Schema,
+    source: &str,
+    section_id: &str,
+    leaf_id: &str,
+) -> Result<String, GenerateError> {
+    let new_template = parse::ItemTemplate::from(item_block(new_schema, section_id)?);
+    if !new_template.slot_ids.iter().any(|id| id == leaf_id) {
+        return Err(GenerateError::WrongShape {
+            what: format!(
+                "section {section_id:?} new item-template declares no slot leaf {leaf_id:?}"
+            ),
+        });
+    }
+    // One declared slot renders bare — there are no sub-label bytes at this arity, so the
+    // reshape is the identity.
+    if !new_template.is_multi_slot() {
+        return Ok(source.to_string());
+    }
+    let old_template = parse::ItemTemplate::from(item_block(old_schema, section_id)?);
+
+    let doc = parse::parse_sections(old_schema, source).map_err(|_| GenerateError::WrongShape {
+        what: "source does not conform to the old schema".to_string(),
+    })?;
+    let Some(parsed) = doc.sections.iter().find(|s| s.id == section_id) else {
+        // The instance omits the section — no items, nothing to reshape.
+        return Ok(source.to_string());
+    };
+
+    let blocks = parse::scan_blocks(source);
+    let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+    for item in &parsed.items {
+        let Some(region) = locate_item_path(old_schema, source, section_id, &[&item.id]) else {
+            continue;
+        };
+        if carries_leaf_sub_label(source, &blocks, &region, &new_template, leaf_id) {
+            continue;
+        }
+        let mut content = item_content_from_parsed(item, source);
+        content.slots =
+            reshaped_item_slots(&content, &old_template.slot_ids, &new_template.slot_ids);
+        content.slot = None;
+        let rendered = render_item(&content);
+        let body = rendered.trim_end_matches('\n');
+        // The separator discipline [`set_item_slot`] splices under: one blank line before
+        // a following heading, exactly one terminating `\n` at EOF.
+        let replacement = if region.end < source.len() {
+            format!("{body}\n\n")
+        } else {
+            format!("{body}\n")
+        };
+        edits.push((region, replacement));
+    }
+
+    // Applied **back to front** so every region — all located against the one parse of
+    // `source` — stays valid as earlier items are rewritten.
+    let mut out = source.to_string();
+    for (region, replacement) in edits.into_iter().rev() {
+        out = splice(&out, region, &replacement);
+    }
+    Ok(out)
+}
+
+/// The declared item block of `schema`'s repeatable section `section_id` — the one lookup
+/// [`insert_item_slot`] performs against both schemas.
+fn item_block<'a>(
+    schema: &'a Schema,
+    section_id: &str,
+) -> Result<&'a crate::schema::Repeatable, GenerateError> {
+    let section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| GenerateError::UnknownSection {
+            id: section_id.to_string(),
+        })?;
+    match &section.body {
+        SectionBody::Repeatable { repeatable } => Ok(repeatable),
+        SectionBody::Simple { .. } => Err(GenerateError::WrongShape {
+            what: format!("section {section_id:?} is not repeatable"),
+        }),
+    }
+}
+
+/// Whether the item at `region` already carries the sub-label of the **added** leaf
+/// `leaf_id` — the per-item idempotency guard [`insert_item_slot`] skips on.
+///
+/// **Keyed on the added leaf, never on "any declared sub-label."** At a 2→3 add the item
+/// already carries both of the old shape's sub-labels while still needing the new one, so an
+/// any-sub-label guard skips exactly the items the change exists to reshape and the fold's
+/// output then fails to parse. The added leaf is the only heading whose presence means *this
+/// change already landed here*.
+///
+/// The two compares are the parser's own — [`parse::is_item_slot_sub_label`] for *is this
+/// deeper heading a sub-label at all* (multi-slot template · one level deeper · unanchored ·
+/// a declared leaf title) and [`parse::heading_matches_label`] for *which leaf* — so the
+/// reader's nested-region boundary, the writer's leaf-region boundary and this guard cannot
+/// disagree about what a `#### <Leaf-Title>` heading is.
+fn carries_leaf_sub_label(
+    source: &str,
+    blocks: &[Block],
+    region: &Range<usize>,
+    template: &parse::ItemTemplate,
+    leaf_id: &str,
+) -> bool {
+    let Some(own_level) = blocks.iter().find_map(|b| match b {
+        Block::Heading { level, range, .. } if range.start == region.start => {
+            Some(level_num_of(*level))
+        }
+        _ => None,
+    }) else {
+        return false;
+    };
+    blocks.iter().any(|b| match b {
+        Block::Heading {
+            level, range, text, ..
+        } => {
+            range.start > region.start
+                && range.start < region.end
+                && parse::is_item_slot_sub_label(
+                    &source[range.clone()],
+                    level_num_of(*level),
+                    own_level,
+                    text,
+                    template,
+                )
+                && parse::heading_matches_label(text, leaf_id)
+        }
+        _ => false,
+    })
+}
+
+/// Re-key one item's committed slot prose onto the **new** template's leaf order: each new
+/// leaf carries the prose the old shape held for it, and a leaf the old shape did not
+/// declare mints **empty**.
+///
+/// The old shape's prose lives in one of two places, which is the arity split the renderer
+/// itself makes: a **single-slot** item carries it bare in `slot` (owned by the old
+/// template's one leaf id), a **multi-slot** item in the named `slots` entries. A
+/// **slot-less** old template carries none, so every new leaf mints empty.
+fn reshaped_item_slots(
+    item: &ItemContent,
+    old_ids: &[String],
+    new_ids: &[String],
+) -> Vec<(String, String)> {
+    let carried: Vec<(&str, &str)> = if item.slots.is_empty() {
+        match (old_ids.first(), item.slot.as_deref()) {
+            (Some(id), Some(prose)) => vec![(id.as_str(), prose)],
+            _ => Vec::new(),
+        }
+    } else {
+        item.slots
+            .iter()
+            .map(|(id, prose)| (id.as_str(), prose.as_str()))
+            .collect()
+    };
+    new_ids
+        .iter()
+        .map(|id| {
+            let prose = carried
+                .iter()
+                .find(|(carried_id, _)| carried_id == id)
+                .map(|(_, prose)| (*prose).to_string())
+                .unwrap_or_default();
+            (id.clone(), prose)
+        })
+        .collect()
+}
+
 /// `set-field` (header field **absent**): materialize the front-matter `key: value`
 /// line for `field` at its **schema-ordered position** inside the `---` fence (after
 /// the nearest preceding present header field, before the nearest following one), so

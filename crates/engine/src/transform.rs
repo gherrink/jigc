@@ -285,6 +285,19 @@ pub fn transform(
             SchemaChange::AddedItemField { section, field } => {
                 out = apply_added_item_field(new_schema, &out, section, field)?;
             }
+            SchemaChange::AddedItemSlot { section, leaf } => {
+                // The item block gains a prose leaf. The primitive re-keys every committed
+                // item's slot prose onto the new template's leaf order and mints the added
+                // leaf **empty** at its schema-ordered offset — reading through `old_schema`,
+                // because a v1-shaped instance does not parse under a v2 multi-slot template
+                // (the `promote_slot_to_repeatable` route, which is why both schemas are
+                // threaded here). Below two declared slots it writes zero bytes: a lone slot
+                // renders bare, under no sub-heading. A **required** added leaf is not refused
+                // here — it mints empty and the per-doc conformance gate adjudicates it, so the
+                // doc collects the doc-authorable Framing-A route instead of a build
+                // instruction (`design/corpus-migration.md` → Prose routing).
+                out = write::insert_item_slot(old_schema, new_schema, &out, section, leaf)?;
+            }
             SchemaChange::ValueRemapped {
                 section,
                 field,
@@ -3290,5 +3303,357 @@ sections:
                 "{label}: the doc migrates byte-identical"
             );
         }
+    }
+
+    // ---- (f) `AddedItemSlot` — a repeatable item block gains prose (M49 Inc-4 T1) ----
+
+    /// A `plan` doctype whose `milestones` item block declares **one** slot leaf (`proves`)
+    /// beside a `trigger` field — the single-slot bare-prose arity every committed item is in
+    /// before the bump.
+    fn plan_one_slot() -> Schema {
+        load_schema(
+            b"\
+type: plan
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: proves, slot: { hint: \"what it proves\" } }
+        - { id: trigger, type: string }
+",
+        )
+        .expect("plan (one slot) loads")
+    }
+
+    /// The same block with a **second, optional** slot leaf appended — the 1→2 arity, the cell
+    /// where the sub-labels are minted and the committed bare prose is re-keyed under the v1
+    /// leaf's own `#### <Leaf-Title>`.
+    fn plan_two_slots(optional: bool) -> Schema {
+        let block = if optional {
+            "        - { id: detail, slot: { optional: true, hint: \"the detail\" } }\n"
+        } else {
+            "        - { id: detail, slot: { hint: \"the detail\" } }\n"
+        };
+        load_schema(
+            format!(
+                "\
+type: plan
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - {{ id: title, type: string }}
+        - {{ id: proves, slot: {{ hint: \"what it proves\" }} }}
+{block}        - {{ id: trigger, type: string }}
+"
+            )
+            .as_bytes(),
+        )
+        .expect("plan (two slots) loads")
+    }
+
+    /// A canonical `plan` carrying **two** items (so "every item" is a real claim, not a sample
+    /// of one), rendered through the writer under `schema` — so the fixture is the shipped
+    /// canonical form, never a hand-typed approximation of it.
+    fn plan_doc(schema: &Schema, slots: [&[(&str, &str)]; 2]) -> String {
+        let item = |id: &str, title: &str, trigger: &str, leaves: &[(&str, &str)]| ItemContent {
+            id: id.to_string(),
+            title: title.to_string(),
+            slot: match leaves {
+                [(_, prose)] => Some((*prose).to_string()),
+                _ => None,
+            },
+            slots: match leaves {
+                [_] => Vec::new(),
+                many => many
+                    .iter()
+                    .map(|(id, prose)| ((*id).to_string(), (*prose).to_string()))
+                    .collect(),
+            },
+            fields: vec![Field {
+                key: "trigger".to_string(),
+                value: Value::Scalar(trigger.to_string()),
+            }],
+            items: Vec::new(),
+        };
+        render(
+            schema,
+            &Instance {
+                title: "Plan".to_string(),
+                sections: vec![SectionContent {
+                    id: "milestones".to_string(),
+                    items: vec![
+                        item("the-loop", "The loop", "M1", slots[0]),
+                        item("the-fan-out", "The fan-out", "M2", slots[1]),
+                    ],
+                    ..Default::default()
+                }],
+            },
+        )
+    }
+
+    /// **The classifier seam — an added item slot names itself.** Before M49 the item-block
+    /// loop classified `Field` leaves only, so this diffed to the `Unclassified` residual and
+    /// the migration refused with a route naming `crates/engine/src/transform.rs` — a file no
+    /// adopter can edit.
+    #[test]
+    fn an_added_item_slot_classifies_at_every_arity() {
+        let one = plan_one_slot();
+        let two = plan_two_slots(true);
+        assert_eq!(
+            schema_diff(&one, &two),
+            vec![SchemaChange::AddedItemSlot {
+                section: "milestones".to_string(),
+                leaf: "detail".to_string(),
+            }],
+            "1→2: the added slot leaf classifies"
+        );
+
+        // 0→1: a slot-less item block gains its first prose leaf.
+        let none = load_schema(
+            b"\
+type: plan
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+",
+        )
+        .expect("plan (no slot) loads");
+        let first = load_schema(
+            b"\
+type: plan
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: proves, slot: { optional: true, hint: \"what it proves\" } }
+        - { id: trigger, type: string }
+",
+        )
+        .expect("plan (first slot) loads");
+        assert_eq!(
+            schema_diff(&none, &first),
+            vec![SchemaChange::AddedItemSlot {
+                section: "milestones".to_string(),
+                leaf: "proves".to_string(),
+            }],
+            "0→1: the added slot leaf classifies too — the arity the report's `detail` needs"
+        );
+
+        // 0→1 is a **byte no-op**: a lone slot renders bare, so a slot-less item already
+        // carries the v2 bytes.
+        let src = plan_doc(&none, [&[], &[]]);
+        let out = transform(&none, &first, &src, &schema_diff(&none, &first))
+            .expect("the 0→1 fold is a no-op, not a refusal");
+        assert_eq!(out, src, "0→1 writes zero bytes");
+        assert_conforms(&first, &out);
+        assert_byte_stable(&first, &out);
+    }
+
+    /// **The driver seam at 1→2 — the committed prose moves under the v1 leaf's sub-label and
+    /// the new leaf mints empty.** No prose is invented, none is lost, and every other byte
+    /// (the item anchors, the `trigger` bullets, the section heading) survives.
+    #[test]
+    fn an_added_item_slot_relabels_the_committed_prose_and_mints_the_new_leaf() {
+        let one = plan_one_slot();
+        let two = plan_two_slots(true);
+        let src = plan_doc(
+            &one,
+            [
+                &[("proves", "The loop closes.")],
+                &[("proves", "The fan-out joins.")],
+            ],
+        );
+        let diff = schema_diff(&one, &two);
+        let out = transform(&one, &two, &src, &diff).expect("the 1→2 fold succeeds");
+
+        // The oracle is the writer's own v2 canonical form for the same content — so a
+        // byte-faithful relabel reproduces it exactly, and the empty `detail` is minted at its
+        // schema-ordered offset rather than appended anywhere convenient.
+        let oracle = plan_doc(
+            &two,
+            [
+                &[("proves", "The loop closes."), ("detail", "")],
+                &[("proves", "The fan-out joins."), ("detail", "")],
+            ],
+        );
+        assert_eq!(out, oracle, "the fold lands the canonical v2 bytes");
+        assert!(
+            out.contains("#### Proves\n\nThe loop closes.\n\n#### Detail"),
+            "the committed bare prose rides verbatim under the v1 leaf's sub-label; got:\n{out}"
+        );
+        assert_conforms(&two, &out);
+        assert_byte_stable(&two, &out);
+
+        // Determinism, and the re-run: folding the already-migrated bytes changes nothing.
+        assert_eq!(
+            transform(&one, &two, &src, &diff).expect("re-run succeeds"),
+            out,
+            "the item-slot reshape is deterministic"
+        );
+    }
+
+    /// **The per-item re-run guard.** One doc can hold an item that already carries the added
+    /// sub-label beside one that does not — a re-run after a refused commit, or a hand-authored
+    /// entry. The already-reshaped item is left **byte-identical**; the other is reshaped.
+    /// A whole-change filter cannot express this, which is why the guard lives per item.
+    #[test]
+    fn an_item_already_carrying_the_added_sub_label_is_left_byte_identical() {
+        let one = plan_one_slot();
+        let two = plan_two_slots(true);
+        // Item 1 already renders both sub-labels (a v2-shaped item); item 2 is still bare.
+        let mixed = plan_doc(
+            &one,
+            [
+                &[(
+                    "proves",
+                    "#### Proves\n\nThe loop closes.\n\n#### Detail\n\nAlready reshaped.",
+                )],
+                &[("proves", "The fan-out joins.")],
+            ],
+        );
+        let already = mixed
+            .split("### The fan-out")
+            .next()
+            .expect("the first item's bytes")
+            .to_string();
+
+        let diff = schema_diff(&one, &two);
+        let out = transform(&one, &two, &mixed, &diff).expect("the mixed fold succeeds");
+        assert!(
+            out.starts_with(&already),
+            "the already-reshaped item keeps its bytes; got:\n{out}"
+        );
+        assert!(
+            out.contains("#### Proves\n\nThe fan-out joins.\n\n#### Detail"),
+            "the un-reshaped item is reshaped; got:\n{out}"
+        );
+        assert_conforms(&two, &out);
+        assert_byte_stable(&two, &out);
+    }
+
+    /// **2→3 — the guard keys on the ADDED leaf, not on "any declared sub-label."** Every item
+    /// already carries both of the old shape's sub-labels while still needing the new one, so an
+    /// any-sub-label guard would skip exactly the items this change exists to reshape and the
+    /// fold's output would fail to parse. Each existing sub-label's bytes are untouched.
+    #[test]
+    fn a_two_to_three_add_mints_the_new_leaf_with_the_existing_ones_untouched() {
+        let two = plan_two_slots(true);
+        let three = load_schema(
+            b"\
+type: plan
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: proves, slot: { hint: \"what it proves\" } }
+        - { id: detail, slot: { optional: true, hint: \"the detail\" } }
+        - { id: risk, slot: { optional: true, hint: \"the risk\" } }
+        - { id: trigger, type: string }
+",
+        )
+        .expect("plan (three slots) loads");
+        let src = plan_doc(
+            &two,
+            [
+                &[
+                    ("proves", "The loop closes."),
+                    ("detail", "Two increments."),
+                ],
+                &[("proves", "The fan-out joins."), ("detail", "One join.")],
+            ],
+        );
+
+        let diff = schema_diff(&two, &three);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedItemSlot {
+                section: "milestones".to_string(),
+                leaf: "risk".to_string(),
+            }]
+        );
+        let out = transform(&two, &three, &src, &diff).expect("the 2→3 fold succeeds");
+        assert_eq!(
+            out,
+            plan_doc(
+                &three,
+                [
+                    &[
+                        ("proves", "The loop closes."),
+                        ("detail", "Two increments."),
+                        ("risk", ""),
+                    ],
+                    &[
+                        ("proves", "The fan-out joins."),
+                        ("detail", "One join."),
+                        ("risk", ""),
+                    ],
+                ]
+            ),
+            "the new leaf mints empty and every existing sub-label survives byte-for-byte"
+        );
+        assert_conforms(&three, &out);
+        assert_byte_stable(&three, &out);
+    }
+
+    /// **A REQUIRED added item slot is adjudicated by the per-doc gate, never refused by the
+    /// driver.** The byte work is identical to the optional cell — one relabel, not two kinds —
+    /// and the empty required leaf then breaks the conformance gate, so the doc rolls back
+    /// byte-identical and the caller renders the doc-authorable Framing-A route
+    /// ([`HaltReason::Gate`]) rather than a build instruction.
+    #[test]
+    fn a_required_added_item_slot_halts_at_the_gate_not_at_the_driver() {
+        let one = plan_one_slot();
+        let two = plan_two_slots(false);
+        let src = plan_doc(
+            &one,
+            [
+                &[("proves", "The loop closes.")],
+                &[("proves", "The fan-out joins.")],
+            ],
+        );
+        let diff = schema_diff(&one, &two);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedItemSlot {
+                section: "milestones".to_string(),
+                leaf: "detail".to_string(),
+            }],
+            "requiredness does not split the kind — the relabel is the same byte work"
+        );
+
+        let corpus = [CorpusDoc {
+            id: "plan-a",
+            old_schema: &one,
+            new_schema: &two,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, Some(0));
+        assert!(
+            matches!(result.halt_reason, Some(HaltReason::Gate(_))),
+            "the gate adjudicates it, so the caller's route is the authorable one; got {:?}",
+            result.halt_reason
+        );
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Untouched {
+                id: "plan-a".to_string(),
+                v0: src.clone(),
+            }],
+            "the doc rolls back byte-identical — the stamp never moves"
+        );
     }
 }

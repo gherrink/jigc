@@ -1077,9 +1077,13 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
             // heading either — it splices a field bullet **into each item of an existing
             // repeatable section** — and it carries its own re-run guard *per item* (the driver
             // skips an item that already has the bullet, which a whole-change filter here could
-            // not express: one doc can hold both kinds of item).
+            // not express: one doc can hold both kinds of item). `AddedItemSlot` mints a
+            // `#### <Leaf-Title>` **sub-label inside each item**, never a `## Heading`, and
+            // carries the identical per-item guard for the identical reason: one doc can hold an
+            // item that already renders the sub-labels beside one that does not.
             SchemaChange::AddedOptionalField { .. }
             | SchemaChange::AddedItemField { .. }
+            | SchemaChange::AddedItemSlot { .. }
             | SchemaChange::OptionalRelaxed { .. }
             | SchemaChange::WidenedCardinality { .. }
             | SchemaChange::NarrowedCardinality { .. }

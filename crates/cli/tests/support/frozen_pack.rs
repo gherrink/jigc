@@ -24,6 +24,17 @@ pub fn dev_pack_tree() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
 }
 
+/// The embedded **methodology** pack's on-disk source tree (`packs/methodology`) — the dev
+/// pack's manifest-governed sibling, and the home of the work-doc doctypes whose item blocks
+/// a migration reshapes.
+pub fn methodology_pack_tree() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("packs")
+        .join("methodology")
+}
+
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.
 fn copy_tree(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).expect("create copy target dir");
@@ -43,6 +54,12 @@ fn copy_tree(src: &Path, dst: &Path) {
 /// tree — the base every helper below mutates.
 pub fn copy_dev_pack(root: &Path) {
     copy_tree(&dev_pack_tree(), root);
+}
+
+/// Copy the **methodology** pack into `root` (created), byte-identical to the shipped tree —
+/// the base a suite mutates when the doctype it reshapes is a methodology one.
+pub fn copy_methodology_pack(root: &Path) {
+    copy_tree(&methodology_pack_tree(), root);
 }
 
 /// Copy the dev pack into `root`, rewrite doctype `ty`'s schema through `reshape`, and
@@ -71,7 +88,11 @@ pub fn reshaped_dev_pack(root: &Path, ty: &str, reshape: impl FnOnce(&str) -> St
 /// **through the production loader** (field types + the schema-version stamp resolved
 /// exactly as the freeze gate resolves them) and write it into that pack's
 /// `config/schema-manifest.yaml`.
-fn repin_manifest_hash(root: &Path, ty: &str) {
+///
+/// Pack-agnostic: it reads whatever pack sits at `root`, so the methodology pack re-pins
+/// through the same one implementation the dev pack does — which is the point of computing
+/// the hash rather than hard-coding it.
+pub fn repin_manifest_hash(root: &Path, ty: &str) {
     let pack = cli::pack::FilesystemPack::new(root.to_path_buf());
     let bytes = fs::read(root.join("schemas").join(format!("{ty}.yaml")))
         .expect("read the reshaped schema");

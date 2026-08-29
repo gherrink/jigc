@@ -33,6 +33,8 @@ mod migrate_byte_floor;
 mod migrate_corpus_foreign;
 #[path = "../migrate_corpus_halt_causes.rs"]
 mod migrate_corpus_halt_causes;
+#[path = "../migrate_corpus_item_slot.rs"]
+mod migrate_corpus_item_slot;
 #[path = "../migrate_corpus_log_completeness.rs"]
 mod migrate_corpus_log_completeness;
 #[path = "../migrate_corpus_set_fields.rs"]
