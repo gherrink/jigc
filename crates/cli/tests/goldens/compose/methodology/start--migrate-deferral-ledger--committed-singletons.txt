@@ -52,8 +52,8 @@ your edit base, so the entries you author below APPEND to those already there an
 any slot you set overwrites. Re-author only what the foreign source adds; an entry
 the committed doc already holds would double. The lone exception is a same-path
 migration — when the foreign file you are migrating IS the canonical
-`docs/deferral-ledger.md` — where the CLI seeds a blank skeleton and your authoring
-rebuilds the whole doc.
+`deferral-ledger` home the schema line above names — where the CLI seeds a blank
+skeleton and your authoring rebuilds the whole doc.
 
 Re-author every DEFERRAL from the foreign record, oldest first, as one item under
 `entries`. Fill its fields mechanically:

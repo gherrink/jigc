@@ -1,6 +1,6 @@
 ---
 when: migrate a foreign decisions log into the managed decisions log
-description: Migrate a foreign decisions log into the managed `decisions-log` singleton at `docs/decisions-log.md` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
+description: Migrate a foreign decisions log into the managed `decisions-log` singleton — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
 usage: an existing project carries a non-conformant decisions log (a DECISIONS.md, a running "choices we made" file) and `jigc migrate <path> --as decisions-log` is rewriting it into the managed decisions log. Off-router — only reached through the migrate verb.
 creates-task: true
 selectable: false

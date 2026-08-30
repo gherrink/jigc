@@ -1,5 +1,6 @@
 //! **`placement-root` — the one home no knob could reach** (M49 Increment 7 — T1 the
-//! knob, T2 the detect + route + move floor).
+//! knob, T2 the detect + route + move floor, T3 the census re-walk, T4 the pack surfaces
+//! that named the literal home).
 //!
 //! A `location:` doctype's home resolves through the `docs-root` knob, so an adopter
 //! whose managed docs do not live under `docs/` re-points every located doctype with one
@@ -32,12 +33,11 @@
 //! `{{ schema:<doctype> }}` projection line the composed step actually carries — the
 //! sentence an agent reads before it authors.
 //!
-//! **Scope bound, stated rather than hidden:** the *literal home strings hand-written into
-//! six pack step bodies* (`author-migration-roadmap.yaml`'s "the canonical
-//! `docs/roadmap.md`", …) are **not** touched by this task — they are prose, they still
-//! say the declared home, and T4 of this increment is where they stop lying. These arms
-//! therefore assert on the **generated** projection line, which is the surface the seam
-//! feeds.
+//! **The T1/T2 arms assert on the GENERATED projection line**, which is the surface the seam
+//! feeds. The *literal home strings hand-written into six pack surfaces* — three
+//! `migrate-*` workflow `description:` strings and the same-path sentence of three
+//! `author-migration-*` steps — were left standing by those tasks and closed by T4, whose
+//! arms sit at the foot of this module.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -924,4 +924,211 @@ fn the_unregistered_tier_routes_adoption_and_a_root_declared_home_is_never_a_str
         "a root-declared placement home is not re-rootable, so nothing sitting at a \
          `VISION.md`-shaped path anywhere else is a `placement-root` strand; got:\n{report}",
     );
+}
+
+// -------------------------------------------------------------------------------------
+// T4 — the pack surfaces that name the literal home stop lying.
+//
+// Six shipped surfaces hand-wrote a placement doctype's home into their prose: three
+// `migrate-*` workflow `description:` strings (static front-matter — `describe` renders them
+// verbatim, no placeholder resolution ever runs over them) and three `author-migration-*`
+// step bodies (the same-path-migration sentence, which restated the literal path). Every one
+// of them was TRUE at HEAD, because a placement home was a constant. T1 made the home a
+// resolved value, and the moment it can differ from its declaration those six sentences
+// become law-1 lies (`design/surface-contract.md` → law 1, nothing lies) — an agent composing
+// under `placement-root: notes` was told to author at `docs/roadmap.md`, a path no door reads.
+//
+// The rule the arms below fence is the general one, not the six instances: **a composed
+// surface may name a placement doctype's home only when that home is the RESOLVED one.** So
+// the enumeration is read from the two embedded packs — every declared `placement.file`, every
+// workflow id — and the sweep runs the whole workflow set plus the memberless catalog, at two
+// knob values that both differ from the declaration. A seventh surface minted tomorrow joins
+// the sweep with no edit here.
+//
+// The reword's two directions, both fenced: the descriptions name the DOCTYPE instead of a
+// path (a `description:` is static, so it can carry no home at all and stay true under every
+// knob value), while the step sentences point at the `{{ schema:<ty> }}` projection line each
+// one already renders above itself — the seam-generated home
+// (`engine::compose::projection_home_line`) that follows the resolved value by construction.
+// Deleting the sentences would also pass a not-contains check, so the arms assert the
+// same-path contract still STANDS in the composed bytes, and that the resolved home is
+// present for the agent to read.
+// -------------------------------------------------------------------------------------
+
+/// The two embedded packs in precedence order — built the CWD-free way, never `make_pack()`.
+fn embedded_packs() -> Vec<cli::pack::EmbeddedPack> {
+    vec![
+        cli::pack::EmbeddedPack::new(),
+        cli::pack::EmbeddedPack::methodology(),
+    ]
+}
+
+/// Every placement doctype either shipped pack declares, as `(doctype, declared placement.file)`
+/// — read out of the packs' own schema resources, so a doctype added, moved or retired changes
+/// this sweep with no edit here. Deduped first-wins across the precedence order.
+fn declared_placement_homes() -> Vec<(String, String)> {
+    use engine::packsource::{PackResourceKind, PackSource};
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for pack in embedded_packs() {
+        for id in pack.list(PackResourceKind::Schemas) {
+            let bytes = pack
+                .read(PackResourceKind::Schemas, &id)
+                .expect("read a schema resource");
+            let schema = cli::pack::load_pack_schema(&pack, &bytes)
+                .expect("a shipped schema loads against its own pack's field types");
+            if !seen.insert(schema.ty.clone()) {
+                continue;
+            }
+            if let Some(placement) = &schema.placement {
+                out.push((schema.ty.clone(), placement.file.clone()));
+            }
+        }
+    }
+    assert!(
+        out.len() >= 3,
+        "the placement doctype set came back near-empty — the enumeration, not the surface, \
+         is what broke",
+    );
+    out
+}
+
+/// Composed step prose is hard-wrapped, so a sentence legitimately spans a line break — the
+/// same normalization the pack-load named-fact fence uses (`cli::pack::normalized_body`'s
+/// view), so a phrase is matched on content rather than on presentation.
+fn normalized(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Every workflow id either shipped pack declares — the whole set, undivided: a
+/// definition-shape filter here would leave a composed surface swept by nothing.
+fn composite_workflow_ids() -> Vec<String> {
+    use engine::packsource::{PackResourceKind, PackSource};
+    let mut out = Vec::new();
+    for pack in embedded_packs() {
+        for id in pack.list(PackResourceKind::Workflows) {
+            out.push(id.as_str().to_string());
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+impl Corpus {
+    /// Every composed surface this sweep reads, as `(label, bytes)` — the memberless catalog
+    /// plus `--preview` for **every** workflow both packs ship. Streams, not stdout alone, and
+    /// the exit status is deliberately not asserted: a surface that refuses still prints, and a
+    /// stale home inside a refusal is the same lie.
+    fn composed_surfaces(&self) -> Vec<(String, String)> {
+        let mut out = vec![("jigc describe".to_string(), self.streams(&["describe"]))];
+        for id in composite_workflow_ids() {
+            out.push((
+                format!("jigc workflow {id} --preview"),
+                self.streams(&["workflow", &id, "--preview"]),
+            ));
+        }
+        out
+    }
+}
+
+/// **No composed surface names a home the cascade no longer resolves to.** Driven at two knob
+/// values that both differ from every nested declaration (`notes`, and the repo-root `.`), over
+/// every declared placement home × every composed surface.
+///
+/// At HEAD this fails on six of them: three `describe` catalog lines and the same-path sentence
+/// of each `author-migration-*` step.
+#[test]
+fn no_composed_surface_names_a_placement_home_the_cascade_re_rooted_away_from() {
+    for root in ["notes", "."] {
+        let corpus = Corpus::new(&format!(
+            "t4-stale-{}",
+            if root == "." { "flat" } else { root }
+        ));
+        corpus.ok(&["config", "set", "placement-root", root]);
+
+        for (ty, declared) in declared_placement_homes() {
+            // A home declared AT the repo root is not re-rootable, so its declaration IS its
+            // resolved home under every knob value — naming it is truth, not a lie.
+            if !declared.contains('/') {
+                continue;
+            }
+            for (label, bytes) in corpus.composed_surfaces() {
+                assert!(
+                    !bytes.contains(&declared),
+                    "under `placement-root {root}` the `{ty}` singleton resolves elsewhere, yet \
+                     `{label}` still names its declaration `{declared}` — a path no door reads \
+                     (surface-contract law 1); got:\n{bytes}",
+                );
+            }
+        }
+    }
+}
+
+/// **The reword points somewhere, and the somewhere is right.** The three migrate steps kept
+/// their same-path contract — it is a real branch of the migrate verb — so the arm asserts the
+/// sentence still stands in the composed bytes AND that the composition carries the resolved
+/// home for the agent to read, at both a re-rooted and an unset cascade. Fixing the lie by
+/// deleting the sentence would pass the arm above and fail this one.
+#[test]
+fn the_same_path_contract_still_stands_and_the_composed_home_is_the_resolved_one() {
+    let cases = [
+        ("migrate-roadmap", "roadmap"),
+        ("migrate-decisions-log", "decisions-log"),
+        ("migrate-deferral-ledger", "deferral-ledger"),
+    ];
+
+    let rerooted = Corpus::new("t4-reword-rerooted");
+    rerooted.ok(&["config", "set", "placement-root", "notes"]);
+    let unset = Corpus::new("t4-reword-unset");
+
+    for (workflow, ty) in cases {
+        for (corpus, home) in [
+            (&rerooted, format!("notes/{ty}.md")),
+            (&unset, format!("docs/{ty}.md")),
+        ] {
+            let preview = corpus.preview(workflow);
+            assert!(
+                normalized(&preview).contains("same-path migration"),
+                "`{workflow}` must keep stating the same-path branch — the lie is the path it \
+                 restated, not the contract; got:\n{preview}",
+            );
+            assert_eq!(
+                projected_home(&preview, ty),
+                home,
+                "the composed `{ty}` home is the resolved one",
+            );
+            assert!(
+                preview.contains(&home),
+                "the composed `{workflow}` bytes carry the resolved home `{home}` the \
+                 same-path sentence points at; got:\n{preview}",
+            );
+        }
+    }
+}
+
+/// **The catalog names the doctype.** A workflow `description:` is static front-matter that
+/// `describe` renders verbatim — no placeholder resolution runs over it — so it can name no
+/// home at all and stay true under every knob value. The arm reads the catalog lines out of
+/// `describe` itself and asserts each names its target doctype, at the unset cascade where the
+/// deleted path was still TRUE: the reword is not permitted to cost the reader the target.
+#[test]
+fn the_catalog_line_of_each_migrate_workflow_names_its_doctype() {
+    let corpus = Corpus::new("t4-catalog");
+    let catalog = corpus.ok(&["describe"]);
+
+    for (workflow, ty) in [
+        ("migrate-roadmap", "roadmap"),
+        ("migrate-decisions-log", "decisions-log"),
+        ("migrate-deferral-ledger", "deferral-ledger"),
+    ] {
+        let line = catalog
+            .lines()
+            .find(|l| l.trim_start().starts_with(&format!("{workflow} is ")))
+            .unwrap_or_else(|| panic!("`{workflow}` has a catalog line; got:\n{catalog}"));
+        assert!(
+            line.contains(&format!("`{ty}` singleton")),
+            "the reworded description names the doctype it migrates into; got: {line}",
+        );
+    }
 }

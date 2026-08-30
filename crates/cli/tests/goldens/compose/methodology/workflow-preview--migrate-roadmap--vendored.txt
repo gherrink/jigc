@@ -51,9 +51,9 @@ the CLI does not mint a fresh one — it copies the committed body in as your ed
 base, so the milestones you author below APPEND to those already there and any slot
 you set overwrites. Re-author only what the foreign source adds; a milestone the
 committed doc already holds would double. The lone exception is a same-path
-migration — when the foreign file you are migrating IS the canonical
-`docs/roadmap.md` — where the CLI seeds a blank skeleton and your authoring rebuilds
-the whole doc.
+migration — when the foreign file you are migrating IS the canonical `roadmap` home
+the schema line above names — where the CLI seeds a blank skeleton and your authoring
+rebuilds the whole doc.
 
 Re-author every MILESTONE from the foreign roadmap, in the foreign order, as one item
 under `milestones` — a foreign milestone / phase / epic / numbered-stage heading maps
