@@ -1195,6 +1195,7 @@ fn run_add_task(
             milestone_id,
             &added.task.id,
             intent,
+            workflow,
         )
         .inspect_err(|_| {
             unwind_mint(
@@ -1219,8 +1220,8 @@ fn run_add_task(
 /// `add-task` append arm of the record-home split (`design/team-ready-state.md` → Engine
 /// capability 1 (write); The commit model: a **separate** record-only path-scoped commit per
 /// `add-task`). Reads the committed record source at its canonical home under docs-root,
-/// appends one `tasks` item (`task-id`/`intent`/`status: active`) via the byte-stable
-/// [`engine::milestone::append_task_item`] primitive, writes it back, then lands a
+/// appends one `tasks` item (`task-id`/`intent`/`workflow`/`status: active`) via the
+/// byte-stable [`engine::milestone::append_task_item`] primitive, writes it back, then lands a
 /// record-only commit through the shared [`commit_record_only`] helper — never sweeping the
 /// agent's in-flight staged/untracked WIP (the M30/M31 path-scoped discipline). A failed
 /// append (a malformed record, a duplicate id) surfaces the engine's routed blocking finding.
@@ -1232,13 +1233,14 @@ fn append_and_commit_record(
     milestone_id: &str,
     task_id: &str,
     intent: &str,
+    workflow: &str,
 ) -> Result<String> {
     let record_path = engine::store::canonical_path(jigc_home, schema, milestone_id)
         .context("the `milestone-record` doctype declares no committed location")?;
     let source = std::fs::read_to_string(&record_path)
         .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
 
-    let appended = engine::milestone::append_task_item(schema, &source, task_id, intent)
+    let appended = engine::milestone::append_task_item(schema, &source, task_id, intent, workflow)
         .map_err(|err| finding_to_err(engine::write::generate_error_finding(&err)))?;
     // The pre-image, captured BEFORE the append lands on disk — a rejected commit restores
     // the pre-append bytes AND the pre-append index entry ([`RecordPreImage`]). Under
@@ -1366,6 +1368,7 @@ fn run_add_from_spec(
                         milestone_id,
                         &a.task.id,
                         &intent,
+                        workflow,
                     )
                 });
             match recorded {

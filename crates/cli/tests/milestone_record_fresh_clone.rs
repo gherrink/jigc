@@ -49,9 +49,13 @@
 //!       *first* op on its own fresh clone (`finalize` too — the reseed runs before its
 //!       refusal). `list-tasks` left this axis at M49 Inc 2 T4 — it is `VerbKind::Read` and
 //!       rebuilds nothing;
-//!   (e) the declared bound: `--workflow` is workbench-local and **not** fresh-clone-durable —
-//!       the reseed re-derives the pack default, so the operator's own overridden re-entry is
-//!       refused **loudly** by the shipped W-equality guard rather than composing the override.
+//!   (e) the recorded workflow is **fresh-clone durable** (M49 Inc 9, T3). It used to be the
+//!       opposite — a declared bound: the minting workflow lived only in the gitignored
+//!       workbench, so the re-seed re-derived the pack default and the operator's own
+//!       overridden re-entry was refused by the W-equality guard naming a workflow the tool
+//!       had itself invented. The `milestone-record` 2→3 leaf ended that: the append arm
+//!       records the workflow and the re-seed sources **each item's** recorded value, falling
+//!       back to the CLI's default only for a pre-bump item that carries no leaf.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -674,77 +678,209 @@ fn every_milestone_entry_door_rebuilds_the_sub_task_areas_on_a_fresh_clone() {
 }
 
 // ---------------------------------------------------------------------------------------
-// (e) The declared bound — `--workflow` is not fresh-clone-durable, and says so loudly.
+// (e) The recorded workflow is fresh-clone durable (M49 Increment 9, T3).
+//
+// Until the `milestone-record` 2→3 bump landed the per-sub-task `workflow` leaf, the minting
+// workflow lived ONLY in the gitignored `.jigc/tasks/<sub>/workflow` file. So a fresh clone
+// rebuilt every sub-task area under the pack's default `sub-task`, and the operator who minted
+// `--workflow decided-task` was refused by the W-equality guard naming `sub-task` — provenance
+// the tool could not see, asserted with full confidence. The record is the fresh-clone
+// continuation state, so the workflow belongs in it: the append arm writes the leaf, and the
+// re-seed sources EACH ITEM's recorded workflow rather than one caller-supplied default.
+//
+// Three arms, one axis — what the record says about a sub-task's workflow:
+//   (e1) an OVERRIDDEN sub-task: the recorded override survives the clone and re-entry
+//        composes at exit 0 (the driven defect, reproduced and shown green);
+//   (e2) an UN-OVERRIDDEN sub-task: still the pack default, now because the record says so;
+//   (e3) a PRE-BUMP record whose items carry NO `workflow` leaf: the fall-back to the CLI's
+//        default is what keeps every record committed before the bump resumable.
 // ---------------------------------------------------------------------------------------
 
-#[test]
-fn an_overridden_workflow_is_refused_loudly_on_fresh_clone_re_entry() {
-    let origin = TempDir::new("override-origin");
-    let home = TempDir::new("home");
-    init_methodology_origin(origin.path());
+/// Drive an origin milestone with one sub-task minted under `workflow` (the flag omitted when
+/// `None`, so the arm exercises the real default path rather than spelling it). Returns the
+/// sub-task id.
+fn drive_origin_sub_task(repo: &Path, home: &Path, intent: &str, workflow: Option<&str>) -> String {
     assert_ok(
-        &run_jigc(
-            origin.path(),
-            home.path(),
-            &["milestone", "create", "Cache rework"],
-        ),
+        &run_jigc(repo, home, &["milestone", "create", "Cache rework"]),
         "`jigc milestone create`",
     );
-    assert_ok(
-        &run_jigc(
-            origin.path(),
-            home.path(),
-            &[
-                "milestone",
-                "add-task",
-                "cache-rework",
-                "Tune the eviction clock",
-                "--workflow",
-                "single-task",
-            ],
-        ),
-        "`jigc milestone add-task --workflow single-task`",
-    );
+    let mut args = vec!["milestone", "add-task", "cache-rework", intent];
+    if let Some(w) = workflow {
+        args.push("--workflow");
+        args.push(w);
+    }
+    let out = run_jigc(repo, home, &args);
+    assert_ok(&out, "`jigc milestone add-task`");
+    // The id is read out of the door's OWN ack (`added task:<id> to milestone:<m>`), never
+    // re-slugged in test code.
+    let ack = String::from_utf8_lossy(&out.stdout).to_string();
+    ack.split_once("task:")
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+        .unwrap_or_else(|| panic!("the add-task ack names the minted sub-task; got:\n{ack}"))
+        .to_string()
+}
 
-    let workdir = TempDir::new("override-clone");
-    let clone = clone_origin(origin.path(), workdir.path());
-    assert_ok(
-        &run_jigc(
-            &clone,
-            home.path(),
-            &["milestone", "provision", "cache-rework"],
-        ),
-        "`jigc milestone provision` on the fresh clone",
-    );
-
-    // The committed record carries `task-id`/`intent`/`status` and NOTHING about the minting
-    // workflow, so the reseed re-derives the pack default. The operator who minted the
-    // override re-enters with it — and is refused loudly, naming what the area actually
-    // records, rather than being silently composed into the wrong workflow.
-    let wt = clone
-        .join(".jigc")
-        .join("worktrees")
-        .join("tune-the-eviction-clock");
-    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
-        .args([
-            "workflow",
-            "single-task",
-            "--task",
-            "tune-the-eviction-clock",
-        ])
+/// Re-enter `sub` as `jigc workflow <workflow> --task <sub>` **from its provisioned worktree** —
+/// the form the milestone-execution `Spawn:` line emits, and the door the W-equality guard sits
+/// on.
+fn reenter(clone: &Path, home: &Path, workflow: &str, sub: &str) -> std::process::Output {
+    let wt = clone.join(".jigc").join("worktrees").join(sub);
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["workflow", workflow, "--task", sub])
         .current_dir(&wt)
-        .env("HOME", home.path())
+        .env("HOME", home)
         .env_remove("JIGC_PACK_DIR")
         .output()
-        .expect("run the overridden re-entry");
-    assert!(
-        !out.status.success(),
-        "an overridden re-entry on a fresh clone must be refused, never composed; stdout:\n{}",
-        String::from_utf8_lossy(&out.stdout),
+        .expect("run the re-entry")
+}
+
+/// Clone `origin`, run the first operating door on it (`provision` — which reseeds the cache
+/// AND every sub-task area from the committed record), and hand back the clone.
+fn clone_and_provision(origin: &Path, workdir: &Path, home: &Path) -> PathBuf {
+    let clone = clone_origin(origin, workdir);
+    assert_ok(
+        &run_jigc(&clone, home, &["milestone", "provision", "cache-rework"]),
+        "`jigc milestone provision` on the fresh clone",
     );
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    clone
+}
+
+/// (e1) **The driven defect, green.** A sub-task minted `--workflow decided-task` is re-entered
+/// as `decided-task` on a fresh clone and **composes**. Before the record carried the leaf this
+/// exited 1 with *"sub-task `<id>` was minted with `sub-task`"* — the re-seed had written that
+/// workbench file itself, out of a default the record never stated.
+#[test]
+fn an_overridden_workflow_survives_the_clone_and_re_enters() {
+    let origin = TempDir::new("durable-origin");
+    let home = TempDir::new("home");
+    init_methodology_origin(origin.path());
+    let sub = drive_origin_sub_task(
+        origin.path(),
+        home.path(),
+        "Tune the eviction clock",
+        Some("decided-task"),
+    );
+
+    // The committed record — the ONLY thing the clone gets — states the override.
+    let record = fs::read_to_string(record_path(origin.path())).expect("read the record");
     assert!(
-        stderr.contains("workflow-refs.workflow-mismatch") || stderr.contains("was minted with"),
-        "the refusal is the shipped W-equality guard, naming the recorded workflow; got:\n{stderr}",
+        record.contains("- workflow: decided-task\n"),
+        "the append arm records the minting workflow; got:\n{record}"
+    );
+
+    let workdir = TempDir::new("durable-clone");
+    let clone = clone_and_provision(origin.path(), workdir.path(), home.path());
+
+    // The rebuilt working area records the override, sourced from the record.
+    assert_eq!(
+        fs::read_to_string(sub_task_area(&clone, &sub).join("workflow"))
+            .expect("the rebuilt area records a workflow")
+            .trim(),
+        "decided-task",
+        "the re-seed sources each item's recorded workflow, not one caller-supplied default",
+    );
+
+    // And the door the defect fired at: re-entry under the recorded workflow composes.
+    let out = reenter(&clone, home.path(), "decided-task", &sub);
+    assert!(
+        out.status.success(),
+        "the overridden re-entry must compose on a fresh clone; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The guard is not disabled, only told the truth: the WRONG workflow is still refused.
+    let wrong = reenter(&clone, home.path(), "sub-task", &sub);
+    assert!(
+        !wrong.status.success()
+            && String::from_utf8_lossy(&wrong.stderr).contains("was minted with `decided-task`"),
+        "a re-entry naming the wrong workflow is still refused, now naming the recorded \
+         override; got {:?}\nstderr:\n{}",
+        wrong.status,
+        String::from_utf8_lossy(&wrong.stderr),
+    );
+}
+
+/// (e2) **The un-overridden sub-task is unchanged** — still the pack default `sub-task`, now
+/// because the record says so rather than because the re-seed guessed it.
+#[test]
+fn an_un_overridden_sub_task_re_enters_under_the_recorded_pack_default() {
+    let origin = TempDir::new("default-origin");
+    let home = TempDir::new("home");
+    init_methodology_origin(origin.path());
+    let sub = drive_origin_sub_task(origin.path(), home.path(), "Warm the read cache", None);
+
+    let record = fs::read_to_string(record_path(origin.path())).expect("read the record");
+    assert!(
+        record.contains("- workflow: sub-task\n"),
+        "an un-overridden mint records the pack default it actually used; got:\n{record}"
+    );
+
+    let workdir = TempDir::new("default-clone");
+    let clone = clone_and_provision(origin.path(), workdir.path(), home.path());
+    assert_eq!(
+        fs::read_to_string(sub_task_area(&clone, &sub).join("workflow"))
+            .expect("the rebuilt area records a workflow")
+            .trim(),
+        "sub-task",
+    );
+    let out = reenter(&clone, home.path(), "sub-task", &sub);
+    assert!(
+        out.status.success(),
+        "the un-overridden re-entry composes as before; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// (e3) **A pre-bump record keeps resuming.** Every `milestone-record` committed before the
+/// 2→3 bump carries items with **no** `workflow` bullet, and the migration adds none (the leaf
+/// is machine-maintained and `default`-less, so `AddedItemField` folds to the source bytes
+/// unchanged — driven in `milestone_record_workflow_leaf.rs`). So the re-seed falls back to the
+/// CLI's default for an item with no leaf, and those milestones resume exactly as they did.
+///
+/// The pre-bump record is produced by driving the binary and then **removing** the leaf — never
+/// by hand-writing a record, and never by reaching into `.jigc/tasks/`.
+#[test]
+fn a_pre_bump_record_with_no_workflow_leaf_falls_back_to_the_cli_default() {
+    let origin = TempDir::new("prebump-origin");
+    let home = TempDir::new("home");
+    init_methodology_origin(origin.path());
+    let sub = drive_origin_sub_task(origin.path(), home.path(), "Warm the read cache", None);
+
+    // Strip the leaf the bump added — the exact shape of every record committed before it.
+    let path = record_path(origin.path());
+    let at_v3 = fs::read_to_string(&path).expect("read the record");
+    let pre_bump: String = at_v3
+        .lines()
+        .filter(|line| !line.starts_with("- workflow: "))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert_ne!(
+        pre_bump, at_v3,
+        "the mint must carry the leaf for the strip to have anything to remove"
+    );
+    fs::write(&path, &pre_bump).expect("seed the pre-bump record");
+    git(origin.path(), &["add", "docs"]);
+    git(
+        origin.path(),
+        &["commit", "-q", "-m", "seed a pre-bump record"],
+    );
+
+    let workdir = TempDir::new("prebump-clone");
+    let clone = clone_and_provision(origin.path(), workdir.path(), home.path());
+    assert_eq!(
+        fs::read_to_string(sub_task_area(&clone, &sub).join("workflow"))
+            .expect("the rebuilt area records a workflow")
+            .trim(),
+        "sub-task",
+        "an item with no `workflow` leaf falls back to the CLI-supplied default",
+    );
+    let out = reenter(&clone, home.path(), "sub-task", &sub);
+    assert!(
+        out.status.success(),
+        "a pre-bump milestone still resumes; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
     );
 }

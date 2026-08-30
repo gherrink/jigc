@@ -130,6 +130,14 @@ const RECORD_TASKS_SECTION: &str = "tasks";
 /// materialized by the CLI at `add-task` from the sub-task's recorded intent.
 const RECORD_TASK_INTENT_FIELD: &str = "intent";
 
+/// The `tasks` item leaf carrying the **workflow the sub-task was minted against**
+/// (`set: on-transition`, schema-version 3 — M49 Increment 9). Written by the `add-task`
+/// append arm ([`append_task_item`]) and read back by the fresh-clone re-seed
+/// ([`reseed_sub_task_areas`]), which is what makes the recorded workflow durable rather
+/// than workbench-local. A record committed **before** the bump carries no such bullet on
+/// any item; the re-seed's fall-back is what keeps it resumable.
+const RECORD_TASK_WORKFLOW_FIELD: &str = "workflow";
+
 /// The `status` value a freshly materialized record (and each fresh sub-task item)
 /// carries until `join` transitions it to `joined`.
 const RECORD_STATUS_ACTIVE: &str = "active";
@@ -983,15 +991,21 @@ pub fn reseed_cache_from_record(
 /// untouched, so a live session's working area — including the `--workflow` it actually
 /// recorded, and any staged docs under it — is never clobbered by a later milestone op.
 ///
-/// **`workflow_id` is the caller's** (the engine ships empty of pack content): the CLI passes
-/// the pack's default sub-task workflow. The committed record carries `task-id`, `intent` and
-/// `status` and **nothing about the minting workflow**, so an `add-task --workflow <other>`
-/// override is workbench-local and *not* fresh-clone-durable. The re-derived default is what
-/// `add-task`/`add-from-spec` record absent an override — correct for every un-overridden
-/// sub-task — and for an overridden one the operator's own `jigc workflow <other> --task <id>`
-/// re-entry hits the shipped W-equality guard and is refused **loudly**, naming what the area
-/// records, rather than being composed as something else. Making the override durable means
-/// putting it in the record, i.e. a frozen-doctype schema bump — a one-way door, out of charter.
+/// **Each item's own recorded `workflow` is the minting workflow** (M49 Increment 9, T3). The
+/// record used to carry `task-id`, `intent` and `status` and nothing about the minting
+/// workflow, so this site rebuilt every area under the single caller-supplied default: an
+/// `add-task --workflow <other>` override was workbench-local, did not survive a clone, and
+/// the operator's own `jigc workflow <other> --task <id>` re-entry was then refused by the
+/// re-entry W-equality guard **naming a workflow this function had itself invented** — false
+/// provenance asserted with full confidence. Schema-version 3 put the leaf in the record, so
+/// each area is rebuilt under the workflow its own item records.
+///
+/// **`default_workflow_id` is the caller's fall-back, for an item with no leaf** (the engine
+/// ships empty of pack content, so the pack's default sub-task workflow is a CLI fact). Every
+/// record committed before the bump carries no `workflow` bullet on any item — the migration
+/// adds none, the leaf being machine-maintained and `default`-less — so the fall-back is what
+/// keeps those milestones resumable. It is the value `add-task`/`add-from-spec` recorded
+/// absent an override, so a pre-bump record resumes exactly as it did.
 ///
 /// **An item the record has settled is not rebuilt** ([`item_is_settled`], the shared predicate
 /// over the item's own `status` leaf). The rule the premise here used to rest on — *every item the record names is
@@ -1007,7 +1021,7 @@ pub fn reseed_sub_task_areas(
     jigc_root: &Path,
     schema: &crate::schema::Schema,
     record_source: &str,
-    workflow_id: &str,
+    default_workflow_id: &str,
 ) -> Result<(), Finding> {
     let doc = crate::parse::parse_sections(schema, record_source)
         .map_err(|findings| read_back_finding(findings.first()))?;
@@ -1028,17 +1042,23 @@ pub fn reseed_sub_task_areas(
         if item_is_settled(item) {
             continue;
         }
-        let intent = item
-            .fields
-            .iter()
-            .find(|f| f.key == RECORD_TASK_INTENT_FIELD)
-            .map(|f| f.value.render())
-            .unwrap_or_default();
+        let leaf = |key: &str| {
+            item.fields
+                .iter()
+                .find(|f| f.key == key)
+                .map(|f| f.value.render())
+        };
+        let intent = leaf(RECORD_TASK_INTENT_FIELD).unwrap_or_default();
+        // The item's own recorded workflow, never the caller's default — that default is
+        // reached only by a pre-bump item, which carries no leaf at all.
+        let workflow = leaf(RECORD_TASK_WORKFLOW_FIELD)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| default_workflow_id.to_string());
         crate::state::mint_task(
             jigc_root,
             &intent,
             SUB_TASK_TYPE,
-            workflow_id,
+            &workflow,
             base.clone(),
             Some(&item.id),
         )?;
@@ -1256,9 +1276,19 @@ pub fn render_fresh_record(
 /// `add-task` write arm (`design/team-ready-state.md` → Engine capability 1 (write),
 /// the `add-task` — append arm; M39 Increment 3). Materializes one `tasks` item —
 /// `task-id` (the `id-from` heading, so `task_id` IS the item title) plus the
-/// `set: on-transition` leaves `intent` and `status: active` (the CLI-supplied
+/// `set: on-transition` leaves `intent`, `workflow` and `status: active` (the CLI-supplied
 /// machine-set values a freshly-added sub-task carries until `join`) — via the M16
 /// [`crate::write::add_item`] primitive over the pack-supplied `schema`.
+///
+/// **`workflow` is the minting workflow, recorded because the record is the fresh-clone
+/// continuation state** (schema-version 3, M49 Increment 9). It was the one thing the record
+/// never carried, so it lived only in the gitignored `.jigc/tasks/<sub>/workflow` file and a
+/// `--workflow` override did not survive a clone; [`reseed_sub_task_areas`] then rebuilt the
+/// area under the caller's default and the re-entry W-equality guard refused the operator's
+/// own override, naming a workflow the tool had itself invented. The caller supplies the id
+/// it actually minted against — the engine ships empty of pack content and validates no
+/// membership here (the CLI's `add-task`/`add-from-spec` doors check it against the loaded
+/// packs before anything mints).
 ///
 /// A **distinct operation** from the `join` in-place mutate (the design's F5 two-arm
 /// census): this is a pure **append**, ordered and byte-stable — the primitive
@@ -1276,16 +1306,22 @@ pub fn append_task_item(
     source: &str,
     task_id: &str,
     intent: &str,
+    workflow: &str,
 ) -> Result<String, crate::write::GenerateError> {
     use crate::field_block::{Field, Value};
 
     // The `set: on-transition` leaves in schema block order (the id-from `task-id` is the
     // heading, not a bullet), materialized to the fresh-append values: the recorded
-    // `intent`, seeded `status: active` until `join` transitions it to `joined`.
+    // `intent`, the minting `workflow`, seeded `status: active` until `join` transitions
+    // it to `joined`.
     let fields = vec![
         Field {
             key: RECORD_TASK_INTENT_FIELD.to_string(),
             value: Value::Scalar(intent.to_string()),
+        },
+        Field {
+            key: RECORD_TASK_WORKFLOW_FIELD.to_string(),
+            value: Value::Scalar(workflow.to_string()),
         },
         Field {
             key: RECORD_STATUS_FIELD.to_string(),
@@ -4862,8 +4898,8 @@ schema-version: 1
 
     /// T2 done-criterion (`design/team-ready-state.md` → Engine capability 1 (write),
     /// the `add-task` — append arm; M39 Increment 3): [`append_task_item`] appends one
-    /// `tasks` item per sub-task over the fresh record — `task-id`/`intent`/`status:
-    /// active` — **byte-stable** (the bytes outside each appended item's span are
+    /// `tasks` item per sub-task over the fresh record — `task-id`/`intent`/`workflow`/
+    /// `status: active` — **byte-stable** (the bytes outside each appended item's span are
     /// byte-identical: the append never disturbs the `meta` header, the H1, the earlier
     /// item, or the `## Tasks` heading) and the twice-appended record **re-parses** with
     /// both items in append order carrying their machine-set values.
@@ -4877,10 +4913,22 @@ schema-version: 1
         let fresh = render_fresh_record(&schema, "cache-rework", &base, 1);
 
         // Append the first sub-task, then the second — each via the `add-task` append arm.
-        let after_one = append_task_item(&schema, &fresh, "warm-cache", "Warm the read cache")
-            .expect("first sub-task appends");
-        let after_two = append_task_item(&schema, &after_one, "evict-cold", "Evict cold entries")
-            .expect("second sub-task appends");
+        let after_one = append_task_item(
+            &schema,
+            &fresh,
+            "warm-cache",
+            "Warm the read cache",
+            "sub-task",
+        )
+        .expect("first sub-task appends");
+        let after_two = append_task_item(
+            &schema,
+            &after_one,
+            "evict-cold",
+            "Evict cold entries",
+            "sub-task",
+        )
+        .expect("second sub-task appends");
 
         // Golden: both items, in append order, under the untouched `meta`/H1/`## Tasks`.
         let expected = "\
@@ -4898,12 +4946,14 @@ schema-version: 1
 
 <!-- fields -->
 - intent: Warm the read cache
+- workflow: sub-task
 - status: active
 
 ### evict-cold  {#evict-cold}
 
 <!-- fields -->
 - intent: Evict cold entries
+- workflow: sub-task
 - status: active
 ";
         assert_eq!(
@@ -4928,7 +4978,8 @@ schema-version: 1
             .iter()
             .find(|s| s.id == RECORD_TASKS_SECTION)
             .expect("the parsed doc carries the `tasks` section");
-        let seen: Vec<(&str, Option<String>, Option<String>)> = tasks
+        #[allow(clippy::type_complexity)]
+        let seen: Vec<(&str, Option<String>, Option<String>, Option<String>)> = tasks
             .items
             .iter()
             .map(|item| {
@@ -4941,6 +4992,7 @@ schema-version: 1
                 (
                     item.title.as_str(),
                     leaf(RECORD_TASK_INTENT_FIELD),
+                    leaf(RECORD_TASK_WORKFLOW_FIELD),
                     leaf(RECORD_STATUS_FIELD),
                 )
             })
@@ -4951,11 +5003,13 @@ schema-version: 1
                 (
                     "warm-cache",
                     Some("Warm the read cache".to_string()),
+                    Some("sub-task".to_string()),
                     Some(RECORD_STATUS_ACTIVE.to_string()),
                 ),
                 (
                     "evict-cold",
                     Some("Evict cold entries".to_string()),
+                    Some("sub-task".to_string()),
                     Some(RECORD_STATUS_ACTIVE.to_string()),
                 ),
             ],
@@ -4978,10 +5032,22 @@ schema-version: 1
             short: "1f2e3d4".to_string(),
         };
         let fresh = render_fresh_record(&schema, "cache-rework", &base, 1);
-        let after_one = append_task_item(&schema, &fresh, "warm-cache", "Warm the read cache")
-            .expect("first sub-task appends");
-        let committed = append_task_item(&schema, &after_one, "evict-cold", "Evict cold entries")
-            .expect("second sub-task appends");
+        let after_one = append_task_item(
+            &schema,
+            &fresh,
+            "warm-cache",
+            "Warm the read cache",
+            "sub-task",
+        )
+        .expect("first sub-task appends");
+        let committed = append_task_item(
+            &schema,
+            &after_one,
+            "evict-cold",
+            "Evict cold entries",
+            "sub-task",
+        )
+        .expect("second sub-task appends");
 
         // The committed record on disk — the join arm writes it directly (net-new
         // plumbing vs. the task-scoped author buffer path).
@@ -5068,7 +5134,8 @@ schema-version: 1
         };
         let mut body = render_fresh_record(schema, milestone_id, &base, 1);
         for (task_id, intent, _) in tasks {
-            body = append_task_item(schema, &body, task_id, intent).expect("the sub-task appends");
+            body = append_task_item(schema, &body, task_id, intent, "sub-task")
+                .expect("the sub-task appends");
         }
         for (task_id, _, status) in tasks {
             if *status != RECORD_STATUS_ACTIVE {
@@ -5298,9 +5365,15 @@ schema-version: 1
 
         // 2. Build the matching record: create + append the two minted sub-task ids.
         let fresh = render_fresh_record(&schema, &minted.id, &base, 1);
-        let r1 = append_task_item(&schema, &fresh, &a.task.id, "Warm the read cache")
-            .expect("append sub-task 1");
-        let record = append_task_item(&schema, &r1, &b.task.id, "Evict cold entries")
+        let r1 = append_task_item(
+            &schema,
+            &fresh,
+            &a.task.id,
+            "Warm the read cache",
+            "sub-task",
+        )
+        .expect("append sub-task 1");
+        let record = append_task_item(&schema, &r1, &b.task.id, "Evict cold entries", "sub-task")
             .expect("append sub-task 2");
 
         // 3. Read-back parses the record into the SAME (BasePin, TaskList) — sha AND

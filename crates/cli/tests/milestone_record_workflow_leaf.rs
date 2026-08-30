@@ -119,6 +119,28 @@ const RECORD_REL: &str = "docs/milestone-records/cache-rework.md";
 
 /// Mint a milestone and one sub-task through the **real** verbs, returning the committed
 /// record's bytes — the exact shape every real `milestone-record` on disk is in.
+/// The **pre-bump** bytes of a v3 mint: the stamp wound back to 2 **and** the `workflow`
+/// bullet the T3 append arm now writes removed — together, the exact shape every
+/// `milestone-record` committed before this bump holds. Never hand-written: the source is the
+/// binary's own mint.
+fn wind_back_to_v2(at_v3: &str) -> String {
+    let stripped: String = at_v3
+        .lines()
+        .filter(|line| !line.starts_with("- workflow: "))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert_ne!(
+        stripped, at_v3,
+        "the mint must carry the `workflow` bullet for the wind-back to have anything to strip"
+    );
+    let at_v2 = stripped.replace("schema-version: 3", "schema-version: 2");
+    assert_ne!(
+        at_v2, stripped,
+        "the mint must carry a stamp for the wind-back to have anything to move"
+    );
+    at_v2
+}
+
 fn minted_record(repo: &Path, home: &Path) -> String {
     assert_ok(
         &jigc(repo, home, &["milestone", "create", "Cache rework"]),
@@ -164,10 +186,10 @@ fn a_fresh_milestone_record_mints_at_schema_version_3() {
 /// `tasks` item, the only place the new leaf could ever splice — folds to 3 under
 /// `jigc migrate-corpus`, reported as migrated and **byte-identical except the stamp**.
 ///
-/// The v2 source is not hand-written: it is the binary's own v3 mint with the stamp
-/// wound back, which is exactly the v2 shape (the new leaf is machine-maintained, so
-/// the writer materializes no bullet for it) and therefore the exact bytes every record
-/// committed before this bump holds.
+/// The v2 source is not hand-written: it is the binary's own v3 mint wound back
+/// ([`wind_back_to_v2`]) — the stamp moved to 2 and the `workflow` bullet the T3 append
+/// arm writes stripped — which is the exact bytes every record committed before this bump
+/// holds.
 ///
 /// RED before the bump: the shipped doctype was itself at v2, so the doc was reported
 /// `already-current` and `migrated[]` was empty.
@@ -178,12 +200,8 @@ fn a_committed_v2_record_migrates_with_the_stamp_as_its_only_byte_delta() {
     init_repo(repo.path());
 
     let at_v3 = minted_record(repo.path(), home.path());
-    let at_v2 = at_v3.replace("schema-version: 3", "schema-version: 2");
-    assert_ne!(
-        at_v2, at_v3,
-        "the mint must carry a stamp for the wind-back to have anything to move"
-    );
-    fs::write(repo.path().join(RECORD_REL), &at_v2).expect("wind the stamp back to v2");
+    let at_v2 = wind_back_to_v2(&at_v3);
+    fs::write(repo.path().join(RECORD_REL), &at_v2).expect("seed the pre-bump record");
     git(repo.path(), &["add", RECORD_REL]);
     git(repo.path(), &["commit", "-q", "-m", "seed the v2 record"]);
 
@@ -209,7 +227,8 @@ fn a_committed_v2_record_migrates_with_the_stamp_as_its_only_byte_delta() {
 
     let after = fs::read_to_string(repo.path().join(RECORD_REL)).expect("read the migrated record");
     assert_eq!(
-        after, at_v3,
+        after,
+        at_v2.replace("schema-version: 2", "schema-version: 3"),
         "the stamp is the migration's only byte delta: `AddedItemField` for a \
          `default`-less, machine-maintained leaf writes nothing on any item",
     );
@@ -228,11 +247,8 @@ fn the_migrated_record_validates_with_no_workflow_bullet_on_any_item() {
     init_repo(repo.path());
 
     let at_v3 = minted_record(repo.path(), home.path());
-    fs::write(
-        repo.path().join(RECORD_REL),
-        at_v3.replace("schema-version: 3", "schema-version: 2"),
-    )
-    .expect("wind the stamp back to v2");
+    fs::write(repo.path().join(RECORD_REL), wind_back_to_v2(&at_v3))
+        .expect("seed the pre-bump record");
     git(repo.path(), &["add", RECORD_REL]);
     git(repo.path(), &["commit", "-q", "-m", "seed the v2 record"]);
     assert_ok(
@@ -243,8 +259,9 @@ fn the_migrated_record_validates_with_no_workflow_bullet_on_any_item() {
     let after = fs::read_to_string(repo.path().join(RECORD_REL)).expect("read the migrated record");
     assert!(
         !after.contains("workflow"),
-        "the migration writes no `workflow` bullet — the leaf is machine-maintained, and \
-         T3 is what fills it; got:\n{after}"
+        "the migration writes no `workflow` bullet — the leaf is machine-maintained and \
+         `default`-less, so a pre-bump record keeps every item exactly as committed (the \
+         re-seed's fall-back is what keeps it resumable); got:\n{after}"
     );
     let stdout = assert_ok(
         &jigc(repo.path(), home.path(), &["validate"]),
