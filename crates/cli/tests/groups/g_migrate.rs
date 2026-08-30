@@ -73,6 +73,8 @@ mod record_set_splice_retired;
 mod registry_seam;
 #[path = "../setup.rs"]
 mod setup;
+#[path = "../snapshot_store_two_snapshots.rs"]
+mod snapshot_store_two_snapshots;
 #[path = "../test_target_registration.rs"]
 mod test_target_registration;
 #[path = "../verb_suite_coverage.rs"]
