@@ -701,14 +701,20 @@ fn run_setup(repo: &Path, home: &Path) -> std::process::Output {
 
 /// The topology **`jigc setup` actually creates**: the setup-written compose marker
 /// *plus* an operator-listed filesystem pack (the `packs:` list
-/// `design/multi-pack.md` → The pack-set documents). The marker composes the two
-/// in-binary packs, so a listed pack has no defined precedence against them
-/// (`design/multi-pack.md` → Embedded second pack: the combination is out of M21
-/// scope) — and it was **silently dropped**, which left the freeze gate nothing to
-/// check: over a drifted frozen `adr` every door, including the **committing**
-/// `jigc milestone create`, ran at exit 0 and landed a record commit. A declared pack
-/// the loader cannot honor must **block loudly**, never load a different pack-set than
-/// the operator declared.
+/// `design/multi-pack.md` → The pack-set documents). The listed pack used to be
+/// **silently dropped**, which left the freeze gate nothing to check: over a drifted
+/// frozen `adr` every door, including the **committing** `jigc milestone create`, ran
+/// at exit 0 and landed a record commit. M42 stopped the drop with a blanket refusal of
+/// the whole combination; **M49 Increment 6 composes it instead**
+/// (`[listed… ▸ dev ▸ methodology]` — `crates/cli/tests/project_pack_composition.rs`),
+/// so the listed pack is now genuinely **loaded and checked**: its drifted `adr` is
+/// named by the pack-load freeze gate at every door.
+///
+/// The claim this test pins is unchanged and is the one its name states — *a listed
+/// pack is never silently dropped* — and it is now pinned to the **truthful**
+/// diagnosis: the doors block naming the doctype that actually drifted, rather than
+/// naming a pack-set combination the loader no longer refuses. The harm arm is
+/// unchanged: the committing door lands no record file and no record commit.
 #[test]
 fn the_setup_written_marker_never_silently_drops_a_listed_pack() {
     let repo = TempDir::new("marker-repo");
@@ -753,13 +759,15 @@ fn the_setup_written_marker_never_silently_drops_a_listed_pack() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(
             !out.status.success(),
-            "`jigc {}` must exit non-zero when `packs.yaml` declares a pack the loader cannot honor; stdout:\n{}\nstderr:\n{stderr}",
+            "`jigc {}` must exit non-zero over a listed pack whose frozen `adr` has drifted; stdout:\n{}\nstderr:\n{stderr}",
             args.join(" "),
             String::from_utf8_lossy(&out.stdout),
         );
         assert!(
-            stderr.contains("compose-embedded-methodology") && stderr.contains("packs.yaml"),
-            "`jigc {}` stderr must name the unsupported `packs.yaml` combination; got:\n{stderr}",
+            stderr.contains("pack-load freeze check failed") && stderr.contains("`adr`"),
+            "`jigc {}` stderr must name the drifted frozen doctype in the LISTED pack — \
+             which is only possible because that pack was actually loaded, not dropped; \
+             got:\n{stderr}",
             args.join(" "),
         );
     }

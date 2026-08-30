@@ -145,6 +145,25 @@ fn governing_entry(pack: &dyn PackSource, ty: &str) -> Option<engine::manifest::
         .find(|e| e.ty == ty)
 }
 
+/// The **freeze-governed doctype id-space** of the given packs: every `type:` declared
+/// in any of their own `config/schema-manifest.yaml` files, unioned. Read from the
+/// manifests themselves — the set is never hand-listed, so it cannot drift from the
+/// freeze it represents.
+///
+/// This is the boundary [`FreezeDemotion`] applies: a project-listed pack composes
+/// **above** the embedded pair for every id *outside* this set (a house doctype is a
+/// genuine extension) and **below** it for every id inside (a project pack may not
+/// shadow a doctype the freeze governs — `design/multi-pack.md` → Embedded second pack).
+/// A pack shipping no valid manifest contributes nothing, the same skip-on-absent
+/// posture [`own_manifest`] and [`assert_schema_freeze`] already take.
+fn governed_doctype_ids(packs: &[&dyn PackSource]) -> std::collections::BTreeSet<String> {
+    packs
+        .iter()
+        .filter_map(|pack| own_manifest(*pack))
+        .flat_map(|manifest| manifest.doctypes.into_iter().map(|entry| entry.ty))
+        .collect()
+}
+
 /// The composed pack-set's `doctype → schema-version` map — the "current manifest
 /// version" the store-scope schema-conformance detector routes each non-conformant doc
 /// against (`design/validation.md` → Version-aware routing; `design/corpus-migration.md` →
@@ -1381,19 +1400,21 @@ fn discover_compose_marker(project_config: Option<&Path>) -> anyhow::Result<bool
 /// → Embedded second pack: dev-highest). This path composes **exactly**
 /// `[dev ▸ methodology]`.
 ///
-/// **Marker set *and* a non-empty `packs:` list is a loud refusal** (M42 Inc 6 fix).
-/// Combining the marker with listed filesystem packs is **out of scope** by design —
-/// a listed pack's precedence against the two in-binary packs is a deferred
-/// composition (`design/multi-pack.md` → Embedded second pack: "combining the marker
-/// with additional listed packs is out of M21 scope"). It used to be honored by
-/// **silently discarding the whole listed set**, which is the lying-route class: in a
-/// `jigc setup`-initialized project (setup writes the marker into *every* project's
-/// `packs.yaml`) an operator's listed pack was never loaded, so a drifted frozen
-/// schema in it had nothing to check it and every door — including the committing
-/// `jigc milestone create` — ran at exit 0. A pack-set the loader cannot honor is now
-/// an error carrying both exits (drop the marker, or drop the list); the *silent* drop
-/// is gone. `jigc setup` no longer manufactures the combination
-/// (`crate::setup::write_compose_marker`).
+/// **Marker set *and* a non-empty `packs:` list composes, at a declared precedence**
+/// (M49 Increment 6; `design/multi-pack.md` → Embedded second pack). The assembly is
+/// `[listed… ▸ dev ▸ methodology]` under one demotion ([`FreezeDemotion`]): for a
+/// `Schemas` id either embedded manifest declares frozen, the listed packs sort
+/// **below** the pair — *a project pack may not shadow a doctype the freeze governs*.
+/// Everything outside that id-space keeps the ordinary listed-highest convention, so a
+/// house doctype is a genuine extension.
+///
+/// **The two rejected alternatives, and why.** Plain `[listed ▸ dev ▸ methodology]`
+/// would let a **manifest-less** listed pack shadow a frozen doctype while
+/// [`assert_schema_freeze`] is skip-on-absent for it — the freeze invariant falsified
+/// from the project layer, at exit 0. The prior **loud refusal** (M42 Inc 6, which
+/// itself replaced a *silent* drop of the whole listed set) was safe but left an
+/// adopter no way to add a house doctype at all: `jigc setup` writes the marker into
+/// every project, so declaring one project pack bricked every door.
 ///
 /// **`JIGC_PACK_DIR` supersedes the marker.** A non-empty `JIGC_PACK_DIR` is the
 /// explicit/dogfood channel: when set it selects the base and the marker does **not**
@@ -1418,29 +1439,25 @@ fn make_pack_from_marker(
     // through to the embedded base, matching `make_base_pack`'s own empty handling.
     let explicit_base = pack_dir.as_ref().is_some_and(|dir| !dir.is_empty());
     if compose_methodology && !explicit_base {
-        if !listed_dirs.is_empty() {
-            let listed = listed_dirs
-                .iter()
-                .map(|dir| dir.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            anyhow::bail!(
-                "unsupported pack-set in `.jigc/config/packs.yaml`: \
-                 `compose-embedded-methodology: true` cannot be combined with a `packs:` list \
-                 (listed: {listed}) — the marker composes the two in-binary packs \
-                 `[dev ▸ methodology]`, and a listed pack's precedence against that pair is a \
-                 deferred composition (`design/multi-pack.md` → Embedded second pack), so \
-                 honoring the marker would drop every listed pack\n\
-                 route: keep the listed packs by removing `compose-embedded-methodology: true` \
-                 from `.jigc/config/packs.yaml`, or keep the embedded `[dev ▸ methodology]` pair \
-                 by removing the `packs:` list"
-            );
-        }
-        // Exactly `[dev ▸ methodology]`, both in-binary; dev first = dev-highest.
-        return Ok(Box::new(CompositePack::new(vec![
-            Box::new(EmbeddedPack::new()),
-            Box::new(EmbeddedPack::methodology()),
-        ])));
+        let dev = EmbeddedPack::new();
+        let methodology = EmbeddedPack::methodology();
+        // The governed id-space is READ from the two manifests at assembly, never
+        // hand-listed: a doctype added to or removed from either manifest moves the
+        // demotion boundary with it, in one place.
+        let governed = governed_doctype_ids(&[&dev, &methodology]);
+        let mut packs: Vec<Box<dyn PackSource>> = listed_dirs
+            .into_iter()
+            .map(|dir| Box::new(FilesystemPack::new(dir)) as Box<dyn PackSource>)
+            .collect();
+        // `[listed… ▸ dev ▸ methodology]`; dev before methodology = dev-highest.
+        let embedded_from = packs.len();
+        packs.push(Box::new(dev));
+        packs.push(Box::new(methodology));
+        return Ok(Box::new(CompositePack::with_freeze_demotion(
+            packs,
+            embedded_from,
+            governed,
+        )));
     }
     Ok(make_pack_from(pack_dir, listed_dirs))
 }
@@ -1565,7 +1582,9 @@ impl PackSource for FilesystemPack {
 ///
 /// Top-level **precedence-override** falls out of `read` (no separate
 /// adjudicator): a colliding `knobs.yaml`/`commit`/workflow id resolves to the
-/// winner's whole file. `list` is the **union deduped-by-id then sorted** — the
+/// winner's whole file. Precedence for a given `(kind, id)` comes from the single
+/// [`ordered`](CompositePack::ordered) function, which is assembly order except under
+/// the [`FreezeDemotion`] the marker-plus-a-listed-pack composition carries. `list` is the **union deduped-by-id then sorted** — the
 /// same stable sorted-by-id contract a single pack's `list()` already honours, so
 /// the `[base]` floor and any union both emit ids in deterministic order
 /// (no `HashSet` iteration order reaches output). `pack_version` is the
@@ -1573,17 +1592,92 @@ impl PackSource for FilesystemPack {
 /// (a *loser*-pack workflow's `{{include: step:X}}` is still mis-resolved here —
 /// fixed in increment 2). See `design/multi-pack.md` → Collision resolution;
 /// Where it sits.
-pub struct CompositePack(Vec<Box<dyn PackSource>>);
+pub struct CompositePack {
+    /// The pack-set in **assembly order**, highest-precedence first.
+    packs: Vec<Box<dyn PackSource>>,
+    /// The per-id **demotion rule**, or `None` for a plain precedence composite.
+    demotion: Option<FreezeDemotion>,
+}
+
+/// The **freeze demotion**: for a `Schemas` id the embedded pair declares frozen, the
+/// packs *before* `embedded_from` (the project's listed packs) sort **below** the pair
+/// — *a project pack may not shadow a doctype the freeze governs*
+/// (`design/multi-pack.md` → Embedded second pack; the M49 settle record → D5).
+///
+/// **Why the rule exists.** The natural assembly `[listed ▸ dev ▸ methodology]` lets a
+/// **manifest-less** listed pack shadow a frozen doctype while
+/// [`assert_schema_freeze`] is skip-on-absent for exactly that pack — so the freeze
+/// invariant would be falsifiable from the layer this composition opens, silently and
+/// at exit 0. Demoting the listed packs for the governed id-space closes it without
+/// closing the *extension* case: an id no manifest declares (a house `note`) still
+/// resolves listed-first.
+///
+/// **Why it lives inside the composite.** One ordering function
+/// ([`CompositePack::ordered`]) feeds `read`, `origin_pack` and `origin_packs`, so the
+/// freeze gate, `doc schema`, the store sweep and `--explain` cannot disagree about who
+/// won (M46 Increment 3's one-producer rule). A demotion applied at a call site would
+/// give each caller its own answer.
+struct FreezeDemotion {
+    /// Index of the first embedded pack in [`CompositePack::packs`] — everything before
+    /// it is a project-listed pack subject to the demotion. `0` makes the rule a no-op
+    /// (no listed packs), which is the marker-alone byte-identity floor.
+    embedded_from: usize,
+    /// Every doctype id declared in either embedded pack's own
+    /// `config/schema-manifest.yaml`, read at assembly — **never hand-listed**, so a
+    /// doctype added to (or removed from) a manifest moves the boundary with it.
+    governed: std::collections::BTreeSet<String>,
+}
 
 impl CompositePack {
-    /// Assemble a composite over `packs`, **highest-precedence first**. A
-    /// single-element `Vec` is the byte-identity floor: its `list`/`read`/
+    /// Assemble a composite over `packs`, **highest-precedence first**, with no
+    /// demotion. A single-element `Vec` is the byte-identity floor: its `list`/`read`/
     /// `pack_version` equal that one pack's.
     ///
     /// Wired into [`make_pack`]'s pack-set assembly (the production caller) and
     /// exercised directly by the unit tests.
     pub fn new(packs: Vec<Box<dyn PackSource>>) -> Self {
-        CompositePack(packs)
+        CompositePack {
+            packs,
+            demotion: None,
+        }
+    }
+
+    /// Assemble `[listed… ▸ dev ▸ methodology]` under the [`FreezeDemotion`] — the
+    /// marker-plus-a-listed-pack composition (`make_pack_from_marker`). `embedded_from`
+    /// is where the embedded pair starts; `governed` is the union of the two embedded
+    /// manifests' declared doctypes ([`governed_doctype_ids`]).
+    fn with_freeze_demotion(
+        packs: Vec<Box<dyn PackSource>>,
+        embedded_from: usize,
+        governed: std::collections::BTreeSet<String>,
+    ) -> Self {
+        CompositePack {
+            packs,
+            demotion: Some(FreezeDemotion {
+                embedded_from,
+                governed,
+            }),
+        }
+    }
+
+    /// **The one ordering function.** The pack-set in the precedence order that applies
+    /// to *this* `(kind, id)`: assembly order, except that a `Schemas` id the embedded
+    /// pair's manifests govern puts the embedded pair first and the listed packs after
+    /// it. `read`, `origin_pack` and `origin_packs` all read precedence from here, so no
+    /// two surfaces can disagree about the winner.
+    fn ordered(&self, kind: PackResourceKind, id: &ResourceId) -> Vec<&dyn PackSource> {
+        let demoted = self
+            .demotion
+            .as_ref()
+            .filter(|d| kind == PackResourceKind::Schemas && d.governed.contains(id.as_str()));
+        match demoted {
+            Some(d) => self.packs[d.embedded_from..]
+                .iter()
+                .chain(self.packs[..d.embedded_from].iter())
+                .map(Box::as_ref)
+                .collect(),
+            None => self.packs.iter().map(Box::as_ref).collect(),
+        }
     }
 }
 
@@ -1592,7 +1686,10 @@ impl PackSource for CompositePack {
     /// arise in production (the base is always present), but the empty-`Vec`
     /// version is the empty string rather than a panic.
     fn pack_version(&self) -> String {
-        self.0.first().map(|p| p.pack_version()).unwrap_or_default()
+        self.packs
+            .first()
+            .map(|p| p.pack_version())
+            .unwrap_or_default()
     }
 
     /// The union of every pack's ids for `kind`, **deduped-by-id then sorted**.
@@ -1601,17 +1698,17 @@ impl PackSource for CompositePack {
     /// (increment-workflow hardening #7).
     fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
         let ids: std::collections::BTreeSet<ResourceId> =
-            self.0.iter().flat_map(|p| p.list(kind)).collect();
+            self.packs.iter().flat_map(|p| p.list(kind)).collect();
         ids.into_iter().collect()
     }
 
-    /// The **precedence-winner's** bytes: the first pack (highest-precedence)
-    /// whose `read` succeeds. If no pack owns the id, a clean
+    /// The **precedence-winner's** bytes: the first pack in this `(kind, id)`'s
+    /// [`ordered`](CompositePack::ordered) precedence whose `read` succeeds. If no pack owns the id, a clean
     /// [`PackError::NotFound`] naming the requested `kind`/`id` — never the last
     /// pack's own error instance.
     fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
-        self.0
-            .iter()
+        self.ordered(kind, id)
+            .into_iter()
             .find_map(|p| p.read(kind, id).ok())
             .ok_or_else(|| PackError::NotFound {
                 kind,
@@ -1625,12 +1722,16 @@ impl PackSource for CompositePack {
     /// collision was adjudicated, name the winner). Counts every constituent whose
     /// `read` succeeds, not just the precedence winner.
     fn owner_count(&self, kind: PackResourceKind, id: &ResourceId) -> usize {
-        self.0.iter().filter(|p| p.read(kind, id).is_ok()).count()
+        self.packs
+            .iter()
+            .filter(|p| p.read(kind, id).is_ok())
+            .count()
     }
 
-    /// The constituent pack that **owns** `(kind, id)` — the **first
-    /// (highest-precedence)** pack whose [`read`](PackSource::read) succeeds, the
-    /// same pack the precedence `read` selects. This is the body-reference
+    /// The constituent pack that **owns** `(kind, id)` — the **first** pack in this
+    /// `(kind, id)`'s [`ordered`](CompositePack::ordered) precedence whose
+    /// [`read`](PackSource::read) succeeds, the same pack the precedence `read`
+    /// selects (one ordering function, so they cannot disagree). This is the body-reference
     /// resolution anchor a composed definition resolves its `{{include: step:X}}`
     /// / `{{cli.X}}` / field-type names against (`design/multi-pack.md` →
     /// Pack-local body-reference resolution), so a *loser*-pack workflow composes
@@ -1640,14 +1741,14 @@ impl PackSource for CompositePack {
     /// [`PackError::NotFound`] from `read`), never a panic. A single-element
     /// composite returns that one pack — origin = the pack (the floor).
     fn origin_pack(&self, kind: PackResourceKind, id: &ResourceId) -> &dyn PackSource {
-        self.0
-            .iter()
+        self.ordered(kind, id)
+            .into_iter()
             .find(|p| p.read(kind, id).is_ok())
-            .map(|p| p.as_ref())
             .unwrap_or(self)
     }
 
-    /// **Every** constituent that ships `(kind, id)`, highest-precedence first —
+    /// **Every** constituent that ships `(kind, id)`, in this id's
+    /// [`ordered`](CompositePack::ordered) precedence (winner first) —
     /// the plural sibling of [`origin_pack`](PackSource::origin_pack): a resource
     /// shadowed by a higher-precedence pack is still enumerated. Delegates to each
     /// constituent's own `origin_packs` (a nested composite flattens), so the walk
@@ -1656,8 +1757,8 @@ impl PackSource for CompositePack {
     /// enforce every manifest-shipping constituent, never just the Config-resource
     /// precedence winner. No owner is the empty `Vec` — there is nothing to walk.
     fn origin_packs(&self, kind: PackResourceKind, id: &ResourceId) -> Vec<&dyn PackSource> {
-        self.0
-            .iter()
+        self.ordered(kind, id)
+            .into_iter()
             .flat_map(|p| p.origin_packs(kind, id))
             .collect()
     }
@@ -1670,7 +1771,7 @@ impl PackSource for CompositePack {
     /// from *its own* `config/defaults`, never the precedence-winner's, so a loser
     /// pack still names itself in the header.
     fn provenance_segments(&self) -> Vec<(String, String)> {
-        self.0
+        self.packs
             .iter()
             .flat_map(|p| p.provenance_segments())
             .collect()
@@ -1686,7 +1787,10 @@ impl PackSource for CompositePack {
     /// segment. Each entry's path + hash come from *its own* constituent, never the
     /// precedence-winner's — a loser pack still names its own directory and bytes.
     fn provenance_entries(&self) -> Vec<engine::packsource::PackProvenance> {
-        self.0.iter().flat_map(|p| p.provenance_entries()).collect()
+        self.packs
+            .iter()
+            .flat_map(|p| p.provenance_entries())
+            .collect()
     }
 }
 
@@ -3577,42 +3681,126 @@ mod tests {
             );
         }
 
-        /// **The marker never silently drops a listed pack** (M42 Inc 6). The marker +
-        /// a non-empty `packs:` list is the combination `design/multi-pack.md` puts out
-        /// of scope; it used to resolve by discarding the whole listed set — and since
-        /// `jigc setup` writes the marker into **every** project's `packs.yaml`, that
-        /// made an operator's listed pack inert in the shipped topology (its drifted
-        /// frozen schema then had nothing to check it). It is now an **error** naming
-        /// both the marker and the dropped packs, with the two exits as the route.
+        /// **The marker composes WITH a listed pack, and the demotion holds for every
+        /// governed id** (M49 Inc 6 / T1). This replaces the M42 refusal
+        /// (`marker + packs:` was an error, which itself replaced a silent drop of the
+        /// whole listed set): the marker is written into *every* `jigc setup` project,
+        /// so refusing the combination left an adopter no way to add a house doctype at
+        /// all. The composition is now `[listed… ▸ dev ▸ methodology]` with the freeze
+        /// demotion, and this asserts the demotion over the **whole governed set** —
+        /// read from the two embedded manifests, never hand-listed — rather than over
+        /// one instance: a listed pack shipping a divergent schema for *every* governed
+        /// doctype wins **none** of them, while the one id no manifest governs still
+        /// resolves listed-first (the extension case the whole task exists for).
         #[test]
-        fn marker_plus_a_listed_pack_is_refused_not_silently_dropped() {
-            let listed = TempDir::new();
-            let Err(err) = make_pack_from_marker(None, vec![listed.path().to_path_buf()], true)
-            else {
-                panic!(
-                    "marker + a listed pack must not assemble — the listed pack would be dropped"
-                );
-            };
-            let msg = format!("{err:#}");
+        fn a_listed_pack_shadows_no_governed_doctype_but_still_extends() {
+            let dev = EmbeddedPack::new();
+            let methodology = EmbeddedPack::methodology();
+            let governed = governed_doctype_ids(&[&dev, &methodology]);
+            assert!(
+                governed.contains("commit") && governed.contains("idea"),
+                "the governed set must span both embedded manifests; got: {governed:?}",
+            );
 
-            assert!(
-                msg.contains("compose-embedded-methodology") && msg.contains("packs.yaml"),
-                "the refusal must name the marker and the file that carries it; got:\n{msg}",
+            // A house pack that tries to shadow EVERY governed doctype, plus one
+            // doctype no manifest governs (the genuine extension).
+            const UNGOVERNED: &str = "house-note";
+            let listed = TempDir::new();
+            let schemas = listed.path().join("schemas");
+            std::fs::create_dir_all(&schemas).expect("mk schemas/");
+            let house_bytes = |ty: &str| format!("type: {ty}\n# the house shadow\n").into_bytes();
+            for ty in governed.iter().map(String::as_str).chain([UNGOVERNED]) {
+                std::fs::write(schemas.join(format!("{ty}.yaml")), house_bytes(ty))
+                    .expect("seed the house schema");
+            }
+
+            let pack = make_pack_from_marker(None, vec![listed.path().to_path_buf()], true)
+                .expect("marker + a listed pack composes");
+
+            // Every governed id resolves to an EMBEDDED pack's bytes, at both the
+            // `read` and the `origin_pack` seam — one ordering function feeds both, so
+            // the freeze gate and every read surface agree on the winner.
+            for ty in &governed {
+                let id = ResourceId::from(ty.as_str());
+                let bytes = pack
+                    .read(PackResourceKind::Schemas, &id)
+                    .expect("a governed doctype reads through the composite");
+                assert_ne!(
+                    bytes,
+                    house_bytes(ty),
+                    "`{ty}` is manifest-governed, so the listed pack must not win it",
+                );
+                assert_eq!(
+                    pack.origin_pack(PackResourceKind::Schemas, &id)
+                        .resolving_path(),
+                    engine::packsource::EMBEDDED_PATH,
+                    "`{ty}`'s origin pack must be an embedded pack, not the listed one",
+                );
+                // The shadowed loser is still enumerated, embedded-first — the freeze
+                // walk and `--explain` read this plural view.
+                let owners: Vec<String> = pack
+                    .origin_packs(PackResourceKind::Schemas, &id)
+                    .iter()
+                    .map(|p| p.resolving_path())
+                    .collect();
+                assert_eq!(
+                    owners.first().map(String::as_str),
+                    Some(engine::packsource::EMBEDDED_PATH),
+                    "`{ty}`'s enumeration must lead with the winner (embedded); got: {owners:?}",
+                );
+                assert_eq!(
+                    owners.last(),
+                    Some(&listed.path().display().to_string()),
+                    "`{ty}`'s shadowed listed owner must still be enumerated, demoted to \
+                     last; got: {owners:?}",
+                );
+            }
+
+            // The extension case: an id no manifest governs keeps the ordinary
+            // listed-highest convention.
+            let id = ResourceId::from(UNGOVERNED);
+            assert_eq!(
+                pack.read(PackResourceKind::Schemas, &id)
+                    .expect("the house doctype reads through the composite"),
+                house_bytes(UNGOVERNED),
+                "an ungoverned doctype must resolve to the listed pack — extension is \
+                 the capability the refusal denied",
             );
-            assert!(
-                msg.contains(&listed.path().display().to_string()),
-                "the refusal must name the listed pack it refuses to drop; got:\n{msg}",
-            );
-            assert!(
-                msg.contains("route:"),
-                "the refusal must carry a route (drop the marker, or drop the list); got:\n{msg}",
+            assert_eq!(
+                pack.origin_pack(PackResourceKind::Schemas, &id)
+                    .resolving_path(),
+                listed.path().display().to_string(),
+                "the ungoverned doctype's origin pack is the listed directory",
             );
         }
 
-        /// The refusal is scoped to the arm that would *drop* something: under an
-        /// explicit `JIGC_PACK_DIR` the marker is already inert
+        /// The demotion is scoped to the **`Schemas`** id-space: a listed pack still
+        /// wins every other kind under the marker (here a workflow, the id-space
+        /// `multi-pack.md` calls precedence-override's home). Without this the
+        /// "extension" the task ships would be schema-only.
+        #[test]
+        fn the_freeze_demotion_does_not_reach_other_id_spaces() {
+            let listed = TempDir::new();
+            let wf = listed.path().join("workflows");
+            std::fs::create_dir_all(&wf).expect("mk workflows/");
+            std::fs::write(wf.join("house-only.yaml"), b"when: from the house pack\n")
+                .expect("seed the house workflow");
+
+            let pack = make_pack_from_marker(None, vec![listed.path().to_path_buf()], true)
+                .expect("marker + a listed pack composes");
+
+            assert_eq!(
+                pack.read(PackResourceKind::Workflows, &ResourceId::from("house-only"))
+                    .expect("the house workflow reads through the composite"),
+                b"when: from the house pack\n",
+                "a listed pack's workflow must compose under the marker",
+            );
+        }
+
+        /// Under an explicit `JIGC_PACK_DIR` the marker is inert
         /// ([`pack_dir_supersedes_the_marker`]), so listed packs compose over that base
-        /// on the plain M14 path — nothing is discarded, nothing is refused.
+        /// on the plain M14 path — no embedded pair, and therefore no freeze demotion:
+        /// the `JIGC_PACK_DIR` channel is byte-for-byte the pre-marker composition.
         #[test]
         fn marker_plus_listed_under_pack_dir_still_composes_the_m14_path() {
             let base = TempDir::new();
