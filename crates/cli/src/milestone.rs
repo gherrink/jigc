@@ -2078,7 +2078,13 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
 ///
 /// **The claim is about the refusal, and stays that narrow**: a `git worktree add` that fails
 /// partway through phase 2 still leaves the earlier paths provisioned, and nothing here rolls
-/// that back — an idempotent re-run reuses them.
+/// that back — an idempotent re-run reuses them. **Since M49 Increment 10 / T5 that state
+/// is said rather than left to be discovered**: every fallible step of phase 2 — the
+/// mutating half — surfaces as a [`PROVISION_FAILED_CODE`] block naming the path it stopped
+/// at, how many worktrees landed first, and the [`provision_route`] re-run, through the same
+/// [`finding_to_err`] funnel [`leftover_finding`] uses. Phase 1 keeps its plain `anyhow`
+/// context: it mutates nothing, so its failures leave no half-provisioned state to explain
+/// and no partial set for `jigc milestone execute` to report.
 fn provision_worktrees(
     repo_root: &Path,
     jigc_home: &Path,
@@ -2119,12 +2125,27 @@ fn provision_worktrees(
         {
             return Err(finding_to_err(leftover_finding(milestone_id, &path, &hold)));
         }
-        plan.push((path, reuse));
+        plan.push((id.clone(), path, reuse));
     }
 
-    // Phase 2 — nothing refused, so clear and add.
-    let mut paths = Vec::with_capacity(plan.len());
-    for (path, reuse) in plan {
+    // Phase 2 — nothing refused, so clear and add. Every failure from here on has already
+    // half-provisioned the milestone, so each one is answered with the door's own code, the
+    // path it stopped at, the count that landed, and the idempotent re-run — never a bare
+    // `anyhow` that a driver cannot tell from a missing repo.
+    let total = plan.len();
+    let mut paths = Vec::with_capacity(total);
+    for (id, path, reuse) in plan {
+        let stopped = |err: anyhow::Error, landed: usize| {
+            finding_to_err(provision_failed_finding(
+                milestone_id,
+                &id,
+                &path,
+                landed,
+                total,
+                force,
+                &err,
+            ))
+        };
         if !reuse {
             if path.exists() {
                 // Name the loss BEFORE the removal ([`narrate_removal`], law 1). Phase 1
@@ -2133,19 +2154,60 @@ fn provision_worktrees(
                 // never a reason to destroy in silence.
                 narrate_removal(&path);
                 std::fs::remove_dir_all(&path)
-                    .with_context(|| format!("could not clear the stale worktree dir {path:?}"))?;
+                    .with_context(|| format!("could not clear the stale worktree dir {path:?}"))
+                    .map_err(|err| stopped(err, paths.len()))?;
             }
             let path_str = path
                 .to_str()
-                .with_context(|| format!("worktree path {path:?} is not valid UTF-8"))?;
+                .with_context(|| format!("worktree path {path:?} is not valid UTF-8"))
+                .map_err(|err| stopped(err, paths.len()))?;
             git_worktree(
                 repo_root,
                 &["worktree", "add", "--detach", path_str, base_sha],
-            )?;
+            )
+            .map_err(|err| stopped(err, paths.len()))?;
         }
         paths.push(path);
     }
     Ok(paths)
+}
+
+/// The block a **phase-2** provision failure surfaces (M49 Increment 10 / T5) — the
+/// [`leftover_finding`] mold, aimed at the other half of the same state.
+///
+/// The two are siblings and deliberately distinct codes: [`PROVISION_CODE`] refuses in
+/// phase 1 having moved nothing, so its whole claim is *"every path is as you left it"*;
+/// this one fires in phase 2, after `landed` of `total` worktrees are already on disk, so
+/// its claim is the opposite and it says so. That state is not a dead end — it is exactly
+/// the set [`partial_worktree_advisories`] reports at `jigc milestone execute`, and the
+/// route repairs it: [`provision_route`]'s re-run reuses what landed and adds the rest.
+///
+/// The underlying git/IO failure rides the message verbatim (`{err:#}`, the whole `anyhow`
+/// chain), because *"could not clear the stale worktree dir … Not a directory"* is the only
+/// sentence that says what the operator has to deal with before the re-run can work.
+fn provision_failed_finding(
+    milestone_id: &str,
+    sub_id: &str,
+    path: &Path,
+    landed: usize,
+    total: usize,
+    force: bool,
+    err: &anyhow::Error,
+) -> Finding {
+    let address = path.display().to_string();
+    Finding::graded(
+        Severity::Blocking,
+        PROVISION_FAILED_CODE,
+        format!(
+            "milestone:{milestone_id}: could not provision sub-task `{sub_id}`'s worktree —              {err:#}. {landed} of {total} worktree(s) landed before it, so the milestone is              now partially provisioned and `jigc milestone execute {milestone_id}` will say              so until the rest are there",
+        ),
+        Some(Location::addressed(&address, 1, 1)),
+        Some(provision_route(
+            milestone_id,
+            force,
+            " — deal with what the message names at that path first; the re-run reuses every              worktree that landed and adds only the rest",
+        )),
+    )
 }
 
 /// The canonical absolute paths of the repo's currently-registered worktrees, parsed
@@ -2237,6 +2299,38 @@ const PROVISION_CODE: &str = "milestone.leftover-holds-work";
 
 /// [`DISCARD_DOOR`]'s blocking identity — [`dirty_worktree_finding`]'s, same reason.
 const DISCARD_CODE: &str = "milestone.dirty-worktree";
+
+/// A provision that **moved bytes and then stopped** — its own blocking identity, distinct
+/// from [`PROVISION_CODE`]: the leftover refusal fires in phase 1 and changes nothing, this
+/// one fires in phase 2 and leaves the milestone half provisioned (M49 Increment 10 / T5).
+const PROVISION_FAILED_CODE: &str = "milestone.provision-failed";
+
+/// The advisory `jigc milestone execute` carries when the milestone is **partially**
+/// provisioned — the state [`PROVISION_FAILED_CODE`] leaves behind, and the only
+/// provisioning state that is worth saying anything about (see [`partial_worktree_advisories`]).
+const PARTIAL_WORKTREES_CODE: &str = "milestone.worktrees-partial";
+
+/// The one route both halves of the provisioning state share: **re-run the provision**.
+/// It is idempotent by construction — a worktree already registered at a sub-task's path is
+/// reused untouched ([`provision_worktrees`]) — so the same argv repairs a half-provisioned
+/// milestone whether the walk stopped on an error or a sub-task was added after it ran.
+///
+/// `--force` is echoed only when the failing run declared it, exactly as
+/// [`MilestoneCommand::rejection_frame`]'s re-runs echo theirs: printed unasked it would
+/// invite consent to a removal the operator never asked for, and dropped from a run that
+/// carried it the re-run would refuse at the leftover guard before reaching the walk again.
+fn provision_route(milestone_id: &str, force: bool, tail: &str) -> engine::finding::Route {
+    let mut argv = vec![
+        "jigc".to_owned(),
+        "milestone".to_owned(),
+        "provision".to_owned(),
+        milestone_id.to_owned(),
+    ];
+    if force {
+        argv.push("--force".to_owned());
+    }
+    engine::finding::Route::mechanical(argv, tail)
+}
 
 /// `jigc milestone provision`'s door — it deletes a leftover at each sub-task's worktree
 /// path before `git worktree add`.
@@ -2525,6 +2619,83 @@ fn provisioned_worktrees(
     list: &engine::milestone::TaskList,
 ) -> Vec<PathBuf> {
     live_worktrees(&subtask_worktrees(repo_root, jigc_home, list))
+}
+
+/// The advisories `jigc milestone execute` carries when the milestone is **partially**
+/// provisioned — one per live sub-task with no usable worktree, id-ordered (M49 Increment
+/// 10 / T5; `design/team-ready-state.md` → The lifecycle).
+///
+/// **The trigger is the PARTIAL set, and only it.** Before this, `execute`'s bytes were
+/// identical over every provisioning state, so a walk emitting `Spawn: cd
+/// .jigc/worktrees/<id> && …` for a directory that is not there read exactly like one whose
+/// worktrees are all present. The response is deliberately **not** a refusal and not a
+/// per-missing-worktree complaint in the un-provisioned state: the composed walk's own first
+/// step is `Run: jigc milestone provision …`, so `execute` is the orientation read taken
+/// *before* provisioning, and a never-provisioned milestone is a **settled** state with
+/// nothing to report. A fully provisioned one is the other settled state. What is worth
+/// saying — what nothing else on the surface says — is that a provision **ran and did not
+/// finish**, which is knowable only from the mixed set.
+///
+/// So both settled states stay byte-identical reads, and the partial one speaks. The subject
+/// is the **path**, classified by the shipped [`subtask_worktrees`] — the same classifier
+/// the boundary and the destroying doors ask, never the registered set, for the reason
+/// recorded there.
+///
+/// One finding per missing sub-task rather than one summary line: each then carries its own
+/// discriminating `(code, target)` key and its own locus, the shape the carryover gate
+/// already uses for its per-path refusals (`design/command-output-contract.md` → the stable
+/// finding key). The route is the shared idempotent [`provision_route`], with the tail
+/// re-derived per verdict — a path holding a directory git cannot vouch for meets the
+/// leftover refusal rather than a fresh `git worktree add`, and a route that promised
+/// otherwise would be a law-1 lie one command deep.
+fn partial_worktree_advisories(
+    repo_root: &Path,
+    jigc_home: &Path,
+    milestone_id: &str,
+    live_ids: &[String],
+) -> Vec<Finding> {
+    let list = engine::milestone::TaskList {
+        tasks: live_ids.to_vec(),
+    };
+    let subtasks = subtask_worktrees(repo_root, jigc_home, &list);
+    let missing: Vec<&SubtaskWorktree> = subtasks
+        .iter()
+        .filter(|sub| sub.state != WorktreeState::Live)
+        .collect();
+    // The two settled states — all provisioned, none provisioned — and the empty milestone,
+    // which is both at once. Nothing to say in any of them.
+    if missing.is_empty() || missing.len() == subtasks.len() {
+        return Vec::new();
+    }
+    let provisioned = subtasks.len() - missing.len();
+    missing
+        .into_iter()
+        .map(|sub| {
+            let (found, tail) = match sub.state {
+                WorktreeState::Absent => (
+                    "nothing is there",
+                    " — idempotent: it reuses every worktree that landed and adds only the                      missing ones",
+                ),
+                WorktreeState::Unreadable => (
+                    "a directory git cannot read as a worktree of its own stands there",
+                    " — it names what is at that path and refuses until you clear it",
+                ),
+                WorktreeState::Live => unreachable!("a live worktree is not missing"),
+            };
+            let address = sub.path.display().to_string();
+            Finding::graded(
+                Severity::Advisory,
+                PARTIAL_WORKTREES_CODE,
+                format!(
+                    "milestone:{milestone_id}: {provisioned} of {} sub-task worktrees are                      provisioned — sub-task `{}` has none ({found}), so its `Spawn:` line                      below would run in a working area that does not exist",
+                    subtasks.len(),
+                    sub.id,
+                ),
+                Some(Location::addressed(&address, 1, 1)),
+                Some(provision_route(milestone_id, false, tail)),
+            )
+        })
+        .collect()
 }
 
 /// Whether any of the milestone's provisioned worktrees has staged code — Σ `git diff
@@ -2872,7 +3043,24 @@ fn remove_milestone_area(dir: &Path) {
 /// (`design/write-commands.md` → Executing the milestone).
 fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
     match run_execute(cwd, milestone_id) {
-        Ok(view) => {
+        Ok((view, advisories)) => {
+            // The provisioning state FIRST, then the walk it is about to be read as (law 3 —
+            // nothing ambushes: an agent that learns halfway down a `Spawn:` list that one of
+            // the working areas is missing has already started). Presentation-only and
+            // non-blocking either way: the composed `--format json` stays the pinned
+            // `{task, text}` contract byte-for-byte, and stream discipline mirrors the
+            // finalize and migrate advisories (`task.rs::emit_left_out_advisory`) — agent /
+            // human text to **stdout** where the agent reads the walk, but under
+            // `--format json` the structured envelope owns stdout, so the advisory goes to
+            // **stderr** and the document's bytes never move.
+            for advisory in &advisories {
+                let line = render::advisory_line(advisory);
+                if matches!(format, Format::Json) {
+                    eprint!("{line}");
+                } else {
+                    print!("{line}");
+                }
+            }
             println!("{}", render::composed(format, &view));
             Outcome::success()
         }
@@ -2892,7 +3080,15 @@ fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
 /// workflow** — [`recorded_workflows`]). The lone production site feeding
 /// [`ComposeContext::milestone`] non-empty; **mints nothing** (the milestone and its
 /// sub-tasks already exist).
-fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Composition> {
+///
+/// Returns the composition paired with the **partial-provisioning** advisories
+/// ([`partial_worktree_advisories`]) — the one thing this read knows that the composed walk
+/// cannot say for itself, because the walk is compiled from the pack and the provisioning
+/// state lives on disk.
+fn run_execute(
+    cwd: &Path,
+    milestone_id: &str,
+) -> Result<(crate::start::Composition, Vec<Finding>)> {
     // The `.jigc/` area binds to jigc_home (the main checkout); the compose feed resolves
     // the same split internally (it derives jigc_home from the worktree `repo_root`).
     let repo_root = discover_repo_root(cwd)
@@ -2914,14 +3110,18 @@ fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Compositi
     // is the **live** set: a `Spawn:` line for a settled sub-task dead-ends on *"no task"* and
     // routes back at the listing that names it again ([`live_sub_task_ids`]).
     let ids = live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?;
+    // The provisioning state the fan-out is about to be told to run in — read before the
+    // compose so the ids are the same live set the `Spawn:` lines are emitted over.
+    let advisories = partial_worktree_advisories(&repo_root, &jigc_home, milestone_id, &ids);
     // Each id paired with its own recorded minting workflow, so the emitted `Spawn:` line names
     // the workflow the re-entry door will accept ([`recorded_workflows`]).
     let tasks = recorded_workflows(&jigc_root, ids)?;
-    crate::start::execute_milestone_in_repo(
+    let view = crate::start::execute_milestone_in_repo(
         &repo_root,
         MILESTONE_EXECUTION_WORKFLOW,
         crate::start::MilestoneFeed::bound(milestone_id, &tasks),
-    )
+    )?;
+    Ok((view, advisories))
 }
 
 /// Dispatch `jigc milestone join <milestone-id>`: run the by-task-id join, render the

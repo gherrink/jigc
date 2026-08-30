@@ -25,6 +25,8 @@ mod milestone_finalize_base_guard;
 mod milestone_join_collision;
 #[path = "../milestone_path_subject.rs"]
 mod milestone_path_subject;
+#[path = "../milestone_provision_handoff.rs"]
+mod milestone_provision_handoff;
 #[path = "../milestone_record_add_from_spec.rs"]
 mod milestone_record_add_from_spec;
 #[path = "../milestone_record_add_task.rs"]

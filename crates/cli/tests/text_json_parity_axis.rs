@@ -359,8 +359,10 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (
         &["milestone", "execute"],
         Tier::Judgment(
-            "a prose summary carried whole inside `text`",
-            MILESTONE_PROSE_SUMMARY,
+            "the composed milestone-execution walk — the pinned `{task, text}` projection",
+            Disposition::DeclaredOut(
+                "`execute` renders through `render::composed`, not `render::milestone`: stdout                  IS the pinned `{task, text}` contract, and the agent surface differs from it                  by the routing footer alone. Its one computed side channel — the                  partially-provisioned advisory (M49 Increment 10 / T5) — is not withheld from                  the driver but MOVED by stream discipline: under `--format json` it is emitted                  on stderr, exactly as the finalize `left-out` / carried-over advisories and                  the migrate byte-floor nudge are, so both surfaces state it and the pinned                  document stays one JSON value                  (`milestone_provision_handoff::the_partial_advisory_leaves_the_json_document_alone`)",
+            ),
         ),
     ),
     (&["milestone", "join"], Tier::Fenced("milestone_join")),
@@ -377,9 +379,11 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     ),
 ];
 
-/// The seven prose-summary `milestone` verbs' shared census disposition — one statement
+/// The six prose-summary `milestone` verbs' shared census disposition — one statement
 /// because they share one renderer (`render::milestone`), and a per-verb copy would be
-/// seven places for the same fact to rot in.
+/// six places for the same fact to rot in. `milestone execute` left this set at M49
+/// Increment 10 / T5: it never rendered through `render::milestone` at all, and it now has
+/// a computed side channel of its own, so it carries its own disposition above.
 const MILESTONE_PROSE_SUMMARY: Disposition = Disposition::DeclaredOut(
     "`render::milestone` puts the ENTIRE agent summary on the wire as `text` (beside \
      `hook_output`); the agent surface differs from it only by the routing footer, which is \

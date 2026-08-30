@@ -75,7 +75,7 @@ pub fn run(
             // structured envelope owns stdout, so the advisory goes to **stderr** and the
             // JSON stdout bytes never move. Non-blocking either way — exit 0.
             if let Some(finding) = advisory {
-                let line = render::migrate_source_advisory(&finding);
+                let line = render::advisory_line(&finding);
                 if matches!(format, Format::Json) {
                     eprint!("{line}");
                 } else {

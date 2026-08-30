@@ -2473,14 +2473,22 @@ fn finding_line(finding: &Finding, gates: bool) -> String {
     line
 }
 
-/// Render a single advisory finding for the agent/human presentation surface — the
-/// migrate byte-floor triviality nudge (M44 Inc 5, `design/auto-migration.md` → The
-/// byte-floor advisory). Delegates to the house [`finding_line`] so the advisory reads
-/// exactly like every other agent-text finding (`advisory · <code> — <message>` plus its
-/// `route:` line). **Presentation-only**: the pinned `{task, text}` JSON contract
-/// [`composed`] projects never carries it — `migrate::run` emits this beside that render,
-/// never inside it.
-pub fn migrate_source_advisory(finding: &Finding) -> String {
+/// Render a single advisory finding for the agent/human presentation surface, **beside** a
+/// composed view rather than inside it. Delegates to the house [`finding_line`] so the
+/// advisory reads exactly like every other agent-text finding (`advisory · <code> —
+/// <message>`, its `at:` locus, its `route:` line).
+///
+/// **Presentation-only**: the pinned `{task, text}` JSON contract [`composed`] projects
+/// never carries it — its producer emits this beside that render, never inside it, and
+/// under `--format json` sends it to **stderr** so the document on stdout still parses as
+/// exactly one JSON value (`design/command-output-contract.md` → Stream discipline).
+///
+/// **One renderer, two producers** (M49 Increment 10 / T5): the migrate byte-floor
+/// triviality nudge (M44 Inc 5, `design/auto-migration.md` → The byte-floor advisory) and
+/// `jigc milestone execute`'s partially-provisioned report. A second copy of this one-line
+/// shape is a second place for the advisory presentation to drift, which is why the name
+/// is the *shape* rather than either producer.
+pub fn advisory_line(finding: &Finding) -> String {
     finding_line(finding, false)
 }
 
