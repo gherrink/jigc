@@ -255,3 +255,155 @@ fn the_composed_set_validates_clean() {
         "(iv) the composed set must validate clean; got:\n{stdout}",
     );
 }
+
+/// A second, minimal house pack — present only so the preserved `packs:` list has an
+/// **order** to preserve. It ships one more doctype the freeze does not govern.
+fn write_second_pack(root: &Path) {
+    let schemas = root.join("schemas");
+    fs::create_dir_all(&schemas).expect("mk schemas/");
+    fs::write(
+        schemas.join("memo.yaml"),
+        b"type: memo\nlocation: memos/\nid-from: title\n\
+          description: A house memo.\n\
+          usage: you want a short house-local memo.\n\
+          \nsections:\n  - id: meta\n    header: true\n    fields:\n      \
+          - { id: audience, type: string }\n  - id: body\n    slot: { hint: \"The memo.\" }\n",
+    )
+    .expect("write memo.yaml");
+}
+
+/// The `packs:` entries of a `packs.yaml`, in file order — the sequence this task must
+/// carry through `jigc setup` untouched. Line-based on purpose: the assertion is about
+/// the emitted bytes, not about a re-parse agreeing with itself.
+fn packs_entries(text: &str) -> Vec<String> {
+    let mut entries = Vec::new();
+    let mut inside = false;
+    for line in text.lines() {
+        if line.trim_end() == "packs:" {
+            inside = true;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        let trimmed = line.trim_start();
+        if let Some(entry) = trimmed.strip_prefix("- ") {
+            entries.push(entry.trim().to_string());
+        } else if !trimmed.is_empty() {
+            break;
+        }
+    }
+    entries
+}
+
+#[test]
+fn setup_wires_the_marker_over_a_projects_own_pack_list() {
+    // T2 — the second half of the refusal. The loader now composes the marker WITH a
+    // `packs:` list (T1), but `jigc setup` still vetoed the marker whenever a list was
+    // present and said so on stderr. Verified live at HEAD: setup exits 0 and leaves
+    // `packs.yaml` byte-identical, so "adding any doctype costs the entire methodology
+    // pack" was true through SETUP, not only through the loader.
+    //
+    // Over a repo whose project layer ALREADY declares two house packs, `jigc setup`
+    // must: exit 0 · print no "left unwired" line · preserve both entries in order and
+    // content · add the marker · leave the project composing BOTH surfaces · and write
+    // no bytes on a second run.
+    let repo = TempDir::new("setup-over-list");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let house = repo.path().join("housepack");
+    write_house_pack(&house);
+    let other = repo.path().join("otherpack");
+    write_second_pack(&other);
+
+    let config_dir = repo.path().join(".jigc").join("config");
+    fs::create_dir_all(&config_dir).expect("mk .jigc/config/");
+    let packs_yaml = config_dir.join("packs.yaml");
+    let authored = format!("packs:\n  - {}\n  - {}\n", house.display(), other.display());
+    fs::write(&packs_yaml, &authored).expect("write the operator's hand-authored packs.yaml");
+    let authored_entries = packs_entries(&authored);
+    assert_eq!(authored_entries.len(), 2, "the fixture declares two packs");
+
+    let setup = run(repo.path(), home.path(), &["setup"]);
+    let setup_err = String::from_utf8_lossy(&setup.stderr).into_owned();
+    let setup_out = String::from_utf8_lossy(&setup.stdout).into_owned();
+    assert!(
+        setup.status.success(),
+        "`jigc setup` over a project that lists its own packs must exit 0; got {:?}\n\
+         stdout:\n{setup_out}\nstderr:\n{setup_err}",
+        setup.status,
+    );
+    assert!(
+        !setup_err.contains("left unwired") && !setup_out.contains("left unwired"),
+        "setup must no longer report the embedded methodology pack as left unwired; \
+         got stderr:\n{setup_err}\nstdout:\n{setup_out}",
+    );
+
+    let after = fs::read_to_string(&packs_yaml).expect("read packs.yaml after setup");
+    assert!(
+        after.contains("compose-embedded-methodology: true"),
+        "setup must wire the compose marker over the operator's own pack list; got:\n{after}",
+    );
+    assert_eq!(
+        packs_entries(&after),
+        authored_entries,
+        "the operator's `packs:` entries must survive setup byte-identical, in order; \
+         got:\n{after}",
+    );
+
+    // The project composes BOTH: a methodology workflow reaches the catalog, and the
+    // listed pack's own doctype resolves. Either one alone is the old either/or.
+    let describe = run(repo.path(), home.path(), &["describe"]);
+    let described = String::from_utf8_lossy(&describe.stdout).into_owned();
+    assert!(
+        describe.status.success(),
+        "`jigc describe` must exit 0 over the composed set; got {:?}\nstderr:\n{}",
+        describe.status,
+        String::from_utf8_lossy(&describe.stderr),
+    );
+    assert!(
+        described.contains("park-idea"),
+        "a methodology-only workflow must appear in `jigc describe` — setup must wire \
+         the embedded pair over the listed packs; got:\n{described}",
+    );
+
+    let schema = run(repo.path(), home.path(), &["doc", "schema", "note"]);
+    let rendered = String::from_utf8_lossy(&schema.stdout).into_owned();
+    assert!(
+        schema.status.success(),
+        "`jigc doc schema note` must exit 0 — the listed pack must still be loaded; \
+         got {:?}\nstderr:\n{}",
+        schema.status,
+        String::from_utf8_lossy(&schema.stderr),
+    );
+    assert!(
+        rendered.contains("doctype: note") && rendered.contains("topic: string"),
+        "the listed pack's own doctype must render; got:\n{rendered}",
+    );
+
+    // A second setup writes no bytes: same content AND an untouched mtime.
+    let bytes_before = fs::read(&packs_yaml).expect("read packs.yaml bytes");
+    let mtime_before = fs::metadata(&packs_yaml)
+        .and_then(|m| m.modified())
+        .expect("packs.yaml mtime");
+    let again = run(repo.path(), home.path(), &["setup"]);
+    assert!(
+        again.status.success(),
+        "a second `jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        again.status,
+        String::from_utf8_lossy(&again.stderr),
+    );
+    assert_eq!(
+        fs::read(&packs_yaml).expect("re-read packs.yaml bytes"),
+        bytes_before,
+        "a second setup must leave `packs.yaml` byte-identical",
+    );
+    assert_eq!(
+        fs::metadata(&packs_yaml)
+            .and_then(|m| m.modified())
+            .expect("packs.yaml mtime after"),
+        mtime_before,
+        "a second setup must write no bytes at all — the file's mtime must not move",
+    );
+}

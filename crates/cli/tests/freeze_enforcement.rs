@@ -799,11 +799,12 @@ fn the_setup_written_marker_never_silently_drops_a_listed_pack() {
 }
 
 /// The other order — `jigc setup` run **over** a project already on the M14 listed-pack
-/// path. Setup must not wire the compose marker there (the marker would make the
-/// operator's declared pack inert), so the listed pack stays loaded and the freeze gate
-/// still sees it: the same `adr` drift blocks every door naming the schema-hash
-/// mismatch. This is the independent proof the listed pack is genuinely **loaded** —
-/// the setup-written marker is what dropped it.
+/// path. Setup wires the compose marker there (M49 Inc 6 T2) *and* leaves the
+/// operator's declared list intact, because the marker no longer makes listed packs
+/// inert: since T1 the loader composes `[listed… ▸ dev ▸ methodology]`. The claim this
+/// arm carries is unchanged — the listed pack stays genuinely **loaded**, so the freeze
+/// gate still sees it and the same `adr` drift blocks the door naming the schema-hash
+/// mismatch — but the proof no longer rests on setup declining to write the marker.
 #[test]
 fn setup_over_a_listed_pack_leaves_that_pack_loaded_and_freeze_checked() {
     let repo = TempDir::new("m14-repo");
@@ -822,8 +823,9 @@ fn setup_over_a_listed_pack_leaves_that_pack_loaded_and_freeze_checked() {
         fs::read_to_string(repo.path().join(".jigc").join("config").join("packs.yaml"))
             .expect("read packs.yaml after setup");
     assert!(
-        !packs_yaml.contains("compose-embedded-methodology"),
-        "`jigc setup` must not wire the compose marker over a listed `packs:` list (it would make the listed packs inert); got:\n{packs_yaml}",
+        packs_yaml.contains("compose-embedded-methodology: true"),
+        "`jigc setup` must wire the compose marker over a listed `packs:` list — the two \
+         compose since M49 Inc 6; got:\n{packs_yaml}",
     );
     assert!(
         packs_yaml.contains(&pack.path().display().to_string()),

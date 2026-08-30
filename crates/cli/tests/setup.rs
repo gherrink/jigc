@@ -594,16 +594,19 @@ fn mode(path: &Path) -> u32 {
 /// (M21). The write is repo-local, idempotent, and non-destructive:
 ///   (i) after setup, `packs.yaml` carries `compose-embedded-methodology: true`;
 ///   (ii) a second setup leaves the file byte-identical (idempotent no-op);
-///   (iii) a pre-seeded `packs:` list survives setup **untouched, and un-marked**.
+///   (iii) a pre-seeded `packs:` list keeps its **entries, in order and content**, and
+///         gains the marker alongside them.
 ///
-/// **(iii) reverses the M21 behavior deliberately** (M42 Inc 6). Setup used to add the
-/// marker *alongside* a hand-written `packs:` list — manufacturing the combination
-/// `design/multi-pack.md` → Embedded second pack puts out of scope, which the pack
-/// factory honored by **silently discarding the listed packs** (so an operator's pack,
-/// and any frozen-schema drift in it, went unseen at every door). The factory now
-/// refuses that pack-set, so writing the marker over a listed pack would brick the
-/// project. The operator's declared pack-set wins; setup leaves the file exactly as
-/// authored and warns on stderr with the route.
+/// **(iii) has now swung back** (M49 Inc 6 T2). M42 Inc 6 made setup decline the marker
+/// over a hand-written `packs:` list, because the combination was one the pack factory
+/// could not honor: it used to discard the listed packs silently, and then refused the
+/// pack-set outright. Since T1 the factory *composes* it — `[listed… ▸ dev ▸
+/// methodology]`, with a listed pack demoted for any doctype the freeze governs — so
+/// declining the marker no longer protects anything and instead costs the operator the
+/// whole methodology surface for declaring one house pack. Setup writes the marker and
+/// keeps the list. **Bound:** the write is a YAML parse-mutate-serialize, so the
+/// entries survive verbatim while the file's layout is re-emitted canonically — which
+/// is why (iii) asserts on the entries rather than on the whole file's bytes.
 #[test]
 fn setup_writes_compose_embedded_methodology_marker() {
     // (i) A clean setup writes the marker.
@@ -644,8 +647,8 @@ fn setup_writes_compose_embedded_methodology_marker() {
         "a second `jigc setup` must leave .jigc/config/packs.yaml byte-identical",
     );
 
-    // (iii) A pre-seeded `packs:` list survives setup untouched, and the marker is NOT
-    //       added — it would make the operator's declared pack-set unloadable.
+    // (iii) A pre-seeded `packs:` list keeps its entries, in order and content, and
+    //       gains the marker alongside them — the two compose since M49 Inc 6.
     let seeded_repo = TempDir::new("compose-marker-seeded");
     mark_repo(seeded_repo.path());
     let seeded_config = seeded_repo.path().join(".jigc/config");
@@ -662,15 +665,27 @@ fn setup_writes_compose_embedded_methodology_marker() {
     );
     let seeded_after = fs::read_to_string(seeded_config.join("packs.yaml"))
         .expect("the seeded packs.yaml is present after setup");
+    let seeded_entries: Vec<&str> = seeded_after
+        .lines()
+        .skip_while(|line| line.trim_end() != "packs:")
+        .skip(1)
+        .map_while(|line| line.trim_start().strip_prefix("- "))
+        .map(str::trim)
+        .collect();
     assert_eq!(
-        seeded_after, seeded_bytes,
-        "a pre-seeded `packs:` list must survive setup byte-identical, with NO marker added \
-         (the marker would make the listed packs unloadable); got:\n{seeded_after}",
+        seeded_entries,
+        vec!["packs/local-pack"],
+        "the pre-seeded `packs:` entries must survive setup in order and content; \
+         got:\n{seeded_after}",
+    );
+    assert!(
+        seeded_after.contains("compose-embedded-methodology: true"),
+        "setup must wire the marker alongside the operator's list; got:\n{seeded_after}",
     );
     let warning = String::from_utf8_lossy(&out3.stderr);
     assert!(
-        warning.contains("compose-embedded-methodology") && warning.contains("route:"),
-        "setup must say it left the embedded methodology pack unwired, with the route; \
+        !warning.contains("left unwired"),
+        "setup must no longer report the embedded methodology pack as left unwired; \
          stderr:\n{warning}",
     );
 }
