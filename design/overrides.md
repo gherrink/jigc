@@ -90,6 +90,16 @@ The loader builds the pack-default layer's scalar surface from this file — bot
 
 **What migrates, and what doesn't.** Only the keys that must **resolve through the cascade** become knobs: `default-workflow` and the `validation.*.severity` keys move to `knobs.yaml` with declared types; the live `serde_yaml_ng::get("default-workflow")` read in the compose path is replaced by `resolved.scalar("default-workflow")`. **`pack-id` is not a knob** — it is the pack *naming itself* (read for the provenance header), not a project-overridable value — so it stays a pack-identity field (the retained `config/defaults.yaml`, or a pack manifest), read directly, never through the cascade. "Subsumed" means the *settable* surface moves to `knobs.yaml`, not that `defaults.yaml` is deleted out from under the `pack-id` read.
 
+**A knob whose two empties are not one value — `placement-root` (M49).** The vocabulary above is per-knob, and one shipped knob deliberately departs from its sibling's. `docs-root` treats `""`, `.` and absent as **one** value (the flat repo-root layout) because for a *prefix* knob they name one outcome. `placement-root` — which re-roots a placement doctype's home ([storage.md](storage.md) → Placement) — has **three**:
+
+| value | meaning |
+| --- | --- |
+| `""` (the pack default) | **unset** — every declared `placement.file` stands, byte-identical to a build carrying no knob |
+| `.` | the **repo root** — `docs/roadmap.md` resolves to `roadmap.md` |
+| `<dir>` | that directory — `docs/roadmap.md` resolves to `<dir>/roadmap.md` |
+
+*Unset* and *repo root* are different outcomes (a declared home standing vs. flattening), so they cannot share a spelling; the resolver returns an `Option`, making them unmixable at the type level rather than by convention. The write path keeps the intuitive spelling reachable: `jigc config set placement-root ""` **canonicalizes to `.`** exactly as `docs-root` does, so the empty string stays reserved for *never set*. The knob is **tunable** (no `floor:`), and — unlike its `docs-root` sibling, which is declared in the dev pack alone — it is **mirrored identically into both shipped packs**, because `knobs.yaml` resolves by whole-file shadow: a key present in only one file is invisible whenever the other wins, and a home that stood in one composition and re-rooted in another would break the composition-invariance the placement design exists to provide.
+
 **Read-side determinism invariant.** Routing a compose-path read through `resolved.scalar(k)` is byte-safe **only** if `k` is declared in `knobs.yaml` and thus seeded into the base map. So the rule is two-sided: `resolve` already rejects a `scalar-set` to an *undeclared* key (write side); M4 adds that **`resolved.scalar(k)` returning `None` for a key the compose path reads is a hard error, not a silent fallback** (read side). The no-override path must stay **byte-identical** to today's output — proven by a no-delta golden over the existing `start_compose` fixtures, *plus* a test that a read of an undeclared knob fails loudly rather than resolving to the old raw value ([Resolution algorithm](#resolution-algorithm)).
 
 An open surface is rejected for the same reason untracked forks are: a silent, unvalidatable, unreconcilable typo'd key is exactly the failure mode the whole system exists to kill.

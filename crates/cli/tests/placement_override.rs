@@ -1132,3 +1132,83 @@ fn the_catalog_line_of_each_migrate_workflow_names_its_doctype() {
         );
     }
 }
+
+// -------------------------------------------------------------------------------------
+// **T5 — the two rows `storage.md` CITES rather than "fixes".**
+//
+// The census carries two latent rows whose wording an overridable placement home puts under
+// suspicion, and the design of record distinguishes them instead of repairing them. Both are
+// claims about *behaviour*, so both are pinned here rather than left as prose:
+//
+// - `cli::start::apply_docs_root` (`storage.md` → Placement, the `:185` row) — *location-only
+//   by design and load-bearing; the absent branch is the correct behavior, recorded so it is
+//   not "fixed."* `placement-root` is a **second function beside it**, never a repair of it, so
+//   a `docs-root` re-point must still leave a placement home exactly where it was.
+// - `cli::milestone::record_key` (the `:183` row) — *"a home change would version-gate through
+//   the manifest, so this cannot silently become wrong."* True of the **declared** home and
+//   never of the resolved one: `docs-root` has moved `milestone-record`'s resolved home since
+//   M38 with no manifest bump. What keeps the row's conclusion standing is that `record_key`
+//   reads the same **resolved** `location:` the store sweep keys its baseline under — and that
+//   `placement-root` cannot reach it at all, `milestone-record` being a `location:` doctype by
+//   design (it is composition-*variant*; `design/team-ready-state.md`).
+//
+// Driven, never reconstructed: the placement home is read out of the emitted `{{ schema:… }}`
+// projection line, the located one out of the emitted `record:` ack line.
+// -------------------------------------------------------------------------------------
+
+/// The home the `record:` line of an emitted `jigc milestone create` ack names.
+fn acked_record_home(ack: &str) -> String {
+    let line = ack
+        .lines()
+        .find(|l| l.starts_with("record: "))
+        .unwrap_or_else(|| panic!("the mint ack carries a `record:` line; got:\n{ack}"));
+    line["record: ".len()..]
+        .split_whitespace()
+        .next()
+        .expect("the record line names a path")
+        .to_owned()
+}
+
+/// **The two home knobs have disjoint subjects.** `docs-root` moves a `location:` home and
+/// never a `placement:` one; `placement-root` moves a re-rootable `placement:` home and never a
+/// `location:` one. Neither is the other's repair, which is exactly what the two cited rows say
+/// — so a later "fix" that taught `apply_docs_root` the placement case, or `placement-root` the
+/// located one, reddens here rather than silently falsifying the design of record.
+#[test]
+fn the_two_home_knobs_have_disjoint_subjects() {
+    let corpus = Corpus::new("t5-distinguished");
+
+    // `docs-root` re-points the located world…
+    corpus.ok(&["config", "set", "docs-root", "notes"]);
+    let located = acked_record_home(&corpus.ok(&["milestone", "create", "Row one eight three"]));
+    assert!(
+        located.starts_with("notes/milestone-records/"),
+        "`docs-root` moves the RESOLVED home of the `location:` doctype `milestone-record` — \
+         with no `schema-version` bump anywhere, which is why the `:183` row's claim is about \
+         the DECLARED home; got `{located}`",
+    );
+    // …and leaves the placement world untouched: the absent branch is the behaviour.
+    assert_eq!(
+        projected_home(&corpus.preview("migrate-roadmap"), "roadmap"),
+        DECLARED_HOME,
+        "`docs-root` never applies to a placement doctype (`storage.md` → Placement) — the \
+         `:185` row records the absent branch as correct, not as a hole `placement-root` fills",
+    );
+
+    // `placement-root` re-points the placement world…
+    corpus.ok(&["config", "set", "placement-root", "prose"]);
+    assert_eq!(
+        projected_home(&corpus.preview("migrate-roadmap"), "roadmap"),
+        "prose/roadmap.md",
+        "the second function beside `apply_docs_root` moves the home its twin may not",
+    );
+    // …and cannot reach a `location:` doctype at all, at either knob value.
+    let still_located =
+        acked_record_home(&corpus.ok(&["milestone", "create", "Row one eight three again"]));
+    assert_eq!(
+        still_located.rsplit_once('/').map(|(dir, _)| dir),
+        located.rsplit_once('/').map(|(dir, _)| dir),
+        "`placement-root` leaves every `location:` home where `docs-root` put it — \
+         `milestone-record` is a `location:` doctype by design, so the knob cannot reach it",
+    );
+}
