@@ -29,6 +29,31 @@ default-workflow:
   of: [dev-task]
   default: dev-task
 
+# --- placement-root — the parent dir of every NON-root placement home (M49) ---
+# The asymmetry this closes: a `location:` doctype's home resolves through `docs-root`,
+# a `placement:` doctype's home resolves through NOTHING (it is the literal
+# `placement.file` its schema declares), and since M38 that literal sits inside the
+# doctype's frozen `schema-hash`, so `jigc relocate` refuses to move it. An adopter whose
+# managed docs do not live under `docs/` therefore had no path at all to `docs/roadmap.md`
+# — not a knob, not a verb (storage.md → Placement; DECISIONS.md → the M49 Settle, D6).
+# THE RULE, which is also the scope answer: a declared home carrying a LEADING DIRECTORY
+# COMPONENT (`docs/roadmap.md`) resolves to `<placement-root>/<remainder>`; a home
+# declared AT the repo root (`VISION.md`, `CHANGELOG.md`) is NEVER re-rooted. The
+# ecosystem-idiomatic files stay unburiable by DERIVATION, so there is no doctype
+# allow-list here to go stale.
+# Default `""` = UNSET: every declared home stands, byte-identical to no knob at all.
+# `.` means the repo root (`docs/roadmap.md` → `roadmap.md`); `jigc config set
+# placement-root ""` canonicalizes to `.`, the same spelling `docs-root` accepts. A
+# tunable knob (no floor).
+# Declared IDENTICALLY in BOTH shipped packs — never a recorded divergence: a knob present
+# in only one file is invisible under the whole-file `knobs.yaml` shadow, so the resolved
+# home would vary by which pack won, and composition-invariance is precisely what the
+# placement design exists to protect. Pinned by cli::pack
+# placement_root_is_declared_in_both_packs_identically.
+placement-root:
+  type: string
+  default: ""
+
 # --- finalize.fan-out.* — the milestone commit-shaping knob (M8) ---
 # squash: how a fan-out (milestone) finalize shapes the commit. `true`
 # (default) = ONE aggregate commit with the CLI-synthesized structural

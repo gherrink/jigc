@@ -56,6 +56,8 @@ mod nested_add_item_on_create;
 mod nested_item_addressing;
 #[path = "../pack_source_determinism.rs"]
 mod pack_source_determinism;
+#[path = "../placement_override.rs"]
+mod placement_override;
 #[path = "../planning_checklist_sanction.rs"]
 mod planning_checklist_sanction;
 #[path = "../read_back_fence.rs"]

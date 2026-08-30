@@ -3201,6 +3201,80 @@ pub(crate) fn docs_root_prefix(resolved: &cascade::Resolved) -> &str {
     if root == "." { "" } else { root }
 }
 
+/// Re-root every **placement** schema's literal home under the resolved `placement-root`
+/// — the placement twin of [`apply_docs_root`], and the only path an adopter has to a
+/// `placement:` doctype's home at all (`design/storage.md` → Placement; `DECISIONS.md` →
+/// the M49 Settle, D6).
+///
+/// The asymmetry it closes: a `location:` doctype's home resolves through `docs-root`, a
+/// `placement:` doctype's resolves through nothing — the literal `placement.file` is what
+/// ships — and since M38 that literal is inside the doctype's frozen `schema-hash`, so
+/// `jigc relocate` refuses to move it. An adopter whose managed docs do not live under
+/// `docs/` had no path to `docs/roadmap.md`: not a knob, not a verb.
+///
+/// **The rule is also the scope answer.** A declared home carrying a leading directory
+/// component (`docs/roadmap.md`) resolves to `<placement-root>/<remainder>`; a home
+/// declared **at the repo root** (`VISION.md`, `CHANGELOG.md`) has no leading component
+/// and is never re-rooted. The ecosystem-idiomatic root files are unburiable by
+/// *derivation*, so there is no doctype allow-list here that could go stale.
+///
+/// Composition-invariance — the property `storage.md` → Placement exists to protect —
+/// survives: the override is **one fixed project value**, so a placement home still does
+/// not vary by which packs composed. That only holds while the knob is declared in every
+/// shipped pack (a knob declared in one is invisible under the whole-file `knobs.yaml`
+/// shadow), which `cli::pack::placement_root_is_declared_in_both_packs_identically` pins.
+///
+/// Unlike [`apply_docs_root`] this re-root **replaces** rather than prefixes, so it is
+/// idempotent; it is still applied at the one schema-resolution seam only, beside its
+/// twin, so both packs' doctypes get one home from one place.
+pub(crate) fn apply_placement_root<'a>(
+    resolved: &cascade::Resolved,
+    schemas: impl IntoIterator<Item = &'a mut Schema>,
+) {
+    let Some(root) = placement_root(resolved) else {
+        return; // unset — every declared home stands.
+    };
+    for schema in schemas {
+        let Some(placement) = schema.placement.as_mut() else {
+            continue; // a located or transient doctype — `docs-root`'s business, not ours.
+        };
+        // A home with no leading directory component is declared AT the repo root
+        // (`VISION.md`): there is nothing to re-root, and re-rooting it is exactly what
+        // the ecosystem-idiomatic rule forbids.
+        let Some((_, remainder)) = placement.file.split_once('/') else {
+            continue;
+        };
+        placement.file = if root.is_empty() {
+            remainder.to_owned()
+        } else {
+            format!("{root}/{remainder}")
+        };
+    }
+}
+
+/// The resolved `placement-root`, normalized — `None` when the knob is **unset**, else the
+/// parent dir a nested placement home re-roots under (`""` being the repo root).
+///
+/// The two empties are deliberately *not* the same value here, which is where the
+/// vocabulary parts company with [`docs_root_prefix`]: the pack default is `""`, meaning
+/// **unset** (every declared home stands, byte-identical to a build with no knob), while
+/// the repo root is spelled `.`. `jigc config set placement-root ""` canonicalizes to `.`
+/// on the write path (`crate::config`), so the intuitive spelling reaches the repo root
+/// and the empty string stays reserved for "never set". A pack whose closed knob surface
+/// omits `placement-root` resolves `None` here and stays declared, the same opt-in shape
+/// `apply_docs_root` has.
+pub(crate) fn placement_root(resolved: &cascade::Resolved) -> Option<&str> {
+    let root = resolved
+        .scalar("placement-root")
+        .unwrap_or("")
+        .trim_matches('/');
+    match root {
+        "" => None,
+        "." => Some(""),
+        root => Some(root),
+    }
+}
+
 pub(crate) struct CascadeDefs<'a> {
     resolved: &'a cascade::Resolved,
     /// The project layer's committed config dir — where `workflows/<id>.yaml` and
@@ -3279,12 +3353,14 @@ impl<'a> CascadeDefs<'a> {
             .with_context(|| format!("the `{id}` schema is malformed"))
     }
 
-    /// One doctype's cascade-resolved schema, its `location:` nested under the resolved
-    /// `docs-root` — the single-doctype twin of [`all_schemas`](Self::all_schemas), for
-    /// the surfaces that address one document rather than sweep the store.
+    /// One doctype's cascade-resolved schema — its `location:` nested under the resolved
+    /// `docs-root`, its `placement:` home re-rooted under the resolved `placement-root` —
+    /// the single-doctype twin of [`all_schemas`](Self::all_schemas), for the surfaces that
+    /// address one document rather than sweep the store.
     pub(crate) fn schema(&self, pack: &dyn PackSource, ty: &str) -> Result<Schema> {
         let mut schema = self.read_one(pack, ty)?;
         apply_docs_root(self.resolved, std::iter::once(&mut schema));
+        apply_placement_root(self.resolved, std::iter::once(&mut schema));
         Ok(schema)
     }
 
@@ -3301,6 +3377,9 @@ impl<'a> CascadeDefs<'a> {
         // `docs-root` before returning — covers `describe`, `start`/compose, and the
         // `committed_store` sweep (all read schemas through here).
         apply_docs_root(self.resolved, out.values_mut());
+        // Surface B: the placement twin — a `placement:` doctype has no `location:` for
+        // `docs-root` to touch, and its literal home is the only one no knob could reach.
+        apply_placement_root(self.resolved, out.values_mut());
         Ok(out)
     }
 }

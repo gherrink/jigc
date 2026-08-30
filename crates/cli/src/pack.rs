@@ -2509,6 +2509,31 @@ mod tests {
           type: string
           default: docs/
 
+        # --- placement-root — the parent dir of every NON-root placement home (M49) ---
+        # The asymmetry this closes: a `location:` doctype's home resolves through `docs-root`,
+        # a `placement:` doctype's home resolves through NOTHING (it is the literal
+        # `placement.file` its schema declares), and since M38 that literal sits inside the
+        # doctype's frozen `schema-hash`, so `jigc relocate` refuses to move it. An adopter whose
+        # managed docs do not live under `docs/` therefore had no path at all to `docs/roadmap.md`
+        # — not a knob, not a verb (storage.md → Placement; DECISIONS.md → the M49 Settle, D6).
+        # THE RULE, which is also the scope answer: a declared home carrying a LEADING DIRECTORY
+        # COMPONENT (`docs/roadmap.md`) resolves to `<placement-root>/<remainder>`; a home
+        # declared AT the repo root (`VISION.md`, `CHANGELOG.md`) is NEVER re-rooted. The
+        # ecosystem-idiomatic files stay unburiable by DERIVATION, so there is no doctype
+        # allow-list here to go stale.
+        # Default `""` = UNSET: every declared home stands, byte-identical to no knob at all.
+        # `.` means the repo root (`docs/roadmap.md` → `roadmap.md`); `jigc config set
+        # placement-root ""` canonicalizes to `.`, the same spelling `docs-root` accepts. A
+        # tunable knob (no floor).
+        # Declared IDENTICALLY in BOTH shipped packs — never a recorded divergence: a knob present
+        # in only one file is invisible under the whole-file `knobs.yaml` shadow, so the resolved
+        # home would vary by which pack won, and composition-invariance is precisely what the
+        # placement design exists to protect. Pinned by cli::pack
+        # placement_root_is_declared_in_both_packs_identically.
+        placement-root:
+          type: string
+          default: ""
+
         # --- finalize.fan-out.* — the milestone commit-shaping knob (M8) ---
         # squash: how a fan-out (milestone) finalize shapes the commit. `true`
         # (default) = ONE aggregate commit with the CLI-synthesized structural
@@ -4907,6 +4932,72 @@ sections:
                     "{which}: intrinsic — floored at blocking, never demotable",
                 );
             }
+        }
+
+        /// (M49 Increment 7 / T1) **`placement-root` is declared in BOTH shipped packs, with
+        /// an identical declaration** — the knob that gives a `placement:` doctype's home
+        /// the project override a `location:` home has always had through `docs-root`
+        /// (`design/storage.md` → Placement; `DECISIONS.md` → the M49 Settle, D6).
+        ///
+        /// Mirrored rather than dev-only **because the property the placement design exists
+        /// to protect is composition-invariance**: `knobs.yaml` collides by whole-file shadow
+        /// (`multi-pack.md` → Per-kind collision behavior), so a key declared in one pack
+        /// alone is *invisible* whenever the other wins — and a placement home that stands in
+        /// one composition and re-roots in another is exactly the variance the literal
+        /// `placement.file` was introduced to end. `docs-root`'s dev-only divergence is not a
+        /// precedent here: it re-points `location:` homes, and the methodology pack
+        /// deliberately has none nested.
+        ///
+        /// The parity guard above would catch a *missing* key, but only as one entry in a
+        /// list; this arm states the mint and its default so the reason survives the diff.
+        #[test]
+        fn placement_root_is_declared_in_both_packs_identically() {
+            const KEY: &str = "placement-root";
+
+            let load = |which: &str, pack: &EmbeddedPack| {
+                engine::knobs::load_knobs(
+                    &pack
+                        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
+                        .unwrap_or_else(|e| panic!("{which} knobs.yaml reads back: {e}")),
+                )
+                .unwrap_or_else(|e| panic!("{which} knobs.yaml loads: {e}"))
+            };
+            let dev = load("dev", &EmbeddedPack::new());
+            let methodology = load("methodology", &EmbeddedPack::methodology());
+
+            for (which, knobs) in [("dev", &dev), ("methodology", &methodology)] {
+                let field = knobs.field(KEY).unwrap_or_else(|| {
+                    panic!(
+                        "{which}: `{KEY}` must be declared — a pack that omits it resolves the \
+                         knob to nothing, so its placement homes silently ignore the override"
+                    )
+                });
+                assert!(
+                    matches!(field.ty, engine::schema::FieldType::String),
+                    "{which}: `{KEY}` is a path fragment — a string knob",
+                );
+                assert_eq!(
+                    knobs.base_scalars().get(KEY).map(String::as_str),
+                    Some(""),
+                    "{which}: the default is the UNSET sentinel — every declared \
+                     `placement.file` stands, byte-identical to a build with no knob (the \
+                     repo root is spelled `.`)",
+                );
+                assert_eq!(
+                    knobs.floors().get(KEY),
+                    None,
+                    "{which}: a layout knob carries no demotion-lock floor",
+                );
+            }
+
+            assert_eq!(
+                dev.field(KEY),
+                methodology.field(KEY),
+                "`{KEY}` must be declared IDENTICALLY in both packs — under the whole-file \
+                 `knobs.yaml` shadow a divergent declaration makes the resolved placement \
+                 home depend on which pack won, which is the composition-variance the \
+                 placement design forbids",
+            );
         }
     }
 }

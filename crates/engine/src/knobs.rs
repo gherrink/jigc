@@ -274,6 +274,10 @@ mod tests {
             // invocation-log — the opt-in in-repo invocation log (M36), bool,
             // default false (OFF); tunable, no floor.
             ("invocation-log", "false"),
+            // placement-root — the parent dir of every NON-root placement home
+            // (M49); string, tunable, no floor. Default `""` is UNSET (every
+            // declared `placement.file` stands); `.` is the repo root.
+            ("placement-root", ""),
             // changelog-recording (1, tunable; M42 — the granted-and-unused changelog
             // gate: advisory by default, promotable to `blocking` with one cascade
             // line, validation.md → The changelog-gate advisory).

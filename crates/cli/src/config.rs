@@ -309,7 +309,13 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // never does. Canonicalize an empty `docs-root` to its flat sentinel `.` so
     // `jigc config set docs-root ""` does the intuitive thing instead of erroring (the
     // read-side helper already maps both `""` and `.` to flat).
-    let value = if key == "docs-root" && value.is_empty() {
+    //
+    // `placement-root` (M49) rides the same branch, and for it the canonicalization is
+    // load-bearing rather than a convenience: its resolved `""` is the *unset* value —
+    // every declared placement home stands — while `.` is the repo root, so an empty set
+    // that landed verbatim would read back as "never set" and silently do nothing
+    // (`crate::start::placement_root`).
+    let value = if matches!(key, "docs-root" | "placement-root") && value.is_empty() {
         "."
     } else {
         value
