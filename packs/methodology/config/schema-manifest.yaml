@@ -12,10 +12,19 @@
 # scope pin) is discharged by the M40 methodology `arb_doc()` byte-stability
 # census, landed before this manifest.
 #
-# v1 frozen set = all TEN shipped methodology schemas: the nine persisted
-# work-doc/design-altitude doctypes (stamp-injected, migrate-corpus-owned —
-# `jigc relocate` now refuses them) plus the transient `commit` shadow (listed
-# for the strict set-equality assert, stamp-excluded: no `location:`/`placement:`).
+# The v1 frozen set was all TEN shipped methodology schemas; it is ELEVEN since the
+# M49 Inc-9 `planning-record` mint: the TEN persisted work-doc/design-altitude
+# doctypes (stamp-injected, migrate-corpus-owned — `jigc relocate` now refuses them)
+# plus the transient `commit` shadow (listed for the strict set-equality assert,
+# stamp-excluded: no `location:`/`placement:`).
+#
+# A NEW doctype is FREE AT THE FREEZE (`planning-record`, M49 Inc-9 / T5 — the
+# per-milestone plan-time gate record, one required slot per planning gate;
+# design/methodology-docs.md -> The planning gate-record). It owes an entry here for
+# the set-equality assert, at schema-version 1 with its own hash — and nothing else:
+# it moves no other doctype's hash, and it owes NO `schema-snapshots/` entry, because
+# at v1 there is no prior shape to diff against.
+#
 # `schema-snapshots/` was ABSENT at v1 and is first populated by the M41 F4
 # `deferral-ledger` v1→v2 rename (the D/I → Decision/Idea enum-member remap — the
 # first methodology v1→v2 bump; `schema-snapshots/deferral-ledger.v1.yaml` sources it).
@@ -112,6 +121,9 @@ doctypes:
   - type: milestone-record
     schema-version: 3
     schema-hash: 545f6dcd4a83229416364f47746a541b92ca657ead4a67369c20c599139b70a3
+  - type: planning-record
+    schema-version: 1
+    schema-hash: 0ba7ebb97167ce96973791d239c19ea1fc640f92039d87c55e74dbe8eac09a28
   - type: research
     schema-version: 1
     schema-hash: d1dcdf569f941af077bd0e234d6f4955a85518b8b202a14c6ed056a276e04fe5

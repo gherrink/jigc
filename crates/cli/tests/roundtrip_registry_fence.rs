@@ -69,10 +69,12 @@ fn round_trip_required(pack: &dyn PackSource) -> BTreeSet<String> {
         .collect()
 }
 
-/// The reviewed snapshot: the 14 persisted doctypes both embedded packs ship (six dev,
-/// nine methodology, with `commit` shared) plus the transient `commit`. Sorted, so a
+/// The reviewed snapshot: the 15 persisted doctypes both embedded packs ship (six dev,
+/// ten methodology, with `commit` shared) plus the transient `commit`. Sorted, so a
 /// diff is legible. A persisted doctype removed/renamed moves `round_trip_required` off
-/// this list; `commit` re-exempted moves it off too.
+/// this list; `commit` re-exempted moves it off too. `planning-record` (M49 Inc-9 / T5)
+/// carries its byte proof in `engine::write`'s `methodology_canonical_fixtures_*`, the
+/// same table as its nine methodology siblings.
 const EXPECTED_ROUND_TRIP_REQUIRED: &[&str] = &[
     "adr",
     "arch-doc",
@@ -84,6 +86,7 @@ const EXPECTED_ROUND_TRIP_REQUIRED: &[&str] = &[
     "dogfood-record",
     "idea",
     "milestone-record",
+    "planning-record",
     "prd",
     "research",
     "roadmap",

@@ -1,0 +1,90 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 5,
+  "type": "planning-record",
+  "schema-version": 1,
+  "fields": [
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "reuse-exercised",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#reuse-exercised"
+    },
+    {
+      "id": "cheap-vs-robust",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#cheap-vs-robust"
+    },
+    {
+      "id": "foreclosed-by-doc",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#foreclosed-by-doc"
+    },
+    {
+      "id": "prior-art-reconciled",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#prior-art-reconciled"
+    },
+    {
+      "id": "census",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#census"
+    },
+    {
+      "id": "integration-seam",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#integration-seam"
+    },
+    {
+      "id": "check-scope-pinned",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#check-scope-pinned"
+    },
+    {
+      "id": "design-complete",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#design-complete"
+    },
+    {
+      "id": "acceptance-spiked",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#acceptance-spiked"
+    },
+    {
+      "id": "value-flow-exercised",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#value-flow-exercised"
+    },
+    {
+      "id": "deliverable-reachable",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#deliverable-reachable"
+    },
+    {
+      "id": "strategic-claim-fresh",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#strategic-claim-fresh"
+    },
+    {
+      "id": "quote-attributed",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#quote-attributed"
+    },
+    {
+      "id": "claim-driven",
+      "kind": "slot",
+      "set-slot": "planning-record:<slug>#claim-driven"
+    }
+  ]
+}
+--- stderr ---

@@ -1,0 +1,21 @@
+exit: 0
+--- stdout ---
+doctype: planning-record (schema-version 1)
+fields:
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - reuse-exercised: slot (set-slot: planning-record:<slug>#reuse-exercised)
+  - cheap-vs-robust: slot (set-slot: planning-record:<slug>#cheap-vs-robust)
+  - foreclosed-by-doc: slot (set-slot: planning-record:<slug>#foreclosed-by-doc)
+  - prior-art-reconciled: slot (set-slot: planning-record:<slug>#prior-art-reconciled)
+  - census: slot (set-slot: planning-record:<slug>#census)
+  - integration-seam: slot (set-slot: planning-record:<slug>#integration-seam)
+  - check-scope-pinned: slot (set-slot: planning-record:<slug>#check-scope-pinned)
+  - design-complete: slot (set-slot: planning-record:<slug>#design-complete)
+  - acceptance-spiked: slot (set-slot: planning-record:<slug>#acceptance-spiked)
+  - value-flow-exercised: slot (set-slot: planning-record:<slug>#value-flow-exercised)
+  - deliverable-reachable: slot (set-slot: planning-record:<slug>#deliverable-reachable)
+  - strategic-claim-fresh: slot (set-slot: planning-record:<slug>#strategic-claim-fresh)
+  - quote-attributed: slot (set-slot: planning-record:<slug>#quote-attributed)
+  - claim-driven: slot (set-slot: planning-record:<slug>#claim-driven)
+--- stderr ---

@@ -2994,8 +2994,8 @@ mod tests {
 
     /// The **methodology sibling** of the build-time freeze gate (M40 A1 —
     /// `design/corpus-migration.md` → M40 revises the dichotomy): the methodology
-    /// pack now ships its **own** `config/schema-manifest.yaml` listing all **ten**
-    /// shipped schemas — the nine persisted work-doc/design-altitude doctypes plus
+    /// pack now ships its **own** `config/schema-manifest.yaml` listing all **eleven**
+    /// shipped schemas — the ten persisted work-doc/design-altitude doctypes plus
     /// the transient `commit` shadow (the freeze assert is strict set-equality; the
     /// dev precedent lists its transient `commit`) — every one frozen at
     /// schema-version 1 (the v1 baseline) except the three bumped since:
@@ -3004,9 +3004,11 @@ mod tests {
     /// bumped twice (M42 Inc-7, the `discarded` lifecycle member; M49 Inc-9, the
     /// per-sub-task `workflow` leaf) and therefore at **3**, shipping the snapshot store's
     /// first **two**-snapshot chain (`.v1.yaml` beside `.v2.yaml`) where the other two ship
-    /// one `schema-snapshots/<ty>.v1.yaml` each — with every recomputed hash matching. A
-    /// methodology schema-shape change that bumps no version fails **here, loudly**, at
-    /// build time.
+    /// one `schema-snapshots/<ty>.v1.yaml` each — with every recomputed hash matching. The
+    /// eleventh member, `planning-record` (M49 Inc-9 / T5), is the **new**-doctype shape of
+    /// this gate: it joins the declared set at schema-version 1 and owes no snapshot at
+    /// all. A methodology schema-shape change that bumps no version fails **here,
+    /// loudly**, at build time.
     #[test]
     fn methodology_schema_manifest_matches_the_frozen_doctype_set() {
         use std::collections::BTreeMap;
@@ -3038,7 +3040,7 @@ mod tests {
         let manifest: engine::manifest::Manifest = serde_yaml_ng::from_slice(&manifest_bytes)
             .expect("config/schema-manifest.yaml parses as a freeze manifest");
 
-        // The frozen set is exactly the ten shipped methodology schemas, each at
+        // The frozen set is exactly the eleven shipped methodology schemas, each at
         // schema-version 1 (the crystallizing v1 baseline) except three: `deferral-ledger`,
         // bumped to 2 by the M41 F4 v1→v2 `kind` enum-member rename (D/I → Decision/Idea
         // — the first methodology v1→v2 migration; `design/corpus-migration.md` → the
@@ -3053,6 +3055,7 @@ mod tests {
         // `[blocking, advisory, HIGH, MEDIUM, LOW]` plus an optional `detail` prose slot on
         // the findings item block — an `EnumWidened` + `AddedItemSlot` pair, both byte
         // no-ops; `completions/artifacts/M49/settle-record.md` → D10 · Tier 3).
+        // `planning-record` (M49 Inc-9 / T5) joins the set NEW, at 1 — free at the freeze.
         let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
         declared.sort_unstable();
         assert_eq!(
@@ -3065,11 +3068,12 @@ mod tests {
                 "dogfood-record",
                 "idea",
                 "milestone-record",
+                "planning-record",
                 "research",
                 "roadmap",
                 "vision",
             ],
-            "the methodology freeze manifest must enumerate exactly the ten shipped schemas",
+            "the methodology freeze manifest must enumerate exactly the eleven shipped schemas",
         );
         for entry in &manifest.doctypes {
             let expected = match entry.ty.as_str() {
@@ -3092,8 +3096,9 @@ mod tests {
     /// manifest shipped (M40 A1), [`load_pack_schema`] injects the schema-version
     /// stamp into every **persisted** methodology doctype — appended to an existing
     /// `meta` header, or carried by a fresh first header for the header-less
-    /// singletons (`roadmap`/`decisions-log`/`deferral-ledger`, which thereby gain a
-    /// `---` block on mint) — and stays **inert** for the transient `commit` shadow
+    /// doctypes (the `roadmap`/`decisions-log`/`deferral-ledger` singletons and the
+    /// per-milestone `planning-record`, which thereby gain a `---` block on mint) —
+    /// and stays **inert** for the transient `commit` shadow
     /// (in the manifest, neither `location:` nor `placement:` — stamp-excluded).
     #[test]
     fn load_pack_schema_stamps_persisted_methodology_doctypes_and_shadow_commit_is_inert() {
@@ -3108,6 +3113,7 @@ mod tests {
             "dogfood-record",
             "idea",
             "milestone-record",
+            "planning-record",
             "research",
             "roadmap",
             "vision",

@@ -88,6 +88,8 @@ idea is One shaped-but-unscheduled direction, with the trigger that would bring 
 
 milestone-record is The per-milestone team-ready state record — the shared base-SHA pin, the ordered sub-task list, and each sub-task's intent and status, resumable from a fresh clone. Reach for it when a milestone is executing and its in-flight state (base, sub-tasks, statuses) must be committed and legible so a teammate or fresh session can continue it, not stranded in the gitignored workbench.
 
+planning-record is One milestone's plan-time gate record — every planning gate answered with the evidence that discharges it, or an explicit N/A and why. Reach for it when a milestone is being planned, and each plan-time gate needs an answer recorded before the plan is allowed to close.
+
 prd is A product requirements document — the vision, the requirements, and the context for a piece of work, the first managed document a fresh project develops its idea into. Reach for it when you are at the start of a new project and want to turn an idea into a shared statement of what to build and why, before any spec or code.
 
 research is One investigation and what it found — the evidence a vision or design is formed from. Reach for it when a question needs evidence gathered and recorded before a vision or decision rests on it, and that record should stay addressable by what it grounds.

@@ -9646,10 +9646,12 @@ mod methodology_roundtrip {
     const IDEA_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/idea.yaml");
     const MILESTONE_RECORD_YAML: &[u8] =
         include_bytes!("../../../packs/methodology/schemas/milestone-record.yaml");
+    const PLANNING_RECORD_YAML: &[u8] =
+        include_bytes!("../../../packs/methodology/schemas/planning-record.yaml");
 
     /// Load the shipped schema for one methodology doctype. Every methodology
     /// doctype declares **engine-native** field types only (`string`/`enum`/
-    /// `date`/`int`/`ref`/`owned-location`), so all nine load bare — no pack
+    /// `date`/`int`/`ref`/`owned-location`), so all ten load bare — no pack
     /// field-type registration (unlike the dev pack's `code-anchor`).
     fn schema_for(ty: &str) -> Schema {
         let bytes: &[u8] = match ty {
@@ -9662,6 +9664,7 @@ mod methodology_roundtrip {
             "research" => RESEARCH_YAML,
             "idea" => IDEA_YAML,
             "milestone-record" => MILESTONE_RECORD_YAML,
+            "planning-record" => PLANNING_RECORD_YAML,
             other => panic!("unknown methodology doctype {other:?}"),
         };
         crate::schema::load_schema(bytes)
@@ -10028,6 +10031,34 @@ mod methodology_roundtrip {
         render(&schema_for("vision"), &instance)
     }
 
+    /// Build a canonical-LF `planning-record`: header-less, one prose slot per
+    /// planning gate. **The section ids come from the shipped schema**, never a hand
+    /// list — the gate set is settled in `design/methodology-docs.md` and a gate added
+    /// there (and to the schema) joins this generator by construction rather than
+    /// silently escaping the census.
+    fn build_planning_record(title: &str, prose: &[String]) -> String {
+        let schema = schema_for("planning-record");
+        assert_eq!(
+            prose.len(),
+            schema.sections.len(),
+            "one prose body per declared gate slot",
+        );
+        let instance = Instance {
+            title: title.to_string(),
+            sections: schema
+                .sections
+                .iter()
+                .zip(prose)
+                .map(|(section, body)| SectionContent {
+                    id: section.id.clone(),
+                    slot: Some(body.clone()),
+                    ..Default::default()
+                })
+                .collect(),
+        };
+        render(&schema, &instance)
+    }
+
     /// Build a canonical-LF `research`: a `meta` header with the one `date`
     /// field, then the `question`/`findings`/`sources` prose slots.
     fn build_research(
@@ -10390,6 +10421,25 @@ mod methodology_roundtrip {
                 )
             });
 
+        // `planning-record` — header-less, fourteen prose slots. The slot COUNT is
+        // read from the shipped schema, so a gate added to the doctype widens the
+        // generated document rather than leaving the new slot un-sampled.
+        let gate_count = schema_for("planning-record").sections.len();
+        let planning_record = (
+            scalar_value(),
+            prop::collection::vec(section_prose(), gate_count..=gate_count),
+        )
+            .prop_map(|(title, prose)| {
+                (
+                    "planning-record".to_string(),
+                    build_planning_record(&title, &prose),
+                    // Header-less (the stamp is injected by the CLI loader, not the
+                    // bare engine one): no settable scalar, so the surgical-edit
+                    // clause self-skips — the `roadmap` precedent.
+                    None,
+                )
+            });
+
         (
             prop_oneof![
                 roadmap,
@@ -10401,6 +10451,7 @@ mod methodology_roundtrip {
                 research,
                 idea,
                 milestone_record,
+                planning_record,
             ],
             eol,
         )
@@ -10932,6 +10983,73 @@ status: active
 # M43
 
 ## Tasks
+",
+            },
+            // `planning-record` — fourteen prose slots, one per planning gate, and no
+            // header at all (the schema-version stamp is CLI-injected, not engine-side).
+            // The gate ids are hyphenated, so this row also pins the multi-word
+            // `## <Heading Text>` rendering for a slot section.
+            Fixture {
+                name: "planning_record_m49",
+                ty: "planning-record",
+                src: "\
+# M49
+
+## Reuse Exercised
+
+Driven: `grep -rn \"FileStateRecord\"` over the cache seam, then the cold-start form on a fresh clone.
+
+## Cheap Vs Robust
+
+The cheap cut leaves a hole in a declared surface, so the robust path is taken; the advocate's case is in the settle record.
+
+## Foreclosed By Doc
+
+`team-ready-state.md`'s exclusion rests on a predicate, and the predicate was driven rather than obeyed.
+
+## Prior Art Reconciled
+
+`grep -rn \"planning gate\" design/` — 4 hits, all one home, no contradiction.
+
+## Census
+
+`grep -rn \"required-slot-present\" crates/` — 11 hits; enforced at the conformance seam, not on a list.
+
+## Integration Seam
+
+The projection feeds `doc schema`, whose input precondition is a loaded schema; the new sections satisfy it.
+
+## Check Scope Pinned
+
+`schema-conformance.required-slot-present`, task and finalize scope.
+
+## Design Complete
+
+Behaviour, finding id, severity and acceptance are all settled in the record.
+
+## Acceptance Spiked
+
+The composed projection and the `--format json` read were both spiked on the real binary.
+
+## Value Flow Exercised
+
+N/A — this milestone builds no new end-to-end flow; the baseline walk stands.
+
+## Deliverable Reachable
+
+Reachable at T6, when the planning workflow's create-gate names the doctype.
+
+## Strategic Claim Fresh
+
+The justification was re-read against the latest trial record, not the charter.
+
+## Quote Attributed
+
+`heading_text` at `crates/engine/src/write.rs` is the producer of every rendered heading quoted here.
+
+## Claim Driven
+
+Driven by the orchestrator: every count in this record came from a command whose output is quoted.
 ",
             },
         ]

@@ -1,0 +1,61 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+# M49
+
+## Reuse Exercised
+
+Driven: `grep -rn "FileStateRecord"` over the cache seam, then the cold-start form on a fresh clone.
+
+## Cheap Vs Robust
+
+The cheap cut leaves a hole in a declared surface, so the robust path is taken; the advocate's case is in the settle record.
+
+## Foreclosed By Doc
+
+`team-ready-state.md`'s exclusion rests on a predicate, and the predicate was driven rather than obeyed.
+
+## Prior Art Reconciled
+
+`grep -rn "planning gate" design/` — 4 hits, all one home, no contradiction.
+
+## Census
+
+`grep -rn "required-slot-present" crates/` — 11 hits; enforced at the conformance seam, not on a list.
+
+## Integration Seam
+
+The projection feeds `doc schema`, whose input precondition is a loaded schema; the new sections satisfy it.
+
+## Check Scope Pinned
+
+`schema-conformance.required-slot-present`, task and finalize scope.
+
+## Design Complete
+
+Behaviour, finding id, severity and acceptance are all settled in the record.
+
+## Acceptance Spiked
+
+The composed projection and the `--format json` read were both spiked on the real binary.
+
+## Value Flow Exercised
+
+N/A — this milestone builds no new end-to-end flow; the baseline walk stands.
+
+## Deliverable Reachable
+
+Reachable at T6, when the planning workflow's create-gate names the doctype.
+
+## Strategic Claim Fresh
+
+The justification was re-read against the latest trial record, not the charter.
+
+## Quote Attributed
+
+`heading_text` at `crates/engine/src/write.rs` is the producer of every rendered heading quoted here.
+
+## Claim Driven
+
+Driven by the orchestrator: every count in this record came from a command whose output is quoted.
