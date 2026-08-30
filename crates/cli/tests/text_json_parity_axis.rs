@@ -247,10 +247,10 @@ const REGISTRY: &[(&[&str], Tier)] = &[
             "a separately versioned read contract — the text arm renders the document, the \
              envelope its own `contract-version`ed projection",
             Disposition::DeclaredOut(
-                "governed by its OWN pinned contract (`doc-read-surface.md`), whose additive \
-                 keys this wave's window closes in the same motion — the plain arm renders the \
-                 document's own bytes, so there is no rendered-fact-vs-key axis for the parity \
-                 rule to run over",
+                "governed by its OWN pinned contract (`doc-read-surface.md`), whose additive-key \
+                 window closes at the 1.0 pin — M49 spends it once more, on the top-level \
+                 `schema-version` number — and the plain arm renders the document's own bytes, \
+                 so there is no rendered-fact-vs-key axis for the parity rule to run over",
             ),
         ),
     ),

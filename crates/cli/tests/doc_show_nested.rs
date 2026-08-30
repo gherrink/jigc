@@ -309,12 +309,17 @@ fn commit_changelog(repo: &Path, home: &Path, pack: &Path) -> String {
 }
 
 // ---- the pinned nested json goldens (`<DATE>` interpolated — `set: on-create`) ----
+//
+// The top-level `schema-version` is M49's additive key — the doc's own stamp as a json
+// NUMBER (`changelog` is manifest schema-version 2), beside the untouched `fields` entry
+// that stays the string (design/doc-read-surface.md → One name, two json types).
 
 const WHOLE_DOC_JSON: &str = r#"{
   "fields": {
     "schema-version": "2"
   },
   "item-count": 1,
+  "schema-version": 2,
   "sections": {
     "releases": [
       {

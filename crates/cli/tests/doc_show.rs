@@ -283,12 +283,17 @@ fn commit_prd(repo: &Path, home: &Path) {
 
 // `schema-version` joined the pinned witness `fields` when the M40 A1 methodology
 // manifest froze `vision` (the declared additive-pre-pin posture —
-// design/team-ready-state.md → the pinned witness fields).
+// design/team-ready-state.md → the pinned witness fields). The **top-level**
+// `schema-version` is M49's additive key — the same stamp as a json NUMBER, so the
+// cross-surface comparison against `jigc doc schema` needs no cast, while the `fields`
+// entry stays the string and the map stays uniformly stringy
+// (design/doc-read-surface.md → One name, two json types).
 const VISION_JSON: &str = r#"{
   "fields": {
     "schema-version": "1"
   },
   "item-count": 0,
+  "schema-version": 1,
   "sections": {
     "invariants": "The CLI owns every structural write; the LLM writes only prose.",
     "open-questions": "How far can one methodology pack compose.",
@@ -303,6 +308,7 @@ const PRD_JSON: &str = r#"{
     "schema-version": "1"
   },
   "item-count": 2,
+  "schema-version": 1,
   "sections": {
     "context": "Built for solo users who abandon heavyweight planners.",
     "requirements": [
@@ -952,5 +958,66 @@ fn a_bare_singleton_address_resolves_for_the_doc_verbs() {
     assert!(
         staged.contains("A context compiler, restated."),
         "the bare-addressed write landed in the singleton's staged instance; got:\n{staged}",
+    );
+}
+
+/// M49 Increment 8 / T2 — the top-level `schema-version` key is **whole-doc only**, and
+/// the `fields` map it sits beside is untouched (`design/doc-read-surface.md` → the
+/// `schema-version` additive key: a `#fragment` slice carries no top-level key, the same
+/// bound `item-count` and the staged marker already state).
+///
+/// The discriminating fragment is the header's **fields-only** slice (`vision:vision#meta`),
+/// which is the one fragment shaped like an object with a `schema-version` entry in it —
+/// and that entry must still be the **string**, exactly as `fields` projects it. A slot
+/// slice is a bare string, so it has no object to hang a key on at all.
+#[test]
+fn the_stamp_key_is_whole_doc_only_and_fields_stays_stringy() {
+    let repo = TempDir::new("stamp-fragment");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    commit_vision(repo.path(), home.path());
+
+    // (1) The whole-doc serve: the top-level key is a NUMBER, the `fields` entry the STRING.
+    let whole = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "vision:vision", "--format", "json"],
+        None,
+    );
+    assert_ok(&whole, "`jigc doc show vision:vision --format json`");
+    let whole: serde_json::Value = serde_json::from_str(&stdout_of(&whole)).expect("valid json");
+    assert_eq!(whole["schema-version"], serde_json::json!(1));
+    assert_eq!(whole["fields"]["schema-version"], serde_json::json!("1"));
+
+    // (2) The fields-only header slice is the `fields` shape verbatim — string, no number.
+    let meta = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "vision:vision#meta", "--format", "json"],
+        None,
+    );
+    assert_ok(&meta, "`jigc doc show vision:vision#meta --format json`");
+    assert_eq!(
+        stdout_of(&meta).trim_end(),
+        "{\n  \"schema-version\": \"1\"\n}",
+        "a fields-only slice projects the leaves as `fields` does — the stamp stays the \
+         string, and the whole-doc-only number does not leak into it",
+    );
+
+    // (3) A slot slice is a bare value: no object, no key.
+    let thesis = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "vision:vision#thesis", "--format", "json"],
+        None,
+    );
+    assert_ok(
+        &thesis,
+        "`jigc doc show vision:vision#thesis --format json`",
+    );
+    let thesis: serde_json::Value = serde_json::from_str(&stdout_of(&thesis)).expect("valid json");
+    assert!(
+        thesis.is_string() && thesis.get("schema-version").is_none(),
+        "a slot slice is the bare prose string; got:\n{thesis}"
     );
 }

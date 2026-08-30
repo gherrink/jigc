@@ -280,8 +280,16 @@ fn staged_read_serves_plain_json_and_slice() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["fields", "item-count", "sections", "slug", "staged", "type"],
-        "exactly the pinned keys + item-count + the one marker key"
+        [
+            "fields",
+            "item-count",
+            "schema-version",
+            "sections",
+            "slug",
+            "staged",
+            "type"
+        ],
+        "exactly the pinned keys + item-count + schema-version + the one marker key"
     );
 
     // (3) A `#section` slice serves the staged prose — plain and json (a fragment
@@ -387,7 +395,14 @@ fn committed_json_carries_no_marker_and_not_staged_routes_task_less() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["fields", "item-count", "sections", "slug", "type"],
+        [
+            "fields",
+            "item-count",
+            "schema-version",
+            "sections",
+            "slug",
+            "type"
+        ],
         "a committed serve differs from the staged serve by exactly the `staged` key"
     );
 
@@ -815,5 +830,156 @@ fn a_bad_task_id_routes_to_task_list_not_the_clap_tip() {
     assert!(
         !stderr.contains("unexpected argument") && !stderr.contains("-- --task"),
         "the misleading clap `-- --task` tip is gone; got:\n{stderr}"
+    );
+}
+
+/// M49 Increment 8 / T2 — the doc's own **schema-version stamp** rides the whole-doc
+/// `--format json` serve as a top-level **number**, so the cross-surface upgrade check a
+/// driver automates (*is this doc's stamp behind its schema?*) needs no cast
+/// (`design/doc-read-surface.md` → One name, two json types · Evolution posture).
+///
+/// The witness is `adr`, whose manifest version is **2** — so the asserted value proves
+/// the key carries the doc's real stamp rather than a constant. Four facts, all on the
+/// emitted bytes of the real binary: the **staged** serve carries it; the **committed**
+/// serve carries the same value; `fields["schema-version"]` is untouched and still the
+/// **string**, so the generic scalar projection's own rule stays true and the map stays
+/// uniformly stringy; and the top-level integer compares to `jigc doc schema`'s integer
+/// with `==` on the two json values — while the string does not, which is the cast the
+/// key exists to retire.
+#[test]
+fn the_doc_stamp_rides_the_whole_doc_serve_as_a_number_and_compares_cast_free() {
+    let repo = TempDir::new("stamp");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    start_task(repo.path(), home.path(), "add rate limiter");
+    let task = "add-rate-limiter";
+    stage_cache_strategy_adr(repo.path(), home.path(), task);
+
+    // (1) The STAGED whole-doc serve carries the stamp as a top-level number …
+    let staged = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "show",
+            "adr:cache-strategy",
+            "--task",
+            task,
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert_ok(&staged, "`jigc doc show adr:... --task <id> --format json`");
+    let staged: serde_json::Value = serde_json::from_str(&stdout_of(&staged)).expect("valid json");
+    assert_eq!(
+        staged["schema-version"],
+        serde_json::json!(2),
+        "the staged whole-doc serve carries the doc's stamp as a top-level NUMBER \
+         (adr is manifest schema-version 2 — not a constant 1)"
+    );
+    // … while `fields` stays uniformly stringy (the generic scalar projection's rule).
+    assert_eq!(
+        staged["fields"]["schema-version"],
+        serde_json::json!("2"),
+        "`fields` is untouched: the stamp is still the string there"
+    );
+
+    // (2) The committed serve carries the same value (both serves, like `item-count`).
+    fill_commit(repo.path(), home.path(), task);
+    assert_ok(
+        &jigc(repo.path(), home.path(), &["task", "finalize", task], None),
+        "`jigc task finalize` — the committed adr",
+    );
+    let committed = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:cache-strategy", "--format", "json"],
+        None,
+    );
+    assert_ok(
+        &committed,
+        "`jigc doc show adr:cache-strategy --format json`",
+    );
+    let committed: serde_json::Value =
+        serde_json::from_str(&stdout_of(&committed)).expect("valid json");
+    assert_eq!(
+        committed["schema-version"],
+        serde_json::json!(2),
+        "the committed whole-doc serve carries it too"
+    );
+
+    // (3) The cross-surface comparison, CAST-FREE: `doc show`'s actual stamp against
+    //     `doc schema`'s expected version, compared as two json values.
+    let contract = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "adr", "--format", "json"],
+        None,
+    );
+    assert_ok(&contract, "`jigc doc schema adr --format json`");
+    let contract: serde_json::Value =
+        serde_json::from_str(&stdout_of(&contract)).expect("valid json");
+    assert!(
+        contract["schema-version"].is_u64() && committed["schema-version"].is_u64(),
+        "both surfaces speak the same json type; got show={} schema={}",
+        committed["schema-version"],
+        contract["schema-version"],
+    );
+    assert_eq!(
+        committed["schema-version"], contract["schema-version"],
+        "the doc's stamp and its schema's version compare with `==`, no cast"
+    );
+    assert_ne!(
+        committed["fields"]["schema-version"], contract["schema-version"],
+        "and the string in `fields` still does NOT — that is the cast this key retires"
+    );
+}
+
+/// An **unstamped** doctype serves `null`, never a coerced `0` and never a missing key.
+/// The witness is the transient `commit:<task>`: it is in the dev manifest but is
+/// neither `location`- nor `placement`-homed, so the pack loader injects no stamp field
+/// into it (`crates/cli/src/pack.rs` → the stamp-injection gate) — the doc genuinely has
+/// no version to report, and the key says so rather than lying with a number
+/// (`design/doc-read-surface.md` → the `schema-version` additive key).
+#[test]
+fn an_unstamped_doctype_serves_a_null_schema_version() {
+    let repo = TempDir::new("unstamped");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    start_task(repo.path(), home.path(), "add rate limiter");
+    let task = "add-rate-limiter";
+    let addr = format!("commit:{task}");
+    set_field(
+        repo.path(),
+        home.path(),
+        &format!("{addr}#type"),
+        task,
+        "feat",
+    );
+
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", &addr, "--task", task, "--format", "json"],
+        None,
+    );
+    assert_ok(
+        &json,
+        "`jigc doc show commit:<task> --task <task> --format json`",
+    );
+    let value: serde_json::Value = serde_json::from_str(&stdout_of(&json)).expect("valid json");
+    assert!(
+        value.get("schema-version").is_some(),
+        "the key is always emitted, even unstamped; got:\n{value}"
+    );
+    assert_eq!(
+        value["schema-version"],
+        serde_json::Value::Null,
+        "an unstamped doctype serves null, never a coerced 0"
+    );
+    assert!(
+        value["fields"].get("schema-version").is_none(),
+        "and `fields` carries no stamp either — there is none to carry"
     );
 }

@@ -4743,6 +4743,11 @@ fn show_json(
 /// contributes to `fields` alone. A scalar field serializes as its string, a list-
 /// cardinality field as a json array; slot prose is trimmed (the clean machine value —
 /// the byte-exact form stays the plain path).
+///
+/// Two additive top-level keys ride beside them, both on **every** whole-doc serve and
+/// on **no** fragment slice (a slice is a bare value with no object to hang a key on):
+/// [`item_count`], and the doc's own **`schema-version`** stamp as a json **number**
+/// ([`stamped_schema_version`]).
 fn whole_doc_json(
     schema: &Schema,
     doc: &engine::parse::Document,
@@ -4776,13 +4781,42 @@ fn whole_doc_json(
             }
         }
     }
+    let schema_version = stamped_schema_version(&fields);
     serde_json::json!({
         "type": schema.ty,
         "slug": address.slug.as_str(),
         "item-count": item_count(doc),
+        "schema-version": schema_version,
         "fields": serde_json::Value::Object(fields),
         "sections": serde_json::Value::Object(sections),
     })
+}
+
+/// The doc's **own schema-version stamp** as a json **number** — the additive top-level
+/// `schema-version` key on the whole-doc `--format json` serve (`design/doc-read-surface.md`
+/// → One name, two json types). It is the doc's **actual** stamp, where `jigc doc schema`'s
+/// identically-named integer is the doctype's **expected** version from the freeze manifest:
+/// comparing the two is the upgrade check a driver automates (*is this doc's stamp behind
+/// its schema?*), and it is the reason this key is a number — before it, that comparison
+/// needed a cast, because the only stamp on this surface was the string in `fields`.
+///
+/// **Read back off the already-built `fields` map on purpose**, not re-walked from the
+/// parsed doc: the two keys then cannot disagree by construction, and `fields` stays
+/// uniformly stringy — [`field_json`]'s *"a scalar field serializes as its string"* holds
+/// for every key in the map, so a driver iterating it is unaffected.
+///
+/// `None` (serializing to `null`) when the doctype carries **no stamp field** — the
+/// transient `commit`, which the pack loader's injection gate skips (`crate::pack` → the
+/// stamp injection is `location`/`placement`-gated) — and equally when a stamp on disk is
+/// not an integer, which only a hand edit produces and which the `int` field-type check
+/// blocks at validate. Never a coerced `0`, and never an absent key: the raw bytes stay
+/// readable in `fields` either way.
+fn stamped_schema_version(fields: &serde_json::Map<String, serde_json::Value>) -> Option<u64> {
+    fields
+        .get(engine::schema::SCHEMA_VERSION_FIELD)?
+        .as_str()?
+        .parse::<u64>()
+        .ok()
 }
 
 /// The doc's **top-level repeatable item count** — the total number of items summed across
