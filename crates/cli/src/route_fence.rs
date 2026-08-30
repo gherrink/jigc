@@ -62,6 +62,17 @@ pub fn install() {
     engine::finding::install_mechanical_argv_validator(validate_mechanical_argv);
 }
 
+/// The fence asked as a **question** rather than as an assertion: `true` iff `argv` would
+/// pass [`validate_mechanical_argv`]. A producer that *derives* an argv from another route's
+/// (the boundary-door task-selector enrichment, `crate::doc::scope_repair_route_to_task`)
+/// cannot know in advance that its result parses, and the constructor's own check is
+/// debug-posture — so it asks here, in every posture, and emits the derived route only when
+/// the answer is yes. The fence therefore governs a derived route in release builds too,
+/// where its panic never fires.
+pub(crate) fn accepts(argv: &[String]) -> bool {
+    validate_mechanical_argv(argv).is_ok()
+}
+
 /// Whether `argv` is a copy-runnable `jigc` command line: it must lead with `jigc` (clap
 /// ignores argv\[0\], but the composed route text does not — a route missing the binary name
 /// is broken even if the rest parses), every token must be **shell-safe as emitted**

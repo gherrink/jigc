@@ -3151,6 +3151,7 @@ fn run_milestone_finalize(
         &staging_dir,
         &base,
         &worktrees,
+        &materialized.sources,
         format,
     )? {
         return Ok(outcome);
@@ -3823,6 +3824,7 @@ fn milestone_boundary_gate(
     staging_dir: &Path,
     base: &BasePin,
     worktrees: &[PathBuf],
+    sources: &BTreeMap<String, String>,
     format: Format,
 ) -> Result<Option<Outcome>> {
     // Fold the N worktree-staged code-sets onto the milestone's shared base (`base.sha`, NOT
@@ -3951,9 +3953,59 @@ fn milestone_boundary_gate(
     if report.has_blocking() {
         // `blocked()` re-applies the cascade (idempotent) and renders the pinned envelope —
         // exit 3. `merged_wt` + `base_tree` drop on return (the worktree/scratch teardown).
-        return Ok(Some(blocked(jigc_home, format, report.findings.to_vec())?));
+        return Ok(Some(blocked(
+            jigc_home,
+            format,
+            scope_merged_repair_routes(report.findings.to_vec(), jigc_root, sources),
+        )?));
     }
     Ok(None)
+}
+
+/// Scope each merged-state gate block's repair route to the **sub-task that contributed the
+/// doc it names** (M49 Increment 8 / T3) — the third member of `crate::render::BOUNDARY_DOORS`
+/// answering the same defect its two task siblings answer: a fan-out has ≥2 open sub-tasks by
+/// construction, so the emitted `jigc doc set-slot <merged address> …` exited 1 on `more than
+/// one active task` at the one door that *always* holds more than one.
+///
+/// **This is not the `<task-id>`-less case M47 inc-2 / T4 settled.** That decision governs the
+/// [`engine::file_state::ConflictBlock`] a few lines above, whose subject is an external edit
+/// against the merged set as a whole — genuinely no single task's. A conformance block names
+/// exactly one merged doc, and [`engine::milestone::MaterializeOutcome::sources`] already
+/// records which sub-task contributed it; the repair is to fix it *in that area* and re-run
+/// the join, which is what the scoped route says and what re-running the door then clears.
+///
+/// **Declared bound — the suffixed instance.** When two areas each *create* the same slug the
+/// join suffixes the loser, so the merged final address (`adr:foo-2`) is an address its own
+/// contributing area does not stage. The staged-body existence check below is what keeps that
+/// case honest: no body under the sub-area, no enrichment, and the route stays exactly the
+/// one it was rather than becoming a confidently wrong one.
+fn scope_merged_repair_routes(
+    mut findings: Vec<Finding>,
+    jigc_root: &Path,
+    sources: &BTreeMap<String, String>,
+) -> Vec<Finding> {
+    for finding in &mut findings {
+        let Some(head) = finding
+            .location
+            .as_ref()
+            .and_then(|location| location.address.as_deref())
+            .map(crate::doc::doc_head)
+        else {
+            continue;
+        };
+        let Some(task) = sources.get(head) else {
+            continue;
+        };
+        let Some((ty, slug)) = head.split_once(':') else {
+            continue;
+        };
+        if !engine::state::instance_path(&jigc_root.join("tasks").join(task), ty, slug).is_file() {
+            continue;
+        }
+        crate::doc::scope_repair_route_to_task(finding, task);
+    }
+    findings
 }
 
 /// The merged code change-set — the repo-relative paths that differ between the milestone's

@@ -2919,8 +2919,49 @@ pub fn is_optional_ref(field: &SchemaField) -> bool {
 /// a blocked finalize names its recovery. "The agent fills the slot / field directly"
 /// is now said *by the finding*, never assumed.
 fn blocking_conformance(code: &str, message: String, location: Option<Location>) -> Finding {
+    assert!(
+        CONFORMANCE_ROUTE_CODES.contains(&code),
+        "blocking_conformance mints `{code}`, which is absent from CONFORMANCE_ROUTE_CODES \
+         — the enumerable domain of conformance_route; add it there too"
+    );
     let route = conformance_route(code);
     Finding::graded(Severity::Blocking, code, message, location, Some(route))
+}
+
+/// The **enumerable domain of [`conformance_route`]** — every code a
+/// [`blocking_conformance`] gate block can mint, as a value a consumer can iterate rather
+/// than a shape only the `match` below knows. Total over that domain by assertion, not by
+/// census: [`blocking_conformance`] refuses a code absent from this list at its own source,
+/// so a seventh arm cannot reach an output without joining the list.
+///
+/// It exists because the gate-block repair routes are a **class with an axis** — the codes
+/// crossed with the doors that emit them (`crate::render::BOUNDARY_DOORS`) — and a test over
+/// that axis must read both sides from code (M49 Increment 8 / T3; `implementation/pinning.md`
+/// §1, the enumeration seam).
+pub const CONFORMANCE_ROUTE_CODES: &[&str] = &[
+    "schema-conformance.required-slot-present",
+    "schema-conformance.required-field-present",
+    "schema-conformance.field-value-conformant",
+    "schema-conformance.unknown-type",
+    "owner-artifact.present",
+];
+
+/// The **gate repair routes**: the [`CONFORMANCE_ROUTE_CODES`] whose declared repair is a
+/// copy-runnable `jigc` write, derived by asking [`conformance_route`] rather than by
+/// re-listing them. The two-branch-judgment codes (`unknown-type`, `owner-artifact.present`)
+/// route [`Route::human`] and are excluded by that derivation, so promoting one to a
+/// mechanical route later widens this set with no edit here.
+pub fn conformance_repair_codes() -> Vec<&'static str> {
+    CONFORMANCE_ROUTE_CODES
+        .iter()
+        .copied()
+        .filter(|code| {
+            matches!(
+                conformance_route(code).kind(),
+                crate::finding::RouteKind::Mechanical { .. }
+            )
+        })
+        .collect()
 }
 
 /// The per-code repair route of a [`blocking_conformance`] gate block — one declared map,
@@ -2981,7 +3022,8 @@ pub(crate) fn conformance_route(code: &str) -> Route {
         ),
         other => panic!(
             "blocking_conformance mints `{other}` with no declared route — add it to \
-             conformance_route (the route floor, design/surface-contract.md → The route fence)"
+             conformance_route AND to CONFORMANCE_ROUTE_CODES (the route floor, \
+             design/surface-contract.md → The route fence)"
         ),
     }
 }

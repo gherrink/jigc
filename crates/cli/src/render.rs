@@ -971,8 +971,27 @@ fn gates_at_finalize(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool 
 /// effective state under the same cascade and blocks exit 3). N10's second arm (M47 inc-8 / T4):
 /// the trailer named only the two task doors while the milestone door gates on the same findings,
 /// so a fan-out operator was told the boundary they were actually standing at could not stop them.
-const BOUNDARY_DOORS: &str =
-    "`jigc task validate` / `jigc task finalize` / `jigc milestone finalize`";
+/// Each door as its **argv path** (the `jigc`-less leaf-verb path `crate::cli::VERB_KINDS`
+/// keys on), so a consumer can *drive* a door rather than only name it: the M49 Inc 8 / T3
+/// route-followability axis crosses these doors with
+/// `engine::validate::conformance_repair_codes` and runs every emitted repair route at every
+/// one of them. Rendered for prose by [`boundary_doors_phrase`], which reproduces the joined
+/// literal this replaced byte-for-byte.
+pub const BOUNDARY_DOORS: &[&[&str]] = &[
+    &["task", "validate"],
+    &["task", "finalize"],
+    &["milestone", "finalize"],
+];
+
+/// [`BOUNDARY_DOORS`] as the trailer's prose — `` `jigc <door>` `` joined by `" / "`, the
+/// exact bytes the flat constant carried before the registry replaced it.
+pub(crate) fn boundary_doors_phrase() -> String {
+    BOUNDARY_DOORS
+        .iter()
+        .map(|door| format!("`jigc {}`", door.join(" ")))
+        .collect::<Vec<_>>()
+        .join(" / ")
+}
 
 /// The door a [`gates_at_compose`] finding really has — the compose gate `jigc start` runs before
 /// it hands a task its steps.
@@ -1128,7 +1147,7 @@ fn store_trailer(
             .filter(|f| matches!(f.severity, Severity::Blocking) && gates_at_compose(f))
             .count();
         let claim = if gating == n {
-            format!("these gate at {BOUNDARY_DOORS}.")
+            format!("these gate at {}.", boundary_doors_phrase())
         } else if compose == n {
             format!(
                 "these gate at compose ({COMPOSE_DOOR}), never at the task or milestone boundary."
@@ -1139,7 +1158,10 @@ fn store_trailer(
         } else {
             let mut clauses = Vec::new();
             if gating > 0 {
-                clauses.push(format!("{gating} of them gate at {BOUNDARY_DOORS}"));
+                clauses.push(format!(
+                    "{gating} of them gate at {}",
+                    boundary_doors_phrase()
+                ));
             }
             if compose > 0 {
                 clauses.push(format!(

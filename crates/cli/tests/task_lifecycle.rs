@@ -30,11 +30,20 @@ use std::process::{Command, Stdio};
 /// rendered bytes must equal the pre-M6 baseline (`design/validation.md` → Severity
 /// assignment — the M6 post-pass: the byte-identical golden must cover the validate
 /// path, not only `start_compose`; review B2).
+///
+/// **Re-captured at M49 Increment 8 / T3**, the second and only other deliberate move:
+/// both gate-block routes gained the `--task add-rate-limiter` selector. The property
+/// this golden guards is *the cascade post-pass perturbs nothing* — it is not a claim
+/// that the route text is frozen — and the moved bytes are exactly the two routes the
+/// boundary-door selector pass rewrites (`design/validation.md` → The route floor: the
+/// boundary-door selector). The advisory's route below already carried `--task` and is
+/// unmoved, which is the shape of the change made visible: only a route that lacked the
+/// selector gained one.
 const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
 blocking · schema-conformance.field-value-conformant — `commit:add-rate-limiter`: field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
-  route: `jigc doc set-field commit:add-rate-limiter#header/type --value <value>` to correct the value
+  route: `jigc doc set-field commit:add-rate-limiter#header/type --task add-rate-limiter --value <value>` to correct the value
 blocking · schema-conformance.required-slot-present — `commit:add-rate-limiter`: required slot in section `summary` is empty
-  route: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -` to fill the empty slot
+  route: `jigc doc set-slot commit:add-rate-limiter#summary --task add-rate-limiter --from-file -` to fill the empty slot
 advisory · changelog-recording.gate-granted-unused — workflow `single-task` grants the `changelog` create-gate and this task recorded no changelog entry
   route: if the change is user-facing, record it in this task — `jigc doc create changelog --title Changelog --task add-rate-limiter`, then `jigc doc add-item changelog:changelog#unreleased-changes --title <category> --task add-rate-limiter`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.

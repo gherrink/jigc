@@ -889,6 +889,69 @@ fn repoint_empty_value(failure: DocFailure, addr: &str, value: &str) -> DocFailu
     failure
 }
 
+/// **Scope a boundary-door repair route to the task it must run in** (M49 Increment 8 / T3;
+/// `design/validation.md` → The route floor; `design/surface-contract.md` → The route fence,
+/// law 2). The gate blocks minted by `engine::validate::conformance_route` route a
+/// `jigc doc` write at the finding's own address — a route the M43 fence proves *parses* and
+/// M47's P6 proves carries no undeliverable placeholder, but which the **boundary doors**
+/// (`crate::render::BOUNDARY_DOORS`) emit into a repo that may hold more than one active
+/// task, where a task-selector-less `jigc doc` write exits 1 on `more than one active task`.
+/// The door already holds the id — `jigc task validate <id>` / `jigc task finalize <id>` were
+/// *given* it, and the milestone door reads it off the merged doc's contributing sub-task —
+/// so `<task-id>`'s declared non-derivability (`engine::finding::ROUTE_PLACEHOLDERS`: "it
+/// needs a different source — the CLI dispatch that resolved the task") is satisfied here,
+/// the same CLI-side post-pass position [`enrich_not_present_route`] occupies.
+///
+/// **The subject is the route's shape, not a list of codes.** Any mechanical route naming a
+/// `jigc doc` verb that `crate::cli::VERB_KINDS` classifies `Write` is a write into a task's
+/// staged area and needs the selector; the classification is read from that clap-fenced
+/// registry, so a doc write-verb added later is swept without an edit here. A route that
+/// already names `--task` (the `write.not-present` enrichment above, the changelog-gate
+/// advisory) is left exactly as it is.
+///
+/// **It can only ever emit a route that runs.** The derived argv is put back through the
+/// fence's own predicate ([`crate::route_fence::accepts`]) before it is adopted, in every
+/// build posture — so a doc write verb that takes no `--task`, or a task id that is not
+/// shell-safe as emitted, leaves the original route standing rather than replacing it with a
+/// second unrunnable one.
+///
+/// The selector is inserted **before the first flag**, after the positional run, so the
+/// author-owned trailing placeholder a route ends on (`--value <value>`, `--from-file -`)
+/// stays last — where an agent's eye and cursor already are.
+pub(crate) fn scope_repair_route_to_task(finding: &mut Finding, task_id: &str) {
+    let Some(route) = finding.route.as_ref() else {
+        return;
+    };
+    let engine::finding::RouteKind::Mechanical { argv, tail } = route.kind() else {
+        return;
+    };
+    if argv.first().map(String::as_str) != Some("jigc")
+        || argv.get(1).map(String::as_str) != Some("doc")
+    {
+        return;
+    }
+    let Some(verb) = argv.get(2) else {
+        return;
+    };
+    if crate::cli::verb_kind(&["doc", verb.as_str()]) != Some(crate::cli::VerbKind::Write) {
+        return;
+    }
+    if argv.iter().any(|arg| arg == "--task") {
+        return;
+    }
+    let at = argv
+        .iter()
+        .position(|arg| arg.starts_with('-'))
+        .unwrap_or(argv.len());
+    let mut scoped = argv.clone();
+    scoped.splice(at..at, ["--task".to_owned(), task_id.to_owned()]);
+    if !crate::route_fence::accepts(&scoped) {
+        return;
+    }
+    let tail = tail.clone();
+    finding.route = Some(engine::finding::Route::mechanical(scoped, tail));
+}
+
 /// Enrich a `write.not-present` reject's route to the **followable containing section**
 /// (`jigc doc show <type>:<slug>#<section> --task <id>`) — the M44 Inc 2 route split
 /// (`design/validation.md` → the `write.*` route split; `design/surface-contract.md` law 2:
@@ -6176,8 +6239,10 @@ fn stamp_target(finding: &mut Finding, subject: &str) {
 
 /// The doc head (`<type>:<slug>`) of a **normal-form** address — the URI prefix every
 /// write-path finding's target carries, and the head the guards rebuild their route
-/// addresses from. An address with no `#fragment` is already the head.
-fn doc_head(addr: &str) -> &str {
+/// addresses from. An address with no `#fragment` is already the head. `pub(crate)` since
+/// M49 Inc 8 / T3: the milestone boundary door asks the same question of a merged doc's
+/// target to find the sub-task that contributed it.
+pub(crate) fn doc_head(addr: &str) -> &str {
     addr.split_once('#').map_or(addr, |(head, _)| head)
 }
 

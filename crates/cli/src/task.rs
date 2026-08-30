@@ -950,7 +950,38 @@ impl TaskArea {
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
         let report = self.preview_gates(report, preview, &schemas)?;
+        let report = self.scope_repair_routes(report)?;
         Ok((report, record))
+    }
+
+    /// Scope every gate-block repair route in `report` to **this** task (M49 Increment 8 /
+    /// T3). Both task-scope members of [`crate::render::BOUNDARY_DOORS`] reach this — `jigc
+    /// task validate` and `finalize`'s preflight share the one [`Self::validate`] entry — and
+    /// both were *given* the id they emit a route without: with a second task open, the
+    /// emitted `jigc doc set-slot …` exited 1 on `more than one active task`, so the only
+    /// stated exit from a blocked gate could not be run.
+    ///
+    /// The transform is [`crate::doc::scope_repair_route_to_task`], applied **after**
+    /// [`Self::preview_gates`] so a previewed finalize-time gate is scoped identically to an
+    /// engine one, and it is **door-scoped by position**: the store sweep (`jigc validate`)
+    /// runs no task, resolves no id, and never passes through here, so its routes stay
+    /// task-free exactly as they were.
+    ///
+    /// Rebuilt through [`engine::result::ValidationReport::new`] — the sanctioned
+    /// re-construction its sibling merge already uses; the severity post-pass is idempotent
+    /// and this pass touches routes only, so grading and order are unmoved.
+    fn scope_repair_routes(
+        &self,
+        report: engine::result::ValidationReport,
+    ) -> Result<engine::result::ValidationReport> {
+        let mut findings = report.findings.into_vec();
+        for finding in &mut findings {
+            crate::doc::scope_repair_route_to_task(finding, &self.id);
+        }
+        Ok(engine::result::ValidationReport::new(
+            findings,
+            &self.severity_cascade()?,
+        ))
     }
 
     /// Merge the **previewable finalize-time gates** into a `task validate` report
