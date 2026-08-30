@@ -3,7 +3,7 @@ exit: 0
 {
   "contract-version": 5,
   "type": "milestone-record",
-  "schema-version": 2,
+  "schema-version": 3,
   "fields": [
     {
       "id": "base",
@@ -50,6 +50,13 @@ exit: 0
           },
           {
             "id": "intent",
+            "type": "string",
+            "required": true,
+            "author-required": false,
+            "set": "on-transition"
+          },
+          {
+            "id": "workflow",
             "type": "string",
             "required": true,
             "author-required": false,

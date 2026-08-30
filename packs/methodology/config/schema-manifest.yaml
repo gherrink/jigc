@@ -26,7 +26,15 @@
 # widened to the superset `[blocking, advisory, HIGH, MEDIUM, LOW]` PLUS an optional
 # `detail` prose slot on the findings item block — an `EnumWidened` + `AddedItemSlot`
 # pair, both byte no-ops, so that migration moves only the stamp too;
-# `schema-snapshots/completion-record.v1.yaml` sources it).
+# `schema-snapshots/completion-record.v1.yaml` sources it), and its FOURTH at the M49
+# `milestone-record` v2→v3 durability bump (a per-sub-task `workflow` leaf joins the
+# `tasks` item block, so the recorded workflow becomes fresh-clone durable — an
+# `AddedItemField` for a `default`-less, machine-maintained leaf, a byte no-op, so that
+# migration moves only the stamp too; `schema-snapshots/milestone-record.v2.yaml` sources
+# it). That fourth entry is the store's FIRST second snapshot for one doctype: a
+# below-version doc diffs against the snapshot at ITS OWN stamp, so a v1-stamped record
+# still sources `.v1.yaml` while a v2-stamped one sources `.v2.yaml`, while the store
+# sweep's managed-vs-foreign classifier reads the whole `1..current` set.
 #
 # `schema-version` is the doctype's own version (v1 at the freeze); `schema-hash`
 # is engine::manifest::schema_hash of its resolved definition. Regenerate a hash
@@ -102,8 +110,8 @@ doctypes:
     schema-version: 1
     schema-hash: 5068e29981c15944a1b9c97989d3d776d249d1c3d4c21b1f17b3b185541faca1
   - type: milestone-record
-    schema-version: 2
-    schema-hash: 4c725b85a03d70b90b7bbfeeb488c055aedd643b431e1f403d2fc119275d18d0
+    schema-version: 3
+    schema-hash: 545f6dcd4a83229416364f47746a541b92ca657ead4a67369c20c599139b70a3
   - type: research
     schema-version: 1
     schema-hash: d1dcdf569f941af077bd0e234d6f4955a85518b8b202a14c6ed056a276e04fe5

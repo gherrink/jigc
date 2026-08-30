@@ -56,6 +56,29 @@ fn methodology_pack_tree() -> PathBuf {
         .join("methodology")
 }
 
+/// The `schema-version` the shipped methodology manifest declares for `ty` — the stamp a
+/// freshly minted instance carries, and so the stamp its served header slice must show.
+///
+/// **Derived, never spelled**: this arm's subject is that a fields-only header section
+/// serves *its field lines*, not that one of those lines equals a particular integer, and
+/// a literal made it redden on the M49 `milestone-record` 2→3 bump.
+fn declared_schema_version(ty: &str) -> u32 {
+    let bytes = fs::read(
+        methodology_pack_tree()
+            .join("config")
+            .join("schema-manifest.yaml"),
+    )
+    .expect("read the shipped methodology schema-manifest");
+    let manifest: engine::manifest::Manifest =
+        serde_yaml_ng::from_slice(&bytes).expect("the methodology manifest deserializes");
+    manifest
+        .doctypes
+        .iter()
+        .find(|entry| entry.ty == ty)
+        .unwrap_or_else(|| panic!("the methodology manifest declares `{ty}`"))
+        .schema_version
+}
+
 /// Run a `git` command in `repo`, asserting success.
 fn git(repo: &Path, args: &[&str]) {
     let out = Command::new("git")
@@ -688,7 +711,10 @@ fn fields_only_header_section_slice_serves_its_fields() {
     assert_ok(&plain, "`jigc doc show milestone-record:cache-rework#meta`");
     assert_eq!(
         stdout_of(&plain).trim_end(),
-        format!("base: {sha} {short}\nstatus: active\nschema-version: 2"),
+        format!(
+            "base: {sha} {short}\nstatus: active\nschema-version: {}",
+            declared_schema_version("milestone-record")
+        ),
         "the witness's header slice serves its field lines",
     );
 
@@ -711,7 +737,8 @@ fn fields_only_header_section_slice_serves_its_fields() {
     assert_eq!(
         stdout_of(&json).trim_end(),
         format!(
-            "{{\n  \"base\": {{\n    \"sha\": \"{sha}\",\n    \"short\": \"{short}\"\n  }},\n  \"schema-version\": \"2\",\n  \"status\": \"active\"\n}}"
+            "{{\n  \"base\": {{\n    \"sha\": \"{sha}\",\n    \"short\": \"{short}\"\n  }},\n  \"schema-version\": \"{}\",\n  \"status\": \"active\"\n}}",
+            declared_schema_version("milestone-record")
         ),
         "the witness's leaves are shaped exactly as the whole-doc `fields` project them \
          (the compound `base` pin included)",

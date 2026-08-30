@@ -31,6 +31,19 @@
 # changes meaning), so the frozen bump's migration only moves the stamp; the prior shape
 # is `schema-snapshots/milestone-record.v1.yaml`.
 #
+# SCHEMA-VERSION 3 (M49 Inc 9) — the `tasks` item block gains a per-sub-task `workflow`
+# leaf. Which workflow a sub-task was minted against lived ONLY in the gitignored
+# `.jigc/` workbench, so the recorded workflow was NOT fresh-clone durable — and a guard
+# that compares recorded workflows then asserts provenance it cannot see, with full
+# confidence. The record is the fresh-clone continuation state, so the workflow belongs
+# in it. Machine-maintained like every other leaf here (`set: on-transition`), so it is
+# not author-required, `set-field` refuses it (the M45 settability rule), and the bump
+# costs a committed record ZERO bytes: the diff classifies `AddedItemField`, and a
+# `default`-less, non-author-required leaf folds to the source unchanged, so the
+# migration moves only the stamp. The prior shape is
+# `schema-snapshots/milestone-record.v2.yaml` — this doctype's SECOND snapshot, and the
+# store's first two-snapshot chain.
+#
 # Section ids are SINGLE WORDS ONLY (`meta`/`tasks`): a multi-word id trips the logged
 # title-case reparse defect, deferred — this routes around it exactly as
 # completion-record did. Manifest-FROZEN since M40 A1 (the methodology
@@ -54,4 +67,5 @@ sections:
       block:
         - { id: task-id, type: string, set: on-transition }
         - { id: intent, type: string, set: on-transition }
+        - { id: workflow, type: string, set: on-transition }
         - { id: status, type: enum, of: [active, joined, discarded], set: on-transition }

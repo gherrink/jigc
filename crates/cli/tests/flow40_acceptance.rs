@@ -74,6 +74,29 @@ fn methodology_pack_tree() -> PathBuf {
         .join("methodology")
 }
 
+/// The `schema-version` the shipped methodology manifest declares for `ty` — the value a
+/// freshly minted, conformant instance stamps, and therefore the value the pinned
+/// `doc show --format json` witness must carry.
+///
+/// **Derived, never spelled.** This arm's job is that the stamp survives the fresh clone
+/// intact, not that it equals any particular integer: pinning the literal made every
+/// future bump of an unrelated doctype leaf redden an acceptance flow on an incidental
+/// number (it did, at the M49 `milestone-record` 2→3 bump).
+fn declared_schema_version(ty: &str) -> u32 {
+    let path = methodology_pack_tree()
+        .join("config")
+        .join("schema-manifest.yaml");
+    let bytes = fs::read(&path).expect("read the shipped methodology schema-manifest");
+    let manifest: engine::manifest::Manifest =
+        serde_yaml_ng::from_slice(&bytes).expect("the methodology manifest deserializes");
+    manifest
+        .doctypes
+        .iter()
+        .find(|entry| entry.ty == ty)
+        .unwrap_or_else(|| panic!("the methodology manifest declares `{ty}`"))
+        .schema_version
+}
+
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
 fn git(repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -546,14 +569,18 @@ fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
         "fresh-clone `doc show milestone-record --format json`",
     );
     let json = stdout_of(&show);
+    // `schema-version` joined the pinned witness fields when the M40 A1 methodology
+    // manifest froze `milestone-record`; the value is read from that manifest rather
+    // than spelled, so the witness is *the stamp survived the clone*, not an integer.
+    let stamp = format!(
+        "\"schema-version\": \"{}\"",
+        declared_schema_version("milestone-record")
+    );
     for needle in [
+        stamp.as_str(),
         "\"type\": \"milestone-record\"",
         "\"slug\": \"cache-rework\"",
         "\"status\": \"joined\"",
-        // `schema-version` joined the pinned witness fields when the M40 A1
-        // methodology manifest froze milestone-record; **2** since the M42 Inc-7
-        // lifecycle bump (the `status` enum widened to admit `discarded`).
-        "\"schema-version\": \"2\"",
         "\"task-id\": \"warm-the-read-cache\"",
         "\"intent\": \"Warm the read cache\"",
         "\"task-id\": \"evict-cold-entries\"",

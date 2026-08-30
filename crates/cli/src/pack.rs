@@ -2999,11 +2999,14 @@ mod tests {
     /// the transient `commit` shadow (the freeze assert is strict set-equality; the
     /// dev precedent lists its transient `commit`) — every one frozen at
     /// schema-version 1 (the v1 baseline) except the three bumped since:
-    /// `deferral-ledger` (M41 F4, the `kind` rename), `milestone-record` (M42 Inc-7, the
-    /// `discarded` lifecycle member) and `completion-record` (M49 Inc-9, the audit
-    /// vocabulary + the `detail` slot), each of which populates its own
-    /// `schema-snapshots/<ty>.v1.yaml` — with every recomputed hash matching. A methodology schema-shape change that bumps
-    /// no version fails **here, loudly**, at build time.
+    /// `deferral-ledger` (M41 F4, the `kind` rename), `completion-record` (M49 Inc-9, the
+    /// audit vocabulary + the `detail` slot) — each at **2** — and `milestone-record`,
+    /// bumped twice (M42 Inc-7, the `discarded` lifecycle member; M49 Inc-9, the
+    /// per-sub-task `workflow` leaf) and therefore at **3**, shipping the snapshot store's
+    /// first **two**-snapshot chain (`.v1.yaml` beside `.v2.yaml`) where the other two ship
+    /// one `schema-snapshots/<ty>.v1.yaml` each — with every recomputed hash matching. A
+    /// methodology schema-shape change that bumps no version fails **here, loudly**, at
+    /// build time.
     #[test]
     fn methodology_schema_manifest_matches_the_frozen_doctype_set() {
         use std::collections::BTreeMap;
@@ -3040,13 +3043,16 @@ mod tests {
         // bumped to 2 by the M41 F4 v1→v2 `kind` enum-member rename (D/I → Decision/Idea
         // — the first methodology v1→v2 migration; `design/corpus-migration.md` → the
         // structural-auto / value-semantic-authored distinction), `milestone-record`,
-        // bumped to 2 by the M42 Inc-7 lifecycle widening (`status` gains `discarded` at
-        // both loci — an `EnumWidened` pair; `design/team-ready-state.md` → The lifecycle),
-        // and `completion-record`, bumped to 2 by the M49 Inc-9 audit-vocabulary bump
-        // (`severity` widened to the superset `[blocking, advisory, HIGH, MEDIUM, LOW]`
-        // plus an optional `detail` prose slot on the findings item block — an
-        // `EnumWidened` + `AddedItemSlot` pair, both byte no-ops;
-        // `completions/artifacts/M49/settle-record.md` → D10).
+        // bumped to 3 by two bumps (M42 Inc-7's lifecycle widening — `status` gains
+        // `discarded` at both loci, an `EnumWidened` pair; then M49 Inc-9's durability bump
+        // — a per-sub-task `workflow` leaf joins the `tasks` item block, an
+        // `AddedItemField` for a `default`-less machine-maintained leaf, so the recorded
+        // workflow becomes fresh-clone durable; `design/team-ready-state.md` → The
+        // lifecycle / the committed record), and `completion-record`, bumped to 2 by the
+        // M49 Inc-9 audit-vocabulary bump (`severity` widened to the superset
+        // `[blocking, advisory, HIGH, MEDIUM, LOW]` plus an optional `detail` prose slot on
+        // the findings item block — an `EnumWidened` + `AddedItemSlot` pair, both byte
+        // no-ops; `completions/artifacts/M49/settle-record.md` → D10 · Tier 3).
         let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
         declared.sort_unstable();
         assert_eq!(
@@ -3067,7 +3073,8 @@ mod tests {
         );
         for entry in &manifest.doctypes {
             let expected = match entry.ty.as_str() {
-                "completion-record" | "deferral-ledger" | "milestone-record" => 2,
+                "completion-record" | "deferral-ledger" => 2,
+                "milestone-record" => 3,
                 _ => 1,
             };
             assert_eq!(

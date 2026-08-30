@@ -47,6 +47,8 @@ mod methodology_pack_substrate;
 mod methodology_running_doctypes;
 #[path = "../methodology_staging_contract.rs"]
 mod methodology_staging_contract;
+#[path = "../milestone_record_workflow_leaf.rs"]
+mod milestone_record_workflow_leaf;
 #[path = "../project_pack_composition.rs"]
 mod project_pack_composition;
 #[path = "../revise_safe_author_steps.rs"]

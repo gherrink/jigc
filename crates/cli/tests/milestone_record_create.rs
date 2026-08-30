@@ -112,6 +112,29 @@ fn methodology_pack_tree() -> PathBuf {
 /// parses committed record bytes against this (structure only; docs-root does not affect
 /// the parse). Production loads it through `load_pack_schema`, which injects the
 /// engine-declared schema-version stamp (milestone-record is manifest-frozen since M40 A1)
+/// The `schema-version` the shipped methodology manifest declares for `ty` — the stamp a
+/// freshly minted instance carries, and the version any below-version instance migrates to.
+///
+/// **Derived, never spelled.** These arms assert *that the stamp is materialized* and
+/// *that the fold moves nothing but the stamp*; a literal made both redden on the M49
+/// `milestone-record` 2→3 bump, on an integer neither arm is about.
+fn declared_schema_version(ty: &str) -> u32 {
+    let bytes = fs::read(
+        methodology_pack_tree()
+            .join("config")
+            .join("schema-manifest.yaml"),
+    )
+    .expect("read the shipped methodology schema-manifest");
+    let manifest: engine::manifest::Manifest =
+        serde_yaml_ng::from_slice(&bytes).expect("the methodology manifest deserializes");
+    manifest
+        .doctypes
+        .iter()
+        .find(|entry| entry.ty == ty)
+        .unwrap_or_else(|| panic!("the methodology manifest declares `{ty}`"))
+        .schema_version
+}
+
 /// — mirror the injection so the stamped record bytes parse.
 fn milestone_record_schema() -> engine::schema::Schema {
     let bytes = fs::read(
@@ -242,11 +265,15 @@ fn methodology_create_materializes_record_and_path_scoped_commits() {
     );
     // The schema-version stamp: milestone-record is manifest-frozen (M40 A1), so a fresh
     // mint must carry the stamp the store-scope validate demands — an unstamped mint is
-    // the tool creating its own blocking finding. **Version 2 since M42 Inc 7** (the
-    // `discarded` lifecycle member widened the `status` enum at both loci).
+    // the tool creating its own blocking finding. The version is READ from the manifest,
+    // never spelled: the subject is that the stamp is materialized at all.
+    let stamp = format!(
+        "schema-version: {}",
+        declared_schema_version("milestone-record")
+    );
     assert!(
-        body.contains("schema-version: 2"),
-        "the fresh record carries the `schema-version: 2` stamp its manifest-frozen \
+        body.contains(&stamp),
+        "the fresh record carries the `{stamp}` stamp its manifest-frozen \
          schema demands; got:\n{body}",
     );
     let (base, tasks) =
@@ -301,17 +328,22 @@ fn methodology_create_materializes_record_and_path_scoped_commits() {
     );
 }
 
-/// (RED-iii) The **v1 → v2 corpus migration** of the `status`-enum widening, on the real
-/// binary (M42 Increment 7 / T1).
+/// (RED-iii) The **v1 → current corpus migration** of the `status`-enum widening, on the
+/// real binary (M42 Increment 7 / T1).
 ///
 /// A committed `schema-version: 1` record — the exact byte form `create` + `add-task`
-/// minted before this bump — carrying **both** a `joined` and an `active` task item, so the
+/// minted before that bump — carrying **both** a `joined` and an `active` task item, so the
 /// widened enum is exercised at the **item** locus as well as the header. `EnumWidened` is a
 /// byte no-op on the corpus (no committed value changes meaning), so `jigc migrate-corpus`
-/// must report it migrated and leave **every byte identical except the stamp `1` → `2`** —
-/// and a re-run must report it already current, byte-untouched.
+/// must report it migrated and leave **every byte identical except the stamp** — and a
+/// re-run must report it already current, byte-untouched.
+///
+/// The target is the **shipped** version, read from the manifest, and since M49 that is a
+/// second thing worth proving: with two snapshots now shipped for this doctype, a
+/// v1-stamped record still sources `.v1.yaml` (the snapshot at ITS OWN stamp) and folds in
+/// one hop to current — the added `.v2.yaml` neither intercepts it nor strands it.
 #[test]
-fn a_committed_v1_record_migrates_to_v2_with_only_the_stamp_moving() {
+fn a_committed_v1_record_migrates_to_current_with_only_the_stamp_moving() {
     let repo = TempDir::new("migrate");
     let home = TempDir::new("home");
     let head = init_repo(repo.path());
@@ -397,13 +429,19 @@ fn a_committed_v1_record_migrates_to_v2_with_only_the_stamp_moving() {
         "an enum WIDENING blocks nothing — it is a byte no-op on the corpus; got: {report}",
     );
 
-    // The widening is a byte no-op: every byte identical except the stamp `1` → `2` — both
-    // task items keep their committed `status` values (`joined` stays joined).
+    // Every classified change on this doctype's chain is a byte no-op: every byte identical
+    // except the stamp — both task items keep their committed `status` values (`joined`
+    // stays joined), and no `workflow` bullet is invented on either.
+    let current = declared_schema_version("milestone-record");
     let after = fs::read_to_string(&record).expect("read the migrated record");
     assert_eq!(
         after,
-        v1.replacen("schema-version: 1\n", "schema-version: 2\n", 1),
-        "the migrated record is the v1 bytes with ONLY the stamp bumped 1 → 2",
+        v1.replacen(
+            "schema-version: 1\n",
+            &format!("schema-version: {current}\n"),
+            1
+        ),
+        "the migrated record is the v1 bytes with ONLY the stamp bumped 1 → {current}",
     );
 
     // RE-RUN — idempotent: already current, byte-untouched.
