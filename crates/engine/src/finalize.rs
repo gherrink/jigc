@@ -226,8 +226,13 @@ pub fn plan_finalize(
     let commit_path = task_dir
         .join(DOCS_DIR)
         .join(format!("{}:{commit_slug}.md", commit_schema.ty));
-    let source = std::fs::read_to_string(&commit_path)
-        .map_err(|err| vec![render_io_finding(&commit_path, &err)])?;
+    let source = std::fs::read_to_string(&commit_path).map_err(|err| {
+        vec![render_io_finding(
+            RenderSubject::Task { id: commit_slug },
+            &commit_path,
+            &err,
+        )]
+    })?;
     let instance = write::instance_from_source(commit_schema, &source)?;
     let message = write::render_commit_message(commit_schema, &instance);
 
@@ -922,12 +927,16 @@ pub fn plan_milestone_finalize(
 ///
 /// A missing or unparseable authored commit doc for any sub-task is a blocking
 /// [`Finding`] (the `plan_finalize` render precedent) — a sub-task that fanned out
-/// must have authored its commit doc before the parent finalize renders it.
+/// must have authored its commit doc before the parent finalize renders it. `milestone_id`
+/// is carried for that refusal alone: a **never-entered** sub-task has no commit doc as its
+/// ordinary state, and `jigc milestone execute <milestone-id>` is the door that prints the
+/// launch line which provisions one ([`RenderSubject::SubTask`], M49 Increment 10 / T6).
 /// Performs no git and no commit; reads only the sub-task working areas.
 pub fn render_subtask_messages(
     sub_ids: &[String],
     tasks_root: &Path,
     commit_schema: &Schema,
+    milestone_id: &str,
 ) -> Result<Vec<String>, Vec<Finding>> {
     let mut messages = Vec::with_capacity(sub_ids.len());
     for sub_id in sub_ids {
@@ -935,8 +944,16 @@ pub fn render_subtask_messages(
             .join(sub_id)
             .join(DOCS_DIR)
             .join(format!("{}:{sub_id}.md", commit_schema.ty));
-        let source = std::fs::read_to_string(&commit_path)
-            .map_err(|err| vec![render_io_finding(&commit_path, &err)])?;
+        let source = std::fs::read_to_string(&commit_path).map_err(|err| {
+            vec![render_io_finding(
+                RenderSubject::SubTask {
+                    id: sub_id,
+                    milestone: milestone_id,
+                },
+                &commit_path,
+                &err,
+            )]
+        })?;
         let instance = write::instance_from_source(commit_schema, &source)?;
         messages.push(write::render_commit_message(commit_schema, &instance));
     }
@@ -1292,25 +1309,98 @@ fn empty_commit_finding(unit: Unit) -> Finding {
     )
 }
 
-/// A blocking finding for an I/O failure reading the staged commit doc during render. Its
-/// subject is the staged **file**, so it [keys at its path](file_location).
-fn render_io_finding(path: &Path, err: &std::io::Error) -> Finding {
-    Finding::graded(
-        Severity::Blocking,
-        "finalize.render-io",
-        format!(
-            "could not read the staged commit doc `{}`: {err}",
-            path.display()
-        ),
-        Some(file_location(path.display())),
-        Some(
+/// Whose staged commit doc a render was reading — the discriminator the **absent** arm of
+/// [`render_io_finding`] keys on (M49 Increment 10 / T6).
+///
+/// One code, two units, and an absence that means something different in each: a serial task's
+/// commit doc is provisioned once, at compose, so its absence is a working area that lost a
+/// file; a fan-out sub-task's is provisioned on its **first re-entry**, so its absence is the
+/// ordinary state of a sub-task nobody ever entered. The recoveries differ accordingly, which
+/// is why the subject is carried rather than guessed from the path — the [`Unit`] precedent
+/// (M42 T3), applied to the render.
+#[derive(Clone, Copy)]
+enum RenderSubject<'a> {
+    /// The finalizing task's own commit doc — [`plan_finalize`] phase 3.
+    Task { id: &'a str },
+    /// A fan-out sub-task's commit doc — [`render_subtask_messages`]. It carries the
+    /// **milestone** id too, because `jigc milestone execute <m>` is the door that prints the
+    /// sub-task's launch line (`design/workflow-dialect.md` → Emitted format rule 4), and that
+    /// line is the act the operator is owed here.
+    SubTask { id: &'a str, milestone: &'a str },
+}
+
+impl RenderSubject<'_> {
+    /// The message + route for a commit doc that is simply **not there**. Neither route names
+    /// a `.jigc/tasks/…` path: that tree is jigc's own gitignored workbench, so handing it to
+    /// the operator as their subject is a direction nobody can take
+    /// (`design/surface-contract.md` → law 1, the route floor).
+    fn absent(self) -> (String, Route) {
+        match self {
+            RenderSubject::Task { id } => (
+                format!(
+                    "task `{id}` stages no commit doc — `commit:{id}` is not in its working \
+                     area, so there is nothing to render into the git message"
+                ),
+                Route::mechanical(
+                    ["jigc", "doc", "list", "--task", id],
+                    format!(
+                        " — it lists what the task still stages; a commit doc is provisioned \
+                         once, at compose, so a task whose copy is gone is abandoned with \
+                         `jigc task discard {id}` and the work re-started with `jigc start`"
+                    ),
+                ),
+            ),
+            RenderSubject::SubTask { id, milestone } => (
+                format!(
+                    "no commit doc for sub-task `{id}` — a sub-task's is provisioned on its \
+                     first re-entry and authored there, and its working area holds none"
+                ),
+                Route::mechanical(
+                    ["jigc", "milestone", "execute", milestone],
+                    format!(
+                        " — it prints sub-task `{id}`'s launch line; run that in the \
+                         sub-task's worktree, author the commit doc, then re-run the finalize \
+                         — or settle the sub-task with `jigc task discard {id}`"
+                    ),
+                ),
+            ),
+        }
+    }
+}
+
+/// A blocking finding for a failed read of the staged commit doc during render. Its subject is
+/// the staged **file**, so it [keys at its path](file_location) on both arms.
+///
+/// **The two read outcomes are not one fact** (M49 Increment 10 / T6). A genuine
+/// permissions/disk fault keeps the shipped text — the read really did fail, and resolving the
+/// fault really is the recovery. `NotFound` is not that: nothing is faulty, the doc was never
+/// written, and the shipped text told the operator to fix a disk problem on a path in jigc's
+/// own workbench — a law-1 lie in both halves, driven live on the `squash: false` fan-out path
+/// where a never-entered sub-task reaches it as its *ordinary* state. So absence answers per
+/// [`RenderSubject`], with a route the operator can run verbatim.
+fn render_io_finding(subject: RenderSubject<'_>, path: &Path, err: &std::io::Error) -> Finding {
+    let (message, route) = if err.kind() == std::io::ErrorKind::NotFound {
+        subject.absent()
+    } else {
+        (
+            format!(
+                "could not read the staged commit doc `{}`: {err}",
+                path.display()
+            ),
             format!(
                 "resolve the read fault on `{}` (a disk or permissions problem), then \
                  re-run the finalize",
                 path.display()
             )
             .into(),
-        ),
+        )
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.render-io",
+        message,
+        Some(file_location(path.display())),
+        Some(route),
     )
 }
 
@@ -1342,7 +1432,11 @@ mod tests {
         let err = || std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
         let task_dir = Path::new(".jigc/tasks/t1");
         let findings = vec![
-            render_io_finding(Path::new(".jigc/tasks/t1/commit.md"), &err()),
+            render_io_finding(
+                RenderSubject::Task { id: "t1" },
+                Path::new(".jigc/tasks/t1/commit.md"),
+                &err(),
+            ),
             promote_io_finding(Path::new(".jigc/tasks/t1/docs/adr:x.md"), &err()),
             provenance_io_finding(Unit::Task("t1"), task_dir, &err()),
             source_path_io_finding(Unit::Task("t1"), task_dir, &err()),
@@ -2665,7 +2759,7 @@ sections:
 
         let schema = commit_schema();
         let id_sorted = vec!["area-low".to_string(), "area-zed".to_string()];
-        let messages = render_subtask_messages(&id_sorted, &tasks_root, &schema)
+        let messages = render_subtask_messages(&id_sorted, &tasks_root, &schema, "cache-rework")
             .expect("both sub-tasks authored a commit doc");
         assert_eq!(
             messages,
@@ -2680,7 +2774,7 @@ sections:
         // in the SAME positions the caller feeds — the caller (TaskList::enumerate) sorts,
         // so the committed sequence is byte-identical across feed orders.
         let reversed = vec!["area-zed".to_string(), "area-low".to_string()];
-        let rev_messages = render_subtask_messages(&reversed, &tasks_root, &schema)
+        let rev_messages = render_subtask_messages(&reversed, &tasks_root, &schema, "cache-rework")
             .expect("the reversed feed renders");
         // Re-sorting the reversed feed reproduces the id-sorted sequence byte-for-byte.
         let mut paired: Vec<(String, String)> = reversed.into_iter().zip(rev_messages).collect();
@@ -2697,11 +2791,118 @@ sections:
             &["area-low".to_string(), "no-such-task".to_string()],
             &tasks_root,
             &schema,
+            "cache-rework",
         )
         .expect_err("a sub-task with no authored commit doc blocks");
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].code, "finalize.render-io");
         assert_eq!(missing[0].severity, Severity::Blocking);
+    }
+
+    /// M49 Increment 10 / T6 — **the render's two read outcomes are two different facts**,
+    /// over both subjects: a `NotFound` names the unit and routes at an act the operator can
+    /// run, and every other I/O fault keeps the shipped read-fault text verbatim.
+    ///
+    /// The three cells reachable through the real binary are driven there
+    /// (`crates/cli/tests/finalize_render_io_absent.rs`). **The sub-task's unreadable cell is
+    /// only reachable here**: through the binary the milestone `join` reads every staged doc
+    /// body before the per-sub-task render is called, so an unreadable `commit:<sub>` is
+    /// answered by `milestone.area-io` first — this is that cell's standing home, driven
+    /// through the production [`render_subtask_messages`] over a real unreadable path.
+    #[test]
+    fn the_render_finding_tells_an_absent_commit_doc_from_a_read_fault() {
+        let root = TempRoot::new("render-io-subject");
+        let tasks_root = root.path().join("tasks");
+        stage_subtask_commit(&tasks_root, "alpha-area", "rework the alpha path");
+        let schema = commit_schema();
+        let ids = vec!["alpha-area".to_string(), "beta-area".to_string()];
+
+        // --- the sub-task, absent: the never-entered state, not a fault -------------------
+        let absent = render_subtask_messages(&ids, &tasks_root, &schema, "cache-rework")
+            .expect_err("a sub-task with no commit doc blocks");
+        assert_eq!(absent.len(), 1);
+        assert_eq!(absent[0].code, "finalize.render-io");
+        assert_eq!(
+            absent[0].message,
+            "no commit doc for sub-task `beta-area` — a sub-task's is provisioned on its \
+             first re-entry and authored there, and its working area holds none",
+        );
+        let route = absent[0]
+            .route
+            .as_ref()
+            .expect("the refusal carries a route")
+            .as_str()
+            .to_string();
+        assert!(
+            route.starts_with("`jigc milestone execute cache-rework`"),
+            "the route leads with the door that prints the launch line; got: {route}",
+        );
+        assert!(
+            route.contains("jigc task discard beta-area"),
+            "the route names the settle exit; got: {route}",
+        );
+        assert!(
+            !route.contains(".jigc/tasks") && !route.contains("a disk or permissions problem"),
+            "an absent doc is neither a disk fault nor a workbench path to fix; got: {route}",
+        );
+
+        // --- the sub-task, unreadable: the shipped read-fault text, verbatim --------------
+        // A directory in the doc's place fails the read with something other than `NotFound`
+        // on every platform — the permissions/disk class the shipped text was written for.
+        let blocked_path =
+            state::instance_path(&tasks_root.join("beta-area"), &schema.ty, "beta-area");
+        std::fs::create_dir_all(&blocked_path).expect("put a directory in the doc's place");
+        let unreadable = render_subtask_messages(&ids, &tasks_root, &schema, "cache-rework")
+            .expect_err("an unreadable commit doc blocks");
+        assert_eq!(unreadable.len(), 1);
+        assert_eq!(unreadable[0].code, "finalize.render-io");
+        assert!(
+            unreadable[0]
+                .message
+                .starts_with("could not read the staged commit doc `"),
+            "a genuine fault keeps the shipped message; got: {}",
+            unreadable[0].message,
+        );
+        let fault_route = unreadable[0]
+            .route
+            .as_ref()
+            .expect("the fault carries a route")
+            .as_str()
+            .to_string();
+        assert!(
+            fault_route.contains("(a disk or permissions problem), then re-run the finalize"),
+            "a genuine fault keeps the shipped route; got: {fault_route}",
+        );
+
+        // --- the serial task, absent: the other subject's own message + route -------------
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        let task = render_io_finding(
+            RenderSubject::Task {
+                id: "warm-the-cache",
+            },
+            Path::new(".jigc/tasks/warm-the-cache/docs/commit:warm-the-cache.md"),
+            &missing,
+        );
+        assert_eq!(
+            task.message,
+            "task `warm-the-cache` stages no commit doc — `commit:warm-the-cache` is not in \
+             its working area, so there is nothing to render into the git message",
+        );
+        let task_route = task
+            .route
+            .as_ref()
+            .expect("the refusal carries a route")
+            .as_str()
+            .to_string();
+        assert!(
+            task_route.starts_with("`jigc doc list --task warm-the-cache`"),
+            "the route leads with the read of what the task stages; got: {task_route}",
+        );
+        assert!(
+            !task_route.contains(".jigc/tasks"),
+            "no route names jigc's own workbench path as the operator's subject; \
+             got: {task_route}",
+        );
     }
 
     /// The **milestone** planner ([`plan_milestone_finalize`]) is the thin sibling

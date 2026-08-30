@@ -4339,8 +4339,9 @@ fn subtask_patches_and_messages(
     // Render each code-carrying sub-task's authored commit doc in id order (one engine
     // call) — the message each per-sub-task commit carries.
     let ids: Vec<String> = coded.iter().map(|(id, _)| id.clone()).collect();
-    let messages = engine::finalize::render_subtask_messages(&ids, &tasks_root, commit_schema)
-        .map_err(|findings| {
+    let messages =
+        engine::finalize::render_subtask_messages(&ids, &tasks_root, commit_schema, milestone_id)
+            .map_err(|findings| {
             // The first blocking finding carries the route (the `dispatch_finalize` envelope).
             findings
                 .into_iter()

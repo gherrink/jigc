@@ -29,6 +29,8 @@ mod finalize_manifest;
 mod finalize_message_truth;
 #[path = "../finalize_outcome_surface.rs"]
 mod finalize_outcome_surface;
+#[path = "../finalize_render_io_absent.rs"]
+mod finalize_render_io_absent;
 #[path = "../finalize_spec_only.rs"]
 mod finalize_spec_only;
 #[path = "../finalize_to_git.rs"]
