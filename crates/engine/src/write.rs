@@ -1804,6 +1804,11 @@ fn set_nested_item_slot(
     if let Some(err) = undeclared_section_splice(schema, section_id) {
         return Err(err);
     }
+    // … and at every hop past the first: a *nested*-section segment the schema never
+    // declared is the same declaredness miss one level down.
+    if let Some(err) = undeclared_nested_section_splice(schema, section_id, item_ids) {
+        return Err(err);
+    }
     let doc = parse::parse_sections(schema, source)
         .map_err(|findings| SpliceError::NotConformant { findings })?;
     let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
@@ -1865,6 +1870,9 @@ pub(crate) fn set_nested_item_field_or_insert(
 ) -> Result<String, GenerateError> {
     // Rank 1 — the undeclared section, as the top-level dual.
     if let Some(err) = undeclared_section_generate(schema, section_id) {
+        return Err(err);
+    }
+    if let Some(err) = undeclared_nested_section_generate(schema, section_id, item_ids) {
         return Err(err);
     }
     // The depth-aware twin of [`set_item_field_or_insert`]'s pre-byte adjudication: the
@@ -1952,6 +1960,18 @@ pub fn add_nested_item(
     // the parse**: the address is wrong whatever state the source is in, and every sibling
     // door opens with the same check.
     if let Some(err) = undeclared_section_generate(schema, section_id) {
+        return Err(err);
+    }
+    // … and at every hop past the first — including the **destination** nested section
+    // itself, which is why the chain walked here is the parent items plus
+    // `nested_section_id`: `#releases/1-3-0/bogus` addresses a nested section the schema
+    // never declared, exactly as `#no-such-section` does one level up.
+    let destination: Vec<&str> = parent_item_ids
+        .iter()
+        .copied()
+        .chain(std::iter::once(nested_section_id))
+        .collect();
+    if let Some(err) = undeclared_nested_section_generate(schema, section_id, &destination) {
         return Err(err);
     }
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
@@ -2061,6 +2081,9 @@ pub fn remove_nested_item(
     if let Some(err) = undeclared_section_splice(schema, section_id) {
         return Err(err);
     }
+    if let Some(err) = undeclared_nested_section_splice(schema, section_id, item_ids) {
+        return Err(err);
+    }
     let doc = parse::parse_sections(schema, source)
         .map_err(|findings| SpliceError::NotConformant { findings })?;
     if nested_parsed_item(schema, &doc, section_id, item_ids).is_none() {
@@ -2139,6 +2162,9 @@ pub fn retitle_item(
     // `write.wrong-shape` that means "declared, but the wrong shape". Answered from the
     // schema alone, so it sits ahead of the parse, as every sibling door.
     if let Some(err) = undeclared_section_generate(schema, section_id) {
+        return Err(err);
+    }
+    if let Some(err) = undeclared_nested_section_generate(schema, section_id, item_ids) {
         return Err(err);
     }
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
@@ -6531,6 +6557,9 @@ pub fn unset_item_field_validated(
     if let Some(err) = undeclared_section_generate(schema, section_id) {
         return Err(generate_error_finding(&err));
     }
+    if let Some(err) = undeclared_nested_section_generate(schema, section_id, item_ids) {
+        return Err(generate_error_finding(&err));
+    }
     if item_chain_absent(schema, source, section_id, item_ids) {
         return Err(generate_error_finding(&GenerateError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?} not present"),
@@ -7296,6 +7325,92 @@ fn undeclared_section_generate(schema: &Schema, section_id: &str) -> Option<Gene
     section_undeclared(schema, section_id).then(|| GenerateError::UnknownSection {
         id: section_id.to_string(),
     })
+}
+
+/// [`section_undeclared`] **at every hop past the first** — the nested-section sibling,
+/// and rank 1 at that depth for the same reason: an address whose *later* segment names a
+/// nested section the schema never declared is wrong whatever the corpus holds, so no
+/// lower rank can answer it honestly.
+///
+/// Returns the write-address path of the first undeclared segment
+/// (`"releases/1-3-0/bogus"`), which is what the rendered reject names — the id alone
+/// would say "no section `bogus`" about a schema that has no top-level `bogus` either,
+/// and the agent's mistake is the hop, not the name.
+///
+/// Answering it lower down is what let **one** miss emit four different codes across the
+/// six item-addressing verbs (M49 — the nested arm of the undeclared-section column;
+/// `design/command-output-contract.md` → Evolution posture, the M49 paragraph):
+/// `write.not-present` at [`set_nested_item_slot`] / [`remove_nested_item`] (routing a
+/// `jigc doc show` of the *top* section, which exits 0 listing item ids that are not what
+/// the address got wrong), `write.wrong-shape` at [`set_nested_item_field_or_insert`] /
+/// [`retitle_item`] / [`add_nested_item`], and `write.unknown-field` at
+/// [`unset_item_field_validated`] — a field question about an item in a nested section
+/// that does not exist.
+///
+/// **Deliberately as narrow as its top-level dual.** A segment the block declares as
+/// something *other* than a nested repeatable (a field, a slot) is a genuine declared-shape
+/// defect each door keeps diagnosing itself (`write.wrong-shape`), exactly as a declared
+/// but non-repeatable **section** is; only the segment declared *nowhere* is re-ranked
+/// here. And the chain alternates `item, nested-section, …` starting at an item, so a
+/// trailing leaf name — `#releases/1-3-0/bogus` at `set-slot` / `set-field`, where `bogus`
+/// is the leaf and never reaches this walk — stays the `write.unknown-field` it correctly
+/// is.
+fn nested_section_undeclared(
+    schema: &Schema,
+    section_id: &str,
+    item_ids: &[&str],
+) -> Option<String> {
+    let section = schema.sections.iter().find(|s| s.id == section_id)?;
+    let SectionBody::Repeatable { repeatable } = &section.body else {
+        return None;
+    };
+    let mut current = repeatable;
+    let mut expect_item = true;
+    for (depth, segment) in item_ids.iter().enumerate() {
+        if expect_item {
+            expect_item = false;
+            continue;
+        }
+        expect_item = true;
+        let declared = current.block.iter().find(|leaf| match leaf {
+            crate::schema::Leaf::Field(field) => field.id == *segment,
+            crate::schema::Leaf::Slot { id, .. } | crate::schema::Leaf::Repeatable { id, .. } => {
+                id == segment
+            }
+        });
+        match declared {
+            Some(crate::schema::Leaf::Repeatable { repeatable, .. }) => current = repeatable,
+            // Declared, but not a nested repeatable: a shape question, not a declaredness
+            // one — left to the door, as the non-repeatable **section** is.
+            Some(_) => return None,
+            None => {
+                return Some(format!("{section_id}/{}", item_ids[..=depth].join("/")));
+            }
+        }
+    }
+    None
+}
+
+/// [`nested_section_undeclared`] as the **splice** path's reject — the nested sibling of
+/// [`undeclared_section_splice`], and the same `write.unknown-section` it renders.
+fn undeclared_nested_section_splice(
+    schema: &Schema,
+    section_id: &str,
+    item_ids: &[&str],
+) -> Option<SpliceError> {
+    nested_section_undeclared(schema, section_id, item_ids)
+        .map(|section| SpliceError::UndeclaredSection { section })
+}
+
+/// [`nested_section_undeclared`] as the **generation** path's reject — the nested sibling
+/// of [`undeclared_section_generate`].
+fn undeclared_nested_section_generate(
+    schema: &Schema,
+    section_id: &str,
+    item_ids: &[&str],
+) -> Option<GenerateError> {
+    nested_section_undeclared(schema, section_id, item_ids)
+        .map(|id| GenerateError::UnknownSection { id })
 }
 
 /// The **undeclared-address guard** the two insert-capable item-field writers consult
@@ -12652,8 +12767,11 @@ OAuth device-code flow.
         let err = retitle_item(&schema, TWO_PARENT, "nope", &["1-2-0"], "New")
             .expect_err("no such section");
         assert!(matches!(err, GenerateError::UnknownSection { .. }));
-        // A **declared** section addressed through an undeclared nested hop keeps
-        // `WrongShape` — the distinction the arm above would otherwise erase.
+        // An **undeclared nested hop** under a declared section is the same declaredness
+        // miss one level down, so it earns the same code (M49 — the nested arm of the
+        // undeclared-section column; [`nested_section_undeclared`]). This assertion read
+        // `WrongShape` until M49, which is exactly the four-codes-for-one-miss state the
+        // sweep closed — moved as a basis-has-changed rebuttal, not an override.
         let err = retitle_item(
             &schema,
             TWO_PARENT,
@@ -12662,6 +12780,19 @@ OAuth device-code flow.
             "New",
         )
         .expect_err("no such nested repeatable");
+        assert!(matches!(err, GenerateError::UnknownSection { .. }));
+        // The bound of that arm, driven rather than asserted in prose: a nested segment
+        // the block **does** declare — as a field, not a repeatable — is a genuine
+        // declared-shape defect and keeps `WrongShape`, exactly as a declared but
+        // non-repeatable *section* does one level up.
+        let err = retitle_item(
+            &schema,
+            TWO_PARENT,
+            "releases",
+            &["1-2-0", "date", "x"],
+            "New",
+        )
+        .expect_err("`date` is a field, not a nested repeatable");
         assert!(matches!(err, GenerateError::WrongShape { .. }));
     }
 

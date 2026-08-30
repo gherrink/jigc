@@ -112,12 +112,43 @@
 //! suffixed `-2` around a bare id that is free. The axis is driven in its own test rather
 //! than as `CELLS` rows, because a row is defined against the one shared fixture.
 //!
+//! **M49 sweeps the undeclared-section column's nested arm.** Every row of that column
+//! gets the section wrong at the address's **first** hop. An address can get it wrong at a
+//! later one — `#releases/1-3-0/bogus/xyz…`, where `releases` is declared, `1-3-0` is live,
+//! and the nested-section segment `bogus` is declared nowhere in the release block — and
+//! that one miss came back **four** different ways across the six item-addressing doors:
+//! `write.not-present` at `set-slot` / `remove-item`, `write.wrong-shape` at
+//! `set-field --value` / `retitle-item` / both `add-item` shapes, and `write.unknown-field`
+//! at `set-field --unset`. A driver keys on `(code, target)`, so one defect answering under
+//! four keys is not a wording problem. Seven rows join the column — the six verbs plus the
+//! nested dual of the bare `add-item` cell, whose destination *is* the undeclared nested
+//! section — and all seven converge on the shipped `write.unknown-section` and its schema
+//! read: no new contract member is minted, because a new code is itself a spend
+//! (`design/command-output-contract.md` → Evolution posture, the M49 paragraph authorizing
+//! the flip on the pinned key; `settle-record.md` → D8). Engine-side the fix is the ranked
+//! predicate's nested sibling (`engine::write::nested_section_undeclared`), asked by the
+//! same six doors that already ask `section_undeclared`.
+//!
+//! **The key's other half is asserted over the whole matrix.** Naming the miss is half of
+//! `(code, target)`; wherever a cell's argv carries a write address, the finding's
+//! `key.target` **and** its `location.address` must be that address, verbatim and in full.
+//! Stated as a property of the matrix rather than a per-row column, so a row added later
+//! inherits it.
+//!
 //! **Declared bound.** The two *section-level* address forms — `set-slot` / `set-field` at
 //! `#<undeclared-section>` with no item hop — are **not** cells of this matrix: the CLI
 //! address resolver refuses to resolve a slot/field target inside an undeclared section and
 //! emits the `{"error": …}` envelope, so they never reach a write door and never mint a
 //! `write.*` finding. That is a different seam (target resolution, not the write-reject
 //! taxonomy) and is left as it is.
+//!
+//! **Declared bound, one level down (M49).** The nested form with **no trailing item
+//! hop** splits by verb, and only one arm is a cell here. At `set-slot` / `set-field`,
+//! `#releases/1-3-0/bogus` names a **leaf** on a live item — `write.unknown-field` is the
+//! right answer and is left standing. At `remove-item` the same string names no item at
+//! all, and the CLI address resolver emits the bare `{"error": …}` envelope before any
+//! write door is reached — the same target-resolution seam as the bound above, one level
+//! down, and left as it is. Only `add-item`, whose destination is a *section*, is a row.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -781,6 +812,107 @@ const CELLS: &[Cell] = &[
         code: "write.unknown-section",
         route: RouteCheck::Schema,
     },
+    // ---- The **nested** arm of the same column (M49 Increment 8, T1). Every row above
+    // gets the section wrong at the address's FIRST hop; these get it wrong at a later one
+    // — `#releases/1-3-0/bogus/xyz…`, where `releases` is declared, `1-3-0` is live, and
+    // the nested-section segment `bogus` is declared nowhere in the release block. It is
+    // the same miss one level down, and it came back four different ways: `write.not-
+    // present` at `set-slot` / `remove-item` (whose route is a `jigc doc show …#releases`
+    // that exits 0 and answers nothing, because the item ids it lists are not what the
+    // address got wrong), `write.wrong-shape` at `set-field --value` / `retitle-item` /
+    // both `add-item` shapes, and `write.unknown-field` at `set-field --unset` — a field
+    // question about an item in a nested section that does not exist. Shape outranks
+    // presence outranks the leaf at every depth, so all seven converge on the shipped
+    // `write.unknown-section` and its schema read (`design/command-output-contract.md` →
+    // Evolution posture, the M49 paragraph authorizing the flip on the pinned key).
+    Cell {
+        what: "set-slot at an item in an undeclared nested section",
+        args: &[
+            "doc",
+            "set-slot",
+            "{addr}#releases/1-3-0/bogus/xyz/summary",
+            "--from-file",
+            "-",
+        ],
+        stdin: Some(b"A summary.\n"),
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "remove-item at an item in an undeclared nested section",
+        args: &["doc", "remove-item", "{addr}#releases/1-3-0/bogus/xyz"],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-field --value at an item in an undeclared nested section",
+        args: &[
+            "doc",
+            "set-field",
+            "{addr}#releases/1-3-0/bogus/xyz/link",
+            "--value",
+            "https://x",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-field --unset at an item in an undeclared nested section",
+        args: &[
+            "doc",
+            "set-field",
+            "{addr}#releases/1-3-0/bogus/xyz/link",
+            "--unset",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "retitle-item at an item in an undeclared nested section",
+        args: &[
+            "doc",
+            "retitle-item",
+            "{addr}#releases/1-3-0/bogus/xyz",
+            "--title",
+            "Fixed",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "nested add-item under an item in an undeclared nested section",
+        args: &[
+            "doc",
+            "add-item",
+            "{addr}#releases/1-3-0/bogus/xyz/changes",
+            "--title",
+            "Added",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        // The nested dual of `add-item into an undeclared section` directly above: the
+        // destination IS the undeclared nested section, with no trailing item hop, so the
+        // segment names a section rather than a leaf and the top-level row's answer is the
+        // right one one level down.
+        what: "add-item into an undeclared nested section",
+        args: &[
+            "doc",
+            "add-item",
+            "{addr}#releases/1-3-0/bogus",
+            "--title",
+            "Added",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
     Cell {
         what: "add-item into a non-repeatable section (the genuine shape question)",
         args: &["doc", "add-item", "{addr}#overview", "--title", "Added"],
@@ -901,6 +1033,30 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
             .unwrap_or_else(|e| panic!("`{}` stderr is JSON: {e}; got:\n{stderr}", cell.what));
         let got = report["findings"][0]["code"].as_str().unwrap_or("<absent>");
         let named_its_miss = got == cell.code;
+
+        // **The other half of the pinned key.** A driver keys on `(code, target)`, so a
+        // cell that names its miss correctly while pointing the key at some *other*
+        // address is still unusable — and the nested column's whole subject is an address
+        // the six doors read to different depths. Asserted as a property of the matrix
+        // rather than as a per-row column: wherever the cell's argv carries a write
+        // address, the finding's key target and its located address are **that** address,
+        // verbatim and in full.
+        if let Some(addressed) = args.iter().find(|arg| arg.contains('#')) {
+            for (half, got) in [
+                ("key.target", &report["findings"][0]["key"]["target"]),
+                (
+                    "location.address",
+                    &report["findings"][0]["location"]["address"],
+                ),
+            ] {
+                assert_eq!(
+                    got.as_str(),
+                    Some(addressed.as_str()),
+                    "`{}`: {half} names the full write address",
+                    cell.what,
+                );
+            }
+        }
 
         // A **collision** must name the colliding minted id in its own message: an
         // `already-present` inside a batch is otherwise silent about WHICH of the
