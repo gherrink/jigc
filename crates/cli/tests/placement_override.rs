@@ -492,3 +492,436 @@ fn a_foreign_squatter_at_the_new_home_is_displaced_into_the_workbench() {
          clobbered, never committed",
     );
 }
+
+// -------------------------------------------------------------------------------------
+// T3 — the 14-site placement census, re-walked against a home that can now DIFFER from its
+// declaration.
+//
+// Every row of the census (`design/storage.md` → Placement — the census) was written when a
+// placement doctype's home was a constant: the literal `placement.file` its schema declares.
+// A site reading that literal off a raw pack read and a site reading it off the cascade were
+// therefore **indistinguishable** — the two could never disagree, so the census could not tell
+// them apart and never had to. `placement-root` (T1) makes them able to disagree, which gives
+// every row a new axis to answer: **declared, or resolved?**
+//
+// The arms below drive the axis through the real binary rather than reading it off the source.
+// Arm 1 walks the whole door set at an overridden home; arm 2 the compose-time `{{store.<ty>}}`
+// resolver (the census's 14th site); arm 3 the store-scope conformance sweep (its 11th); arm 4
+// the strand — the state the doctype's home moves and the committed instance does not — with
+// the knob written **straight into the manifest**, so T2's move floor never runs and the
+// question is only what the doors say about a doc at the other home.
+//
+// **What arm 4 found, and this task repairs.** The `location:` twin of that state has been
+// detected since M36: a `docs-root` re-point that strands `docs/decisions/x.md` draws
+// `file-state.orphaned-doc` from `jigc validate` (the self-discovery arm keyed on the
+// location-dir basename — the component a `docs-root` re-point leaves invariant). The
+// `placement:` twin drew **nothing**: `jigc validate` printed *the committed store validates
+// clean* over a stranded, baselined managed doc. That is the very asymmetry this increment
+// exists to close, one layer down — the knob shipped, the detector did not follow — so the
+// placement self-discovery arm lands here, keyed on the part a `placement-root` re-point leaves
+// invariant: the **declared remainder** (`docs/roadmap.md` → `roadmap.md`). A placement doctype
+// whose declared home carries no leading directory component (`VISION.md`, `CHANGELOG.md`) is
+// not re-rootable and contributes no arm at all — the ecosystem-idiomatic rule's own
+// derivation, fenced by the last arm below rather than asserted in a comment.
+// -------------------------------------------------------------------------------------
+
+/// The `roadmap` singleton's home as **declared** (`packs/methodology/schemas/roadmap.yaml`).
+const DECLARED_HOME: &str = "docs/roadmap.md";
+/// The same home as **resolved** under `placement-root: notes` — the only home any door may name.
+const RESOLVED_HOME: &str = "notes/roadmap.md";
+
+impl Corpus {
+    /// `jigc <args>` with `stdin` piped — the prose write path (`--from-file -`).
+    fn jigc_stdin(&self, args: &[&str], stdin: &[u8]) -> std::process::Output {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(args)
+            .current_dir(self.repo.path())
+            .env("HOME", self.home.path())
+            .env_remove("JIGC_PACK_DIR")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn the jigc binary");
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(stdin)
+            .expect("write stdin");
+        child.wait_with_output().expect("wait for jigc")
+    }
+
+    /// Set one prose slot through the binary, asserting exit 0.
+    fn set_slot(&self, addr: &str, prose: &[u8]) {
+        let out = self.jigc_stdin(&["doc", "set-slot", addr, "--from-file", "-"], prose);
+        assert!(
+            out.status.success(),
+            "set-slot {addr} must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+
+    /// Both streams of an invocation, joined — the doors below route on stdout *or* stderr.
+    fn streams(&self, args: &[&str]) -> String {
+        let out = self.jigc(args);
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        )
+    }
+
+    /// Overwrite the project layer's `manifest.yaml` verbatim — the hand-edited re-point that
+    /// bypasses `jigc config set`, and with it T2's move floor.
+    fn write_manifest(&self, body: &str) {
+        let config = self.repo.path().join(".jigc").join("config");
+        fs::create_dir_all(&config).expect("create the project layer");
+        fs::write(config.join("manifest.yaml"), body).expect("write manifest.yaml");
+    }
+
+    /// Every path in the `HEAD` tree.
+    fn head_paths(&self) -> Vec<String> {
+        self.git(&["ls-tree", "-r", "--name-only", "HEAD"])
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Author the `planning` workflow's `roadmap` singleton and finalize it — the
+    /// create → author → finalize third of the door walk. Returns the task id.
+    fn author_and_finalize_roadmap(&self) -> String {
+        let task = "plan-the-first-milestone";
+        self.ok(&[
+            "start",
+            "--workflow",
+            "planning",
+            "plan the first milestone",
+        ]);
+        assert_eq!(
+            self.ok(&[
+                "doc", "create", "roadmap", "--title", "Roadmap", "--task", task
+            ])
+            .trim(),
+            "roadmap:roadmap",
+            "the singleton mints at the fixed slug",
+        );
+        let item = self
+            .ok(&[
+                "doc",
+                "add-item",
+                "roadmap:roadmap#milestones",
+                "--title",
+                "M-One",
+                "--task",
+                task,
+            ])
+            .trim()
+            .to_owned();
+        self.set_slot(&format!("{item}/proves"), b"The home follows the knob.\n");
+        self.set_slot(&format!("{item}/decomposition"), b"Inc 1, as prose.\n");
+        self.ok(&[
+            "doc",
+            "set-field",
+            &format!("commit:{task}#type"),
+            "--value",
+            "docs",
+        ]);
+        self.ok(&[
+            "doc",
+            "set-field",
+            &format!("commit:{task}#scope"),
+            "--value",
+            "planning",
+        ]);
+        self.set_slot(&format!("commit:{task}#summary"), b"record the roadmap\n");
+        self.set_slot(&format!("commit:{task}#body"), b"One home, everywhere.\n");
+        self.ok(&["task", "finalize", task]);
+        task.to_owned()
+    }
+}
+
+/// **The door walk.** With `placement-root: notes` a full create → author → finalize →
+/// `doc show` → `doc list` → `validate` → `ingest` → `unmanage` → `migrate-corpus` names
+/// `notes/roadmap.md` at **every** door and the declared `docs/roadmap.md` at **none** — the
+/// census's `declared or resolved?` axis answered by driving each door rather than by reading
+/// which field its source line touches.
+#[test]
+fn every_door_resolves_the_overridden_placement_home() {
+    let corpus = Corpus::new("doors");
+    corpus.ok(&["config", "set", "placement-root", "notes"]);
+    let task = corpus.author_and_finalize_roadmap();
+
+    // finalize — `finalize::plan_promotions` promoted to the resolved home, and the commit
+    // carries it there.
+    assert!(
+        corpus.head_paths().iter().any(|p| p == RESOLVED_HOME),
+        "finalize promotes the created singleton to the RESOLVED home; HEAD holds:\n{:?}",
+        corpus.head_paths(),
+    );
+    assert!(
+        !corpus.exists(DECLARED_HOME),
+        "nothing is left at the declared home",
+    );
+    let _ = task;
+
+    // `doc show` — `store::canonical_path`.
+    let shown = corpus.ok(&["doc", "show", "roadmap:roadmap"]);
+    assert!(
+        shown.contains("The home follows the knob."),
+        "`doc show` reads the committed singleton at the resolved home; got:\n{shown}",
+    );
+
+    // `doc list` — the contract-pinned index read prints the path it resolved.
+    let listed = corpus.ok(&["doc", "list"]);
+    assert!(
+        listed.contains(&format!("roadmap:roadmap  {RESOLVED_HOME}  managed")),
+        "`doc list` names the resolved home beside the identity; got:\n{listed}",
+    );
+
+    // `validate` — the store-scope sweep (conformance + file-state) over the resolved home.
+    let report = corpus.ok(&["validate"]);
+    assert!(
+        report.contains("validates clean"),
+        "the store validates clean with the doc at its resolved home; got:\n{report}",
+    );
+
+    // `ingest` — the census surface adopts at the resolved home, no move.
+    let census = corpus.ok(&["ingest"]);
+    assert!(
+        census.contains(&format!("adoptable {RESOLVED_HOME} → roadmap")),
+        "`ingest` classifies the doc adoptable AT the resolved home; got:\n{census}",
+    );
+
+    // `migrate-corpus` — its placement destination + `exists_in` probe read the resolved home.
+    let migrated = corpus.ok(&["migrate-corpus"]);
+    assert!(
+        migrated.contains(&format!("current    {RESOLVED_HOME}")),
+        "`migrate-corpus` reports the singleton already-current AT the resolved home; got:\n{migrated}",
+    );
+
+    // `unmanage` — the second path→identity pair (`unmanage::{identity_of, is_placement_file}`).
+    let unmanaged = corpus.ok(&["unmanage", RESOLVED_HOME]);
+    assert!(
+        unmanaged.contains(&format!("unmanaged {RESOLVED_HOME} (roadmap:roadmap)")),
+        "`unmanage` recognizes the resolved home as the `roadmap` singleton's identity; got:\n{unmanaged}",
+    );
+
+    // No door anywhere named the declaration.
+    for door in [
+        vec!["doc", "show", "roadmap:roadmap"],
+        vec!["doc", "list"],
+        vec!["validate"],
+        vec!["ingest"],
+        vec!["migrate-corpus"],
+    ] {
+        let out = corpus.streams(&door);
+        assert!(
+            !out.contains(DECLARED_HOME),
+            "`jigc {}` must never name the DECLARED home once the knob re-roots it; got:\n{out}",
+            door.join(" "),
+        );
+    }
+}
+
+/// **The 14th census site — the compose-time `{{store.<placement-type>}}` resolver**
+/// (`cli::start::committed_store`). It derives a placement doctype's collection key from the
+/// type id and its one-element collection from the home, and its failure mode is silence: an
+/// absent key renders **empty text**, never a finding. So the arm drives the emitted step body
+/// of a project-layer step that names `{{store.roadmap}}` — with the doc at the resolved home
+/// the collection carries `roadmap:roadmap`; with the identical doc at the declared home it is
+/// empty, which is what a resolver reading the declaration would produce in the mirror image.
+#[test]
+fn the_compose_time_store_collection_follows_the_overridden_home() {
+    let corpus = Corpus::new("store-root");
+    corpus.ok(&["config", "set", "placement-root", "notes"]);
+    corpus.commit_file(RESOLVED_HOME, ROADMAP);
+    corpus.ok(&["ingest"]);
+
+    let step = corpus.home.path().join("probe-store.yaml");
+    fs::write(
+        &step,
+        "The committed roadmap collection:\n\n{{ store.roadmap }}\n",
+    )
+    .expect("write the probe step");
+    corpus.ok(&[
+        "config",
+        "insert-step",
+        "--workflow",
+        "planning",
+        "--after",
+        "plan-scope",
+        step.to_str().expect("utf-8 path"),
+    ]);
+
+    let preview = corpus.preview("planning");
+    assert!(
+        preview.contains("The committed roadmap collection:\n\n> roadmap:roadmap\n"),
+        "`{{{{store.roadmap}}}}` resolves the singleton at the RESOLVED home; got:\n{preview}",
+    );
+
+    // The mirror image: the same doc at the DECLARED home resolves to nothing. Asserted so the
+    // arm above cannot pass on a resolver that ignores the home entirely.
+    let stray = Corpus::new("store-root-declared");
+    stray.ok(&["config", "set", "placement-root", "notes"]);
+    stray.commit_file(DECLARED_HOME, ROADMAP);
+    fs::write(
+        &step,
+        "The committed roadmap collection:\n\n{{ store.roadmap }}\n",
+    )
+    .expect("write the probe step");
+    stray.ok(&[
+        "config",
+        "insert-step",
+        "--workflow",
+        "planning",
+        "--after",
+        "plan-scope",
+        step.to_str().expect("utf-8 path"),
+    ]);
+    let stray_preview = stray.preview("planning");
+    assert!(
+        stray_preview.contains("The committed roadmap collection:"),
+        "the probe step still composes; got:\n{stray_preview}",
+    );
+    // `> <address>` is the collection's own render — the surrounding step bodies name
+    // `roadmap:roadmap` as a write address many times over, so the assertion is scoped to the
+    // rendered entry, not to the string.
+    assert!(
+        !stray_preview.contains("> roadmap:roadmap"),
+        "a doc at the declared home contributes no `store.roadmap` entry once the knob \
+         re-roots the type — the empty case renders empty text, never a fabricated entry; \
+         got:\n{stray_preview}",
+    );
+}
+
+/// **The 11th census site — `validate::schema_conformance_store`**, the detect-half of the
+/// corpus migration, enumerated through `index::committed_instances`. A non-conformant file at
+/// the **resolved** home draws its `schema-conformance.*` break there and flips the exit; the
+/// same bytes at the declared home are, correctly, no longer at a managed home at all — they
+/// are a **strand**, and the arm below is where that is adjudicated.
+#[test]
+fn the_store_conformance_sweep_adjudicates_at_the_overridden_home() {
+    let corpus = Corpus::new("conformance");
+    corpus.ok(&["config", "set", "placement-root", "notes"]);
+    corpus.commit_file(
+        RESOLVED_HOME,
+        "# Roadmap\n\n## Milestones\n\nnot the schema.\n",
+    );
+
+    let out = corpus.jigc(&["validate"]);
+    let report = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        report.contains("schema-conformance.") && report.contains(RESOLVED_HOME),
+        "the fifth store family walks the RESOLVED home; got:\n{report}",
+    );
+    assert!(
+        !report.contains(DECLARED_HOME),
+        "and only the resolved one — a sweep reading the declaration would adjudicate \
+         a file that is not there; got:\n{report}",
+    );
+    assert!(
+        !out.status.success(),
+        "a non-conformant doc at a managed home flips the exit — the sweep must not \
+         green over it",
+    );
+}
+
+/// **The strand — and the door that used to lie about it.**
+///
+/// `scalar: {placement-root: notes}` written straight into `.jigc/config/manifest.yaml`
+/// bypasses `jigc config set`, so T2's move floor never runs: the doctype's home moves and the
+/// committed, baselined instance stays at `docs/roadmap.md`. Before this task `jigc validate`
+/// printed *the committed store validates clean* over exactly that state — while the
+/// `location:` twin of it (a `docs-root` re-point stranding `docs/decisions/x.md`) has drawn
+/// `file-state.orphaned-doc` since M36. Same asymmetry as the knob itself, one layer down.
+///
+/// Every door is asserted: the strand is detected and routed by `validate` **and** `ingest`,
+/// the read surface blocks rather than inventing content, and no door reports a clean store.
+#[test]
+fn a_hand_edited_repoint_strands_the_committed_doc_and_no_door_reports_it_clean() {
+    let corpus = Corpus::new("strand-manifest");
+    corpus.commit_file(DECLARED_HOME, ROADMAP);
+    corpus.ok(&["ingest"]);
+    corpus.write_manifest("scalar:\n  placement-root: notes\n");
+
+    assert!(
+        corpus.exists(DECLARED_HOME) && !corpus.exists(RESOLVED_HOME),
+        "the hand edit moves nothing — the doc stays where the floor would have moved it from",
+    );
+
+    // `validate` — the strand is a finding with a route, never a clean store.
+    let report = corpus.ok(&["validate"]);
+    assert!(
+        !report.contains("validates clean"),
+        "the store must NOT validate clean over a baselined doc sitting at the other home; \
+         got:\n{report}",
+    );
+    assert!(
+        report.contains("file-state.orphaned-doc") && report.contains(DECLARED_HOME),
+        "the strand draws the same registered-tier advisory its `location:` twin draws; \
+         got:\n{report}",
+    );
+    assert!(
+        report.contains("placement-root") && report.contains(RESOLVED_HOME),
+        "the finding names the knob that moved the home and the home it moved to — a \
+         `docs-root` diagnosis here would be a lie; got:\n{report}",
+    );
+    let route = report
+        .lines()
+        .find(|l| l.trim_start().starts_with("route:"))
+        .unwrap_or_else(|| panic!("the strand advisory carries a route; got:\n{report}"));
+    assert!(
+        route.contains(RESOLVED_HOME) && route.contains("jigc unmanage"),
+        "the route names the home to move to and the way to drop it; got: {route}",
+    );
+
+    // `ingest` — the census surface routes the same state at its own door.
+    let census = corpus.ok(&["ingest"]);
+    assert!(
+        census.contains("ingest.wrong-location") && census.contains(RESOLVED_HOME),
+        "`ingest` blocks the conformant doc sitting outside the resolved home; got:\n{census}",
+    );
+
+    // `doc show` — the read surface blocks at the resolved home rather than serving the
+    // stranded bytes from the declaration.
+    let shown = corpus.streams(&["doc", "show", "roadmap:roadmap"]);
+    assert!(
+        shown.contains("store.not-found") && shown.contains(RESOLVED_HOME),
+        "the read surface blocks at the resolved home; got:\n{shown}",
+    );
+}
+
+/// **The never-adopted tier, and the fence that keeps the ecosystem-idiomatic files out of it.**
+///
+/// Two facts in one arm, because they are the same derivation seen from both sides. A committed
+/// file carrying a re-rootable placement doctype's home remainder but **no** baseline is the
+/// two-tier route's *unregistered* tier — a coincidence or an un-ingested foreign doc, routed to
+/// adoption, never called a tracked strand. And a **root-declared** placement home (`VISION.md`)
+/// is not re-rootable at all, so a stray `docs/VISION.md` is not this arm's business: no
+/// `placement-root` value could ever have stranded it, and saying one did would be a lie.
+#[test]
+fn the_unregistered_tier_routes_adoption_and_a_root_declared_home_is_never_a_strand() {
+    let corpus = Corpus::new("unregistered");
+    corpus.commit_file(DECLARED_HOME, ROADMAP);
+    corpus.commit_file("docs/VISION.md", VISION);
+    corpus.write_manifest("scalar:\n  placement-root: notes\n");
+
+    let report = corpus.ok(&["validate"]);
+    assert!(
+        report.contains("file-state.unregistered-doc") && report.contains(DECLARED_HOME),
+        "a never-baselined file at a re-rootable placement doctype's prior home is the \
+         unregistered tier, not a tracked strand; got:\n{report}",
+    );
+    assert!(
+        report.contains("jigc migrate docs/roadmap.md --as roadmap"),
+        "the unregistered tier routes at the adoption verb; got:\n{report}",
+    );
+    assert!(
+        !report.contains("docs/VISION.md"),
+        "a root-declared placement home is not re-rootable, so nothing sitting at a \
+         `VISION.md`-shaped path anywhere else is a `placement-root` strand; got:\n{report}",
+    );
+}

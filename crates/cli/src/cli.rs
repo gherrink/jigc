@@ -1016,12 +1016,13 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         report.findings.push(finding);
     }
 
-    // docs-root orphan advisory (M36, `design/validation.md` → Orphan detection): a
-    // committed `.md` stranded outside the resolved doctype roots after a `docs-root`
-    // re-point. The engine's file-state twin only sees docs it has a `FileStateRecord`
-    // for; this fills the coverage hole by enumerating `git ls-files` (committed truth
-    // that survives a fresh clone) matched on the location-directory basename — never a
-    // bare `.md` match (`README.md` stays unflagged).
+    // The home-re-point strand advisory (M36 for `docs-root`, M49 Increment 7 for
+    // `placement-root`; `design/validation.md` → Orphan detection): a committed `.md` left
+    // outside its doctype's current resolved home by a re-point of the knob that resolves that
+    // home. The engine's file-state twin only sees docs it has a `FileStateRecord` for; this
+    // fills the coverage hole by enumerating `git ls-files` (committed truth that survives a
+    // fresh clone), matched on the part the home's knob leaves invariant — never a bare `.md`
+    // match (`README.md` stays unflagged).
     //
     // **Two-tier since M40** (`design/validation.md` → M40 two-tier route): the classify
     // heuristic is unchanged and emission is NEVER gated on `FileStateRecord` membership
@@ -1038,22 +1039,51 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     // Both tiers stay report-only + **un-keyed**: neither code is a `CHECK_INVENTORY`
     // row nor matches `validation_store_exit_flips`, so the exit stays 0. CLI-side
     // because the engine ships domain-empty and never shells to git for tracked status.
-    for (rel, doctype) in crate::orphan::orphaned_docs(&jigc_home, schemas.values()) {
+    //
+    // **Both home shapes since M49 Increment 7.** The arm above was `location:`-only because a
+    // `placement:` home was a constant no knob could move; `placement-root` ends that, so the
+    // detector follows — else `jigc validate` prints *the committed store validates clean* over
+    // a baselined doc stranded at the doctype's prior home, while the `location:` twin of that
+    // exact state has been reported since M36. Each tier's wording keys on the matched
+    // doctype's **current home shape**, so neither names the knob that did not move it.
+    let declared = defs.declared_schemas(pack)?;
+    for strand in crate::orphan::orphaned_docs(&jigc_home, &declared, &schemas) {
+        let crate::orphan::Strand {
+            rel,
+            doctype,
+            current,
+        } = strand;
         let finding = if record.get(&rel).is_some() {
+            let (diagnosis, route) = match &current {
+                crate::orphan::Home::Location(_) => (
+                    format!(
+                        "committed doc `{rel}` sits outside the resolved doctype roots — a \
+                         `docs-root` change likely stranded it (it looks managed but resolves \
+                         under no doctype location)"
+                    ),
+                    "move it under the current resolved root (re-point `docs-root` to cover \
+                     it) or drop it with `jigc unmanage`"
+                        .to_string(),
+                ),
+                crate::orphan::Home::Placement(file) => (
+                    format!(
+                        "committed doc `{rel}` sits outside `{doctype}`'s resolved home \
+                         `{file}` — a `placement-root` change likely stranded it (the home \
+                         moved, the committed instance did not)"
+                    ),
+                    format!(
+                        "move it to `{file}` and re-run `jigc ingest`, re-point \
+                         `placement-root` to cover where it sits, or drop it with \
+                         `jigc unmanage {rel}`"
+                    ),
+                ),
+            };
             engine::finding::Finding::graded(
                 engine::finding::Severity::Advisory,
                 "file-state.orphaned-doc",
-                format!(
-                    "committed doc `{rel}` sits outside the resolved doctype roots — a \
-                     `docs-root` change likely stranded it (it looks managed but resolves \
-                     under no doctype location)"
-                ),
+                diagnosis,
                 Some(engine::finding::Location::addressed(rel, 1, 1)),
-                Some(
-                    "move it under the current resolved root (re-point `docs-root` to cover \
-                     it) or drop it with `jigc unmanage`"
-                        .into(),
-                ),
+                Some(route.into()),
             )
         } else {
             let migrate_workflow = format!("migrate-{doctype}");
@@ -1062,13 +1092,23 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
                 .iter()
                 .any(|id| *id == engine::packsource::ResourceId::from(migrate_workflow.as_str()));
             let route = crate::orphan::unregistered_route(&rel, &doctype, migratable);
+            let looks_like = match &current {
+                crate::orphan::Home::Location(_) => {
+                    format!("it sits under a `{doctype}`-style directory")
+                }
+                crate::orphan::Home::Placement(file) => {
+                    format!(
+                        "it carries `{doctype}`'s home filename, whose resolved home is `{file}`"
+                    )
+                }
+            };
             engine::finding::Finding::graded(
                 engine::finding::Severity::Advisory,
                 "file-state.unregistered-doc",
                 format!(
-                    "committed doc `{rel}` looks managed (it sits under a `{doctype}`-style \
-                     directory) but was never adopted — a basename coincidence or an \
-                     un-ingested foreign doc, not a tracked strand"
+                    "committed doc `{rel}` looks managed ({looks_like}) but was never \
+                     adopted — a basename coincidence or an un-ingested foreign doc, not a \
+                     tracked strand"
                 ),
                 Some(engine::finding::Location::addressed(rel, 1, 1)),
                 Some(route.into()),

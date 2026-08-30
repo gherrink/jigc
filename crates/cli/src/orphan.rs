@@ -7,11 +7,14 @@
 //! generalized [`Home`] vocabulary (`location` dir **or** `placement` file), which the two
 //! arms share:
 //!
-//! - **found-stranded** — the prior home is *self-discovered* from the doc's own dir, keyed
-//!   on a `location:` basename match. Backs the store-scope `file-state.orphaned-doc`
-//!   advisory ([`orphaned_docs`], `jigc validate`). Here the location-dir basename is the
-//!   *only* signal available (no prior-home record in hand), so a placement/root strand — a
-//!   file with no dir pattern — is **not** self-discoverable; only the recorded arm sees it.
+//! - **found-stranded** — the prior home is *self-discovered* from the doc's own path, keyed
+//!   on the part the home's knob leaves invariant: a `location:` **dir basename** under
+//!   `docs-root`, or (since M49 Increment 7) a re-rootable `placement:` home's **declared
+//!   remainder** under `placement-root`. Backs the store-scope `file-state.orphaned-doc`
+//!   advisory ([`orphaned_docs`], `jigc validate`). The placement half exists only because
+//!   the knob does: before it, a `placement.file` was a constant and no re-point could
+//!   strand its instance. A placement home declared **at** the repo root (`VISION.md`) is
+//!   not re-rootable and stays outside the arm — only the recorded arm sees a strand there.
 //! - **recorded-prior-home** — the prior home is *supplied/recorded* (the M39 relocation +
 //!   `config set docs-root` fire-points), so a placement→root, root→`docs`, `location`
 //!   basename **rename**, or shape change (`location`↔`placement`) all become detectable —
@@ -142,40 +145,116 @@ pub(crate) fn committed_markdown(repo_root: &Path) -> Vec<String> {
     out
 }
 
-/// The committed `.md`s that **look like** managed docs (their immediate-parent dir
-/// basename matches some persisted doctype's resolved `location:` basename) yet fall
-/// **outside** that doctype's current resolved root — the `docs-root`-changed orphans.
-/// Each hit carries the **matched doctype** (`schema.ty`) beside the path, the handle the
-/// M40 two-tier route needs to name `jigc migrate <path> --as <doctype>` on the
-/// unregistered tier ([`unregistered_route`]). `schemas` must carry the
-/// `docs-root`-applied `location:` (the resolved roots). Address-sorted.
-pub(crate) fn orphaned_docs<'a>(
+/// One committed doc found **stranded** — sitting at a shape that looks like a doctype's home
+/// while the doctype's *current* home is elsewhere. Carries the three things the two-tier
+/// advisory needs: the path, the **matched doctype** (the handle `jigc migrate <path> --as
+/// <doctype>` needs on the unregistered tier — [`unregistered_route`]), and that doctype's
+/// **current** home, which is both the destination a repair moves to and the discriminator the
+/// finding's wording keys on (a `location:` home was moved by `docs-root`, a `placement:` home
+/// by `placement-root` — naming the wrong knob would be a law-1 lie).
+pub(crate) struct Strand {
+    /// The committed repo-relative `.md` path sitting outside its doctype's current home.
+    pub(crate) rel: String,
+    /// The doctype whose home shape the path matched.
+    pub(crate) doctype: String,
+    /// That doctype's current resolved home.
+    pub(crate) current: Home,
+}
+
+/// The committed `.md`s that **look like** managed docs yet fall **outside** the matched
+/// doctype's current resolved home — the strands a home re-point leaves behind, one hit per
+/// path, address-sorted (the walk is over the sorted [`committed_markdown`] listing).
+///
+/// Two self-discovery arms, one per home shape, each keyed on **the part its knob leaves
+/// invariant** — that is what makes a self-discovered prior home possible at all:
+///
+/// - **`location:`** (M36) — the location-dir **basename**. `docs-root` is a whole-path prefix,
+///   so `decisions` survives every re-point; a committed `<anywhere>/decisions/x.md` whose
+///   doctype now homes elsewhere is stranded.
+/// - **`placement:`** (M49 Increment 7 / T3) — the declared home's **remainder past its first
+///   path component**. `placement-root` replaces exactly that first component
+///   (`crate::start::reroot_placement_file`), so `roadmap.md` survives every re-point; a
+///   committed `<anywhere>/roadmap.md` (or a root-level `roadmap.md`) that is not the doctype's
+///   current home is stranded. Until the knob shipped this arm could not exist and was not
+///   needed: a placement home was the literal its schema declared, so it could never move.
+///
+/// A placement doctype whose **declared** home carries no leading directory component
+/// (`VISION.md`, `CHANGELOG.md`) is **not re-rootable** — the ecosystem-idiomatic rule is a
+/// derivation, not an allow-list — so it contributes no arm at all and a stray `docs/VISION.md`
+/// is never called a strand. That is why `declared` is a parameter: once the root is `.` a
+/// *resolved* placement home is a bare filename whether it was declared nested or at the root,
+/// and the two are then indistinguishable.
+///
+/// `resolved` must carry the `docs-root`-applied `location:` and the `placement-root`-applied
+/// `placement.file`; `declared` the same schemas before either was applied
+/// (`crate::start::CascadeDefs::{all_schemas, declared_schemas}`). Both are keyed by doctype.
+pub(crate) fn orphaned_docs(
     repo_root: &Path,
-    schemas: impl IntoIterator<Item = &'a Schema>,
-) -> Vec<(String, String)> {
-    let schemas: Vec<&Schema> = schemas.into_iter().collect();
+    declared: &std::collections::BTreeMap<String, Schema>,
+    resolved: &std::collections::BTreeMap<String, Schema>,
+) -> Vec<Strand> {
+    let schemas: Vec<&Schema> = resolved.values().collect();
+    // The placement arm's key: per RE-ROOTABLE placement doctype, the remainder that survives
+    // the re-root, paired with the current home the doc must no longer be at.
+    let rerootable: Vec<(&Schema, &str)> = resolved
+        .values()
+        .filter_map(|schema| {
+            schema.placement.as_ref()?;
+            let file = &declared.get(&schema.ty)?.placement.as_ref()?.file;
+            let (_, remainder) = file.split_once('/')?;
+            Some((schema, remainder))
+        })
+        .collect();
     let mut hits = Vec::new();
     for rel in committed_markdown(repo_root) {
-        let Some(base) = parent_basename(&rel) else {
-            continue; // a root-level file — never a `location`-homed managed doc.
-        };
-        // The doctype whose resolved location basename matches — at most one (basenames
-        // are unique per doctype). No match → ordinary prose, never flagged.
-        let Some(schema) = schemas.iter().find(|s| location_basename(s) == Some(base)) else {
+        // The `location:` arm first, so its pre-existing verdicts are untouched.
+        if let Some(base) = parent_basename(&rel)
+            // The doctype whose resolved location basename matches — at most one (basenames
+            // are unique per doctype). No match → ordinary prose, never flagged.
+            && let Some(schema) = schemas.iter().find(|s| location_basename(s) == Some(base))
+            && let (Some(current), Some(parent)) = (home_of(schema), parent_dir(&rel))
+            // Found-stranded self-discovery: the doc's own parent dir *looks like* a home (its
+            // basename matched), so it is the self-discovered prior home; stranded iff the doc
+            // is no longer at the doctype's CURRENT home.
+            && is_stranded(&rel, &Home::Location(parent.to_string()), &current)
+        {
+            hits.push(Strand {
+                rel,
+                doctype: schema.ty.clone(),
+                current,
+            });
+            continue;
+        }
+        // The `placement:` arm: the path carries a re-rootable doctype's invariant remainder.
+        let Some((schema, _)) = rerootable
+            .iter()
+            .find(|(_, remainder)| at_remainder(&rel, remainder))
+        else {
             continue;
         };
-        let (Some(current), Some(parent)) = (home_of(schema), parent_dir(&rel)) else {
-            continue; // a location match always has both — defensive.
+        let Some(current) = home_of(schema) else {
+            continue; // a placement match always has a home — defensive.
         };
-        // Found-stranded self-discovery: the doc's own parent dir *looks like* a home (its
-        // basename matched), so it is the self-discovered prior home; stranded iff the doc is
-        // no longer at the doctype's CURRENT home (directly under the current resolved root).
-        if is_stranded(&rel, &Home::Location(parent.to_string()), &current) {
-            let ty = schema.ty.clone();
-            hits.push((rel, ty));
+        // The self-discovered prior home of a placement strand is the doc's own path (a
+        // placement home IS one file), so `is_stranded` reduces to "not at the current home" —
+        // routed through the shared discriminator rather than re-spelled.
+        if is_stranded(&rel, &Home::placement(&rel), &current) {
+            hits.push(Strand {
+                rel,
+                doctype: schema.ty.clone(),
+                current,
+            });
         }
     }
     hits
+}
+
+/// Whether a committed repo-relative path sits **at** `remainder` under some parent — i.e. it
+/// is `<anything>/<remainder>` or exactly `<remainder>` (the repo-root case a
+/// `placement-root: .` produces). The path-boundary check is load-bearing: a bare
+/// `ends_with(remainder)` would also match `docs/old-roadmap.md`.
+fn at_remainder(rel: &str, remainder: &str) -> bool {
+    rel == remainder || rel.ends_with(&format!("/{remainder}"))
 }
 
 /// The route for the **unregistered** tier of the two-tier orphan advisory (M40;
@@ -303,6 +382,16 @@ mod tests {
         }
     }
 
+    /// A doctype map keyed the way `CascadeDefs::{all_schemas, declared_schemas}` key theirs.
+    fn map(schemas: Vec<Schema>) -> std::collections::BTreeMap<String, Schema> {
+        schemas.into_iter().map(|s| (s.ty.clone(), s)).collect()
+    }
+
+    /// `(rel, doctype)` pairs — the shape the two callers below assert on.
+    fn pairs(strands: Vec<Strand>) -> Vec<(String, String)> {
+        strands.into_iter().map(|s| (s.rel, s.doctype)).collect()
+    }
+
     /// (M38 inc-2 T3) Characterization — orphan detection keys on the immediate-parent
     /// **directory basename** matching a doctype's `location:` basename, so a **placement**
     /// doctype's root literal (`VISION.md`) is **never mis-orphaned**: a root file has no
@@ -311,6 +400,10 @@ mod tests {
     /// root `.md` (`README.md`) is likewise **not** the placement doctype's instance. A live
     /// `decisions/live.md` under its current root proves the sweep actually enumerates and
     /// stays quiet only where it should.
+    ///
+    /// (M49 inc-7 T3) Still true with the placement arm added, and now for a **derived**
+    /// reason rather than an absent one: `VISION.md` is declared at the repo root, so it has
+    /// no leading path component for `placement-root` to replace and contributes no arm.
     #[test]
     fn placement_root_file_and_sibling_root_md_are_never_orphaned() {
         let repo = TempRepo::new();
@@ -318,12 +411,12 @@ mod tests {
         repo.commit_file("README.md", "# Readme\n");
         repo.commit_file("decisions/live.md", "# A decision\n");
 
-        let schemas = vec![
+        let schemas = map(vec![
             placement_schema("vision", "VISION.md"),
             adr_schema("decisions/"),
-        ];
+        ]);
         assert!(
-            orphaned_docs(repo.path(), &schemas).is_empty(),
+            orphaned_docs(repo.path(), &schemas, &schemas).is_empty(),
             "a placement root file, a sibling root .md, and a live decision are none orphaned",
         );
     }
@@ -335,11 +428,61 @@ mod tests {
     fn orphaned_docs_surfaces_the_matched_doctype() {
         let repo = TempRepo::new();
         repo.commit_file("old/decisions/cache.md", "# A decision\n");
-        let schemas = vec![adr_schema("docs/decisions/")];
+        let schemas = map(vec![adr_schema("docs/decisions/")]);
         assert_eq!(
-            orphaned_docs(repo.path(), &schemas),
+            pairs(orphaned_docs(repo.path(), &schemas, &schemas)),
             vec![("old/decisions/cache.md".to_string(), "adr".to_string())],
             "a stranded hit names both the path and the doctype whose basename matched",
+        );
+    }
+
+    /// (M49 inc-7 T3) **The placement arm's key is the DECLARED remainder, and the
+    /// declared-vs-resolved distinction is load-bearing at exactly one value of the knob.**
+    ///
+    /// Under `placement-root: .` a nested-declared home (`docs/roadmap.md`) and a
+    /// root-declared one (`VISION.md`) both resolve to a bare filename, so the *resolved*
+    /// schemas alone cannot tell them apart. Feeding the declarations does: `notes/roadmap.md`
+    /// is a strand of the re-rootable `roadmap`, while `docs/VISION.md` is not a strand of the
+    /// unburiable `vision` — no `placement-root` value could have put it there, so saying one
+    /// did would be a lie. Passing `resolved` for both arguments (the pre-knob world) flips
+    /// the second assertion, which is what makes this a test of the parameter and not of the
+    /// walk.
+    #[test]
+    fn the_placement_arm_keys_on_the_declared_remainder_not_the_resolved_home() {
+        let repo = TempRepo::new();
+        repo.commit_file("notes/roadmap.md", "# Roadmap\n");
+        repo.commit_file("docs/VISION.md", "# Vision\n");
+
+        let declared = map(vec![
+            placement_schema("roadmap", "docs/roadmap.md"),
+            placement_schema("vision", "VISION.md"),
+        ]);
+        // `placement-root: .` — the nested home flattens to the repo root, the root one stands.
+        let resolved = map(vec![
+            placement_schema("roadmap", "roadmap.md"),
+            placement_schema("vision", "VISION.md"),
+        ]);
+
+        assert_eq!(
+            pairs(orphaned_docs(repo.path(), &declared, &resolved)),
+            vec![("notes/roadmap.md".to_string(), "roadmap".to_string())],
+            "the re-rootable doctype's instance is stranded off the repo root; the \
+             root-declared `vision` contributes no arm, so `docs/VISION.md` is not a strand",
+        );
+    }
+
+    /// (M49 inc-7 T3) The remainder match is **path-boundary anchored**: a doc whose filename
+    /// merely *ends with* the home's is ordinary prose, never a strand.
+    #[test]
+    fn a_filename_that_merely_ends_with_the_home_is_not_a_strand() {
+        let repo = TempRepo::new();
+        repo.commit_file("docs/old-roadmap.md", "# Not the roadmap\n");
+
+        let declared = map(vec![placement_schema("roadmap", "docs/roadmap.md")]);
+        let resolved = map(vec![placement_schema("roadmap", "notes/roadmap.md")]);
+        assert!(
+            orphaned_docs(repo.path(), &declared, &resolved).is_empty(),
+            "`docs/old-roadmap.md` is not `<anywhere>/roadmap.md`",
         );
     }
 
