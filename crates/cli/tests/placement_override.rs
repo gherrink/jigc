@@ -1212,3 +1212,136 @@ fn the_two_home_knobs_have_disjoint_subjects() {
          `milestone-record` is a `location:` doctype by design, so the knob cannot reach it",
     );
 }
+
+// -------------------------------------------------------------------------------------
+// The design of record follows the arm that was added to it.
+//
+// `crates/cli/src/orphan.rs`'s module doc points its reader at `design/validation.md` →
+// Orphan detection, and that section's *pinned* match predicate was written at M36, when
+// `location:` was the only home shape a knob could move. It says the self-discovery signal
+// is the location **directory** basename and that a placement file is therefore **not**
+// self-discoverable. The placement tier this increment shipped falsifies both: it keys a
+// self-discovered prior home on a DECLARED FILENAME remainder, with no prior home in hand.
+//
+// The arm below fences the doc against the binary in one test, so neither half can drift
+// alone: the shipped predicate is driven through `jigc validate` at the **pack-default**
+// cascade (the knob never set — the state an adopter is in), and the section is asserted to
+// carry the corrected key, the boundary rule, the root-declared carve-out, and the trade
+// the widened key makes, rather than the claim the binary disproves.
+// -------------------------------------------------------------------------------------
+
+/// `design/validation.md`, read from the repo the suite is compiled in.
+fn validation_doc() -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repo root sits two levels above crates/cli")
+        .to_path_buf();
+    fs::read_to_string(root.join("design/validation.md")).expect("read design/validation.md")
+}
+
+/// Whether `doc` carries `claim`, and every occurrence of it is qualified within the next
+/// `window` bytes by `qualifier` — the shape a struck-rather-than-deleted pin takes: the old
+/// sentence stays legible, and no reader can reach it without reaching its correction.
+fn every_occurrence_is_qualified(doc: &str, claim: &str, qualifier: &str, window: usize) -> bool {
+    let mut found = false;
+    let mut from = 0usize;
+    while let Some(at) = doc[from..].find(claim) {
+        found = true;
+        let start = from + at + claim.len();
+        let end = doc.len().min(start + window);
+        if !doc[start..end].contains(qualifier) {
+            return false;
+        }
+        from = start;
+    }
+    found
+}
+
+/// **The shipped self-discovery predicate, and the design of record that describes it.**
+///
+/// Half one drives it: at the **unset** knob (`placement-root` is pack-default — no project
+/// override was ever recorded), two committed files carrying `roadmap`'s declared home
+/// remainder are matched from their own paths alone, at two different depths, neither of
+/// them under a directory whose basename names any doctype's `location:`. Pre-M49 neither
+/// could be reached: the sole arm keyed on the parent-DIRECTORY basename and `roadmap` is a
+/// `placement:` doctype whose `location` is `None`. An ordinary `.md` at a neutral path
+/// stays unflagged, so the M36 anti-goal the pin actually forbade — matching by extension —
+/// is still not what ships.
+///
+/// Half two holds `design/validation.md` to it. The two M36/M39 claims are the ones
+/// `orphan.rs` sends its reader to, so each must be qualified where it stands, and the
+/// section must state the arm's key, its path-boundary rule, the root-declared carve-out,
+/// and — the part a reworded pin would skip — that a declared-remainder key is **broader**
+/// than the directory key it joins, which is why the file below is reachable at all.
+#[test]
+fn the_orphan_predicate_of_record_states_the_placement_arm_that_shipped() {
+    // --- half one: the binary, at the pack-default cascade -----------------------------
+    let corpus = Corpus::new("orphan-predicate");
+    corpus.commit_file("implementation/roadmap.md", ROADMAP);
+    corpus.commit_file("packages/foo/roadmap.md", ROADMAP);
+    corpus.commit_file("guides/notes.md", "# Notes\n");
+
+    let knob = corpus.ok(&["config", "get", "placement-root"]);
+    assert!(
+        knob.contains("pack-default"),
+        "the arm must run at the UNSET knob — the state every adopter starts in; got:\n{knob}",
+    );
+
+    let report = corpus.ok(&["validate"]);
+    for rel in ["implementation/roadmap.md", "packages/foo/roadmap.md"] {
+        assert!(
+            report.contains(rel) && report.contains("file-state.unregistered-doc"),
+            "the shipped self-discovery key is the declared home REMAINDER, matched at any \
+             depth with no prior home in hand — `{rel}` is reached by it; got:\n{report}",
+        );
+    }
+    assert!(
+        report.contains("carries `roadmap`'s home filename"),
+        "and the wording says so — a filename, not a directory; got:\n{report}",
+    );
+    assert!(
+        !report.contains("guides/notes.md"),
+        "matching by the `.md` extension alone is still explicitly wrong — an ordinary \
+         committed `.md` at a neutral path is untouched; got:\n{report}",
+    );
+    assert!(
+        !report.contains("README.md"),
+        "the front-door false-positive the M36 pin forbade must stay forbidden; got:\n{report}",
+    );
+
+    // --- half two: the design of record ------------------------------------------------
+    let doc = validation_doc();
+    for (claim, qualifier) in [
+        (
+            "the only self-discovery signal is the `location:` **directory** basename",
+            "M49",
+        ),
+        (
+            "a placement/root file has no dir pattern, so it is **not** self-discoverable",
+            "M49",
+        ),
+    ] {
+        assert!(
+            every_occurrence_is_qualified(&doc, claim, qualifier, 600),
+            "`design/validation.md` still states, unqualified, a claim the shipped detector \
+             disproves: {claim}",
+        );
+    }
+    for phrase in [
+        // the key the placement arm is actually keyed on
+        "remainder past its first path component",
+        // the boundary rule `orphan::at_remainder` enforces
+        "path-boundary",
+        // the carve-out: a root-declared home contributes no arm
+        "contributes no arm",
+        // the trade owned rather than denied
+        "broader than",
+    ] {
+        assert!(
+            doc.contains(phrase),
+            "`design/validation.md` → Orphan detection must state `{phrase}` — the placement \
+             arm's key, its boundary, its carve-out and the trade it makes",
+        );
+    }
+}
