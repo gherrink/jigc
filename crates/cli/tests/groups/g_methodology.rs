@@ -51,6 +51,8 @@ mod methodology_staging_contract;
 mod milestone_record_workflow_leaf;
 #[path = "../planning_gate_forcing.rs"]
 mod planning_gate_forcing;
+#[path = "../planning_gate_home.rs"]
+mod planning_gate_home;
 #[path = "../planning_record_schema.rs"]
 mod planning_record_schema;
 #[path = "../project_pack_composition.rs"]
