@@ -2,9 +2,10 @@
 //! author-migration template (V1: the folding-YAML silent-corruption class).
 //!
 //! For each slot-bearing migrate-guidance template — the five dev-pack doctypes
-//! (`adr` / `prd` / `spec` / `arch-doc` / `changelog`) and the six methodology-pack
+//! (`adr` / `prd` / `spec` / `arch-doc` / `changelog`) and the seven methodology-pack
 //! doctypes (`research` / `vision` / `idea` / `roadmap` / `decisions-log` /
-//! `deferral-ledger`) — this drives the SHIPPED payload skeleton through the built
+//! `deferral-ledger`, joined at M49 Increment 9 by `completion-record`, whose findings
+//! item block gained its first prose slot) — this drives the SHIPPED payload skeleton through the built
 //! `jigc` binary: `migrate` composes the guidance, the heredoc skeleton is extracted
 //! verbatim (the extract-the-skeleton coupling), a **multi-paragraph + bulleted** body
 //! is substituted into every `<<…>>` slot, and the filled payload is piped to
@@ -470,53 +471,18 @@ fold_safe_cases! {
         "old-deferrals.md",
         "# Deferrals\n\n## An owed thing\n\nDeferred until later.\n",
         [("\"<Decision | Idea>\"", "Decision")];
-}
 
-/// The `completion-record` template is **deliberately absent** from the fold-safety
-/// table: it carries **zero prose slots** — every `set:` value is an inline field
-/// (`verdict` / `owner-artifact` / `severity` / `disposition` / `evidence`), so there is
-/// no `<<…>>` slot to fold. This test pins that exclusion to the shipped skeleton: if a
-/// future revision adds a prose slot, the assertion fails and the template must join the
-/// table above.
-#[test]
-fn completion_record_has_no_prose_slots_so_is_excluded() {
-    let repo = TempDir::new("completion-record");
-    let home = TempDir::new("home");
-    init_repo(repo.path());
-    fs::write(
-        repo.path().join(".jigc").join("config").join("packs.yaml"),
-        format!("packs:\n  - {}\n", methodology_pack_tree().display()),
-    )
-    .expect("write packs.yaml naming the methodology pack");
-
-    let rel = "old-close.md";
-    // A verdict-bearing source: `completion-record` migration refuses an outcome-less doc.
-    fs::write(
-        repo.path().join(rel),
+    // M49 Inc-9 T1 — `completion-record` joined this table the day its findings item
+    // block gained the optional `detail` prose slot; before that it carried no `<<…>>`
+    // at all and was excluded on that premise, asserted by its own arm. The foreign
+    // source must STATE AN OUTCOME: the migration's refusal rung declines an
+    // outcome-less document rather than fabricating a verdict.
+    completion_record_slot_prose_fold_safe: "completion-record", Pack::Methodology,
+        "old-close.md",
         "# M1 close\n\nMilestone M1 shipped — all criteria met and the audit passed.\n",
-    )
-    .expect("write foreign close record");
-    git(repo.path(), &["add", rel]);
-    git(
-        repo.path(),
-        &["commit", "-q", "-m", "track foreign close record"],
-    );
-
-    let composed = ok_stdout(
-        run_jigc(
-            repo.path(),
-            home.path(),
-            None,
-            &["migrate", rel, "--as", "completion-record"],
-            None,
-        ),
-        "jigc migrate --as completion-record",
-    );
-
-    let (skeleton, _task) = extract_author_skeleton(&composed, "completion-record");
-    assert!(
-        !skeleton.contains("<<"),
-        "completion-record is excluded from the fold-safety table on the premise that it \
-         carries no `<<…>>` prose slot; the shipped skeleton now does — add it to the table:\n{skeleton}",
-    );
+        [
+            ("\"<green | red>\"", "green"),
+            ("\"<blocking | advisory | HIGH | MEDIUM | LOW>\"", "HIGH"),
+            ("\"<fixed | deferred | contested>\"", "fixed"),
+        ];
 }

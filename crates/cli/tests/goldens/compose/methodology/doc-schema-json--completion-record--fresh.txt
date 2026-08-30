@@ -3,7 +3,7 @@ exit: 0
 {
   "contract-version": 5,
   "type": "completion-record",
-  "schema-version": 1,
+  "schema-version": 2,
   "fields": [
     {
       "id": "verdict",
@@ -55,7 +55,10 @@ exit: 0
             "type": "enum",
             "of": [
               "blocking",
-              "advisory"
+              "advisory",
+              "HIGH",
+              "MEDIUM",
+              "LOW"
             ],
             "required": true,
             "author-required": true,
@@ -81,7 +84,13 @@ exit: 0
             "set-field": "completion-record:<slug>#findings/<id>/evidence"
           }
         ],
-        "slots": [],
+        "slots": [
+          {
+            "id": "detail",
+            "optional": true,
+            "set-slot": "completion-record:<slug>#findings/<id>/detail"
+          }
+        ],
         "nested": []
       }
     }

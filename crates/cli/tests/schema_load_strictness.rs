@@ -291,8 +291,8 @@ fn every_shipped_schema_and_snapshot_loads_unchanged() {
         }
     }
     assert_eq!(
-        loaded, 20,
-        "both packs ship 16 schemas + 4 versioned snapshots",
+        loaded, 21,
+        "both packs ship 16 schemas + 5 versioned snapshots",
     );
 }
 

@@ -9,6 +9,8 @@ mod support;
 mod add_item_on_create;
 #[path = "../adr_schema_conformance_store.rs"]
 mod adr_schema_conformance_store;
+#[path = "../completion_record_audit_vocabulary.rs"]
+mod completion_record_audit_vocabulary;
 #[path = "../embedded_methodology_compose.rs"]
 mod embedded_methodology_compose;
 #[path = "../error_remediation.rs"]

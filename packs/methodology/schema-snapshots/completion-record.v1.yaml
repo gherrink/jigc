@@ -1,0 +1,46 @@
+# completion-record.v1 — the prior (pre-audit-vocabulary) shape of the
+# `completion-record` doctype: the `findings` item block's `severity` enum CLOSED at the
+# two members `[blocking, advisory]` and the block carrying **no slot leaf at all**,
+# everything else — the `completions/` home, `id-from: title`, the `meta` header's
+# `verdict` + `owned-location` `owner-artifact`, and the `title` / `disposition` /
+# `evidence` item fields — IDENTICAL to the current (v2) shape. This is the EXACT
+# committed v1 form a real `completions/<milestone>.md` had before the M49 Inc-9 bump.
+#
+# Diffed against the current (v2) shape it classifies as exactly
+# `[EnumWidened { findings/severity }, AddedItemSlot { findings/detail }]` — and BOTH are
+# byte no-ops on a committed record, which is why the migration moves only the stamp:
+#
+#   * the widening is `new.of ⊇ old.of` (every committed `blocking`/`advisory` is still a
+#     declared member and still means what it meant), so no authored old→new map is owed —
+#     unlike the `deferral-ledger.v1` enum-member RENAME (`ValueRemapped`), where which old
+#     member maps to which new one was a semantic choice;
+#   * the added slot lands at the **0 → 1** arity, and a lone declared slot renders BARE,
+#     under no sub-heading — so a slot-less committed item already carries the v2 bytes
+#     (M49 Inc-4's `AddedItemSlot`; the transform's `insert_item_slot` is the identity
+#     below two declared slots).
+#
+# The `deferral-ledger.v1.yaml` / `milestone-record.v1.yaml` mold (the methodology pack's
+# `load_prior_schema` sourcing): a full, real, reviewable prior-schema snapshot — the
+# determinism boundary in its strongest form (two genuine declared schemas diffed, never a
+# hand-written migration recipe). See corpus-migration.md → Prior-schema sourcing + the
+# `EnumWidened` and `AddedItemSlot` kinds; completions/artifacts/M49/settle-record.md → D10.
+type: completion-record
+location: completions/
+id-from: title
+description: The per-milestone completion record — the audit verdict, the owner-artifact the genuine audit produced, and each triaged finding with its disposition.
+usage: a milestone reaches its completion audit, so its verdict, the audit's owner-artifact, and the triaged findings need a durable per-milestone record.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: verdict, type: enum, of: [green, red] }
+      - { id: owner-artifact, type: owned-location }
+  - id: findings
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: severity, type: enum, of: [blocking, advisory] }
+        - { id: disposition, type: enum, of: [fixed, deferred, contested] }
+        - { id: evidence, type: string }

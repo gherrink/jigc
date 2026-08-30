@@ -20,7 +20,8 @@
 //!
 //! **The axis is arity × requiredness**, and the cells are the ones a real bump lands in:
 //!
-//! - **0 → 1, optional** (`completion-record` + a `detail` slot — D10's settled shape): the
+//! - **0 → 1, optional** (`completion-record` + a `detail` slot — D10's settled shape, and the
+//!   one this suite's cells now manufacture by **stripping** the slot the bump shipped): the
 //!   schema-version stamp is the migration's **only** byte delta, because a lone slot renders
 //!   *bare*, under no sub-heading, so a slot-less item already carries the v2 bytes.
 //! - **1 → 2, optional** (`roadmap` + an optional second slot): the committed bare item prose
@@ -76,23 +77,32 @@ impl Drop for TempDir {
     }
 }
 
-/// Bump `ty`'s manifest `schema-version` `from → to` in the pack copy at `pack`. The **hash**
-/// is re-pinned separately by [`frozen_pack::repin_manifest_hash`] whenever the *current*
-/// schema is the half that moved; a bump alone is what an author does when only the prior
-/// snapshot is being introduced.
-fn bump_manifest(pack: &Path, ty: &str, from: u32, to: u32) {
+/// Pin `ty`'s manifest `schema-version` to `to` in the pack copy at `pack`, **whatever it
+/// shipped at**. The **hash** is re-pinned separately by [`frozen_pack::repin_manifest_hash`]
+/// whenever the *current* schema is the half that moved; a version pin alone is what an author
+/// does when only the prior snapshot is being introduced.
+///
+/// It reads the shipped version rather than asserting one, so a doctype this suite reshapes can
+/// be bumped for real in the pack (M49 Inc-9 shipped `completion-record` at **2**) without every
+/// cell below going red on an incidental number — the fixture pairs the cells manufacture are
+/// what the axis is made of, not the version they are labelled with.
+fn pin_manifest_version(pack: &Path, ty: &str, to: u32) {
     let manifest_path = pack.join("config").join("schema-manifest.yaml");
     let manifest = fs::read_to_string(&manifest_path).expect("read the copied manifest");
-    let bumped = manifest.replacen(
-        &format!("- type: {ty}\n    schema-version: {from}"),
-        &format!("- type: {ty}\n    schema-version: {to}"),
-        1,
-    );
-    assert_ne!(
-        manifest, bumped,
-        "the manifest must carry `{ty}` at schema-version {from}",
-    );
-    fs::write(&manifest_path, bumped).expect("write the bumped manifest");
+    let anchor = format!("- type: {ty}\n    schema-version: ");
+    let at = manifest
+        .find(&anchor)
+        .unwrap_or_else(|| panic!("the manifest must declare a `{ty}` entry"))
+        + anchor.len();
+    let end = at
+        + manifest[at..]
+            .find('\n')
+            .expect("the schema-version line terminates");
+    let mut pinned = String::with_capacity(manifest.len());
+    pinned.push_str(&manifest[..at]);
+    pinned.push_str(&to.to_string());
+    pinned.push_str(&manifest[end..]);
+    fs::write(&manifest_path, pinned).expect("write the pinned manifest");
 }
 
 /// A methodology-pack copy whose doctype `ty` is bumped `1 → 2`:
@@ -130,7 +140,7 @@ fn pack_bumping(
     );
     fs::write(&schema_path, &current_body).expect("write the current schema");
 
-    bump_manifest(dir.path(), ty, 1, 2);
+    pin_manifest_version(dir.path(), ty, 2);
     frozen_pack::repin_manifest_hash(dir.path(), ty);
     dir
 }
@@ -264,9 +274,21 @@ fn assert_byte_stable(pack: &Path, ty: &str, bytes: &str) {
 /// manufacture a single-slot prior shape.
 const ROADMAP_DECOMPOSITION: &str = "        - { id: decomposition, slot: { hint: \"The increments, as prose: each increment's deliverable and the tasks that build it, one level.\" } }\n";
 
-/// The shipped `completion-record` item block's last field — the anchor an added slot leaf is
-/// appended after.
-const RECORD_EVIDENCE: &str = "        - { id: evidence, type: string }\n";
+/// The shipped `completion-record` item block's **one** slot leaf (M49 Inc-9 T1 — the `detail`
+/// prose leaf that made the 0→1 arity real). The cells below strip it to manufacture the
+/// slot-less prior shape, and append after it to manufacture the higher arities.
+const RECORD_DETAIL: &str = "        - { id: detail, slot: { optional: true, hint: \"The finding in prose — what it is, how it was reproduced, and what its disposition rests on. Leave it empty when the one-line `evidence` says everything.\" } }\n";
+
+/// Drop the shipped `detail` slot leaf: `completion-record`'s finding block becomes the
+/// **slot-less** shape every record committed before that bump carries.
+fn without_detail(body: &str) -> String {
+    let out = body.replacen(RECORD_DETAIL, "", 1);
+    assert_ne!(
+        out, body,
+        "completion-record.yaml must declare the `detail` slot"
+    );
+    out
+}
 
 /// Drop the `decomposition` slot leaf: the shipped 2-slot `roadmap` item block becomes the
 /// **single-slot** shape a committed v1 instance carries as bare prose.
@@ -327,12 +349,9 @@ schema-version: 1
 #[test]
 fn zero_to_one_optional_migrates_with_the_stamp_as_its_only_byte_delta() {
     let home = TempDir::new("home");
-    let pack = pack_bumping(
-        "pack",
-        "completion-record",
-        |shipped| shipped.to_string(),
-        |shipped| with_optional_detail(shipped, RECORD_EVIDENCE),
-    );
+    let pack = pack_bumping("pack", "completion-record", without_detail, |shipped| {
+        shipped.to_string()
+    });
     let repo = repo_with(&[
         ("completions/M1.md", RECORD_V1),
         ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
@@ -622,11 +641,10 @@ fn a_re_run_leaves_an_already_reshaped_item_byte_identical() {
 // fields**.
 // ---------------------------------------------------------------------------------------------
 
-/// Append a second **optional** `extra` slot leaf after the `detail` one — the 2→3 arity over a
-/// field-bearing block.
+/// Append a second **optional** `extra` slot leaf after the shipped `detail` one — the 1→2
+/// arity over a field-bearing block, and the base the 2→3 cell appends a third onto.
 fn with_optional_extra(body: &str) -> String {
-    let anchor =
-        "        - { id: detail, slot: { optional: true, hint: \"The entry in prose.\" } }\n";
+    let anchor = RECORD_DETAIL;
     let out = body.replacen(
         anchor,
         &format!(
@@ -693,13 +711,13 @@ THE COMMITTED PROSE THAT MUST SURVIVE.
 ";
 
 /// The 1→2 reshape over `completion-record`'s **field-bearing** finding block: prior = the
-/// shipped block plus an optional `detail` slot; current = plus an optional `extra` slot.
+/// shipped block (whose one slot leaf is `detail`); current = plus an optional `extra` slot.
 fn record_one_to_two(tag: &str) -> TempDir {
     pack_bumping(
         tag,
         "completion-record",
-        |shipped| with_optional_detail(shipped, RECORD_EVIDENCE),
-        |shipped| with_optional_extra(&with_optional_detail(shipped, RECORD_EVIDENCE)),
+        |shipped| shipped.to_string(),
+        with_optional_extra,
     )
 }
 
@@ -808,9 +826,9 @@ fn the_unmodelled_bytes_guard_holds_at_two_to_three() {
     let pack = pack_bumping(
         "pack",
         "completion-record",
-        |shipped| with_optional_extra(&with_optional_detail(shipped, RECORD_EVIDENCE)),
+        with_optional_extra,
         |shipped| {
-            with_optional_extra(&with_optional_detail(shipped, RECORD_EVIDENCE)).replacen(
+            with_optional_extra(shipped).replacen(
                 "        - { id: extra, slot: { optional: true, hint: \"The rest.\" } }\n",
                 "        - { id: extra, slot: { optional: true, hint: \"The rest.\" } }\n        - { id: more, slot: { optional: true, hint: \"Still more.\" } }\n",
                 1,

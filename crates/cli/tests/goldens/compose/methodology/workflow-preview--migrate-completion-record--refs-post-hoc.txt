@@ -31,11 +31,18 @@ The `completion-record` schema — each instance a managed file at `docs/complet
     - `schema-version`: int — CLI-stamped (schema-version) unless authored
 - `findings`: repeatable items, one per `title`:
     - `title`: string — the item's id-source (authored as the item's `title:` payload key)
-    - `severity`: enum, one of: blocking | advisory — author-required
+    - `severity`: enum, one of: blocking | advisory | HIGH | MEDIUM | LOW — author-required
     - `disposition`: enum, one of: fixed | deferred | contested — author-required
     - `evidence`: string — author-required
+    - `detail`: prose slot (optional) — The finding in prose — what it is, how it was reproduced, and what its disposition rests on. Leave it empty when the one-line `evidence` says everything.
 
-Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Pipe the payload on stdin:
+Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
+
+<slot-id>: |-
+  <<The first line of the prose
+  and its second line, inside the SAME pair.>>
+
+Pipe the payload on stdin:
 
 jigc doc author completion-record --from-file - --task your-task-id <<'EOF'
 title: "<the title>" # the id-source — slugged lowercase-kebab into the doc id: space, `_`, `/`, `.` and `-` each mark a word boundary and render as `-` (so `v1.1` and `in-memory` are each two words) and every other non-alphanumeric is dropped; the result is capped at the first 5 words / 50 chars; then a leading or trailing filler word (a/an/the/of/to/in/on/at/by/for) is dropped unless a hyphen glues it to its neighbour
@@ -48,9 +55,11 @@ sections:
     items:
       - title: "<the title>"
         set:
-          severity: "<blocking | advisory>"
+          severity: "<blocking | advisory | HIGH | MEDIUM | LOW>"
           disposition: "<fixed | deferred | contested>"
           evidence: "<the evidence>"
+          detail: |- # optional — omit this key if unused
+            <<The finding in prose — what it is, how it was reproduced, and what its disposition rests on. Leave it empty when the one-line `evidence` says everything.>>
 EOF
 
 Map the `verdict` mechanically: the foreign record closes the milestone clean
@@ -84,12 +93,19 @@ this ladder, FIRST rung that applies wins:
 
      then set `owner-artifact: completions/artifacts/<milestone>/source.md`.
 
-Each foreign finding maps onto one `findings` item: `severity` is `blocking` when
-the foreign record treated it as must-fix, `advisory` otherwise; `disposition` is
-`fixed` / `deferred` / `contested` off the foreign record's own resolution (an
-unresolved-but-accepted finding is `deferred`); `evidence` is a plain STRING (the
-file:line, repro, or trace as recorded) — never a managed ref, and a foreign
-reference to a document that is not in the store stays prose inside that string.
+Each foreign finding maps onto one `findings` item: `severity` carries the foreign
+record's OWN grade when it graded one — `HIGH` / `MEDIUM` / `LOW` ride verbatim —
+and otherwise it is `blocking` when the foreign record treated the finding as
+must-fix, `advisory` when it did not; `disposition` is `fixed` / `deferred` /
+`contested` off the foreign record's own resolution (an unresolved-but-accepted
+finding is `deferred`); `evidence` is a plain STRING (the file:line, repro, or trace
+as recorded) — never a managed ref, and a foreign reference to a document that is
+not in the store stays prose inside that string.
+
+The optional `detail` slot takes the foreign record's own prose about that finding
+when it wrote a paragraph the one-line `evidence` cannot hold; leave it unfilled
+otherwise.
+
 When the foreign record states its outcome but records NO findings, author no
 `findings` items — omit that entry entirely.
 

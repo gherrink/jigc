@@ -21,7 +21,12 @@
 # first methodology v1→v2 bump; `schema-snapshots/deferral-ledger.v1.yaml` sources it).
 # It gains its second entry at the M42 `milestone-record` v1→v2 lifecycle bump (the
 # `status` enum widened to admit `discarded` at both loci — an `EnumWidened` pair, so the
-# migration moves only the stamp; `schema-snapshots/milestone-record.v1.yaml` sources it).
+# migration moves only the stamp; `schema-snapshots/milestone-record.v1.yaml` sources it),
+# and its THIRD at the M49 `completion-record` v1→v2 audit-vocabulary bump (`severity`
+# widened to the superset `[blocking, advisory, HIGH, MEDIUM, LOW]` PLUS an optional
+# `detail` prose slot on the findings item block — an `EnumWidened` + `AddedItemSlot`
+# pair, both byte no-ops, so that migration moves only the stamp too;
+# `schema-snapshots/completion-record.v1.yaml` sources it).
 #
 # `schema-version` is the doctype's own version (v1 at the freeze); `schema-hash`
 # is engine::manifest::schema_hash of its resolved definition. Regenerate a hash
@@ -82,8 +87,8 @@ doctypes:
     schema-version: 1
     schema-hash: 8832981bd6063e374c1e20705ceb0358be0d266d16d9a7350550225c4eef25fe
   - type: completion-record
-    schema-version: 1
-    schema-hash: bffb7c686200e4d76862f9ebd7f120a5754d97a6635e64a2a065f3409f1eee1a
+    schema-version: 2
+    schema-hash: bc3f7e974a498a77b151a5d875ddc065494001473bc050c104fae39a254640ef
   - type: decisions-log
     schema-version: 1
     schema-hash: c12bd61561a520e2d884abb3d0bbfc73b0eba1a89a721eda4cf4e5ed3ac039df

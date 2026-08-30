@@ -69,20 +69,31 @@ impl Drop for TempDir {
     }
 }
 
-/// Bump `ty`'s manifest `schema-version` `1 → 2` in the pack copy at `pack`.
+/// Pin `ty`'s manifest `schema-version` to **2** in the pack copy at `pack`, whatever it
+/// shipped at — the version the fixture pairs below are built against (the `v1` snapshot is
+/// the prior shape, so a doc stamped 1 migrates to 2).
+///
+/// It reads the shipped version rather than asserting `1`, so a doctype this suite uses as a
+/// host can be bumped for real in the pack (M49 Inc-9 shipped `completion-record` at **2**)
+/// without these arms going red on an incidental number: what they assert is the *pair* they
+/// manufacture, not the version it is labelled with.
 fn bump_manifest(pack: &Path, ty: &str) {
     let manifest_path = pack.join("config").join("schema-manifest.yaml");
     let manifest = fs::read_to_string(&manifest_path).expect("read the copied manifest");
-    let bumped = manifest.replacen(
-        &format!("- type: {ty}\n    schema-version: 1"),
-        &format!("- type: {ty}\n    schema-version: 2"),
-        1,
-    );
-    assert_ne!(
-        manifest, bumped,
-        "the manifest must carry `{ty}` at schema-version 1",
-    );
-    fs::write(&manifest_path, bumped).expect("write the bumped manifest");
+    let anchor = format!("- type: {ty}\n    schema-version: ");
+    let at = manifest
+        .find(&anchor)
+        .unwrap_or_else(|| panic!("the manifest must declare a `{ty}` entry"))
+        + anchor.len();
+    let end = at
+        + manifest[at..]
+            .find('\n')
+            .expect("the schema-version line terminates");
+    let mut pinned = String::with_capacity(manifest.len());
+    pinned.push_str(&manifest[..at]);
+    pinned.push('2');
+    pinned.push_str(&manifest[end..]);
+    fs::write(&manifest_path, pinned).expect("write the pinned manifest");
 }
 
 /// A methodology-pack copy whose doctype `ty` is bumped `1 → 2`: the `v1` snapshot is `prior`'s

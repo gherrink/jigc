@@ -515,7 +515,7 @@ fn migrate_completion_record_verbatim_source_rung_and_the_floored_gate() {
         "`verdict`: enum, one of: green | red — author-required",
         "`owner-artifact`: owned-location — author-required",
         "- `findings`: repeatable items, one per `title`:",
-        "`severity`: enum, one of: blocking | advisory — author-required",
+        "`severity`: enum, one of: blocking | advisory | HIGH | MEDIUM | LOW — author-required",
         "`disposition`: enum, one of: fixed | deferred | contested — author-required",
     ] {
         assert!(

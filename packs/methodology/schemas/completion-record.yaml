@@ -7,10 +7,30 @@
 # `owner-artifact` — an engine-native `owned-location` path (the #5-gate target
 # shipped inc-3): finalize promotes that owned file in-transaction and the gate
 # asserts its presence. A repeatable `findings` section records each audit finding:
-# a `severity`, a `disposition` (fixed/deferred/contested), and an `evidence`
-# STRING — NOT a managed ref, because the artifact it names (an adr/spec) lives in
-# the dev pack and the methodology pack composes alone (the M12 subsume model; a
-# `ref:` would point outside the composed schema universe).
+# a `severity`, a `disposition` (fixed/deferred/contested), an `evidence` STRING —
+# NOT a managed ref, because the artifact it names (an adr/spec) lives in the dev
+# pack and the methodology pack composes alone (the M12 subsume model; a `ref:`
+# would point outside the composed schema universe) — and an optional `detail` slot.
+#
+# SCHEMA-VERSION 2 (M49 Inc-9 T1; settle-record.md -> D10). Two changes, one bump:
+#
+#   * `severity` is the SUPERSET `[blocking, advisory, HIGH, MEDIUM, LOW]`. Every
+#     real audit this methodology runs grades HIGH/MEDIUM/LOW, and the v1 pair
+#     rejected those words at exit 1 — the doctype could not record its own audits.
+#     The shipped pair is KEPT deliberately: `new.of` superset `old.of` classifies
+#     `EnumWidened`, a byte no-op on every committed record, whereas REPLACING the
+#     pair would be `ValueRemapped` and owe an authored old->new map that
+#     `blocking -> ?` cannot answer.
+#   * `detail` — an OPTIONAL prose slot on the findings item block, so a finding can
+#     carry a paragraph beside the one-line `evidence` string. It is the item
+#     block's FIRST slot: at the 0->1 arity a lone declared slot renders bare, under
+#     no sub-heading, so the corpus migration writes zero bytes beyond the stamp
+#     (`AddedItemSlot`, M49 Inc-4). Converting `evidence` into that slot instead
+#     would have been `RemovedField` + `AddedItemSlot`, and `RemovedField` is
+#     refused by design (design/corpus-migration.md:188).
+#
+# `schema-snapshots/completion-record.v1.yaml` is the prior shape the migration
+# diffs against; see design/corpus-migration.md -> Prior-schema sourcing.
 #
 # Section ids are SINGLE WORDS ONLY (`meta`/`findings`): a multi-word id trips the
 # logged title-case reparse defect, deferred — these route around it exactly as
@@ -34,6 +54,7 @@ sections:
       id-from: title
       block:
         - { id: title, type: string }
-        - { id: severity, type: enum, of: [blocking, advisory] }
+        - { id: severity, type: enum, of: [blocking, advisory, HIGH, MEDIUM, LOW] }
         - { id: disposition, type: enum, of: [fixed, deferred, contested] }
         - { id: evidence, type: string }
+        - { id: detail, slot: { optional: true, hint: "The finding in prose — what it is, how it was reproduced, and what its disposition rests on. Leave it empty when the one-line `evidence` says everything." } }

@@ -30,13 +30,15 @@
 //!     refusal keys on the *value*, never on the fixture's presence.
 //!  2. **The engine states it as a typed error.** `load_schema` returns
 //!     `SchemaError::UnknownSetKind`, not a stringly-typed message.
-//!  3. **Nothing was re-pinned.** `set:` lives inside `engine::manifest::schema_hash`
-//!     and crosses the pinned `doc schema` contract, so closing the vocabulary is a
-//!     one-way door if it moves either: every `schema-hash` in **both** manifests must
-//!     equal the value at `HEAD`, and `jigc doc schema adr --format json` must be
-//!     byte-identical to its `HEAD` capture. This arm is a **red-step obligation**, not
-//!     a pin: a serialization that moves a hash is a manifest re-pin — a one-way door
-//!     and a halt, never a quiet bump.
+//!  3. **Nothing was re-pinned quietly.** `set:` lives inside
+//!     `engine::manifest::schema_hash` and crosses the pinned `doc schema` contract, so
+//!     closing the vocabulary is a one-way door if it moves either: no entity in either
+//!     manifest may have its `schema-hash` move against `HEAD` **while its co-located
+//!     version stands still** (the shipped successor rule, stated in both manifest
+//!     headers), and `jigc doc schema adr --format json` must be byte-identical to its
+//!     `HEAD` capture. This arm is a **red-step obligation**, not a pin: a serialization
+//!     that moves a hash behind no version is a manifest re-pin — a one-way door and a
+//!     halt, never a quiet bump.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -307,9 +309,30 @@ fn load_schema_returns_a_typed_unknown_set_kind() {
     }
 }
 
-/// The `hash:` lines of `path` as committed at `HEAD` and as they stand in the working
-/// tree — the two sides of the no-re-pin comparison.
-fn hash_lines(rel: &str) -> (Vec<String>, Vec<String>) {
+/// A manifest's pinned entities, keyed by entity name: `name -> (version, hash)`.
+type Pins = std::collections::BTreeMap<String, (u32, String)>;
+
+/// Every pinned entity of a manifest — each doctype under its own name, plus the
+/// `slug-rule` — as `(version, hash)`. The **entity** is the unit the successor rule is
+/// written over (`packs/methodology/config/schema-manifest.yaml` header: *a SCHEMA-SHAPE
+/// change moves a doctype's `schema-hash` only together with its `schema-version`*), so
+/// the comparison below is per entity rather than over a flat list of hash lines.
+fn pinned_entities(body: &str, rel: &str) -> Pins {
+    let manifest: engine::manifest::Manifest = serde_yaml_ng::from_str(body)
+        .unwrap_or_else(|e| panic!("{rel} deserializes as a freeze manifest: {e}"));
+    let mut out = Pins::new();
+    if let Some(rule) = manifest.slug_rule {
+        out.insert("slug-rule".to_string(), (rule.version, rule.hash));
+    }
+    for entry in manifest.doctypes {
+        out.insert(entry.ty, (entry.schema_version, entry.schema_hash));
+    }
+    out
+}
+
+/// The pinned entities of `rel` as committed at `HEAD` and as they stand in the working
+/// tree — the two sides of the no-quiet-re-pin comparison.
+fn head_and_working(rel: &str) -> (Pins, Pins) {
     let out = Command::new("git")
         .args(["show", &format!("HEAD:{rel}")])
         .current_dir(repo_root())
@@ -323,33 +346,43 @@ fn hash_lines(rel: &str) -> (Vec<String>, Vec<String>) {
     let head = String::from_utf8(out.stdout).expect("utf-8 manifest");
     let working =
         fs::read_to_string(repo_root().join(rel)).expect("read the working-tree manifest");
-    let pick = |body: &str| -> Vec<String> {
-        body.lines()
-            .map(str::trim)
-            .filter(|line| line.starts_with("schema-hash:") || line.starts_with("hash:"))
-            .map(str::to_owned)
-            .collect()
-    };
-    (pick(&head), pick(&working))
+    (pinned_entities(&head, rel), pinned_entities(&working, rel))
 }
 
-/// **Arm 3 — the red-step obligation: nothing was re-pinned.** Closing the vocabulary
-/// must leave `Field`'s serialization untouched, because `set:` sits inside
+/// **Arm 3 — the red-step obligation: nothing was re-pinned *quietly*.** Closing the
+/// vocabulary must leave `Field`'s serialization untouched, because `set:` sits inside
 /// `engine::manifest::schema_hash` and inside the pinned `doc schema --format json`
-/// contract. A hash that moves here is a manifest re-pin — a one-way door and a halt.
+/// contract. A hash that moves with **no version behind it** is a manifest re-pin — a
+/// one-way door and a halt.
+///
+/// The predicate is the shipped **successor rule**, not `hashes are equal`: a hash moves
+/// only together with its co-located version (both manifests' headers state it; M48
+/// Increment 11 fences it in CI over the pushed range). The flat form this arm first
+/// carried could not tell a silent re-pin from a **declared, versioned bump**, so it
+/// reddened on the first legitimate one — M49 Increment 9's `completion-record` 1→2 —
+/// where the honest verdict is *this moved, and it said so*. Increment 2's own claim is
+/// unweakened: a serialization change moves a hash while every version stands still, and
+/// that is exactly what still fails here.
 #[test]
 fn no_schema_hash_moved_and_the_pinned_projection_is_byte_identical() {
     for rel in [
         "crates/cli/pack/config/schema-manifest.yaml",
         "packs/methodology/config/schema-manifest.yaml",
     ] {
-        let (head, working) = hash_lines(rel);
+        let (head, working) = head_and_working(rel);
         assert!(!head.is_empty(), "{rel} must declare hashes at HEAD");
-        assert_eq!(
-            head, working,
-            "a `schema-hash` in {rel} moved against HEAD — that is a manifest re-pin, \
-             a one-way door, and a halt: never a quiet bump",
-        );
+        for (entity, (head_version, head_hash)) in &head {
+            let Some((version, hash)) = working.get(entity) else {
+                continue; // an entity that left the manifest is that change's own subject
+            };
+            assert!(
+                hash == head_hash || version != head_version,
+                "`{entity}`'s `schema-hash` in {rel} moved against HEAD while its version \
+                 stood still at {head_version} — that is a quiet manifest re-pin, a \
+                 one-way door, and a halt: a shape change moves the hash only together \
+                 with the version that declares it",
+            );
+        }
     }
 
     let repo = TempDir::new("projection-repo");

@@ -53,12 +53,19 @@ this ladder, FIRST rung that applies wins:
 
      then set `owner-artifact: completions/artifacts/<milestone>/source.md`.
 
-Each foreign finding maps onto one `findings` item: `severity` is `blocking` when
-the foreign record treated it as must-fix, `advisory` otherwise; `disposition` is
-`fixed` / `deferred` / `contested` off the foreign record's own resolution (an
-unresolved-but-accepted finding is `deferred`); `evidence` is a plain STRING (the
-file:line, repro, or trace as recorded) — never a managed ref, and a foreign
-reference to a document that is not in the store stays prose inside that string.
+Each foreign finding maps onto one `findings` item: `severity` carries the foreign
+record's OWN grade when it graded one — `HIGH` / `MEDIUM` / `LOW` ride verbatim —
+and otherwise it is `blocking` when the foreign record treated the finding as
+must-fix, `advisory` when it did not; `disposition` is `fixed` / `deferred` /
+`contested` off the foreign record's own resolution (an unresolved-but-accepted
+finding is `deferred`); `evidence` is a plain STRING (the file:line, repro, or trace
+as recorded) — never a managed ref, and a foreign reference to a document that is
+not in the store stays prose inside that string.
+
+The optional `detail` slot takes the foreign record's own prose about that finding
+when it wrote a paragraph the one-line `evidence` cannot hold; leave it unfilled
+otherwise.
+
 When the foreign record states its outcome but records NO findings, author no
 `findings` items — omit that entry entirely.
 

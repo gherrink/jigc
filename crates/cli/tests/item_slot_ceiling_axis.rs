@@ -21,8 +21,8 @@
 //! of the code under test.
 //!
 //! Every repeatable item context is swept, including the **field-only** ones
-//! (`commit.trailers`, `completion-record.findings`, `milestone-record.tasks`) and
-//! the slotless-but-nested `changelog.releases`: the ceiling is a property of the
+//! (`commit.trailers`, `milestone-record.tasks`) and the slotless-but-nested
+//! `changelog.releases`: the ceiling is a property of the
 //! *address*, and `changelog.releases` is the only `has_nested` witness either pack
 //! ships — the shipped half of the row no doctype exercises through a slot.
 //!
@@ -306,10 +306,6 @@ const SLOTLESS: &[(&str, &str)] = &[
     (
         "commit.trailers",
         "field-only: a trailer is a key/value pair, no prose.",
-    ),
-    (
-        "completion-record.findings",
-        "field-only: a finding row is typed fields, no prose.",
     ),
     (
         "milestone-record.tasks",

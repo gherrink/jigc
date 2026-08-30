@@ -65,15 +65,22 @@ the artifact's bytes — presence, not content):
 jigc doc set-field completion-record:<slug>#verdict --value <green|red> --task your-task-id
 jigc doc set-field completion-record:<slug>#owner-artifact --value completions/artifacts/<milestone>/<file> --task your-task-id
 
-Then, for each triaged finding, mint an entry and author it — its `severity`
-(blocking/advisory), its `disposition` (fixed/deferred/contested), and the `evidence`
-(a string: the file:line, repro, or trace — not a managed ref). The item id is minted
-from the title you give:
+Then, for each triaged finding, mint an entry and author it — its `severity`, its
+`disposition` (fixed/deferred/contested), and the `evidence` (a string: the file:line,
+repro, or trace — not a managed ref). `severity` takes the audit's own grade, HIGH /
+MEDIUM / LOW, when the audit graded it; `blocking` / `advisory` are kept for an audit
+that only says must-fix-or-not. The item id is minted from the title you give:
 
 jigc doc add-item completion-record:<slug>#findings --title "<the finding>" --task your-task-id
-jigc doc set-field completion-record:<slug>#findings/<id>/severity --value <blocking|advisory> --task your-task-id
+jigc doc set-field completion-record:<slug>#findings/<id>/severity --value <HIGH|MEDIUM|LOW|blocking|advisory> --task your-task-id
 jigc doc set-field completion-record:<slug>#findings/<id>/disposition --value <fixed|deferred|contested> --task your-task-id
 jigc doc set-field completion-record:<slug>#findings/<id>/evidence --value "<the file:line, repro, or trace>" --task your-task-id
+
+The optional `detail` slot takes the finding in prose when the one-line `evidence`
+cannot carry it — what the finding was, how it reproduced, what its disposition
+rests on. Nothing gates on it, so fill it only where it earns its place:
+
+jigc doc set-slot completion-record:<slug>#findings/<id>/detail --from-file <path> --task your-task-id
 
 Or make it one call — the batch alternative to the whole sequence above (run it
 instead of the create + per-leaf verbs, or after them — the create it implies
