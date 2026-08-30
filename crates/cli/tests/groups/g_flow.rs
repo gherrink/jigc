@@ -19,6 +19,8 @@ mod commit_trailer_roundtrip;
 mod e2e_audit;
 #[path = "../exit_codes.rs"]
 mod exit_codes;
+#[path = "../exit_flip_count_record.rs"]
+mod exit_flip_count_record;
 #[path = "../flow28_marquee.rs"]
 mod flow28_marquee;
 #[path = "../flow33_acceptance.rs"]

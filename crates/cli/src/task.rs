@@ -61,7 +61,10 @@ pub enum ExitClass {
     Success,
     /// Operational error, and every reject that is not a task-scope gate: an absent
     /// task id, a git/IO failure, a blocked write (`write.*`), a hook-rejected finalize,
-    /// and the three store-scope exit flips.
+    /// and the store-scope exit flips [`crate::render::STORE_EXIT_FLIPS`] enumerates.
+    /// The count is deliberately not restated — the table **is** the enumeration
+    /// (`design/validation.md` → Exit semantics); the hand-count that stood here went
+    /// stale against it (M49 Increment 8 / T6).
     Error,
     /// Usage error — clap's own convention, emitted before jigc reads `--format`.
     Usage,
@@ -137,7 +140,7 @@ pub const EXIT_CODES: &[ExitCode] = &[
         code: EXIT_ERROR,
         meaning: "operational error, and every reject that is not a task-scope gate",
         scope: "an absent task id, a git/IO failure, a blocked write, a hook-rejected \
-                finalize, and the three store-scope exit flips",
+                finalize, and the store-scope exit flips `render::STORE_EXIT_FLIPS` enumerates",
         bootstrap_label: Some("error"),
     },
     ExitCode {
