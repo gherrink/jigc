@@ -243,28 +243,85 @@ pub fn is_declared_singleton(code: &str) -> bool {
         || code == "overrides.project-step-missing"
 }
 
+/// The **route-exempt parse diagnostics** — one row per code, each with its reason, in the
+/// order [`crate::parse`] raises them (frame → field group → item identity → slot prose).
+/// This is the route floor's exemption list ([surface-contract.md](../../../design/surface-contract.md)
+/// → The route fence; [validation.md](../../../design/validation.md) → The route floor), and
+/// it is an **enumeration, not a namespace**: until M49 the predicate was
+/// `starts_with("conformance.")`, so a code no producer emits was exempt by its *spelling*,
+/// and a route-less blocking finding could be admitted at the seam by being named into the
+/// family. Every member below is a real producer in `parse.rs`; the derivation arm beside the
+/// route-floor sweep asserts the two sets agree.
+///
+/// **The criterion is *may* be route-less, and the whole family shares one reason.** Each of
+/// these is raised by [`crate::parse::parse_sections`], which returns `Err` on *any* finding —
+/// so a doc carrying one of them **does not parse**, and every `jigc doc` write verb resolves
+/// its address through that same parse. A mechanical repair route here would name a command
+/// that cannot run on the document it is printed about. What is left is the located message,
+/// and since M49 that message is genuinely located on the surface an agent reads (`at:
+/// <address> · line <n>`, `cli::render::finding_locus`) — the fact the exemption's rationale
+/// always asserted and the agent text withheld until then. Exemption means *may*, not *must*:
+/// a diagnostic that knows a **direction** takes a route and needs no row here, which is why
+/// `conformance.duplicate-field` — repaired by deleting the stray line, and carrying the
+/// shipped hand-repair sanction — is deliberately absent, and why the *same* code can be
+/// routed at a different emission (the store sweep routes a **below-version** doc's frame
+/// findings at `migrate`; `validate::store_sweep_routes_below_version_parse_failures_migrate`).
+///
+/// The rows, and what each message leaves the reader:
+///
+/// - `conformance.header-not-first`, `conformance.section-missing`,
+///   `conformance.section-renamed` — the document's **frame**: the schema-fixed `##` heading
+///   is absent, renamed, or the header section is not first. The message names the required
+///   heading (or the found one), and no jigc verb rewrites a doc's own frame in place.
+/// - `conformance.orphaned-sentinel`, `conformance.malformed-field-block`,
+///   `conformance.unknown-field` — the **field group's bytes**: a `<!-- fields -->` sentinel
+///   with no list under it, a bullet the field grammar cannot read, an undeclared key. The
+///   message names the sentinel line, the malformed line, or the key **and the declared set
+///   beside it** — and whether an undeclared key should be corrected or deleted is the
+///   author's call, not a direction jigc holds.
+/// - `conformance.item-heading-unanchored`, `conformance.item-anchor-malformed`,
+///   `conformance.item-anchor-duplicate` — an item's **identity**: no `{#id}`, an `{#id}` that
+///   is not a slug, or one id on two items. There is no address to route *at* — a write verb
+///   takes an address, and the missing/invalid/ambiguous identity is exactly the defect. The
+///   message names the heading and the depth reserved here, the bad anchor text, or the
+///   duplicated id.
+/// - `conformance.item-slot-label-missing`, `conformance.item-slot-delimiter-shadowed`,
+///   `conformance.slot-setext-heading`, `conformance.slot-heading-depth` — a **slot's prose**:
+///   a declared `####` sub-heading absent from a multi-slot item, or an authored line that
+///   shadows the item-slot delimiter / sits at a schema-reserved depth. The message names the
+///   offending line and the depth that *is* free at that address (context-derived, never a
+///   global `####`), which is the whole repair.
+const CONFORMANCE_PARSE_DIAGNOSTICS: &[&str] = &[
+    "conformance.header-not-first",
+    "conformance.section-missing",
+    "conformance.section-renamed",
+    "conformance.orphaned-sentinel",
+    "conformance.malformed-field-block",
+    "conformance.unknown-field",
+    "conformance.item-heading-unanchored",
+    "conformance.item-anchor-malformed",
+    "conformance.item-anchor-duplicate",
+    "conformance.item-slot-label-missing",
+    "conformance.item-slot-delimiter-shadowed",
+    "conformance.slot-setext-heading",
+    "conformance.slot-heading-depth",
+];
+
 /// Whether `code` is **route-exempt** under the route floor — the floor's **one-home
 /// exemption fn** (the [`is_declared_singleton`] pattern: a list of exceptions checkable
-/// from the code alone, never a census of call sites). The route floor
+/// from the code alone, never a census of call sites). The floor
 /// ([surface-contract.md](../../../design/surface-contract.md) → The route fence;
 /// [validation.md](../../../design/validation.md) → The route floor) says `blocking ⇒
-/// route present`, asserted on [`Finding`]'s `Serialize`; the exemption covers exactly the
-/// **purely-positional parser `conformance.*` diagnostics** — a malformed byte at a source
-/// coordinate, where *the located message is the repair* (fix the named line; no CLI verb
-/// repairs a hand-broken byte) and any at-parse route would be a guess. Exemption means
-/// *may be route-less*: a parser diagnostic that does know a direction (the below-version
-/// parse failure routed `migrate`) still carries it. A second such carrier since M49:
-/// `conformance.duplicate-field` — a declared key repeated in one field group is repaired
-/// by deleting the stray line, so the direction is not a guess, and its route is the
-/// shipped hand-repair sanction rather than a second wording of it
-/// ([`crate::file_state::OUT_OF_BAND_SANCTION`]).
+/// route present`, asserted on [`Finding`]'s `Serialize`; the exemption is exactly
+/// [`CONFORMANCE_PARSE_DIAGNOSTICS`], whose doc-comment states the shared reason and what
+/// each member's message leaves the reader.
 ///
 /// The **hook-rejection error identity** (`finalize.commit-rejected`) is the floor's other
 /// re-affirmed exemption, but it is an anyhow error path, not a [`Finding`] — git's
 /// verbatim stderr *is* the correction signal ([finalize.md](../../../design/finalize.md))
 /// — so it never reaches this seam and needs no entry here.
 pub fn is_route_exempt(code: &str) -> bool {
-    code.starts_with("conformance.")
+    CONFORMANCE_PARSE_DIAGNOSTICS.contains(&code)
 }
 
 /// One row of the **route-placeholder derivability table** — the declaration behind **P6
@@ -1253,7 +1310,7 @@ mod tests {
     /// code, key, message, location:{address,line,col}, route:null}` — in that field order,
     /// no stray keys, `route` kept as `null`. The `probe`/`check` handle derives from the
     /// `code`'s `<prefix>.<suffix>` split (here the exempt parser code
-    /// `conformance.heading-missing` → `("conformance", "heading-missing")` — it still
+    /// `conformance.section-missing` → `("conformance", "section-missing")` — it still
     /// *carries* a handle, it is merely not post-passed). The golden pins the serialized
     /// string (not a key-sorted value), so it also locks field *order*; a rename, a reorder,
     /// or a serde-attribute slip breaks it. That is the contract.
@@ -1268,7 +1325,7 @@ mod tests {
     #[test]
     fn finding_json_projection_is_the_pinned_envelope() {
         let finding = Finding::blocking(
-            "conformance.heading-missing",
+            "conformance.section-missing",
             "required section heading `## Decision` is missing",
             Location::addressed("adr:pick-a-db#decision", 1, 1),
         );
@@ -1279,10 +1336,10 @@ mod tests {
         {
           "severity": "blocking",
           "probe": "conformance",
-          "check": "heading-missing",
-          "code": "conformance.heading-missing",
+          "check": "section-missing",
+          "code": "conformance.section-missing",
           "key": {
-            "code": "conformance.heading-missing",
+            "code": "conformance.section-missing",
             "target": "adr:pick-a-db#decision"
           },
           "message": "required section heading `## Decision` is missing",
@@ -1344,7 +1401,7 @@ mod tests {
     fn route_exempt_parser_diagnostics_and_non_blocking_pass_the_seam() {
         // A parser conformance diagnostic: blocking, route-less, exempt by its one-home fn.
         let parser_diagnostic = Finding::blocking(
-            "conformance.heading-missing",
+            "conformance.section-missing",
             "required section heading `## Decision` is missing",
             Location::addressed("adr:pick-a-db#decision", 1, 1),
         );
@@ -1407,7 +1464,7 @@ mod tests {
     #[test]
     fn findings_project_as_the_plain_array() {
         let finding = Finding::blocking(
-            "conformance.heading-missing",
+            "conformance.section-missing",
             "required section heading `## Decision` is missing",
             Location::addressed("adr:pick-a-db#decision", 1, 1),
         );
@@ -1686,6 +1743,147 @@ mod tests {
         );
     }
 
+    /// The exemption is an **enumeration, not a namespace** (M49 Increment 8 / D5). Under the
+    /// `starts_with("conformance.")` predicate it replaced, *any* code spelled into that
+    /// namespace was exempt — including one no producer emits — so a route-less blocking
+    /// finding could be admitted at the seam by its **spelling**. The negative control is the
+    /// whole property: an unenumerated `conformance.*` code is refused, and the criterion the
+    /// enumeration is written to is checked on the one member it applies to — exemption means
+    /// *may* be route-less, so `conformance.duplicate-field`, which carries a route, needs no
+    /// row and does not have one.
+    #[test]
+    fn the_route_exemption_is_an_enumeration_not_a_namespace_prefix() {
+        // Spelled in two pieces on purpose: the derivation arm below reads this file's raw
+        // bytes, and a literal here would be a phantom `conformance.*` name in its input.
+        let invented = format!("conformance.{}", "not-a-real-code");
+        assert!(
+            !is_route_exempt(&invented),
+            "a code nobody emits is not exempt — the exemption is a stated list of parser \
+             diagnostics, not the `conformance.` namespace",
+        );
+
+        assert!(
+            !is_route_exempt("conformance.duplicate-field"),
+            "the criterion is *may* be route-less: `duplicate-field` knows its direction and \
+             carries a route, so it needs no row and takes none",
+        );
+
+        for code in CONFORMANCE_PARSE_DIAGNOSTICS {
+            assert!(is_route_exempt(code), "`{code}` is an enumerated member");
+        }
+    }
+
+    /// **The disposal arm** (M49 Increment 8 / D5): every `conformance.*` code *named* in the
+    /// engine's own source has a **production producer**. A code name with no producer is a
+    /// claim about the tool's vocabulary that the tool does not keep — the M45 rename left
+    /// `item-anchor-missing` alive in a negative assertion, and a synthetic `heading-missing`
+    /// stood in for a real code in this file's own envelope goldens. Neither could ever be
+    /// emitted, and a reader (or a reason-per-member enumeration) has no way to tell them
+    /// from the thirteen that can. *(Both are written here without their `conformance.`
+    /// head — the convention [`is_declared_non_unique`]'s M45 row already uses: a retired
+    /// name spelled in full is itself a name with no producer, and this arm reads prose.)*
+    ///
+    /// The name set is read from the **raw** bytes — comments and test modules included,
+    /// because a doc-comment naming a retired code is exactly the lie this arm hunts — while
+    /// the producer set comes from the same production-source constructor scan the route-floor
+    /// sweep above uses. **Bound: the engine crate**, which is where `conformance.*` findings
+    /// are produced and where the vocabulary is therefore claimed; a `conformance.*` string in
+    /// a CLI fixture is an assertion about *output text*, and this arm cannot see it.
+    #[test]
+    fn every_conformance_code_named_in_engine_source_has_a_producer() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        collect_rs(&src, &mut files);
+
+        let mut named: Vec<(String, String)> = Vec::new();
+        let mut producers: Vec<String> = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).expect("read source");
+            for name in conformance_names(&text) {
+                named.push((name, file.display().to_string()));
+            }
+            collect_finding_codes(&production_code(&text), &mut producers);
+        }
+        producers.retain(|c| c.starts_with("conformance."));
+        producers.sort();
+        producers.dedup();
+
+        // Sanity floor, the sibling of the sweep's: an empty difference is only trustworthy
+        // if both scans reached their subject.
+        assert!(
+            producers.len() >= 13,
+            "the producer scan found only {} `conformance.*` producers — the source lexer \
+             likely regressed",
+            producers.len(),
+        );
+        assert!(
+            named.len() >= producers.len(),
+            "the name scan found fewer names than producers — the name lexer likely regressed",
+        );
+
+        let orphans: Vec<String> = named
+            .iter()
+            .filter(|(name, _)| !producers.contains(name))
+            .map(|(name, file)| format!("  {name} — named in {file}"))
+            .collect();
+        assert!(
+            orphans.is_empty(),
+            "these `conformance.*` code names have no production producer — give each one a \
+             producer, or dispose of the name (design/validation.md → The route floor):\n{}",
+            orphans.join("\n"),
+        );
+    }
+
+    /// Every `conformance.<name>` token in `text` — the **raw** name scan (see the disposal
+    /// arm). `schema-conformance.*` is a different family and is excluded by requiring the
+    /// byte before `conformance` to be neither `-` nor alphanumeric.
+    fn conformance_names(text: &str) -> Vec<String> {
+        const HEAD: &str = "conformance.";
+        let bytes = text.as_bytes();
+        let mut out = Vec::new();
+        let mut from = 0usize;
+        while let Some(rel) = text[from..].find(HEAD) {
+            let start = from + rel;
+            from = start + HEAD.len();
+            let preceded_by_name_byte = start > 0 && {
+                let b = bytes[start - 1];
+                b == b'-' || b.is_ascii_alphanumeric()
+            };
+            if preceded_by_name_byte {
+                continue;
+            }
+            let mut end = from;
+            while end < bytes.len()
+                && (bytes[end].is_ascii_lowercase()
+                    || bytes[end].is_ascii_digit()
+                    || bytes[end] == b'-')
+            {
+                end += 1;
+            }
+            // A Rust path, not a code name: `conformance.is_empty()` on a local named
+            // `conformance` would otherwise read as a name whose tail is `is`, terminated
+            // by an identifier byte — which no finding code ever is.
+            let is_rust_path =
+                end < bytes.len() && (bytes[end] == b'_' || bytes[end].is_ascii_alphanumeric());
+            if end > from && !is_rust_path {
+                out.push(text[start..end].to_string());
+            }
+        }
+        out
+    }
+
+    /// Every literal finding `code` constructed in the production `code` view — the producer
+    /// set the disposal arm subtracts. Non-literal codes are skipped (the same bound the
+    /// route-floor sweep declares).
+    fn collect_finding_codes(code: &str, out: &mut Vec<String>) {
+        for_each_finding_constructor(code, |is_graded, args| {
+            let code_arg = if is_graded { args.get(1) } else { args.first() };
+            if let Some(lit) = code_arg.and_then(|a| extract_str_lit(a)) {
+                out.push(lit);
+            }
+        });
+    }
+
     /// Recursively collect `.rs` files under `dir` — the seam-sweep scan's file set.
     fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         for entry in std::fs::read_dir(dir).expect("read dir") {
@@ -1917,14 +2115,12 @@ mod tests {
         Some(rest[..end].to_string())
     }
 
-    /// Find every `Finding::graded(…)` / `Finding::blocking(…)` in the production `code` view and
-    /// record any that constructs a route-less, non-[`is_route_exempt`] **blocking** finding.
-    fn scan_blocking_constructors(
-        code: &str,
-        file: &std::path::Path,
-        examined: &mut usize,
-        violations: &mut Vec<String>,
-    ) {
+    /// Walk every `Finding::graded(…)` / `Finding::blocking(…)` call in the production `code`
+    /// view, handing each one's constructor kind (`is_graded`) and top-level argument spans to
+    /// `visit` — the one traversal both source-derived arms read (the route-floor sweep's
+    /// route-less-blocking scan and the disposal arm's producer scan), so the two can never
+    /// disagree about what a producer *is*.
+    fn for_each_finding_constructor(code: &str, mut visit: impl FnMut(bool, &[String])) {
         let bytes = code.as_bytes();
         for (marker, is_graded) in [("Finding::graded(", true), ("Finding::blocking(", false)] {
             let mut from = 0usize;
@@ -1949,37 +2145,55 @@ mod tests {
                 }
                 from = (open + 1).max(close);
                 let args = top_level_split(&code[open + 1..close]);
-                *examined += 1;
-
-                let is_blocking = if is_graded {
-                    args.first()
-                        .is_some_and(|a| a.contains("Severity::Blocking"))
-                } else {
-                    true
-                };
-                if !is_blocking {
-                    continue;
-                }
-                let route_less = if is_graded {
-                    args.last().is_some_and(|a| a == "None")
-                } else {
-                    // `Finding::blocking` is route-less by construction.
-                    true
-                };
-                if !route_less {
-                    continue;
-                }
-                let code_arg = if is_graded { args.get(1) } else { args.first() };
-                let finding_code = code_arg.and_then(|a| extract_str_lit(a));
-                let exempt = finding_code.as_deref().is_some_and(is_route_exempt);
-                if !exempt {
-                    let shown = finding_code.unwrap_or_else(|| "<non-literal code>".to_string());
-                    violations.push(format!(
-                        "  {}: {marker}… {shown}, route=None",
-                        file.display()
-                    ));
-                }
+                visit(is_graded, &args);
             }
         }
+    }
+
+    /// Find every `Finding::graded(…)` / `Finding::blocking(…)` in the production `code` view and
+    /// record any that constructs a route-less, non-[`is_route_exempt`] **blocking** finding.
+    fn scan_blocking_constructors(
+        code: &str,
+        file: &std::path::Path,
+        examined: &mut usize,
+        violations: &mut Vec<String>,
+    ) {
+        for_each_finding_constructor(code, |is_graded, args| {
+            *examined += 1;
+
+            let is_blocking = if is_graded {
+                args.first()
+                    .is_some_and(|a| a.contains("Severity::Blocking"))
+            } else {
+                true
+            };
+            if !is_blocking {
+                return;
+            }
+            let route_less = if is_graded {
+                args.last().is_some_and(|a| a == "None")
+            } else {
+                // `Finding::blocking` is route-less by construction.
+                true
+            };
+            if !route_less {
+                return;
+            }
+            let code_arg = if is_graded { args.get(1) } else { args.first() };
+            let finding_code = code_arg.and_then(|a| extract_str_lit(a));
+            let exempt = finding_code.as_deref().is_some_and(is_route_exempt);
+            if !exempt {
+                let shown = finding_code.unwrap_or_else(|| "<non-literal code>".to_string());
+                let marker = if is_graded {
+                    "Finding::graded("
+                } else {
+                    "Finding::blocking("
+                };
+                violations.push(format!(
+                    "  {}: {marker}… {shown}, route=None",
+                    file.display()
+                ));
+            }
+        });
     }
 }

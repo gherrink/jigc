@@ -260,7 +260,7 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
         &bash_event(
             "jigc task validate t2",
             3,
-            "blocking · conformance.required-field-present — required field `case` missing\n",
+            "blocking · schema-conformance.required-field-present — required field `case` missing\n",
         ),
     );
     // A `finalize` exit 3 keys the drift bucket.
@@ -271,7 +271,7 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
             3,
             &envelope(
                 "blocking",
-                "conformance.required-field-present",
+                "schema-conformance.required-field-present",
                 "required field `owner-artifact` missing",
                 "dogfood/pilot-run.md",
             ),
@@ -353,7 +353,7 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
     assert_eq!(drift[0]["window"], 2);
     assert_eq!(
         drift[0]["findings"],
-        serde_json::json!(["conformance.required-field-present"]),
+        serde_json::json!(["schema-conformance.required-field-present"]),
         "the qualitative what-it-caught record rides the drift bucket"
     );
 
@@ -363,7 +363,7 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
     assert_eq!(blocks.len(), 1);
     assert_eq!(
         blocks[0]["findings"],
-        serde_json::json!(["conformance.required-field-present"]),
+        serde_json::json!(["schema-conformance.required-field-present"]),
         "agent-text finding extraction feeds the paired count"
     );
 
@@ -573,7 +573,7 @@ fn jrun_captures_real_exit_into_the_log() {
     fs::write(
         &stub,
         "#!/usr/bin/env bash\n\
-         echo \"blocking · conformance.required-field-present — required field case missing\"\n\
+         echo \"blocking · schema-conformance.required-field-present — required field case missing\"\n\
          exit 3\n",
     )
     .expect("write stub jigc");
@@ -615,7 +615,7 @@ fn jrun_captures_real_exit_into_the_log() {
     assert_eq!(event["cmd"], "task finalize t1", "the reconstructed argv");
     assert_eq!(event["exit"], 3, "the REAL exit, not null");
     assert_eq!(
-        event["findings"][0]["code"], "conformance.required-field-present",
+        event["findings"][0]["code"], "schema-conformance.required-field-present",
         "finding extraction runs over the captured stdout"
     );
 
@@ -680,7 +680,7 @@ fn jrun_logs_before_passthrough_survives_a_closed_pipe() {
     fs::write(
         &stub,
         "#!/usr/bin/env bash\n\
-         echo \"blocking · conformance.required-field-present — required field case missing\"\n\
+         echo \"blocking · schema-conformance.required-field-present — required field case missing\"\n\
          seq 1 200000\n\
          exit 3\n",
     )
@@ -709,7 +709,7 @@ fn jrun_logs_before_passthrough_survives_a_closed_pipe() {
         serde_json::from_str(raw.lines().next().expect("one event")).expect("v1 JSON");
     assert_eq!(event["exit"], 3, "real exit logged before passthrough");
     assert_eq!(
-        event["findings"][0]["code"], "conformance.required-field-present",
+        event["findings"][0]["code"], "schema-conformance.required-field-present",
         "findings extracted from the full captured output, not the truncated view"
     );
     // The BrokenPipe was swallowed — no Python traceback leaked to the run.
@@ -737,7 +737,7 @@ fn hook_extracts_path_qualified_and_every_compound_invocation() {
         &bash_event(
             "/usr/local/bin/jigc task validate t1",
             3,
-            "blocking · conformance.required-field-present — required field `case` missing\n",
+            "blocking · schema-conformance.required-field-present — required field `case` missing\n",
         ),
     );
     run_hook(

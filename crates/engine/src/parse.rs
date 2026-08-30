@@ -2870,11 +2870,17 @@ more prose.
             13,
             "located at the offending line, not the item's: {f:?}"
         );
-        assert!(
-            !findings
+        // The anchor-blaming diagnosis is replaced, not doubled — asserted as *one*
+        // conformance finding for this heading rather than as the absence of the M45-retired
+        // `item-anchor-missing` code, which no producer has emitted since the rename and
+        // which the disposal arm in `finding.rs` now refuses to see named at all.
+        assert_eq!(
+            findings
                 .iter()
-                .any(|f| f.code == "conformance.item-anchor-missing"),
-            "the anchor-blaming diagnosis is replaced, not doubled: {findings:#?}"
+                .filter(|f| f.code.starts_with("conformance."))
+                .count(),
+            1,
+            "one diagnosis for the ghost heading, not two: {findings:#?}"
         );
     }
 
