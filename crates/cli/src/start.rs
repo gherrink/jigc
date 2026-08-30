@@ -851,9 +851,11 @@ pub fn preview_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
 
 /// Execute a milestone work-unit — compose the **explicitly-named**
 /// `creates-task: false` `workflow_id` over the milestone's id-sorted sub-task list,
-/// feeding `milestone_ids` into `{{milestone.tasks}}` so the workflow's `fan-out`
-/// step resolves it (one `` Spawn: `jigc workflow <run> --task <id>` `` per id, in
-/// id-sorted order). **Mints nothing** — the milestone and its sub-tasks already
+/// feeding `milestone_tasks` into `{{milestone.tasks}}` so the workflow's `fan-out`
+/// step resolves it (one `` Spawn: `jigc workflow <W> --task <id>` `` per sub-task, in
+/// id-sorted order, `<W>` being **that sub-task's recorded minting workflow** — the CLI
+/// reads it and feeds the pair; the resolver does no work-unit I/O). **Mints nothing**
+/// — the milestone and its sub-tasks already
 /// exist (`write-commands.md` → Executing the milestone — `jigc milestone execute
 /// <id>`). The lone production site feeding [`ComposeContext::milestone`] non-empty;
 /// `milestone.rs` resolves the work-unit + reads `TaskList::enumerate()` and calls
@@ -862,7 +864,7 @@ pub fn preview_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
 pub fn execute_milestone_in_repo(
     start: &Path,
     workflow_id: &str,
-    milestone_ids: &[String],
+    milestone_tasks: &[engine::data_value::SubTask],
 ) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
@@ -881,7 +883,7 @@ pub fn execute_milestone_in_repo(
         workflow_id,
         &source,
         &overrides,
-        milestone_ids,
+        milestone_tasks,
         None,
         // A milestone execution mints no top-level task, so no `--slug` applies.
         None,
@@ -988,7 +990,7 @@ pub(crate) fn compose_migrate_in_repo(
 }
 
 /// The milestone-feeding compose seam — compose the no-task `workflow_id` over an
-/// **injected** `pack` + `source` with `milestone_ids` fed into `{{milestone.tasks}}`,
+/// **injected** `pack` + `source` with `milestone_tasks` fed into `{{milestone.tasks}}`,
 /// no cascade overrides (the structural-only shape `compose_core`'s no-override path
 /// reads the pack unchanged). The `pub(crate)` boundary lets the `milestone.rs`
 /// dispatch test drive the feeding contract over a `FixturePack` fan-out workflow
@@ -1002,7 +1004,7 @@ pub(crate) fn execute_milestone_core(
     pack: &dyn PackSource,
     workflow_id: &str,
     source: &dyn StepSource,
-    milestone_ids: &[String],
+    milestone_tasks: &[engine::data_value::SubTask],
 ) -> Result<Composition> {
     let overrides = ComposeOverrides {
         deltas: Vec::new(),
@@ -1023,7 +1025,7 @@ pub(crate) fn execute_milestone_core(
         source,
         &defs,
         &overrides,
-        milestone_ids,
+        milestone_tasks,
         None,
         None,
         false,
@@ -1044,7 +1046,7 @@ fn compose_drained(
     workflow_id: &str,
     source: &CascadeStepSource<'_>,
     overrides: &ComposeOverrides,
-    milestone_ids: &[String],
+    milestone_tasks: &[engine::data_value::SubTask],
     seam: Option<&str>,
     slug_override: Option<&str>,
     preview: bool,
@@ -1063,7 +1065,7 @@ fn compose_drained(
         source,
         &source.defs(),
         overrides,
-        milestone_ids,
+        milestone_tasks,
         seam,
         slug_override,
         preview,
@@ -1123,7 +1125,7 @@ fn compose_core(
     source: &dyn StepSource,
     defs: &CascadeDefs<'_>,
     overrides: &ComposeOverrides,
-    milestone_ids: &[String],
+    milestone_tasks: &[engine::data_value::SubTask],
     seam: Option<&str>,
     slug_override: Option<&str>,
     preview: bool,
@@ -1244,7 +1246,7 @@ fn compose_core(
             // id-sorted sub-task list by the `jigc milestone execute` dispatch —
             // the lone production site feeding this non-empty (`milestone.rs`
             // `run_execute`; `write-commands.md` → Executing the milestone).
-            milestone: milestone_ids.to_vec(),
+            milestone: milestone_tasks.to_vec(),
             // The CLI-owned source seam — `None` on every `start`/milestone compose
             // path; fed the staged foreign bytes only by the `jigc migrate` verb
             // (auto-migration.md → The source seam). A `creates-task: false`

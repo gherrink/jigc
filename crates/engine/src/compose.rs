@@ -1561,9 +1561,16 @@ fn emit_bare_data_value(
 ///
 /// `over` carries the verbatim marker placeholder text (e.g. `{{ milestone.tasks }}`);
 /// its `{{…}}` braces are stripped and the inner data-value path resolved against
-/// `ctx` to a [`Resolution::Milestone`] collection. `run` is the marker's
-/// `workflow:<id>` ref; the `workflow:` prefix is stripped to the bare workflow id
-/// that names the re-entry command (`jigc workflow <id> --task <sub>`) — the BARE
+/// `ctx` to a [`Resolution::Milestone`] collection. The launch line names **each
+/// sub-task's own recorded minting workflow** — the `<W>` the re-entry door
+/// `jigc workflow <W> --task <id>` asserts equality against, so a sub-task minted
+/// `--workflow <other>` is spawned under `<other>` rather than handed a command the
+/// binary refuses (M49 Increment 10 / T3;
+/// [write-commands.md](../../../design/write-commands.md) → Sub-agent re-entry).
+///
+/// `run` is the marker's `workflow:<id>` ref, the **fall-back** for a sub-task
+/// carrying no recorded workflow (a pre-bump record's item): the `workflow:` prefix
+/// is stripped to the bare workflow id that names the re-entry command — the BARE
 /// CLI payload; the adapter launch wrapper is a later increment
 /// ([assistant-adapter.md] → Bind the spawn mechanism). An **empty** collection
 /// emits the empty string — zero directives, never a finding (the
@@ -1586,8 +1593,8 @@ fn emit_fan_out_spawns(
         )
     })?;
     let path = parse_data_value(inner)?;
-    let ids = match path.resolve(ctx)? {
-        Resolution::Milestone { ids } => ids,
+    let tasks = match path.resolve(ctx)? {
+        Resolution::Milestone { tasks } => tasks,
         _ => {
             return Err(blocking_workflow_refs(
                 "workflow-refs.malformed-data-value",
@@ -1598,14 +1605,18 @@ fn emit_fan_out_spawns(
             ));
         }
     };
-    // The re-entry command names the bare workflow id (the `workflow:` prefix stripped).
-    let workflow = run.strip_prefix("workflow:").unwrap_or(run);
-    let lines: Vec<String> = ids
+    // The re-entry command names the bare workflow id (the `workflow:` prefix stripped)
+    // — the step's own `run:`, used only where a sub-task records no workflow of its own.
+    let fallback = run.strip_prefix("workflow:").unwrap_or(run);
+    let lines: Vec<String> = tasks
         .iter()
-        .map(|id| {
+        .map(|task| {
             // Each spawn directs its sub-agent into its own detached worktree first
             // (M31 WF4) via the shared `worktree_path` convention `render_spawn` also
-            // uses, then runs the bare re-entry payload there.
+            // uses, then runs the bare re-entry payload there — under the sub-task's
+            // OWN recorded workflow, which is what the re-entry guard compares against.
+            let id = &task.id;
+            let workflow = task.workflow.as_deref().unwrap_or(fallback);
             let worktree = crate::milestone::worktree_path(id);
             let cmd = format!(
                 "cd {} && jigc workflow {workflow} --task {id}",
@@ -8466,13 +8477,27 @@ Follow the house rule.
     /// A `creates-task: false` ctx fed the milestone's id-sorted sub-task ids — the
     /// `fan-out` step's `over:` list-source ([workflow-dialect.md] → data-value
     /// roots). No `task` root (a `fan-out`/`join` workflow operates on an existing
-    /// milestone work-unit and mints no task).
+    /// milestone work-unit and mints no task). Each sub-task carries **no** recorded
+    /// workflow, so the emit falls back to the step's own `run:` — the pre-bump arm;
+    /// [`fan_out_ctx_with_workflows`] feeds the recorded-workflow arm.
     fn fan_out_ctx(ids: &[&str]) -> ComposeContext {
+        fan_out_ctx_with_workflows(&ids.iter().map(|id| (*id, None)).collect::<Vec<_>>())
+    }
+
+    /// The same ctx over `(id, recorded workflow)` pairs — the shape the CLI feeds since
+    /// M49 Increment 10 / T3, so a sub-task minted `--workflow <W>` is spawned under `<W>`
+    /// rather than under the step's single `run:`.
+    fn fan_out_ctx_with_workflows(tasks: &[(&str, Option<&str>)]) -> ComposeContext {
         ComposeContext {
             task: None,
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
-            milestone: ids.iter().map(|s| (*s).to_owned()).collect(),
+            milestone: tasks
+                .iter()
+                .map(|(id, workflow)| {
+                    crate::data_value::SubTask::new(*id, workflow.map(str::to_owned))
+                })
+                .collect(),
             source: None,
             schemas: std::collections::BTreeMap::new(),
         }
@@ -8535,6 +8560,52 @@ Follow the house rule.
                 "Spawn line must be `^Spawn: `(.+)`$`, got {spawn:?}"
             );
         }
+    }
+
+    /// M49 Increment 10 / T3 — **each `Spawn:` line names its own sub-task's recorded
+    /// minting workflow**, the value the re-entry door `jigc workflow <W> --task <id>`
+    /// asserts equality against ([write-commands.md] → Sub-agent re-entry). Both arms of
+    /// the axis in one fixture: `alpha-fix` records `decided-task` and is spawned under
+    /// it; `zebra-fix` records nothing and falls back to the step's own
+    /// `run: workflow:sub-task`. The ids are fed **out of order** and carry **different**
+    /// workflows, so the emitted order is visibly keyed on the id and not on what each
+    /// sub-task runs.
+    ///
+    /// Before this, `run:` was the only workflow a launch line could name — so every
+    /// sub-task minted `--workflow <other>` was handed a command the binary refuses.
+    #[test]
+    fn fan_out_spawns_name_each_sub_tasks_recorded_workflow() {
+        let source = MapSource::new(&[
+            (
+                "implement-tasks",
+                "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run:  workflow:sub-task\n---\nSpawn a sub-agent per task and implement it.\n",
+            ),
+            (
+                "join-tasks",
+                "---\njoin: {}\n---\nAll sub-tasks complete and merged by task-id order. Continue.\n",
+            ),
+        ]);
+        let def = t5_fan_out_def();
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx =
+            fan_out_ctx_with_workflows(&[("zebra-fix", None), ("alpha-fix", Some("decided-task"))]);
+
+        let composed = compose(&def, &source, &catalog, &ctx).expect("composes");
+
+        let spawns: Vec<&str> = composed
+            .text
+            .lines()
+            .filter(|l| l.starts_with("Spawn: "))
+            .collect();
+        assert_eq!(
+            spawns,
+            vec![
+                "Spawn: `cd .jigc/worktrees/alpha-fix && jigc workflow decided-task --task alpha-fix`",
+                "Spawn: `cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix`",
+            ],
+            "each Spawn names its own sub-task's recorded workflow, the step's `run:` only \
+             where none is recorded — id-ordered regardless"
+        );
     }
 
     /// An **empty** milestone (no sub-tasks) → **zero** `Spawn:` lines — the
@@ -8607,7 +8678,11 @@ Follow the house rule.
             task: None,
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
-            milestone: list.enumerate(),
+            milestone: list
+                .enumerate()
+                .into_iter()
+                .map(|id| crate::data_value::SubTask::new(id, None))
+                .collect(),
             source: None,
             schemas: std::collections::BTreeMap::new(),
         }
@@ -8709,14 +8784,7 @@ Follow the house rule.
 
         // A milestone ctx whose ids are NOT id-sorted — fed straight to `compose`,
         // bypassing `TaskList::enumerate()`. Two divergent feed orders of the same set.
-        let ctx_for = |order: &[&str]| ComposeContext {
-            task: None,
-            catalog: Vec::new(),
-            store: std::collections::BTreeMap::new(),
-            milestone: order.iter().map(|s| (*s).to_owned()).collect(),
-            source: None,
-            schemas: std::collections::BTreeMap::new(),
-        };
+        let ctx_for = |order: &[&str]| fan_out_ctx(order);
         let forward = compose(
             &def,
             &source,

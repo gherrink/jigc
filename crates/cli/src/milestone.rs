@@ -25,6 +25,7 @@ use crate::pack::make_pack;
 use crate::render;
 use crate::task::git_head;
 use anyhow::{Context, Result, bail};
+use engine::data_value::SubTask;
 use engine::file_state::{FileStateRecord, hash_bytes, reconcile_committed};
 use engine::finalize::plan_milestone_finalize;
 use engine::finding::{Finding, Location, Route, Severity};
@@ -1868,6 +1869,30 @@ fn live_sub_task_ids(
     Ok(ids.into_iter().filter(|id| !settled.contains(id)).collect())
 }
 
+/// Pair each live sub-task id with **the workflow it was minted against** — the value the
+/// re-entry W-equality guard compares `<W>` to, so the `fan-out` emit can name a launch line
+/// the binary accepts (M49 Increment 10 / T3; `design/write-commands.md` → Sub-agent re-entry).
+///
+/// It is read from the sub-task's own working area (`.jigc/tasks/<id>/workflow`) — *the same
+/// file that guard reads*, and on a fresh clone the one the shared re-seed has just re-derived
+/// from each record item's `workflow` leaf (M49 Increment 9). Reading the guard's own source is
+/// what makes agreement structural rather than coincidental.
+///
+/// An area recording **no** workflow yields [`None`], and the `fan-out` step's own `run:` answers
+/// that sub-task — the pre-bump case [`DEFAULT_SUB_TASK_WORKFLOW`] has covered since Increment 9.
+/// The CLI does this read because the resolver does **no** work-unit I/O (the determinism
+/// boundary): it is fed pairs.
+fn recorded_workflows(jigc_root: &Path, ids: Vec<String>) -> Result<Vec<SubTask>> {
+    ids.into_iter()
+        .map(|id| {
+            let dir = jigc_root.join("tasks").join(&id);
+            let workflow = engine::state::read_workflow_id(&dir)
+                .with_context(|| format!("could not read the recorded workflow for `{id}`"))?;
+            Ok(SubTask::new(id, workflow))
+        })
+        .collect()
+}
+
 fn reseed_cache(
     jigc_home: &Path,
     jigc_root: &Path,
@@ -2863,7 +2888,8 @@ fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
 /// precedent), read its **id-sorted** `TaskList::enumerate()`, and compose the
 /// `creates-task: false` `milestone-execution` workflow over it — feeding the id-sorted
 /// list into `{{milestone.tasks}}` so the `fan-out` step resolves it (one `Spawn:`
-/// directive per sub-task, id-ordered). The lone production site feeding
+/// directive per sub-task, id-ordered, each naming **that sub-task's recorded minting
+/// workflow** — [`recorded_workflows`]). The lone production site feeding
 /// [`ComposeContext::milestone`] non-empty; **mints nothing** (the milestone and its
 /// sub-tasks already exist).
 fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Composition> {
@@ -2888,7 +2914,10 @@ fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Compositi
     // is the **live** set: a `Spawn:` line for a settled sub-task dead-ends on *"no task"* and
     // routes back at the listing that names it again ([`live_sub_task_ids`]).
     let ids = live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?;
-    crate::start::execute_milestone_in_repo(&repo_root, MILESTONE_EXECUTION_WORKFLOW, &ids)
+    // Each id paired with its own recorded minting workflow, so the emitted `Spawn:` line names
+    // the workflow the re-entry door will accept ([`recorded_workflows`]).
+    let tasks = recorded_workflows(&jigc_root, ids)?;
+    crate::start::execute_milestone_in_repo(&repo_root, MILESTONE_EXECUTION_WORKFLOW, &tasks)
 }
 
 /// Dispatch `jigc milestone join <milestone-id>`: run the by-task-id join, render the
@@ -4544,7 +4573,7 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::unwind_mint;
+    use super::{SubTask, unwind_mint};
     use crate::start::{PackStepSource, execute_milestone_core};
     use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
     use std::collections::HashMap;
@@ -4629,13 +4658,18 @@ mod tests {
     /// The T1 milestone-feeding contract: composing the `creates-task: false`
     /// `milestone-execution` fixture workflow through [`execute_milestone_core`] with a
     /// milestone's id-sorted sub-task list fed into `{{milestone.tasks}}` emits **one**
-    /// `` Spawn: `cd <worktree> && jigc workflow sub-task --task <id>` `` per id, **in
+    /// `` Spawn: `cd <worktree> && jigc workflow <W> --task <id>` `` per sub-task, **in
     /// id-sorted order**.
     /// The feed is given in NON-id order (zebra before alpha) so the id-sorted emit is
     /// not an accident of feed order — and (Validation hardening #7) the **reversed**
     /// feed emits the byte-identical block, proving the resolver sorts on resolve, not a
     /// caller pre-sort. The emit is read straight off the composed bytes the agent runs
     /// — never a reconstructed equivalent.
+    ///
+    /// Both `<W>` arms are fed here (M49 Increment 10 / T3): `alpha-fix` records
+    /// `decided-task` and is spawned under it; `zebra-fix` records **nothing** and falls
+    /// back to the step's own `run:` — and the sort still keys on the **id**, not the
+    /// workflow, across both feed orders.
     #[test]
     fn milestone_feeding_emits_one_id_sorted_spawn_per_subtask() {
         let pack = fanout_pack();
@@ -4645,16 +4679,20 @@ mod tests {
         let repo_root = Path::new("/nonexistent-milestone-execute-repo");
 
         // The id-sorted sub-task list, FED in non-id order.
-        let fed = vec!["zebra-fix".to_owned(), "alpha-fix".to_owned()];
+        let fed = vec![
+            SubTask::new("zebra-fix", None),
+            SubTask::new("alpha-fix", Some("decided-task".to_owned())),
+        ];
         let composed =
             execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &fed)
                 .expect("milestone-execution composes over the fed sub-task list")
                 .view;
 
         // Exactly one Spawn line per sub-task, each `cd`-ing into its own worktree
-        // before the bare re-entry workflow + id.
+        // before the bare re-entry workflow + id — the recorded workflow where the
+        // sub-task carries one, the step's `run:` where it does not.
         let alpha =
-            "Spawn: `cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`";
+            "Spawn: `cd .jigc/worktrees/alpha-fix && jigc workflow decided-task --task alpha-fix`";
         let zebra =
             "Spawn: `cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix`";
         assert!(
@@ -4680,7 +4718,10 @@ mod tests {
 
         // Order-invariance (Validation hardening #7): the REVERSED feed emits the
         // byte-identical composed output — the resolver sorts on resolve.
-        let reversed = vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()];
+        let reversed = vec![
+            SubTask::new("alpha-fix", Some("decided-task".to_owned())),
+            SubTask::new("zebra-fix", None),
+        ];
         let composed_rev =
             execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &reversed)
                 .expect("the reversed feed composes")

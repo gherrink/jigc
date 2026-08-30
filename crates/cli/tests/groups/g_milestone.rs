@@ -45,6 +45,8 @@ mod milestone_record_rollback;
 mod milestone_record_schema;
 #[path = "../milestone_record_stale_base.rs"]
 mod milestone_record_stale_base;
+#[path = "../milestone_spawn_recorded_workflow.rs"]
+mod milestone_spawn_recorded_workflow;
 #[path = "../milestone_task_list_concurrency.rs"]
 mod milestone_task_list_concurrency;
 #[path = "../milestone_teardown_loss.rs"]

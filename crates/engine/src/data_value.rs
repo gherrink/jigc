@@ -189,6 +189,39 @@ pub struct TaskRoot {
     pub roles: BTreeMap<String, Option<Address>>,
 }
 
+/// One fanned sub-task of the milestone being composed — its id, and the **workflow
+/// it was minted against** (`jigc milestone add-task … --workflow <W>`, recorded per
+/// item on the milestone record since M49 Increment 9 and therefore fresh-clone
+/// durable; [team-ready-state.md](../../../design/team-ready-state.md) → The lifecycle).
+///
+/// The pair is what lets the `fan-out` emit name a launch line the binary accepts: the
+/// re-entry door `jigc workflow <W> --task <id>` asserts `<W>` equals the sub-task's
+/// recorded mint workflow, so a spawn line carrying the step's single `run:` workflow is
+/// refused for every overridden sub-task ([write-commands.md](../../../design/write-commands.md)
+/// → Sub-agent re-entry: the re-entry equality guard).
+///
+/// `workflow` is `None` for a sub-task carrying **no** recorded value — a pre-bump
+/// record's item, the one case the `fan-out` step's own `run:` still answers. The CLI
+/// reads the recorded value and feeds it; the resolver does no work-unit I/O.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubTask {
+    /// The sub-task's minted work-unit id (the `--task <id>` the launch line names).
+    pub id: String,
+    /// The workflow the sub-task was minted against, when one is recorded.
+    pub workflow: Option<String>,
+}
+
+impl SubTask {
+    /// Build a sub-task from its id and its recorded minting workflow (`None` when the
+    /// record carries no value for it).
+    pub fn new(id: impl Into<String>, workflow: Option<String>) -> Self {
+        Self {
+            id: id.into(),
+            workflow,
+        }
+    }
+}
+
 /// The composition context a data-value [`Path`] resolves against — the live
 /// state feed (`overrides.md` → Resolution algorithm, the read path).
 ///
@@ -224,18 +257,19 @@ pub struct ComposeContext {
     /// from the map (no committed instances) resolves to the empty collection —
     /// empty text, not a finding.
     pub store: BTreeMap<String, Vec<Address>>,
-    /// The engine-native `milestone` work-unit root — the live sub-task ids of the
+    /// The engine-native `milestone` work-unit root — the live sub-tasks of the
     /// milestone being composed (`{{milestone.tasks}}`, the `fan-out` step's
     /// list-source; [workflow-dialect.md](../../../design/workflow-dialect.md)
     /// → data-value roots). The CLI feeds the `TaskList::enumerate()` output
-    /// (already canonically id-sorted) and the resolver does **no** work-unit I/O
-    /// (the determinism boundary), mirroring how `catalog`/`store` are fed; the
+    /// (already canonically id-sorted) **paired with each sub-task's recorded
+    /// minting workflow**, and the resolver does **no** work-unit I/O (the
+    /// determinism boundary), mirroring how `catalog`/`store` are fed; the
     /// resolver also **sorts on resolve** so the emitted `fan-out` directive
     /// sequence is id-ordered regardless of feed order — the engine's determinism
     /// does not depend on the caller pre-sorting (Validation hardening #7). Empty
     /// when the composition has no milestone (no fan-out) or the milestone has no
     /// sub-tasks — the empty collection, not a finding.
-    pub milestone: Vec<String>,
+    pub milestone: Vec<SubTask>,
     /// The CLI-owned **source seam** — the raw foreign-document bytes the `jigc
     /// migrate` verb stages into the task, surfaced verbatim into the composed
     /// migration workflow by the lone `{{source}}` read-only context placeholder
@@ -318,19 +352,21 @@ pub enum Resolution {
         /// The committed instance addresses of one doctype, in fed order.
         entries: Vec<Address>,
     },
-    /// The live **collection** of sub-task ids the engine-native `milestone` root
+    /// The live **collection** of sub-tasks the engine-native `milestone` root
     /// resolves to (`milestone.tasks`; [workflow-dialect.md](../../../design/workflow-dialect.md)
     /// → data-value roots — "its `.tasks` resolves to the milestone's sub-task
     /// collection"). A collection leaf like [`Catalog`](Resolution::Catalog) /
-    /// [`Store`](Resolution::Store): it carries the bare sub-task ids (the
-    /// `fan-out` step fans over them) but is not navigable — a further `.relation`
-    /// hop, `#fragment`, or `@` past it is a structural error. An empty milestone
+    /// [`Store`](Resolution::Store): it carries the sub-tasks (the `fan-out` step
+    /// fans over them) but is not navigable — a further `.relation` hop,
+    /// `#fragment`, or `@` past it is a structural error. An empty milestone
     /// resolves to the empty collection (no finding).
     Milestone {
-        /// The milestone's sub-task ids in **canonical id-sorted order** — the
-        /// resolver sorts here, so the order is a pure function of the id *set* and
-        /// never depends on the caller's feed order (Validation hardening #7).
-        ids: Vec<String>,
+        /// The milestone's sub-tasks in **canonical id-sorted order** — the
+        /// resolver sorts here, so the order is a pure function of the sub-task
+        /// *set* and never depends on the caller's feed order (Validation
+        /// hardening #7). Each carries its recorded minting workflow, which is
+        /// what the `fan-out` emit names in its launch line.
+        tasks: Vec<SubTask>,
     },
 }
 
@@ -361,8 +397,8 @@ impl Path {
     ///   `#fragment`, or `@` past it is the `workflow-refs.store-not-navigable`
     ///   structural error (a collection root, like `catalog`).
     /// - `milestone.tasks` (the fixed `.tasks` leaf hop) → [`Resolution::Milestone`],
-    ///   the milestone's sub-task ids (empty when none); `milestone` alone, a
-    ///   non-`tasks` hop, a further hop past `.tasks`, a `#fragment`, or `@` is the
+    ///   the milestone's sub-tasks — id + recorded minting workflow (empty when none);
+    ///   `milestone` alone, a non-`tasks` hop, a further hop past `.tasks`, a `#fragment`, or `@` is the
     ///   `workflow-refs.milestone-not-navigable` structural error (a collection leaf).
     ///
     /// A literal `type:name` [`Head::Doc`] head is a committed-store read that
@@ -464,9 +500,9 @@ impl Path {
             // (Validation hardening #7). The CLI feeds `TaskList::enumerate()`
             // output (already id-sorted), so this is a no-op on the production path;
             // it closes the order leak when any other caller feeds an unsorted set.
-            let mut ids = ctx.milestone.clone();
-            ids.sort();
-            return Ok(Resolution::Milestone { ids });
+            let mut tasks = ctx.milestone.clone();
+            tasks.sort_by(|a, b| a.id.cmp(&b.id));
+            return Ok(Resolution::Milestone { tasks });
         }
 
         if root != "task" {
@@ -1010,49 +1046,57 @@ mod tests {
     /// engine-native `milestone` work-unit root the `fan-out` step's
     /// `{{milestone.tasks}}` reads ([workflow-dialect.md](../../../design/workflow-dialect.md)
     /// → data-value roots). The CLI feeds the `TaskList::enumerate()` output (already
-    /// id-sorted); the resolver does **no** work-unit I/O (the determinism boundary).
+    /// id-sorted) paired with each sub-task's recorded minting workflow; the resolver
+    /// does **no** work-unit I/O (the determinism boundary).
     fn two_task_milestone_ctx() -> ComposeContext {
         ComposeContext {
-            milestone: vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()],
+            milestone: two_tasks(),
             ..ComposeContext::default()
         }
     }
 
+    /// The two fed sub-tasks, in id order — one recording a minting workflow, one
+    /// recording none (the pre-bump item the `fan-out` step's own `run:` answers).
+    fn two_tasks() -> Vec<SubTask> {
+        vec![
+            SubTask::new("alpha-fix", Some("decided-task".to_owned())),
+            SubTask::new("zebra-fix", None),
+        ]
+    }
+
     /// Core done-criterion: a bare `milestone.tasks` (the fixed `.tasks` leaf hop,
     /// no `#fragment`, no `@` marker) resolves to [`Resolution::Milestone`] carrying
-    /// the sub-task ids in **canonical id-sorted order** — the collection the
-    /// `fan-out` step fans over. An empty milestone resolves to the **empty**
-    /// collection (no finding).
+    /// the sub-tasks in **canonical id-sorted order**, each with the workflow it was
+    /// minted against — the collection the `fan-out` step fans over. An empty
+    /// milestone resolves to the **empty** collection (no finding).
     #[test]
     fn bare_milestone_tasks_resolves_to_milestone_collection() {
         let ctx = two_task_milestone_ctx();
 
         assert_eq!(
             resolve("milestone.tasks", &ctx).expect("bare `milestone.tasks` resolves"),
-            Resolution::Milestone {
-                ids: vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()],
-            }
+            Resolution::Milestone { tasks: two_tasks() }
         );
 
-        // The resolver sorts: an unsorted feed resolves id-ordered, so the emit
-        // path's order is a pure function of the id set, not the caller's feed
-        // order (Validation hardening #7).
+        // The resolver sorts **on the id**: an unsorted feed resolves id-ordered, so the
+        // emit path's order is a pure function of the sub-task set, not the caller's feed
+        // order and not the workflows they carry (Validation hardening #7).
+        let mut reversed = two_tasks();
+        reversed.reverse();
         let unsorted = ComposeContext {
-            milestone: vec!["zebra-fix".to_owned(), "alpha-fix".to_owned()],
+            milestone: reversed,
             ..ComposeContext::default()
         };
         assert_eq!(
             resolve("milestone.tasks", &unsorted).expect("unsorted milestone resolves"),
-            Resolution::Milestone {
-                ids: vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()],
-            }
+            Resolution::Milestone { tasks: two_tasks() }
         );
 
         // An empty milestone → the empty collection, not a finding.
         let empty = ComposeContext::default();
         assert_eq!(
             resolve("milestone.tasks", &empty).expect("empty milestone resolves to empty"),
-            Resolution::Milestone { ids: Vec::new() }
+            Resolution::Milestone { tasks: Vec::new() }
         );
     }
 
