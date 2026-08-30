@@ -3231,24 +3231,45 @@ pub(crate) fn apply_placement_root<'a>(
     resolved: &cascade::Resolved,
     schemas: impl IntoIterator<Item = &'a mut Schema>,
 ) {
-    let Some(root) = placement_root(resolved) else {
+    let root = placement_root(resolved);
+    if root.is_none() {
         return; // unset — every declared home stands.
-    };
+    }
     for schema in schemas {
         let Some(placement) = schema.placement.as_mut() else {
             continue; // a located or transient doctype — `docs-root`'s business, not ours.
         };
-        // A home with no leading directory component is declared AT the repo root
-        // (`VISION.md`): there is nothing to re-root, and re-rooting it is exactly what
-        // the ecosystem-idiomatic rule forbids.
-        let Some((_, remainder)) = placement.file.split_once('/') else {
-            continue;
-        };
-        placement.file = if root.is_empty() {
-            remainder.to_owned()
-        } else {
-            format!("{root}/{remainder}")
-        };
+        placement.file = reroot_placement_file(&placement.file, root);
+    }
+}
+
+/// The home a **declared** `placement.file` resolves to under `root` — the whole re-root
+/// rule, in one place, so the two callers that need it cannot drift apart:
+/// [`apply_placement_root`] (the schema-resolution seam) and the `config set
+/// placement-root` move floor (`crate::config`), which computes a doctype's *prior* and
+/// *current* home by applying this to the same declaration under the old and the new value.
+///
+/// `None` is **unset** — the declaration stands. Otherwise a declared home carrying a
+/// leading directory component re-roots to `<root>/<remainder>` (`""` being the repo root,
+/// so the component is simply dropped); a home declared **at** the repo root has no leading
+/// component and is returned unchanged, which is the ecosystem-idiomatic rule.
+///
+/// **Always apply this to the DECLARATION, never to an already-resolved home.** The two
+/// look interchangeable and are not: once the root is `.` a resolved home has no leading
+/// component left, so re-rooting *it* under a new value is a silent no-op — which, on the
+/// move floor, computes a destination equal to the source and strands the doc it was
+/// supposed to move.
+pub(crate) fn reroot_placement_file(declared: &str, root: Option<&str>) -> String {
+    let Some(root) = root else {
+        return declared.to_owned();
+    };
+    let Some((_, remainder)) = declared.split_once('/') else {
+        return declared.to_owned();
+    };
+    if root.is_empty() {
+        remainder.to_owned()
+    } else {
+        format!("{root}/{remainder}")
     }
 }
 
@@ -3264,11 +3285,17 @@ pub(crate) fn apply_placement_root<'a>(
 /// omits `placement-root` resolves `None` here and stays declared, the same opt-in shape
 /// `apply_docs_root` has.
 pub(crate) fn placement_root(resolved: &cascade::Resolved) -> Option<&str> {
-    let root = resolved
-        .scalar("placement-root")
-        .unwrap_or("")
-        .trim_matches('/');
-    match root {
+    normalize_placement_root(resolved.scalar("placement-root").unwrap_or(""))
+}
+
+/// Normalize a **raw** `placement-root` value to [`placement_root`]'s vocabulary: strip
+/// surrounding slashes, `""` is **unset** (`None`), `.` is the repo root (`Some("")`).
+///
+/// The raw-string sibling of [`placement_root`] (which normalizes a *resolved* value) — the
+/// `config set` move floor needs it because the new value is not yet in the cascade, exactly
+/// as `config::normalize_docs_root` is the raw sibling of [`docs_root_prefix`].
+pub(crate) fn normalize_placement_root(raw: &str) -> Option<&str> {
+    match raw.trim_matches('/') {
         "" => None,
         "." => Some(""),
         root => Some(root),
@@ -3364,15 +3391,31 @@ impl<'a> CascadeDefs<'a> {
         Ok(schema)
     }
 
-    /// Load every cascade-resolved schema keyed by doctype: for each doctype the
-    /// pack ships, read the project `schemas/<id>.yaml` shadow when the project
-    /// owns the id, else the pack definition (whole-file shadow, no field-merge).
-    pub(crate) fn all_schemas(&self, pack: &dyn PackSource) -> Result<BTreeMap<String, Schema>> {
+    /// Every cascade-resolved schema keyed by doctype, **as declared** — the whole-file
+    /// project shadow resolved, but neither `docs-root` nor `placement-root` applied.
+    ///
+    /// The raw read [`all_schemas`](Self::all_schemas) is built on, exposed because the
+    /// `config set placement-root` move floor must compute a doctype's prior **and** current
+    /// home from the same declaration ([`reroot_placement_file`] — applying the rule to an
+    /// already-resolved home is the silent-strand trap that helper documents). Every other
+    /// caller wants `all_schemas`: a resolved home is what the store reads and writes.
+    pub(crate) fn declared_schemas(
+        &self,
+        pack: &dyn PackSource,
+    ) -> Result<BTreeMap<String, Schema>> {
         let mut out = BTreeMap::new();
         for id in pack.list(PackResourceKind::Schemas) {
             let schema = self.read_one(pack, id.as_str())?;
             out.insert(schema.ty.clone(), schema);
         }
+        Ok(out)
+    }
+
+    /// Load every cascade-resolved schema keyed by doctype: for each doctype the
+    /// pack ships, read the project `schemas/<id>.yaml` shadow when the project
+    /// owns the id, else the pack definition (whole-file shadow, no field-merge).
+    pub(crate) fn all_schemas(&self, pack: &dyn PackSource) -> Result<BTreeMap<String, Schema>> {
+        let mut out = self.declared_schemas(pack)?;
         // Surface A: nest every persisted doctype's `location:` under the resolved
         // `docs-root` before returning — covers `describe`, `start`/compose, and the
         // `committed_store` sweep (all read schemas through here).

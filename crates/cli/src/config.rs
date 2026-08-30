@@ -23,6 +23,7 @@
 //! through `workflow-refs`.
 
 use crate::invocation_log::Outcome;
+use crate::orphan::{self, Home};
 use crate::pack::make_pack;
 use crate::render::{ConfigAck, KnobReading, RejectedSet};
 use anyhow::{Context, Result, bail};
@@ -357,6 +358,16 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
         route_docs_root_repoint_orphans(pack.as_ref(), &project_config, value);
     }
 
+    // `placement-root` re-point: the placement sibling of the loop above, same place and
+    // same posture — it runs BEFORE the knob lands (so the prior home resolves off the old
+    // cascade) and is best-effort (a hiccup never fails the write). T1 shipped the knob and
+    // said so plainly: a re-point re-resolves every nested placement home while the
+    // committed instance stays put, and the store goes QUIET about it (the record still
+    // baselines the old path and the file still matches). This is the floor that closes it.
+    if key == "placement-root" {
+        route_placement_root_repoint_strands(pack.as_ref(), &project_config, value);
+    }
+
     // Step 3 — record the `scalar-set` into the project manifest (last-write-wins).
     write_scalar(&project_config, key, value)?;
     Ok(ConfigAck::Set {
@@ -434,6 +445,98 @@ fn route_docs_root_repoint_orphans(pack: &dyn PackSource, project_config: &Path,
             Err(err) => {
                 eprintln!("  - {old_rel}: could not relocate ({err:#}) — move it by hand")
             }
+        }
+    }
+}
+
+/// On a `placement-root` re-point to `new_value`, **detect + route + move** the committed
+/// instances the change would strand at each placement doctype's prior home — the placement
+/// sibling of [`route_docs_root_repoint_orphans`] (`design/storage.md` → Placement /
+/// docs-root; `design/reconciliation.md` → the route home / Relocation collisions).
+///
+/// A `placement-root` re-point has a **recorded prior home** — the declared `placement.file`
+/// re-rooted under the *old* resolved value, deterministic from the current cascade — so
+/// auto-move is safe here for exactly the reason it is on the `docs-root` sibling, and unsafe
+/// on the freeze-exempt path (which carries no prior-home snapshot and takes the human's
+/// `--from`).
+///
+/// **Both homes are computed from the DECLARED `placement.file`** — through the one shared
+/// [`crate::start::reroot_placement_file`] rule — never by re-rooting the prior *resolved*
+/// home, which the seam already produced. The two look
+/// interchangeable and are not: once the root is `.` the resolved home has no leading
+/// directory component left, so re-rooting it under the new value yields the same path — a
+/// destination equal to the source, a silent no-op, and the doc left stranded at the repo
+/// root. That is the exact silent-loss shape this floor exists to prevent.
+///
+/// The move itself delegates to [`crate::relocate::relocate_stranded`], which carries the
+/// [`crate::relocate::move_doc`] primitive (`git mv` + file-state re-key) **and** the
+/// foreign-squatter displacement into the gitignored `.jigc/displaced/` workbench that the
+/// `docs-root` loop, calling `move_doc` directly, does not have — so a working file at the
+/// new home is parked out of the way, never clobbered.
+///
+/// Best-effort: a resolution/store-access hiccup returns silently, and a per-doc failure is
+/// surfaced (routing the operator to move it by hand) but never fails the write.
+fn route_placement_root_repoint_strands(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    new_value: &str,
+) {
+    let Ok(resolved) = crate::start::resolve_severity_cascade(pack, project_config) else {
+        return;
+    };
+    let old_root = crate::start::placement_root(&resolved);
+    let new_root = crate::start::normalize_placement_root(new_value);
+    if old_root == new_root {
+        return; // the same home for every doctype — nothing can be stranded.
+    }
+    let defs = crate::start::CascadeDefs::new(&resolved, project_config);
+    let Ok(declared) = defs.declared_schemas(pack) else {
+        return;
+    };
+    // `<repo>/.jigc/config` → the repo root the committed docs (and `git ls-files`) live at.
+    let Some(repo_root) = project_config.parent().and_then(Path::parent) else {
+        return;
+    };
+    // Each placement doctype whose home actually moves, as a (prior, current) home pair —
+    // both sides re-rooted from the one declaration.
+    let pairs: Vec<(Home, Home)> = declared
+        .values()
+        .filter_map(|schema| {
+            let file = &schema.placement.as_ref()?.file;
+            let prior = crate::start::reroot_placement_file(file, old_root);
+            let current = crate::start::reroot_placement_file(file, new_root);
+            (prior != current).then(|| (Home::placement(&prior), Home::placement(&current)))
+        })
+        .collect();
+    let committed = orphan::committed_markdown(repo_root);
+    let strands = pairs.iter().any(|(prior, current)| {
+        committed
+            .iter()
+            .any(|rel| orphan::is_stranded(rel, prior, current))
+    });
+    if !strands {
+        return;
+    }
+    // The solicit/act honesty pair the `docs-root` sibling prints: name the sweep's basis
+    // (every committed doc at a placement doctype's prior home, managed or not — committed
+    // truth, deliberately index-blind so a fresh clone still relocates) and the git state the
+    // moves land in (each is a staged `git mv`, committed by the operator's next commit).
+    eprintln!(
+        "relocating the committed doc(s) stranded by the `placement-root` re-point to \
+         `{new_value}` (every committed doc at a placement doctype's prior home, managed or \
+         not; each move is a staged `git mv` — commit it with your next commit):"
+    );
+    let jigc_root = repo_root.join(".jigc");
+    for (prior, current) in &pairs {
+        let report = crate::relocate::relocate_stranded(repo_root, &jigc_root, prior, current);
+        for (from, to) in &report.moved {
+            eprintln!("  - {from} → {to}");
+        }
+        for (from, to) in &report.displaced {
+            eprintln!("  - {from} → {to} (a foreign file at the new home, parked out of the way)");
+        }
+        for (path, reason) in &report.blocked {
+            eprintln!("  - {path}: could not relocate ({reason}) — move it by hand");
         }
     }
 }

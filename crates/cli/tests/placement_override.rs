@@ -1,4 +1,5 @@
-//! **`placement-root` — the one home no knob could reach** (M49 Increment 7, T1).
+//! **`placement-root` — the one home no knob could reach** (M49 Increment 7 — T1 the
+//! knob, T2 the detect + route + move floor).
 //!
 //! A `location:` doctype's home resolves through the `docs-root` knob, so an adopter
 //! whose managed docs do not live under `docs/` re-points every located doctype with one
@@ -241,4 +242,253 @@ fn the_unset_knob_leaves_every_declared_home_standing() {
     );
     assert_eq!(corpus.preview("migrate-vision"), vision);
     assert_eq!(corpus.preview("migrate-changelog"), changelog);
+}
+
+// -------------------------------------------------------------------------------------
+// T2 — the detect + route + MOVE floor: a `placement-root` re-point moves the docs it
+// would otherwise strand.
+//
+// T1 shipped the knob, not the safety. A re-point re-resolves every nested placement
+// home while the committed instance stays where it was, so the doc is **stranded**: the
+// store goes quiet (`jigc validate` reports nothing — the record still baselines the old
+// path and the file still matches it), and every read of the doctype's home now points at
+// a file that does not exist. That is the same shape the M39 `config set docs-root` floor
+// closed for `location:` doctypes (`crate::config::route_docs_root_repoint_orphans`), and
+// this is its placement sibling: same place in `run_set` (BEFORE the knob lands, so the
+// prior home resolves off the old cascade), same best-effort posture (a hiccup never fails
+// the write), same solicit/act honesty pair.
+//
+// The arms below drive the **real binary**: the move is asserted on the filesystem, on
+// `git status --porcelain`, and by reading the doc back through `jigc doc show` at the
+// address that must keep working.
+// -------------------------------------------------------------------------------------
+
+/// A conformant, v1-stamped `roadmap` — the byte form a committed methodology corpus
+/// carries at the placement home. Bytes are asserted **identical** across the move: a
+/// relocation preserves the file, it does not re-author it.
+const ROADMAP: &str = "\
+---
+schema-version: 1
+---
+
+# Roadmap
+
+## Milestones
+
+### First milestone  {#first-milestone}
+
+#### Proves
+
+The loop closes.
+
+#### Decomposition
+
+One increment.
+";
+
+/// A conformant, v1-stamped `vision` at the repo-root literal home.
+const VISION: &str = "\
+---
+schema-version: 1
+---
+
+# Vision
+
+## Thesis
+
+Structure belongs to the tool.
+
+## Invariants
+
+Prose belongs to the model.
+
+## Open questions
+
+None yet.
+";
+
+impl Corpus {
+    /// `git <args>` in the corpus repo, asserting success and returning stdout.
+    fn git(&self, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(self.repo.path())
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        String::from_utf8(out.stdout).expect("utf-8 git stdout")
+    }
+
+    /// Write `rel` (creating its parents) and commit it.
+    fn commit_file(&self, rel: &str, body: &str) {
+        let abs = self.repo.path().join(rel);
+        if let Some(parent) = abs.parent() {
+            fs::create_dir_all(parent).expect("create parent dir");
+        }
+        fs::write(&abs, body).expect("write file");
+        self.git(&["add", rel]);
+        self.git(&["commit", "-q", "-m", &format!("add {rel}")]);
+    }
+
+    fn exists(&self, rel: &str) -> bool {
+        self.repo.path().join(rel).exists()
+    }
+
+    fn read(&self, rel: &str) -> String {
+        fs::read_to_string(self.repo.path().join(rel))
+            .unwrap_or_else(|err| panic!("reading {rel}: {err}"))
+    }
+
+    /// `git status --porcelain`, as lines.
+    fn status_lines(&self) -> Vec<String> {
+        self.git(&["status", "--porcelain"])
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
+/// **The floor.** A committed, baselined `docs/roadmap.md`, then
+/// `jigc config set placement-root notes`: the doc is **at** the new home, the move is a
+/// staged `git mv` (one `R` line, and only one — the two repo-root placement doctypes
+/// contribute none), the read address still resolves, and the store is not quietly wrong.
+///
+/// The last assertion is the one that separates a *move* from a *rename of the resolved
+/// home*: `move_doc` re-keys the file-state record, so `jigc validate` reports **no**
+/// file-state finding at the new path. Moving the file without re-keying would leave the
+/// recorded path missing — quiet in a different way, and still broken.
+#[test]
+fn a_repoint_moves_the_committed_doc_it_would_otherwise_strand() {
+    let corpus = Corpus::new("strand");
+    corpus.commit_file("docs/roadmap.md", ROADMAP);
+    corpus.commit_file("VISION.md", VISION);
+    corpus.ok(&["ingest"]);
+
+    corpus.ok(&["config", "set", "placement-root", "notes"]);
+
+    assert!(
+        corpus.exists("notes/roadmap.md"),
+        "the re-point must MOVE the committed instance to the new resolved home",
+    );
+    assert!(
+        !corpus.exists("docs/roadmap.md"),
+        "the prior home must be emptied — a copy left behind is a second source of truth",
+    );
+    assert_eq!(
+        corpus.read("notes/roadmap.md"),
+        ROADMAP,
+        "a relocation preserves the bytes — it never re-authors the doc",
+    );
+    assert!(
+        corpus.exists("VISION.md") && !corpus.exists("notes/VISION.md"),
+        "a home declared AT the repo root is not re-rooted, so it is never moved either",
+    );
+
+    let status = corpus.status_lines();
+    let renames: Vec<&String> = status.iter().filter(|l| l.starts_with('R')).collect();
+    assert_eq!(
+        renames.len(),
+        1,
+        "the move lands as ONE staged `git mv` (the operator commits it next); status:\n{}",
+        status.join("\n"),
+    );
+    assert!(
+        renames[0].contains("docs/roadmap.md") && renames[0].contains("notes/roadmap.md"),
+        "the staged rename names the prior and the new home; got: {}",
+        renames[0],
+    );
+
+    let shown = corpus.jigc(&["doc", "show", "roadmap:roadmap"]);
+    assert!(
+        shown.status.success(),
+        "the doc must still read back at its address after the re-point; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&shown.stdout),
+        String::from_utf8_lossy(&shown.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&shown.stdout).contains("The loop closes."),
+        "the read-back serves the moved doc's prose",
+    );
+
+    let report = corpus.ok(&["validate"]);
+    assert!(
+        !report.contains("file-state."),
+        "the move re-keys the file-state record, so the store carries no file-state \
+         finding at the new home; report:\n{report}",
+    );
+}
+
+/// **The trap the sibling floor cannot hit, and this one can.** Once `placement-root` is
+/// `.` the resolved home has **no leading directory component left** (`docs/roadmap.md`
+/// → `roadmap.md`), so re-rooting the *old resolved* home under the new value computes a
+/// **no-op destination** — the re-root rule reads the declaration, and a root-level file
+/// declares nothing to re-root. Both homes must therefore be computed from the DECLARED
+/// `placement.file`, never by re-rooting the prior resolved one. The two look equivalent
+/// and are not: get it wrong and the doc is silently stranded at the repo root, which is
+/// the exact silent-loss shape this floor exists to prevent.
+#[test]
+fn a_repoint_away_from_the_repo_root_still_finds_the_doc() {
+    let corpus = Corpus::new("from-root");
+    corpus.commit_file("docs/roadmap.md", ROADMAP);
+    corpus.ok(&["ingest"]);
+
+    corpus.ok(&["config", "set", "placement-root", "."]);
+    assert!(
+        corpus.exists("roadmap.md") && !corpus.exists("docs/roadmap.md"),
+        "the flatten re-point moves the doc to the repo root",
+    );
+
+    corpus.ok(&["config", "set", "placement-root", "notes"]);
+    assert!(
+        corpus.exists("notes/roadmap.md"),
+        "a re-point AWAY from the repo root must move the doc it strands — computing the \
+         destination by re-rooting the prior RESOLVED home yields `roadmap.md`, a silent \
+         no-op that leaves the doc behind",
+    );
+    assert!(
+        !corpus.exists("roadmap.md"),
+        "the prior (root) home is emptied",
+    );
+
+    let shown = corpus.jigc(&["doc", "show", "roadmap:roadmap"]);
+    assert!(
+        shown.status.success(),
+        "the address resolves at the second home too; stderr:\n{}",
+        String::from_utf8_lossy(&shown.stderr),
+    );
+}
+
+/// **A foreign file squatting the destination is displaced, never clobbered.** The move
+/// primitive's collision resolution (`design/reconciliation.md` → Relocation collisions)
+/// parks an untracked/unmanaged squatter in the gitignored `.jigc/displaced/` workbench so
+/// the managed instance can land and no working file is lost — the arm the `docs-root`
+/// loop, which calls `move_doc` directly, does not have.
+#[test]
+fn a_foreign_squatter_at_the_new_home_is_displaced_into_the_workbench() {
+    let corpus = Corpus::new("squatter");
+    corpus.commit_file("docs/roadmap.md", ROADMAP);
+    corpus.ok(&["ingest"]);
+
+    const SQUATTER: &str = "# not the managed roadmap\n";
+    let squatter = corpus.repo.path().join("notes/roadmap.md");
+    fs::create_dir_all(squatter.parent().expect("parent")).expect("create notes/");
+    fs::write(&squatter, SQUATTER).expect("write the squatter");
+
+    corpus.ok(&["config", "set", "placement-root", "notes"]);
+
+    assert_eq!(
+        corpus.read("notes/roadmap.md"),
+        ROADMAP,
+        "the managed instance lands at the destination",
+    );
+    assert_eq!(
+        corpus.read(".jigc/displaced/roadmap.md"),
+        SQUATTER,
+        "the foreign squatter is moved into the gitignored workbench intact — never \
+         clobbered, never committed",
+    );
 }
