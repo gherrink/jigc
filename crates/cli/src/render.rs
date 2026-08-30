@@ -4694,8 +4694,8 @@ mod tests {
     }
 
     /// The `--explain` collision-winner line (T5): over a tree carrying one
-    /// adjudicated top-level cross-pack collision per id-space (the `default-workflow`
-    /// knob; the `commit` doctype), the agent-text body renders **one line per
+    /// adjudicated top-level cross-pack collision per id-space (the `knobs` file; the
+    /// `commit` doctype), the agent-text body renders **one line per
     /// collision** naming the **winning pack** (its `(pack-id, version)`). A
     /// single-pack tree carries **no** collision winners, so **no** winner line
     /// renders and the output is byte-identical to today (the byte-identity floor;
@@ -4716,7 +4716,7 @@ mod tests {
             Vec::new(),
             vec![
                 CollisionWinner {
-                    collision: "default-workflow".to_string(),
+                    collision: "config:knobs".to_string(),
                     pack_id: "methodology".to_string(),
                     pack_version: "0.1.0".to_string(),
                 },
@@ -4731,8 +4731,8 @@ mod tests {
         let agent = explain(Format::Agent, &colliding, "methodology/v0.1.0 | dev/v0.0.0");
         // One winner line per adjudicated collision, naming the winning pack.
         assert!(
-            agent.contains("collision: default-workflow → won by methodology/0.1.0"),
-            "the knob collision must name the winning pack; got:\n{agent}",
+            agent.contains("collision: config:knobs → won by methodology/0.1.0"),
+            "the knob-file collision must name the winning pack; got:\n{agent}",
         );
         assert!(
             agent.contains("collision: doctype:commit → won by methodology/0.1.0"),
@@ -4760,7 +4760,7 @@ mod tests {
         // omits it (skip-empty), and both round-trip.
         let json_out = explain(Format::Json, &colliding, "methodology/v0.1.0 | dev/v0.0.0");
         assert!(!json_out.contains(ROUTING_FOOTER));
-        assert!(json_out.contains("\"collision\": \"default-workflow\""));
+        assert!(json_out.contains("\"collision\": \"config:knobs\""));
         let back: ResolutionTree = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, colliding);
         let single_json = explain(Format::Json, &single, "dev/v0.0.0");
@@ -4794,7 +4794,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             vec![CollisionWinner {
-                collision: "default-workflow".to_string(),
+                collision: "config:knobs".to_string(),
                 pack_id: "methodology".to_string(),
                 pack_version: "0.1.0".to_string(),
             }],
@@ -4831,7 +4831,7 @@ mod tests {
         // The `Pack input:` lines render AFTER the collision-winner lines (the inc-2
         // surface) — the planner's ordering: provenance follows the collision winners.
         let collision_at = agent
-            .find("collision: default-workflow")
+            .find("collision: config:knobs")
             .expect("collision-winner line present");
         let input_at = agent
             .find("Pack input: methodology/0.1.0")

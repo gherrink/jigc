@@ -18,8 +18,8 @@
 //! composed surface those tasks built — it does not rebuild it.
 //!
 //! WITH the marker (after a normal `jigc setup`):
-//!   (i)   `jigc start --explain` shows `default-workflow → won by dev` AND
-//!         `commit → won by dev` (dev-highest collision resolution).
+//!   (i)   `jigc start --explain` shows `config:knobs → won by dev` AND
+//!         `doctype:commit → won by dev` (dev-highest collision resolution).
 //!   (ii)  `jigc doc create roadmap` succeeds and `jigc start --workflow planning`
 //!         composes/exits 0 — milestone authoring works out of the box.
 //!   (iii) `jigc start --workflow dev-task` composes methodology's OWN test-first
@@ -177,10 +177,11 @@ fn with_marker_explain_names_dev_as_the_collision_winner() {
     );
     let out = String::from_utf8(explain.stdout).expect("utf-8 stdout");
 
-    // `default-workflow` resolves to DEV's `router` — dev wins the collision (named).
+    // The whole `knobs.yaml` resolves to DEV's (hence `default-workflow` → `router`) —
+    // dev wins the collision, named by the resource actually adjudicated.
     assert!(
-        out.contains("collision: default-workflow → won by dev/"),
-        "(i) `--explain` must name dev as the `default-workflow` collision winner \
+        out.contains("collision: config:knobs → won by dev/"),
+        "(i) `--explain` must name dev as the `config/knobs` collision winner \
          (dev-highest); got:\n{out}",
     );
     // The `commit` doctype resolves to DEV's — dev wins (keeps `implements→spec`).
@@ -331,9 +332,15 @@ fn without_marker_surface_is_byte_identical_to_the_dev_only_floor() {
         "(iv) the dev-only floor carries NO collision line (single-pack, hardening #5 — \
          the omitting context); got:\n{explain_out}",
     );
+    // The label is byte-identical to the single-pack floor: dev names itself, at the
+    // binary's own version — the composite-of-one is its own origin pack.
     assert!(
-        explain_out.contains("workflow:router"),
-        "(iv) `default-workflow` must resolve to dev's `router` from dev alone; got:\n{explain_out}",
+        explain_out.starts_with(&format!(
+            "workflow:router    (pack-default · dev/v{})\n",
+            env!("CARGO_PKG_VERSION"),
+        )),
+        "(iv) `default-workflow` must resolve to dev's `router` from dev alone, labelled \
+         byte-identically to the single-pack floor; got:\n{explain_out}",
     );
 
     // methodology's `planning` is absent: `--workflow planning` blocks non-zero (no such

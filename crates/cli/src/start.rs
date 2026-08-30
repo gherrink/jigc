@@ -1326,38 +1326,86 @@ pub(crate) fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Ve
         .collect()
 }
 
-/// The adjudicated top-level cross-pack collision id-spaces the multi-pack
-/// `--explain` provenance names a winner for (`design/multi-pack.md` → Collision
-/// resolution): the `default-workflow` knob (the whole `knobs.yaml` is
-/// precedence-shadowed, so a divergent `default-workflow` enum collides) and the
-/// `commit` doctype (a divergent schema). Each is `(label, kind, resource-id)`; a
-/// collision is *adjudicated* iff ≥2 composed packs own the resource. The path +
-/// content-hash provenance is increment 3, not these labels.
-const ADJUDICATED_COLLISIONS: &[(&str, PackResourceKind, &str)] = &[
-    ("default-workflow", PackResourceKind::Config, "knobs"),
-    ("doctype:commit", PackResourceKind::Schemas, "commit"),
-];
+/// The top-level cross-pack id-spaces a collision can be *adjudicated* in, **derived
+/// from the composed pack-set** rather than hand-listed: every `Schemas` id, every
+/// `Workflows` id, and the whole-file `Config:knobs` resource. Each is
+/// `(label, kind, resource-id)`.
+///
+/// These are exactly the **user-facing top-level definitions** that resolve by
+/// pack-precedence (`design/multi-pack.md` → Collision resolution), so for each one a
+/// single pack's whole definition wins and "won by X" is a true statement about the
+/// composed surface.
+///
+/// **Excluded by rule:** `Steps`, `Config:commands` and the pack field-types resolve
+/// **pack-locally** — against the pack that defines the referring workflow or schema
+/// (`multi-pack.md` → Pack-local body-reference resolution). Two packs shipping
+/// `step:implement` is not a collision anybody wins: each pack's workflows keep their
+/// own body, so a winner line for them would be false.
+///
+/// Deriving rather than listing is what lets a *project* pack's demoted doctype be
+/// named: the hand-written pair this replaced could only ever speak about `commit` and
+/// `default-workflow`, so any other collision the pack-set carried was silently absent
+/// from the determinism header. The order is fixed (schemas, then workflows, then the
+/// knob file) over each kind's already-sorted [`PackSource::list`], so the emitted line
+/// order is stable and pack-order-invariant.
+fn adjudicated_collisions(pack: &dyn PackSource) -> Vec<(String, PackResourceKind, ResourceId)> {
+    let mut spaces: Vec<(String, PackResourceKind, ResourceId)> = pack
+        .list(PackResourceKind::Schemas)
+        .into_iter()
+        .map(|id| (format!("doctype:{id}"), PackResourceKind::Schemas, id))
+        .collect();
+    spaces.extend(
+        pack.list(PackResourceKind::Workflows)
+            .into_iter()
+            .map(|id| (format!("workflow:{id}"), PackResourceKind::Workflows, id)),
+    );
+    spaces.push((
+        "config:knobs".to_owned(),
+        PackResourceKind::Config,
+        ResourceId::from("knobs"),
+    ));
+    spaces
+}
 
 /// The adjudicated top-level cross-pack collision winners for `pack` — one
-/// [`CollisionWinner`](engine::result::CollisionWinner) per [`ADJUDICATED_COLLISIONS`]
-/// id-space that ≥2 composed packs own, naming the **precedence winner** (the first
-/// `provenance_segments()` segment — highest-precedence first). A single-pack
-/// composition owns each id at most once, so it yields **no** winners and the
-/// `--explain` output stays byte-identical (`design/multi-pack.md` → Provenance:
+/// [`CollisionWinner`](engine::result::CollisionWinner) per [`adjudicated_collisions`]
+/// id-space that ≥2 composed packs own, naming the pack that **owns** the id: its
+/// [`PackSource::origin_pack`] — the same pack `read` selects and the same anchor the
+/// definition's body-references resolve against — reported through that pack's **own**
+/// provenance segment.
+///
+/// Never the composed set's highest-precedence segment: with three packs the top of the
+/// precedence order need not own the id at all (it may ship nothing that collides, or
+/// may have been demoted by the freeze rule), and naming it makes the determinism header
+/// assert the opposite of what the loader resolved (`design/overrides.md` → the cascade
+/// provenance determinism contract; `design/multi-pack.md` → Provenance under N packs).
+/// At two packs the two readings coincide, which is why the defect survived M14.
+///
+/// A single-pack composition owns each id at most once, so it yields **no** winners and
+/// the `--explain` output stays byte-identical (`design/multi-pack.md` → Provenance:
 /// where a collision was adjudicated, name which pack won).
 fn collision_winners(pack: &dyn PackSource) -> Vec<engine::result::CollisionWinner> {
-    let Some((pack_id, pack_version)) = pack.provenance_segments().into_iter().next() else {
-        return Vec::new();
-    };
-    ADJUDICATED_COLLISIONS
-        .iter()
-        .filter(|(_, kind, id)| pack.owner_count(*kind, &ResourceId::from(*id)) > 1)
-        .map(|(label, _, _)| engine::result::CollisionWinner {
-            collision: (*label).to_owned(),
-            pack_id: pack_id.clone(),
-            pack_version: pack_version.clone(),
+    adjudicated_collisions(pack)
+        .into_iter()
+        .filter(|(_, kind, id)| pack.owner_count(*kind, id) > 1)
+        .filter_map(|(collision, kind, id)| {
+            let (pack_id, pack_version) = owning_pack_segment(pack.origin_pack(kind, &id))?;
+            Some(engine::result::CollisionWinner {
+                collision,
+                pack_id,
+                pack_version,
+            })
         })
         .collect()
+}
+
+/// The `(pack-id, version)` an owning pack names **itself** by — its own first
+/// [`PackSource::provenance_segments`] segment, the identical accessor the `Pack input:`
+/// lines render, so one pack cannot be named two ways on one screen. `None` only for a
+/// pack that reports no segment at all (an empty composite — unreachable in production,
+/// where the base is always present).
+fn owning_pack_segment(owner: &dyn PackSource) -> Option<(String, String)> {
+    owner.provenance_segments().into_iter().next()
 }
 
 /// The composed pack-set's per-pack provenance inputs for `pack` — one
@@ -1513,7 +1561,21 @@ pub fn compose_explain_in_repo(
     // degrades to one entry (additive provenance), so the `--explain` surface stays
     // byte-identical but for the one input line (`design/multi-pack.md` → Provenance).
     tree.pack_inputs = pack_inputs(pack);
-    let pack_label = format!("{}/v{}", pack_id_from_config(pack)?, pack.pack_version());
+    // The workflow line names the pack that actually **provided** the workflow — its
+    // [`PackSource::origin_pack`], the same anchor its body-references resolve against
+    // — never a precedence read of `config/defaults` + the composite's version, which
+    // under three packs names whichever pack sits on top even when it ships neither the
+    // workflow nor an identity of its own (`design/multi-pack.md` → Provenance under N
+    // packs; `design/overrides.md` → the cascade provenance determinism contract). A
+    // single pack is its own origin, so the label degrades byte-identically to the
+    // single-pack floor.
+    let origin = pack.origin_pack(
+        PackResourceKind::Workflows,
+        &ResourceId::from(workflow_id.as_str()),
+    );
+    let pack_label = owning_pack_segment(origin)
+        .map(|(pack_id, version)| format!("{pack_id}/v{version}"))
+        .unwrap_or_default();
     Ok((tree, pack_label))
 }
 
@@ -5891,10 +5953,12 @@ mod tests {
         );
     }
 
-    /// A two-pack fixture used to drive the `--explain` collision-winner detection:
-    /// each pack ships `config/knobs` (the `default-workflow` enum) and
-    /// `schemas/commit` (the doctype) under its own `pack-id`, so both adjudicated
-    /// id-spaces collide when two are composed.
+    /// A fixture pack used to drive the `--explain` collision-winner detection: it
+    /// ships one resource in **every** id-space the derivation walks — `config/knobs`,
+    /// `schemas/commit`, `workflows/wf` — and one in each id-space the derivation
+    /// **excludes by rule** (`steps/implement`, `config/commands`), each under its own
+    /// `pack-id`. Composing two of these collides all five, so the test can assert both
+    /// what is adjudicated and what is not.
     fn collision_pack(pack_id: &str) -> FixturePack {
         FixturePack::with(vec![
             (
@@ -5907,50 +5971,98 @@ mod tests {
                 "knobs",
                 "default-workflow:\n  type: enum\n",
             ),
+            (PackResourceKind::Config, "commands", "commands: {}\n"),
             (PackResourceKind::Schemas, "commit", "type: commit\n"),
+            (PackResourceKind::Workflows, "wf", "id: wf\nsteps: []\n"),
+            (PackResourceKind::Steps, "implement", "id: implement\n"),
         ])
     }
 
-    /// T5 done-criterion — the `--explain` collision-winner detection: over a
-    /// **two-pack** composite where both adjudicated id-spaces collide
-    /// (`default-workflow` knob; `commit` doctype), [`collision_winners`] names the
-    /// **precedence winner** (the highest-precedence pack) for **each** collision;
-    /// over a **single-pack** composite it yields **none** (the byte-identity floor;
-    /// hardening #5 — the omitting context). The winner is the first
-    /// `provenance_segments()` segment (`design/multi-pack.md` → Provenance).
+    /// The **highest-precedence** pack of the three-pack fixture: it ships its own
+    /// identity and one doctype nobody else owns, and **nothing** that collides. Every
+    /// attribution `--explain` prints over `[house ▸ b ▸ c]` must therefore name a pack
+    /// *below* it — which is exactly the misattribution T3 fixes.
+    fn extension_only_pack() -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: house\ndefault-workflow: wf\n",
+            ),
+            (PackResourceKind::Schemas, "note", "type: note\n"),
+        ])
+    }
+
+    /// T3 done-criterion (the unit half) — the `--explain` collision winner names the
+    /// pack that **owns** the id, and the adjudicated set is **derived** from the
+    /// composed pack-set rather than hand-listed.
+    ///
+    /// Three assertions over one axis — *a pack attribution names the pack that
+    /// actually provided the thing*:
+    ///
+    /// 1. Over a **three-pack** composite whose highest-precedence pack (`house`) ships
+    ///    neither the colliding doctype nor the colliding workflow, every winner names
+    ///    the real owner (`b`) — not `house`, which the pre-T3 read of
+    ///    `provenance_segments()[0]` named.
+    /// 2. The set is derived, so **every** precedence-resolved id-space is covered: the
+    ///    `commit` doctype, the `wf` workflow **and** the `knobs` file. An id only one
+    ///    pack owns (`note`) adjudicates nothing.
+    /// 3. The id-spaces that resolve **pack-locally** (`Steps`, `Config:commands`) are
+    ///    excluded by rule — both packs ship them, and neither may produce a winner
+    ///    line, because no pack *wins* a resource each pack keeps for its own
+    ///    definitions (`design/multi-pack.md` → Pack-local body-reference resolution).
+    ///
+    /// A **single-pack** composite yields none (the byte-identity floor; hardening #5 —
+    /// the omitting context).
     #[test]
-    fn collision_winners_names_precedence_winner_per_adjudicated_collision() {
-        // Two-pack composite: `methodology` is highest-precedence (first) and wins
-        // both adjudicated top-level ids over `dev`.
+    fn collision_winners_name_the_owning_pack_over_every_derived_id_space() {
+        let labels = |winners: &[engine::result::CollisionWinner]| -> Vec<(String, String)> {
+            winners
+                .iter()
+                .map(|w| {
+                    (
+                        w.collision.clone(),
+                        format!("{}/{}", w.pack_id, w.pack_version),
+                    )
+                })
+                .collect()
+        };
+
+        // Three-pack composite: `house` is highest-precedence yet owns none of the
+        // colliding ids; `b` outranks `c` on every one of them.
+        let three = crate::pack::CompositePack::new(vec![
+            Box::new(extension_only_pack()),
+            Box::new(collision_pack("b")),
+            Box::new(collision_pack("c")),
+        ]);
+        let winners = labels(&collision_winners(&three));
+        assert_eq!(
+            winners,
+            vec![
+                ("doctype:commit".to_owned(), "b/0.0.0".to_owned()),
+                ("workflow:wf".to_owned(), "b/0.0.0".to_owned()),
+                ("config:knobs".to_owned(), "b/0.0.0".to_owned()),
+            ],
+            "each winner must name the pack that OWNS the id (`b`), never the \
+             highest-precedence pack (`house`); the derived set must cover the doctype, \
+             the workflow and the knob file, and must exclude the pack-local \
+             `steps`/`commands` id-spaces and the single-owner `note`",
+        );
+
+        // Two-pack composite: `methodology` is highest-precedence AND the owner, so the
+        // pre-T3 surface's answer is preserved where it was already right.
         let composite = crate::pack::CompositePack::new(vec![
             Box::new(collision_pack("methodology")),
             Box::new(collision_pack("dev")),
         ]);
-        let winners = collision_winners(&composite);
-
-        let by_label: Vec<(&str, &str, &str)> = winners
-            .iter()
-            .map(|w| {
-                (
-                    w.collision.as_str(),
-                    w.pack_id.as_str(),
-                    w.pack_version.as_str(),
-                )
-            })
-            .collect();
-        // One winner per adjudicated collision, each naming the precedence winner.
-        assert!(
-            by_label.contains(&("default-workflow", "methodology", "0.0.0")),
-            "the knob collision names the precedence winner; got:\n{by_label:?}",
-        );
-        assert!(
-            by_label.contains(&("doctype:commit", "methodology", "0.0.0")),
-            "the doctype collision names the precedence winner; got:\n{by_label:?}",
-        );
         assert_eq!(
-            winners.len(),
-            2,
-            "exactly the two adjudicated collisions are named; got:\n{by_label:?}",
+            labels(&collision_winners(&composite)),
+            vec![
+                ("doctype:commit".to_owned(), "methodology/0.0.0".to_owned()),
+                ("workflow:wf".to_owned(), "methodology/0.0.0".to_owned()),
+                ("config:knobs".to_owned(), "methodology/0.0.0".to_owned()),
+            ],
+            "where the precedence winner IS the owner, the named winner is unchanged",
         );
 
         // Single-pack composite: no id is owned by >1 pack → NO winners (the

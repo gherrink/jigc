@@ -795,10 +795,11 @@ fn flow17_consolidated_acceptance_over_the_real_dev_x_methodology_pair() {
         String::from_utf8_lossy(&explain.stderr),
     );
     let explain_out = String::from_utf8(explain.stdout).expect("utf-8 stdout");
-    // `default-workflow` resolves to methodology's `dev-task` — named as the winner.
+    // The whole `knobs.yaml` resolves to methodology's (hence `default-workflow` →
+    // `dev-task`) — named by the resource actually adjudicated.
     assert!(
-        explain_out.contains("collision: default-workflow → won by methodology/0.1.0"),
-        "(2) `--explain` must name methodology as the `default-workflow` collision winner; got:\n{explain_out}",
+        explain_out.contains("collision: config:knobs → won by methodology/0.1.0"),
+        "(2) `--explain` must name methodology as the `config/knobs` collision winner; got:\n{explain_out}",
     );
     // The `commit` doctype resolves to methodology's — named as the winner.
     assert!(

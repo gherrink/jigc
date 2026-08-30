@@ -119,9 +119,37 @@ fn write_house_pack(root: &Path) {
     .expect("write commit.yaml");
 }
 
+/// The house pack minus its divergent `commit` — the arm where the highest-precedence
+/// pack ships **neither** the colliding doctype **nor** any workflow, so every pack
+/// attribution `--explain` prints must name a pack *below* it.
+fn write_extension_only_pack(root: &Path) {
+    write_house_pack(root);
+    fs::remove_file(root.join("schemas").join("commit.yaml")).expect("drop the divergent commit");
+}
+
+/// The house pack's own identity (`config/defaults.yaml`) — `pack-id: house`,
+/// `version: 0.0.1`. Present only in the provenance arms: without it the composite's
+/// precedence read of `config/defaults` falls through to dev and the misattribution
+/// this task fixes is invisible on the emitted bytes.
+fn write_house_identity(root: &Path) {
+    let config = root.join("config");
+    fs::create_dir_all(&config).expect("mk config/");
+    fs::write(
+        config.join("defaults.yaml"),
+        b"pack-id: house\nversion: 0.0.1\n",
+    )
+    .expect("write the house pack's defaults.yaml");
+}
+
 /// A repo whose project layer carries the marker (written by a normal `jigc setup`)
 /// **and** a `packs:` list naming the house pack — the combination this task composes.
 fn marker_plus_listed_repo(tag: &str) -> (TempDir, TempDir) {
+    marker_plus_pack_repo(tag, &write_house_pack)
+}
+
+/// [`marker_plus_listed_repo`] over an arbitrary house-pack writer — the seam the
+/// provenance arms use to vary what the highest-precedence pack ships.
+fn marker_plus_pack_repo(tag: &str, write_pack: &dyn Fn(&Path)) -> (TempDir, TempDir) {
     let repo = TempDir::new(tag);
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -134,7 +162,7 @@ fn marker_plus_listed_repo(tag: &str) -> (TempDir, TempDir) {
     );
 
     let house = repo.path().join("housepack");
-    write_house_pack(&house);
+    write_pack(&house);
 
     let packs_yaml = repo.path().join(".jigc").join("config").join("packs.yaml");
     let existing = fs::read_to_string(&packs_yaml).expect("read packs.yaml after setup");
@@ -253,6 +281,147 @@ fn the_composed_set_validates_clean() {
     assert!(
         stdout.contains("no findings"),
         "(iv) the composed set must validate clean; got:\n{stdout}",
+    );
+}
+
+/// The embedded packs' version — `EmbeddedPack::pack_version` is the binary's own, so
+/// the provenance assertions name a *pack* rather than pinning a release string.
+const BINARY_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Every `--explain` line of `out` that attributes something to a pack — the workflow
+/// line and each `collision:` line. Extracted from the **emitted bytes** so the
+/// assertions run on what an agent reads, never on a reconstruction.
+fn attribution_lines(out: &str) -> Vec<String> {
+    out.lines()
+        .filter(|l| l.starts_with("workflow:") || l.trim_start().starts_with("collision:"))
+        .map(|l| l.trim_start().to_string())
+        .collect()
+}
+
+#[test]
+fn explain_names_the_pack_that_actually_provided_each_resolved_id() {
+    // T3 — the provenance half of the composition. Over `[house ▸ dev ▸ methodology]`
+    // where the house pack ships NEITHER the colliding `commit` doctype NOR any
+    // workflow, every pack attribution `--explain` prints must name a pack BELOW the
+    // top of the precedence order. Verified live at HEAD, which printed all three
+    // attributions as `house`:
+    //   workflow:single-task    (pack-default · house/v0.0.1)
+    //   collision: default-workflow → won by house/0.0.1
+    //   collision: doctype:commit → won by house/0.0.1
+    // `design/overrides.md` makes cascade provenance a hard determinism contract; a
+    // header naming a pack that provided nothing is exactly the hidden variance it
+    // exists to prevent.
+    let (repo, home) = marker_plus_pack_repo("explain-owner", &|root: &Path| {
+        write_extension_only_pack(root);
+        write_house_identity(root);
+    });
+
+    let out = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--explain",
+            "--workflow",
+            "single-task",
+            "add a thing",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --explain` over the three-pack composition must exit 0; got {:?}\n\
+         stderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let text = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // The house pack IS in the composed set — the misattribution was possible precisely
+    // because it composes, so its absence would make the arm vacuous.
+    assert!(
+        text.contains("Pack input: house/0.0.1 = "),
+        "the house pack must be in the composed set; got:\n{text}",
+    );
+
+    // Every attribution, on the emitted bytes: the workflow line names DEV (whose pack
+    // ships `single-task`), and each collision winner names the pack that owns the id.
+    assert_eq!(
+        attribution_lines(&text),
+        vec![
+            format!("workflow:single-task    (pack-default · dev/v{BINARY_VERSION})"),
+            format!("collision: doctype:commit → won by dev/{BINARY_VERSION}"),
+            format!("collision: config:knobs → won by dev/{BINARY_VERSION}"),
+        ],
+        "every pack attribution must name the pack that provided the thing; got:\n{text}",
+    );
+
+    // Derived, not hand-listed — and filtered: `note` is owned by one pack, so it
+    // adjudicates nothing and prints no winner line.
+    assert!(
+        !text.contains("doctype:note"),
+        "an id only one pack owns is no collision and must print no winner line; \
+         got:\n{text}",
+    );
+}
+
+#[test]
+fn explain_names_the_demoted_project_doctype_as_the_loss_it_is() {
+    // T3 — the demotion, seen from the provenance surface. The house pack DOES ship a
+    // divergent `commit`, so all three packs own it and the freeze demotion (T1) makes
+    // the house pack LOSE. `--explain` must say so: the winner is dev, the pack whose
+    // frozen shape `doc schema commit` actually renders. At HEAD the line named
+    // `house/0.0.1` — the surface asserted the opposite of what the loader resolved,
+    // which is the worst reading of a determinism header.
+    let (repo, home) = marker_plus_pack_repo("explain-demoted", &|root: &Path| {
+        write_house_pack(root);
+        write_house_identity(root);
+    });
+
+    let out = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--explain",
+            "--workflow",
+            "single-task",
+            "add a thing",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --explain` over the demoted composition must exit 0; got {:?}\n\
+         stderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let text = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        text.contains("Pack input: house/0.0.1 = "),
+        "the house pack must be in the composed set; got:\n{text}",
+    );
+    assert!(
+        text.contains(&format!(
+            "collision: doctype:commit → won by dev/{BINARY_VERSION}"
+        )),
+        "the demoted project doctype's loss must be named: dev wins `commit`; got:\n{text}",
+    );
+    assert!(
+        !text.contains("won by house/"),
+        "the house pack wins nothing here — it must not be named as any winner; \
+         got:\n{text}",
+    );
+
+    // The named winner is the one the loader actually resolved — the surface and the
+    // schema read cannot disagree.
+    let schema = run(repo.path(), home.path(), &["doc", "schema", "commit"]);
+    let rendered = String::from_utf8_lossy(&schema.stdout).into_owned();
+    assert!(
+        schema.status.success() && !rendered.contains("ticket"),
+        "`doc schema commit` must render DEV's frozen shape, matching the named \
+         winner; got {:?}\n{rendered}",
+        schema.status,
     );
 }
 

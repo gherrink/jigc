@@ -1562,8 +1562,8 @@ $ git add -A && git commit -qm "chore: jigc setup"
 ```text
 $ jigc start --explain | grep -E "Pack:|collision"
   Pack: dev/0.0.0 ▸ methodology/0.1.0          ← dev-highest (the inverse of flow 17's methodology-first header)
-  collision: default-workflow → won by dev     ← dev's knobs win → default-workflow = router
-  collision: doctype:commit    → won by dev     ← composed commit KEEPS implements→spec (methodology's is a subset)
+  collision: doctype:commit → won by dev       ← composed commit KEEPS implements→spec (methodology's is a subset)
+  collision: config:knobs   → won by dev       ← dev's whole knobs.yaml wins → default-workflow = router
 
 # because dev wins `default-workflow`, a bare `jigc start` lands on the ROUTER selection menu (the MVP on-ramp),
 # NOT methodology's dev-task — contrast flow 17, where methodology wins and a bare start composes dev-task:
