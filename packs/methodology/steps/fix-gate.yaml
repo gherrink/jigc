@@ -3,7 +3,13 @@ checkpoint:
   reason: fix-rounds-exhausted
 ---
 For each blocking finding, run a dev-workflow fix task — a red that fails because
-of the defect, a minimal green, the gate, one commit — then re-validate. This is
-bounded to three rounds. If blocking findings remain after the fix-round cap,
-stop and surface it: thrash is a signal for a human, not for another round.
-Advisories are surfaced, not gated.
+of the defect, a minimal green, the gate, one commit — then re-validate. One
+fixer per finding, strictly serial over the one shared working tree: two
+tree-mutating agents at once race the git index and each other's gate. Brief the
+fixer with the finding, never with the finding's boundary — a fixer handed a list
+of sites fixes the list, so it derives the axis the fix is owed over and reports
+its full membership instead.
+
+This is bounded to three rounds. If blocking findings remain after the
+fix-round cap, stop and surface it: thrash is a signal for a human, not for
+another round. Advisories are surfaced, not gated.

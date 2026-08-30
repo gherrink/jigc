@@ -9,7 +9,20 @@ the genuine scope and judgment calls — must-settle-now versus defer-to-a-later
 milestone, and whether a gap warrants building machinery at all — rather than
 silently deciding them. The human owns this gate.
 
+Never self-frame the cheap-vs-robust fork. Before recommending a defer,
+commission an independent robust-case advocate — a read-only agent that did not
+propose the cheap cut — to argue the vision-robust case at full strength, so the
+human chooses between two honestly-argued cases rather than the proposer's lone
+cheap recommendation.
+
 A gap consciously deferred is logged on the deferral ledger, keyed to the
 milestone that will own it. The design Settle writes is itself a claim: pin the
 scope of every check it introduces, and spike every acceptance flow — its
 invocation commands included — against the real engine before locking it.
+
+The settled-doc write-back may be delegated to writer subagents, on two
+conditions: every decision is already recorded before they start, so they execute
+and invent nothing and flag out-of-scope residue instead of silently fixing it;
+and the independent review pass runs over their output. Delegation without the
+recorded ground truth, or without the review, is how settled design drifts in
+transit.

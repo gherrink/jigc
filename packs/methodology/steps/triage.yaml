@@ -12,3 +12,9 @@ the completion-fix lane (recorded as its own task/increment, keyed to the milest
 that will own it) and a contested finding (the "fix" would revise a settled decision
 or change intended behavior). Surface those two; everything else is a tested commit
 the human reviews after. The human owns this gate.
+
+Never self-frame the first of those two. Before surfacing a fix as too big for
+this lane, commission an independent robust-case advocate — a read-only agent that
+did not propose parking the work — to argue at full strength the case for doing it
+now, so the human gate decides between two honestly-argued cases rather than the
+proposer's lone cheap recommendation.

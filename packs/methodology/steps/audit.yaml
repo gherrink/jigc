@@ -2,12 +2,13 @@ Audit the assembled milestone — a fresh, adversarial pass over the finished wh
 not a re-run of the per-increment validate. The milestone you are closing:
 {{ task.intent }}
 
-Two independent passes: a read-only code review of the whole milestone diff for
-correctness, invariant violations, and scope honesty (inert/dead features,
+Two independent passes, neither of them run by an agent that built the milestone:
+a read-only code review that cannot edit or commit, over the whole milestone diff
+for correctness, invariant violations, and scope honesty (inert/dead features,
 stubs-as-done, tautological tests, creep); and an end-to-end run of the milestone's
-worked-example flows over the real binary in throwaway repos — not trusting the
-builders' own tests. Produce ranked findings with file:line evidence and a
-green/red verdict on whether the deliverable genuinely holds.
+worked-example flows over the real binary in throwaway repos, driven by an agent
+that does not trust the builders' own tests. Produce ranked findings with file:line
+evidence and a green/red verdict on whether the deliverable genuinely holds.
 
 This is judgment work, not a checklist to tick. The verdict and the gap-detection
 stay pure agent prose — a step that emits a count threshold or a checklist the agent

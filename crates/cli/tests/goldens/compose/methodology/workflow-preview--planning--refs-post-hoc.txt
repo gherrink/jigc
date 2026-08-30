@@ -13,10 +13,13 @@ worked-example flow(s) that will demonstrate it. That done-picture is the bar
 everything below is measured against.
 
 Verify the baseline it builds on, don't trust the roadmap's "shipped" prose:
-exercise the real binary to map what is genuinely built versus stubbed, deferred,
-or latent. A "design-locked / planning-light" framing must RAISE that audit
-intensity, never relax it. Pull this milestone's deferred topics from the
-deferral ledger first, and fold them into the done-picture and the gap list.
+delegate the baseline audit to recon agents that exercise the real binary, and
+let the capability ledger record what they proved by running it — never what an
+orchestrator concluded by reading code. Map what is genuinely built versus
+stubbed, deferred, or latent. A "design-locked / planning-light" framing must
+RAISE that audit intensity, never relax it. Pull this milestone's deferred topics
+from the deferral ledger first, and fold them into the done-picture and the gap
+list.
 
 These phases are a walk, not a liturgy. If you have already scouted this terrain —
 baseline verified against the running binary, gaps already mapped — then work them
@@ -30,6 +33,10 @@ done-picture against the assembled product: what is missing or unfit to build it
 cleanly. Look across decisions still open, design docs that don't exist or have
 drifted, doctype schemas no workflow has yet driven, and engine/CLI surface the
 milestone assumes.
+
+Run the pass as several independent readers rather than one, each briefed on the
+done-picture and none of them the author of the claim it is testing — a gap the
+scoping pass missed is not found again by the party that missed it.
 
 Reuse is a claim, not a fact: "this already exists, the milestone just reuses it"
 is the most dangerous miss — spike the new shape against the real binary before
@@ -45,10 +52,23 @@ the genuine scope and judgment calls — must-settle-now versus defer-to-a-later
 milestone, and whether a gap warrants building machinery at all — rather than
 silently deciding them. The human owns this gate.
 
+Never self-frame the cheap-vs-robust fork. Before recommending a defer,
+commission an independent robust-case advocate — a read-only agent that did not
+propose the cheap cut — to argue the vision-robust case at full strength, so the
+human chooses between two honestly-argued cases rather than the proposer's lone
+cheap recommendation.
+
 A gap consciously deferred is logged on the deferral ledger, keyed to the
 milestone that will own it. The design Settle writes is itself a claim: pin the
 scope of every check it introduces, and spike every acceptance flow — its
 invocation commands included — against the real engine before locking it.
+
+The settled-doc write-back may be delegated to writer subagents, on two
+conditions: every decision is already recorded before they start, so they execute
+and invent nothing and flag out-of-scope residue instead of silently fixing it;
+and the independent review pass runs over their output. Delegation without the
+recorded ground truth, or without the review, is how settled design drifts in
+transit.
 
 Review what Settle produced — an independent pass. A reader who did NOT author the
 decisions, docs, or doctype schemas reads them adversarially for coherence, gaps

@@ -26,21 +26,29 @@ Halt on a blocked task — a real ambiguity, a new fork, or a green gate
 unreachable without overstepping the task's scope. Surface it to the human
 rather than guessing past it or widening scope to force a pass.
 
-Validate the increment independently against the roadmap — a read-only check
-that does not edit or commit. Verify, with concrete evidence: the gate is green
-from a clean state; the deliverable holds end-to-end by running the real binary
-and observing output, not by trusting the tests alone; the increment proves what
-the roadmap says it proves; the invariants are honored; and the scope is honest
-— no inert feature, no stub presented as done, no creep into a later increment.
+Validate the increment against the roadmap — an independent, read-only check run
+by an agent that did not build it and cannot edit or commit, so it cannot certify
+its own work. It returns findings; it does not repair them. Verify, with concrete
+evidence: the gate is green from a clean state; the deliverable holds end-to-end
+by running the real binary and observing output, not by trusting the tests alone;
+the increment proves what the roadmap says it proves; the invariants are honored;
+and the scope is honest — no inert feature, no stub presented as done, no creep
+into a later increment.
 
 Return findings, each blocking (the deliverable, proves, invariants, or scope
 are not genuinely met) or advisory (real but non-blocking).
 
 Checkpoint: fix-rounds-exhausted
 For each blocking finding, run a dev-workflow fix task — a red that fails because
-of the defect, a minimal green, the gate, one commit — then re-validate. This is
-bounded to three rounds. If blocking findings remain after the fix-round cap,
-stop and surface it: thrash is a signal for a human, not for another round.
-Advisories are surfaced, not gated.
+of the defect, a minimal green, the gate, one commit — then re-validate. One
+fixer per finding, strictly serial over the one shared working tree: two
+tree-mutating agents at once race the git index and each other's gate. Brief the
+fixer with the finding, never with the finding's boundary — a fixer handed a list
+of sites fixes the list, so it derives the axis the fix is owed over and reports
+its full membership instead.
+
+This is bounded to three rounds. If blocking findings remain after the
+fix-round cap, stop and surface it: thrash is a signal for a human, not for
+another round. Advisories are surfaced, not gated.
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

@@ -8,12 +8,13 @@ Audit the assembled milestone — a fresh, adversarial pass over the finished wh
 not a re-run of the per-increment validate. The milestone you are closing:
 
 
-Two independent passes: a read-only code review of the whole milestone diff for
-correctness, invariant violations, and scope honesty (inert/dead features,
+Two independent passes, neither of them run by an agent that built the milestone:
+a read-only code review that cannot edit or commit, over the whole milestone diff
+for correctness, invariant violations, and scope honesty (inert/dead features,
 stubs-as-done, tautological tests, creep); and an end-to-end run of the milestone's
-worked-example flows over the real binary in throwaway repos — not trusting the
-builders' own tests. Produce ranked findings with file:line evidence and a
-green/red verdict on whether the deliverable genuinely holds.
+worked-example flows over the real binary in throwaway repos, driven by an agent
+that does not trust the builders' own tests. Produce ranked findings with file:line
+evidence and a green/red verdict on whether the deliverable genuinely holds.
 
 This is judgment work, not a checklist to tick. The verdict and the gap-detection
 stay pure agent prose — a step that emits a count threshold or a checklist the agent
@@ -33,12 +34,24 @@ that will own it) and a contested finding (the "fix" would revise a settled deci
 or change intended behavior). Surface those two; everything else is a tested commit
 the human reviews after. The human owns this gate.
 
+Never self-frame the first of those two. Before surfacing a fix as too big for
+this lane, commission an independent robust-case advocate — a read-only agent that
+did not propose parking the work — to argue at full strength the case for doing it
+now, so the human gate decides between two honestly-argued cases rather than the
+proposer's lone cheap recommendation.
+
 Checkpoint: fix-rounds-exhausted
 For each blocking finding, run a dev-workflow fix task — a red that fails because
-of the defect, a minimal green, the gate, one commit — then re-validate. This is
-bounded to three rounds. If blocking findings remain after the fix-round cap,
-stop and surface it: thrash is a signal for a human, not for another round.
-Advisories are surfaced, not gated.
+of the defect, a minimal green, the gate, one commit — then re-validate. One
+fixer per finding, strictly serial over the one shared working tree: two
+tree-mutating agents at once race the git index and each other's gate. Brief the
+fixer with the finding, never with the finding's boundary — a fixer handed a list
+of sites fixes the list, so it derives the axis the fix is owed over and reports
+its full membership instead.
+
+This is bounded to three rounds. If blocking findings remain after the
+fix-round cap, stop and surface it: thrash is a signal for a human, not for
+another round. Advisories are surfaced, not gated.
 
 Re-verify — the project's full gate green (its own format, lint, test, and build
 gate, whatever toolchain it uses; do not assume a particular one) AND re-run the

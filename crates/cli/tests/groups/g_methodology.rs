@@ -33,6 +33,8 @@ mod located_finding_text;
 mod methodology_completion_record;
 #[path = "../methodology_corpus_stamp.rs"]
 mod methodology_corpus_stamp;
+#[path = "../methodology_delegation_prose.rs"]
+mod methodology_delegation_prose;
 #[path = "../methodology_honesty_artifact.rs"]
 mod methodology_honesty_artifact;
 #[path = "../methodology_increment_off_router.rs"]

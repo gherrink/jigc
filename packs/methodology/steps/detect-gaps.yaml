@@ -4,6 +4,10 @@ cleanly. Look across decisions still open, design docs that don't exist or have
 drifted, doctype schemas no workflow has yet driven, and engine/CLI surface the
 milestone assumes.
 
+Run the pass as several independent readers rather than one, each briefed on the
+done-picture and none of them the author of the claim it is testing — a gap the
+scoping pass missed is not found again by the party that missed it.
+
 Reuse is a claim, not a fact: "this already exists, the milestone just reuses it"
 is the most dangerous miss — spike the new shape against the real binary before
 trusting it, including its cold-start (empty, freshly-created) state. This is

@@ -7,10 +7,13 @@ worked-example flow(s) that will demonstrate it. That done-picture is the bar
 everything below is measured against.
 
 Verify the baseline it builds on, don't trust the roadmap's "shipped" prose:
-exercise the real binary to map what is genuinely built versus stubbed, deferred,
-or latent. A "design-locked / planning-light" framing must RAISE that audit
-intensity, never relax it. Pull this milestone's deferred topics from the
-deferral ledger first, and fold them into the done-picture and the gap list.
+delegate the baseline audit to recon agents that exercise the real binary, and
+let the capability ledger record what they proved by running it — never what an
+orchestrator concluded by reading code. Map what is genuinely built versus
+stubbed, deferred, or latent. A "design-locked / planning-light" framing must
+RAISE that audit intensity, never relax it. Pull this milestone's deferred topics
+from the deferral ledger first, and fold them into the done-picture and the gap
+list.
 
 These phases are a walk, not a liturgy. If you have already scouted this terrain —
 baseline verified against the running binary, gaps already mapped — then work them
