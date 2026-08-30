@@ -594,22 +594,42 @@ fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
 /// identifier the fence checks for.
 const SINGLETON_COPY_IN_CODE: &str = "create.singleton-copy-in";
 
-/// **The append half of the copy-in contract** (M47 Inc 9 T2 — the conditional
-/// tier of the named-fact fence): the facts a copy-in declarer owes *only when the
-/// singleton it solicits can hold repeating items*. The flat map
-/// ([`CONSTRAINT_REQUIRED_TOKENS`]) carries what binds at **every** declarer —
-/// copy-in as the edit base, slots overwrite; these two carry what binds where
-/// **items exist**: that authored items *append* to the committed ones, and that
-/// re-authoring one the doc already holds *would double* it.
+/// **The append/collision clause of the copy-in contract** (M47 Inc 9 T2, corrected
+/// at M49 Inc 10 T2 — the conditional tier of the named-fact fence): the facts a
+/// copy-in declarer owes *only when the singleton it solicits can hold repeating
+/// items*. The flat map ([`CONSTRAINT_REQUIRED_TOKENS`]) carries what binds at
+/// **every** declarer — copy-in as the edit base, slots overwrite; these carry what
+/// binds where **items exist**: that authored items *append* beside the committed
+/// ones, and what happens when one collides.
+///
+/// **The collision is a refusal, not a doubling.** The tier shipped demanding
+/// *"would double"*, which the binary never does: a payload item whose title mints an
+/// id the doc already holds is refused with `write.already-present`, the **whole
+/// payload** rejected and nothing staged, leaving the author to edit that item **in
+/// place** (`crates/cli/tests/author_write_contract.rs` drives all three facts end to
+/// end over a committed singleton). A fence demanding a false consequence is a law-1
+/// lie the fence itself mandates — the sharpest form of the class — so the tokens are
+/// the behaviour, four facts rather than two.
 ///
 /// The condition is the referenced singleton's own structure (≥1 `repeatable:`
 /// section), so the tier is derived, never listed: flat-mapping these tokens onto
 /// `create.singleton-copy-in` would force a slot-only declarer (methodology's
-/// `author-migration-vision`, whose `vision` schema OVERWRITES and has nothing to
-/// double) to state a falsehood — a law-1 lie the fence itself would demand.
-/// Authored in [`normalized_body`]'s form, fenced by
-/// `constraint_tokens_are_authored_in_normalized_form`.
-pub const COPY_IN_APPEND_TOKENS: [&str; 2] = ["append", "would double"];
+/// `author-migration-vision`, whose `vision` schema OVERWRITES and holds no items to
+/// collide) to state facts that are false there. Authored in [`normalized_body`]'s
+/// form, fenced by `constraint_tokens_are_authored_in_normalized_form`.
+///
+/// Declared bound, unchanged: this fence reaches the **declarer family** only — a step
+/// that solicits the same batch author through a literal `jigc doc author <T>` line
+/// and no `{{schema:<T>}}` ref (dev's `author-change`) carries no `states-constraints:`
+/// code and is outside every pack-load fence. The clause is swept over *both* shapes
+/// by `author_write_contract.rs`, which bijects its list against this const so the two
+/// halves cannot drift.
+pub const COPY_IN_APPEND_TOKENS: [&str; 4] = [
+    "append",
+    "write.already-present",
+    "whole payload",
+    "in place",
+];
 
 /// Extract every `<T>` from a step body's `{{schema:<T>}}` references — the same
 /// `schema:`-prefix the compose seam strips (`engine::compose` → the schema
@@ -647,17 +667,20 @@ fn schema_refs(body: &str) -> Vec<String> {
 /// cross-pack solicit does not arise for these five steps). A manifest-less pack
 /// stays on skip-on-absent.
 ///
-/// **The conditional append tier (M47 Inc 9 T2).** The declaration bought presence;
-/// the named-fact map ([`CONSTRAINT_REQUIRED_TOKENS`]) buys what binds at *every*
-/// declarer. What binds only where **items can double** rides here, on the same
-/// schema load: when the solicited singleton declares ≥1 `repeatable:` section, the
-/// step must also state [`COPY_IN_APPEND_TOKENS`] — that authored items append, and
-/// that re-authoring one the doc already holds would double it. The condition is the
-/// referenced schema's own structure, so the tier is derived exactly like the owe-set
-/// above and needs no exclusion list: a slot-only singleton's declarer (methodology's
-/// `author-migration-vision`) is inert here, never in error — flat-mapping the tokens
-/// would force it to state a falsehood. Same A-3 bound: the *named facts* of jigc's
-/// own contract, never prose quality.
+/// **The conditional append/collision tier (M47 Inc 9 T2; corrected M49 Inc 10 T2).**
+/// The declaration bought presence; the named-fact map
+/// ([`CONSTRAINT_REQUIRED_TOKENS`]) buys what binds at *every* declarer. What binds
+/// only where **items can collide** rides here, on the same schema load: when the
+/// solicited singleton declares ≥1 `repeatable:` section, the step must also state
+/// [`COPY_IN_APPEND_TOKENS`] — that authored items append beside the committed ones,
+/// and that one whose title mints an id the doc already holds is refused with
+/// `write.already-present`, the whole payload rejected, the exit being to edit that
+/// item in place. The condition is the referenced schema's own structure, so the tier
+/// is derived exactly like the owe-set above and needs no exclusion list: a slot-only
+/// singleton's declarer (methodology's `author-migration-vision`) is inert here, never
+/// in error — flat-mapping the tokens would force it to state facts that are false
+/// there. Same A-3 bound: the *named facts* of jigc's own contract, never prose
+/// quality.
 ///
 /// **The obligation direction (M47 Inc 9 T3).** Every tier above runs *ref ⇒
 /// declaration ⇒ named facts*; this runs the reverse, closing the pair into a
@@ -687,7 +710,7 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
             let def = engine::compose::load_step_def(id.as_str(), &bytes)
                 .map_err(|finding| def_load_failure("step-front-matter", id.as_str(), finding))?;
             let mut solicits_singleton = false;
-            let mut items_can_double = false;
+            let mut items_can_collide = false;
             for ty in schema_refs(&def.body) {
                 let Some(schema) = owner
                     .read(PackResourceKind::Schemas, &ResourceId::from(ty.as_str()))
@@ -699,9 +722,9 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
                 };
                 solicits_singleton = true;
                 // The conditional tier's signal: a `repeatable:` section means the
-                // authored items land beside the committed ones, so the append half
-                // of the contract binds at this solicit.
-                items_can_double |= schema.sections.iter().any(|section| {
+                // authored items land beside the committed ones, so a payload item can
+                // collide with a committed one and the clause binds at this solicit.
+                items_can_collide |= schema.sections.iter().any(|section| {
                     matches!(section.body, engine::schema::SectionBody::Repeatable { .. })
                 });
             }
@@ -741,7 +764,7 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
                     id.as_str(),
                 );
             }
-            if items_can_double {
+            if items_can_collide {
                 let body = normalized_body(&def.body);
                 let missing: Vec<&str> = COPY_IN_APPEND_TOKENS
                     .into_iter()
@@ -752,12 +775,14 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
                         "pack-load named-fact fence failed: step `{}` declares \
                          `{SINGLETON_COPY_IN_CODE}` and solicits a singleton whose sections \
                          repeat (authored items land beside the committed ones) but its prose \
-                         never says {} — the append half of the copy-in contract would first \
-                         surface when an authored item doubles, an ambush \
+                         never says {} — the append/collision half of the copy-in contract \
+                         would first surface when an authored item is refused, an ambush \
                          (design/surface-contract.md → The stated-at fence)\n\
                          route: state, beside the copy-in sentence, that what you author \
-                         APPENDS to the items already committed and that re-authoring one the \
-                         doc already holds would double it",
+                         APPENDS to the items already committed and that an item whose title \
+                         mints an id the doc already holds is refused \
+                         (`write.already-present`), the WHOLE payload rejected and nothing \
+                         staged — so edit that item in place instead of re-authoring it",
                         id.as_str(),
                         missing
                             .iter()

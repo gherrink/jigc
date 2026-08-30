@@ -33,6 +33,8 @@
 
 use crate::support;
 
+use std::collections::BTreeSet;
+
 use cli::pack::EmbeddedPack;
 use engine::packsource::{PackResourceKind, PackSource};
 
@@ -93,64 +95,201 @@ fn all_workflows() -> Vec<(&'static str, String, String)> {
     out
 }
 
-/// The append half's marker phrase — the sentence that already shipped, and the
-/// selector for the axis this suite sweeps. A step that tells an agent its authored
-/// entries land beside the committed ones has taken on the whole contract.
-const APPEND_HALF: &str = "existing entries are untouched";
+/// The whole clause a batch-author solicit owes wherever a payload item can collide
+/// with a committed one: that what you author **appends** beside the entries already
+/// there, plus the three facts of the collision — the code an agent greps for, that
+/// the WHOLE payload is refused, and the edit-in-place exit. Every fact is the
+/// binary's own behaviour, driven end to end by
+/// [`a_colliding_payload_item_rejects_the_whole_author_over_a_committed_singleton`]
+/// below, so the clause is what happens rather than a phrasing preference.
+const WHOLE_CLAUSE: [&str; 4] = [
+    "append",
+    "write.already-present",
+    "whole payload",
+    "in place",
+];
 
-/// The facts the collision half owes wherever the append half is stated: the code an
-/// agent greps for, that the WHOLE payload is refused, and the edit-in-place exit.
-const COLLISION_FACTS: [&str; 3] = ["write.already-present", "whole payload", "in place"];
+/// The consequence the clause replaces (M49 Inc 10 T2). Until this commit the
+/// pack-load fence *demanded* it of five steps — but a colliding item never doubles,
+/// it rejects the whole payload — so a fence bought a law-1 lie. No shipped step of
+/// either pack may say it again.
+const RETIRED_FALSEHOOD: &str = "would double";
 
-#[test]
-fn every_step_stating_the_append_half_states_the_collision_reject() {
-    let steps = all_steps();
-    let mut stating = Vec::new();
-    let mut missing = Vec::new();
-    for (pack, id, body) in &steps {
-        let body = normalized(body);
-        if !body.contains(APPEND_HALF) {
-            continue;
+/// Every doctype a step solicits a **batch** `jigc doc author` of, in the two shapes
+/// the shipped steps use: the rendered payload skeleton (`{{schema:<T>}}` — the
+/// generation seam whose whole point is that the step never hand-writes the payload)
+/// and the literal `jigc doc author <T>` command line. A `--help` mention inside a
+/// sentence is not a command line, and a leading `-` is never a doctype.
+fn batch_author_targets(body: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let mut rest = body;
+    while let Some(open) = rest.find("{{") {
+        rest = &rest[open + 2..];
+        let Some(close) = rest.find("}}") else { break };
+        if let Some(ty) = rest[..close].trim().strip_prefix("schema:") {
+            out.insert(ty.trim().to_owned());
         }
-        stating.push(format!("{pack}:{id}"));
-        for fact in COLLISION_FACTS {
+        rest = &rest[close + 2..];
+    }
+    for line in body.lines() {
+        if let Some(tail) = line.trim().strip_prefix("jigc doc author ")
+            && let Some(word) = tail.split_whitespace().next()
+            && !word.starts_with('-')
+        {
+            out.insert(word.to_owned());
+        }
+    }
+    out
+}
+
+/// A pack's singleton doctypes whose schema declares ≥1 `repeatable:` section — the
+/// only doctypes where a payload item *can* collide with a committed one, read
+/// through the production schema load rather than a yaml grep.
+fn repeating_singletons(pack: &EmbeddedPack) -> BTreeSet<String> {
+    pack.list(PackResourceKind::Schemas)
+        .into_iter()
+        .filter(|id| {
+            let Ok(bytes) = pack.read(PackResourceKind::Schemas, id) else {
+                return false;
+            };
+            let Ok(schema) = cli::pack::load_pack_schema(pack, &bytes) else {
+                return false;
+            };
+            schema.singleton
+                && schema.sections.iter().any(|section| {
+                    matches!(section.body, engine::schema::SectionBody::Repeatable { .. })
+                })
+        })
+        .map(|id| id.as_str().to_owned())
+        .collect()
+}
+
+/// The owe-set, **derived from the structural signal the step already renders** —
+/// never a phrase. The literal-phrase selector this replaces (*"existing entries are
+/// untouched"*) missed dev's `author-change`, which says *"existing **releases** are
+/// untouched"*: same clause, different noun, three collision facts absent. Derived,
+/// the set is every step of both packs that solicits a batch author of a repeating
+/// singleton, so a sibling growing the clause with a third noun is covered by
+/// construction.
+fn whole_clause_owing_steps() -> Vec<(&'static str, String, String)> {
+    let repeating: Vec<(&'static str, BTreeSet<String>)> = embedded_packs()
+        .into_iter()
+        .map(|(name, pack)| (name, repeating_singletons(&pack)))
+        .collect();
+    all_steps()
+        .into_iter()
+        .filter(|(pack, _, body)| {
+            let Some((_, types)) = repeating.iter().find(|(name, _)| name == pack) else {
+                return false;
+            };
+            batch_author_targets(body)
+                .iter()
+                .any(|ty| types.contains(ty))
+        })
+        .collect()
+}
+
+/// The clause, over its whole axis: every step of both packs' whole step trees that
+/// solicits a batch author of a repeating singleton states all four facts.
+#[test]
+fn every_batch_author_solicit_states_the_whole_clause() {
+    let owing = whole_clause_owing_steps();
+    let members: Vec<String> = owing
+        .iter()
+        .map(|(pack, id, _)| format!("{pack}:{id}"))
+        .collect();
+    assert!(
+        members.iter().any(|member| member == "dev:author-change"),
+        "the derived owe-set must reach dev's `author-change` — the step the retired \
+         literal-phrase selector missed; got: {members:?}",
+    );
+
+    let mut missing = Vec::new();
+    for (pack, id, body) in &owing {
+        let body = normalized(body);
+        for fact in WHOLE_CLAUSE {
             if !body.contains(fact) {
                 missing.push(format!("step `{pack}:{id}` never says \"{fact}\""));
             }
         }
     }
     assert!(
-        !stating.is_empty(),
-        "no shipped step states the append half (\"{APPEND_HALF}\") — the selector \
-         drifted, so this sweep is vacuous",
-    );
-    assert!(
         missing.is_empty(),
-        "a step states that authored entries APPEND to the committed ones but never \
-         states what happens when one collides — the third behaviour (a payload item \
-         whose title mints an id the doc already holds rejects the WHOLE payload, \
-         nothing staged) is the one an agent meets by surprise:\n  {}\n(steps stating \
-         the append half: {})",
+        "a step solicits a batch author over a singleton whose items can collide but \
+         never states what happens when one does — a payload item whose title mints an \
+         id the doc already holds rejects the WHOLE payload (`write.already-present`), \
+         nothing staged, and the exit is to edit that item in place:\n  {}\n(owing \
+         steps: {})",
         missing.join("\n  "),
-        stating.join(", "),
+        members.join(", "),
+    );
+}
+
+/// The pack-load fence and this sweep demand **the same clause** — the fence is the
+/// half that blocks a pack from shipping the gap, this sweep the half that reaches
+/// the literal-command siblings outside the declarer family. Bijected here so the two
+/// cannot drift into disagreeing about what the binary does.
+#[test]
+fn the_pack_load_fence_demands_exactly_the_clause() {
+    let fenced: BTreeSet<&str> = cli::pack::COPY_IN_APPEND_TOKENS.into_iter().collect();
+    let clause: BTreeSet<&str> = WHOLE_CLAUSE.into_iter().collect();
+    assert_eq!(
+        fenced, clause,
+        "`COPY_IN_APPEND_TOKENS` must demand exactly the clause the binary produces",
+    );
+}
+
+/// The retired consequence is gone from the shipped prose — swept over both packs'
+/// whole step trees, not just the five the fence forced to say it.
+#[test]
+fn no_shipped_step_states_the_retired_doubling_falsehood() {
+    let offenders: Vec<String> = all_steps()
+        .iter()
+        .filter(|(_, _, body)| normalized(body).contains(RETIRED_FALSEHOOD))
+        .map(|(pack, id, _)| format!("{pack}:{id}"))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "a colliding payload item is refused, not doubled — these steps still say \
+         \"{RETIRED_FALSEHOOD}\": {offenders:?}",
     );
 }
 
 #[test]
 fn the_composed_batch_author_note_states_the_collision_reject() {
     let corpus = TrialCorpus::build(State::Fresh);
-    // The shape the trial read the note from: a mint-free preview of the planning
-    // workflow, whose `author-roadmap` step carries the batch-author note.
-    let composed = normalized(&corpus.jigc_ok(&["workflow", "planning", "--preview"]));
-    assert!(
-        composed.contains(APPEND_HALF),
-        "the composed planning preview must keep the append half; got:\n{composed}"
-    );
-    for fact in COLLISION_FACTS {
+    // Two composed doors, both driven through the real binary: the mint-free preview
+    // the trial read the note from (its `author-roadmap` step carries the batch-author
+    // note), and the `single-task` front door, whose `record-changelog` step is the
+    // one the fence forced into the falsehood.
+    let doors: [(&str, Vec<&str>); 2] = [
+        (
+            "workflow planning --preview",
+            vec!["workflow", "planning", "--preview"],
+        ),
+        (
+            "start --workflow single-task",
+            vec![
+                "start",
+                "--workflow",
+                "single-task",
+                "record a user-facing change",
+            ],
+        ),
+    ];
+    for (label, args) in doors {
+        let composed = normalized(&corpus.jigc_ok(&args));
+        for fact in WHOLE_CLAUSE {
+            assert!(
+                composed.contains(fact),
+                "the COMPOSED `{label}` bytes — what an agent reads — must state \
+                 \"{fact}\"; got:\n{composed}"
+            );
+        }
         assert!(
-            composed.contains(fact),
-            "the COMPOSED planning preview — the bytes an agent reads — must state \
-             \"{fact}\"; got:\n{composed}"
+            !composed.contains(RETIRED_FALSEHOOD),
+            "the COMPOSED `{label}` bytes must not say \"{RETIRED_FALSEHOOD}\"; \
+             got:\n{composed}"
         );
     }
 }

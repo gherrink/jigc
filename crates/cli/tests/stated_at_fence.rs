@@ -38,9 +38,11 @@
 //! token's occurrences from a copied pack blocks pack load, naming step, code and
 //! token. Its **conditional tier** (T2) rides the referenced singleton's own
 //! structure: a copy-in declarer whose solicited singleton has ≥1 `repeatable:`
-//! section owes the append half too (`cli::pack::COPY_IN_APPEND_TOKENS`), and a
-//! declarer whose singleton is slot-only owes nothing and stays clean — the
-//! exemption asserted over the enumerated declarer set, never assumed.
+//! section owes the append/collision clause too (`cli::pack::COPY_IN_APPEND_TOKENS`
+//! — corrected at M49 Inc 10 T2, where the clause stopped demanding the *"would
+//! double"* the binary never does), and a declarer whose singleton is slot-only owes
+//! nothing and stays clean — the exemption asserted over the enumerated declarer set,
+//! never assumed.
 //!
 //! Its **obligation direction** (T3) closes the pair into a biconditional: every
 //! `create.singleton-copy-in` declarer of the two trees (two in dev, four in
@@ -697,9 +699,9 @@ fn copy_in_declarers(pack: &Path) -> BTreeSet<String> {
 }
 
 /// The **item-bearing** declarers: steps soliciting a singleton whose schema declares
-/// ≥1 `repeatable:` section, so authored items append and a re-authored one would
-/// double. Enumerated from the shipped tree (steps × their `{{schema:<T>}}` refs ×
-/// `T`'s own schema), never hand-listed.
+/// ≥1 `repeatable:` section, so authored items append beside the committed ones and a
+/// re-authored one collides. Enumerated from the shipped tree (steps × their
+/// `{{schema:<T>}}` refs × `T`'s own schema), never hand-listed.
 fn append_owing_steps(pack: &Path) -> BTreeSet<String> {
     let source = cli::pack::FilesystemPack::new(pack.to_path_buf());
     step_defs(pack)
@@ -722,9 +724,10 @@ fn append_owing_steps(pack: &Path) -> BTreeSet<String> {
         .collect()
 }
 
-/// Drive the conditional tier's whole axis through the real binary: delete each
-/// append fact in turn from each item-bearing declarer, assert the load blocks
-/// naming step, code and token, then restore the step before the next deletion.
+/// Drive the conditional tier's whole axis through the real binary: delete each fact
+/// of the append/collision clause in turn from each item-bearing declarer, assert the
+/// load blocks naming step, code and token, then restore the step before the next
+/// deletion.
 fn drive_append_axis(pack: &Path, run: &dyn Fn() -> std::process::Output) {
     let owing = append_owing_steps(pack);
     assert!(
@@ -807,11 +810,12 @@ fn every_item_bearing_methodology_declarer_states_the_append_half() {
 /// The omitting context that must stay **inert, never an error**: a copy-in declarer
 /// whose singleton is **slot-only** (methodology's `author-migration-vision` — the
 /// `vision` schema has no `repeatable:` section, and its prose says the slots
-/// OVERWRITE) owes no append fact and loads clean. Asserted, not assumed: the exempt
+/// OVERWRITE) owes no clause fact and loads clean. Asserted, not assumed: the exempt
 /// declarers are enumerated as the declarer set minus the item-bearing one, and each
 /// is proven to state neither append fact — so the clean load below is the tier
 /// standing down, not prose accidentally satisfying it. Flat-mapping the tokens would
-/// make the fence demand a statement that is false for this step.
+/// make the fence demand statements that are false for this step (its slots have no
+/// items to collide, so `write.already-present` cannot arise there).
 #[test]
 fn a_slot_only_copy_in_declarer_is_exempt_from_the_append_tier() {
     let repo = TempDir::new("apx-repo");

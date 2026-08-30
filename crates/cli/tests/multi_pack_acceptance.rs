@@ -439,7 +439,9 @@ Run: `jigc doc create changelog --title Changelog --task add-a-thing`
 If a changelog is ALREADY committed, the CLI does not mint a fresh one — it copies
 the committed body in as your edit base, so what you author below APPENDS to the
 entries already there and any slot you set overwrites. Author only what THIS change
-adds; an entry the committed changelog already holds would double.
+adds; an entry whose title mints an id the committed changelog already holds is
+refused (`write.already-present`), the WHOLE payload rejected and nothing staged, so
+edit that entry in place with `jigc doc set-slot` rather than re-authoring it here.
 
 Then author the entry itself. The target schema and its batch payload, both
 generated from the resolved `changelog` schema, follow — one call places the whole

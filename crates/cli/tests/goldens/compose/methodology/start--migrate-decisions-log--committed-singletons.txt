@@ -46,7 +46,10 @@ If a `decisions-log` is ALREADY committed in the store (a re-run, or one adopted
 earlier), the CLI does not mint a fresh one — it copies the committed body in as
 your edit base, so the entries you author below APPEND to those already there and
 any slot you set overwrites. Re-author only what the foreign source adds; an entry
-the committed doc already holds would double. The lone exception is a same-path
+whose title mints an id the committed doc already holds is refused
+(`write.already-present`), the WHOLE payload rejected and nothing staged, so edit that
+entry in place with `jigc doc set-slot` rather than re-authoring it here. The lone
+exception is a same-path
 migration — when the foreign file you are migrating IS the canonical `decisions-log`
 home the schema line above names — where the CLI seeds a blank skeleton and your
 authoring rebuilds the whole doc.

@@ -37,7 +37,10 @@ over a doc this task already staged acks `already existed — copied in for
 update` and changes nothing): the batch verb reads one declarative payload from
 stdin (grammar: `jigc doc author --help`) and places every entry in a single
 write, no printed-address dance. Over an already-committed changelog it copies
-the committed doc in and appends — existing releases are untouched:
+the committed doc in and appends — existing releases are untouched; an entry whose
+title mints an id the changelog already holds is refused (`write.already-present`),
+the WHOLE payload rejected and nothing staged, so edit that entry in place with the
+per-entry `set-field` / `set-slot` lines above rather than re-authoring it here:
 
 jigc doc author changelog --from-file - --task {{task.id}}
 

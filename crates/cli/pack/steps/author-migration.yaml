@@ -19,7 +19,10 @@ If a `changelog` is ALREADY committed in the store (a re-run, or one adopted
 earlier), the CLI does not mint a fresh one — it copies the committed body in as
 your edit base, so the releases and change-groups you author below APPEND to those
 already there and any slot you set overwrites. Re-author only what the foreign
-source adds; a release the committed doc already holds would double. The lone
+source adds; a release whose title mints an id the committed doc already holds is
+refused (`write.already-present`), the WHOLE payload rejected and nothing staged, so
+edit that release in place with `jigc doc set-field` / `jigc doc set-slot` rather than
+re-authoring it here. The lone
 exception is a same-path migration — when the foreign file you are migrating IS the
 canonical `CHANGELOG.md` — where the CLI seeds a blank skeleton and your authoring
 rebuilds the whole doc.
