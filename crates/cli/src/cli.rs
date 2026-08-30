@@ -1405,8 +1405,11 @@ fn run_orient(format: Format) -> Outcome {
 /// create, alter or resurrect state a later door reads as **authority**. A sub-task's
 /// `.jigc/tasks/<id>/` working area is authority — its `workflow` file decides what a
 /// re-entry composes — and `jigc milestone list-tasks` rebuilt exactly that from a committed
-/// record which carries no minting workflow at all, so an `--workflow`-overridden sub-task
-/// came back under the pack default: a read verb fabricating provenance. It reads the record
+/// record that carried no minting workflow at the time, so an `--workflow`-overridden sub-task
+/// came back under the pack default: a read verb fabricating provenance. The record carries a
+/// per-item `workflow` leaf since M49 Increment 9 / T3, so that value would be sourced rather
+/// than invented today — which retires the example and leaves the rule exactly where it was: a
+/// `Read` leaf may not materialize a working area whatever it would put in it. It reads the record
 /// and writes nothing now (`crate::milestone`'s `run_list_tasks`), and the whole `Read` set is
 /// swept over a state built to reveal a write by `tests/read_verb_acts_nothing.rs`.
 ///

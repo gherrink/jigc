@@ -884,3 +884,64 @@ fn a_pre_bump_record_with_no_workflow_leaf_falls_back_to_the_cli_default() {
         String::from_utf8_lossy(&out.stderr),
     );
 }
+
+/// **The retired claim, fenced over every home that carried it** (M49 Increment 9 / T3
+/// completion-audit fix).
+///
+/// Before the `milestone-record` 2→3 bump the committed record carried `task-id`/`intent`/
+/// `status` and nothing about the minting workflow, so four passages stated as settled fact
+/// that a `--workflow` override could not survive a clone and that the re-seed's value was
+/// therefore an invention. T3 reversed exactly that. Its correction landed at three of its four
+/// homes — the engine fn, `team-ready-state.md`, `write-commands.md` — and the CLI's three
+/// passages went on asserting the reversed behaviour, one of them cited as a *declared bound*:
+/// the shape that forecloses a shipped fix for the next reader, and the one this wave exists to
+/// refuse.
+///
+/// So the **claim** is enumerated here rather than the sites, and every home it ever had is
+/// scanned. The obligation is absence only, on purpose: what stops the claim being "corrected"
+/// by deleting the paragraph is the behavioural half of this same suite — arm (e) and the
+/// pre-bump arm drive the override, the default and a leaf-less item through real clones, and
+/// no prose edit satisfies them.
+const RETIRED_NO_RECORDED_WORKFLOW_CLAIMS: &[&str] = &[
+    "the record carries no minting workflow",
+    "not fresh-clone-durable",
+    "does not carry and therefore cannot source",
+    "overridden sub-task is a fabrication",
+    "carries no minting workflow at all",
+];
+
+#[test]
+fn no_home_still_says_the_record_lacks_the_minting_workflow() {
+    const HOMES: &[(&str, &str)] = &[
+        (
+            "crates/cli/src/milestone.rs",
+            include_str!("../src/milestone.rs"),
+        ),
+        ("crates/cli/src/cli.rs", include_str!("../src/cli.rs")),
+        (
+            "crates/engine/src/milestone.rs",
+            include_str!("../../engine/src/milestone.rs"),
+        ),
+        (
+            "design/team-ready-state.md",
+            include_str!("../../../design/team-ready-state.md"),
+        ),
+        (
+            "design/write-commands.md",
+            include_str!("../../../design/write-commands.md"),
+        ),
+    ];
+
+    for (home, body) in HOMES {
+        for claim in RETIRED_NO_RECORDED_WORKFLOW_CLAIMS {
+            assert!(
+                !body.contains(claim),
+                "{home} still asserts the behaviour M49 Increment 9 / T3 reversed — {claim:?}. \
+                 The committed `milestone-record` carries a per-item `workflow` leaf at \
+                 schema-version 3 and `reseed_sub_task_areas` sources it, so an `--workflow` \
+                 override IS fresh-clone durable; state the shipped truth rather than the \
+                 pre-bump bound.",
+            );
+        }
+    }
+}

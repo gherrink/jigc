@@ -1528,10 +1528,14 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 ///
 /// **The one read verb no longer reaches it** (M49 Increment 2, T4). `list-tasks` is
 /// [`crate::cli::VerbKind::Read`] and used to call this like the rest, so a *read* rebuilt
-/// every absent sub-task area under `DEFAULT_SUB_TASK_WORKFLOW` — the pack fact below, which
-/// for an `--workflow`-overridden sub-task is a fabrication, and which a later re-entry reads
-/// as authority. It reads the committed record directly now ([`read_record`]) and materializes
-/// nothing; the doors that go on to *operate* are unchanged.
+/// every absent sub-task area — writing each one's `workflow` file, at the time, out of
+/// `DEFAULT_SUB_TASK_WORKFLOW`: a value the record did not then carry, invented for an
+/// `--workflow`-overridden sub-task, and read as authority by a later re-entry. M49 Increment 9
+/// / T3 removed the *invention* — the record carries a per-item `workflow` leaf at
+/// `schema-version` 3 and the re-seed sources it — but the objection is untouched, and it is
+/// why `list-tasks` stays off this site: a `Read` leaf may not materialize a working area
+/// whatever it would put in it. It reads the committed record directly now ([`read_record`])
+/// and materializes nothing; the doors that go on to *operate* are unchanged.
 ///
 /// Gated twice so it stays inert where there is nothing to re-derive: (1) the `milestone-record`
 /// schema must be resolved (a `[dev ▸ methodology]` project) — dev-only (no methodology pack) has
@@ -1877,10 +1881,12 @@ fn reseed_cache(
     engine::milestone::reseed_cache_from_record(&dir, schema, &source).map_err(finding_to_err)?;
     // The sub-task working areas, rebuilt from the same record (M47 Inc 3 T3). Second, on
     // purpose: `reseed_cache_from_record` carries the terminal guard, so a settled milestone
-    // refuses above this line and never has areas rebuilt for it. `DEFAULT_SUB_TASK_WORKFLOW`
-    // is the pack fact the engine may not know — the record carries no minting workflow, so an
-    // `--workflow` override is workbench-local and not fresh-clone-durable (the engine fn's
-    // declared bound).
+    // refuses above this line and never has areas rebuilt for it. Each area is rebuilt under
+    // the `workflow` leaf its own recorded item carries (`milestone-record` schema-version 3,
+    // M49 Inc 9 T3), so an `--workflow` override IS fresh-clone durable.
+    // `DEFAULT_SUB_TASK_WORKFLOW` is passed as the fall-back the engine may not know — the pack
+    // fact reached only by a pre-bump item that carries no leaf, and exactly the value
+    // `add-task` recorded absent an override.
     engine::milestone::reseed_sub_task_areas(jigc_root, schema, &source, DEFAULT_SUB_TASK_WORKFLOW)
         .map_err(finding_to_err)
 }
@@ -1895,10 +1901,13 @@ fn reseed_cache(
 /// classified [`crate::cli::VerbKind::Read`], and it used to reach the shared
 /// [`reseed_cache`] site like every operating door — so a *read* rebuilt the milestone cache
 /// **and every absent sub-task working area**, each with a `workflow` file the committed
-/// record does not carry and therefore cannot source. An `--workflow`-overridden sub-task
+/// record did not then carry and could not source. An `--workflow`-overridden sub-task
 /// came back under the pack default: a read verb fabricating provenance that a later
-/// `jigc workflow <W> --task <id>` re-entry reads as authority (see [`crate::cli::VerbKind`],
-/// which states what a `Read` leaf may and may not materialize).
+/// `jigc workflow <W> --task <id>` re-entry reads as authority. The record carries a per-item
+/// `workflow` leaf since M49 Increment 9 / T3, so that value would be sourced rather than
+/// invented today — which retires the example, not the conclusion, because the conclusion never
+/// rested on it: a `Read` leaf may not materialize a working area whatever it would put in it
+/// (see [`crate::cli::VerbKind`], which states what a `Read` leaf may and may not materialize).
 ///
 /// So both behaviours the re-seed was carrying here are kept, read-only:
 /// - **the fresh-clone answer** — with no `.jigc/` workbench the ids come straight from the
