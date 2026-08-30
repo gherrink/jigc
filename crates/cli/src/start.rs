@@ -689,7 +689,7 @@ pub fn compose_in_repo(
         &workflow_id,
         &source,
         &overrides,
-        &[],
+        MilestoneFeed::none(),
         None,
         slug_override,
         false,
@@ -727,7 +727,7 @@ pub fn compose_named_in_repo(
         workflow_id,
         &source,
         &overrides,
-        &[],
+        MilestoneFeed::none(),
         None,
         slug_override,
         false,
@@ -781,7 +781,7 @@ pub fn compose_named_no_intent_in_repo(start: &Path, workflow_id: &str) -> Resul
         workflow_id,
         &source,
         &overrides,
-        &[],
+        MilestoneFeed::none(),
         None,
         // No mint on the `creates-task: false` arm (a `creates-task: true` `<X>` was
         // rejected above), so a `--slug` override could never apply here.
@@ -842,29 +842,65 @@ pub fn preview_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
         workflow_id,
         &source,
         &overrides,
-        &[],
+        MilestoneFeed::none(),
         None,
         None,
         true,
     )
 }
 
+/// The milestone state one compose is fed — the **bound** work-unit's id and its
+/// id-sorted sub-task list, the two engine-native `milestone` leaves
+/// ([`engine::data_value::ComposeContext::milestone_id`] / `::milestone`).
+///
+/// They travel as one value because they are one fact: the single door that binds a
+/// milestone (`jigc milestone execute <id>`) binds both, and every other compose
+/// passes [`MilestoneFeed::none`] — where `{{milestone.tasks}}` resolves to the empty
+/// collection and `milestone.id` resolves absent, so a catalog arg sourcing it keeps
+/// its `<MILESTONE_ID>` agent marker (`command-catalog.md` → The three arg kinds).
+/// The CLI does the work-unit I/O; the resolver does none (the determinism boundary).
+#[derive(Clone, Copy, Default)]
+pub struct MilestoneFeed<'a> {
+    /// The bound milestone's id — `None` on every compose off the execute door.
+    pub id: Option<&'a str>,
+    /// The milestone's live sub-tasks, each id paired with its recorded minting
+    /// workflow; empty when no milestone is bound.
+    pub tasks: &'a [engine::data_value::SubTask],
+}
+
+impl<'a> MilestoneFeed<'a> {
+    /// The unbound feed — no milestone id, no sub-tasks.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// The bound feed — the executing milestone's id and its live sub-task list.
+    pub fn bound(id: &'a str, tasks: &'a [engine::data_value::SubTask]) -> Self {
+        Self {
+            id: Some(id),
+            tasks,
+        }
+    }
+}
+
 /// Execute a milestone work-unit — compose the **explicitly-named**
-/// `creates-task: false` `workflow_id` over the milestone's id-sorted sub-task list,
-/// feeding `milestone_tasks` into `{{milestone.tasks}}` so the workflow's `fan-out`
+/// `creates-task: false` `workflow_id` over the bound milestone's id + its id-sorted
+/// sub-task list, feeding `milestone.tasks` so the workflow's `fan-out`
 /// step resolves it (one `` Spawn: `jigc workflow <W> --task <id>` `` per sub-task, in
 /// id-sorted order, `<W>` being **that sub-task's recorded minting workflow** — the CLI
-/// reads it and feeds the pair; the resolver does no work-unit I/O). **Mints nothing**
+/// reads it and feeds the pair; the resolver does no work-unit I/O), and `milestone.id`
+/// so the walk's three `` Run: `jigc milestone …` `` lines carry the real id rather than
+/// an agent-fill marker (M49). **Mints nothing**
 /// — the milestone and its sub-tasks already
 /// exist (`write-commands.md` → Executing the milestone — `jigc milestone execute
-/// <id>`). The lone production site feeding [`ComposeContext::milestone`] non-empty;
+/// <id>`). The lone production site feeding a **bound** [`MilestoneFeed`];
 /// `milestone.rs` resolves the work-unit + reads `TaskList::enumerate()` and calls
 /// in. Bypasses the cascade `default-workflow` knob (the workflow is named, like
 /// Form D) but still resolves the cascade for phase-2/4/5 owners.
 pub fn execute_milestone_in_repo(
     start: &Path,
     workflow_id: &str,
-    milestone_tasks: &[engine::data_value::SubTask],
+    milestone: MilestoneFeed<'_>,
 ) -> Result<Composition> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
@@ -883,7 +919,7 @@ pub fn execute_milestone_in_repo(
         workflow_id,
         &source,
         &overrides,
-        milestone_tasks,
+        milestone,
         None,
         // A milestone execution mints no top-level task, so no `--slug` applies.
         None,
@@ -990,7 +1026,7 @@ pub(crate) fn compose_migrate_in_repo(
 }
 
 /// The milestone-feeding compose seam — compose the no-task `workflow_id` over an
-/// **injected** `pack` + `source` with `milestone_tasks` fed into `{{milestone.tasks}}`,
+/// **injected** `pack` + `source` with the [`MilestoneFeed`] fed into the `milestone` root,
 /// no cascade overrides (the structural-only shape `compose_core`'s no-override path
 /// reads the pack unchanged). The `pub(crate)` boundary lets the `milestone.rs`
 /// dispatch test drive the feeding contract over a `FixturePack` fan-out workflow
@@ -1004,7 +1040,7 @@ pub(crate) fn execute_milestone_core(
     pack: &dyn PackSource,
     workflow_id: &str,
     source: &dyn StepSource,
-    milestone_tasks: &[engine::data_value::SubTask],
+    milestone: MilestoneFeed<'_>,
 ) -> Result<Composition> {
     let overrides = ComposeOverrides {
         deltas: Vec::new(),
@@ -1025,7 +1061,7 @@ pub(crate) fn execute_milestone_core(
         source,
         &defs,
         &overrides,
-        milestone_tasks,
+        milestone,
         None,
         None,
         false,
@@ -1046,7 +1082,7 @@ fn compose_drained(
     workflow_id: &str,
     source: &CascadeStepSource<'_>,
     overrides: &ComposeOverrides,
-    milestone_tasks: &[engine::data_value::SubTask],
+    milestone: MilestoneFeed<'_>,
     seam: Option<&str>,
     slug_override: Option<&str>,
     preview: bool,
@@ -1065,7 +1101,7 @@ fn compose_drained(
         source,
         &source.defs(),
         overrides,
-        milestone_tasks,
+        milestone,
         seam,
         slug_override,
         preview,
@@ -1125,7 +1161,7 @@ fn compose_core(
     source: &dyn StepSource,
     defs: &CascadeDefs<'_>,
     overrides: &ComposeOverrides,
-    milestone_tasks: &[engine::data_value::SubTask],
+    milestone: MilestoneFeed<'_>,
     seam: Option<&str>,
     slug_override: Option<&str>,
     preview: bool,
@@ -1246,7 +1282,11 @@ fn compose_core(
             // id-sorted sub-task list by the `jigc milestone execute` dispatch —
             // the lone production site feeding this non-empty (`milestone.rs`
             // `run_execute`; `write-commands.md` → Executing the milestone).
-            milestone: milestone_tasks.to_vec(),
+            milestone: milestone.tasks.to_vec(),
+            // The bound work-unit's id — the `milestone.id` leaf the three
+            // `{ agent: milestone_id }` catalog args source. `None` on every compose
+            // but `jigc milestone execute`, where the `<MILESTONE_ID>` marker stands (M49).
+            milestone_id: milestone.id.map(str::to_owned),
             // The CLI-owned source seam — `None` on every `start`/milestone compose
             // path; fed the staged foreign bytes only by the `jigc migrate` verb
             // (auto-migration.md → The source seam). A `creates-task: false`
@@ -2400,8 +2440,10 @@ fn build_context(
         // resolves to the committed instances (the determinism boundary; the
         // engine resolver does no committed-store I/O).
         store,
-        // No milestone in this single-`start` compose path (see the no-task arm).
+        // No milestone in this single-`start` compose path (see the no-task arm) —
+        // neither the sub-task collection nor the bound work-unit id.
         milestone: Vec::new(),
+        milestone_id: None,
         // The CLI-owned source seam — the staged foreign bytes fed by `jigc migrate`
         // at mint and re-fed from the persisted `<task_dir>/source` on resume /
         // re-entry; `None` whenever no source is staged — every non-migration compose
@@ -4098,7 +4140,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -4214,7 +4256,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -4322,7 +4364,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -4384,7 +4426,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -4444,7 +4486,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -4563,7 +4605,7 @@ mod tests {
                 &source,
                 &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
                 &ComposeOverrides::structural(deltas),
-                &[],
+                MilestoneFeed::none(),
                 None,
                 None,
                 false,
@@ -4637,7 +4679,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -4679,7 +4721,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -4761,7 +4803,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             true,
@@ -4792,7 +4834,7 @@ mod tests {
             &source2,
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -5498,7 +5540,7 @@ mod tests {
             "wf-lower",
             &source,
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -5547,7 +5589,7 @@ mod tests {
             "wf",
             &source,
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -5589,7 +5631,7 @@ mod tests {
             "wf",
             &CascadeStepSource::new(&composite, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -5603,7 +5645,7 @@ mod tests {
             "wf",
             &CascadeStepSource::new(&base_pack_clone, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -5694,7 +5736,7 @@ mod tests {
             "wf-lower",
             &source,
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -5738,7 +5780,7 @@ mod tests {
             "wf",
             &source,
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -5780,7 +5822,7 @@ mod tests {
             "wf",
             &CascadeStepSource::new(&composite, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -5794,7 +5836,7 @@ mod tests {
             "wf",
             &CascadeStepSource::new(&base_pack_clone, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -6698,7 +6740,7 @@ mod tests {
             &source,
             &defs,
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -6722,7 +6764,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), project_config),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -6750,7 +6792,7 @@ mod tests {
             &source,
             &defs,
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,
@@ -6766,7 +6808,7 @@ mod tests {
             &source,
             &CascadeDefs::new(&no_shadow_resolved(), project_config),
             &ComposeOverrides::structural(Vec::new()),
-            &[],
+            MilestoneFeed::none(),
             None,
             None,
             false,

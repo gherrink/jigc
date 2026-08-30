@@ -34,7 +34,9 @@ A catalog is a YAML list of command-refs, one entry per `id`. Each entry:
 |---|---|---|
 | `"<literal>"` (a plain string) | a fixed token | itself, shell-quoted if needed |
 | `{ from: <data-value-path> }` | resolved at compose-time against the workflow's data-value context | the resolved value, shell-quoted if needed |
-| `{ agent: <name>, hint: <string> }` | left for the agent to fill at run-time | `<NAME>` (uppercase identifier, single-angle brackets) |
+| `{ agent: <name>, hint: <string>, from: <data-value-path>? }` | left for the agent to fill at run-time — unless the optional `from:` source resolves at compose-time, in which case the CLI fills it | the resolved value where the source is bound, else `<NAME>` (uppercase identifier, single-angle brackets) |
+
+**The `agent:` arg's optional `from:` is the marker's fall-back, not a second `from:` arg** (M49). Some tokens are the agent's to type at one door and the CLI's to know at another: the milestone id in `` Run: `jigc milestone provision <MILESTONE_ID>` `` is unknowable when the walk is composed off the router, and *already bound* when the same walk is composed by `jigc milestone execute <id>`. A `from:` source on the `agent:` arg says exactly that — fill it where the composing door has the state, leave the marker where it does not — and it keeps the determinism boundary on the right side of the line: the agent never re-types what the CLI already knows. The two kinds differ precisely on the unfed case, which is why this is not simply a `from:` arg: an unresolvable `from:` path is **intrinsic-blocking** (see [Validation](#validation)), and a path that resolves *absent* renders an empty argument — so a bare `from:` on a token that is only sometimes bound would either block the other doors or emit `jigc milestone provision ''`. The marker fall-back is the empty-vs-unresolvable stance ([workflow-dialect.md](workflow-dialect.md) → Leaves) carried into the rendered command line.
 
 The data-value-path in `from:` uses the workflow-dialect grammar ([workflow-dialect.md](workflow-dialect.md) → Leaves): `task.commit#summary` for an address, `@task.spec#criteria` for content, `task.id` for a scalar. The path resolves in the same context as a workflow-step placeholder, so the catalog can navigate any state the workflow has — task roots, store roots, pack-provided roots.
 
@@ -99,7 +101,7 @@ The composed output has three bracket families, each filled by a different party
 |---|---|---|---|
 | `{{...}}` placeholder | `{{task.commit#summary}}` | CLI | compose-time (gone from emitted text) |
 | `<<...>>` slot-author | `<<author: commit:foo#summary>>` | LLM | write-path (through `jigc doc set-slot`) |
-| `<...>` agent-substitution | `<TITLE>` | LLM | run-time (typed into shell) |
+| `<...>` agent-substitution | `<TITLE>` | LLM | run-time (typed into shell) — unless the arg's optional `from:` source is bound at compose-time, when the CLI fills it and no marker is emitted |
 
 `<...>` is visually distinct from `<<...>>`: single-angle vs double, uppercase identifier with no payload vs `name: address` payload. They cannot be confused at a glance.
 

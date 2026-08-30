@@ -1785,11 +1785,15 @@ fn milestone_execute_composes_the_real_fanout_join_finalize_workflow() {
     let join_prose_at = stdout
         .find("Once every spawned sub-task reports complete")
         .expect("the join-tasks step must be conditional on the sub-tasks completing");
+    // Each `Run:` line carries the **bound** milestone's id, not an agent-fill marker:
+    // this door was reached with the work-unit bound, so the token is the CLI's to
+    // fill (M49 Increment 10 / T4). The marker's home is the off-verb compose, pinned
+    // by `flow10_acceptance.rs`.
     let join_run_at = stdout
-        .find("Run: `jigc milestone join <MILESTONE_ID>`")
+        .find("Run: `jigc milestone join cache-rework`")
         .expect("the join-tasks step must resolve a `Run:` line — the join is taught");
     let run_at = stdout
-        .find("Run: `jigc milestone finalize <MILESTONE_ID>`")
+        .find("Run: `jigc milestone finalize cache-rework`")
         .expect("the milestone-finalize step must resolve a `Run:` line");
     assert!(
         last_spawn_at < join_prose_at && join_prose_at < join_run_at && join_run_at < run_at,
@@ -1856,8 +1860,9 @@ fn milestone_execute_emits_the_provision_run_before_the_first_spawn() {
          got:\n{stdout}",
     );
 
+    // The bound milestone's id, resolved — see the sibling above (M49 Inc 10 / T4).
     let provision_at = stdout
-        .find("Run: `jigc milestone provision <MILESTONE_ID>`")
+        .find("Run: `jigc milestone provision cache-rework`")
         .expect("the provision step must resolve a `Run:` line into the composed view");
     let first_spawn_at = stdout
         .find("Spawn: `cd .jigc/worktrees/")

@@ -212,10 +212,16 @@ fn default_true() -> bool {
 ///   compose-time against the workflow's data-value context. The path text is
 ///   carried **verbatim** here (the workflow-dialect grammar string); parsing /
 ///   resolution is composition's job, not the loader's — this task is load-only.
-/// - [`CommandArg::Agent`] — `{ agent: <name>, hint: <string> }`: left for the
-///   agent to fill at run-time, rendered as an `<NAME>` marker. The `hint` is
-///   **required and non-empty** (the agent needs to know what to substitute —
-///   `command-catalog.md` → Validation).
+/// - [`CommandArg::Agent`] — `{ agent: <name>, hint: <string>, from: <path>? }`:
+///   left for the agent to fill at run-time, rendered as an `<NAME>` marker. The
+///   `hint` is **required and non-empty** (the agent needs to know what to
+///   substitute — `command-catalog.md` → Validation). The **optional** `from:` is
+///   a compose-time source for the same token: where the composing door has the
+///   value bound the CLI fills it and the marker never reaches the agent; where it
+///   does not, the path resolves absent and the marker stands. It is the agent
+///   marker's fall-back, never a second `from:` arg — an unfed source is empty,
+///   not the intrinsic-blocking dangling-`from:` finding a [`CommandArg::From`]
+///   would raise (M49; `command-catalog.md` → The three arg kinds).
 ///
 /// Any other map shape (an unknown key, a `from` that is not a string, an
 /// `agent` missing or with an empty `hint`) is a malformed entry rejected at
@@ -228,8 +234,14 @@ pub enum CommandArg {
     Literal { literal: String },
     /// A `from:` data-value path, carried verbatim (resolved in composition).
     From { from: String },
-    /// An `agent:` run-time substitution with a required non-empty hint.
-    Agent { agent: String, hint: String },
+    /// An `agent:` run-time substitution with a required non-empty hint and an
+    /// optional compose-time `from:` source that fills the marker when bound.
+    Agent {
+        agent: String,
+        hint: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+    },
 }
 
 /// One catalog command-ref: the `{{cli.<id>}}` entry the workflow's steps
@@ -337,8 +349,12 @@ fn parse_command_arg(raw: serde_yaml_ng::Value) -> Result<CommandArg, Finding> {
 /// Convert one `from:`/`agent:` arg mapping into a typed [`CommandArg`].
 ///
 /// Exactly one recognized shape is admitted: `{ from: <string> }` or
-/// `{ agent: <string>, hint: <non-empty string> }`. Any other key, a wrong
-/// value type, a missing `hint`, or an empty `hint` is a malformed arg.
+/// `{ agent: <string>, hint: <non-empty string>, from: <string>? }`. Any other
+/// key, a wrong value type, a missing `hint`, or an empty `hint` is a malformed
+/// arg. The `agent:` shape is tested **first**, since it is the one that may also
+/// carry a `from` key (its optional compose-time source) — reading the bare
+/// `from:` kind first would mis-route it into a plain [`CommandArg::From`] and
+/// lose the marker fall-back.
 fn parse_arg_mapping(map: serde_yaml_ng::Mapping) -> Result<CommandArg, Finding> {
     use serde_yaml_ng::Value;
     let str_at = |map: &serde_yaml_ng::Mapping, key: &str| -> Option<String> {
@@ -347,6 +363,36 @@ fn parse_arg_mapping(map: serde_yaml_ng::Mapping) -> Result<CommandArg, Finding>
             _ => None,
         }
     };
+
+    if map.contains_key(Value::from("agent")) {
+        let unknown = map
+            .keys()
+            .any(|k| !matches!(k, Value::String(s) if s == "agent" || s == "hint" || s == "from"));
+        if unknown {
+            return Err(malformed_arg(
+                "an `agent:` arg takes only the `agent`, `hint` and `from` keys".to_owned(),
+            ));
+        }
+        let agent = str_at(&map, "agent")
+            .ok_or_else(|| malformed_arg("`agent:` must be a name string".to_owned()))?;
+        let hint = str_at(&map, "hint").filter(|h| !h.trim().is_empty()).ok_or_else(|| {
+            malformed_arg(format!(
+                "`agent:` arg `{agent}` needs a non-empty `hint` (the agent must know what to substitute)"
+            ))
+        })?;
+        // The optional compose-time source. Present-but-not-a-string is malformed
+        // (the same rejection the bare `from:` kind gives), never silently dropped.
+        let from = match map.get(Value::from("from")) {
+            None => None,
+            Some(Value::String(path)) => Some(path.clone()),
+            Some(_) => {
+                return Err(malformed_arg(format!(
+                    "`agent:` arg `{agent}`'s optional `from:` must be a data-value-path string"
+                )));
+            }
+        };
+        return Ok(CommandArg::Agent { agent, hint, from });
+    }
 
     if map.contains_key(Value::from("from")) {
         if map.len() != 1 {
@@ -357,25 +403,6 @@ fn parse_arg_mapping(map: serde_yaml_ng::Mapping) -> Result<CommandArg, Finding>
         let from = str_at(&map, "from")
             .ok_or_else(|| malformed_arg("`from:` must be a data-value-path string".to_owned()))?;
         return Ok(CommandArg::From { from });
-    }
-
-    if map.contains_key(Value::from("agent")) {
-        let unknown = map
-            .keys()
-            .any(|k| !matches!(k, Value::String(s) if s == "agent" || s == "hint"));
-        if unknown {
-            return Err(malformed_arg(
-                "an `agent:` arg takes only the `agent` and `hint` keys".to_owned(),
-            ));
-        }
-        let agent = str_at(&map, "agent")
-            .ok_or_else(|| malformed_arg("`agent:` must be a name string".to_owned()))?;
-        let hint = str_at(&map, "hint").filter(|h| !h.trim().is_empty()).ok_or_else(|| {
-            malformed_arg(format!(
-                "`agent:` arg `{agent}` needs a non-empty `hint` (the agent must know what to substitute)"
-            ))
-        })?;
-        return Ok(CommandArg::Agent { agent, hint });
     }
 
     Err(malformed_arg(
@@ -446,43 +473,72 @@ pub fn render_command(
 ///   value; [`Resolution::Address`] / [`Resolution::Content`] → the canonical
 ///   address string; [`Resolution::Absent`] → empty text, per
 ///   `workflow-dialect.md` → Empty vs unresolvable).
-/// - [`CommandArg::Agent`] → an uppercase `<NAME>` marker (the agent fills it at
-///   run-time); the marker is left **bare** by [`shell_quote`] since its
-///   character set is the bare-allowed set (`command-catalog.md` → Shell-safe).
+/// - [`CommandArg::Agent`] → its optional `from:` source resolved first: a
+///   non-empty resolved value renders as that value (shell-quoted), so the door
+///   that has the state bound emits a line the agent runs verbatim; an absent /
+///   empty resolution (every door that does not) falls back to the uppercase
+///   `<NAME>` marker the agent fills at run-time. The marker is left **bare** by
+///   [`shell_quote`] since its character set is the bare-allowed set
+///   (`command-catalog.md` → Shell-safe).
 fn render_arg(
     arg: &CommandArg,
     ctx: &crate::data_value::ComposeContext,
 ) -> Result<String, Finding> {
-    use crate::data_value::{Path, Resolution};
     let token = match arg {
         CommandArg::Literal { literal } => literal.clone(),
-        // The `<NAME>` agent marker is emitted **bare** (it is the agent's
-        // run-time substitution point, not a value to quote — `command-catalog.md`
-        // → Shell-safe rendering). It bypasses `shell_quote` entirely.
-        CommandArg::Agent { agent, .. } => return Ok(format!("<{}>", agent.to_uppercase())),
-        CommandArg::From { from } => {
-            let path = Path::parse(from).map_err(|source| {
-                blocking_workflow_refs(
-                    "workflow-refs.malformed-data-value",
-                    format!("command-ref `from:` path `{from}` is malformed: {source}"),
-                    Location::at(1, 1),
-                )
-            })?;
-            match path.resolve(ctx)? {
-                Resolution::Scalar { value } => value,
-                Resolution::Address { address } | Resolution::Content { address } => {
-                    address.to_string()
+        // An `agent:` arg fills from its optional compose-time source where the
+        // composing door has that state bound; otherwise the `<NAME>` marker stands.
+        // The marker is emitted **bare** (it is the agent's run-time substitution
+        // point, not a value to quote — `command-catalog.md` → Shell-safe rendering),
+        // so it bypasses `shell_quote` entirely; a *filled* value is quoted like any
+        // other resolved token.
+        CommandArg::Agent { agent, from, .. } => {
+            match from.as_deref().map(|path| resolve_arg_path(path, ctx)) {
+                Some(resolved) => {
+                    let value = resolved?;
+                    if value.is_empty() {
+                        return Ok(format!("<{}>", agent.to_uppercase()));
+                    }
+                    value
                 }
-                Resolution::Absent => String::new(),
-                Resolution::Catalog { .. }
-                | Resolution::Store { .. }
-                | Resolution::Milestone { .. } => {
-                    return Err(collection_not_lone());
-                }
+                None => return Ok(format!("<{}>", agent.to_uppercase())),
             }
         }
+        CommandArg::From { from } => resolve_arg_path(from, ctx)?,
     };
     Ok(shell_quote(&token))
+}
+
+/// Resolve one command-ref arg's data-value path to its rendered text — the shared
+/// body of [`CommandArg::From`] and an [`CommandArg::Agent`]'s optional `from:`
+/// source, so the two cannot drift on what a path resolves to.
+///
+/// [`Resolution::Scalar`] → its value; [`Resolution::Address`] /
+/// [`Resolution::Content`] → the canonical address string; [`Resolution::Absent`] →
+/// **empty text** (`workflow-dialect.md` → Empty vs unresolvable) — which the `From`
+/// kind renders as an empty quoted token and the `Agent` kind reads as *fall back to
+/// the marker*. A collection is not a lone arg. A malformed path, and any structural
+/// resolution error, surfaces the resolver's blocking [`Finding`].
+fn resolve_arg_path(
+    from: &str,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<String, Finding> {
+    use crate::data_value::{Path, Resolution};
+    let path = Path::parse(from).map_err(|source| {
+        blocking_workflow_refs(
+            "workflow-refs.malformed-data-value",
+            format!("command-ref `from:` path `{from}` is malformed: {source}"),
+            Location::at(1, 1),
+        )
+    })?;
+    Ok(match path.resolve(ctx)? {
+        Resolution::Scalar { value } => value,
+        Resolution::Address { address } | Resolution::Content { address } => address.to_string(),
+        Resolution::Absent => String::new(),
+        Resolution::Catalog { .. } | Resolution::Store { .. } | Resolution::Milestone { .. } => {
+            return Err(collection_not_lone());
+        }
+    })
 }
 
 /// POSIX single-arg quoting, deterministic (`command-catalog.md` → Shell-safe
@@ -3522,6 +3578,7 @@ mod tests {
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         }
@@ -4443,6 +4500,7 @@ Slightly higher write latency for resilience.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         }
@@ -4532,6 +4590,7 @@ Slightly higher write latency for resilience.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         };
@@ -4664,6 +4723,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         }
@@ -4804,6 +4864,83 @@ A failed charge retries with exponential backoff, capped at five attempts.
     /// `crates/cli/pack/config/commands.yaml` (asserted byte-identical below).
     const COMMANDS_YAML: &[u8] = include_bytes!("../../cli/pack/config/commands.yaml");
 
+    /// M49 Increment 10 (T4) — the three shipped milestone command-refs render the
+    /// **bound** work-unit's id, and keep the `<MILESTONE_ID>` marker where none is
+    /// bound. Driven over the **real** `commands.yaml` entries and the real renderer,
+    /// so the emitted bytes are the contract: a catalog edit that drops the `from:`
+    /// source (the line goes back to a marker the `jigc milestone execute` walk cannot
+    /// fill) or one that turns it into a bare `{ from: }` (the off-verb walk starts
+    /// emitting an empty `''` argument, and a dangling-`from:` block with it) fails
+    /// here. The class is enumerated from the catalog, not hand-listed: every ref whose
+    /// args carry an `agent:` arg with a `from:` source is asserted on both sides.
+    #[test]
+    fn an_agent_arg_with_a_from_source_fills_when_bound_and_keeps_its_marker_when_not() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+
+        // The axis: every shipped ref whose `agent:` arg declares a compose-time source.
+        let sourced: Vec<(&String, &CommandRef)> = catalog
+            .commands
+            .iter()
+            .filter(|(_, cmd)| {
+                cmd.args
+                    .iter()
+                    .any(|a| matches!(a, CommandArg::Agent { from: Some(_), .. }))
+            })
+            .collect();
+        assert_eq!(
+            sourced
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "milestone-finalize",
+                "milestone-join",
+                "milestone-provision"
+            ],
+            "the sourced-agent-arg class is the three milestone refs",
+        );
+
+        let bound = crate::data_value::ComposeContext {
+            milestone_id: Some("cache-hardening".to_owned()),
+            ..crate::data_value::ComposeContext::default()
+        };
+        let unbound = crate::data_value::ComposeContext::default();
+        for (id, cmd) in sourced {
+            let filled = render_command(cmd, &bound).expect("renders against a bound milestone");
+            assert!(
+                filled.ends_with(" cache-hardening"),
+                "`{id}` must render the bound milestone id; got {filled:?}",
+            );
+            let marked = render_command(cmd, &unbound).expect("renders with no milestone bound");
+            assert!(
+                marked.ends_with(" <MILESTONE_ID>"),
+                "`{id}` must keep the agent-fill marker when unbound; got {marked:?}",
+            );
+        }
+    }
+
+    /// The optional source is still a **typed** key: present-but-not-a-string is the
+    /// same malformed-arg rejection the bare `from:` kind gives, never a silent drop
+    /// (which would degrade the line back to a marker with no signal). And an unknown
+    /// key stays rejected — widening `agent:` to admit `from:` admits nothing else.
+    #[test]
+    fn an_agent_args_optional_source_is_typed_and_the_key_set_stays_closed() {
+        for (yaml, what) in [
+            (
+                "commands:\n  - id: x\n    command: jigc\n    args:\n      - { agent: a, hint: h, from: 7 }\n    hint: h\n",
+                "a non-string `from:`",
+            ),
+            (
+                "commands:\n  - id: x\n    command: jigc\n    args:\n      - { agent: a, hint: h, when: now }\n    hint: h\n",
+                "an unknown key",
+            ),
+        ] {
+            let err = load_command_catalog(yaml.as_bytes())
+                .expect_err(&format!("{what} is a malformed arg"));
+            assert_eq!(err.code, "workflow-refs.malformed-command-arg");
+        }
+    }
+
     /// Core done-criterion: the shipped `commands.yaml` loads with all four
     /// command-refs present and each of the three arg kinds carried correctly —
     /// a `from:` arg carries its data-value-path string, an `agent:` arg carries
@@ -4840,7 +4977,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             .args
             .iter()
             .find_map(|a| match a {
-                CommandArg::Agent { agent, hint } => Some((agent, hint)),
+                CommandArg::Agent { agent, hint, .. } => Some((agent, hint)),
                 _ => None,
             })
             .expect("create-adr has an agent arg");
@@ -5089,7 +5226,8 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 {
                   "kind": "agent",
                   "agent": "milestone_id",
-                  "hint": "the milestone:<slug> id being executed"
+                  "hint": "the milestone:<slug> id being executed",
+                  "from": "milestone.id"
                 }
               ],
               "hint": "The milestone commit boundary — validate the merged join + commit per the squash knob."
@@ -5108,7 +5246,8 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 {
                   "kind": "agent",
                   "agent": "milestone_id",
-                  "hint": "the milestone:<slug> id being executed"
+                  "hint": "the milestone:<slug> id being executed",
+                  "from": "milestone.id"
                 }
               ],
               "hint": "Merge the sub-tasks' staged docs by task-id order and report — commits nothing."
@@ -5127,7 +5266,8 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 {
                   "kind": "agent",
                   "agent": "milestone_id",
-                  "hint": "the milestone:<slug> id being executed"
+                  "hint": "the milestone:<slug> id being executed",
+                  "from": "milestone.id"
                 }
               ],
               "hint": "Provision one detached base-pin worktree per sub-task before the fan-out."
@@ -6067,6 +6207,7 @@ explain what changes (nothing appears if it supersedes none).
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         }
@@ -6658,6 +6799,7 @@ explain what changes (nothing appears if it supersedes none).
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         }
@@ -6938,6 +7080,7 @@ explain what changes (nothing appears if it supersedes none).
             ],
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         };
@@ -6955,6 +7098,7 @@ explain what changes (nothing appears if it supersedes none).
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         };
@@ -6988,6 +7132,7 @@ explain what changes (nothing appears if it supersedes none).
             catalog: Vec::new(),
             store,
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         };
@@ -7005,6 +7150,7 @@ explain what changes (nothing appears if it supersedes none).
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            milestone_id: None,
             source: None,
             schemas: std::collections::BTreeMap::new(),
         };
@@ -8492,6 +8638,7 @@ Follow the house rule.
             task: None,
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone_id: None,
             milestone: tasks
                 .iter()
                 .map(|(id, workflow)| {
@@ -8678,6 +8825,7 @@ Follow the house rule.
             task: None,
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone_id: None,
             milestone: list
                 .enumerate()
                 .into_iter()

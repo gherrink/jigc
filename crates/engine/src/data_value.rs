@@ -270,6 +270,16 @@ pub struct ComposeContext {
     /// when the composition has no milestone (no fan-out) or the milestone has no
     /// sub-tasks — the empty collection, not a finding.
     pub milestone: Vec<SubTask>,
+    /// The engine-native `milestone.id` leaf — the **bound** work-unit's id, fed at
+    /// the one door that has one (`jigc milestone execute <id>` → `cli::start::
+    /// execute_milestone_in_repo`); `None` on every other compose (the router, a
+    /// `start --workflow milestone-execution` walk, any task compose), where it
+    /// resolves [`Resolution::Absent`] — empty text, never a finding, the same
+    /// empty-vs-unresolvable stance the sibling roots take
+    /// ([workflow-dialect.md](../../../design/workflow-dialect.md) → data-value
+    /// roots). The CLI owns the work-unit read; the resolver does no work-unit I/O
+    /// (the determinism boundary), exactly as for [`ComposeContext::milestone`].
+    pub milestone_id: Option<String>,
     /// The CLI-owned **source seam** — the raw foreign-document bytes the `jigc
     /// migrate` verb stages into the task, surfaced verbatim into the composed
     /// migration workflow by the lone `{{source}}` read-only context placeholder
@@ -470,39 +480,52 @@ impl Path {
             });
         }
 
-        // The engine-native `milestone` work-unit root is a **collection leaf**
-        // reached by the fixed `.tasks` hop: `milestone.tasks` (exactly that one
-        // hop, no `#fragment`, no `@` marker) resolves to the milestone's sub-task
-        // ids as a collection. The `.tasks` hop is the lone navigation; `milestone`
-        // alone, a `@` marker, a `#fragment`, any non-`tasks` first hop, or a
-        // further hop past `.tasks` is a structural error — there is nothing to
-        // navigate into, slice, or dereference past the collection
-        // (workflow-dialect.md → data-value roots). An empty milestone resolves to
-        // the **empty** collection (empty text, not a finding), mirroring `store`.
+        // The engine-native `milestone` work-unit root carries exactly **two** leaves,
+        // each reached by one fixed hop and nothing more (no `#fragment`, no `@`
+        // marker): `milestone.tasks`, the sub-task **collection** the `fan-out` step
+        // reads, and `milestone.id`, the bound work-unit's **scalar** id. `milestone`
+        // alone, a `@` marker, a `#fragment`, any other first hop, or a further hop
+        // past either leaf is a structural error — there is nothing to navigate into,
+        // slice, or dereference past a leaf (workflow-dialect.md → data-value roots).
+        // Both leaves take the **empty-not-finding** stance `store` takes: an empty
+        // milestone resolves to the empty collection, and an **unbound** milestone (a
+        // compose reached off the `jigc milestone execute` door — the router, a
+        // `start --workflow` walk) resolves `.id` to [`Resolution::Absent`], never a
+        // finding. That is what lets a catalog arg declare `milestone.id` and still
+        // keep its `<NAME>` agent marker off-verb (command-catalog.md → The three arg
+        // kinds) instead of emitting an intrinsic-blocking dangling `from:`.
         if root == "milestone" {
-            let is_bare_tasks = self.hops.len() == 1
-                && self.hops[0].as_str() == "tasks"
-                && self.fragment.is_none()
-                && !self.marker;
-            if !is_bare_tasks {
-                return Err(crate::compose::blocking_workflow_refs(
-                    "workflow-refs.milestone-not-navigable",
-                    "`milestone.tasks` is the only navigable milestone path — it takes \
-                     exactly the `.tasks` hop and no further `.relation` hop, \
-                     `#fragment`, or `@` content marker"
-                        .to_owned(),
-                    Location::at(1, 1),
-                ));
+            let leaf = (self.hops.len() == 1 && self.fragment.is_none() && !self.marker)
+                .then(|| self.hops[0].as_str());
+            match leaf {
+                Some("id") => {
+                    return Ok(match &ctx.milestone_id {
+                        Some(id) => Resolution::Scalar { value: id.clone() },
+                        None => Resolution::Absent,
+                    });
+                }
+                Some("tasks") => {
+                    // Sort here so the emitted `fan-out` directive sequence is id-ordered
+                    // regardless of the feed order the caller hands in — the engine's
+                    // determinism does not silently depend on the caller pre-sorting
+                    // (Validation hardening #7). The CLI feeds `TaskList::enumerate()`
+                    // output (already id-sorted), so this is a no-op on the production path;
+                    // it closes the order leak when any other caller feeds an unsorted set.
+                    let mut tasks = ctx.milestone.clone();
+                    tasks.sort_by(|a, b| a.id.cmp(&b.id));
+                    return Ok(Resolution::Milestone { tasks });
+                }
+                _ => {
+                    return Err(crate::compose::blocking_workflow_refs(
+                        "workflow-refs.milestone-not-navigable",
+                        "`milestone.id` and `milestone.tasks` are the only navigable \
+                         milestone paths — the root takes exactly one of those hops and \
+                         no further `.relation` hop, `#fragment`, or `@` content marker"
+                            .to_owned(),
+                        Location::at(1, 1),
+                    ));
+                }
             }
-            // Sort here so the emitted `fan-out` directive sequence is id-ordered
-            // regardless of the feed order the caller hands in — the engine's
-            // determinism does not silently depend on the caller pre-sorting
-            // (Validation hardening #7). The CLI feeds `TaskList::enumerate()`
-            // output (already id-sorted), so this is a no-op on the production path;
-            // it closes the order leak when any other caller feeds an unsorted set.
-            let mut tasks = ctx.milestone.clone();
-            tasks.sort_by(|a, b| a.id.cmp(&b.id));
-            return Ok(Resolution::Milestone { tasks });
         }
 
         if root != "task" {
@@ -779,6 +802,7 @@ mod tests {
             }),
             catalog: Vec::new(),
             store: BTreeMap::new(),
+            milestone_id: None,
             milestone: Vec::new(),
             source: None,
             schemas: std::collections::BTreeMap::new(),
@@ -868,6 +892,7 @@ mod tests {
             task: None,
             catalog: Vec::new(),
             store: BTreeMap::new(),
+            milestone_id: None,
             milestone: Vec::new(),
             source: None,
             schemas: std::collections::BTreeMap::new(),
@@ -921,6 +946,7 @@ mod tests {
                 CatalogEntry::new("quick-fix", "A small, localized fix."),
             ],
             store: BTreeMap::new(),
+            milestone_id: None,
             milestone: Vec::new(),
             source: None,
             schemas: std::collections::BTreeMap::new(),
@@ -988,6 +1014,7 @@ mod tests {
             task: None,
             catalog: Vec::new(),
             store,
+            milestone_id: None,
             milestone: Vec::new(),
             source: None,
             schemas: std::collections::BTreeMap::new(),

@@ -374,17 +374,26 @@ fn the_rendered_spawn_line_resolves_to_the_real_reentry_verb() {
     );
 }
 
-/// **T2 hardening #4 — the emitted provision `Run:` line reaches the real verb.** The
-/// `jigc milestone execute` view's worktree-provisioning `Run:` line, lifted verbatim
-/// from the composed bytes the agent runs, executes against the built binary and reaches
-/// the T1 `milestone provision` verb (exit 0) — never a clap unknown-subcommand error. The
-/// agent fills the one `<MILESTONE_ID>` marker (its documented run-time substitution point,
-/// exactly as the spawn line's `task_id`); every other byte runs verbatim, so a regression
-/// in the catalog entry or the verb wiring fails here rather than being masked.
+/// **T2 hardening #4, inverted at M49 Increment 10 (T4) — the three emitted milestone
+/// `Run:` lines carry the *resolved* id and run verbatim.** This arm used to pin
+/// `<MILESTONE_ID>` as correct output ("its documented run-time substitution point")
+/// on the `jigc milestone execute <id>` path — but that door is *reached with the
+/// milestone bound*, so the token is the CLI's to fill, not the agent's (the
+/// determinism boundary; `command-catalog.md` → The three arg kinds). It is
+/// **inverted, not deleted** (the M45 precedent for a test that pinned the old truth),
+/// and widened from the provision line alone to the whole class the change touches:
+/// the three `{ agent: milestone_id }` catalog args — `milestone-provision`,
+/// `milestone-join`, `milestone-finalize`.
+///
+/// Each line is lifted **verbatim** from the composed bytes the agent reads and
+/// executed against the built binary, in the order the walk emits them, so a
+/// regression in the catalog entry, the `milestone.id` root, or the verb wiring fails
+/// here rather than being masked by a reconstruction. The marker's remaining home — a
+/// compose with **no** milestone bound — is pinned by the sibling arm below.
 #[test]
-fn the_emitted_provision_run_line_reaches_the_real_provision_verb() {
-    let repo = TempDir::new("provision-run");
-    let home = TempDir::new("provision-run-home");
+fn the_three_emitted_milestone_run_lines_carry_the_resolved_id_and_run_verbatim() {
+    let repo = TempDir::new("milestone-run-lines");
+    let home = TempDir::new("milestone-run-lines-home");
     init_repo(repo.path());
 
     expect_ok(
@@ -421,63 +430,134 @@ fn the_emitted_provision_run_line_reaches_the_real_provision_verb() {
     expect_ok(&executed, "milestone execute");
     let view = String::from_utf8(executed.stdout).expect("utf-8 execute stdout");
 
-    // Lift the provision `Run:` line's backticked command VERBATIM from the composed view —
-    // the bytes the agent runs, not a reconstruction.
-    let command = view
+    // Lift every milestone `Run:` line's backticked command VERBATIM from the composed
+    // view — the bytes the agent runs, never a reconstruction.
+    let commands: Vec<String> = view
         .lines()
         .filter_map(|l| l.strip_prefix("Run: `").and_then(|r| r.strip_suffix('`')))
-        .find(|c| c.starts_with("jigc milestone provision"))
-        .unwrap_or_else(|| {
-            panic!("the composed view must carry the provision Run line; got:\n{view}")
-        })
-        .to_owned();
-
-    // The line carries exactly the one `<MILESTONE_ID>` agent fill marker (the run-time
-    // substitution point) and the real `milestone provision` verb tokens.
-    let tokens: Vec<&str> = command.split_whitespace().collect();
-    assert_eq!(
-        &tokens[..3],
-        &["jigc", "milestone", "provision"],
-        "the provision Run line must invoke the `jigc milestone provision` verb; got {command:?}",
-    );
-    assert!(
-        command.contains("<MILESTONE_ID>"),
-        "the provision Run line must leave the milestone id as the agent fill marker; got {command:?}",
-    );
-
-    // Fill the one agent marker (what the agent does at run-time), then execute the line
-    // VERBATIM against the built binary (drop the leading `jigc` token — the built-binary
-    // path replaces the program name).
-    let filled: Vec<String> = tokens
-        .iter()
-        .map(|t| {
-            if *t == "<MILESTONE_ID>" {
-                "cache-hardening".to_owned()
-            } else {
-                (*t).to_owned()
-            }
-        })
+        .filter(|c| c.starts_with("jigc milestone "))
+        .map(str::to_owned)
         .collect();
-    let arg_refs: Vec<&str> = filled[1..].iter().map(String::as_str).collect();
-    let provisioned = run(repo.path(), home.path(), &arg_refs);
+    assert_eq!(
+        commands,
+        vec![
+            "jigc milestone provision cache-hardening".to_owned(),
+            "jigc milestone join cache-hardening".to_owned(),
+            "jigc milestone finalize cache-hardening".to_owned(),
+        ],
+        "the composed walk must emit the three milestone Run lines with the bound \
+         milestone's id resolved, in walk order; got:\n{view}",
+    );
+    assert!(
+        !view.contains("<MILESTONE_ID>"),
+        "no agent-fill marker survives where the milestone IS bound; got:\n{view}",
+    );
 
-    // It must REACH the real `milestone provision` verb and exit 0 — never a clap
-    // unknown-subcommand / usage error (a Run line naming a nonexistent verb).
-    let stderr = String::from_utf8_lossy(&provisioned.stderr);
+    // Execute each line VERBATIM in the order the walk emits them (drop the leading
+    // `jigc` token — the built-binary path replaces the program name).
+    for command in &commands {
+        let tokens: Vec<&str> = command.split_whitespace().collect();
+        let ran = run(repo.path(), home.path(), &tokens[1..]);
+        let mut combined = String::from_utf8_lossy(&ran.stdout).into_owned();
+        combined.push_str(&String::from_utf8_lossy(&ran.stderr));
+
+        // It must REACH the real verb — never a clap unknown-subcommand / usage error
+        // (a Run line naming a nonexistent verb).
+        assert!(
+            !combined.contains("Usage:") && !combined.to_lowercase().contains("unrecognized"),
+            "the emitted line `{command}` must not trip a clap parse error; got:\n{combined}",
+        );
+        // …and the id it carries must be the REAL milestone: an unresolved or wrong id
+        // is refused by every one of the three verbs with `does not exist`.
+        assert!(
+            !combined.contains("does not exist"),
+            "the emitted line `{command}` must carry an id the verb resolves; got:\n{combined}",
+        );
+        assert!(
+            combined.contains("milestone:cache-hardening"),
+            "the emitted line `{command}` must act on the bound milestone (naming it back); \
+             got:\n{combined}",
+        );
+    }
+    // The two lines that are runnable at this point of the walk (nothing is authored
+    // yet, so `finalize` legitimately refuses on state) reach their verb at exit 0.
+    for argv in [
+        ["milestone", "provision", "cache-hardening"],
+        ["milestone", "join", "cache-hardening"],
+    ] {
+        let ran = run(repo.path(), home.path(), &argv);
+        expect_ok(&ran, "re-running the emitted line");
+    }
+}
+
+/// **The marker survives exactly where the milestone is NOT bound.** `jigc start
+/// --workflow milestone-execution` composes the same workflow off the `milestone
+/// execute` verb — the door `jigc workflow milestone-execution --preview` routes to,
+/// since a `creates-task: false` workflow has nothing to preview — so no work-unit is
+/// bound: the three `Run:` lines keep the `<MILESTONE_ID>` agent-substitution marker
+/// and the compose stays **clean** (exit 0, no finding).
+///
+/// This is the empty-vs-unresolvable stance the sibling roots already take
+/// (`workflow-dialect.md` → data-value roots): an unfed root resolves absent, never
+/// the intrinsic-blocking dangling-`from:` finding (`command-catalog.md` → Validation)
+/// a bare `{ from: "milestone.id" }` arg would emit here. It is also the standing check
+/// behind `milestone-execution.yaml`'s `suppressed:` reason, which cites this
+/// degenerate off-verb walk — zero `Spawn:` lines, an unresolved `<MILESTONE_ID>` — as
+/// its rationale.
+#[test]
+fn the_off_verb_compose_keeps_the_milestone_id_marker_and_stays_clean() {
+    let repo = TempDir::new("milestone-off-verb");
+    let home = TempDir::new("milestone-off-verb-home");
+    init_repo(repo.path());
+
+    // The `--preview` door refuses a no-task workflow and routes to the compose door;
+    // that refusal is what makes `start --workflow` the off-verb compose under test.
+    let previewed = run(
+        repo.path(),
+        home.path(),
+        &["workflow", "milestone-execution", "--preview"],
+    );
+    let preview_err = String::from_utf8_lossy(&previewed.stderr).into_owned();
     assert!(
-        provisioned.status.success(),
-        "the emitted provision Run line must reach the real provision verb and exit 0, not a \
-         clap unknown-subcommand error; stderr:\n{stderr}",
+        !previewed.status.success()
+            && preview_err.contains("jigc start --workflow milestone-execution"),
+        "the preview door must keep routing a no-task workflow to the compose door; \
+         got:\n{preview_err}",
+    );
+
+    let composed = run(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "milestone-execution"],
+    );
+    expect_ok(&composed, "start --workflow milestone-execution");
+    let view = String::from_utf8(composed.stdout).expect("utf-8 compose stdout");
+    let stderr = String::from_utf8_lossy(&composed.stderr).into_owned();
+
+    let commands: Vec<String> = view
+        .lines()
+        .filter_map(|l| l.strip_prefix("Run: `").and_then(|r| r.strip_suffix('`')))
+        .filter(|c| c.starts_with("jigc milestone "))
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(
+        commands,
+        vec![
+            "jigc milestone provision <MILESTONE_ID>".to_owned(),
+            "jigc milestone join <MILESTONE_ID>".to_owned(),
+            "jigc milestone finalize <MILESTONE_ID>".to_owned(),
+        ],
+        "with no milestone bound the three lines keep the agent-fill marker; got:\n{view}",
+    );
+    // The degenerate walk composes CLEAN — an unfed root is absent, not a finding.
+    assert!(
+        !view.contains("blocking ·") && !stderr.contains("blocking ·"),
+        "the off-verb compose must carry no finding; stdout:\n{view}\nstderr:\n{stderr}",
     );
     assert!(
-        !stderr.contains("Usage:") && !stderr.to_lowercase().contains("unrecognized"),
-        "the emitted provision Run line must not trip a clap parse error; stderr:\n{stderr}",
-    );
-    let stdout = String::from_utf8(provisioned.stdout).expect("utf-8 provision stdout");
-    assert!(
-        stdout.contains("provisioned"),
-        "the executed Run line must reach the provision verb (its summary), proving it is not a \
-         clap parse failure; got:\n{stdout}",
+        !view.contains("Spawn: "),
+        "the off-verb walk fans out over nothing (the `suppressed:` reason's other half); \
+         got:\n{view}",
     );
 }
 

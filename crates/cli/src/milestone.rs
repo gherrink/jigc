@@ -2917,7 +2917,11 @@ fn run_execute(cwd: &Path, milestone_id: &str) -> Result<crate::start::Compositi
     // Each id paired with its own recorded minting workflow, so the emitted `Spawn:` line names
     // the workflow the re-entry door will accept ([`recorded_workflows`]).
     let tasks = recorded_workflows(&jigc_root, ids)?;
-    crate::start::execute_milestone_in_repo(&repo_root, MILESTONE_EXECUTION_WORKFLOW, &tasks)
+    crate::start::execute_milestone_in_repo(
+        &repo_root,
+        MILESTONE_EXECUTION_WORKFLOW,
+        crate::start::MilestoneFeed::bound(milestone_id, &tasks),
+    )
 }
 
 /// Dispatch `jigc milestone join <milestone-id>`: run the by-task-id join, render the
@@ -4683,10 +4687,15 @@ mod tests {
             SubTask::new("zebra-fix", None),
             SubTask::new("alpha-fix", Some("decided-task".to_owned())),
         ];
-        let composed =
-            execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &fed)
-                .expect("milestone-execution composes over the fed sub-task list")
-                .view;
+        let composed = execute_milestone_core(
+            repo_root,
+            &pack,
+            "milestone-execution",
+            &source,
+            crate::start::MilestoneFeed::bound("fanout-milestone", &fed),
+        )
+        .expect("milestone-execution composes over the fed sub-task list")
+        .view;
 
         // Exactly one Spawn line per sub-task, each `cd`-ing into its own worktree
         // before the bare re-entry workflow + id — the recorded workflow where the
@@ -4722,10 +4731,15 @@ mod tests {
             SubTask::new("alpha-fix", Some("decided-task".to_owned())),
             SubTask::new("zebra-fix", None),
         ];
-        let composed_rev =
-            execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &reversed)
-                .expect("the reversed feed composes")
-                .view;
+        let composed_rev = execute_milestone_core(
+            repo_root,
+            &pack,
+            "milestone-execution",
+            &source,
+            crate::start::MilestoneFeed::bound("fanout-milestone", &reversed),
+        )
+        .expect("the reversed feed composes")
+        .view;
         assert_eq!(
             composed.text, composed_rev.text,
             "the fan-out emit must be byte-identical across divergent feed orders (id-sorted on resolve)",

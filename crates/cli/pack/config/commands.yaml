@@ -109,7 +109,7 @@ commands:
     args:
       - "milestone"
       - "provision"
-      - { agent: milestone_id, hint: "the milestone:<slug> id being executed" }
+      - { agent: milestone_id, from: "milestone.id", hint: "the milestone:<slug> id being executed" }
     hint: "Provision one detached base-pin worktree per sub-task before the fan-out."
 
   - id: milestone-join
@@ -117,7 +117,7 @@ commands:
     args:
       - "milestone"
       - "join"
-      - { agent: milestone_id, hint: "the milestone:<slug> id being executed" }
+      - { agent: milestone_id, from: "milestone.id", hint: "the milestone:<slug> id being executed" }
     hint: "Merge the sub-tasks' staged docs by task-id order and report — commits nothing."
 
   - id: milestone-finalize
@@ -125,7 +125,7 @@ commands:
     args:
       - "milestone"
       - "finalize"
-      - { agent: milestone_id, hint: "the milestone:<slug> id being executed" }
+      - { agent: milestone_id, from: "milestone.id", hint: "the milestone:<slug> id being executed" }
     hint: "The milestone commit boundary — validate the merged join + commit per the squash knob."
 
   - id: recompose-task
