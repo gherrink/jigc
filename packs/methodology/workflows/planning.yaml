@@ -1,12 +1,13 @@
 ---
-description: The milestone-planning loop (scope → detect-gaps → settle → review → decompose), with the human-gated Settle composed as a structural Checkpoint, then authors the three running working-docs (roadmap / deferral-ledger / decisions-log) the loop maintains.
-usage: you are opening a milestone — scoping it against the roadmap, settling its gaps, and cutting it into increments — and you want the phase walk, its human gate, and the running-doc authoring made visible.
+description: The milestone-planning loop (scope → detect-gaps → settle → review → decompose), with the human-gated Settle composed as a structural Checkpoint, then authors this milestone's plan-time gate-record and the three running working-docs (roadmap / deferral-ledger / decisions-log) the loop maintains.
+usage: you are opening a milestone — scoping it against the roadmap, settling its gaps, and cutting it into increments — and you want the phase walk, its human gate, the gate-record that blocks the commit until every plan-time gate is answered, and the running-doc authoring made visible.
 creates-task: true
 selectable: false
 suppressed:
   reason: invoked by name with the milestone in hand (`jigc start --workflow planning "<milestone>"`) — opening a milestone is a deliberate lifecycle act, not an intent the router disambiguates
   expires: never
 allows-create:
+  - { type: planning-record, as: gates }
   - { type: roadmap, as: roadmap }
   - { type: deferral-ledger, as: ledger }
   - { type: decisions-log, as: log }
@@ -16,6 +17,7 @@ allows-create:
 {{ include: step:settle }}
 {{ include: step:plan-review }}
 {{ include: step:decompose }}
+{{ include: step:author-planning-record }}
 {{ include: step:author-roadmap }}
 {{ include: step:author-ledger }}
 {{ include: step:author-decisions }}

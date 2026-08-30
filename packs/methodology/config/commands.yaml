@@ -103,6 +103,26 @@ commands:
       - { from: "task.id" }
     hint: "Create the per-milestone completion-record fresh in the current task."
 
+  # The planning workflow's gate-record create-fresh command-ref (M49 Inc-9 / T6).
+  # `planning-record` is `id-from: title` (per-milestone, NOT a singleton) — `create`
+  # mints `planning-records/<milestone>.md` fresh from the agent's title (the proven
+  # completion-record mint), so `--title` carries the agent-supplied milestone title,
+  # never a fixed literal. The per-gate `set-slot` authoring is NOT written out beside
+  # this ref: the author step renders `{{schema:planning-record}}`, so the fourteen
+  # gates and their hints are generated from the resolved schema and a fifteenth gate
+  # needs no edit here.
+  - id: create-planning-record
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "planning-record"
+      - "--title"
+      - { agent: title, hint: "the milestone whose plan-time gates this record answers — its title mints the create-fresh slug" }
+      - "--task"
+      - { from: "task.id" }
+    hint: "Create the per-milestone planning gate-record fresh in the current task."
+
   # The record-dogfood workflow's create-fresh command-ref (M17 inc-5 / T2). The
   # dogfood-record is `id-from: title` (per-run, NOT a singleton) — `create` mints
   # `dogfood/<run>.md` fresh from the agent's title (the proven completion-record

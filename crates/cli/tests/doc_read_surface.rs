@@ -69,6 +69,7 @@ const METHODOLOGY_DOCTYPES: &[&str] = &[
     "research",
     "idea",
     "dogfood-record",
+    "planning-record",
 ];
 
 // ---------------------------------------------------------------------------
@@ -151,7 +152,7 @@ fn create_instance(corpus: &TrialCorpus, ty: &str) -> (String, String) {
         "prd" => "project-setup",
         "arch-doc" => "architecture-documentation",
         "changelog" => "record-change",
-        "roadmap" | "decisions-log" | "deferral-ledger" => "planning",
+        "roadmap" | "decisions-log" | "deferral-ledger" | "planning-record" => "planning",
         "completion-record" => "completion",
         "vision" => "form-vision",
         "research" => "do-research",
@@ -833,56 +834,16 @@ fn the_walk_lists_union_equals_the_composite_registry() {
         .chain(METHODOLOGY_DOCTYPES)
         .map(|s| s.to_string())
         .collect();
-    // Declared exclusion 1: machine-maintained whole, walked by
+    // The one declared exclusion: machine-maintained whole, walked by
     // `milestone_record_is_machine_maintained_whole` instead of the per-leaf parity.
+    // (`planning-record`'s M49 Inc-9 / T5 exclusion expired at T6, which gave it the
+    // `planning` workflow's `allows-create` — it now walks with the rest.)
     walked.insert("milestone-record".to_string());
-    // Declared exclusion 2: `planning-record` (M49 Inc-9 / T5) ships its SHAPE with no
-    // driving workflow — the parity walk creates its instance through a workflow whose
-    // `allows-create` admits the doctype, and no shipped workflow admits this one yet.
-    // The exclusion is NOT a promise anyone has to remember: the arm below asserts the
-    // condition that warrants it, so the commit that gates a workflow on
-    // `planning-record` reddens there and the doctype must join a walk.
-    walked.insert(EXCLUDED_UNTIL_CREATABLE.to_string());
     assert_eq!(
         walked, registry,
-        "the parity walk's hand lists (DEV_DOCTYPES ∪ METHODOLOGY_DOCTYPES ∪ the two \
-         declared exclusions) drifted from the composite registry — a doctype \
+        "the parity walk's hand lists (DEV_DOCTYPES ∪ METHODOLOGY_DOCTYPES ∪ the \
+         milestone-record exclusion) drifted from the composite registry — a doctype \
          shipped without joining a settability walk, or a walked doctype left the packs",
-    );
-}
-
-/// The doctype excluded from the parity walk **because nothing can create it**.
-const EXCLUDED_UNTIL_CREATABLE: &str = "planning-record";
-
-/// The exclusion above is a claim about the shipped packs — *no workflow's
-/// `allows-create` admits `planning-record`* — and a claim gets a test
-/// (`design/methodology-docs.md` → *A deferral trigger is a claim about the code*).
-/// This arm reads every shipped workflow's front matter out of the composite and
-/// **fires the moment the claim stops being true**, so the increment that gives the
-/// doctype a driving workflow cannot also leave it un-walked.
-#[test]
-fn the_uncreatable_exclusion_expires_when_a_workflow_gates_on_the_doctype() {
-    let pack = composite();
-    let gating: Vec<String> = pack
-        .list(PackResourceKind::Workflows)
-        .iter()
-        .filter(|id| {
-            let bytes = pack
-                .read(PackResourceKind::Workflows, id)
-                .unwrap_or_else(|e| panic!("workflow `{}` reads back: {e}", id.as_str()));
-            let def = engine::compose::load_workflow_def(&bytes)
-                .unwrap_or_else(|e| panic!("workflow `{}` parses: {e:?}", id.as_str()));
-            def.allows_create
-                .iter()
-                .any(|entry| entry.doc_type == EXCLUDED_UNTIL_CREATABLE)
-        })
-        .map(|id| id.as_str().to_string())
-        .collect();
-    assert!(
-        gating.is_empty(),
-        "`{EXCLUDED_UNTIL_CREATABLE}` is now creatable through {gating:?}, so its \
-         parity-walk exclusion has expired: add it to METHODOLOGY_DOCTYPES and map its \
-         create workflow in `create_instance`",
     );
 }
 

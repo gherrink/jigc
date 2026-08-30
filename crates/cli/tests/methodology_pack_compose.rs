@@ -1085,14 +1085,24 @@ fn composed_authoring_commands_carry_the_minted_task_id_with_two_active_tasks() 
         "no `{{{{ … }}}}` placeholder may survive the planning compose; got:\n{stdout}",
     );
 
-    // EVERY emitted `jigc doc …` line — Run-class and literal — carries the
-    // minted planning id. Asserted over the emitted bytes, line by line. One
-    // exemption: a `--help` mention (the batch alternative's grammar pointer,
-    // M43 inc-7 T6) reads the CLI's own help — not a doc write, so it needs no
-    // task disambiguation.
+    // EVERY emitted `jigc doc …` COMMAND LINE — Run-class and literal — carries the
+    // minted planning id. Asserted over the emitted bytes, line by line.
+    //
+    // A command line is one an agent copies and runs: after the `Run: \`` decoration
+    // is stripped, the line *begins* with the invocation. A line that merely *mentions*
+    // a verb inside a sentence is prose, not a write — the `{{schema:<T>}}` projection's
+    // own instruction sentence (*"Author the whole document in ONE `jigc doc author`
+    // batch payload"*, M43's generation seam, reaching this workflow at M49 Inc-9 / T6)
+    // names the batch verb three lines above the runnable line that carries `--task`.
+    // Two exemptions, both non-writes: that prose class, and a `--help` mention (the
+    // batch alternative's grammar pointer, M43 inc-7 T6), which reads the CLI's own help.
     let doc_lines: Vec<&str> = stdout
         .lines()
         .filter(|l| l.contains("jigc doc ") && !l.contains("--help"))
+        .filter(|l| {
+            let bare = l.trim().trim_start_matches("Run: `");
+            bare.starts_with("jigc doc ")
+        })
         .collect();
     assert!(
         !doc_lines.is_empty(),

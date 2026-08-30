@@ -1,0 +1,29 @@
+---
+states-constraints: [read.staged-read-back]
+---
+Record the plan-time gates on this milestone's own `planning-record` — one required
+slot per gate, each answered with the evidence that discharges it, or an explicit
+`N/A` and why the gate does not apply to this milestone. Create it fresh — the slug
+is minted from the title you give (this milestone):
+
+{{ cli.create-planning-record }}
+
+EVERY gate slot is required, and that is the whole point of the record rather than a
+side effect of it: `jigc task finalize` BLOCKS on an unfilled one
+(`schema-conformance.required-slot-present`, naming the gate at its own address) and
+lands the record once every gate is answered. jigc checks only that a slot is
+FILLED — it never reads, scores or lints the judgment you put inside it — so an
+honest `N/A — <why>` is a complete answer, no phrasing is graded, and what the record
+buys is that no gate goes UNANSWERED.
+
+The schema and its batch payload follow, both generated from the resolved
+`planning-record`: each gate's line states what that gate requires recorded, and the
+payload places every gate over a single staged buffer.
+
+{{ schema:planning-record }}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show planning-record:<slug> --task {{task.id}}
