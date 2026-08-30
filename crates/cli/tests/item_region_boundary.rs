@@ -628,11 +628,23 @@ fn a_repeated_declared_field_bullet_blocks_with_its_route() {
         finding.starts_with("blocking · ") && finding.contains("`status`"),
         "the finding blocks and names the repeated key: {finding}",
     );
-    let route = lines
-        .get(hits[0] + 1)
+    // The finding's own indented block: its locus line (M49 Inc 8 / T4 — a located finding
+    // says where) and then its route, so the route is found by what it *says*, not by a
+    // fixed offset that a new indented line moves.
+    let block: Vec<&str> = lines[hits[0] + 1..]
+        .iter()
+        .take_while(|line| line.starts_with(' '))
+        .map(|line| line.trim_start())
+        .collect();
+    assert!(
+        block.iter().any(|line| line.starts_with("at: ")),
+        "the located finding names where the stray line is: {block:?}",
+    );
+    let route = block
+        .iter()
+        .find(|line| line.starts_with("route: "))
         .copied()
-        .unwrap_or_default()
-        .trim_start();
+        .unwrap_or_default();
     assert!(
         route.starts_with("route: ")
             && route.contains("`status:`")

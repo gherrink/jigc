@@ -1348,9 +1348,15 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
         engine::finding::Severity::Advisory => "advisory",
     };
     let head = format!("{severity} · {} — {}", finding.code, finding.message);
+    // The locus rides between the message and the route, exactly as it does on the findings
+    // surface ([`crate::render::finding_line`]) — one funnel must not describe a break in
+    // fewer facts than another (M49 Increment 8 / T4).
+    let at = crate::render::finding_locus(&finding)
+        .map(|locus| format!("\n  at: {locus}"))
+        .unwrap_or_default();
     match finding.route {
-        Some(route) => anyhow::anyhow!("{head}\n  route: {route}"),
-        None => anyhow::anyhow!("{head}"),
+        Some(route) => anyhow::anyhow!("{head}{at}\n  route: {route}"),
+        None => anyhow::anyhow!("{head}{at}"),
     }
 }
 

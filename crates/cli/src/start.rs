@@ -3533,11 +3533,17 @@ fn read_pack(pack: &dyn PackSource, kind: PackResourceKind, id: &str) -> Result<
 /// the same envelope minting already uses (a hard block is a blocking-severity
 /// finding carrying a route, `DECISIONS.md` 2026-05-31).
 fn finding_to_err(finding: Finding) -> anyhow::Error {
+    // The locus rides between the message and the route, exactly as it does on the findings
+    // surface ([`crate::render::finding_line`]) — one funnel must not describe a break in
+    // fewer facts than another (M49 Increment 8 / T4).
+    let at = crate::render::finding_locus(&finding)
+        .map(|locus| format!("\n  at: {locus}"))
+        .unwrap_or_default();
     let route = finding
         .route
         .map(|r| format!("\n  route: {r}"))
         .unwrap_or_default();
-    anyhow::anyhow!("{}{route}", finding.message)
+    anyhow::anyhow!("{}{at}{route}", finding.message)
 }
 
 /// Read HEAD as a [`BasePin`] (full + short SHA) by shelling out to the user's

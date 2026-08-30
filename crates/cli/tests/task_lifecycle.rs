@@ -39,12 +39,23 @@ use std::process::{Command, Stdio};
 /// boundary-door selector). The advisory's route below already carried `--task` and is
 /// unmoved, which is the shape of the change made visible: only a route that lacked the
 /// selector gained one.
+///
+/// **And re-captured again at M49 Increment 8 / T4**, the third move and the same posture:
+/// every located finding gained an indented `at:` line between its message and its route
+/// (`design/validation.md` → the route exemption). The shape of *this* change is visible in
+/// the same way — the two conformance findings carry the doc address they are keyed at, the
+/// enum-field one without a line because the field's location claims none, and the
+/// `changelog-recording` advisory is keyed at the **task**, which is why its locus reads
+/// `task:add-rate-limiter` rather than a doc coordinate.
 const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
 blocking · schema-conformance.field-value-conformant — `commit:add-rate-limiter`: field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
+  at: commit:add-rate-limiter#header/type
   route: `jigc doc set-field commit:add-rate-limiter#header/type --task add-rate-limiter --value <value>` to correct the value
 blocking · schema-conformance.required-slot-present — `commit:add-rate-limiter`: required slot in section `summary` is empty
+  at: commit:add-rate-limiter#summary · line 9
   route: `jigc doc set-slot commit:add-rate-limiter#summary --task add-rate-limiter --from-file -` to fill the empty slot
 advisory · changelog-recording.gate-granted-unused — workflow `single-task` grants the `changelog` create-gate and this task recorded no changelog entry
+  at: task:add-rate-limiter
   route: if the change is user-facing, record it in this task — `jigc doc create changelog --title Changelog --task add-rate-limiter`, then `jigc doc add-item changelog:changelog#unreleased-changes --title <category> --task add-rate-limiter`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
@@ -65,6 +76,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
 /// actually emits.
 const NO_DELTA_CLEAN_VALIDATE_GOLDEN: &str = "\
 advisory · changelog-recording.gate-granted-unused — workflow `single-task` grants the `changelog` create-gate and this task recorded no changelog entry
+  at: task:add-rate-limiter
   route: if the change is user-facing, record it in this task — `jigc doc create changelog --title Changelog --task add-rate-limiter`, then `jigc doc add-item changelog:changelog#unreleased-changes --title <category> --task add-rate-limiter`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";

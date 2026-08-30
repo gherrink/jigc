@@ -109,8 +109,15 @@ fn seed_pack(dir: &TempDir, steps: &[(&str, &str)]) -> PathBuf {
 /// and the rendered bytes must equal the pre-M6 baseline (`design/validation.md` →
 /// Severity assignment — the M6 post-pass: the byte-identical golden must cover the
 /// validate and upgrade paths; review B2).
+///
+/// **Re-captured at M49 Increment 8 / T4**, the one deliberate move: a located finding now
+/// names its locus on an indented `at:` line between the message and the route
+/// (`design/validation.md` → the route exemption). The property this golden guards — *the M6
+/// cascade post-pass moves no byte* — is unchanged; the delta target this finding is keyed at
+/// is now stated as the finding's own address rather than only inside the sentence.
 const NO_DELTA_BLOCKING_UPGRADE_GOLDEN: &str = "\
 blocking · override-default.target-exists — override target `workflow:single-task#gone` no longer exists in the current pack
+  at: workflow:single-task#gone
   route: remove or re-target the delta on `workflow:single-task#gone`
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";

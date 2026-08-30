@@ -38,8 +38,16 @@ use std::process::{Command, Stdio};
 /// the rendered bytes must equal the pre-M6 baseline (`design/validation.md` → Severity
 /// assignment — the M6 post-pass: the byte-identical golden must cover the finalize path,
 /// not only `start_compose`; review B2). Findings render to stderr on the finalize path.
+///
+/// **Revised at M49 Increment 8 / T4** — the one revision this baseline has taken, and a
+/// deliberate one: every text render of a located finding now carries its locus on an
+/// indented `at:` line between the message and the route (`design/validation.md` → the route
+/// exemption), so the blocked finalize names the **full-identity** ref key it is gating on
+/// rather than leaving it to the JSON envelope. Everything else is byte-identical to the
+/// pre-M6 capture.
 const NO_DELTA_DANGLING_FINALIZE_GOLDEN: &str = "\
 blocking · schema-conformance.ref-resolves — forward-ref integrity — `adr:shared-redis-session-cache#supersedes` target `adr:typo-nonexistent` resolves in neither the committed store nor this task's working area; resolution: fix the reference to an existing target, create the target in this task, or drop the `supersedes` field
+  at: adr:shared-redis-session-cache#supersedes/adr:typo-nonexistent
   route: fix the reference, create the target in this task, or drop the field
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";

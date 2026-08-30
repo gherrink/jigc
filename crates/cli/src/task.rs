@@ -4431,9 +4431,15 @@ pub(crate) fn git_capture(repo_root: &Path, args: &[&str]) -> Result<String> {
 /// carrying its message + route — the same envelope `crate::doc` / `crate::start`
 /// use for a load-time block.
 fn finding_to_err(finding: Finding) -> anyhow::Error {
+    // The locus rides between the message and the route, exactly as it does on the findings
+    // surface ([`crate::render::finding_line`]) — one funnel must not describe a break in
+    // fewer facts than another (M49 Increment 8 / T4).
+    let at = crate::render::finding_locus(&finding)
+        .map(|locus| format!("\n  at: {locus}"))
+        .unwrap_or_default();
     match finding.route {
-        Some(route) => anyhow::anyhow!("{}\n  route: {route}", finding.message),
-        None => anyhow::anyhow!("{}", finding.message),
+        Some(route) => anyhow::anyhow!("{}{at}\n  route: {route}", finding.message),
+        None => anyhow::anyhow!("{}{at}", finding.message),
     }
 }
 

@@ -164,11 +164,17 @@ fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
 /// Map an engine [`Finding`] to an `anyhow` error carrying its message + route — the
 /// same envelope the rest of the CLI surfaces blocking findings through.
 fn finding_to_err(finding: Finding) -> anyhow::Error {
+    // The locus rides between the message and the route, exactly as it does on the findings
+    // surface ([`crate::render::finding_line`]) — one funnel must not describe a break in
+    // fewer facts than another (M49 Increment 8 / T4).
+    let at = crate::render::finding_locus(&finding)
+        .map(|locus| format!("\n  at: {locus}"))
+        .unwrap_or_default();
     let route = finding
         .route
         .map(|r| format!("\n  route: {r}"))
         .unwrap_or_default();
-    anyhow::anyhow!("{}{route}", finding.message)
+    anyhow::anyhow!("{}{at}{route}", finding.message)
 }
 
 #[cfg(test)]

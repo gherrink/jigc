@@ -1775,10 +1775,20 @@ fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
 /// describing one break in two vocabularies is the class this wave exists to close, and the
 /// migration report has no standing to re-diagnose what the gate (or the parser) already
 /// diagnosed.
+///
+/// **The words include the *where* (M49 Increment 8 / T4.)** The relayed diagnostics are the
+/// ones that "say where the buffer broke" ([`halt_finding`]) — and the relay dropped exactly
+/// that half, so an operator read *what* was wrong with a doc whose refusal is keyed at its
+/// **path** and had to find the byte themselves. Each relayed message now carries its own
+/// locus ([`crate::render::finding_locus`]) when it has one; a location-less diagnostic
+/// relays exactly as before.
 fn relayed(findings: &[Finding]) -> String {
     findings
         .iter()
-        .map(|finding| finding.message.as_str())
+        .map(|finding| match crate::render::finding_locus(finding) {
+            Some(locus) => format!("{} (at {locus})", finding.message),
+            None => finding.message.clone(),
+        })
         .collect::<Vec<_>>()
         .join("; ")
 }

@@ -407,6 +407,26 @@ fn assert_project_schema_shadows(
     Ok(())
 }
 
+/// The `anyhow` error a pack-load fence raises when a definition it must read does not parse
+/// — **one funnel for the family**, so all five sweeps name the resource, relay the loader's
+/// diagnosis, and carry its locus in the same words (M49 Increment 8 / T4).
+///
+/// The locus is usually absent here and that is correct: the front-matter loaders raise at
+/// `Location::at(1, 1)` — the placeholder coordinate the load boundary
+/// later replaces with the resource address — so [`crate::render::finding_locus`] returns
+/// `None` and the sentence reads exactly as it did. A loader that ever raises at a real line
+/// in the definition says so here by construction, rather than by a fence author remembering.
+fn def_load_failure(sweep: &str, id: &str, finding: engine::finding::Finding) -> anyhow::Error {
+    let at = crate::render::finding_locus(&finding)
+        .map(|locus| format!(" (at {locus})"))
+        .unwrap_or_default();
+    anyhow::anyhow!(
+        "pack-load {sweep} sweep failed on `{}`: {}{at}",
+        id,
+        finding.message,
+    )
+}
+
 /// The **eager workflow-front-matter sweep** — the M43 pack-load fence home
 /// (`design/surface-contract.md` → The fences: pack-load posture). Workflows
 /// parse lazily on the compose path, so before this sweep a front-matter defect
@@ -447,11 +467,7 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
                 .read(PackResourceKind::Workflows, &id)
                 .with_context(|| format!("the `{}` workflow is unreadable", id.as_str()))?;
             let def = engine::compose::load_workflow_def(&bytes).map_err(|finding| {
-                anyhow::anyhow!(
-                    "pack-load workflow-front-matter sweep failed on `{}`: {}",
-                    id.as_str(),
-                    finding.message,
-                )
+                def_load_failure("workflow-front-matter", id.as_str(), finding)
             })?;
             if !def.selectable && def.suppressed.is_none() {
                 anyhow::bail!(
@@ -539,13 +555,8 @@ fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
             let bytes = owner
                 .read(PackResourceKind::Steps, &id)
                 .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
-            let def = engine::compose::load_step_def(id.as_str(), &bytes).map_err(|finding| {
-                anyhow::anyhow!(
-                    "pack-load step-front-matter sweep failed on `{}`: {}",
-                    id.as_str(),
-                    finding.message,
-                )
-            })?;
+            let def = engine::compose::load_step_def(id.as_str(), &bytes)
+                .map_err(|finding| def_load_failure("step-front-matter", id.as_str(), finding))?;
             declared.extend(def.states_constraints);
         }
         let undeclared: Vec<&str> = AMBUSH_CLASS_CODES
@@ -673,13 +684,8 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
             let bytes = owner
                 .read(PackResourceKind::Steps, &id)
                 .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
-            let def = engine::compose::load_step_def(id.as_str(), &bytes).map_err(|finding| {
-                anyhow::anyhow!(
-                    "pack-load step-front-matter sweep failed on `{}`: {}",
-                    id.as_str(),
-                    finding.message,
-                )
-            })?;
+            let def = engine::compose::load_step_def(id.as_str(), &bytes)
+                .map_err(|finding| def_load_failure("step-front-matter", id.as_str(), finding))?;
             let mut solicits_singleton = false;
             let mut items_can_double = false;
             for ty in schema_refs(&def.body) {
@@ -861,13 +867,8 @@ fn assert_staged_read_back_stated(pack: &dyn PackSource) -> anyhow::Result<()> {
             let bytes = owner
                 .read(PackResourceKind::Steps, &id)
                 .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
-            let def = engine::compose::load_step_def(id.as_str(), &bytes).map_err(|finding| {
-                anyhow::anyhow!(
-                    "pack-load step-front-matter sweep failed on `{}`: {}",
-                    id.as_str(),
-                    finding.message,
-                )
-            })?;
+            let def = engine::compose::load_step_def(id.as_str(), &bytes)
+                .map_err(|finding| def_load_failure("step-front-matter", id.as_str(), finding))?;
             let solicits_write = cli_refs(&def.body)
                 .iter()
                 .any(|reference| write_refs.contains(reference))
@@ -1009,13 +1010,8 @@ fn assert_named_facts_stated(pack: &dyn PackSource) -> anyhow::Result<()> {
             let bytes = owner
                 .read(PackResourceKind::Steps, &id)
                 .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
-            let def = engine::compose::load_step_def(id.as_str(), &bytes).map_err(|finding| {
-                anyhow::anyhow!(
-                    "pack-load step-front-matter sweep failed on `{}`: {}",
-                    id.as_str(),
-                    finding.message,
-                )
-            })?;
+            let def = engine::compose::load_step_def(id.as_str(), &bytes)
+                .map_err(|finding| def_load_failure("step-front-matter", id.as_str(), finding))?;
             let body = normalized_body(&def.body);
             for code in &def.states_constraints {
                 let Some((_, tokens)) = CONSTRAINT_REQUIRED_TOKENS

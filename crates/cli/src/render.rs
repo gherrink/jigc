@@ -2408,9 +2408,37 @@ pub fn config_list(format: Format, readings: &[KnobReading]) -> String {
     }
 }
 
+/// The **locus** of a located [`Finding`] — the one renderer of `location`, so every text
+/// surface says *where* in the same words (M49 Increment 8 / T4).
+///
+/// The `conformance.*` route exemption ([validation.md](../../../design/validation.md) → the
+/// route floor) grants a purely-positional parser diagnostic a route-less pass on one stated
+/// rationale: *the located message **is** the repair*. That was false of the surface an agent
+/// reads — the JSON envelope carried `location: {address, line}` while every text render
+/// printed the message alone — so the exemption rested on a fact the text withheld. This
+/// function is the fix's single seam; a site that renders a finding calls it, and the source
+/// sweep in `crates/cli/tests/located_finding_text.rs` holds the axis.
+///
+/// **Line 1 is this codebase's "no coordinate known".** Every producer that synthesizes a
+/// location purely to carry an address stamps `1:1` — `finding::readdress_to_uri`,
+/// `compose::at_resource`, `doc::stamp_target`, `migrate_corpus::blocked_finding` — so
+/// rendering `line 1` would be a coordinate the finding does not actually claim. A line-1
+/// location therefore contributes its address and nothing more, and a line-1 location with no
+/// address contributes nothing at all: `None`, and the caller prints as it did before.
+pub fn finding_locus(finding: &Finding) -> Option<String> {
+    let location = finding.location.as_ref()?;
+    let line = (location.line > 1).then(|| format!("line {}", location.line));
+    match (&location.address, line) {
+        (Some(address), Some(line)) => Some(format!("{address} · {line}")),
+        (Some(address), None) => Some(address.clone()),
+        (None, line) => line,
+    }
+}
+
 /// One agent-text finding line: `<severity> · <code> — <message>`, plus an indented
 /// `route:` line when the finding carries a repair direction (the settled
-/// block-payload envelope — a hard block is a blocking finding carrying a route).
+/// block-payload envelope — a hard block is a blocking finding carrying a route), and an
+/// indented `at:` line between the two when the finding is **located** ([`finding_locus`]).
 /// A route-less **advisory** is purely informational, and says so — the agent must
 /// never be left inferring whether output wants something from it.
 ///
@@ -2430,6 +2458,13 @@ fn finding_line(finding: &Finding, gates: bool) -> String {
         line.push_str("   (no action needed)");
     }
     line.push('\n');
+    // Where, then what to do about it: the locus precedes the route, because a route that
+    // says "fix the named line" is unreadable until the line is named ([`finding_locus`]).
+    if let Some(locus) = finding_locus(finding) {
+        line.push_str("  at: ");
+        line.push_str(&locus);
+        line.push('\n');
+    }
     if let Some(route) = &finding.route {
         line.push_str("  route: ");
         line.push_str(route);
@@ -3014,11 +3049,11 @@ pub fn corpus_migration(
             // diagnosis, and — separately — the route. The two halves print on their own lines:
             // fusing them is what let the route carry a diagnosis and say nothing actionable.
             for finding in &report.blocked {
-                let path = finding
-                    .location
-                    .as_ref()
-                    .and_then(|l| l.address.as_deref())
-                    .unwrap_or("<unaddressed>");
+                // The row head IS the locus, rendered from the finding's own location through
+                // the one renderer ([`finding_locus`]) — so a producer that ever raises this
+                // family at a real source coordinate says so here, rather than the reader
+                // losing the half the JSON keeps (M49 Increment 8 / T4).
+                let path = finding_locus(finding).unwrap_or_else(|| "<unaddressed>".to_owned());
                 out.push_str(&format!("  blocked    {path}\n"));
                 out.push_str(&format!("    {}: {}\n", finding.code, finding.message));
                 if let Some(route) = &finding.route {
@@ -3030,11 +3065,11 @@ pub fn corpus_migration(
             // store door's own (`schema-conformance.unadopted-instance`, advisory, routed at
             // adoption), rendered from the one producer rather than re-worded here.
             for finding in &report.unadopted {
-                let path = finding
-                    .location
-                    .as_ref()
-                    .and_then(|l| l.address.as_deref())
-                    .unwrap_or("<unaddressed>");
+                // The row head IS the locus, rendered from the finding's own location through
+                // the one renderer ([`finding_locus`]) — so a producer that ever raises this
+                // family at a real source coordinate says so here, rather than the reader
+                // losing the half the JSON keeps (M49 Increment 8 / T4).
+                let path = finding_locus(finding).unwrap_or_else(|| "<unaddressed>".to_owned());
                 out.push_str(&format!("  unadopted  {path}\n"));
                 out.push_str(&format!("    {}: {}\n", finding.code, finding.message));
                 if let Some(route) = &finding.route {
@@ -3046,11 +3081,11 @@ pub fn corpus_migration(
             // `Finding`: the address carries the leaf fragment (`<path>#<section>/<field>`), so a
             // reader sees WHICH leaf, and the route says whether anyone may write it at all.
             for finding in &report.unfilled {
-                let address = finding
-                    .location
-                    .as_ref()
-                    .and_then(|l| l.address.as_deref())
-                    .unwrap_or("<unaddressed>");
+                // The row head IS the locus, rendered from the finding's own location through
+                // the one renderer ([`finding_locus`]) — so a producer that ever raises this
+                // family at a real source coordinate says so here, rather than the reader
+                // losing the half the JSON keeps (M49 Increment 8 / T4).
+                let address = finding_locus(finding).unwrap_or_else(|| "<unaddressed>".to_owned());
                 out.push_str(&format!("  unfilled   {address}\n"));
                 out.push_str(&format!("    {}: {}\n", finding.code, finding.message));
                 if let Some(route) = &finding.route {
@@ -5320,6 +5355,7 @@ mod tests {
 
         needs-reconcile decisions/auth-choice.md → adr
           blocking · conformance.section-missing — required section heading `## context` is missing
+          at: decisions/auth-choice.md
           route: reconcile decisions/auth-choice.md against the `adr` schema
         adoptable decisions/rate-limit.md → adr  (adopted — indexed + baselined, no file moved)
           adopted — structurally empty: 0 milestones
@@ -5978,8 +6014,10 @@ mod tests {
         let agent = validation(Format::Agent, &report);
         insta::assert_snapshot!(agent, @"
         blocking · file-state.hash-matches — on-disk content of `decisions/x.md` differs
+          at: decisions/x.md
           route: reconcile decisions/x.md
         blocking · schema-conformance.required-slot-present — required slot in section `summary` is empty
+          at: commit:x#summary
           route: `jigc doc set-slot commit:x#summary --from-file -` to fill the empty slot
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
@@ -6048,6 +6086,7 @@ mod tests {
         let agent = validation_store(Format::Agent, &content, &BTreeSet::new());
         insta::assert_snapshot!(agent, @"
         blocking (gates at finalize) · doc-code.symbol-exists — cited symbol `evict_lru` not found
+          at: adr:cache#status/cites-code
           route: update the citation, or restore the cited symbol
         1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize` / `jigc milestone finalize`.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.

@@ -25,6 +25,8 @@ mod flow32_acceptance;
 mod hook_output_axis;
 #[path = "../invocation_log.rs"]
 mod invocation_log;
+#[path = "../located_finding_text.rs"]
+mod located_finding_text;
 #[path = "../methodology_completion_record.rs"]
 mod methodology_completion_record;
 #[path = "../methodology_corpus_stamp.rs"]

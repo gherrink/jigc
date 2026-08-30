@@ -2916,6 +2916,11 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
         let mut finding_codes = Vec::with_capacity(blocking.len());
         for finding in blocking {
             eprintln!("{}", finding.message);
+            // Where, then the repair — the same order and the same words the findings
+            // surface uses ([`crate::render::finding_locus`], M49 Increment 8 / T4).
+            if let Some(locus) = crate::render::finding_locus(finding) {
+                eprintln!("  at: {locus}");
+            }
             if let Some(route) = &finding.route {
                 eprintln!("  route: {route}");
             }
@@ -3766,6 +3771,11 @@ fn blocked(jigc_home: &Path, format: Format, findings: Vec<Finding>) -> Result<O
     } else {
         for finding in &report.findings {
             eprintln!("{}", finding.message);
+            // Where, then the repair — the same order and the same words the findings
+            // surface uses ([`crate::render::finding_locus`], M49 Increment 8 / T4).
+            if let Some(locus) = crate::render::finding_locus(finding) {
+                eprintln!("  at: {locus}");
+            }
             if let Some(route) = &finding.route {
                 eprintln!("  route: {route}");
             }
@@ -4508,9 +4518,15 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
         engine::finding::Severity::Advisory => "advisory",
     };
     let head = format!("{severity} · {} — {}", finding.code, finding.message);
+    // The locus rides between the message and the route, exactly as it does on the findings
+    // surface ([`crate::render::finding_line`]) — one funnel must not describe a break in
+    // fewer facts than another (M49 Increment 8 / T4).
+    let at = crate::render::finding_locus(&finding)
+        .map(|locus| format!("\n  at: {locus}"))
+        .unwrap_or_default();
     match finding.route {
-        Some(route) => anyhow::anyhow!("{head}\n  route: {route}"),
-        None => anyhow::anyhow!("{head}"),
+        Some(route) => anyhow::anyhow!("{head}{at}\n  route: {route}"),
+        None => anyhow::anyhow!("{head}{at}"),
     }
 }
 
