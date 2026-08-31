@@ -3274,4 +3274,99 @@ sections: []
             "an ignorable advisory says so in the first clause (the style guide): {f:?}",
         );
     }
+
+    /// A doctype declaring `location:` **without** a trailing slash must key its
+    /// file-state baseline at a path that exists on disk. The sweep reads through
+    /// `repo_root.join(location).join(...)` (which inserts the separator) but keys the
+    /// record by the concatenation `{location}{slug}.md`, so a slashless declaration
+    /// used to record `findingsfindings-log.md` — a path that does not exist and never
+    /// will, so the store sweep never matched the finalize-written baseline, re-adopted
+    /// every run, and printed a nonexistent path at the reader (a law-1 lie on a
+    /// permanent advisory). Every *shipped* schema spells the slash, which is why
+    /// nothing hit it until M49 Increment 6 made project-authored packs shippable.
+    ///
+    /// The fix is the load-time normalization in
+    /// [`crate::schema`](../schema/index.html) — this test drives the real authoring
+    /// door (`load_schema_with_types` over a slashless `location:`), so it fails at the
+    /// key the way an adopter's pack does, not at a hand-built `Schema`.
+    #[test]
+    fn a_slashless_location_keys_its_baseline_at_a_path_that_exists() {
+        let yaml = String::from_utf8(ADR_YAML.to_vec())
+            .expect("adr.yaml is utf-8")
+            .replace("location: decisions/", "location: findings");
+        let schema = crate::schema::load_schema_with_types(
+            yaml.as_bytes(),
+            &crate::schema::dev_pack_field_types(),
+        )
+        .expect("a slashless-location adr fixture loads");
+        let mut schemas: std::collections::BTreeMap<String, Schema> =
+            std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), schema);
+
+        let root = TempRoot::new("slashless");
+        let findings_dir = root.path().join("findings");
+        std::fs::create_dir_all(&findings_dir).expect("mk findings/");
+        std::fs::write(findings_dir.join("findings-log.md"), ADR_B_BASE)
+            .expect("write the committed doc");
+
+        let mut record = FileStateRecord::new();
+        let mut index = EdgeIndex::default();
+        let task = TempRoot::new("slashless-task");
+
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+            &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
+        );
+
+        let real = "findings/findings-log.md";
+        assert_eq!(
+            record.get(real),
+            Some(hash_bytes(ADR_B_BASE.as_bytes()).as_str()),
+            "the adopted baseline is keyed at the doc's real path: {:?}",
+            record.hashes.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            root.path().join(real).exists(),
+            "the recorded key names a path that exists on disk"
+        );
+        for key in record.hashes.keys() {
+            assert!(
+                root.path().join(key).exists(),
+                "every recorded key names an existing path; `{key}` does not"
+            );
+        }
+        // And the advisory the reader sees names that same real path — not the
+        // glued `findingsfindings-log.md` the concatenation used to print.
+        let adopt = findings
+            .iter()
+            .find(|f| f.code == "file-state.baseline-adopt")
+            .expect("the fresh doc draws a baseline-adopt advisory");
+        assert!(
+            adopt.message.contains(real) && !adopt.message.contains("findingsfindings"),
+            "the advisory names the real path: {adopt:?}"
+        );
+
+        // Idempotence — the symptom that made it permanent: a second sweep over an
+        // unchanged store re-adopts nothing.
+        let again = reconcile_committed_store(
+            &mut record,
+            &mut index,
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+            &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
+        );
+        assert!(
+            !again.iter().any(|f| f.code == "file-state.baseline-adopt"),
+            "the adopted baseline matches on the next sweep — no forever-re-adopt: {again:?}"
+        );
+    }
 }

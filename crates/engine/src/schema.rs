@@ -35,7 +35,21 @@ pub struct Schema {
     /// The repo-relative directory persisted instances live in (e.g.
     /// `decisions/`). Absent for a transient type whose sink is not a file
     /// (the `commit` type's sink is the git message).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ///
+    /// **Invariant: a non-empty value always ends in `/`** — normalized at
+    /// deserialization by [`de_location`], so it holds on every load path (pack
+    /// YAML, a serde round-trip) rather than only where an author remembered the
+    /// slash. Half the consumers build the instance path by concatenation
+    /// (`format!("{location}{slug}.md")` — `file_state`'s record key, `milestone`'s
+    /// baseline key, `migrate_corpus`' key + prefix strip, `compose`'s rendered
+    /// schema description) and half by `Path::join`, which inserts the separator
+    /// itself; without the invariant the two disagree and a slashless declaration
+    /// keys a baseline at a path that does not exist (M49).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "de_location"
+    )]
     pub location: Option<String>,
 
     /// The id of the field whose value is slugged into the document's frozen id
@@ -122,6 +136,35 @@ impl Schema {
                 .unwrap_or_else(|| self.ty.clone())
         })
     }
+}
+
+/// Normalize a declared `location:` to the trailing-slash spelling every
+/// concatenating consumer assumes (see [`Schema::location`]).
+///
+/// A **non-empty** value that does not already end in `/` gains one; an
+/// already-slashed value is left byte-identical (so no shipped doctype's
+/// `schema-hash` moves — every pack schema already spells the slash). The empty
+/// value is left alone deliberately: `""` is the flat repo-root layout that
+/// `apply_docs_root` restores, where `format!("{location}{slug}.md")` and
+/// `repo_root.join("")` already agree, and where a `"/"` would make the path
+/// absolute.
+///
+/// This is a **normalization, not a refusal**: `findings` and `findings/` denote
+/// the same directory, so there is no authorial intent to preserve — and a new
+/// blocking pack-load door over a benign spelling would be a poor trade now that
+/// project-authored packs ship (M49 Increment 6).
+fn de_location<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Option::<String>::deserialize(deserializer)?;
+    Ok(raw.map(|location| {
+        if location.is_empty() || location.ends_with('/') {
+            location
+        } else {
+            format!("{location}/")
+        }
+    }))
 }
 
 /// A doctype's **literal-file placement**: the one exact repo-root-relative path
@@ -2803,6 +2846,46 @@ sections: []
     fn non_utf8_is_a_typed_error() {
         let err = load_schema(&[0xff, 0xfe]).expect_err("non-utf8 errors");
         assert!(matches!(err, SchemaError::NotUtf8), "got {err:?}");
+    }
+
+    /// A `location:` declared **without** a trailing slash normalizes to carry one at
+    /// load — the single hygiene point for the invariant every `{location}{slug}.md`
+    /// concatenator already assumes (M49; `crates/engine/src/file_state.rs`,
+    /// `crates/cli/src/milestone.rs`, `crates/cli/src/migrate_corpus.rs`,
+    /// `crates/engine/src/compose.rs`). Every shipped schema already spells the slash,
+    /// so this is a byte no-op for them (and their `schema-hash` does not move); a
+    /// project-authored pack (M49 Increment 6) is the population that can omit it.
+    #[test]
+    fn a_slashless_location_normalizes_to_carry_its_trailing_slash() {
+        let slashless =
+            load_schema(b"type: finding\nlocation: findings\nid-from: title\nsections: []\n")
+                .expect("a slashless location loads");
+        assert_eq!(
+            slashless.location.as_deref(),
+            Some("findings/"),
+            "a slashless `location:` gains its trailing slash at load"
+        );
+
+        // Already-slashed is untouched (the shipped spelling — the hash must not move),
+        // and a nested location keeps its interior separators.
+        let slashed =
+            load_schema(b"type: finding\nlocation: docs/findings/\nid-from: title\nsections: []\n")
+                .expect("a slashed location loads");
+        assert_eq!(
+            slashed.location.as_deref(),
+            Some("docs/findings/"),
+            "an already-slashed `location:` is left byte-identical"
+        );
+
+        // The flat repo-root spelling (`""`) must NOT gain a slash: `{location}{slug}.md`
+        // and `repo_root.join("")` already agree there, and `"/"` would make it absolute.
+        let flat = load_schema(b"type: finding\nlocation: \"\"\nid-from: title\nsections: []\n")
+            .expect("an empty location loads");
+        assert_eq!(
+            flat.location.as_deref(),
+            Some(""),
+            "the flat repo-root spelling stays empty — a slash there would be absolute"
+        );
     }
 }
 
