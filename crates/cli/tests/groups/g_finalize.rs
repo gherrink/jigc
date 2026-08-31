@@ -49,6 +49,8 @@ mod freeze_enforcement;
 mod ledger_entry_seven_discharged;
 #[path = "../ledger_record_truth.rs"]
 mod ledger_record_truth;
+#[path = "../leg_two_refusal_homed.rs"]
+mod leg_two_refusal_homed;
 #[path = "../manifest_freeze_fence.rs"]
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]
