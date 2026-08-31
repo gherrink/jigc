@@ -1041,10 +1041,14 @@ pub enum InstallCommit {
 /// non-zero. CLI **locates** the repo root; the injectors do the writes (the
 /// engine stays presentation-free and filesystem-free).
 pub fn run(start: &Path) -> Result<SetupSummary, Finding> {
+    // The not-in-a-repository cause answers with the ONE shared text + route every other
+    // door gives (M49 Inc 11 T2, `locate::locate_finding`); the `$HOME`-unset cause is a
+    // different precondition and keeps its own carry.
     let ctx = locate::locate(start).map_err(|err| {
-        Finding::block(
+        locate::locate_finding(
             "setup.repo-root",
-            format!("cannot locate the repository root: {err:#}"),
+            start,
+            &err,
             "run `jigc setup` from inside the target git repository",
         )
     })?;
@@ -1976,10 +1980,12 @@ impl RemovedArtifacts {
 /// byte-untouched. `Ok(summary)` on a clean teardown; `Err(finding)` is a single blocking
 /// `uninstall.*` finding carrying a route — the dispatcher renders it and exits non-zero.
 pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Finding> {
+    // The shared not-in-a-repository answer, exactly as `setup`'s door gives it.
     let ctx = locate::locate(start).map_err(|err| {
-        Finding::block(
+        locate::locate_finding(
             "uninstall.repo-root",
-            format!("cannot locate the repository root: {err:#}"),
+            start,
+            &err,
             "run `jigc uninstall` from inside the target git repository",
         )
     })?;

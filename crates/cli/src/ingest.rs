@@ -170,8 +170,7 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
     // edge-index HEAD stamp reads the worktree HEAD (M31 Inc 2 / WF3). Outside a worktree
     // the two coincide, so the sweep is byte-identical.
     let jigc_home = require_project_layer(cwd)?;
-    let worktree = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let worktree = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let pack = make_pack()?;
     let project_config = jigc_home.join(".jigc/config");
     let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;

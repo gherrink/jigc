@@ -107,8 +107,7 @@ pub fn mint_in_repo(
     // `.jigc/` working area binds to **jigc_home**, the main checkout, so every worktree
     // of one project shares a single `.jigc/` (M31 Inc 2 / WF3). Outside a worktree the
     // two coincide, so the mint is byte-identical.
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let jigc_root = jigc_home_or_repo(start)?.join(".jigc");
     let base = read_head(&repo_root)?;
     // The carryover gate's door half (M43 T1, `design/surface-contract.md` → The
@@ -136,8 +135,7 @@ pub fn mint_in_repo(
 /// worktree this is the byte-identical walk-up root [`discover_repo_root`] returns (M31
 /// Inc 2 / WF3); inside a linked worktree it redirects to the main checkout.
 pub(crate) fn jigc_home_or_repo(start: &Path) -> Result<PathBuf> {
-    crate::repo::jigc_home(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))
+    crate::repo::jigc_home(start).ok_or_else(|| crate::locate::not_in_repo(start))
 }
 
 /// Resolve the project cascade layer dir (`<jigc_home>/.jigc/config`) from `start`,
@@ -666,8 +664,7 @@ pub fn compose_in_repo(
     intent: &str,
     slug_override: Option<&str>,
 ) -> Result<Composition> {
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 
     let pack = make_pack()?;
@@ -709,8 +706,7 @@ pub fn compose_named_in_repo(
     workflow_id: &str,
     slug_override: Option<&str>,
 ) -> Result<Composition> {
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 
     let pack = make_pack()?;
@@ -753,8 +749,7 @@ pub fn compose_named_in_repo(
 /// An unknown `<X>` surfaces its routed not-found finding from the cascade read,
 /// before any branch — the same rejection the intent-bearing Form D gives.
 pub fn compose_named_no_intent_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 
     let pack = make_pack()?;
@@ -811,8 +806,7 @@ pub fn compose_named_no_intent_in_repo(start: &Path, workflow_id: &str) -> Resul
 // The `jigc workflow <id> --preview` dispatch (`cli.rs` → `run_preview`) calls this
 // (Inc 3 T2, the `--preview` surface + render).
 pub fn preview_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 
     let pack = make_pack()?;
@@ -902,8 +896,7 @@ pub fn execute_milestone_in_repo(
     workflow_id: &str,
     milestone: MilestoneFeed<'_>,
 ) -> Result<Composition> {
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 
     let pack = make_pack()?;
@@ -1908,8 +1901,7 @@ fn blanket_base_pin_refusal(
 /// task) — **unless the id is a milestone sub-task**, whose commit door is the
 /// milestone's, not this task's ([`blanket_base_pin_refusal`]).
 pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 
     // The committed doc-store + `.jigc/` working area bind to **jigc_home** (the main
@@ -2027,8 +2019,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
 /// rejects with a routed `workflow-refs.workflow-mismatch` block naming both ids + the
 /// sub-task; a base mismatch rejects with the divergence-routing prompt.
 pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Composition> {
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 
     // The committed doc-store + `.jigc/` working area bind to **jigc_home** (the main

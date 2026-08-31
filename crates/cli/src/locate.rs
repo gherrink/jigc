@@ -9,7 +9,7 @@
 //! are present. It reads no bytes and resolves no deltas — that is the engine's
 //! job (feed-layers-in / assert-results-out).
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 /// What the CLI hands the engine after locating the cascade sources: the repo
@@ -56,6 +56,79 @@ pub(crate) fn not_set_up() -> anyhow::Error {
     )
 }
 
+/// The one route a not-inside-a-git-repository refusal carries.
+///
+/// It is a [`engine::finding::Route::human`] direction, and says so rather than
+/// manufacturing an argv to satisfy the route fence: standing outside a repository there
+/// is no `jigc` command that repairs the state — the moves are `cd` and `git init`, and
+/// `git init` is git's to run, not jigc's (`design/surface-contract.md` → The route
+/// fence: *"a route whose command sits mid-sentence does not fit the constructor, and
+/// the constructor is not to be contorted to claim a conversion"*).
+pub fn not_in_repo_route() -> engine::finding::Route {
+    engine::finding::Route::human(
+        "run jigc from inside the target git repository; if this project isn't one yet, \
+         `git init` here first",
+    )
+}
+
+/// The one precondition text every door reachable from outside a repository shares.
+///
+/// It carries `start` because *where jigc looked* is the fact a user in the wrong
+/// directory needs: the walk-up found no `.git` from there, and the path says which
+/// "there" the shell was in.
+pub fn not_in_repo_message(start: &Path) -> String {
+    format!(
+        "not inside a git repository (no `.git` found from {})",
+        start.display()
+    )
+}
+
+/// The shared not-inside-a-git-repository rejection, `anyhow` shape — every leaf verb but
+/// the two that answer in `Finding`s converges here (M49 Inc 11 T2).
+///
+/// Before it there were three spellings across two contract shapes and 20 sites, and 45 of
+/// the 47 leaf verbs stated the state with no route at all
+/// (`design/surface-contract.md` → law 2; `tests/not_in_repo_axis.rs` drives the axis and
+/// fences this constructor as the only composer of the sentence).
+pub(crate) fn not_in_repo(start: &Path) -> anyhow::Error {
+    anyhow::anyhow!("{} — {}", not_in_repo_message(start), not_in_repo_route())
+}
+
+/// Map a [`locate`] failure onto a blocking `<verb>.repo-root` finding — the `Finding`
+/// shape of the same answer, for the two doors (`jigc setup` / `jigc uninstall`) whose
+/// whole surface is a `Result<_, Finding>`.
+///
+/// The not-inside-a-repository cause — the only one a user standing in the wrong directory
+/// can reach — answers with the **shared** message and route, so the two finding-shaped
+/// doors say exactly what the anyhow-shaped doors say.
+///
+/// [`locate`] has exactly one other failure mode: an unset `$HOME`, which is a different
+/// precondition (no `cd` repairs it) and is *not* on this axis — no directory you can stand
+/// in produces it. It keeps its shipped message and its shipped `other_route` byte-for-byte.
+/// **Declared bound:** that arm is a law-1 wobble this task did not own — it reports a
+/// `<verb>.repo-root` code and a "run it from inside the repository" route for a fault that
+/// is neither — and repairing it means minting a code, which is a contract move
+/// (`DECISIONS.md` → 2026-08-31 M49 Increment 11 / T2).
+pub(crate) fn locate_finding(
+    code: &'static str,
+    start: &Path,
+    err: &anyhow::Error,
+    other_route: &'static str,
+) -> engine::finding::Finding {
+    if discover_repo_root(start).is_none() {
+        return engine::finding::Finding::block(
+            code,
+            not_in_repo_message(start),
+            not_in_repo_route(),
+        );
+    }
+    engine::finding::Finding::block(
+        code,
+        format!("cannot locate the repository root: {err:#}"),
+        other_route,
+    )
+}
+
 /// Locate the cascade sources starting from `start`, resolving the team path
 /// from `$HOME`.
 pub fn locate(start: &Path) -> Result<RunContext> {
@@ -68,10 +141,7 @@ pub fn locate(start: &Path) -> Result<RunContext> {
 /// core of [`locate`]).
 fn locate_from(start: &Path, home: &Path) -> Result<RunContext> {
     let Some(repo_root) = discover_repo_root(start) else {
-        bail!(
-            "not inside a git repository (no .git found from {})",
-            start.display()
-        );
+        return Err(not_in_repo(start));
     };
     // jigc_home — the main checkout the `.jigc/` layer + committed doc-store bind to;
     // outside a worktree it is the byte-identical walk-up root (M31 Inc 2 / WF3).

@@ -433,8 +433,7 @@ fn no_such_milestone(milestone_id: &str) -> anyhow::Error {
 fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
     // The base pin is the *worktree* HEAD; the `.jigc/` area binds to jigc_home (the main
     // checkout), so all worktrees share one `.jigc/` (M31 Inc 2 / WF3).
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     crate::gitignore::ensure(&jigc_root)?;
@@ -2006,8 +2005,7 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
 /// refuses unless `force` ([`probe_leftover`]). An unknown milestone (no area) surfaces as
 /// a context-wrapped error.
 fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     // `.jigc/worktrees/` must be ignored or the linked worktrees pollute the main
@@ -2764,8 +2762,7 @@ fn git_worktree(repo_root: &Path, args: &[&str]) -> Result<String> {
 /// Dev-only (no methodology pack → no `milestone-record` schema) degrades exactly as every other
 /// record arm does: no record to settle, no commit — and the workbench teardown still runs.
 fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, String)> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
@@ -3091,8 +3088,7 @@ fn run_execute(
 ) -> Result<(crate::start::Composition, Vec<Finding>)> {
     // The `.jigc/` area binds to jigc_home (the main checkout); the compose feed resolves
     // the same split internally (it derives jigc_home from the worktree `repo_root`).
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
@@ -3197,8 +3193,7 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<(JoinOutcome, Vec<String>)
     // cross-worktree collision read (below) reads each provisioned worktree's staged set.
     // The committed doc-store + `.jigc/` index bind to jigc_home (the main checkout); the
     // fan-out worktrees + their registration bind to the worktree repo_root (M31 Inc 2).
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
@@ -3307,8 +3302,7 @@ fn run_milestone_finalize(
     // git commit/stage stay on the worktree `repo_root` (M31 Inc 2 / WF3). The promote
     // transaction (`try_execute_finalize_plan` / `execute_finalize_plan`) is kept on
     // `repo_root` — the worktree-finalize promote placement is the deferred WF4/WF5 concern.
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;

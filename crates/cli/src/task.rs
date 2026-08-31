@@ -757,8 +757,7 @@ impl TaskArea {
     /// `<jigc_home>/.jigc/tasks/<id>/`. A task that does not exist rejects with the
     /// task-list route ([`no_such_task`]).
     fn resolve(cwd: &Path, id: &str) -> Result<Self> {
-        let repo_root = discover_repo_root(cwd)
-            .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+        let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
         let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
         let jigc_root = jigc_home.join(".jigc");
         let dir = jigc_root.join("tasks").join(id);

@@ -51,6 +51,8 @@ mod ledger_record_truth;
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]
 mod mention_resolves;
+#[path = "../not_in_repo_axis.rs"]
+mod not_in_repo_axis;
 #[path = "../pre_guard_repair_route.rs"]
 mod pre_guard_repair_route;
 #[path = "../reconciliation_baseline_contrast.rs"]
