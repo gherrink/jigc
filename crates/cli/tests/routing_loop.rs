@@ -511,26 +511,31 @@ fn step_6_the_router_closing_text_names_the_fuller_catalog_and_that_read_answers
     );
 }
 
-/// The M46 completion audit's F1 — **the router's off-catalog promise, held over
-/// the whole set it names.**
+/// The M46 completion audit's F1, **rewritten on a changed basis (M49 Increment 11 /
+/// T6): the promise now ranges over the whole set, because the fence now buys it.**
 ///
 /// The closing text names `jigc describe --workflows` and promises a reason for each
-/// workflow sitting off the catalog. But the catalog predicate is `creates-task &&
-/// selectable`, while M43's `suppressed:` pack-load fence binds only `selectable:
-/// false` — so the off-catalog set splits in two: a **hidden** half that owes, and
-/// carries, a declared reason, and a `creates-task: false` half that owes none and
-/// carries none (`router`, `ingest-existing`, `increment` at the time of writing). A
-/// promise over the union is a law-1 lie for the second half, and the repair is
-/// **scope** — name the half the fence buys, change no behaviour
-/// (`design/surface-contract.md` → law 1).
+/// workflow sitting off the catalog. The catalog predicate is `creates-task &&
+/// selectable`, and M43's `suppressed:` pack-load fence bound only `selectable:
+/// false` — so the off-catalog set split in two: a **hidden** half that owed, and
+/// carried, a declared reason, and a `creates-task: false` half that owed none and
+/// carried none (`router`, `ingest-existing`, `increment`). M46 took the cheap half of
+/// that repair — **scope**, naming the half the fence bought — and this arm pinned the
+/// narrowing. T6 takes the other half: the fence's subject widens to the catalog's
+/// **complement**, so no off-catalog workflow is reasonless and the narrowing is no
+/// longer a repair but a constraint on a sentence that is now true unscoped
+/// (`design/surface-contract.md` → The suppression fence). The prose-shape asserts
+/// that pinned the narrowing therefore go; the driven ones stay and get stronger.
 ///
-/// This iterates that axis rather than the reported instance: the off-catalog set is
+/// This iterates the axis rather than the reported instance: the off-catalog set is
 /// DERIVED from the emitted bytes of the two reads — the router's own catalog listing
-/// and the read it names, run verbatim — then split on the envelope's `router_hidden`
-/// key, with each half held to what the fence actually buys. Both halves must be
-/// non-empty over the shipped packs, or the arm proves nothing.
+/// and the read it names, run verbatim — and every member of it must carry the clause
+/// and its declared reason, while every catalog member must carry neither. The
+/// complement must be non-empty over the shipped packs, or the arm proves nothing;
+/// that it strictly exceeds the `selectable: false` set is pinned where the
+/// front-matter is readable (`describe.rs::describe_states_why_every_off_catalog_workflow_is_absent`).
 #[test]
-fn the_routers_off_catalog_promise_is_scoped_to_the_half_that_owes_a_reason() {
+fn the_routers_off_catalog_promise_covers_every_workflow_the_catalog_leaves_out() {
     let repo = TempDir::new("off-catalog-promise");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -617,22 +622,30 @@ fn the_routers_off_catalog_promise_is_scoped_to_the_half_that_owes_a_reason() {
                 )
             });
         let clause = "It is hidden from the router catalog: ";
+        let on_catalog = catalog.iter().any(|listed_id| listed_id == id);
         match definition["router_hidden"].as_str() {
             Some(reason) => {
                 assert!(
+                    !on_catalog,
+                    "`{id}` is listed ON the catalog, so it cannot also narrate that it is \
+                     hidden from it; catalog: {catalog:?}",
+                );
+                assert!(
                     entry.contains(clause) && entry.contains(reason),
-                    "`{id}` is hidden, so the read must carry its declared reason; \
+                    "`{id}` is off the catalog, so the read must carry its declared reason; \
                      got:\n{entry}",
                 );
                 with_reason.push(id.to_string());
             }
             None => {
+                // The omitting context: a workflow the catalog DOES list states no
+                // reason for an absence it does not have.
                 assert!(
                     !entry.contains(clause),
                     "`{id}` declares no suppression, so the read states no reason for it; \
                      got:\n{entry}",
                 );
-                if !catalog.iter().any(|listed_id| listed_id == id) {
+                if !on_catalog {
                     without_reason.push(id.to_string());
                 }
             }
@@ -640,36 +653,12 @@ fn the_routers_off_catalog_promise_is_scoped_to_the_half_that_owes_a_reason() {
     }
     assert!(
         !with_reason.is_empty(),
-        "the shipped packs must carry a hidden workflow, or the promise has no subject",
+        "the shipped packs must carry a workflow off the catalog, or the promise has no subject",
     );
     assert!(
-        !without_reason.is_empty(),
-        "the shipped packs must carry a workflow that sits off the catalog while owing no \
-         reason (`creates-task: false`), or this arm proves nothing; catalog: {catalog:?}",
+        without_reason.is_empty(),
+        "the router promises a reason for every workflow the catalog leaves out, so NO \
+         off-catalog workflow may sit there reasonless — {} do; catalog: {catalog:?}",
+        without_reason.join(", "),
     );
-
-    // The promise, taken from the emitted bytes: it may only range over the half that
-    // owes a reason — the ids in `without_reason` sit off the catalog and carry none.
-    let closing = router
-        .split_once("That catalog is the selectable subset")
-        .unwrap_or_else(|| panic!("the router must name its catalog as a subset; got:\n{router}"))
-        .1
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    if let Some((_, tail)) = closing.split_once("the reason") {
-        let promise = tail.split('.').next().unwrap_or(tail);
-        assert!(
-            promise.contains("hidden"),
-            "the reason-promise must name the HIDDEN half as its scope — {} sit(s) off the \
-             catalog with no declared reason, so an unscoped promise lies about them; \
-             promise: {promise:?}\ngot:\n{router}",
-            without_reason.join(", "),
-        );
-        assert!(
-            !promise.contains("off the catalog") && !promise.contains("outside"),
-            "…and it may not re-extend itself to the whole off-catalog set, which is the \
-             union the fence does not cover; promise: {promise:?}\ngot:\n{router}",
-        );
-    }
 }

@@ -1452,7 +1452,7 @@ fn describe_router_hidden_close() {
     let description = Description::assemble(
         [("sub-task", &hidden), ("single-task", &plain)],
         std::iter::empty(),
-        &catalog,
+        [("dev", &catalog)],
     );
 
     let text = describe(Format::Agent, &description);

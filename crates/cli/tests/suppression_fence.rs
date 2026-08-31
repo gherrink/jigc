@@ -83,8 +83,10 @@ fn pack_copy(tag: &str, src: &Path) -> TempDir {
 }
 
 /// Strip the named workflow's whole `suppressed:` block (the key line + its
-/// indented body) from a copied pack — the mutation the fence must catch: a
-/// `selectable: false` workflow left with no machine-visible reason.
+/// indented body) from a copied pack — the mutation the fence must catch: a workflow
+/// the router catalog leaves out, left with no machine-visible reason. Either cause
+/// of absence qualifies (`selectable: false`, or `creates-task: false`), which is the
+/// fence's subject since M49 Increment 11 / T6.
 fn strip_suppressed_block(pack: &Path, workflow: &str) {
     let path = pack.join("workflows").join(format!("{workflow}.yaml"));
     let body = fs::read_to_string(&path).expect("read the copied workflow");
@@ -111,8 +113,9 @@ fn strip_suppressed_block(pack: &Path, workflow: &str) {
         "the shipped `{workflow}` workflow must declare a `suppressed:` block to strip"
     );
     assert!(
-        out.contains("selectable: false"),
-        "the stripped `{workflow}` workflow must stay `selectable: false`; got:\n{out}"
+        out.contains("selectable: false") || out.contains("creates-task: false"),
+        "the stripped `{workflow}` workflow must stay off the router catalog — \
+         `selectable: false` or `creates-task: false`; got:\n{out}"
     );
     fs::write(&path, out).expect("write the stripped workflow");
 }
@@ -195,6 +198,38 @@ fn a_stripped_suppressed_block_is_blocked_at_pack_load() {
     assert!(
         stderr.contains("suppressed"),
         "stderr must name the missing `suppressed:` declaration; got:\n{stderr}",
+    );
+}
+
+/// The other cause of absence, and the fence's widened subject (M49 Increment 11 /
+/// T6): a workflow off the catalog because it **mints no task** owes the reader a
+/// reason exactly as a `selectable: false` one does. `ingest-existing` is
+/// `creates-task: false`; stripping its `suppressed:` block blocks at pack-load.
+///
+/// Without this arm the fence would still be keyed on one of the catalog's two
+/// exclusion causes, which is the defect T6 repairs — `step:route-to-workflow`
+/// promises a reason for every absence, and a fence over half the population buys
+/// half the promise.
+#[test]
+fn a_stripped_creates_task_false_workflow_is_blocked_at_pack_load() {
+    let repo = TempDir::new("ct-repo");
+    let home = TempDir::new("ct-home");
+    let pack = pack_copy("ct-strip", &embedded_pack_tree());
+    init_repo(repo.path());
+    strip_suppressed_block(pack.path(), "ingest-existing");
+
+    let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a `creates-task: false` workflow with no `suppressed:` block must make `jigc start` \
+         exit non-zero; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("ingest-existing") && stderr.contains("suppressed"),
+        "stderr must name the offending `ingest-existing` workflow and the missing \
+         `suppressed:` declaration; got:\n{stderr}",
     );
 }
 

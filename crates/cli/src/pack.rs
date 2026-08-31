@@ -441,12 +441,23 @@ fn def_load_failure(sweep: &str, id: &str, finding: engine::finding::Finding) ->
 /// owner's workflows load through the production [`load_workflow_def`] (a
 /// malformed front-matter now blocks at pack-load, naming the workflow).
 ///
-/// **The suppression fence (law 2):** every `selectable: false` workflow must
-/// declare `suppressed: {reason, expires}` — a hidden capability carries a
+/// **The suppression fence (law 2):** every workflow the router catalog leaves out
+/// must declare `suppressed: {reason, expires}` — an absent capability carries a
 /// machine-visible reason that can expire (`never` is legal for a
-/// permanent-by-design hide; a *malformed* block is already rejected by the
+/// permanent-by-design absence; a *malformed* block is already rejected by the
 /// loader's required-shape check). Missing ⇒ fail, naming the workflow — the
 /// `decided-task` lesson made mechanical.
+///
+/// **The subject is the catalog's complement, not one of its two causes** (M49
+/// Increment 11 / T6). The catalog's population is `creates-task: true &&
+/// selectable: true`, so a workflow falls off it *either* by being hidden
+/// (`selectable: false`) *or* by minting no task (`creates-task: false`) — and
+/// `step:route-to-workflow` promises the reader a reason for **every** absence. Keyed
+/// on `selectable` alone, the fence bought half that promise: `router`,
+/// `ingest-existing` and `increment` sat off the catalog narrating nothing, while
+/// `milestone-execution` — `creates-task: false` and voluntarily carrying a
+/// `suppressed:` block — showed the shape was already the right one. `expires: never`
+/// is the honest value for a structural absence.
 ///
 /// **The catalog shape fence (the style guide's floor):** every **selectable
 /// work-workflow** (`creates-task: true && selectable: true` — the router
@@ -469,14 +480,20 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
             let def = engine::compose::load_workflow_def(&bytes).map_err(|finding| {
                 def_load_failure("workflow-front-matter", id.as_str(), finding)
             })?;
-            if !def.selectable && def.suppressed.is_none() {
+            if !(def.creates_task && def.selectable) && def.suppressed.is_none() {
+                let cause = if def.selectable {
+                    "`creates-task: false`"
+                } else {
+                    "`selectable: false`"
+                };
                 anyhow::bail!(
-                    "pack-load suppression fence failed: workflow `{}` declares \
-                     `selectable: false` with no `suppressed:` block — a hidden capability \
-                     must carry a machine-visible reason \
+                    "pack-load suppression fence failed: workflow `{}` declares {cause} — so the \
+                     router catalog leaves it out — with no `suppressed:` block; a capability \
+                     off the catalog must carry a machine-visible reason \
                      (design/surface-contract.md → The suppression fence)\n\
-                     route: add `suppressed: {{reason: <why it is hidden>, expires: never | \
-                     <the condition that un-hides it>}}` to the workflow's front-matter",
+                     route: add `suppressed: {{reason: <why the catalog leaves it out>, \
+                     expires: never | <the condition that puts it on>}}` to the workflow's \
+                     front-matter",
                     id.as_str(),
                 );
             }

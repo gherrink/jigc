@@ -4003,10 +4003,20 @@ pub fn describe(format: Format, description: &Description) -> String {
             }
             if !description.commands.is_empty() {
                 out.push_str("And the commands jigc hands you along the way. ");
+                // The id alone does not identify an entry under a composed pack-set —
+                // two packs may declare the same id with different hints, and both are
+                // reachable — so each sentence names its declaring pack. A pack that
+                // declares no `pack-id` has no attribution to print, and prints none.
                 let sentences: Vec<String> = description
                     .commands
                     .iter()
-                    .map(|c| format!("{} {}", c.id, c.hint))
+                    .map(|c| {
+                        if c.pack.is_empty() {
+                            format!("{} {}", c.id, c.hint)
+                        } else {
+                            format!("{} ({} pack) {}", c.id, c.pack, c.hint)
+                        }
+                    })
                     .collect();
                 out.push_str(&sentences.join(" "));
                 out.push_str("\n\n");
@@ -5860,6 +5870,7 @@ mod tests {
             ],
             commands: vec![CommandHint {
                 id: "finalize".to_string(),
+                pack: "dev".to_string(),
                 hint: "Validate, render the commit, and commit the task.".to_string(),
             }],
         };
@@ -5880,8 +5891,9 @@ mod tests {
             "the doctype's woven sentence is carried verbatim; got:\n{agent}",
         );
         assert!(
-            agent.contains("Validate, render the commit, and commit the task."),
-            "the command-ref hint is carried verbatim; got:\n{agent}",
+            agent.contains("finalize (dev pack) Validate, render the commit, and commit the task."),
+            "the command-ref hint is carried verbatim, under the id and the pack that declares \
+             it; got:\n{agent}",
         );
         assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
 
@@ -5937,7 +5949,7 @@ mod tests {
         let description = Description::assemble(
             [("narrated", &narrated), ("silent-workflow", &silent)],
             std::iter::empty(),
-            &catalog,
+            [("dev", &catalog)],
         );
 
         let agent = describe(Format::Agent, &description);

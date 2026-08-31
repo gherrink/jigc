@@ -3,6 +3,9 @@ when: pick a work-workflow for an intent
 description: A selection pass that presents the available work-workflows and routes an intent to the right one.
 usage: you have an intent but are unsure which work-workflow fits, and want the catalog to choose from.
 creates-task: false
+suppressed:
+  reason: "mints no task — the catalog it presents lists task-minting work-workflows, and this selection pass is the front door that presents them rather than an entry on its own menu"
+  expires: never
 ---
 {{ include: step:present-catalog }}
 {{ include: step:route-to-workflow }}

@@ -3,6 +3,9 @@ when: drive one roadmap increment end-to-end — plan its tasks, execute them se
 description: The increment-workflow's outer loop (plan → execute → validate → fix), with its three human-gated halts composed as structural Checkpoint directives.
 usage: you are working a whole roadmap increment, not a single task, and you want the plan/execute/validate/fix phases and their halt points made visible.
 creates-task: false
+suppressed:
+  reason: "mints no task — an outer loop whose execute phase mints one task per planned task, and the catalog lists task-minting work-workflows only"
+  expires: never
 ---
 {{ include: step:plan }}
 {{ include: step:plan-gate }}

@@ -6,7 +6,9 @@
 //! engine **assembles, never generates** — it makes no LLM call; the prose is
 //! the human-authored `description:` / `usage:` fields carried on the
 //! definitions themselves, woven into a structured sentence here, and the
-//! command-ref `hint`s carried verbatim. The result is presentation-free: it
+//! command-ref `hint`s carried verbatim — one entry per **declaring pack**, so a
+//! composed pack-set's command surface is the union of its catalogs rather than the
+//! precedence winner's alone ([`CommandHint`]). The result is presentation-free: it
 //! carries the woven prose, not a rendered surface (the `cli::render` free-prose
 //! renderer frames it — `module-layout.md` → CLI renders).
 //!
@@ -71,13 +73,25 @@ pub struct DefinitionProse {
     pub router_hidden: Option<String>,
 }
 
-/// One command-ref's projected `hint` — the command's `{{cli.<id>}}` id and its
-/// authored one-line `hint`, carried verbatim as prose (`hint`'s first
-/// projection consumer — `introspection.md` → Command surface).
+/// One command-ref's projected `hint` — the command's `{{cli.<id>}}` id, the pack
+/// that declares it, and its authored one-line `hint`, carried verbatim as prose
+/// (`hint`'s first projection consumer — `introspection.md` → Command surface).
+///
+/// **The id alone does not identify a command-ref under a composed pack-set.** A
+/// workflow resolves `{{cli.<id>}}` against *its own* origin pack's catalog, so two
+/// packs may each declare the same id with a different argv and a different `hint`,
+/// and both are genuinely reachable. The projection therefore carries one entry per
+/// **declaring pack**, keyed `(id, pack)` — the union, attributed — rather than the
+/// precedence winner alone (M49 Increment 11 / T6; `introspection.md` → Command
+/// surface).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandHint {
     /// The command-ref's `{{cli.<id>}}` id.
     pub id: String,
+    /// The `pack-id` of the pack whose catalog declares this entry — the attribution
+    /// that makes a repeated id readable. Empty only for a pack that declares no
+    /// `pack-id` (provenance is a display surface, never a hard-fail path).
+    pub pack: String,
     /// The authored one-line `hint`, carried verbatim.
     pub hint: String,
 }
@@ -107,14 +121,16 @@ impl Description {
     ///
     /// `workflows` is the **unfiltered** set (`(id, def)` pairs — every workflow,
     /// not the `creates-task && selectable` catalog); `schemas` is the full
-    /// doctype set; `catalog` is the command catalog whose `hint`s are projected.
-    /// Inputs may arrive in any order — the assembler sorts every output list by
-    /// id, so the projection is deterministic. No LLM call: the prose is
-    /// assembled from the authored fields, never generated.
+    /// doctype set; `catalogs` is one `(pack-id, catalog)` pair per **declaring
+    /// pack**, whose `hint`s are projected as their union — see [`CommandHint`] for
+    /// why the winner alone would hide reachable command-refs. Inputs may arrive in
+    /// any order — the assembler sorts every output list (commands by `(id, pack)`),
+    /// so the projection is deterministic. No LLM call: the prose is assembled from
+    /// the authored fields, never generated.
     pub fn assemble<'a>(
         workflows: impl IntoIterator<Item = (&'a str, &'a WorkflowDef)>,
         schemas: impl IntoIterator<Item = &'a Schema>,
-        catalog: &CommandCatalog,
+        catalogs: impl IntoIterator<Item = (&'a str, &'a CommandCatalog)>,
     ) -> Self {
         let mut definitions: Vec<DefinitionProse> = Vec::new();
 
@@ -155,16 +171,23 @@ impl Description {
         definitions.append(&mut workflow_proses);
         definitions.append(&mut doctype_proses);
 
-        // The catalog is a `BTreeMap`, so iteration is already id-sorted; collect
-        // it into the projection's stable shape.
-        let commands = catalog
-            .commands
-            .iter()
-            .map(|(id, command_ref)| CommandHint {
-                id: id.clone(),
-                hint: command_ref.hint.clone(),
+        // Each catalog is a `BTreeMap` (id-sorted within a pack), but the union spans
+        // packs, so the merged list is sorted by `(id, pack)` — the key the projection
+        // is stable under, and the order a reader scanning for one id wants.
+        let mut commands: Vec<CommandHint> = catalogs
+            .into_iter()
+            .flat_map(|(pack, catalog)| {
+                catalog
+                    .commands
+                    .iter()
+                    .map(move |(id, command_ref)| CommandHint {
+                        id: id.clone(),
+                        pack: pack.to_owned(),
+                        hint: command_ref.hint.clone(),
+                    })
             })
             .collect();
+        commands.sort_by(|a, b| a.id.cmp(&b.id).then_with(|| a.pack.cmp(&b.pack)));
 
         Self {
             schema_version: SCHEMA_VERSION,
@@ -290,12 +313,6 @@ mod tests {
         }
     }
 
-    fn empty_catalog() -> CommandCatalog {
-        CommandCatalog {
-            commands: BTreeMap::new(),
-        }
-    }
-
     fn catalog_with(entries: &[(&str, &str)]) -> CommandCatalog {
         let mut commands = BTreeMap::new();
         for (id, hint) in entries {
@@ -325,7 +342,7 @@ mod tests {
         let description = Description::assemble(
             [("single-task", &def)],
             std::iter::empty(),
-            &empty_catalog(),
+            std::iter::empty(),
         );
 
         assert_eq!(description.definitions.len(), 1);
@@ -404,7 +421,7 @@ mod tests {
         let description = Description::assemble(
             [("single-task", &def)],
             std::iter::empty(),
-            &empty_catalog(),
+            std::iter::empty(),
         );
 
         assert_eq!(description.definitions.len(), 1);
@@ -422,7 +439,7 @@ mod tests {
     fn usage_only_narrates_reach_for_when_clause() {
         let def = workflow(None, Some("a decision is worth preserving."));
         let description =
-            Description::assemble([("adr", &def)], std::iter::empty(), &empty_catalog());
+            Description::assemble([("adr", &def)], std::iter::empty(), std::iter::empty());
 
         assert_eq!(description.definitions.len(), 1);
         let prose = &description.definitions[0].prose;
@@ -442,7 +459,7 @@ mod tests {
         let description = Description::assemble(
             [("narrated", &narrated), ("silent", &silent)],
             std::iter::empty(),
-            &empty_catalog(),
+            std::iter::empty(),
         );
 
         assert_eq!(
@@ -459,7 +476,7 @@ mod tests {
     fn blank_field_is_treated_as_absent() {
         let def = workflow(Some("   "), Some("you need the menu."));
         let description =
-            Description::assemble([("x", &def)], std::iter::empty(), &empty_catalog());
+            Description::assemble([("x", &def)], std::iter::empty(), std::iter::empty());
 
         assert_eq!(
             description.definitions[0].prose,
@@ -484,7 +501,7 @@ mod tests {
             expires: "never".to_owned(),
         });
         let description =
-            Description::assemble([("sub-task", &def)], std::iter::empty(), &empty_catalog());
+            Description::assemble([("sub-task", &def)], std::iter::empty(), std::iter::empty());
 
         assert_eq!(description.definitions.len(), 1);
         assert_eq!(
@@ -504,7 +521,7 @@ mod tests {
             Some("a milestone execution fans out."),
         );
         let description =
-            Description::assemble([("sub-task", &def)], std::iter::empty(), &empty_catalog());
+            Description::assemble([("sub-task", &def)], std::iter::empty(), std::iter::empty());
 
         assert_eq!(
             description.definitions[0].prose,
@@ -533,7 +550,7 @@ mod tests {
         let description = Description::assemble(
             [("migrate-spec", &def)],
             std::iter::empty(),
-            &empty_catalog(),
+            std::iter::empty(),
         );
 
         assert_eq!(description.definitions.len(), 1);
@@ -558,7 +575,8 @@ mod tests {
                 "Validate, render the commit, and commit the task.",
             ),
         ]);
-        let description = Description::assemble(std::iter::empty(), std::iter::empty(), &catalog);
+        let description =
+            Description::assemble(std::iter::empty(), std::iter::empty(), [("dev", &catalog)]);
 
         assert_eq!(description.commands.len(), 2);
         let ingest = description
@@ -569,6 +587,42 @@ mod tests {
         assert_eq!(
             ingest.hint,
             "Ingest the agent's drafted prose into the named slot."
+        );
+        assert_eq!(
+            ingest.pack, "dev",
+            "the projected entry names the pack whose catalog declares it"
+        );
+    }
+
+    /// The union across packs, and the reason it is one: two packs may each declare
+    /// the **same** command-ref id with a different `hint`, and a workflow resolves
+    /// `{{cli.<id>}}` against its *own* origin pack — so both are reachable and both
+    /// are projected, attributed. Projecting the precedence winner alone would hide a
+    /// reachable command-ref (M49 Increment 11 / T6).
+    #[test]
+    fn a_collided_id_is_projected_once_per_declaring_pack() {
+        let dev = catalog_with(&[("show-doc", "read a managed doc"), ("run-ingest", "scan")]);
+        let methodology = catalog_with(&[("show-doc", "read a work-doc back")]);
+
+        let description = Description::assemble(
+            std::iter::empty(),
+            std::iter::empty(),
+            [("dev", &dev), ("methodology", &methodology)],
+        );
+
+        let projected: Vec<(&str, &str, &str)> = description
+            .commands
+            .iter()
+            .map(|c| (c.id.as_str(), c.pack.as_str(), c.hint.as_str()))
+            .collect();
+        assert_eq!(
+            projected,
+            vec![
+                ("run-ingest", "dev", "scan"),
+                ("show-doc", "dev", "read a managed doc"),
+                ("show-doc", "methodology", "read a work-doc back"),
+            ],
+            "the union carries each declaring pack's own entry, sorted by (id, pack)",
         );
     }
 
@@ -581,19 +635,22 @@ mod tests {
         let alpha = workflow(Some("the first workflow alphabetically."), None);
         let yak = schema("yak", Some("a shaggy doctype."), None);
         let bison = schema("bison", Some("a sturdy doctype."), None);
-        let catalog = catalog_with(&[("z-cmd", "last command"), ("a-cmd", "first command")]);
+        // Two catalogs with a genuinely COLLIDING id (`a-cmd` in both, different
+        // hints) — a non-overlapping pair would prove nothing about the merge.
+        let dev = catalog_with(&[("z-cmd", "last command"), ("a-cmd", "first command")]);
+        let methodology = catalog_with(&[("a-cmd", "the methodology reading")]);
 
         // Id order.
         let forward = Description::assemble(
             [("alpha", &alpha), ("zebra", &zebra)],
             [&bison, &yak],
-            &catalog,
+            [("dev", &dev), ("methodology", &methodology)],
         );
-        // Reverse order — the same inputs scrambled.
+        // Reverse order — the same inputs scrambled, the catalogs included.
         let reverse = Description::assemble(
             [("zebra", &zebra), ("alpha", &alpha)],
             [&yak, &bison],
-            &catalog,
+            [("methodology", &methodology), ("dev", &dev)],
         );
 
         assert_eq!(
@@ -617,7 +674,16 @@ mod tests {
                 (DefinitionKind::Doctype, "yak"),
             ],
         );
-        let cmd_ids: Vec<&str> = forward.commands.iter().map(|c| c.id.as_str()).collect();
-        assert_eq!(cmd_ids, vec!["a-cmd", "z-cmd"]);
+        // The merged command list is keyed `(id, pack)` — the colliding id keeps both
+        // declaring packs' entries, in one order regardless of the input order.
+        let cmd_keys: Vec<(&str, &str)> = forward
+            .commands
+            .iter()
+            .map(|c| (c.id.as_str(), c.pack.as_str()))
+            .collect();
+        assert_eq!(
+            cmd_keys,
+            vec![("a-cmd", "dev"), ("a-cmd", "methodology"), ("z-cmd", "dev"),],
+        );
     }
 }

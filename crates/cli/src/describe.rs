@@ -6,8 +6,11 @@
 //! project layer, [`make_pack`], then build the resolved definitions **pack-only**
 //! (the *unfiltered* workflow set — every workflow, not the
 //! `creates-task && selectable` catalog — plus the full doctype set + the command
-//! catalog) and hand them to the engine's [`Description::assemble`] whole-menu
-//! projection assembler (`design/introspection.md` → Command surface).
+//! catalogs of **every** constituent pack that ships one, since composition resolves
+//! each workflow's command-refs against its own origin pack) and hand them to the
+//! engine's [`Description::assemble`] whole-menu projection assembler
+//! (`design/introspection.md` → Command surface). *Pack-only* here means **outside
+//! the project/team cascade**, not "one pack": the pack-set may be composed.
 //!
 //! Read-only by construction: it locates, reads the cascade-resolved definitions,
 //! and assembles — it composes nothing, mints nothing, and writes nothing. The
@@ -21,10 +24,10 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-use engine::compose::{WorkflowDef, load_workflow_def};
+use engine::compose::{CommandCatalog, WorkflowDef, load_workflow_def};
 use engine::finding::Finding;
 use engine::introspect::{DefinitionKind, Description};
-use engine::packsource::{PackResourceKind, PackSource};
+use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::Schema;
 
 use crate::pack::make_pack;
@@ -114,13 +117,44 @@ pub(crate) fn run(cwd: &Path, kinds: Kinds) -> Result<Description> {
     // reads the authored `description:` / `usage:` fields the resolved layer carries.
     let workflows: Vec<(String, WorkflowDef)> = load_workflow_defs(pack, &defs)?;
     let schemas: Vec<Schema> = load_schemas(pack, &defs)?;
-    let catalog = load_catalog(pack)?;
+    let catalogs = load_catalogs(pack)?;
 
     Ok(kinds.select(Description::assemble(
         workflows.iter().map(|(id, def)| (id.as_str(), def)),
         schemas.iter(),
-        &catalog,
+        catalogs
+            .iter()
+            .map(|(pack_id, cat)| (pack_id.as_str(), cat)),
     )))
+}
+
+/// The command catalog of **every** pack in the composed set that ships one, paired
+/// with that pack's `pack-id` — the union the projection carries, attributed.
+///
+/// Not the precedence winner alone: `CompositePack::read` resolves `config/commands`
+/// winner-take-all whole-file, but composition never uses that resolution — a
+/// workflow's `{{cli.<id>}}` refs resolve against **its own** origin pack's catalog
+/// (`start.rs` → `origin_pack(Workflows, …)` → [`load_catalog`]; `multi-pack.md` →
+/// Pack-local body-reference resolution). So under `[dev ▸ methodology]` every
+/// methodology command-ref is genuinely composed and reachable while the
+/// winner-take-all read left eleven of them on no menu at all — law 2, on the surface
+/// that exists to name what is available (M49 Increment 11 / T6).
+///
+/// Enumerated with [`PackSource::origin_packs`], the same accessor the pack-load
+/// freeze/front-matter fences use to reach **every** manifest-shipping constituent
+/// rather than the winner, in precedence order.
+fn load_catalogs(pack: &dyn PackSource) -> Result<Vec<(String, CommandCatalog)>> {
+    let owners = pack.origin_packs(PackResourceKind::Config, &ResourceId::from("commands"));
+    if owners.is_empty() {
+        // `origin_packs` is empty exactly when no constituent's `read` succeeds, so the
+        // composite read faults too: surface that fault verbatim rather than degrading a
+        // missing catalog into a silently empty menu.
+        load_catalog(pack)?;
+    }
+    owners
+        .into_iter()
+        .map(|owner| Ok((owner.own_pack_id(), load_catalog(owner)?)))
+        .collect()
 }
 
 /// Load every workflow definition through the cascade — the **unfiltered** set (every

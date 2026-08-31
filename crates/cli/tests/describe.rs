@@ -377,10 +377,10 @@ fn describe_over_base_pack(tag: &str, pack_root: &Path) -> String {
 }
 
 /// Run `jigc describe` with the shipped pack at `pack_root` **listed** in
-/// `packs.yaml` — highest-precedence, over the embedded base. `CompositePack::read`
-/// is winner-take-all whole-file for `config/commands`, so the projected catalog is
-/// this pack's alone (`design/multi-pack.md` → The pack-set) — the methodology-alone
-/// catalog path, which is where the methodology entry is visible.
+/// `packs.yaml` — highest-precedence, over the embedded base. Since M49 the command
+/// surface is the **union** of every constituent's catalog, each entry attributed to
+/// the pack that declares it (`design/introspection.md` → Command surface), so this
+/// arm sees the listed pack's own entries beside the base's.
 fn describe_over_listed_pack(tag: &str, pack_root: &Path) -> String {
     let repo = TempDir::new(tag);
     set_up_repo(repo.path());
@@ -405,6 +405,151 @@ fn describe_over_listed_pack(tag: &str, pack_root: &Path) -> String {
         String::from_utf8_lossy(&out.stderr),
     );
     String::from_utf8(out.stdout).expect("utf-8 stdout")
+}
+
+/// The `pack-id` a shipped pack tree declares in its `config/defaults.yaml` — the
+/// same string `PackSource::own_pack_id` reads, and the origin attribution
+/// `describe` carries on every projected command-ref. Derived from the pack source,
+/// never typed here.
+fn pack_id_of(pack_root: &Path) -> String {
+    let path = pack_root.join("config").join("defaults.yaml");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).expect("the pack defaults parse as YAML");
+    value["pack-id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{} declares no `pack-id`", path.display()))
+        .to_owned()
+}
+
+/// Every command-ref a shipped pack tree declares, as `(pack-id, ref id, hint)` —
+/// read from that pack's own `config/commands.yaml` on disk, never a hand-typed
+/// list, so a catalog entry added or reworded moves the expectation with it.
+fn shipped_catalog_entries(pack_root: &Path) -> Vec<(String, String, String)> {
+    let pack_id = pack_id_of(pack_root);
+    let path = pack_root.join("config").join("commands.yaml");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).expect("the command catalog parses as YAML");
+    value["commands"]
+        .as_sequence()
+        .expect("the catalog carries a `commands:` list")
+        .iter()
+        .map(|entry| {
+            (
+                pack_id.clone(),
+                entry["id"]
+                    .as_str()
+                    .expect("a catalog entry carries an id")
+                    .to_owned(),
+                entry["hint"]
+                    .as_str()
+                    .expect("a catalog entry carries a hint")
+                    .to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// The `(pack, id, hint)` triples `jigc describe --commands --format json` projects,
+/// sorted — the emitted envelope's own view of the composed command surface.
+fn projected_command_entries(repo: &Path, home: &Path) -> Vec<(String, String, String)> {
+    let json = describe_json_with(repo, home, &["--commands"]);
+    let mut out: Vec<(String, String, String)> = json["commands"]
+        .as_array()
+        .expect("the projection carries a `commands` array")
+        .iter()
+        .map(|c| {
+            (
+                c["pack"]
+                    .as_str()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "every projected command-ref must name the pack that declares it — \
+                             the composed set spans more than one catalog, and an unattributed \
+                             id cannot say which hint it carries. Got:\n{c:#}"
+                        )
+                    })
+                    .to_owned(),
+                c["id"].as_str().expect("a projected id").to_owned(),
+                c["hint"].as_str().expect("a projected hint").to_owned(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// M49 Increment 11 / T6 — **the command surface is the union of every declaring
+/// pack's catalog, each entry attributed to its origin.**
+///
+/// `describe` read `config/commands` through the composite's winner-take-all
+/// whole-file `read`, so the `[dev ▸ methodology]` composition an ordinary
+/// `jigc setup` project runs under projected **dev's 16 ids and nothing else** —
+/// while composition resolves each workflow's `{{cli.X}}` against *its own* origin
+/// pack's catalog (`start.rs` → `origin_pack(Workflows, id)` → `load_catalog`), so
+/// eleven methodology command-refs that every methodology workflow really composes
+/// appeared on no menu at all. That is law 2 (`surface-contract.md`): the capability
+/// exists and the surface that exists to name it hides it.
+///
+/// Driven over the **emitted bytes** of the real binary, with the expectation
+/// **derived from both pack sources on disk** rather than a hand-typed set — a
+/// catalog entry added to either pack moves this arm with it.
+#[test]
+fn describe_commands_carry_the_union_of_every_declaring_pack() {
+    let repo = TempDir::new("catalog-union");
+    set_up_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write the compose marker");
+    let home = TempDir::new("home");
+
+    let dev = shipped_catalog_entries(&dev_pack());
+    let methodology = shipped_catalog_entries(&methodology_pack());
+
+    // Non-vacuity, derived: the two catalogs must genuinely diverge, or a
+    // winner-take-all projection would satisfy the union assert by accident.
+    let dev_ids: std::collections::BTreeSet<&str> =
+        dev.iter().map(|(_, id, _)| id.as_str()).collect();
+    let methodology_only: Vec<String> = methodology
+        .iter()
+        .map(|(_, id, _)| id.clone())
+        .filter(|id| !dev_ids.contains(id.as_str()))
+        .collect();
+    assert!(
+        !methodology_only.is_empty(),
+        "the two shipped catalogs must declare at least one divergent id, or this arm cannot \
+         tell a union from the precedence winner",
+    );
+
+    let mut expected: Vec<(String, String, String)> = dev.into_iter().chain(methodology).collect();
+    expected.sort();
+
+    assert_eq!(
+        projected_command_entries(repo.path(), home.path()),
+        expected,
+        "`jigc describe --commands --format json` must carry every command-ref either pack \
+         declares, attributed to the pack that declares it",
+    );
+
+    // The prose arm an agent actually reads carries the same union — the envelope is
+    // not a private surface (`introspection.md` → the filter selects membership, and
+    // both renderings are the same assembled projection).
+    let out = describe_stdout_with(repo.path(), home.path(), &["--commands"]);
+    for id in &methodology_only {
+        assert!(
+            out.contains(id),
+            "the emitted prose menu must name the methodology-only command-ref `{id}`; \
+             got:\n{out}",
+        );
+    }
+    assert_non_contractual_prose(&out).unwrap_or_else(|why| {
+        panic!(
+            "the unioned command menu must stay hostile-to-parsing: {why}\n--- output ---\n{out}"
+        )
+    });
 }
 
 /// M48 Increment 3, T1 — **`jigc doc show` joins both packs' command catalogs.**
@@ -452,9 +597,9 @@ fn describe_names_doc_show_in_both_shipped_catalogs() {
              what describe projects",
         );
         assert!(
-            out.contains(&format!("{id} {hint}")),
-            "`jigc describe` over the {label} pack alone must name its `{id}` command-ref and \
-             its authored hint; got:\n{out}",
+            out.contains(&format!("{id} ({} pack) {hint}", pack_id_of(pack_root))),
+            "`jigc describe` over the {label} pack alone must name its `{id}` command-ref, the \
+             pack that declares it, and its authored hint; got:\n{out}",
         );
         // The new entry must not cost the surface its posture — describe stays a menu,
         // not a table (`introspection.md` → The operational format contract).
@@ -467,11 +612,12 @@ fn describe_names_doc_show_in_both_shipped_catalogs() {
 }
 
 /// The composite arm of the same claim: the `[dev ▸ methodology]` composition an
-/// ordinary `jigc setup` project runs under still names the read-back surface. The
-/// declared bound, neither opened nor closed here: `CompositePack::read` is
+/// ordinary `jigc setup` project runs under names the read-back surface — **from
+/// both catalogs**. The declared bound this arm carried (*"`CompositePack::read` is
 /// winner-take-all whole-file for `config/commands`, so the composite projects the
-/// **dev** catalog only — hence the dev entry is the one this arm derives and the
-/// methodology entry rides the methodology-alone arm above.
+/// dev catalog only"*) is discharged by M49 Increment 11 / T6: the projection is the
+/// union of every declaring pack's catalog, so the methodology entry is no longer
+/// reachable only through the methodology-alone arm.
 #[test]
 fn describe_names_doc_show_on_the_composite_path() {
     let repo = TempDir::new("readback-composite");
@@ -483,16 +629,21 @@ fn describe_names_doc_show_on_the_composite_path() {
     .expect("write the compose marker");
     let home = TempDir::new("home");
 
-    let dev = dev_pack();
-    let (id, hint) = catalog_doc_show_entry(&dev)
-        .expect("the dev catalog must carry the `jigc doc show` command-ref");
-
     let out = describe_stdout(repo.path(), home.path());
-    assert!(
-        out.contains(&format!("{id} {hint}")),
-        "the composite `[dev ▸ methodology]` projection must name the dev catalog's `{id}` \
-         command-ref; got:\n{out}",
-    );
+    for pack_root in [dev_pack(), methodology_pack()] {
+        let (id, hint) = catalog_doc_show_entry(&pack_root).unwrap_or_else(|| {
+            panic!(
+                "{} must carry a `jigc doc show` command-ref",
+                pack_root.display()
+            )
+        });
+        let pack_id = pack_id_of(&pack_root);
+        assert!(
+            out.contains(&format!("{id} ({pack_id} pack) {hint}")),
+            "the composite `[dev ▸ methodology]` projection must name the {pack_id} catalog's \
+             `{id}` command-ref; got:\n{out}",
+        );
+    }
 }
 
 #[test]
@@ -667,11 +818,21 @@ fn describe_breaks_a_paragraph_per_definition() {
     });
 }
 
-/// The `suppressed: {reason, …}` declarations of every hidden (`selectable: false`)
-/// workflow in the two shipped embedded packs, read from the pack sources on disk
-/// (the same files `include_dir!` embeds), keyed `(workflow id, reason)`. Derived,
-/// not hard-coded — the hidden set grows/shrinks with the packs.
-fn shipped_hidden_workflows() -> Vec<(String, String)> {
+/// One shipped workflow's catalog-relevant front-matter, read from the pack source
+/// on disk: its id, whether it mints a task, whether it is selectable, and the
+/// `suppressed.reason` it declares (if any). Both booleans default **true** when the
+/// key is omitted, exactly as `WorkflowFrontMatter` does.
+struct ShippedWorkflow {
+    id: String,
+    creates_task: bool,
+    selectable: bool,
+    reason: Option<String>,
+}
+
+/// Every workflow the two shipped embedded packs declare, read from the pack sources
+/// on disk (the same files `include_dir!` embeds). Derived, not hard-coded — the
+/// workflow set grows and shrinks with the packs.
+fn shipped_workflows() -> Vec<ShippedWorkflow> {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let pack_dirs = [
         manifest.join("pack").join("workflows"),
@@ -682,7 +843,7 @@ fn shipped_hidden_workflows() -> Vec<(String, String)> {
             .join("methodology")
             .join("workflows"),
     ];
-    let mut hidden = Vec::new();
+    let mut out = Vec::new();
     for dir in pack_dirs {
         for entry in fs::read_dir(&dir).expect("read pack workflows dir") {
             let path = entry.expect("dir entry").path();
@@ -697,22 +858,132 @@ fn shipped_hidden_workflows() -> Vec<(String, String)> {
                 .expect("workflow file carries front-matter");
             let value: serde_yaml_ng::Value =
                 serde_yaml_ng::from_str(front_matter).expect("front-matter parses as YAML");
-            if value["selectable"].as_bool() != Some(false) {
-                continue;
-            }
-            let reason = value["suppressed"]["reason"]
-                .as_str()
-                .expect("a hidden shipped workflow carries suppressed.reason (the pack-load fence)")
-                .to_owned();
-            let id = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .expect("workflow id from file stem")
-                .to_owned();
-            hidden.push((id, reason));
+            out.push(ShippedWorkflow {
+                id: path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .expect("workflow id from file stem")
+                    .to_owned(),
+                creates_task: value["creates-task"].as_bool().unwrap_or(true),
+                selectable: value["selectable"].as_bool().unwrap_or(true),
+                reason: value["suppressed"]["reason"].as_str().map(str::to_owned),
+            });
         }
     }
-    hidden
+    out
+}
+
+/// The `suppressed: {reason, …}` declarations of every workflow the router catalog
+/// leaves out — its complement, `!(creates-task && selectable)`, which is exactly the
+/// population `catalog.rs` filters away — keyed `(workflow id, reason)`. Derived from
+/// the pack sources, never a hand list; the `expect` is the fence's own claim, so a
+/// shipped workflow that falls off the catalog with no declared reason reddens here.
+fn shipped_off_catalog_workflows() -> Vec<(String, String)> {
+    shipped_workflows()
+        .into_iter()
+        .filter(|w| !(w.creates_task && w.selectable))
+        .map(|w| {
+            let reason = w.reason.unwrap_or_else(|| {
+                panic!(
+                    "workflow `{}` sits off the router catalog and declares no \
+                     `suppressed.reason` — every workflow the catalog leaves out owes the \
+                     reader the reason it is absent (the pack-load suppression fence)",
+                    w.id,
+                )
+            });
+            (w.id, reason)
+        })
+        .collect()
+}
+
+/// The hidden (`selectable: false`) subset of the above — the M43 fence's original
+/// population, kept as its own derivation so the arm that pins it stays about
+/// *deliberate* suppression rather than the wider catalog complement.
+fn shipped_hidden_workflows() -> Vec<(String, String)> {
+    shipped_workflows()
+        .into_iter()
+        .filter(|w| !w.selectable)
+        .map(|w| {
+            let reason = w.reason.expect(
+                "a hidden shipped workflow carries suppressed.reason (the pack-load fence)",
+            );
+            (w.id, reason)
+        })
+        .collect()
+}
+
+/// M49 Increment 11 / T6 — **every workflow the router catalog leaves out states why
+/// it is absent.**
+///
+/// `step:route-to-workflow` tells the reader that the catalog is a subset and that
+/// `jigc describe --workflows` carries each absent one's reason. The M43 fence bought
+/// that promise for `selectable: false` only, so the three workflows off the catalog
+/// for the *other* reason — `creates-task: false` — narrated nothing at all
+/// (`ingest-existing`, `router`, `increment`). The fence's subject is now the
+/// catalog's **complement**, not one of its two causes.
+///
+/// The set is **derived** from both pack sources (`shipped_off_catalog_workflows`),
+/// never hand-listed, and the assertion runs over the emitted bytes of the real
+/// binary in both renderings.
+#[test]
+fn describe_states_why_every_off_catalog_workflow_is_absent() {
+    let repo = TempDir::new("off-catalog");
+    set_up_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write the compose marker");
+    let home = TempDir::new("home");
+
+    let off_catalog = shipped_off_catalog_workflows();
+    let hidden: std::collections::BTreeSet<String> = shipped_hidden_workflows()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    // Non-vacuity, derived: the arm only proves something new if the complement is
+    // strictly wider than the `selectable: false` set M43 already fenced.
+    assert!(
+        off_catalog.iter().any(|(id, _)| !hidden.contains(id)),
+        "the shipped packs must carry at least one `creates-task: false` workflow, or this arm \
+         re-proves the M43 hidden set; got {off_catalog:?}",
+    );
+
+    let json = describe_json(repo.path(), home.path());
+    let definitions = json["definitions"]
+        .as_array()
+        .expect("the projection carries a definitions array");
+    let out = describe_stdout(repo.path(), home.path());
+
+    for (id, reason) in &off_catalog {
+        let definition = definitions
+            .iter()
+            .find(|d| d["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("off-catalog workflow `{id}` must be narrated by describe"));
+        let reason = reason.trim().trim_end_matches('.');
+        assert_eq!(
+            definition["router_hidden"].as_str(),
+            Some(reason),
+            "`{id}` is off the router catalog, so `router_hidden` must carry its declared \
+             reason; got:\n{definition:#}",
+        );
+        let prose = definition["prose"].as_str().expect("a definition prose");
+        assert!(
+            prose.contains("hidden from the router catalog"),
+            "`{id}`'s entry must say it is absent from the router catalog; got: {prose:?}",
+        );
+        assert!(
+            out.contains(reason),
+            "the emitted prose must carry `{id}`'s reason for being off the catalog; got:\n{out}",
+        );
+    }
+
+    assert_non_contractual_prose(&out).unwrap_or_else(|why| {
+        panic!(
+            "the projection with every off-catalog reason woven in must stay non-contractual \
+             prose: {why}\n--- output ---\n{out}"
+        )
+    });
 }
 
 #[test]
@@ -1014,8 +1285,8 @@ fn describe_json_carries_the_router_hidden_suppression_as_a_key() {
 /// M48 Inc 8 / T3 — **the menu can be asked for the part it needs.**
 ///
 /// `jigc describe` is the whole menu: 33 workflows (18 of them narrating "hidden from
-/// the router catalog", 12 of them `migrate-*`) plus every doctype plus all 17
-/// command-refs on one 1,167-char line — 24kB an agent reads to find one kind of thing
+/// the router catalog", 12 of them `migrate-*`) plus every doctype plus every
+/// composed pack's command-refs on one 1,167-char line — 24kB an agent reads to find one kind of thing
 /// (DECISIONS → 2026-08-13 the Settle, `describe` — the filter only, not the positional
 /// form). `--workflows` / `--doctypes` / `--commands` select **which entries** the menu
 /// returns; they are combinable, and **no flag is the whole menu** (today's behaviour,
@@ -1075,8 +1346,11 @@ fn describe_kind_filter_selects_which_entries_the_menu_returns() {
         .iter()
         .map(|c| {
             let id = c["id"].as_str().expect("a command-ref id");
+            let pack = c["pack"].as_str().expect("a command-ref origin pack");
             let hint = c["hint"].as_str().expect("a command-ref hint");
-            (id.to_owned(), format!("{id} {hint}"))
+            // The prose sentence names the declaring pack — an id alone does not
+            // identify an entry under a composed pack-set (M49 Inc 11 / T6).
+            (id.to_owned(), format!("{id} ({pack} pack) {hint}"))
         })
         .collect();
     let menu = [&workflows, &doctypes, &commands];

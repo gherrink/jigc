@@ -73,8 +73,8 @@ jigc start --workflow <chosen> \"<intent>\"
 
 That catalog is the selectable subset. A workflow outside it is reached by name
 with the same `--workflow` form — `jigc describe --workflows` lists every
-workflow, hidden ones included, and each hidden one carries the reason it is
-hidden.
+workflow, the ones the catalog leaves out included, and each of those carries
+the reason it is hidden from the catalog.
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 
