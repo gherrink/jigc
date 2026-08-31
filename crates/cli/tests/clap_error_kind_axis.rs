@@ -187,10 +187,13 @@ const KIND_DISPOSITIONS: &[KindRow] = &[
         disposition: Disposition::ClapStands,
         reason: "clap names the fault and prints the usage; jigc cannot render the \
                  offending bytes any better than clap declines to. It is disposed CLAP \
-                 STANDS only since M49 T5: `main` built its takeover argv from \
-                 `std::env::args()`, which PANICS on a non-UTF-8 argument, so this kind \
-                 exited 101 with a Rust panic and no usage at all until the axis was \
-                 derived and drove it.",
+                 STANDS only since M49 T5, and only completely since T5's own fix was \
+                 swept: TWO production sites read the process argv — `main`'s takeover \
+                 render and the invocation-log record — and `std::env::args()` PANICS on \
+                 a non-UTF-8 argument at either. Fixing the first left the kind at exit \
+                 101 whenever the (documented, trial-default) `invocation-log` knob was \
+                 ON, which is why this row is driven in BOTH fixture topologies and the \
+                 class is fenced at the source.",
     },
     KindRow {
         kind: ErrorKind::DisplayHelp,
@@ -280,6 +283,41 @@ fn init_repo(repo: &Path) {
     fs::write(repo.join("README.md"), "hello\n").expect("write file");
     git(repo, &["add", "."]);
     git(repo, &["commit", "-q", "-m", "initial"]);
+}
+
+/// A real git repo with one commit, `jigc setup` run over it, and the **invocation-log
+/// knob ON** — the second fixture topology the axis is driven in.
+///
+/// The knob is the axis member [`init_repo`] cannot reach: the log wrapper runs after the
+/// clap arm has emitted, reads the process argv for its record, and is resolved only
+/// inside a jigc project layer. A row driven in a bare repo therefore never executes it.
+fn setup_project_with_the_log_on(repo: &Path, home: &Path) {
+    init_repo(repo);
+    let out = jigc(repo, home, &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let out = jigc(repo, home, &["config", "set", "invocation-log", "true"]);
+    assert!(
+        out.status.success(),
+        "`jigc config set invocation-log true` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The JSONL invocation-log records at `.jigc/logs/invocations.jsonl` (empty when absent).
+fn log_records(repo: &Path) -> Vec<serde_json::Value> {
+    let path = repo.join(".jigc").join("logs").join("invocations.jsonl");
+    match fs::read_to_string(&path) {
+        Ok(body) => body
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).expect("each log line is valid JSON"))
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 /// A probe's tokens as the OS sees them, with [`NON_UTF8_TOKEN`] substituted by the raw
@@ -385,21 +423,19 @@ fn the_table_is_pinned_to_the_clap_it_was_derived_against() {
     );
 }
 
-/// **Every producible row is reached by driving its argv through the real binary** — and
-/// the emitted bytes are asserted against the row's disposition, never against a
-/// reconstruction of them.
+/// Drive every producible row's argv through the real binary in `repo`, asserting the
+/// emitted bytes against the row's disposition — never against a reconstruction of them.
 ///
 /// Three assertions per row: the argv produces exactly the kind the row claims (in-process
 /// parse — the only way to see a *kind*); the driven binary exits on the taxonomy's own
 /// codes; and the emitted stream carries clap's own render byte for byte
 /// ([`Disposition::ClapStands`]) or jigc's own block byte for byte
 /// ([`Disposition::JigcRenders`]).
-#[test]
-fn every_producible_kind_is_reached_by_driving_its_probe() {
-    let repo = TempDir::new("drive");
-    let home = TempDir::new("home");
-    init_repo(repo.path());
-
+///
+/// `observed` is handed each row with the exit code it was asserted at, so a caller can
+/// check what its own fixture topology adds — the log-on arm below checks that the
+/// invocation the row just made was recorded.
+fn drive_every_producible_kind(repo: &Path, home: &Path, mut observed: impl FnMut(&KindRow, u8)) {
     let mut driven = 0;
     for row in KIND_DISPOSITIONS {
         if row.disposition == Disposition::NotProducible {
@@ -416,7 +452,7 @@ fn every_producible_kind_is_reached_by_driving_its_probe() {
             err.kind(),
         );
 
-        let out = jigc(repo.path(), home.path(), row.probe);
+        let out = jigc(repo, home, row.probe);
         let (expected_code, emitted) = if err.use_stderr() {
             (EXIT_USAGE, String::from_utf8(out.stderr.clone()))
         } else {
@@ -459,11 +495,65 @@ fn every_producible_kind_is_reached_by_driving_its_probe() {
             }
             Disposition::NotProducible => unreachable!("filtered above"),
         }
+        observed(row, expected_code);
     }
     assert!(
         driven >= 10,
         "the driven set must not silently shrink; drove {driven}",
     );
+}
+
+/// **Every producible row is reached by driving its argv through the real binary.**
+#[test]
+fn every_producible_kind_is_reached_by_driving_its_probe() {
+    let repo = TempDir::new("drive");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    drive_every_producible_kind(repo.path(), home.path(), |_, _| {});
+}
+
+/// **The same axis, driven in the topology the trials actually run in — the invocation
+/// log ON.**
+///
+/// The fixture is an axis of its own, and the table above was driven along one point of
+/// it. Every clap-rejected argv reaches `main`'s log wrapper *after* the render, and that
+/// wrapper reads the process argv for its record — a second read of the same bytes, at a
+/// second site, executed only inside a jigc project layer with the knob on. So the
+/// `InvalidUtf8` row's stated disposition (CLAP STANDS, exit 2) was asserted in the one
+/// state where the second read cannot run: with the knob on, `std::env::args()` there
+/// panicked the process at exit **101** *after* clap's render had already been emitted —
+/// and not only for that argv, but for **any** invocation carrying a non-UTF-8 argument,
+/// including ones that are not errors at all. The knob is documented, shipped, and ON in
+/// every RC trial this project runs, so this is the dominant configuration, not an exotic
+/// one.
+///
+/// Each row is checked to have been *logged*, which is what keeps this arm from passing
+/// vacuously: if the knob failed to apply, the log path would never run and the arm would
+/// assert the same thing twice.
+#[test]
+fn every_producible_kind_holds_with_the_invocation_log_on() {
+    let repo = TempDir::new("logon");
+    let home = TempDir::new("home");
+    setup_project_with_the_log_on(repo.path(), home.path());
+
+    let mut recorded = log_records(repo.path()).len();
+    drive_every_producible_kind(repo.path(), home.path(), |row, code| {
+        let records = log_records(repo.path());
+        assert_eq!(
+            records.len(),
+            recorded + 1,
+            "`jigc {}` must append exactly one invocation-log record — the log path is \
+             what this arm exists to execute",
+            row.probe.join(" "),
+        );
+        assert_eq!(
+            records[records.len() - 1]["exit_code"].as_u64(),
+            Some(u64::from(code)),
+            "`jigc {}` records the exit code it actually exited on",
+            row.probe.join(" "),
+        );
+        recorded = records.len();
+    });
 }
 
 /// **The not-producible rows, fenced where a fence exists.** Four of the six are absent
@@ -632,5 +722,78 @@ fn a_foreclosed_flag_without_a_curated_row_keeps_claps_render() {
     assert!(
         !stderr.contains("jigc doc rename"),
         "`rename`'s curated answer must not fire under another node; got:\n{stderr}",
+    );
+}
+/// **The class fence: no production code reads the process argv as `String`s.**
+///
+/// `std::env::args()` panics on an argument that is not valid UTF-8. The two production
+/// reads of the process argv — `main`'s takeover render and the invocation log's record —
+/// were fixed one at a time, the second surviving the first by a whole increment, because
+/// each fix was aimed at the *site* the repro named rather than the *class*
+/// ([dev-workflow.md](../../../implementation/dev-workflow.md) → *a fix is complete over
+/// its class's axis*). The class is: **every production read of the process argv**, and it
+/// has exactly one safe form.
+///
+/// So the property is checked where membership is decided — the source itself — rather
+/// than by a driven probe per reader, because a third reader added tomorrow would be
+/// driven by nothing. Test-domain code is out of scope: a test's own argv is its own.
+#[test]
+fn no_production_code_reads_the_process_argv_as_strings() {
+    /// The panicking form. `std::env::args_os()` does not match it — the `(` is required
+    /// immediately after `args`.
+    const BANNED: &str = "env::args(";
+    /// The safe form, which the sweep must keep finding, or it is inspecting nothing.
+    const SAFE: &str = "env::args_os(";
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .canonicalize()
+        .expect("canonicalize the workspace root");
+    let sources: Vec<PathBuf> = ["crates/engine", "crates/cli"]
+        .iter()
+        .flat_map(|krate| crate::support::rust_source::rust_files(&root.join(krate)))
+        .filter(|path| !path.components().any(|c| c.as_os_str() == "probes"))
+        .collect();
+    assert!(
+        sources.len() > 100,
+        "the sweep must find the workspace sources; found only {}",
+        sources.len(),
+    );
+
+    let mut offenders = Vec::new();
+    let mut safe_reads = 0usize;
+    for path in &sources {
+        let body = fs::read_to_string(path).expect("read a workspace source");
+        // Comments and string literals are blanked, so `main.rs`'s own prose about the
+        // banned form — and this suite's constants — are not offenders.
+        let code = crate::support::rust_source::code_only(&body);
+        let regions = crate::support::rust_source::cfg_test_regions(&code);
+        for (at, _) in code.match_indices(SAFE) {
+            if !crate::support::rust_source::is_test_domain(path, &regions, at) {
+                safe_reads += 1;
+            }
+        }
+        for (at, _) in code.match_indices(BANNED) {
+            if crate::support::rust_source::is_test_domain(path, &regions, at) {
+                continue;
+            }
+            let rel = path.strip_prefix(&root).unwrap_or(path).display();
+            offenders.push(format!("  {rel}:{}", code[..at].lines().count()));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "production code must read the process argv with `{SAFE}` and convert lossily: \
+         `{BANNED}` PANICS the process (exit 101) on an argument that is not valid \
+         UTF-8, and every jigc invocation reaches both readers.\n{} offending site(s):\n{}",
+        offenders.len(),
+        offenders.join("\n"),
+    );
+    assert!(
+        safe_reads >= 2,
+        "the fence must keep seeing the production argv reads it governs; found only \
+         {safe_reads} `{SAFE}` call(s) — the sweep has drifted off the sources",
     );
 }

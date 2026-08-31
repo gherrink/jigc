@@ -288,7 +288,20 @@ impl Outcome {
 pub fn log_invocation(logs_dir: &Path, duration: Duration, outcome: &Outcome, output_bytes: u128) {
     // argv without the (machine-specific, absolute) program path — the record captures the
     // verb + flags + intent text (`design/measurement.md` → Honesty note on `argv` content).
-    let argv: Vec<String> = std::env::args().skip(1).collect();
+    //
+    // `args_os` read lossily, never `args`: this wrapper runs on EVERY invocation, and
+    // `std::env::args()` PANICS on an argument that is not valid UTF-8 — here after the
+    // verb has already emitted, so the run's own output reached the reader and the
+    // process then died at exit 101 with a Rust panic on top of it. The class is *every*
+    // production read of the process argv (`main`'s takeover render is the other member,
+    // fixed one increment earlier); it is fenced at the source by
+    // `crates/cli/tests/clap_error_kind_axis.rs` →
+    // `no_production_code_reads_the_process_argv_as_strings`, so a third reader cannot
+    // arrive in the panicking form.
+    let argv: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
     let _ = append_record(
         logs_dir,
         &now_timestamp(),
