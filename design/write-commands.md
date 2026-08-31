@@ -2,7 +2,7 @@
 
 The verbs through which the agent (and humans) put content *into* document instances via the CLI — the write side of [VISION.md](../VISION.md) principle #3 (the CLI is the only interface for reads *and* writes). The addressing, unit kinds, override ladder, and validation framework these verbs build on are dialect-neutral and specified in [structural-grammar.md](structural-grammar.md); the `slot`/`field`/`relation` leaves they target are in [document-type-schema.md](document-type-schema.md). **Read those first.**
 
-Scope: the **write layer** only. The override layer (customizing a *type*) is its own future part-doc. For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**; the on-disk format is an open question (the form-marker syntax open was resolved at M24 — the batch path is declarative whole-doc, below).
+Scope: the **write layer** only. The override layer (customizing a *type*) is its own future part-doc. For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**; the on-disk format is **not** an open question — it is owned by [storage.md](storage.md), its parser boundary locked 2026-05-28 (*document instances* take the flat field-block front-matter parser, *definitions* the config YAML one — [DECISIONS.md](../DECISIONS.md) → Pass 5 #1), and the schema-definition format has been **frozen v1** since M34 ([corpus-migration.md](corpus-migration.md)). The form-marker syntax open was resolved at M24 — the batch path is declarative whole-doc, below.
 
 ## Write layer vs override layer
 

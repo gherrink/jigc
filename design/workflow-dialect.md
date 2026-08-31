@@ -2,7 +2,7 @@
 
 The second dialect over the skeleton: how a workflow is **defined** and **composed** into the instruction set the agent receives. This is the *compose* half of the context compiler — the read path's counterpart to the document dialect's write path.
 
-Builds on [structural-grammar.md](structural-grammar.md) (the skeleton: steps, addressing, `include`, override), [document-type-schema.md](document-type-schema.md) (data-values navigate the document graph), [write-commands.md](write-commands.md) (command-refs route to write ops; the task/staging model), [storage.md](storage.md) (isolated working areas, by-task-id merge, and the md + front-matter file pattern definitions reuse), and [overrides.md](overrides.md) (definitions resolve through the cascade). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**; the emitted-format micro-syntax is an open question.
+Builds on [structural-grammar.md](structural-grammar.md) (the skeleton: steps, addressing, `include`, override), [document-type-schema.md](document-type-schema.md) (data-values navigate the document graph), [write-commands.md](write-commands.md) (command-refs route to write ops; the task/staging model), [storage.md](storage.md) (isolated working areas, by-task-id merge, and the md + front-matter file pattern definitions reuse), and [overrides.md](overrides.md) (definitions resolve through the cascade). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**; the emitted-format micro-syntax is **settled** — decided 2026-05-28 ([DECISIONS.md](../DECISIONS.md) → *Emitted micro-syntax — four classes, `Run:` formalized*) and specified below under [Emitted format](#emitted-format).
 
 ## Shared grammar, divergent runtime
 
@@ -35,7 +35,7 @@ The resolution tree shows exactly **what the composer did to get from definition
 4. **Data-value path resolution** — for each `{{path}}` / `{{@path}}`, the parsed path (head + `.relation` hops + `#fragment`), the live-state root it started from, what it resolved to (**scalar** / **address** / **content** / **collection**), and — for `@` — the address it dereferenced.
 5. **Compose-time findings** — anything `workflow-refs` flagged: dangling include, dangling placeholder, `@` on a scalar (a conformance error), include cycle. With addresses.
 
-Illustrative shape (exact framing settles with the emitted-format micro-syntax, see [open questions](#open-questions)):
+Illustrative shape (the exact framing is the settled micro-syntax, see [Emitted format](#emitted-format)):
 
 ```text
 workflow:single-task                              (pack-default · dev/v0.3.0)

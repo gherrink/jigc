@@ -69,6 +69,8 @@ mod record_item_slot_kind;
 mod record_nesting_cap;
 #[path = "../record_set_splice_retired.rs"]
 mod record_set_splice_retired;
+#[path = "../record_stale_reasons.rs"]
+mod record_stale_reasons;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
 #[path = "../setup.rs"]

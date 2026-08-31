@@ -478,7 +478,7 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 ## Increment 3 — compose
 
-- **(cleanup) Stale emitted-format open question** — [module-layout.md](module-layout.md) → Renderers still calls the emitted-format micro-syntax "an open question," but it's settled (the four-class format in [workflow-dialect.md](../design/workflow-dialect.md#emitted-format); VISION says settled 2026-05-28). Confirm and remove the stale ref.
+- **(cleanup) Stale emitted-format open question** — *discharged 2026-08-31 (M49 Increment 11 / T10)*: [module-layout.md](module-layout.md) → Renderers called the emitted-format micro-syntax an open question long after it was settled (2026-05-28; the format lives in [workflow-dialect.md](../design/workflow-dialect.md#emitted-format)). That bullet now states the settled dependency, and the two sibling sites this entry never named — `workflow-dialect.md`'s own preamble and its illustrative-shape pointer — are repaired with it. See [DECISIONS.md](../DECISIONS.md) → 2026-08-31.
 
 ## Increment 4 — write + finalize
 
