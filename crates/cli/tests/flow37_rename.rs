@@ -41,6 +41,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use cli::rename::{RefusalKind, Repair};
+
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
 
@@ -449,6 +451,15 @@ fn rename_rolls_back_byte_identical_on_precommit_failure() {
 /// Collision (#3): a rename whose new title slugs to a **different** existing doc's slug
 /// blocks (exit != 0, the collision message), leaving the store untouched — an identity
 /// refactor never silently suffixes onto a live doc.
+///
+/// **PT-A (M49 Inc 11 / T4):** this was the arm that reported the class — it blocked, said
+/// the right sentence, and carried neither a finding code nor a route, while the same
+/// fault one argument away (`jigc doc rename … --task <id>`'s destination-occupancy guard)
+/// blocked `write.already-present` **and** routed. So the store-untouched half below is
+/// joined by the surface half: the declared identity, and a route naming both exits — the
+/// `--slug` this agent can pick, and the incumbent it may have meant all along. The sweep
+/// over all nine arms is `every_rename_refusal_carries_an_identity_and_an_exit`; this test
+/// stays the one that proves *this* arm changes nothing on disk.
 #[test]
 fn rename_onto_a_different_existing_slug_blocks() {
     let repo = TempDir::new("collision");
@@ -469,6 +480,16 @@ fn rename_onto_a_different_existing_slug_blocks() {
     assert!(
         stderr.contains("a different doc already exists"),
         "the block must carry the collision message; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!("· {} — ", RefusalKind::OccupiedDestination.code())),
+        "the block must name itself — `write.already-present`, the code its in-task sibling \
+         already raises for this fault; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("--slug <other-slug>") && stderr.contains("jigc doc show adr:keeper"),
+        "the route must name both exits: an id nothing answers to, and the incumbent the \
+         caller may have meant; stderr:\n{stderr}",
     );
 
     // The store is untouched: the target keeps its slug, the colliding doc is unchanged,
@@ -1563,5 +1584,341 @@ fn store_scope_content_drift_raises_no_exit_flipping_finding() {
             .all(|c| *c == "schema-conformance.schema-version-current"),
         "the ONLY exit-flipping finding may be the version-currency break (this fixture corpus is \
          v1-stamped under the v2 manifest); codes: {codes:?}",
+    );
+}
+
+// ── the refusal axis (M49 Increment 11 / T4 — PT-A) ─────────────────────────────────
+
+/// Enable the invocation log in `repo`'s project layer — the door's logged **identity**
+/// is half of what this axis asserts, and the knob is OFF by default.
+fn enable_invocation_log(repo: &Path) {
+    fs::create_dir_all(repo.join(".jigc/config")).expect("mk project config");
+    fs::write(
+        repo.join(".jigc/config/manifest.yaml"),
+        "scalar:\n  invocation-log: true\n",
+    )
+    .expect("write the project scalar layer");
+}
+
+/// One driven refusal: the fixture it lives in, the argv that provokes the arm, and what
+/// the real binary answered. `home` is `Some` only for the composed `[dev ▸ methodology]`
+/// scene (the `milestone-record` row), and selects the runner the route is re-run with.
+struct Scene {
+    label: String,
+    repo: TempDir,
+    home: Option<TempDir>,
+    argv: Vec<&'static str>,
+    out: std::process::Output,
+}
+
+impl Scene {
+    /// Run `jigc <args>` in this scene's own environment — the composed runner when the
+    /// scene needs the methodology pack, the plain one otherwise.
+    fn rerun(&self, args: &[&str]) -> std::process::Output {
+        match &self.home {
+            Some(home) => jigc_composed(self.repo.path(), home.path(), args),
+            None => jigc(self.repo.path(), args),
+        }
+    }
+}
+
+/// Drive one [`RefusalKind`] through the **real binary**, in a fixture built to reach that
+/// arm and no other. The match is **exhaustive**, so a tenth refusal cannot compile
+/// without a scene that provokes it; [`RefusalKind::InFlight`] yields **two** scenes,
+/// because the guard keys on two markers (a task working area and a milestone) and one
+/// green marker would leave the other unswept.
+fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
+    let plain = |tag: &str, argv: Vec<&'static str>, prepare: &dyn Fn(&Path)| {
+        let repo = TempDir::new(tag);
+        seed_store(repo.path());
+        enable_invocation_log(repo.path());
+        prepare(repo.path());
+        let out = jigc(repo.path(), &argv);
+        Scene {
+            // The tag rides the label so the two `InFlight` scenes are distinguishable in
+            // a failure message — one marker green and the other red must not read alike.
+            label: format!("{kind:?} ({tag})"),
+            repo,
+            home: None,
+            argv,
+            out,
+        }
+    };
+    let nothing = |_: &Path| {};
+    match kind {
+        RefusalKind::UnknownDoctype => vec![plain(
+            "axis-unknown-type",
+            vec!["rename", "nosuch:thing", "--to", "Cache"],
+            &nothing,
+        )],
+        RefusalKind::TransientDoctype => vec![plain(
+            "axis-transient",
+            vec!["rename", "commit:some-task", "--to", "Cache"],
+            &nothing,
+        )],
+        RefusalKind::NoSuchDoc => vec![plain(
+            "axis-no-such-doc",
+            vec!["rename", "adr:nope", "--to", "Cache"],
+            &nothing,
+        )],
+        RefusalKind::UnslugableTitle => vec![plain(
+            "axis-unslugable",
+            vec!["rename", "adr:single-node-cache", "--to", "!!!"],
+            &nothing,
+        )],
+        RefusalKind::DirtyTree => vec![plain(
+            "axis-dirty",
+            vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
+            &|repo: &Path| {
+                fs::write(
+                    repo.join("docs/decisions/keeper.md"),
+                    "# Keeper\n\nedited\n",
+                )
+                .expect("dirty a tracked doc");
+                git(repo, &["add", "--", "docs/decisions/keeper.md"]);
+            },
+        )],
+        RefusalKind::InFlight => vec![
+            plain(
+                "axis-inflight-task",
+                vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
+                &|repo: &Path| {
+                    fs::create_dir_all(repo.join(".jigc/tasks/some-task")).expect("mk task area");
+                },
+            ),
+            plain(
+                "axis-inflight-milestone",
+                vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
+                &|repo: &Path| {
+                    fs::create_dir_all(repo.join(".jigc/milestones/some-milestone"))
+                        .expect("mk milestone");
+                },
+            ),
+        ],
+        RefusalKind::OccupiedDestination => vec![plain(
+            "axis-occupied",
+            // "Keeper" slugs to `keeper`, the third adr's live identity.
+            vec!["rename", "adr:single-node-cache", "--to", "Keeper"],
+            &nothing,
+        )],
+        RefusalKind::FixedIdentity => {
+            let repo = TempDir::new("axis-fixed-identity");
+            seed_placement_store(repo.path());
+            enable_invocation_log(repo.path());
+            // "Notes" slugs to `notes` — not the singleton's fixed `changelog`.
+            let argv = vec!["rename", "changelog:changelog", "--to", "Notes"];
+            let out = jigc(repo.path(), &argv);
+            vec![Scene {
+                label: format!("{kind:?}"),
+                repo,
+                home: None,
+                argv,
+                out,
+            }]
+        }
+        RefusalKind::WorkUnitIdentity => {
+            let repo = TempDir::new("axis-work-unit");
+            let home = TempDir::new("axis-work-unit-home");
+            git(repo.path(), &["init", "-q"]);
+            git(repo.path(), &["config", "user.email", "test@example.com"]);
+            git(repo.path(), &["config", "user.name", "Test"]);
+            fs::write(repo.path().join("README.md"), "hello\n").expect("write file");
+            git(repo.path(), &["add", "."]);
+            git(repo.path(), &["commit", "-q", "-m", "initial"]);
+            write_compose_marker(repo.path());
+            let created = jigc_composed(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+            );
+            assert!(
+                created.status.success(),
+                "`jigc milestone create` must exit 0; stderr:\n{}",
+                String::from_utf8_lossy(&created.stderr),
+            );
+            // Between milestones — the unconditional record guard, not the in-flight one.
+            fs::remove_dir_all(repo.path().join(".jigc/milestones")).expect("drop the workbench");
+            enable_invocation_log(repo.path());
+            let argv = vec![
+                "rename",
+                "milestone-record:cache-rework",
+                "--to",
+                "Overhaul",
+            ];
+            let out = jigc_composed(repo.path(), home.path(), &argv);
+            vec![Scene {
+                label: format!("{kind:?}"),
+                repo,
+                home: Some(home),
+                argv,
+                out,
+            }]
+        }
+    }
+}
+
+/// The `route:` lines of a rendered surface (the `unknown_doctype_axis` reader).
+fn route_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim_start)
+        .filter(|line| line.starts_with("route:"))
+        .map(|line| line.trim_start_matches("route:").trim().to_owned())
+        .collect()
+}
+
+/// The first backticked command span of a route line — the argv a reader would paste.
+fn route_command(route: &str) -> String {
+    let (_, rest) = route
+        .split_once('`')
+        .unwrap_or_else(|| panic!("a route must name a command in backticks: {route}"));
+    let (command, _) = rest
+        .split_once('`')
+        .unwrap_or_else(|| panic!("a route's command span must close: {route}"));
+    command.to_string()
+}
+
+/// **The axis (PT-A).** Every refusal [`RefusalKind`] declares, driven through the real
+/// binary, must answer with an **identity** and an **exit**: exit **1** exactly (never a
+/// fence panic's 101, never a silent 0), the declared finding code on the printed surface,
+/// exactly one route — run **verbatim at exit 0** where the declaration says a command is
+/// the repair — and the same code in the invocation log's `finding_codes`, so a refused
+/// rename is distinguishable there from the other eight ways this door says no.
+///
+/// The occupancy arm is PT-A's own report and was the reddest: `` cannot rename to `X` —
+/// a different doc already exists at … `` shipped code-less and route-less while the same
+/// fault one argument away routed.
+///
+/// Route argvs are re-run by whitespace split, so every scene drives a **single-word**
+/// `--to` title; the quoting a prose title needs is `crate::task::shell_token`'s own
+/// contract and is fenced by its real-shell metachar axis, not re-proven here.
+#[test]
+fn every_rename_refusal_carries_an_identity_and_an_exit() {
+    for &kind in RefusalKind::ALL {
+        for scene in drive_refusal(kind) {
+            let name = format!("{} · jigc {}", scene.label, scene.argv.join(" "));
+            let stdout = String::from_utf8_lossy(&scene.out.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&scene.out.stderr).into_owned();
+
+            assert_eq!(
+                scene.out.status.code(),
+                Some(1),
+                "{name}: a refusal exits 1 — a clean operational refusal, never a fence \
+                 panic's 101 and never a silent 0;\nstdout:\n{stdout}\nstderr:\n{stderr}",
+            );
+            assert!(
+                stderr.contains(&format!("· {} — ", kind.code())),
+                "{name}: the surface must carry the declared `{}` identity;\nstderr:\n{stderr}",
+                kind.code(),
+            );
+
+            let routes = route_lines(&stderr);
+            assert_eq!(
+                routes.len(),
+                1,
+                "{name}: a refusal carries exactly one route;\nstderr:\n{stderr}",
+            );
+            match kind.repair() {
+                Repair::Command => {
+                    let command = route_command(&routes[0]);
+                    let argv: Vec<&str> = command.split_whitespace().collect();
+                    assert_eq!(
+                        argv.first().copied(),
+                        Some("jigc"),
+                        "{name}: a `Command` repair's route must be a jigc invocation: {command}",
+                    );
+                    let followed = scene.rerun(&argv[1..]);
+                    assert!(
+                        followed.status.success(),
+                        "{name}: the emitted route `{command}` must run verbatim at exit 0;\n{}",
+                        String::from_utf8_lossy(&followed.stderr),
+                    );
+                }
+                Repair::Judgment(why) => {
+                    assert!(
+                        !why.trim().is_empty(),
+                        "{name}: a `Judgment` repair states its reason at the site",
+                    );
+                    // A judgment route must *explain*, not merely command: strip every
+                    // backticked span and prose must remain. Without this the branch would
+                    // accept a bare command wearing a judgment label — which is exactly the
+                    // mislabelling the disposition exists to prevent, and the route this
+                    // door shipped before PT-A was no route at all.
+                    let prose: String = routes[0]
+                        .split('`')
+                        .step_by(2)
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    assert!(
+                        prose.split_whitespace().count() >= 5,
+                        "{name}: a judgment names the exits AND says why the choice is not \
+                         jigc's; got only {prose:?} outside the command spans;\nstderr:\n{stderr}",
+                    );
+                }
+            }
+
+            // The log identity: `finding_codes` names this refusal, so a failed rename is
+            // legible in the invocation log rather than one more exit-1-with-nothing.
+            let records = log_records(scene.repo.path());
+            let record = record_for(&records, &scene.argv);
+            let codes: Vec<String> = record["finding_codes"]
+                .as_array()
+                .expect("finding_codes is an array")
+                .iter()
+                .map(|code| {
+                    code.as_str()
+                        .expect("a finding code is a string")
+                        .to_owned()
+                })
+                .collect();
+            assert!(
+                codes.iter().any(|code| code == kind.code()),
+                "{name}: the logged record must carry the `{}` identity; record:\n{record:#}",
+                kind.code(),
+            );
+            assert_eq!(
+                record["exit_code"], 1,
+                "{name}: the logged record must carry exit 1; record:\n{record:#}",
+            );
+        }
+    }
+}
+
+/// The declaration is closed over the enum: every variant is in [`RefusalKind::ALL`], so
+/// the axis above cannot silently skip one. The match is exhaustive, so a tenth variant
+/// does not compile without an author coming here; the count is what catches a variant
+/// that compiles but never joined `ALL`.
+#[test]
+fn every_refusal_kind_is_declared() {
+    for kind in RefusalKind::ALL {
+        match kind {
+            RefusalKind::UnknownDoctype
+            | RefusalKind::TransientDoctype
+            | RefusalKind::NoSuchDoc
+            | RefusalKind::UnslugableTitle
+            | RefusalKind::DirtyTree
+            | RefusalKind::InFlight
+            | RefusalKind::FixedIdentity
+            | RefusalKind::WorkUnitIdentity
+            | RefusalKind::OccupiedDestination => {}
+        }
+    }
+    assert_eq!(
+        RefusalKind::ALL.len(),
+        9,
+        "a new `RefusalKind` joins `ALL` (and the axis suite gains the scene that drives it)",
+    );
+}
+
+/// The unknown-doctype row's code is not a second spelling of the shipped one: it is read
+/// off `engine::store::unknown_doctype`, the single constructor M49 Increment 11 / T1 made
+/// every door raise. Without this the declaration could drift from the site it describes,
+/// which is the only member the axis reaches through a shared engine constructor rather
+/// than this module's own refusal funnel.
+#[test]
+fn the_unknown_doctype_row_reads_the_shipped_code() {
+    assert_eq!(
+        RefusalKind::UnknownDoctype.code(),
+        engine::store::unknown_doctype("nosuch").code,
+        "the declared code must be the shipped constructor's",
     );
 }

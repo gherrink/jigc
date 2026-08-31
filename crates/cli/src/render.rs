@@ -3852,7 +3852,9 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
 /// Flatten a blocking [`Finding`] into an `anyhow::Error` carrying the **whole** finding
 /// surface — `severity · code — message`, the locus, and the route — so a verb whose only
 /// failure channel is the operational funnel ([`operational_error`]) still refuses with an
-/// identity and a recovery.
+/// identity and a recovery. Since M49 Increment 11 / T4 it carries the finding **itself**
+/// ([`BlockedFinding`]) and not only its rendering, so a dispatch handler can log the
+/// identity it prints ([`blocked_finding`]); the emitted bytes are unchanged.
 ///
 /// The shape is the findings surface's own ([`finding_line`]): one funnel must not
 /// describe a break in fewer facts than another (M49 Increment 8 / T4). Three verbs
@@ -3865,20 +3867,45 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
 /// `--format json` these doors carry it inside the `{"error": …}` envelope rather than as
 /// the structured finding projection — the posture the three earlier copies already ship.
 pub fn finding_error(finding: &Finding) -> anyhow::Error {
-    let severity = match finding.severity {
-        Severity::Blocking => "blocking",
-        Severity::Warning => "warning",
-        Severity::Advisory => "advisory",
-    };
-    let head = format!("{severity} · {} — {}", finding.code, finding.message);
-    let at = finding_locus(finding)
-        .map(|locus| format!("\n  at: {locus}"))
-        .unwrap_or_default();
-    match &finding.route {
-        Some(route) => anyhow::anyhow!("{head}{at}\n  route: {route}"),
-        None => anyhow::anyhow!("{head}{at}"),
+    anyhow::Error::new(BlockedFinding(finding.clone()))
+}
+
+/// The [`Finding`] a [`finding_error`] was built from, when `err` is one — the read half
+/// of the carrier, so a dispatch handler can name the refusal in the invocation log
+/// (`Outcome::with_findings`) instead of logging one more anonymous exit 1.
+pub fn blocked_finding(err: &anyhow::Error) -> Option<&Finding> {
+    err.downcast_ref::<BlockedFinding>()
+        .map(|blocked| &blocked.0)
+}
+
+/// A blocking [`Finding`] travelling as an `anyhow::Error` — the carrier
+/// [`finding_error`] builds and [`blocked_finding`] reads back.
+///
+/// It exists because a flattened finding lost something on the way out: the printed
+/// surface kept the code, the locus and the route, but the **invocation log** saw only
+/// `Outcome::failure()` — exit 1, `finding_codes: []`, `error_code: null` — so every
+/// refusal a verb raised this way was indistinguishable there from every other
+/// (M49 Increment 11 / T4). Carrying the finding rather than only its rendering costs one
+/// clone and lets the dispatch log the identity it already printed.
+///
+/// [`Display`](std::fmt::Display) is the findings surface's own shape — `severity · code
+/// — message`, the locus, the route ([`finding_line`]) — so `{err:#}` emits the bytes the
+/// four doors already shipped and nothing on the printed side moves.
+#[derive(Debug)]
+pub struct BlockedFinding(pub Finding);
+
+impl std::fmt::Display for BlockedFinding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The **house** agent-text finding line, minus the trailing newline the error
+        // funnels' own `eprintln!` supplies. Delegating rather than re-deriving is what
+        // makes this a carrier and not a second renderer: the flattened refusal cannot
+        // drift from every other rendered finding, and `located_finding_text`'s sweep
+        // keeps one row for one site instead of two rows for one shape.
+        f.write_str(finding_line(&self.0, false).trim_end_matches('\n'))
     }
 }
+
+impl std::error::Error for BlockedFinding {}
 
 /// Render an **operational error** (an orchestration/`anyhow` failure — not a
 /// validation outcome) to the surface `format` selects: `json` emits the single-key

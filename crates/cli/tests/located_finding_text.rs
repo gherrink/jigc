@@ -328,16 +328,14 @@ const MESSAGE_SITES: &[(&str, &str, Verdict, &str)] = &[
     ),
     (
         "render.rs",
-        "finding_error",
-        Verdict::Carries,
-        "the shared finding→`anyhow` flattening the four operational-funnel doors \
-         (`migrate` / `relocate` / `rename` / `task bind`) refuse through",
-    ),
-    (
-        "render.rs",
         "finding_line",
         Verdict::Carries,
-        "the house agent-text finding line every findings surface renders through",
+        "the house agent-text finding line every findings surface renders through — and, \
+         since M49 Increment 11 / T4, the flattened refusal too: `BlockedFinding`'s \
+         `Display` delegates here rather than re-deriving the shape, so the shared \
+         finding→`anyhow` funnel the four operational-funnel doors (`migrate` / \
+         `relocate` / `rename` / `task bind`) refuse through is this one site, not a \
+         second row",
     ),
     (
         "start.rs",

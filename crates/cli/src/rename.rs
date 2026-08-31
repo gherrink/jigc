@@ -29,12 +29,17 @@
 //! pins I2/I4); a **placement-singleton** reslug rejects with the real rule (identity fixed to
 //! the type; retitle-only) and a **milestone-record** reslug refuses always — between milestones
 //! too (M40 A4). The advisory prose/unmanaged-mention report is T5.
+//!
+//! Every one of those refusals is declared and disposed in one place — [`RefusalKind`], which
+//! carries the finding code each raises and whether its route is a command or a judgment
+//! (M49 Increment 11 / T4, PT-A).
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use engine::file_state::{FileStateRecord, hash_bytes};
+use engine::finding::{Finding, Location, Route, Severity};
 use engine::index;
 use engine::schema::Schema;
 use engine::slug::slugify;
@@ -42,6 +47,195 @@ use engine::slug::slugify;
 use crate::ingest::{load_schemas, require_project_layer};
 use crate::pack::make_pack;
 use crate::task::{git_capture, git_commit, git_head, git_run, git_status_entries, path_at_head};
+
+/// **The refusal axis of `jigc rename`** — every state this door declines *before it has
+/// mutated anything*, declared once so the sites cannot drift from the sweep that drives
+/// them (`flow37_rename::every_rename_refusal_carries_an_identity_and_an_exit`).
+///
+/// **The defect (M49 Increment 11 / T4 — PT-A).** The occupancy arm answered
+/// `` cannot rename to `adr:keeper` — a different doc already exists at … `` with **no
+/// finding code and no route**, while *the same fault one argument away* — the
+/// destination-occupancy guard of `jigc doc rename … --task <id>` — blocks
+/// `write.already-present` and routes. Eight of this door's nine pre-transaction refusals
+/// shared that shape, and nothing fenced them: an `anyhow::bail!` is outside M43's route
+/// floor **by construction**, since [`engine::finding::is_route_exempt`] takes a *finding*
+/// code and a bail has none.
+///
+/// **Why the `Finding` promotion, and not the anyhow-embedded span.** Two precedents
+/// ship: `tests/anyhow_route_spans.rs`' checked [`engine::finding::Route::mechanical`]
+/// span written *inside* an `anyhow` message (M43 Increment 1 / T7), and M49 Increment
+/// 10 / T5's `finding_to_err` promotion at `jigc milestone provision`. The embedded span
+/// buys a **route** and nothing else — and half of what a refusal owes here is an
+/// **identity**: the code that reaches `finding_codes` in the invocation log, without
+/// which a refused rename is indistinguishable there from the eight other ways this door
+/// says no (exit 1, no findings, `error_code: null`). Only the promotion carries both, so
+/// the promotion is what this axis uses.
+///
+/// **What is deliberately not a member.** The malformed-address reject ([`parse_addr`])
+/// is a row of the *address-parse* fault axis, adjudicated over
+/// [`engine::address::ParseError`]'s own six variants at M49 Increment 5 / T3 — which gave
+/// every **head** fault the `<type>:<slug>` sentence and the `jigc describe` route and
+/// left the family code-less. This door's local parser gives exactly that answer, so
+/// minting a code for it **here alone** would fork one class across two doors. The
+/// in-transaction failures are the other non-members, for the opposite reason: they are
+/// the *transaction's*, not the gate's — each rolls the store back ([`rollback_rename`]),
+/// and a commit-phase rejection already carries its own log identity
+/// ([`crate::invocation_log::ERROR_RENAME_REJECTED`]) through the survivable frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefusalKind {
+    /// The address names a doctype no resolved cascade carries.
+    UnknownDoctype,
+    /// The address names a **transient** doctype — neither `location:` nor `placement:`,
+    /// so there is no committed file to move.
+    TransientDoctype,
+    /// The doctype resolves, but no managed doc answers to that identity.
+    NoSuchDoc,
+    /// `--to` carries a title with no slug-able content, and no `--slug` override.
+    UnslugableTitle,
+    /// The working tree carries a tracked change, staged or unstaged.
+    DirtyTree,
+    /// A task working area or a milestone is in flight.
+    InFlight,
+    /// A **singleton** doctype's reslug: its slug IS the type id.
+    FixedIdentity,
+    /// A `milestone-record`'s reslug: its slug IS the milestone work-unit id.
+    WorkUnitIdentity,
+    /// The destination identity is already answered by a different committed doc.
+    OccupiedDestination,
+}
+
+/// How a refusal's route repairs the state — the disposition every member owes, and the
+/// axis suite's branch: a [`Repair::Command`] row's route names a `jigc` command the
+/// sweep **runs verbatim**, a [`Repair::Judgment`] row states at the site why no single
+/// command is the answer. There is no third disposition: the route floor admits no
+/// route-less blocking finding outside `engine::finding::is_route_exempt`'s conformance
+/// parse diagnostics, and none of these is one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Repair {
+    /// The route names a `jigc` command that moves the state on. The axis runs it.
+    Command,
+    /// The repair is a judgment, and the field says whose and why. A route still ships —
+    /// it names the exits — but no argv is *the* answer, so the sweep does not run one.
+    Judgment(&'static str),
+}
+
+impl RefusalKind {
+    /// Every member — the axis the sweep iterates. A new variant joins here as well as
+    /// [`RefusalKind::code`] and [`RefusalKind::repair`] (both exhaustive matches, so the
+    /// compiler asks for two of the three and `every_refusal_kind_is_declared` for the
+    /// third).
+    pub const ALL: &'static [RefusalKind] = &[
+        RefusalKind::UnknownDoctype,
+        RefusalKind::TransientDoctype,
+        RefusalKind::NoSuchDoc,
+        RefusalKind::UnslugableTitle,
+        RefusalKind::DirtyTree,
+        RefusalKind::InFlight,
+        RefusalKind::FixedIdentity,
+        RefusalKind::WorkUnitIdentity,
+        RefusalKind::OccupiedDestination,
+    ];
+
+    /// The finding code this refusal carries — its identity on the printed surface **and**
+    /// in the invocation log's `finding_codes`.
+    ///
+    /// Seven of the nine reuse a **shipped** code rather than minting a door-private one:
+    /// the fault is the same fault the read and in-task write paths already name, and one
+    /// fault owes one code (the M49 Increment 11 / T1 rule, applied to refusals). In
+    /// particular [`RefusalKind::FixedIdentity`] and [`RefusalKind::WorkUnitIdentity`]
+    /// share `write.identity-change` with `jigc doc rename`'s own two identity
+    /// refusals — the two verbs differ in *what identity they may move*, never in what
+    /// kind of fault a fixed one is.
+    ///
+    /// The two mints are the states no other door can be in: only this verb refuses over
+    /// the **working tree** it is about to commit in place, and only this verb refuses
+    /// over an in-flight **fan-out** whose join key it would change.
+    pub fn code(self) -> &'static str {
+        match self {
+            RefusalKind::UnknownDoctype => "store.unknown-type",
+            RefusalKind::TransientDoctype => "store.transient-type",
+            RefusalKind::NoSuchDoc => "store.not-found",
+            RefusalKind::UnslugableTitle => "write.unslugable-title",
+            RefusalKind::DirtyTree => "rename.dirty-tree",
+            RefusalKind::InFlight => "rename.in-flight",
+            RefusalKind::FixedIdentity | RefusalKind::WorkUnitIdentity => "write.identity-change",
+            RefusalKind::OccupiedDestination => "write.already-present",
+        }
+    }
+
+    /// This refusal's disposition — see [`Repair`]. Each `Judgment` carries its reason
+    /// here, at the declaration, so a reader asking *"why does this one not just tell me
+    /// the command?"* is answered where the verdict is taken.
+    pub fn repair(self) -> Repair {
+        match self {
+            // The doctype surface answers all three: it lists what exists, what persists,
+            // and under which identity — which is exactly what each of these got wrong.
+            RefusalKind::UnknownDoctype
+            | RefusalKind::TransientDoctype
+            | RefusalKind::NoSuchDoc => Repair::Command,
+            // The retitle the fixed identity *does* support, argv-complete: the doc's own
+            // slug is derivable (it is the type id / the work-unit id), so the command is
+            // concrete rather than a placeholder the reader has to fill.
+            RefusalKind::FixedIdentity | RefusalKind::WorkUnitIdentity => Repair::Command,
+            RefusalKind::UnslugableTitle => Repair::Judgment(
+                "the id is the author's to choose: a title with no word character cannot yield one, and a mechanical argv may carry only a declared placeholder (`engine::finding::ROUTE_PLACEHOLDERS`), which a slug is not",
+            ),
+            RefusalKind::DirtyTree => Repair::Judgment(
+                "committing or stashing is git's move, not jigc's, and which of the two the tracked change deserves is the operator's call",
+            ),
+            RefusalKind::InFlight => Repair::Judgment(
+                "finalize keeps the in-flight work and discard drops it — the route names both exits because choosing between them is not jigc's to do",
+            ),
+            RefusalKind::OccupiedDestination => Repair::Judgment(
+                "a free slug is the agent's to pick, the same reason `jigc doc rename`'s own destination-occupancy guard routes `Human`",
+            ),
+        }
+    }
+}
+
+/// **Refuse with an identity.** Flatten `kind`'s [`Finding`] — its declared
+/// [`code`](RefusalKind::code), the located subject, the message and the route — into the
+/// `anyhow` channel this verb returns on, through the shared
+/// [`crate::render::finding_error`] carrier. The carrier is what makes the identity
+/// survive the trip: the dispatch reads the finding back off the error and logs its code,
+/// so the code the surface prints is the code `finding_codes` records.
+///
+/// `at` is the subject the refusal is *about* — the `<type>:<slug>` identity in every arm
+/// that has resolved one, the bare doctype id in the two that refuse before an instance
+/// exists ([`RefusalKind::UnknownDoctype`] / [`RefusalKind::TransientDoctype`], the
+/// doctype-scoped locus rule `engine::store` follows).
+fn refuse(kind: RefusalKind, at: &str, message: String, route: Route) -> anyhow::Error {
+    crate::render::finding_error(&Finding::graded(
+        Severity::Blocking,
+        kind.code(),
+        message,
+        Some(Location::addressed(at, 1, 1)),
+        Some(route),
+    ))
+}
+
+/// The **retitle** route the two fixed-identity refusals carry: this exact doc, the title
+/// the caller asked for, and an explicit `--slug` pinning the identity that may not move.
+///
+/// It is [`Repair::Command`] and not a judgment because both halves are *derivable* — the
+/// slug is the type id (a placement singleton) or the milestone work-unit id, and the
+/// title is the caller's own `--to` — so the command is concrete rather than a shape the
+/// reader has to fill in. Run verbatim it lands the retitle-only arm this door does
+/// support, which is the whole of what the refusal is withholding.
+fn retitle_route(old_id: &str, title: &str, fixed_slug: &str) -> Route {
+    Route::mechanical(
+        [
+            "jigc",
+            "rename",
+            old_id,
+            "--to",
+            &crate::task::shell_token(title),
+            "--slug",
+            fixed_slug,
+        ],
+        " keeps the identity that cannot move and rewrites only the title",
+    )
+}
 
 /// The outcome of a rename: the old/new `<type>:<slug>` identities, the repo-relative
 /// paths the move spanned, the new title, and the repointed referrers (each
@@ -105,11 +299,17 @@ pub(crate) fn run(
     let (ty, old_slug) = parse_addr(old_addr)?;
     let old_rel = doc_path(&schema_map, &ty, &old_slug)?;
     let old_abs = repo_root.join(&old_rel);
+    let old_id = format!("{ty}:{old_slug}");
     if !old_abs.is_file() {
-        bail!(
-            "no managed doc `{ty}:{old_slug}` to rename (expected at {old_rel})\n  route: check the id (or run {} for the doctype surface)",
-            engine::finding::Route::mechanical(["jigc", "describe"], ""),
-        );
+        return Err(refuse(
+            RefusalKind::NoSuchDoc,
+            &old_id,
+            format!("no managed doc `{old_id}` to rename (expected at {old_rel})"),
+            Route::mechanical(
+                ["jigc", "describe"],
+                " lists the doctype surface — check the id you typed against it",
+            ),
+        ));
     }
     let old_source = std::fs::read_to_string(&old_abs)
         .with_context(|| format!("could not read the doc to rename at {old_rel}"))?;
@@ -119,11 +319,21 @@ pub(crate) fn run(
         None => slugify(title),
     };
     if new_slug.is_empty() {
-        bail!("`--to {title:?}` slugs to nothing — pass an explicit `--slug`");
+        return Err(refuse(
+            RefusalKind::UnslugableTitle,
+            &old_id,
+            format!(
+                "`--to {title:?}` slugs to nothing — a rename derives the new id from the \
+                 title, and this one carries no slug-able content"
+            ),
+            Route::human(format!(
+                "re-run with a title carrying at least one word character, or name the id \
+                 yourself: `jigc rename {old_id} --to <a title> --slug <new-slug>`"
+            )),
+        ));
     }
     let new_rel = doc_path(&schema_map, &ty, &new_slug)?;
     let new_abs = repo_root.join(&new_rel);
-    let old_id = format!("{ty}:{old_slug}");
     let new_id = format!("{ty}:{new_slug}");
 
     // The up-front validation gate (runs before any mutation):
@@ -142,20 +352,39 @@ pub(crate) fn run(
         .map(|(_, path)| path)
         .collect();
     if !dirty.is_empty() {
-        bail!(
-            "cannot rename with a dirty working tree — commit or stash your changes first \
-             (a rename is a deliberate standalone op that commits in place): {}",
-            dirty.join(", ")
-        );
+        return Err(refuse(
+            RefusalKind::DirtyTree,
+            &old_id,
+            format!(
+                "cannot rename with a dirty working tree — commit or stash your changes \
+                 first (a rename is a deliberate standalone op that commits in place): {}",
+                dirty.join(", ")
+            ),
+            Route::human(
+                "commit those tracked changes, or `git stash` them, then re-run the rename \
+                 — a rename commits in place with no pathspec, so anything already in the \
+                 index would ride its commit",
+            ),
+        ));
     }
     // (b) **mid-fan-out guard** — a rename changes the by-task-id join's same-doc-clash key
     //     and a task working area may hold an old-slug copy that would promote stale; block
     //     whenever any task working area *or* milestone is in-flight (the coarse guard, I4).
     if let Some(marker) = mid_fan_out_marker(&jigc_root) {
-        bail!(
-            "cannot rename while {marker} is in flight — finalize or discard it first \
-             (a rename changes the by-task-id join key)"
-        );
+        let (unit, id) = (marker.unit, marker.id.as_str());
+        return Err(refuse(
+            RefusalKind::InFlight,
+            &old_id,
+            format!(
+                "cannot rename while {unit} `{id}` is in flight — finalize or discard it \
+                 first (a rename changes the by-task-id join key)"
+            ),
+            Route::human(format!(
+                "settle it first — `jigc {unit} finalize {id}` if that work is done, \
+                 `jigc {unit} discard {id}` if it is not; a rename is task-less and \
+                 self-committing, so it runs once neither is open"
+            )),
+        ));
     }
     // (c) **no-op reslug** — when the new slug equals the doc's own current slug the identity
     //     is unchanged, so the rename degrades to a retitle-only (rewrite H1 + commit, no
@@ -169,11 +398,16 @@ pub(crate) fn run(
     //     the placement literal ignoring the slug, so `new_abs == old_abs`: it is the SAME
     //     file, not a collision). Retitle-only (the degenerate arm (c)) stays supported.
     if !is_retitle && schema_map[ty.as_str()].placement.is_some() {
-        bail!(
-            "cannot reslug `{old_id}` — a placement singleton's identity is fixed to its type \
-             (the slug IS the type id `{ty}` and the doc lives at the literal {old_rel}); only \
-             a retitle is supported: pass a `--to` title that keeps the slug `{old_slug}`"
-        );
+        return Err(refuse(
+            RefusalKind::FixedIdentity,
+            &old_id,
+            format!(
+                "cannot reslug `{old_id}` — a placement singleton's identity is fixed to \
+                 its type (the slug IS the type id `{ty}` and the doc lives at the literal \
+                 {old_rel}); only a retitle is supported"
+            ),
+            retitle_route(&old_id, title, &old_slug),
+        ));
     }
     // (e) **milestone-record reslug** — refused always, between milestones too (M40 A4.4;
     //     write-commands.md → Milestone-record reslug): the record's slug IS the milestone
@@ -182,17 +416,33 @@ pub(crate) fn run(
     //     committed) rename target's doctype, fresh-clone survivable — no workbench read; the
     //     coarse mid-fan-out guard (b) covers only the in-flight window.
     if !is_retitle && ty == crate::milestone::MILESTONE_RECORD_TYPE {
-        bail!(
-            "cannot reslug `{old_id}` — a milestone-record's slug IS its milestone \
-             work-unit id (it keys `.jigc/milestones/{old_slug}` and every milestone op), \
-             so a reslug would sever the committed record from its work unit; only a \
-             retitle is supported: pass a `--to` title that keeps the slug `{old_slug}`"
-        );
+        return Err(refuse(
+            RefusalKind::WorkUnitIdentity,
+            &old_id,
+            format!(
+                "cannot reslug `{old_id}` — a milestone-record's slug IS its milestone \
+                 work-unit id (it keys `.jigc/milestones/{old_slug}` and every milestone \
+                 op), so a reslug would sever the committed record from its work unit; \
+                 only a retitle is supported"
+            ),
+            retitle_route(&old_id, title, &old_slug),
+        ));
     }
     // (f) **collision** — a non-degenerate new slug must be free; a collision with a
     //     *different* committed doc blocks (an identity refactor, never the join's suffix).
     if !is_retitle && new_abs.is_file() {
-        bail!("cannot rename to `{new_id}` — a different doc already exists at {new_rel}");
+        return Err(refuse(
+            RefusalKind::OccupiedDestination,
+            &new_id,
+            format!("cannot rename to `{new_id}` — a different doc already exists at {new_rel}"),
+            Route::human(format!(
+                "give this doc an id nothing else answers to — re-run `jigc rename \
+                 {old_id} --to {} --slug <other-slug>`; or, if `{new_id}` is the doc you \
+                 meant to work on, read it with `jigc doc show {new_id}` and rename that \
+                 one instead",
+                crate::task::shell_token(title),
+            )),
+        ));
     }
 
     // Compute every referrer's old→new rewrite (grouped per source doc, so a doc that
@@ -470,17 +720,35 @@ fn rollback_rename(
     }
 }
 
+/// An in-flight fan-out marker: the **work-unit kind** (`task` / `milestone`) and its id.
+///
+/// `unit` is spelled as the `jigc` verb family that settles that kind, because the
+/// refusal's route names both of its exits (`jigc <unit> finalize <id>` /
+/// `jigc <unit> discard <id>`) — so the two spellings cannot disagree.
+struct FanOutMarker {
+    /// `"task"` or `"milestone"` — the verb family, and the noun the message uses.
+    unit: &'static str,
+    /// The work unit's id.
+    id: String,
+}
+
 /// The first in-flight fan-out marker, if any — a task working area
-/// (`<jigc>/tasks/<id>/`) or a milestone (`<jigc>/milestones/<id>/`), each labelled for the
-/// block message. A rename mid-fan-out would change the by-task-id join's same-doc-clash key
-/// and a working area may hold an old-slug copy that would promote stale, so the verb refuses
-/// the identity op while either is live (the coarse guard, [DECISIONS.md] 2026-06-28 pin I4).
-/// Both enumerations are sorted (the first id is deterministic), so the message is stable.
-fn mid_fan_out_marker(jigc_root: &Path) -> Option<String> {
+/// (`<jigc>/tasks/<id>/`) or a milestone (`<jigc>/milestones/<id>/`). A rename mid-fan-out
+/// would change the by-task-id join's same-doc-clash key and a working area may hold an
+/// old-slug copy that would promote stale, so the verb refuses the identity op while either
+/// is live (the coarse guard, [DECISIONS.md] 2026-06-28 pin I4). Both enumerations are
+/// sorted (the first id is deterministic), so the message and its route are stable.
+fn mid_fan_out_marker(jigc_root: &Path) -> Option<FanOutMarker> {
     if let Some(id) = engine::state::list_active_task_ids(jigc_root).first() {
-        return Some(format!("task `{id}`"));
+        return Some(FanOutMarker {
+            unit: "task",
+            id: id.clone(),
+        });
     }
-    first_dir_name(&jigc_root.join("milestones")).map(|id| format!("milestone `{id}`"))
+    first_dir_name(&jigc_root.join("milestones")).map(|id| FanOutMarker {
+        unit: "milestone",
+        id,
+    })
 }
 
 /// The lexicographically-first sub-directory name under `dir`, or `None` when `dir` is
@@ -611,7 +879,18 @@ fn doc_path(schema_map: &BTreeMap<String, Schema>, ty: &str, slug: &str) -> Resu
         return Ok(placement.file.clone());
     }
     let location = schema.location.as_deref().ok_or_else(|| {
-        anyhow!("`{ty}` is a transient doctype — it has no persisted file to rename")
+        refuse(
+            RefusalKind::TransientDoctype,
+            ty,
+            format!(
+                "`{ty}` is a transient doctype — it never lands as a repo file, so it has \
+                 no persisted path to rename"
+            ),
+            Route::mechanical(
+                ["jigc", "describe"],
+                " lists the doctypes that do persist, and the identity each one carries",
+            ),
+        )
     })?;
     Ok(format!("{}/{slug}.md", location.trim_end_matches('/')))
 }

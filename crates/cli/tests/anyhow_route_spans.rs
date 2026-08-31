@@ -640,6 +640,17 @@ fn frozen_doctype_relocate_routes_to_migrate_corpus() {
 
 /// Both rename rejects — the malformed address and the missing doc — keep their
 /// `jigc describe` route, the spans riding the checked constructor.
+///
+/// **M49 Increment 11 / T4 (PT-A) split the two.** The malformed address stays a
+/// code-less `anyhow` by decision: it is a row of the *address-parse* fault axis
+/// (`address_parse_error_axis.rs`, M49 Increment 5 / T3), which gave every **head** fault
+/// this `<type>:<slug>` sentence and this route across every door, so a code minted for
+/// `jigc rename` alone would fork one class. The missing doc is a row of the *refusal*
+/// axis (`flow37_rename::every_rename_refusal_carries_an_identity_and_an_exit`) and was
+/// promoted to a `Finding`: it now leads with `store.not-found`, the code the read path
+/// already raises for the same fault, and carries the locus — which is what puts the
+/// identity in the invocation log, not only on the surface. The route is unchanged in
+/// substance and still rides the checked constructor, which is why this arm keeps it.
 #[test]
 fn rename_rejects_route_to_describe() {
     let repo = TempDir::new("rename");
@@ -660,8 +671,9 @@ fn rename_rejects_route_to_describe() {
     );
     assert_error_bytes(
         &missing,
-        "no managed doc `adr:nope` to rename (expected at docs/decisions/nope.md)\n  \
-         route: check the id (or run `jigc describe` for the doctype surface)\n",
+        "blocking · store.not-found — no managed doc `adr:nope` to rename (expected at \
+         docs/decisions/nope.md)\n  at: adr:nope\n  route: `jigc describe` lists the \
+         doctype surface — check the id you typed against it\n",
     );
 }
 
