@@ -2,7 +2,7 @@
 
 How managed content lives on disk: the **document file format** and the **repository layout** around it. One format serves committed documents, the staging working copy, and the future fillable form.
 
-Builds on [structural-grammar.md](structural-grammar.md) (addressing, units, minting), [document-type-schema.md](document-type-schema.md) (slot/field/relation), and [write-commands.md](write-commands.md) (staging, `finalize`, reconciliation). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**.
+Builds on [structural-grammar.md](structural-grammar.md) (addressing, units, minting), [document-type-schema.md](document-type-schema.md) (slot/field/relation), and [write-commands.md](write-commands.md) (staging, `finalize`, reconciliation). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative** ([what that disclaims](../CLAUDE.md#how-we-work-together)).
 
 ## Source of truth
 

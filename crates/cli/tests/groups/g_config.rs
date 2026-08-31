@@ -44,6 +44,8 @@ mod flow41_acceptance;
 mod flow44_acceptance;
 #[path = "../gate_coverage_fence.rs"]
 mod gate_coverage_fence;
+#[path = "../illustrative_disclaimer_scope.rs"]
+mod illustrative_disclaimer_scope;
 #[path = "../ingest.rs"]
 mod ingest;
 #[path = "../ingest_finding_keys.rs"]

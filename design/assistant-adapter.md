@@ -2,7 +2,7 @@
 
 The thin, per-assistant shim between the neutral CLI and a specific coding assistant (Claude Code, Cursor, Codex). It is the *entire* integration surface — kept tiny and **CLI-generated** so it can never become the next bloated rules-pile.
 
-Builds on [VISION.md](../VISION.md) (assistant-neutral core + thin adapter; the sub-agent seam), [bootstrap.md](bootstrap.md) (the sentence it injects), [workflow-dialect.md](workflow-dialect.md) (the fan-out dispatch it binds), and [overrides.md](overrides.md) (config-family YAML). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**.
+Builds on [VISION.md](../VISION.md) (assistant-neutral core + thin adapter; the sub-agent seam), [bootstrap.md](bootstrap.md) (the sentence it injects), [workflow-dialect.md](workflow-dialect.md) (the fan-out dispatch it binds), and [overrides.md](overrides.md) (config-family YAML). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative** ([what that disclaims](../CLAUDE.md#how-we-work-together)).
 
 ## Neutral core, per-assistant profile
 

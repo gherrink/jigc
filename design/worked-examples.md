@@ -1,6 +1,6 @@
 # Worked examples
 
-End-to-end walkthroughs of the milestone-critical flows, with cross-refs to the canonical spec for every surface they touch. This doc is **last in the reading order**; each example references prior part-docs without re-stating their content. Notation is **illustrative** — the docs cited are the source of truth for shape, error format, and edge cases.
+End-to-end walkthroughs of the milestone-critical flows, with cross-refs to the canonical spec for every surface they touch. This doc is **last in the reading order**; each example references prior part-docs without re-stating their content. Notation is **illustrative** ([what that disclaims](../CLAUDE.md#how-we-work-together)) — the docs cited are the source of truth for shape, error format, and edge cases.
 
 The flows:
 

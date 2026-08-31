@@ -2,7 +2,7 @@
 
 How `jigc` wires into a real project from zero: the two **agent-followed setup workflows** that sit *on top of* the already-built `jigc setup` install command. This is M9 ([roadmap.md](../implementation/roadmap.md) → M9), the last spine milestone.
 
-Builds on [bootstrap.md](bootstrap.md) (the orientation front door + the "this project isn't set up" state it routes from), [assistant-adapter.md](assistant-adapter.md) (the `jigc setup` *install* this composes over), [reconciliation.md](reconciliation.md) (the `file-state` substrate the ingestion classifier reuses — and the inverse problem it does **not** solve), [workflow-dialect.md](workflow-dialect.md) (the workflow front-matter + compose contract both flows ride), and [write-commands.md](write-commands.md) (the create-gate the new-project flow authors through). For the *why*, see [DECISIONS.md](../DECISIONS.md) (2026-06-06). Notation is **illustrative**.
+Builds on [bootstrap.md](bootstrap.md) (the orientation front door + the "this project isn't set up" state it routes from), [assistant-adapter.md](assistant-adapter.md) (the `jigc setup` *install* this composes over), [reconciliation.md](reconciliation.md) (the `file-state` substrate the ingestion classifier reuses — and the inverse problem it does **not** solve), [workflow-dialect.md](workflow-dialect.md) (the workflow front-matter + compose contract both flows ride), and [write-commands.md](write-commands.md) (the create-gate the new-project flow authors through). For the *why*, see [DECISIONS.md](../DECISIONS.md) (2026-06-06). Notation is **illustrative** ([what that disclaims](../CLAUDE.md#how-we-work-together)).
 
 ## The boundary that frames everything: command vs workflow
 

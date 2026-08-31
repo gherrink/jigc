@@ -2,7 +2,7 @@
 
 The typed schema behind `{{cli.<id>}}` command-refs. A workflow names a command-ref; the cascade resolves it to an entry in the catalog; the renderer emits a literal shell-safe command line into the composed workflow. This is what makes "every other command the agent ever needs is learned **just-in-time**" ([bootstrap.md](bootstrap.md)) concrete: the agent never memorizes a CLI vocabulary, never improvises invocations — the workflow gives the exact command at the exact moment.
 
-Builds on [workflow-dialect.md](workflow-dialect.md) (command-refs are one of three placeholder kinds; the data-value grammar), [overrides.md](overrides.md) (catalog entries resolve through the cascade like any pack content), [validation.md](validation.md) (`workflow-refs.command-ref-resolves` validates entries at compose-time), [write-commands.md](write-commands.md) (the verbs the catalog typically targets), and [bootstrap.md](bootstrap.md) (JIT learning of commands). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**.
+Builds on [workflow-dialect.md](workflow-dialect.md) (command-refs are one of three placeholder kinds; the data-value grammar), [overrides.md](overrides.md) (catalog entries resolve through the cascade like any pack content), [validation.md](validation.md) (`workflow-refs.command-ref-resolves` validates entries at compose-time), [write-commands.md](write-commands.md) (the verbs the catalog typically targets), and [bootstrap.md](bootstrap.md) (JIT learning of commands). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative** ([what that disclaims](../CLAUDE.md#how-we-work-together)).
 
 ## What a command-ref is
 

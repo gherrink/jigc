@@ -2,7 +2,7 @@
 
 The **document dialect** of the [structural grammar](structural-grammar.md). The skeleton — units, blocks, leaves, addressing, minting, composition, override, and the validation framework — is dialect-neutral and specified there; **read it first.** This document defines what is specific to documents: the leaf kinds (`slot`, `field`), the determinism boundary as it falls inside a document, the `relation` construct for cross-references, and the document-specific validation probes.
 
-This specifies the **schema** — the vocabulary *and* its on-disk form. The actual ADR / SPEC / PRD / commit definitions are development-pack content authored *in* this vocabulary and shipped with the pack; their file format is [On-disk definition format](#on-disk-definition-format) below. Notation is **illustrative**; for the *why*, see [DECISIONS.md](../DECISIONS.md); for the framing, [VISION.md](../VISION.md) → Document model.
+This specifies the **schema** — the vocabulary *and* its on-disk form. The actual ADR / SPEC / PRD / commit definitions are development-pack content authored *in* this vocabulary and shipped with the pack; their file format is [On-disk definition format](#on-disk-definition-format) below. Notation is **illustrative** ([what that disclaims](../CLAUDE.md#how-we-work-together)); for the *why*, see [DECISIONS.md](../DECISIONS.md); for the framing, [VISION.md](../VISION.md) → Document model.
 
 ## The trichotomy: section / slot / field
 
