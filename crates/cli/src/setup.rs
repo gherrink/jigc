@@ -2174,6 +2174,14 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Fin
 /// **Sorted**, so neither surface varies with readdir order. An absent root is the empty set,
 /// so the no-fan-out teardown (and the idempotent second run over an already-removed
 /// `.jigc/`) short-circuits before any `git` call.
+///
+/// **Every child, not only the directories** (M49). The subject was `path.is_dir()`, which is
+/// a claim about *shape* where the door's question is about *bytes*: `remove_dir_all(.jigc/)`
+/// takes a plain file under `.jigc/worktrees/` exactly as hard as a worktree, and the filter
+/// made that file invisible to both surfaces at once — the guard never probed it, so
+/// `jigc uninstall` destroyed it at **exit 0**, and the narration never named it either. The
+/// path's shape is [`crate::milestone::probe_leftover`]'s question to answer (fail-closed: a
+/// path it cannot read refuses), never a reason to drop it from the set.
 fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
     let worktrees_root = repo_root.join(".jigc").join("worktrees");
     if !worktrees_root.is_dir() {
@@ -2181,10 +2189,7 @@ fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
     }
     let mut paths: Vec<PathBuf> = Vec::new();
     for entry in std::fs::read_dir(&worktrees_root)? {
-        let path = entry?.path();
-        if path.is_dir() {
-            paths.push(path);
-        }
+        paths.push(entry?.path());
     }
     paths.sort();
     Ok(paths)

@@ -6301,6 +6301,30 @@ fn stamp_target(finding: &mut Finding, subject: &str) {
         Some(_) => {}
         None => finding.location = Some(Location::addressed(subject, 1, 1)),
     }
+    // **The if-absent rule's fence** (M49). What the clobber-guard lets stand must be a
+    // target the contract *declares*: the subject itself (the doctype-scoped `create`
+    // keys — `create.gate-blocked` → `adr`) or an already-URI-normal address
+    // (`create.serial-collision`'s instance address, `<type>:<slug>`). Anything else is a
+    // bare **fragment** that hitch-hiked out of a producer which could not resolve its own
+    // identity — the shape `engine::write::splice_error_finding` shipped, where a parse
+    // break's `header/bogus` survived this stamp untouched and reached a driver as a
+    // `key.target` no read verb can resolve. Without the fence the guard cannot tell a
+    // resolved target from a leaked hop, so the next producer to leak one is silent again.
+    //
+    // Debug-only, exactly like the membership test it protects
+    // (`engine::finding::debug_assert_keys_discriminate`): this is an invariant of jigc's
+    // **own** finding producers, exercised by the whole suite, never a runtime condition on
+    // a user's document.
+    debug_assert!(
+        match finding.location.as_ref().and_then(|l| l.address.as_deref()) {
+            Some(address) => address == subject || address.contains(':'),
+            None => false,
+        },
+        "a write finding's target must be URI-normal or the subject itself, never a bare \
+         fragment; code `{}` carried {:?} at subject `{subject}`",
+        finding.code,
+        finding.location.as_ref().and_then(|l| l.address.as_deref()),
+    );
 }
 
 /// The doc head (`<type>:<slug>`) of a **normal-form** address — the URI prefix every

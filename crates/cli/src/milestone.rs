@@ -2122,11 +2122,29 @@ fn provision_worktrees(
         // A non-registered leftover dir would make `git worktree add` fail ("already
         // exists"), so it has to go — but only once the probe can prove it holds nothing
         // (or `--force` says so): the binary cannot tell `junk.txt` from `precious.txt`.
-        if !reuse
-            && !force
-            && let Some(hold) = probe_leftover(&path)?
-        {
-            return Err(finding_to_err(leftover_finding(milestone_id, &path, &hold)));
+        if !reuse && !force {
+            let probed = probe_leftover(&path).map_err(|err| {
+                finding_to_err(unprobeable_leftover_finding(
+                    &PROVISION_DOOR,
+                    &path,
+                    &err,
+                    // **No `--force`.** This arm is reachable only unforced (`--force`
+                    // skips the probe entirely), and forcing it would send phase 2's
+                    // `remove_dir_all` at a path it has just been told it cannot read —
+                    // which fails again, one door further along. The only move that makes
+                    // the re-run work is the operator's, so that is what the route names.
+                    provision_route(
+                        milestone_id,
+                        false,
+                        " — deal with what the message names at that path first (move it \
+                         out of the way, or remove it yourself once you have looked at \
+                         it); the re-run then provisions normally",
+                    ),
+                ))
+            })?;
+            if let Some(hold) = probed {
+                return Err(finding_to_err(leftover_finding(milestone_id, &path, &hold)));
+            }
         }
         plan.push((id.clone(), path, reuse));
     }
@@ -2523,6 +2541,50 @@ fn child_names(path: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
+/// The **fail-closed refusal**: [`probe_leftover`] could not run at all, so the door refuses
+/// rather than destroy a path whose safety is unknown — with the door's own code, the path,
+/// the probe's verbatim failure, and a route, exactly like the refusal it stands beside.
+///
+/// This is the shape the class reopened in: [`probe_leftover`]'s contract already said *"an
+/// unreadable directory or an unreadable `git status` is an `Err` — the door refuses on it"*,
+/// and the doors did refuse — but as a bare `anyhow` chain, which is **invisible to the route
+/// floor by construction** (`engine::finding::is_route_exempt` keys on a finding *code*, and
+/// there was none). `jigc milestone provision` over a leftover **file** printed
+/// `could not read the leftover directory …: Not a directory (os error 20)` at rc 1: no
+/// `blocking · <code>` prefix, no `at:`, no `route:`, while the adjacent directory-shaped cell
+/// answered correctly. `jigc uninstall` had this half already
+/// (`crate::setup::unverified_worktrees_finding`); its two milestone siblings did not.
+///
+/// **The door's own refusal code**, not a new one: the state is *"these bytes may not be
+/// disposable"* whether the probe measured content or could not measure at all, and the
+/// operator's next action is identical — so a driver keying on `(code, target)` sees one
+/// identity for one door's refusal (`crate::setup::unverified_worktrees_finding`'s stated
+/// rationale, applied to the doors that shipped without it).
+///
+/// The route is the caller's, because the honest exit differs per door: `provision` cannot
+/// offer `--force` here (see its call site), while `discard`'s `--force` skips this guard
+/// entirely and does abandon the milestone.
+fn unprobeable_leftover_finding(
+    door: &DestroyingDoor,
+    path: &Path,
+    err: &anyhow::Error,
+    route: engine::finding::Route,
+) -> Finding {
+    let address = path.display().to_string();
+    Finding::graded(
+        Severity::Blocking,
+        door.code
+            .expect("only a refusing door raises a fail-closed leftover refusal"),
+        format!(
+            "`{address}` could not be checked before `{}` would delete it — {err:#}. Nothing \
+             can say those bytes are disposable, so nothing was removed.",
+            door.verb,
+        ),
+        Some(Location::addressed(&address, 1, 1)),
+        Some(route),
+    )
+}
+
 /// What the milestone boundary found **at a sub-task's worktree path** — the subject the
 /// boundary reads, credits and commits from.
 ///
@@ -2820,7 +2882,7 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
     // the human's explicit consent — on the one path whose premise is "throw this away", that
     // intent is exactly what must be confirmed rather than assumed.
     if !force {
-        let held = held_subtask_worktrees(&repo_root, &jigc_home, &list)?;
+        let held = held_subtask_worktrees(milestone_id, &repo_root, &jigc_home, &list)?;
         if !held.is_empty() {
             return Err(finding_to_err(dirty_worktree_finding(milestone_id, &held)));
         }
@@ -2959,6 +3021,7 @@ struct HeldWorktree {
 /// set, because *"found nothing"* and *"there is nothing"* are the same bytes to the caller and
 /// only one of them is safe to abandon on.
 fn held_subtask_worktrees(
+    milestone_id: &str,
     repo_root: &Path,
     jigc_home: &Path,
     list: &engine::milestone::TaskList,
@@ -2973,7 +3036,25 @@ fn held_subtask_worktrees(
     let mut held = Vec::new();
     for sub_id in list.enumerate() {
         let path = canonical_home.join(worktree_path(&sub_id));
-        if let Some(hold) = probe_leftover(&path)? {
+        // The probe's own failure is the door's refusal too, not a bare `anyhow` the route
+        // floor cannot see ([`unprobeable_leftover_finding`]). `--force` is named here and
+        // not at `provision` because it genuinely works at this door: it skips this guard
+        // and abandons the milestone, leaving a path nothing vouches for on disk.
+        let probed = probe_leftover(&path).map_err(|err| {
+            finding_to_err(unprobeable_leftover_finding(
+                &DISCARD_DOOR,
+                &path,
+                &err,
+                format!(
+                    "look at that path and get out what you need, then re-run \
+                     `jigc milestone discard {milestone_id}` — or re-run with `--force` to \
+                     abandon the milestone anyway, which leaves that path on disk for you \
+                     to deal with"
+                )
+                .into(),
+            ))
+        })?;
+        if let Some(hold) = probed {
             held.push(HeldWorktree {
                 registered: registered.iter().any(|w| w == &path),
                 path,
@@ -4590,6 +4671,21 @@ fn doomed_at(path: &Path) -> Result<Doomed> {
         return Ok(Doomed {
             subject: WORKTREE,
             lines: Vec::new(),
+        });
+    }
+    // A **non-directory** leftover has no children to enumerate — it *is* the bytes — and
+    // `child_names` below would fail on it, which the narration swallows (best-effort), so
+    // the removal would take a file it never named. It is named here instead, in the terms
+    // the probe can back: git vouches for nothing at a path it cannot even enter.
+    if !path.is_dir() {
+        return Ok(Doomed {
+            subject: "leftover file",
+            lines: vec![
+                path.file_name()
+                    .unwrap_or(path.as_os_str())
+                    .to_string_lossy()
+                    .into_owned(),
+            ],
         });
     }
     match classify_leftover(path) {

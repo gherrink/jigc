@@ -7526,12 +7526,30 @@ fn item_field_schema<'a>(
 /// [`SpliceError::NotConformant`] names the parse break it carries — and a carried
 /// break also **locates** the finding at the offending line, rather than the 1:1
 /// fallback every address-less write reject otherwise takes.
+///
+/// **The carried break contributes its coordinate, never its address** (M49). A parse
+/// finding's [`Location::address`] is a bare *fragment* — `header/bogus`,
+/// `criteria/ghost/statement` — assembled outward by [`parse::prefix_hop`] and completed
+/// into URI normal form only by the producer that holds the doc's identity
+/// ([`crate::finding::readdress_to_uri`], whose stated precondition is exactly that its
+/// input is raw per-instance parse output). This seam is **not** that producer: the write
+/// path's target is the *write's own address*, stamped outward by the CLI, which holds it
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → the
+/// `write.*` row). Cloning the whole location shipped the fragment as the finding's
+/// `key.target` and, being non-null, it survived that stamp untouched — so a
+/// `write.non-reparseable` over any break **inside a section** (every break `prefix_hop`
+/// reaches, which is nearly all of them) emitted `target: "header/bogus"`: a key no read
+/// verb resolves, and a different target shape from the same code's doc-level branch.
+/// Keeping `line`/`col` keeps the whole reason the carry exists.
 pub fn splice_error_finding(err: &SpliceError) -> Finding {
     let (code, location) = match err {
         SpliceError::NotPresent { .. } => ("write.not-present", None),
         SpliceError::NotConformant { findings } => (
             "write.non-reparseable",
-            findings.first().and_then(|f| f.location.clone()),
+            findings
+                .first()
+                .and_then(|f| f.location.as_ref())
+                .map(|l| Location::at(l.line, l.col)),
         ),
         SpliceError::UndeclaredSection { .. } => ("write.unknown-section", None),
         // The undeclared **slot** leaf carries the `GenerateError::UnknownField`

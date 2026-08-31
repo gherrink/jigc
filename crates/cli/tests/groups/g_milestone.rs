@@ -9,6 +9,8 @@ mod support;
 mod flow42_acceptance;
 #[path = "../flow43_acceptance.rs"]
 mod flow43_acceptance;
+#[path = "../leftover_probe_fail_closed.rs"]
+mod leftover_probe_fail_closed;
 #[path = "../milestone.rs"]
 mod milestone;
 #[path = "../milestone_abort_survives.rs"]
