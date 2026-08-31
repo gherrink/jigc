@@ -84,48 +84,12 @@ use cli::pack::{CompositePack, EmbeddedPack};
 use engine::packsource::{PackResourceKind, PackSource};
 use engine::schema::{Leaf, Repeatable, Schema, SectionBody};
 use std::collections::BTreeSet;
+use support::shape_space::{FIXTURE_WORKFLOW, SHAPES, Shape, shape_schema};
 use support::trial_corpus::{FixturePack, State, TrialCorpus};
 
 // ============================================================================
 // The axis
 // ============================================================================
-
-/// One shape of item block: how many prose slots its template declares, and whether it
-/// nests a repeatable. The pair *is* the axis — a shape is computed, never a constant,
-/// so a cell cannot be dropped by editing a fixture.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Shape {
-    slots: usize,
-    nested: bool,
-}
-
-/// The six shapes: `{slotless, single-slot, multi-slot} × {nested, ¬nested}`.
-const SHAPES: [Shape; 6] = [
-    Shape {
-        slots: 0,
-        nested: false,
-    },
-    Shape {
-        slots: 0,
-        nested: true,
-    },
-    Shape {
-        slots: 1,
-        nested: false,
-    },
-    Shape {
-        slots: 1,
-        nested: true,
-    },
-    Shape {
-        slots: 2,
-        nested: false,
-    },
-    Shape {
-        slots: 2,
-        nested: true,
-    },
-];
 
 /// The three write ops every shape is driven through, in the order a real corpus meets
 /// them: the cold-fill **insert** onto an item with no field group, the surgical
@@ -138,78 +102,6 @@ enum Op {
 }
 
 const OPS: [Op; 3] = [Op::Insert, Op::Update, Op::Unset];
-
-impl Shape {
-    /// The shape's name, as the fixture-pack labels and assertion messages spell it.
-    fn label(self) -> String {
-        let slots = match self.slots {
-            0 => "slotless",
-            1 => "single-slot",
-            _ => "multi-slot",
-        };
-        let nesting = if self.nested { "nested" } else { "flat" };
-        format!("{slots}-{nesting}")
-    }
-
-    /// The declared slot ids of this shape's item template, in document order.
-    fn slot_ids(self) -> &'static [&'static str] {
-        &["statement", "proves"][..self.slots]
-    }
-}
-
-/// The doctype schema for one shape, generated from the `(slots, nested)` pair.
-///
-/// It is written over the dev pack's `changelog` slot: a fixture pack **replaces** a
-/// schema rather than registering a new doctype, so nothing outside the schema file has
-/// to be manufactured too. Every shape carries the same optional `status` field — the
-/// leaf all eighteen cells write — so the only thing varying across the space is the
-/// item template's own shape.
-fn shape_schema(shape: Shape) -> String {
-    let mut yaml = String::from(
-        "type: changelog
-id-from: title
-description: A manufactured findings log for the item-region shape space.
-usage: the item-region boundary needs item-block shapes the shipped packs do not declare.
-sections:
-  - id: findings
-    repeatable:
-      id-from: label
-      block:
-        - { id: label, type: string }
-        - { id: status, type: string, optional: true }
-",
-    );
-    for slot in shape.slot_ids() {
-        yaml.push_str(&format!(
-            "        - {{ id: {slot}, slot: {{ hint: \"The {slot}.\" }} }}\n"
-        ));
-    }
-    if shape.nested {
-        yaml.push_str(
-            "        - id: notes
-          repeatable:
-            id-from: label
-            block:
-              - { id: label, type: string }
-              - { id: detail, slot: { hint: \"The note.\" } }
-",
-        );
-    }
-    yaml
-}
-
-/// The workflow whose create-gate admits the fixture doctype — `creates-task: true`, so
-/// `jigc start --workflow` mints the task every write below addresses.
-const FIXTURE_WORKFLOW: &str = "\
----
-when: record a finding in the findings log
-description: Author the findings log.
-usage: a finding needs recording in the findings log.
-creates-task: true
-allows-create: [{type: changelog, as: findings}]
----
-{{ include: step:finalize }}
-";
 
 /// One expectation over a `####` heading: the conformance code the gate must raise and
 /// the offending bytes that finding must name back — or `None` where the heading draws
