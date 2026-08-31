@@ -36,6 +36,17 @@ use crate::task::git_run;
 /// and records `new_rel` at `new_hash`. Loads and saves the record itself, so a caller with
 /// no further file-state work (the relocation paths) needs nothing more; `apply_and_commit`
 /// re-loads it to layer its referrer re-keys on top (the two saves compose byte-identically).
+///
+/// **The destination is checked against git's own trackability first**
+/// ([`crate::trackable::untrackable_reason`]) and an untrackable one is refused before any
+/// byte moves — the M49 completion-triage data-loss fix. `git mv <src> .git/<dst>` prints
+/// `error: invalid path` and **exits 0**: it moves the file on disk, drops the source from
+/// the index, adds nothing, and every caller here read that 0 as a successful move. The
+/// exit code is therefore not the test; this check is, and it lives on the **primitive** so
+/// the four doors that funnel through it (`config set docs-root`, `config set
+/// placement-root`, `jigc relocate`, `jigc rename`) are covered by one guard rather than
+/// four — including when the destination comes from a hand-edited manifest no door
+/// adjudicated.
 pub(crate) fn move_doc(
     repo_root: &Path,
     jigc_root: &Path,
@@ -44,6 +55,11 @@ pub(crate) fn move_doc(
     new_hash: &str,
 ) -> Result<()> {
     if old_rel != new_rel {
+        if let Some(reason) = crate::trackable::untrackable_reason(repo_root, new_rel) {
+            return Err(anyhow!(
+                "refusing to move `{old_rel}` to a destination git cannot track: {reason}"
+            ));
+        }
         git_run(repo_root, &["mv", old_rel, new_rel])?;
     }
     let mut record = FileStateRecord::load(jigc_root)
@@ -416,6 +432,72 @@ mod tests {
             record.get("decisions/new.md"),
             Some(old_hash.as_str()),
             "the new file-state key is recorded at the supplied hash",
+        );
+    }
+
+    /// **The primitive refuses a destination git cannot record — and refuses it BEFORE it
+    /// moves anything** (M49 completion triage, the HIGH data-loss finding).
+    ///
+    /// `git mv <src> .git/<dst>` prints `error: invalid path` and **exits 0**: the file
+    /// moves on disk, the source leaves the index, nothing is added, and the caller —
+    /// which had only the exit code to go on — reported a successful move. The doc then
+    /// existed only in git history and was gone from the next clone.
+    ///
+    /// The guard sits on the **primitive**, not on the door that reported the loss, so the
+    /// four doors that funnel through it are covered by one check even when the
+    /// destination comes from a hand-edited manifest that no door adjudicated. The
+    /// assertion is therefore the **index**, not the filesystem: the defect's signature was
+    /// a staged deletion with no matching add.
+    #[test]
+    fn move_doc_refuses_a_destination_git_cannot_track_and_moves_nothing() {
+        let repo = TempRepo::new();
+        let body = "# A decision\n\nProse.\n";
+        repo.commit_file("decisions/old.md", body);
+
+        let jigc_root = repo.path().join(".jigc");
+        let hash = hash_bytes(body.as_bytes());
+        let mut seed = FileStateRecord::new();
+        seed.record("decisions/old.md".to_string(), hash.clone());
+        seed.save(&jigc_root).expect("seed the file-state record");
+
+        // Both shapes git cannot record: inside its own directory, and outside the repo.
+        for dest in [".git/old.md", ".git/hooks/old.md", "../escaped.md"] {
+            let err = move_doc(repo.path(), &jigc_root, "decisions/old.md", dest, &hash)
+                .expect_err("an untrackable destination is refused, never reported as moved");
+            let rendered = format!("{err:#}");
+            assert!(
+                rendered.contains("git cannot track"),
+                "the refusal says what it refused and why; got: {rendered}",
+            );
+
+            assert!(
+                repo.path().join("decisions/old.md").exists(),
+                "{dest}: the source is untouched — the refusal precedes the move",
+            );
+            assert!(
+                !repo.path().join(dest).exists(),
+                "{dest}: nothing was written at the destination either",
+            );
+
+            let record = FileStateRecord::load(&jigc_root).expect("reload the record");
+            assert_eq!(
+                record.get("decisions/old.md"),
+                Some(hash.as_str()),
+                "{dest}: the file-state baseline is not re-keyed onto a home nothing is at",
+            );
+        }
+
+        let tracked = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo.path())
+            .args(["ls-files"])
+            .output()
+            .expect("run git ls-files");
+        assert!(
+            String::from_utf8_lossy(&tracked.stdout)
+                .lines()
+                .any(|p| p == "decisions/old.md"),
+            "the doc is still TRACKED — the loss was a staged deletion with no matching add",
         );
     }
 

@@ -347,6 +347,36 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
         )));
     }
 
+    // Step 2b — **a home git cannot record is not a home** (M49 completion triage, the HIGH
+    // data-loss finding). Both root knobs re-point where every managed doc lives, and both
+    // then MOVE the committed docs the re-point strands. `jigc config set placement-root .git`
+    // printed `docs/roadmap.md → .git/roadmap.md`, exited 0, and left a staged deletion with
+    // no matching add — `git mv` into git's own directory prints `error: invalid path` and
+    // **exits 0**, so the mover read success and the doc survived only in history, gone from
+    // the next clone. `validate` then graded that store clean.
+    //
+    // The refusal is at the *door*, not per-doc, and it lands **before** anything moves or the
+    // knob is written, because the alternatives are both worse: a warn-and-proceed loses the
+    // bytes at exit 0, and a per-doc skip that still lands the knob leaves the store pointing
+    // at a home no doc is at. The value is the operator's, so a refusal is actionable — and it
+    // holds even with no committed doc to strand yet, since every *future* create and
+    // finalize-promote would write to the same unrecordable home.
+    //
+    // Scoped to what git cannot record, never to roots that merely look unusual: a
+    // **gitignored** root (`placement-root .jigc`) is a path git tracks perfectly well and has
+    // only been told to skip — it stages a real `R` rename — and it keeps working.
+    if matches!(key, "docs-root" | "placement-root")
+        && let Some(repo_root) = project_config.parent().and_then(Path::parent)
+        && let Some(reason) = crate::trackable::untrackable_reason(repo_root, value)
+    {
+        return Err(finding_to_err(Finding::block(
+            "config.untrackable-root",
+            format!("`{value}` cannot be the `{key}`: {reason}"),
+            "re-run with a root git can record — a path under the repository root and outside \
+             `.git/`; `jigc config list` shows the value in force and the layer it wins from",
+        )));
+    }
+
     // docs-root re-point: detect + route + MOVE the committed docs the change would strand at
     // the *prior* resolved root (M39 inc-5 T3, replacing the M36 warn-then-strand). This is
     // `run_set`'s first read of the committed doc surface — a store-access seam that resolves

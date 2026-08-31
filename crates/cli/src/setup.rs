@@ -1403,144 +1403,37 @@ fn install_tracked_paths(
 
 /// The installed `pre-commit` hook's repo-root-relative path when it is a **committable
 /// working-tree file**, else `None` — the discriminator the install commit's pathspec is
-/// derived from.
+/// derived from (M48 Increment 5 / F4).
 ///
-/// Committable means both halves, and neither is optional:
-///   - **under the canonicalized repo root** — a `core.hooksPath` pointing outside the
-///     repo, and the **common** hooks dir a linked worktree resolves to, are outside the
-///     tree git commits from and cannot be in any commit;
-///   - **outside git's own dirs** (`--git-dir` *and* `--git-common-dir`, both printed by
-///     one `rev-parse`) — the default `.git/hooks/pre-commit` *is* under the repo root, so
-///     the root test alone is not the answer. A `.git`-internal pathspec entry is not
-///     rejected by anything upstream either: it is not gitignored (`git check-ignore`
-///     exits 1 on it) and `git add -- .git/hooks/pre-commit` exits **0** while staging
-///     nothing — an inert entry that would look green.
-///   - **owned by *this* repository** — location is not trackability. A hooks dir under
-///     the root can belong to **another** repo: a submodule (shared hooks vendored as
-///     one) or a plain embedded repo. Git is asked which repo owns the hook's own
-///     directory (`rev-parse --show-toplevel` from inside it), because both shapes are
-///     otherwise fatal to the *whole* install commit and in opposite ways — inside a
-///     submodule `git add` refuses with `Pathspec '…' is in submodule '…'` (exit 128),
-///     and inside an embedded repo `git add` stages nothing at exit 0 while the
-///     pathspec-limited `git commit` then dies on `did not match any file(s) known to
-///     git`.
-///   - **not under a gitlink in the *index*** — the same ownership question asked of the
-///     index, because the filesystem cannot answer it alone. A submodule that is
-///     registered but **not checked out** — a plain `git clone` without `--recursive`, or
-///     a `git submodule deinit` — leaves an *empty directory* with no `.git` inside it,
-///     so `rev-parse --show-toplevel` from the hook's own dir answers **this** root and
-///     the filesystem test says "mine". The index still holds the `160000` gitlink at the
-///     submodule's path, and `git add` refuses the hook fatally exactly as it does when
-///     the submodule *is* checked out. This is the common shape, not the exotic one: a
-///     clone without `--recursive` is the default clone.
+/// **The rule now lives in one place** ([`crate::trackable::untrackable_reason`]) and is
+/// asked here, not restated: under the canonicalized repo root, outside git's own dirs,
+/// and owned by *this* repository rather than a submodule or embedded repo. It was written
+/// for this door and generalized at M49, when the doc-relocating movers turned out to need
+/// the same answer and to be losing committed documents for want of it — two copies of a
+/// trackability rule is exactly how one of them ends up wrong.
 ///
-/// The two ownership halves cover the shapes we know; **neither can promise git will
-/// accept the path** (a sparse-checkout excluding the hooks dir refuses it while every
-/// test here says "committable"), which is why [`commit_install`] treats the hook as a
-/// **soft** member of the pathspec. This function keeps the pathspec honest; it is not
-/// the only thing standing between an unusual hooks dir and a failed install.
+/// Why the install commit needs it: the pathspec was first built on the premise *"the hook
+/// lives in git's control dir — never a tracked file"*, which is false under an in-repo
+/// `core.hooksPath`, so the summary listed a file the commit did not carry. Asking is what
+/// keeps the next hooks-path shape from re-opening the hole.
+///
+/// The predicate cannot **promise** git will accept the path (a sparse-checkout excluding
+/// the hooks dir refuses it while every test says "committable"), which is why
+/// [`commit_install`] treats the hook as a **soft** member of the pathspec. This function
+/// keeps the pathspec honest; it is not the only thing standing between an unusual hooks
+/// dir and a failed install.
 ///
 /// Deliberately *not* keyed on [`display_hook_path`]'s printed value: that renders the
 /// default `.git/hooks/pre-commit` **relative** (it strips the canonicalized repo root,
 /// and `.git/` is under it), so "the printed path is relative" is not a committability
-/// test. Conservative on failure — if git cannot be asked, nothing is added.
+/// test. Conservative on failure — a hook that does not canonicalize is not added.
 fn committable_hook_path(repo_root: &Path, hook_file: &Path) -> Option<String> {
     let root = std::fs::canonicalize(repo_root).ok()?;
     let hook = std::fs::canonicalize(hook_file).ok()?;
     let relative = hook.strip_prefix(&root).ok()?.to_str()?.to_string();
-
-    let out = git_output(
-        repo_root,
-        [
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-dir",
-            "--git-common-dir",
-        ],
-    )?;
-    if !out.status.success() {
-        return None;
-    }
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let git_dir = line.trim();
-        if git_dir.is_empty() {
-            continue;
-        }
-        // A git dir that does not resolve cannot contain the hook we just canonicalized.
-        if std::fs::canonicalize(git_dir).is_ok_and(|dir| hook.starts_with(&dir)) {
-            return None;
-        }
-    }
-
-    // Ownership: the repo git reports from inside the hook's own directory must be the
-    // one we are committing in. A submodule / embedded repo answers with its own
-    // toplevel, and that path is not this index's to take.
-    let hook_dir = hook.parent()?;
-    let owner = git_output(hook_dir, ["rev-parse", "--show-toplevel"])?;
-    if !owner.status.success() {
-        return None;
-    }
-    let owner = String::from_utf8_lossy(&owner.stdout).trim().to_string();
-    if std::fs::canonicalize(owner).ok()? != root {
-        return None;
-    }
-
-    // …and the same question of the index, which is the only side that can see a
-    // registered-but-absent submodule (the un-`--recursive` clone).
-    if index_gitlink_covers(repo_root, &relative) {
-        return None;
-    }
-
-    Some(relative)
-}
-
-/// Whether the index holds a **gitlink** (mode `160000`) at any ancestor directory of
-/// `relative` — i.e. whether the path lies inside a submodule as far as *this* index is
-/// concerned, checked out or not.
-///
-/// Asks about the ancestors rather than the path itself, because a pathspec *inside* a
-/// submodule matches nothing (that is the whole problem). The gitlink's own reported path
-/// is then checked to be a proper ancestor: a sibling submodule under a shared parent
-/// (`my-hooks/vendored` beside `my-hooks/pre-commit`) matches the ancestor pathspec but
-/// does not contain the hook, and refusing on it would drop a perfectly committable hook.
-/// `-z` so paths arrive unquoted whatever `core.quotePath` says. Conservative on failure:
-/// if git cannot be asked, the entry keeps whatever the other tests granted it — the
-/// soft-member retry in [`commit_install`] is the backstop, not this.
-fn index_gitlink_covers(repo_root: &Path, relative: &str) -> bool {
-    let mut ancestors: Vec<String> = Vec::new();
-    let mut prefix = String::new();
-    // Every proper ancestor DIRECTORY of the hook file (its own component dropped).
-    let mut components: Vec<&str> = relative.split('/').collect();
-    components.pop();
-    for component in components {
-        if !prefix.is_empty() {
-            prefix.push('/');
-        }
-        prefix.push_str(component);
-        ancestors.push(prefix.clone());
-    }
-    if ancestors.is_empty() {
-        return false;
-    }
-
-    let mut args: Vec<String> = vec![
-        "ls-files".into(),
-        "--stage".into(),
-        "-z".into(),
-        "--".into(),
-    ];
-    args.extend(ancestors);
-    let Some(out) = git_output(repo_root, args) else {
-        return false;
-    };
-    if !out.status.success() {
-        return false;
-    }
-    String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter_map(|entry| entry.strip_prefix("160000 "))
-        .filter_map(|entry| entry.split_once('\t'))
-        .any(|(_, path)| relative.starts_with(&format!("{path}/")))
+    crate::trackable::untrackable_reason(repo_root, &relative)
+        .is_none()
+        .then_some(relative)
 }
 
 /// A git step of the install commit that **ran and refused** — the loud half of

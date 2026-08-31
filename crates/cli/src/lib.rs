@@ -44,5 +44,6 @@ pub mod route_fence;
 pub mod setup;
 pub mod start;
 pub mod task;
+pub mod trackable;
 pub mod unmanage;
 pub mod upgrade;
