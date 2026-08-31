@@ -88,6 +88,11 @@ migrates ADRs and arch-docs together, migrate the ADR corpus first.
 Component titles must be SLUG-DISTINCT — two titles that slugify identically fail the whole
 batch atomically (`write.already-present`). Give each component a distinct name.
 
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list arch-doc --task sweep-the-compose-surface
+
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
 carry yet:

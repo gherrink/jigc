@@ -11,6 +11,11 @@ Set the Conventional-Commits type:
 
 {{ cli.set-commit-type }}
 
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
 Set the scope — the area this change touches:
 
 {{ cli.set-commit-scope }}

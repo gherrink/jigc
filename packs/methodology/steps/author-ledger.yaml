@@ -7,6 +7,12 @@ existing committed ledger is copied in for append):
 
 {{ cli.create-ledger }}
 
+The `deferral-ledger` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema deferral-ledger
+
 Then, for each deferral, mint an entry and author it: its `kind` (Decision for a
 deferred decision, Idea for a parked idea), the `trigger` milestone that resurfaces
 it, and the `body` prose for what is owed and why. The `date` is CLI-set on create:

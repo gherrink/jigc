@@ -6,6 +6,12 @@ Record the completion audit on the per-milestone completion-record. Create it fr
 
 {{ cli.create-completion-record }}
 
+The `completion-record` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema completion-record
+
 Set the meta header — the audit `verdict` (green/red) and the `owner-artifact`: the
 repo-relative path to the genuine-audit artifact the orchestrator recorded. That
 path MUST live under the owned artifact home `completions/artifacts/<milestone>/` —
@@ -41,6 +47,11 @@ stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author completion-record --from-file - --task {{task.id}}
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list completion-record --task {{task.id}}
 
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not

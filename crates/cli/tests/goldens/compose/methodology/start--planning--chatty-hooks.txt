@@ -190,6 +190,11 @@ sections:
         <<every **load-bearing claim that arrives second-hand** — from a delegated subagent, a prior wave's record, or a doc — is either **driven before it enters the record**, or **marked as relayed** where it is written. The sibling of `quote-attributed` one level out: that gate binds a quoted *string* to its producer; this binds a reported *fact* to an execution. The failure is invisible for the same reason — the claim is well-formed and cites a file, so the reasoning *looks* checked. **M46 failed this four times in one wave, and the delegation instruments are what caught it, not review:** an auditor's *"`tasks.json` does not exist at rc.11"* was relayed into the scope audit unverified, reported onward as fact, and survived a full reporting cycle before the gap pass found the constant at `milestone.rs:41` — with the sharing documented as designed in a locked doc. The same wave relayed `finalize.base-mismatch` as an unnoticed hole (it is a **recorded exclusion**, M47 Settle Decision 1, mirrored in four docs), N-4's repair path in **both** directions, and an advocate's fan-out topology claim that the orchestrator's own race test then falsified. **And it reached a decision, which is why it is a gate and not a note:** D3 — *"at the 1.0 pin, stamp-absent means foreign"* — was affirmed by the human on the orchestrator's recommendation and **withdrawn the same day**, on a premise checkable in **one command** (`jigc ingest` is register-only, so it adopts without a stamp and the population the affirmation called *empty at the pin* is refilled continuously by the product's own front door). **The cell is filled by naming what was driven** — the command and its observed output — for each claim the plan turns on; a claim that was not driven is written into the record **as relayed**, never silently promoted.>>
 EOF
 
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list planning-record --task sweep-the-compose-surface
+
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
 carry yet:
@@ -201,6 +206,11 @@ roadmap singleton — safe whether or not it already exists (an existing committ
 roadmap is copied in for append):
 
 Run: `jigc doc create roadmap --title Roadmap --task sweep-the-compose-surface`
+
+The `roadmap` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema roadmap
 
 Then mint this milestone's entry and author it — its `proves` and the prose
 `decomposition` of its increments (one level: each increment's deliverable and the
@@ -235,6 +245,12 @@ existing committed ledger is copied in for append):
 
 Run: `jigc doc create deferral-ledger --title 'Deferral Ledger' --task sweep-the-compose-surface`
 
+The `deferral-ledger` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema deferral-ledger
+
 Then, for each deferral, mint an entry and author it: its `kind` (Decision for a
 deferred decision, Idea for a parked idea), the `trigger` milestone that resurfaces
 it, and the `body` prose for what is owed and why. The `date` is CLI-set on create:
@@ -257,6 +273,12 @@ log singleton — safe whether or not it already exists (an existing committed l
 copied in for append):
 
 Run: `jigc doc create decisions-log --title 'Decisions Log' --task sweep-the-compose-surface`
+
+The `decisions-log` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema decisions-log
 
 Then, for each decision made, mint an entry and author its `why` — the reasoning,
 in a sentence or two. The `date` is CLI-set on create:
@@ -282,6 +304,11 @@ Set the Conventional-Commits type:
 
 Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <TYPE> --task sweep-the-compose-surface`
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
 
 Set the scope — the area this change touches:
 

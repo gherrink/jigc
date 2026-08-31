@@ -651,7 +651,7 @@ pub const COPY_IN_APPEND_TOKENS: [&str; 4] = [
 /// Extract every `<T>` from a step body's `{{schema:<T>}}` references — the same
 /// `schema:`-prefix the compose seam strips (`engine::compose` → the schema
 /// projection). Whitespace-tolerant inside the braces and around the type id.
-fn schema_refs(body: &str) -> Vec<String> {
+pub fn schema_refs(body: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = body;
     while let Some(open) = rest.find("{{") {
@@ -838,7 +838,7 @@ fn cli_refs(body: &str) -> Vec<String> {
 /// `{{cli.<id>}}` refs cannot resolve at all, and composition surfaces that on its
 /// own front door) — the same skip-on-absent posture the fences take toward a
 /// manifest-less pack, and the `{{schema:<T>}}` arm still applies.
-fn doc_write_command_ids(owner: &dyn PackSource) -> std::collections::BTreeSet<String> {
+pub fn doc_write_command_ids(owner: &dyn PackSource) -> std::collections::BTreeSet<String> {
     let Some(catalog) = owner
         .read(PackResourceKind::Config, &ResourceId::from("commands"))
         .ok()
@@ -867,6 +867,25 @@ fn doc_write_command_ids(owner: &dyn PackSource) -> std::collections::BTreeSet<S
         })
         .map(|(id, _)| id.clone())
         .collect()
+}
+
+/// **The read-back fence's solicit predicate**, in one place — a step body solicits a
+/// managed-doc write iff it carries a lone-line `{{cli.<id>}}` ref resolving to a
+/// `jigc doc <write-verb>` catalog entry ([`doc_write_command_ids`], the caller passes
+/// the owner pack's set) **or** a `{{schema:<T>}}` authoring-payload ref.
+///
+/// Public because the owe-set it defines has a second consumer that must not re-derive
+/// it: `crates/cli/tests/read_surface_naming.rs` disposes every soliciting step against
+/// the two read surfaces the packs never named (M49 Inc 11, T7). A hand-copied second
+/// predicate would let the fence and the sweep disagree about which steps are in.
+pub fn solicits_managed_doc_write(
+    body: &str,
+    write_refs: &std::collections::BTreeSet<String>,
+) -> bool {
+    cli_refs(body)
+        .iter()
+        .any(|reference| write_refs.contains(reference))
+        || !schema_refs(body).is_empty()
 }
 
 /// **The stated-at fence, write-solicit tier (law 2, M48 Inc 3)** —
@@ -911,11 +930,7 @@ fn assert_staged_read_back_stated(pack: &dyn PackSource) -> anyhow::Result<()> {
                 .with_context(|| format!("the `{}` step is unreadable", id.as_str()))?;
             let def = engine::compose::load_step_def(id.as_str(), &bytes)
                 .map_err(|finding| def_load_failure("step-front-matter", id.as_str(), finding))?;
-            let solicits_write = cli_refs(&def.body)
-                .iter()
-                .any(|reference| write_refs.contains(reference))
-                || !schema_refs(&def.body).is_empty();
-            if !solicits_write {
+            if !solicits_managed_doc_write(&def.body, &write_refs) {
                 continue;
             }
             if !def
@@ -2389,6 +2404,11 @@ mod tests {
 
         {{ cli.create-adr }}
 
+        The `adr` schema is the authority on what you write into it — its required slots
+        and fields, each field's enum members, and every address a write can take:
+
+        jigc doc schema adr
+
         Author its three required slots on the address `create` prints — `context` (the
         forces at play), `decision` (the call itself), `consequences` (tradeoffs and
         follow-on effects). Inside slot prose, the reserved heading depths are schema-relative to
@@ -2410,6 +2430,11 @@ mod tests {
         Before you finalize, verify the change actually works: build it and run the
         tests, and confirm the behaviour you set out to produce. Finalize commits your
         staged work; it does not check that the work is correct.
+
+        `<slug>` is the slug the title minted, and this task's own index names it back —
+        every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+        jigc doc list adr --task {{task.id}}
 
         Read your write back before you move on — with `--task` the read serves THIS
         task's staged copy, the write you just made, which the committed store does not

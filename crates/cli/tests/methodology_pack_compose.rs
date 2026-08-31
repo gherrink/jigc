@@ -1026,6 +1026,20 @@ fn record_dogfood_composes_the_record_authoring_lines_and_finalize_tail() {
 /// executed **verbatim** (the emitted bytes, split into argv — never
 /// reconstructed) and must succeed, landing the write in the PLANNING task's
 /// working area.
+/// Whether the `jigc doc <verb>` leaf declares a `--task` argument, read from the
+/// built clap tree. A verb that does not (`schema`, the cascade-resolved shape read)
+/// is task-independent by construction, so a composed line for it carries no task id
+/// and must not be held to the >1-active-task disambiguation rule.
+fn verb_declares_task(verb: &str) -> bool {
+    use clap::CommandFactory;
+    let mut root = <cli::cli::Cli as CommandFactory>::command();
+    root.build();
+    root.get_subcommands()
+        .find(|sub| sub.get_name() == "doc")
+        .and_then(|doc| doc.get_subcommands().find(|sub| sub.get_name() == verb))
+        .is_some_and(|leaf| leaf.get_arguments().any(|arg| arg.get_id() == "task"))
+}
+
 #[test]
 fn composed_authoring_commands_carry_the_minted_task_id_with_two_active_tasks() {
     let repo = TempDir::new("two-active");
@@ -1094,14 +1108,25 @@ fn composed_authoring_commands_carry_the_minted_task_id_with_two_active_tasks() 
     // own instruction sentence (*"Author the whole document in ONE `jigc doc author`
     // batch payload"*, M43's generation seam, reaching this workflow at M49 Inc-9 / T6)
     // names the batch verb three lines above the runnable line that carries `--task`.
-    // Two exemptions, both non-writes: that prose class, and a `--help` mention (the
-    // batch alternative's grammar pointer, M43 inc-7 T6), which reads the CLI's own help.
+    // Three exemptions, all non-writes: that prose class; a `--help` mention (the
+    // batch alternative's grammar pointer, M43 inc-7 T6), which reads the CLI's own
+    // help; and a verb that declares **no** `--task` at all — `jigc doc schema <T>`,
+    // the task-independent shape read (M49 Inc 11 / T7), for which `--task m99` would
+    // be a usage error rather than a disambiguation. That third exemption is read off
+    // the clap tree ([`verb_declares_task`]) rather than spelled as a verb name, so a
+    // future `doc` verb joins the rule or its exemption by its own declaration.
     let doc_lines: Vec<&str> = stdout
         .lines()
         .filter(|l| l.contains("jigc doc ") && !l.contains("--help"))
         .filter(|l| {
             let bare = l.trim().trim_start_matches("Run: `");
             bare.starts_with("jigc doc ")
+        })
+        .filter(|l| {
+            let bare = l.trim().trim_start_matches("Run: `");
+            bare.split_whitespace()
+                .nth(2)
+                .is_some_and(verb_declares_task)
         })
         .collect();
     assert!(

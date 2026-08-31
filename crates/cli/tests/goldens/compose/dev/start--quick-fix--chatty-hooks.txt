@@ -25,6 +25,11 @@ The `type` value is one of: feat | fix | docs | style | refactor | perf | test |
 Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
 <<author: commit:sweep-the-compose-surface#summary>>
 
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
 The `scope` and `body` are optional: add a `scope` to name the area touched, or
 author a `body` to explain the motivation, only when they earn their place —
 

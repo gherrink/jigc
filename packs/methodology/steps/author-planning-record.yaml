@@ -22,6 +22,11 @@ payload places every gate over a single staged buffer.
 
 {{ schema:planning-record }}
 
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list planning-record --task {{task.id}}
+
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
 carry yet:

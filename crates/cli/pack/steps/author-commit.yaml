@@ -14,6 +14,11 @@ address. Set the type, then stage the summary prose:
 {{ cli.set-commit-summary }}
 <<author: {{ task.commit#summary }}>>
 
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
 The `scope` and `body` are optional: add a `scope` to name the area touched, or
 author a `body` to explain the motivation, only when they earn their place —
 

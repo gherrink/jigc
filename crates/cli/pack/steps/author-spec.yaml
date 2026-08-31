@@ -10,6 +10,11 @@ Create the spec, then author its slots:
 <<author: {{ task.spec#goal }}>>
 <<author: {{ task.spec#context }}>>
 
+The `spec` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema spec
+
 State the non-goals too — what this change will explicitly NOT do bounds the work
 as sharply as what it will; fold them into the `context` slot. Name the concrete
 files or modules the change is expected to touch when they are already known, so
@@ -36,6 +41,11 @@ stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author spec --from-file - --task {{task.id}}
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list spec --task {{task.id}}
 
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not

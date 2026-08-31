@@ -9,6 +9,12 @@ existing committed log is copied in for append):
 
 {{ cli.create-log }}
 
+The `decisions-log` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema decisions-log
+
 Mint one entry per decision and author its `why` — the reasoning, in a sentence
 or two; the `date` is CLI-set on create. Inside slot prose, the reserved heading
 depths are schema-relative to the address you write — the CLI owns the section,

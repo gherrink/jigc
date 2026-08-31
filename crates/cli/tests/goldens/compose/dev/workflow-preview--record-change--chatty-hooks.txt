@@ -10,6 +10,11 @@ is copied in for append):
 
 Run: `jigc doc create changelog --title Changelog --task your-task-id`
 
+The `changelog` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema changelog
+
 Then author the change. To cut a release, mint a release item (its id is minted
 from the version title you give — e.g. `1.0.0` mints `1-0-0` — and its `date` is
 stamped on create). `add-item` PRINTS the new item's address; use that printed
@@ -66,6 +71,11 @@ Run: `jigc doc set-field commit:your-task-id#type --value <COMMIT_TYPE> --task y
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
 Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
 <<author: commit:your-task-id#summary>>
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
 
 The `scope` and `body` are optional: add a `scope` to name the area touched, or
 author a `body` to explain the motivation, only when they earn their place —

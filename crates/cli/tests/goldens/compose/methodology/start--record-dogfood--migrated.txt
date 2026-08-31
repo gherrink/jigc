@@ -7,6 +7,12 @@ is minted from the title you give (this run):
 
 Run: `jigc doc create dogfood-record --title <TITLE> --task sweep-the-compose-surface`
 
+The `dogfood-record` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema dogfood-record
+
 Set the run identity — the `case` this run exercises and the sha of the pinned
 binary it ran against:
 
@@ -63,6 +69,11 @@ transcribe-verbatim and seeded-vs-organic bounds above bind unchanged:
 
 jigc doc author dogfood-record --from-file - --task sweep-the-compose-surface
 
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list dogfood-record --task sweep-the-compose-surface
+
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
 carry yet:
@@ -79,6 +90,11 @@ Set the Conventional-Commits type:
 
 Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <TYPE> --task sweep-the-compose-surface`
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
 
 Set the scope — the area this change touches:
 

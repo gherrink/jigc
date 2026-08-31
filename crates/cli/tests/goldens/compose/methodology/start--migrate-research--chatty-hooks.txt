@@ -72,6 +72,11 @@ NOT fabricate today's date, so a dateless note stays dateless (no false history)
 The research schema is a ref-free leaf — it declares no structural ref, so a foreign
 cross-reference stays plain prose in the slot it belongs to; never invent a field for it.
 
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list research --task sweep-the-compose-surface
+
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
 carry yet:

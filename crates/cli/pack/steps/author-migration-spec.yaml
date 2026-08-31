@@ -44,6 +44,11 @@ A foreign "decided by ADR-X" / "see the auth ADR" reference has no structural ed
 spec schema (there is no `decided-by` relation) — fold it into the `context` prose instead;
 never invent a field for it.
 
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list spec --task {{task.id}}
+
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
 carry yet:

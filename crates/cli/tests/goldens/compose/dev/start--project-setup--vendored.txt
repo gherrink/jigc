@@ -25,6 +25,11 @@ Run: `jigc doc create prd --title <TITLE> --task sweep-the-compose-surface`
 jigc doc set-slot prd:<slug>#vision --from-file - --task sweep-the-compose-surface
 jigc doc set-slot prd:<slug>#context --from-file - --task sweep-the-compose-surface
 
+The `prd` schema is the authority on what you write into it — its required slots
+and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema prd
+
 Then add one requirement per thing the product must do. For each, mint the item
 and write its requirement in prose:
 
@@ -39,6 +44,11 @@ stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author prd --from-file - --task sweep-the-compose-surface
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list prd --task sweep-the-compose-surface
 
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
@@ -59,6 +69,11 @@ Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <COMMIT_T
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
 Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
 <<author: commit:sweep-the-compose-surface#summary>>
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
 
 The `scope` and `body` are optional: add a `scope` to name the area touched, or
 author a `body` to explain the motivation, only when they earn their place —

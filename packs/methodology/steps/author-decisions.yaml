@@ -7,6 +7,12 @@ copied in for append):
 
 {{ cli.create-log }}
 
+The `decisions-log` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema decisions-log
+
 Then, for each decision made, mint an entry and author its `why` — the reasoning,
 in a sentence or two. The `date` is CLI-set on create:
 

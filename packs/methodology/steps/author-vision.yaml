@@ -11,6 +11,11 @@ of the title:
 
 {{ cli.create-vision }}
 
+The `vision` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema vision
+
 Ground the vision in the committed research it rests on. Set `grounded-in` to the
 research this vision is formed from — pass ALL of it in ONE call as an inline list
 (the multi-value path). Every element is recorded and resolved at finalize:

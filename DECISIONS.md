@@ -2,6 +2,23 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-08-31 — M49 Increment 11 / T7: the pack names the two read surfaces it never named, and the fence stops teaching one verb
+
+Four read surfaces ship ([doc-read-surface.md](design/doc-read-surface.md)); the two packs named **one**. Measured at `f0cda4b`: `jigc doc show` 35×, `jigc doc schema` **0×**, `jigc doc list` **0×**, and `jigc doc` once in the two shipped guides — in `MIGRATING.md`, as `doc author`. The producer is jigc's own: M48's read-back fence routes with *"name the staged read-back … `jigc doc show <addr> --task {{task.id}}`"*, so all 31 soliciting steps learned exactly the verb the fence named. This is the discoverability lens that has landed six consecutive trials, with the mechanism visible for once: a fence that names one instance buys one instance.
+
+**The owe-set is the fence's own, by construction.** `assert_staged_read_back_stated`'s solicit test is extracted to `cli::pack::solicits_managed_doc_write` and both consumers call it — the fence, and `crates/cli/tests/read_surface_naming.rs`, which disposes every member. A second, hand-copied predicate would have let the sweep and the fence disagree about which steps are in, which is the failure this task exists to fix one layer down.
+
+**Every member is disposed against each surface, and both dispositions are *derived from bytes the step already renders* — never an exclusion list.** Blanket-sprinkling both verbs across 31 steps was the named failure mode, and it would have been wrong on the facts:
+
+- **`jigc doc schema <T>`** is owed unless the step carries `{{schema:<T>}}`, which renders the shape inline and answers the read in place. **Correction to the planning basis:** that projection is used at **14** sites, not the 3 the decomposition recorded (grep `schema:` over both shipped step trees) — so 14 of 31 members are legitimately OUT and 17 owe it. The corrected count is what makes the OUT branch load-bearing rather than decorative.
+- **`jigc doc list <T> --task <id>`** is owed where the step's staged read-back address carries an unresolved `<slug>` placeholder. At **17 of 31** members the sentence M48's fence forced onto the step is *unrunnable as printed*: `jigc doc show adr:<slug> --task <id>` is handed to an agent the step never tells how to obtain `<slug>`. `doc list --task`, shipped at M48 for exactly that question, was named nowhere. The other 14 print the address in full (`commit:{{task.id}}`, `changelog:changelog`, …) and owe nothing.
+
+`the_derivation_is_not_vacuous` fences the derivation itself — all four partitions must stay populated, so a predicate that quietly stops matching reddens instead of passing — and the composed half drives **every** workflow of both packs through `jigc workflow <id> --preview`, asserting the emitted bytes an agent reads. Its step resolution is **pack-local** ([multi-pack.md](design/multi-pack.md) → Pack-local body-reference resolution), which the first cut got wrong: keyed by id alone, the two methodology workflows including `step:implement` were asserted against dev's ADR text they never render.
+
+**`BOOTSTRAP_READ_RULE` is left unchanged, deliberately.** It already names both verbs — `doc list` as the definition of the managed set, `doc schema` in the derive-jigc's-behaviour-from-the-installed-binary clause — and both statements are true for their own subject. B1's gap is that nothing tells an *authoring* agent the shape read exists *at the point of authoring*, which is fixed where the solicit is. A second framing in `AGENT.md` would restate, not repair.
+
+**The installed guide artifact** (`.claude/skills/jigc/SKILL.md`, whose bytes are `QUICKSTART.md` + `MIGRATING.md` through `setup::guide_body`) gains one block naming the three reads and what `--task` does to two of them, asserted off disk after a real `jigc setup` rather than from the source constant.
+
 ## 2026-08-31 — M49 Increment 11 / T6: `describe` stops projecting the winner, and the catalog's complement gets its reason
 
 Two law-2 holes on the one surface whose job is to say what exists.

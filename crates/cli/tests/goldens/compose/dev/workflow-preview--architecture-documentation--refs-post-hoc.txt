@@ -13,6 +13,11 @@ arch-doc of the same slug is copied in for revise) — then author its overview:
 Run: `jigc doc create arch-doc --title <TITLE> --task your-task-id`
 <<author: arch-doc#overview>>
 
+The `arch-doc` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema arch-doc
+
 Cite the decisions this part of the system rests on, so finalize can check each
 citation still resolves. `cites` is a list — author **all** of them in ONE
 `set-field` as a bracketed list (a second `set-field` replaces, not appends, so
@@ -46,6 +51,11 @@ write; the payload's `title:` mints the slug exactly like the create above. The
 
 jigc doc author arch-doc --from-file - --task your-task-id
 
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list arch-doc --task your-task-id
+
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
 carry yet:
@@ -65,6 +75,11 @@ Run: `jigc doc set-field commit:your-task-id#type --value <COMMIT_TYPE> --task y
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
 Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
 <<author: commit:your-task-id#summary>>
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
 
 The `scope` and `body` are optional: add a `scope` to name the area touched, or
 author a `body` to explain the motivation, only when they earn their place —

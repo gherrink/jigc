@@ -7,6 +7,11 @@ from the title you give (the question this investigation answers):
 
 Run: `jigc doc create research --title <TITLE> --task sweep-the-compose-surface`
 
+The `research` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema research
+
 Author the three prose slots — the question it set out to answer, what the evidence
 showed, and where that evidence came from. The `date` is CLI-set on create:
 
@@ -22,6 +27,11 @@ stdin (grammar: `jigc doc author --help`) and places every leaf in a single
 write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author research --from-file - --task sweep-the-compose-surface
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list research --task sweep-the-compose-surface
 
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
@@ -39,6 +49,11 @@ Set the Conventional-Commits type:
 
 Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <TYPE> --task sweep-the-compose-surface`
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
 
 Set the scope — the area this change touches:
 

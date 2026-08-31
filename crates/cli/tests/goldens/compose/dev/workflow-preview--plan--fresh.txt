@@ -13,6 +13,11 @@ Run: `jigc doc create spec --title <TITLE> --task your-task-id`
 <<author: spec#goal>>
 <<author: spec#context>>
 
+The `spec` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema spec
+
 State the non-goals too — what this change will explicitly NOT do bounds the work
 as sharply as what it will; fold them into the `context` slot. Name the concrete
 files or modules the change is expected to touch when they are already known, so
@@ -40,6 +45,11 @@ write; the payload's `title:` mints the slug exactly like the create above:
 
 jigc doc author spec --from-file - --task your-task-id
 
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list spec --task your-task-id
+
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
 carry yet:
@@ -59,6 +69,11 @@ Run: `jigc doc set-field commit:your-task-id#type --value <COMMIT_TYPE> --task y
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
 Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
 <<author: commit:your-task-id#summary>>
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
 
 The `scope` and `body` are optional: add a `scope` to name the area touched, or
 author a `body` to explain the motivation, only when they earn their place —

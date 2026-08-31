@@ -108,6 +108,11 @@ long:
 
 Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
+The `adr` schema is the authority on what you write into it — its required slots
+and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema adr
+
 Author its three required slots on the address `create` prints — `context` (the
 forces at play), `decision` (the call itself), `consequences` (tradeoffs and
 follow-on effects). Inside slot prose, the reserved heading depths are schema-relative to
@@ -129,6 +134,11 @@ jigc doc set-slot adr:<slug>#options --from-file - --task add-rate-limiter
 Before you finalize, verify the change actually works: build it and run the
 tests, and confirm the behaviour you set out to produce. Finalize commits your
 staged work; it does not check that the work is correct.
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list adr --task add-rate-limiter
 
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not
@@ -228,6 +238,11 @@ Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --ta
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
 Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
 <<author: commit:add-rate-limiter#summary>>
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
 
 The `scope` and `body` are optional: add a `scope` to name the area touched, or
 author a `body` to explain the motivation, only when they earn their place —

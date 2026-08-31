@@ -6,6 +6,12 @@ is minted from the title you give (this run):
 
 {{ cli.create-dogfood-record }}
 
+The `dogfood-record` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema dogfood-record
+
 Set the run identity — the `case` this run exercises and the sha of the pinned
 binary it ran against:
 
@@ -61,6 +67,11 @@ write; the payload's `title:` mints the slug exactly like the create above. The
 transcribe-verbatim and seeded-vs-organic bounds above bind unchanged:
 
 jigc doc author dogfood-record --from-file - --task {{task.id}}
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list dogfood-record --task {{task.id}}
 
 Read your write back before you move on — with `--task` the read serves THIS
 task's staged copy, the write you just made, which the committed store does not

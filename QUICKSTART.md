@@ -117,6 +117,22 @@ through the workflow's `create` gate.
 Bare `jigc start` (no intent) orients instead: it reports project state and the
 next action, read-only.
 
+### Reading while the task is open
+
+Managed docs are read through `jigc`, never off disk — three reads cover it, and
+`--task <id>` turns the first two onto the working copies your open task has
+staged but not yet committed:
+
+```sh
+jigc doc list --task <id>             # what this task stages, each by its address
+jigc doc show adr:<slug> --task <id>  # the staged doc itself
+jigc doc schema adr                   # the shape a write has to fill
+```
+
+Drop `--task` and the first two serve the committed store instead. `jigc doc
+schema` needs no task — it projects the resolved schema: required slots and
+fields, each field's enum members, and every address a write can take.
+
 ## 3. `jigc task finalize <id>` — the commit boundary
 
 When the work is done, finalize. This is the single transactional boundary
