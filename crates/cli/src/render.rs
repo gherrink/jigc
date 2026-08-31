@@ -993,6 +993,192 @@ pub(crate) fn boundary_doors_phrase() -> String {
         .join(" / ")
 }
 
+/// What a `finalize.*` finding's `key.target` names — the **subject split** that is the whole
+/// point of the family (`design/command-output-contract.md` → The `finalize.*` family).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinalizeSubject {
+    /// The **work unit**: `task:<id>` / `milestone:<id>`, built by `engine::finalize`'s
+    /// `Unit::location` (or [`crate::task`]'s `work_unit_location` for the two CLI members).
+    WorkUnit,
+    /// A **file**: the path, built by `engine::finalize`'s `file_location`. A promote
+    /// destination or a carried path may be foreign, with no URI identity — the `file-state`
+    /// reason exactly.
+    FilePath,
+}
+
+impl FinalizeSubject {
+    /// The subject's name as the contract's `target` column spells it — so prose and table
+    /// are rendered from the same value rather than re-worded per home.
+    #[must_use]
+    pub fn target_form(self) -> &'static str {
+        match self {
+            FinalizeSubject::WorkUnit => "the work-unit ref",
+            FinalizeSubject::FilePath => "the file path",
+        }
+    }
+}
+
+/// One member of the **`finalize.*` family** — a blocked-finalize finding code, its producing
+/// module, and the target form it keys at.
+///
+/// **The membership predicate, stated once and derived from nowhere else:** a code is a member
+/// **iff a production (non-`#[cfg(test)]`) constructor mints it as a [`Finding`] whose code lies
+/// in the `finalize.` namespace.** Everything else that *looks* like a member — a cascade knob
+/// key, an invocation-log error identity, a declared contract identifier no producer mints — is
+/// enumerated with its reason in [`FINALIZE_NON_MEMBERS`] instead.
+///
+/// **Why a table and not a count.** Four homes carried four different numerals for this family
+/// (`design/command-output-contract.md` said *nine* three times and *eleven* once,
+/// `implementation/roadmap.md` said *twelve*), and every one of them was wrong — including the
+/// paragraph that had already written down the reason (*a census keyed on where you expect the
+/// members to live will miss the ones that live somewhere else*) and then re-committed the error
+/// by publishing a corrected count. The settled rule is `design/validation.md` → *Exit semantics*:
+/// **the table is the enumeration; do not restate its size.** This is that table, on the
+/// [`STORE_EXIT_FLIPS`] / [`BOUNDARY_DOORS`] idiom, and
+/// `crates/cli/tests/finalize_family_registry.rs` holds it to the predicate above by scanning
+/// production source — so a new producer that does not join this table reddens, wherever it lives.
+///
+/// The M49 sweep the predicate found, which no count included: **`finalize.milestone-sub-task`**
+/// lives in `engine::milestone`, in no doc row and inside no numeral — the third crate-or-file the
+/// file-scoped census did not think to look in. And the contract's sub-table carried a row for
+/// `finalize.forward-ref-dangling`, which **no production producer mints at all**: it survives
+/// only as a unit-test fixture in `engine::finding`, so it was a member of the count and of no
+/// code path.
+pub struct FinalizeCode {
+    /// The finding code, verbatim.
+    pub code: &'static str,
+    /// The module whose production source mints it — `<crate>::<module>`, checked against the
+    /// scan so a member that moves crates cannot keep a stale home here.
+    pub producer: &'static str,
+    /// The target form it keys at.
+    pub subject: FinalizeSubject,
+    /// What that subject *is*, in the words the contract's sub-table uses.
+    pub subject_note: &'static str,
+}
+
+/// The family, sorted by `code` (the sort is asserted, so the table has one order and a
+/// diff over it reads as a membership change rather than a reshuffle).
+pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
+    FinalizeCode {
+        code: "finalize.base-mismatch",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit's base pin — two constructors (pin diverged, overlap), \
+                       mutually exclusive, so one instance per finalize",
+    },
+    FinalizeCode {
+        code: "finalize.carried-staged",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the pre-task staged file (add, modify or deletion) the whole-index \
+                       commit would silently absorb — one finding per carried path",
+    },
+    FinalizeCode {
+        code: "finalize.empty-commit",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit, whose staged set produced no diff",
+    },
+    FinalizeCode {
+        code: "finalize.migration-no-replacement",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the foreign source file the migration would retire with nothing to \
+                       put in its place",
+    },
+    FinalizeCode {
+        code: "finalize.milestone-sub-task",
+        producer: "engine::milestone",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the sub-task whose own finalize would land a commit outside the \
+                       milestone's one commit boundary",
+    },
+    FinalizeCode {
+        code: "finalize.no-task",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit whose task directory is absent",
+    },
+    FinalizeCode {
+        code: "finalize.nothing-staged",
+        producer: "cli::task",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit — the tree is dirty and the narrowed index is empty",
+    },
+    FinalizeCode {
+        code: "finalize.promote-clobber",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the destination file it refused to overwrite, which may be foreign \
+                       and carry no URI identity",
+    },
+    FinalizeCode {
+        code: "finalize.promote-io",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the staged doc it could not read",
+    },
+    FinalizeCode {
+        code: "finalize.provenance-io",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit whose provenance manifest could not be read",
+    },
+    FinalizeCode {
+        code: "finalize.render-io",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the staged commit doc",
+    },
+    FinalizeCode {
+        code: "finalize.source-path-io",
+        producer: "engine::finalize",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit whose recorded source path could not be read",
+    },
+    FinalizeCode {
+        code: "finalize.stage-failed",
+        producer: "cli::task",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit whose own stage phase git rejected",
+    },
+];
+
+/// The identifiers in the `finalize.` namespace that are **not** family members, each with the
+/// reason it is not one. Without this list the predicate reads as a namespace — and a namespace
+/// is exactly what let a knob key, an error identity and a declared-but-unminted contract
+/// identifier be counted as codes (the M49 Increment 8 lesson: *an exemption is an enumeration,
+/// not a namespace prefix*).
+///
+/// A member of this list that ever gains a production `Finding` producer must move into
+/// [`FINALIZE_FAMILY`]; the registry suite asserts that in both directions.
+pub const FINALIZE_NON_MEMBERS: &[(&str, &str)] = &[
+    (
+        "finalize.commit-rejected",
+        "an invocation-log **error identity** (`crate::invocation_log::ERROR_COMMIT_REJECTED`) \
+         for the survivable hook-rejection frame — an `anyhow` path, never a `Finding`, so it \
+         projects no `(code, target)` key",
+    ),
+    (
+        "finalize.fan-out",
+        "a cascade **knob-key namespace** (`finalize.fan-out.squash`), not a finding code at all",
+    ),
+    (
+        "finalize.forward-ref-dangling",
+        "named as a member by the contract's sub-table for two waves and minted by **no** \
+         production producer at all — it survives only as a unit-test fixture in \
+         `engine::finding`, so it was a member of the count and of no code path (M49 \
+         Increment 11 / T11). Declared here rather than merely deleted, so the record can \
+         name it and so re-adding it as a member is a change to this table",
+    ),
+    (
+        "finalize.left-out",
+        "a declared **contract identifier** only (`crate::pack`'s ambush-class set): the M42 \
+         settle chose print-over-refuse, so the staging contract's sole production surface is \
+         the pre/post-commit left-out print and no producer mints it as a `Finding`",
+    ),
+];
+
 /// The door a [`gates_at_compose`] finding really has — the compose gate `jigc start` runs before
 /// it hands a task its steps.
 const COMPOSE_DOOR: &str = "`jigc start`";

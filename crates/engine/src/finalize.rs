@@ -12,6 +12,17 @@
 //! 2026-05-31 → inc-4 planning pins: "the engine `finalize` is a pure transaction
 //! planner … keeping the engine LLM-free *and* shell-free").
 //!
+//! **A new `finalize.*` finding code joins one registry, wherever it is minted.**
+//! The family is enumerated at `cli::render::FINALIZE_FAMILY` under a stated
+//! predicate — *a code is a member iff a production constructor mints it as a
+//! [`Finding`] in the `finalize.` namespace* — and
+//! `crates/cli/tests/finalize_family_registry.rs` derives that set by scanning
+//! production source, so a producer added here (or in `milestone`, or CLI-side)
+//! that skips the registry reddens. Its size is deliberately stated in no
+//! document: three homes carried three different wrong numerals for this family
+//! before M49 Increment 11 / T11 replaced the counting with the table
+//! (`design/command-output-contract.md` → The `finalize.*` family).
+//!
 //! The planner covers the phases that are pure decisions over its inputs:
 //!
 //! - **Phase 1 — preflight** (`finalize.md` → 1. Preflight): the task working area

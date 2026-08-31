@@ -19,6 +19,8 @@ mod file_state_history_gate;
 mod file_state_merge_hand_off;
 #[path = "../file_state_soundness.rs"]
 mod file_state_soundness;
+#[path = "../finalize_family_registry.rs"]
+mod finalize_family_registry;
 #[path = "../finalize_finding_keys.rs"]
 mod finalize_finding_keys;
 #[path = "../finalize_index_scoping.rs"]
