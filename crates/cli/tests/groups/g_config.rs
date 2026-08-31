@@ -28,6 +28,8 @@ mod config_insert_step;
 mod config_read;
 #[path = "../config_replace_remove_step.rs"]
 mod config_replace_remove_step;
+#[path = "../doctype_authoring_fences.rs"]
+mod doctype_authoring_fences;
 #[path = "../flow13_acceptance.rs"]
 mod flow13_acceptance;
 #[path = "../flow13_contract_and_severity.rs"]
