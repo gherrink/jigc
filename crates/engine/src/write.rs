@@ -2447,32 +2447,42 @@ fn item_block_within(
 /// otherwise be matched (the parent's field appended INTO a child's group — the
 /// corruption this guards). An item with no nested child keeps its whole region.
 ///
-/// **The boundary is schema-keyed, not depth-keyed (M49 D3(A)).** "The first deeper
-/// heading" is the wrong test, because a **multi-slot** item's own `#### <Leaf-Title>`
-/// sub-labels *are* deeper headings: on any item block declaring ≥2 slots the region
-/// stopped at the item's own first sub-label, putting the item's own trailing field
-/// group outside it — so [`set_item_field`] found no bullet, [`set_item_field_or_insert`]
-/// fell through to the insert half, and [`insert_item_field`]'s cold-fill arm appended a
-/// **second bullet for the same key** at exit 0, invisible to `jigc validate`, with the
-/// pinned `doc show --format json` read returning the stale first value.
+/// **The boundary is the schema-reserved depth, not "the first deeper heading" (M49
+/// D3(A), completed at the M49 completion audit).** Two things are wrong with "deeper":
+///
+/// * a **multi-slot** item's own `#### <Leaf-Title>` sub-labels *are* deeper headings, so
+///   on any block declaring ≥2 slots the region stopped at the item's own first
+///   sub-label, putting the item's own trailing field group outside it — [`set_item_field`]
+///   found no bullet, [`set_item_field_or_insert`] fell through to the insert half, and
+///   [`insert_item_field`]'s cold-fill arm appended a **second bullet for the same key**
+///   at exit 0, invisible to `jigc validate`, with the pinned `doc show --format json`
+///   read returning the stale first value;
+/// * a heading the address's own **ceiling declares free** ([`slot_ceiling`] —
+///   `reserved_max` is a *level*, `first_allowed` one deeper) is likewise a deeper
+///   heading, so ordinary author prose carrying one truncated the region the same way and
+///   produced the same duplicate bullet — this time refused by the validate-after guard
+///   as a **false** `write.non-reparseable`. The item's own region cannot end at a depth
+///   the tool's own message told the author to use.
 ///
 /// The rule the fix keys on — the context taken as a fence input rather than sniffed
-/// from bytes (`design/surface-contract.md`): a deeper heading that is a **declared slot
-/// sub-label of this item's template** ([`parse::is_item_slot_sub_label`]) does not end
-/// the region; anything deeper that is not one does. An `{#id}` anchor is what identifies
-/// such a heading as a nested item rather than a defect, so an anchored heading ends the
-/// region even when its text matches a declared leaf title — without which a parent's
-/// leaf region would swallow its children's field groups, which is the same corruption in
-/// the other direction.
+/// from bytes (`design/surface-contract.md`): the region ends at the first heading **at
+/// `own_level + 1`**, the one depth a nested child can render at, that is not a
+/// **declared slot sub-label of this item's template**, and only where the template
+/// declares a nested repeatable at all. An `{#id}` anchor is what identifies such a
+/// heading as a nested item rather than a defect, so an anchored heading ends the region
+/// even when its text matches a declared leaf title — without which a parent's leaf
+/// region would swallow its children's field groups, which is the same corruption in the
+/// other direction.
 ///
-/// The predicate is the **parser's own** (M49 T2), because the reader asks the identical
-/// question one seam over — where does this item's nested region begin — and two
-/// implementations of one question is how this class opened.
+/// The predicate is the **parser's own** ([`parse::opens_item_nested_region`], M49 T2),
+/// because the reader asks the identical question one seam over — where does this item's
+/// nested region begin — and two implementations of one question is how this class
+/// opened.
 ///
 /// `item_ids` is the **section-qualified** chain (the one [`chain_repeatable`] walks), so
 /// the template resolved is the one the addressed item is an instance of; a chain the
-/// schema cannot walk yields no declared sub-labels — i.e. the depth-only boundary this
-/// widens, which is the conservative answer rather than a wider region.
+/// schema cannot walk yields no declared sub-labels, and the predicate then answers on
+/// depth alone — the conservative narrower region rather than a wider one.
 fn item_own_leaf_region(
     schema: &Schema,
     source: &str,
@@ -2498,16 +2508,13 @@ fn item_own_leaf_region(
                 level, range, text, ..
             } if range.start > region.start
                 && range.start < region.end
-                && level_num_of(*level) > own_level
-                && !template.as_ref().is_some_and(|template| {
-                    parse::is_item_slot_sub_label(
-                        &source[range.clone()],
-                        level_num_of(*level),
-                        own_level,
-                        text,
-                        template,
-                    )
-                }) =>
+                && parse::opens_item_nested_region(
+                    &source[range.clone()],
+                    level_num_of(*level),
+                    own_level,
+                    text,
+                    template.as_ref(),
+                ) =>
             {
                 Some(range.start)
             }
@@ -6986,10 +6993,12 @@ impl SlotCeiling {
 /// | an item whose block carries a **nested repeatable**, at depth `d` | `2+d+1` | `2+d+2` |
 ///
 /// The derivation keys on **`multi_slot || has_nested`**, never multi-slot alone: the
-/// parser bounds a nested-bearing item's leaf region at the first deeper heading that is
-/// not one of the item's own declared slot sub-labels (M49 T2), so an *authored* heading
-/// at `2+d+1` inside that item's prose reads as a nested item start exactly as a
-/// sub-label would. No shipped doctype is single-slot-with-nested today — which is
+/// parser bounds a nested-bearing item's leaf region at the first heading **at `2+d+1`**
+/// that is not one of the item's own declared slot sub-labels
+/// ([`parse::opens_item_nested_region`], M49 T2), so an *authored* heading at that level
+/// inside the item's prose reads as a nested item start exactly as a sub-label would —
+/// and, symmetrically, `first_allowed` is a depth the boundary must let through, since
+/// the ceiling is the sentence the write path prints to the author. No shipped doctype is single-slot-with-nested today — which is
 /// precisely why the member is derived rather than enumerated.
 ///
 /// `item_chain` is the **section-qualified** address chain ([`physical_item_chain`]):

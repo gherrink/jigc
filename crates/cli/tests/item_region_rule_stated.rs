@@ -126,6 +126,13 @@ fn parsing_md_states_the_schema_keyed_boundary_rule() {
         "neither a declared slot sub-label of this item's template nor an anchored nested item",
         "`{#id}` anchor",
         "is_item_slot_sub_label",
+        // The depth half of the rule (M49 completion audit). The sub-label clause alone
+        // is the rule the fix *started* from — stating only it would let the doc describe
+        // a boundary keyed on "the first deeper heading", which is what truncated an
+        // item's own region at a heading the ceiling declares free.
+        "the first heading **at `item_level + 1`** that is neither a declared slot sub-label",
+        "nothing **deeper** than `item_level + 1` can be a nested child",
+        "opens_item_nested_region",
     ] {
         assert!(
             flat_body.contains(&flat(fragment)),

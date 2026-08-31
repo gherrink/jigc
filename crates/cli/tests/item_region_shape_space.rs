@@ -247,24 +247,24 @@ fn findings_over_the_doc(corpus: &TrialCorpus, task: &str) -> Vec<String> {
 
 /// Assert the document still parses and the gate raises nothing over it — the invariant
 /// every cell shares, checked after every op.
-fn assert_doc_is_whole(corpus: &TrialCorpus, task: &str, shape: Shape, op: Op, bytes: &str) {
+fn assert_doc_is_whole(corpus: &TrialCorpus, task: &str, shape: Shape, cell: &str, bytes: &str) {
     let label = shape.label();
     let (ok, text) = run(corpus, &["doc", "show", DOC, "--task", task]);
     assert!(
         ok,
-        "[{label}/{op:?}] a doc jigc itself just wrote must read back at exit 0 — a \
+        "[{label}/{cell}] a doc jigc itself just wrote must read back at exit 0 — a \
          reject here is the writer acking bytes its own parser refuses:\n{text}",
     );
     let findings = findings_over_the_doc(corpus, task);
     assert!(
         findings.is_empty(),
-        "[{label}/{op:?}] the gate must raise nothing over the written doc: \
+        "[{label}/{cell}] the gate must raise nothing over the written doc: \
          {findings:?}\n--- staged bytes ---\n{bytes}",
     );
     for fragment in surviving_fragments(shape) {
         assert!(
             bytes.contains(&fragment),
-            "[{label}/{op:?}] the write ate content it does not address — {fragment:?} \
+            "[{label}/{cell}] the write ate content it does not address — {fragment:?} \
              is gone:\n{bytes}",
         );
     }
@@ -324,7 +324,7 @@ fn drive_shape(shape: Shape) {
                     "\"draft\"",
                     "[{label}/insert] the pinned read returns what the write acked",
                 );
-                assert_doc_is_whole(&corpus, &task, shape, op, &bytes);
+                assert_doc_is_whole(&corpus, &task, shape, &format!("{op:?}"), &bytes);
             }
             Op::Update => {
                 // The surgical update: the bullet is present, so this is the splice arm —
@@ -359,7 +359,7 @@ fn drive_shape(shape: Shape) {
                     "[{label}/update] the pinned read returns the value the LAST write \
                      acked, never the stale first one",
                 );
-                assert_doc_is_whole(&corpus, &task, shape, op, &bytes);
+                assert_doc_is_whole(&corpus, &task, shape, &format!("{op:?}"), &bytes);
             }
             Op::Unset => {
                 let (ok, text) = run(
@@ -388,7 +388,7 @@ fn drive_shape(shape: Shape) {
                     "[{label}/unset] the pinned read must report the leaf absent, not \
                      serve the removed value:\n{text}",
                 );
-                assert_doc_is_whole(&corpus, &task, shape, op, &bytes);
+                assert_doc_is_whole(&corpus, &task, shape, &format!("{op:?}"), &bytes);
             }
         }
     }
@@ -473,6 +473,177 @@ fn assert_deeper_heading(
 }
 
 // ============================================================================
+// The payload axis — prose carrying a heading at the depth the shape declares FREE
+// ============================================================================
+
+/// The shallowest heading depth this shape's own ceiling declares **free** for slot
+/// prose, read from the engine's own derivation (`engine::write::slot_ceiling`) over the
+/// generated schema rather than written down.
+///
+/// A constant here would be the bug in the test instead of in the product: the ceiling
+/// is a function of `(Schema, section, item-chain)` — `####` for a flat single-slot
+/// item, `#####` wherever the template reserves one level deeper — and the M45 lesson is
+/// that a statement built from a global constant proves *statement == constant* while
+/// the constant is context-blind (`design/surface-contract.md` → the stated-at fence).
+fn first_allowed_depth(shape: Shape) -> usize {
+    let schema = engine::schema::load_schema(shape_schema(shape).as_bytes())
+        .expect("the generated shape schema loads");
+    engine::write::slot_ceiling(&schema, "findings", &["*"])
+        .expect("the manufactured item chain resolves against its own schema")
+        .first_allowed
+}
+
+/// Slot prose for `slot` carrying one heading at `shape`'s first-allowed depth, plus a
+/// tail **after** it — the tail is what a truncating region boundary eats.
+///
+/// It opens with [`slot_prose`] so [`surviving_fragments`] still names a fragment this
+/// payload keeps: the cell asserts the write did not eat its neighbours, not that the
+/// document is unchanged.
+fn free_depth_payload(shape: Shape, slot: &str) -> String {
+    let hashes = "#".repeat(first_allowed_depth(shape));
+    format!(
+        "{}\n\n{hashes} A heading at the depth this address declares free\n\nAnd the tail \
+         after it.",
+        slot_prose(slot),
+    )
+}
+
+/// Drive one shape through the payload axis: **every declared slot position**, each in
+/// its own corpus, written with a heading at the shape's first-allowed depth — then, on
+/// the last of them, the three field ops over that same prose.
+///
+/// # What this dimension is, and why the eighteen cells could not reach it
+///
+/// The eighteen `shape × op` cells above fill every slot with **plain** prose and write
+/// only the `status` field, so the whole space was driven over a document in which no
+/// item's own prose carried a heading at all. Two boundaries in the engine answer *where
+/// does this item's own leaf region end* — [`engine::parse`]'s nested-region start and
+/// [`engine::write`]'s field-group bound — and both keyed on **the first heading deeper
+/// than the item**, which is not the rule the ceiling states: the ceiling reserves a
+/// *level*, and everything below it is opaque slot prose. So a heading at the very depth
+/// jigc's own `write.slot-heading-depth` message prescribes truncated the item's own
+/// region, and the failure was invisible to a suite whose payloads had no headings in
+/// them (M49 completion audit).
+///
+/// **Slot position** is the second missing dimension, and it is why the defect was a
+/// *false rejection* rather than a silent one on the multi-slot shapes: truncating at a
+/// free-depth heading in the **last** declared slot cuts nothing structural away, while
+/// truncating in any **earlier** slot cuts the next `#### <Leaf-Title>` sub-label out of
+/// the item's own region, so every following leaf parsed as missing and the write was
+/// refused as non-reparseable — naming a `####` sub-heading the payload never contained.
+fn drive_payload_axis(shape: Shape) {
+    let label = shape.label();
+    let pack = FixturePack::from_dev_pack(&format!("payload-{label}"));
+    pack.write_schema("changelog", &shape_schema(shape))
+        .write_workflow("log-finding", FIXTURE_WORKFLOW);
+
+    let hashes = "#".repeat(first_allowed_depth(shape));
+    for slot in shape.slot_ids() {
+        let (corpus, task, item) = build(shape, &pack);
+        let address = format!("{item}/{slot}");
+        let payload = free_depth_payload(shape, slot);
+        let cell = format!("slot:{slot}");
+
+        // 1. The write acks. It is the depth the tool's own ceiling declares free, so a
+        //    refusal here is jigc refusing the repair it just prescribed.
+        let out = corpus.jigc_stdin(
+            &[
+                "doc",
+                "set-slot",
+                &address,
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            &payload,
+        );
+        assert!(
+            out.status.success(),
+            "[{label}/{cell}] a `{hashes}` heading is at the depth this address's own \
+             ceiling declares free, so the write must land — a refusal here contradicts \
+             the `write.slot-heading-depth` repair jigc prints one call earlier:\n{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+
+        // 2. The pinned read returns what the write acked — the whole payload, tail
+        //    included. A truncating region boundary shows up here as an ack at exit 0
+        //    over a read that has silently lost everything past the heading.
+        assert_eq!(
+            read_json(&corpus, &address, &task),
+            serde_json::to_string(&payload).expect("json-encode the payload"),
+            "[{label}/{cell}] the pinned read must return the prose the write acked, \
+             heading and tail included",
+        );
+
+        let bytes = staged_bytes(&corpus, &task);
+        assert_doc_is_whole(&corpus, &task, shape, &cell, &bytes);
+
+        // 3. The item's own field group is still the item's own: the three field ops
+        //    over prose that carries a free-depth heading must behave exactly as they do
+        //    over plain prose (the writer's half of the same boundary).
+        let status = format!("{item}/status");
+        for (op, args, expected) in [
+            (
+                "insert",
+                vec![
+                    "doc",
+                    "set-field",
+                    status.as_str(),
+                    "--value",
+                    "draft",
+                    "--task",
+                    task.as_str(),
+                ],
+                Some("- status: draft"),
+            ),
+            (
+                "update",
+                vec![
+                    "doc",
+                    "set-field",
+                    status.as_str(),
+                    "--value",
+                    "done",
+                    "--task",
+                    task.as_str(),
+                ],
+                Some("- status: done"),
+            ),
+            (
+                "unset",
+                vec![
+                    "doc",
+                    "set-field",
+                    status.as_str(),
+                    "--unset",
+                    "--task",
+                    task.as_str(),
+                ],
+                None,
+            ),
+        ] {
+            let (ok, text) = run(&corpus, &args);
+            assert!(
+                ok,
+                "[{label}/{cell}/{op}] a field op over an item whose prose carries a \
+                 free-depth heading must land exactly as it does over plain prose:\n{text}",
+            );
+            let bytes = staged_bytes(&corpus, &task);
+            assert_eq!(
+                status_bullets(&bytes),
+                expected.into_iter().collect::<Vec<_>>(),
+                "[{label}/{cell}/{op}] the free-depth heading must not split the item's \
+                 own field group — a second bullet is the region boundary reading author \
+                 prose as structure:\n{bytes}",
+            );
+            assert_doc_is_whole(&corpus, &task, shape, &format!("{cell}/{op}"), &bytes);
+        }
+    }
+}
+
+// ============================================================================
 // The eighteen cells — one test per shape, three cells each
 // ============================================================================
 
@@ -504,6 +675,83 @@ fn multi_slot_flat_insert_update_unset() {
 #[test]
 fn multi_slot_nested_insert_update_unset() {
     drive_shape(SHAPES[5]);
+}
+
+/// The payload axis over the slot-bearing shapes. A **slotless** item declares no slot
+/// to write, so it has no cell here — the exclusion is structural, not a gap: the axis
+/// is `{shape with >=1 slot} x {declared slot position} x {plain, free-depth heading}`,
+/// and [`the_payload_axis_covers_every_slot_bearing_shape`] fences that every such shape
+/// has a driver.
+#[test]
+fn single_slot_flat_free_depth_heading_in_every_slot() {
+    drive_payload_axis(SHAPES[2]);
+}
+
+#[test]
+fn single_slot_nested_free_depth_heading_in_every_slot() {
+    drive_payload_axis(SHAPES[3]);
+}
+
+#[test]
+fn multi_slot_flat_free_depth_heading_in_every_slot() {
+    drive_payload_axis(SHAPES[4]);
+}
+
+#[test]
+fn multi_slot_nested_free_depth_heading_in_every_slot() {
+    drive_payload_axis(SHAPES[5]);
+}
+
+/// The payload axis reaches **every** slot-bearing shape and, within each, **every**
+/// declared slot position — derived from the same [`SHAPES`] enumeration the eighteen
+/// cells iterate, so a shape added to the axis without a payload driver cannot hide.
+///
+/// It also states the fact that made slot position load-bearing: a multi-slot shape has
+/// a non-last slot, and the non-last position is the one whose truncation cuts a
+/// structural sub-label out of the item's own region.
+#[test]
+fn the_payload_axis_covers_every_slot_bearing_shape() {
+    let slot_bearing: Vec<Shape> = SHAPES.iter().copied().filter(|s| s.slots > 0).collect();
+    assert_eq!(
+        slot_bearing.len(),
+        4,
+        "four of the six shapes declare a slot; the other two model no prose and so \
+         have no payload cell",
+    );
+    let mut non_last_positions = 0;
+    for shape in &slot_bearing {
+        let ids = shape.slot_ids();
+        assert_eq!(
+            ids.len(),
+            shape.slots,
+            "[{}] every declared slot position is reachable by address",
+            shape.label(),
+        );
+        non_last_positions += ids.len() - 1;
+        // The depth the payload uses is the shape's own, derived rather than written
+        // down — and it is strictly deeper than everything the schema reserves there.
+        let schema = engine::schema::load_schema(shape_schema(*shape).as_bytes())
+            .expect("the generated shape schema loads");
+        let ceiling = engine::write::slot_ceiling(&schema, "findings", &["*"])
+            .expect("the manufactured item chain resolves");
+        assert_eq!(
+            ceiling.first_allowed,
+            first_allowed_depth(*shape),
+            "[{}] the payload's depth is the engine's own first-allowed depth",
+            shape.label(),
+        );
+        assert!(
+            ceiling.first_allowed > ceiling.reserved_max,
+            "[{}] the free depth is deeper than everything reserved at this address",
+            shape.label(),
+        );
+    }
+    assert!(
+        non_last_positions > 0,
+        "the axis includes at least one NON-LAST slot position — the position whose \
+         truncation cuts a following `#### <Leaf-Title>` sub-label out of the item's own \
+         region, and the one the eighteen `shape x op` cells never wrote to",
+    );
 }
 
 /// The space is the whole cartesian product, and it is eighteen cells — derived from
