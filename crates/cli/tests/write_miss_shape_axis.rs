@@ -135,12 +135,34 @@
 //! Stated as a property of the matrix rather than a per-row column, so a row added later
 //! inherits it.
 //!
-//! **Declared bound.** The two *section-level* address forms — `set-slot` / `set-field` at
-//! `#<undeclared-section>` with no item hop — are **not** cells of this matrix: the CLI
-//! address resolver refuses to resolve a slot/field target inside an undeclared section and
-//! emits the `{"error": …}` envelope, so they never reach a write door and never mint a
-//! `write.*` finding. That is a different seam (target resolution, not the write-reject
-//! taxonomy) and is left as it is.
+//! **M49 closes the column's section-level arm — the bound this file used to declare.**
+//! The two *section-level* address forms — `set-slot` at `#<undeclared-section>` and
+//! `set-field` at `#<undeclared-section>/<leaf>`, with no item hop — were **not** cells of
+//! this matrix, because the CLI's own target resolvers refuse before any write door is
+//! reached: searching for a slot or a field inside a section that does not exist, they
+//! found neither and emitted a bare `{"error": "no slot addressed by …"}` — exit 1,
+//! code-less, route-less, **outside the finding envelope**. `jigc doc author` reaches both
+//! resolvers through its batch lowering (a payload section's `set:` key is a field hop; the
+//! section's own id is its slot, key-less), so the same bare form came back at two more
+//! doors — a fourth producer the M47 census did not count. Calling that "a different seam"
+//! kept `design/validation.md`'s **universal** — *the address names a section the schema
+//! does not declare* — false at four of them (M47 increment 6, advisory 2). Five rows join
+//! the column, all on the shipped `write.unknown-section` and its schema read, and the
+//! resolvers now ask the engine's own rank-1 predicate
+//! (`engine::write::undeclared_section_splice`) rather than inferring the miss from the
+//! absent leaf below.
+//!
+//! **The column is fenced against the write-verb registry, not hand-counted**
+//! ([`every_doc_write_verb_taking_a_section_hop_answers_an_undeclared_one`]): every `doc`
+//! write verb in `cli::cli::VERB_KINDS` either drives an undeclared section hop here or is
+//! named in `NO_SECTION_HOP` with the reason it carries none. Shipping over one cell is how
+//! this column started, so a ninth write verb is now a row to add rather than a
+//! rediscovery.
+//!
+//! **Declared bound, one hop shorter.** A *leaf*-only address with no section hop at all —
+//! `set-field` at `#<name>`, the single-hop MVP form that searches every section for a
+//! field of that id — is not a cell: it names no section, so *undeclared section* is not
+//! what it got wrong, and it keeps the resolver's own sentence.
 //!
 //! **Declared bound, one level down (M49).** The nested form with **no trailing item
 //! hop** splits by verb, and only one arm is a cell here. At `set-slot` / `set-field`,
@@ -150,6 +172,7 @@
 //! write door is reached — the same target-resolution seam as the bound above, one level
 //! down, and left as it is. Only `add-item`, whose destination is a *section*, is a row.
 
+use cli::cli::{VERB_KINDS, VerbKind};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -812,6 +835,81 @@ const CELLS: &[Cell] = &[
         code: "write.unknown-section",
         route: RouteCheck::Schema,
     },
+    // ---- The **section-level** arm of the same column (M49 Increment 11, T3). Every row
+    // above carries an **item hop**, so the address reaches a write door and the engine's
+    // rank-1 `section_undeclared` answers it. These do not: `set-slot` at `#<undeclared>`
+    // and `set-field` at `#<undeclared>/<leaf>` bottom out in the CLI's own target
+    // resolvers, which searched the schema for a *slot* / a *field* and — finding neither,
+    // because the section they would live in does not exist — refused with a bare
+    // `{"error": "no slot addressed by …"}`: exit 1, **code-less, route-less, outside the
+    // finding envelope**, so a driver keying on `(code, target)` sees nothing at all and an
+    // agent is handed no recovery. `jigc doc author` reaches the same two resolvers through
+    // its batch lowering, one arm each (a payload section's `set:` key is a field hop; the
+    // section's own id is its slot, key-less), so it produced the bare form twice more. The
+    // miss is identical to the rows above — the schema declares no such section — so it
+    // earns the same `write.unknown-section` and the same `jigc doc schema <doctype>` read,
+    // asked at rank 1 in the resolver rather than inferred from a missing leaf
+    // (`design/validation.md` → The `write.*` route split, whose universal this closes —
+    // M47 increment 6, advisory 2).
+    Cell {
+        what: "set-slot at an undeclared section (no item hop)",
+        args: &[
+            "doc",
+            "set-slot",
+            "{addr}#no-such-section",
+            "--from-file",
+            "-",
+        ],
+        stdin: Some(b"A summary.\n"),
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-field --value at a field in an undeclared section (no item hop)",
+        args: &[
+            "doc",
+            "set-field",
+            "{addr}#no-such-section/link",
+            "--value",
+            "https://x",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-field --unset at a field in an undeclared section (no item hop)",
+        args: &["doc", "set-field", "{addr}#no-such-section/link", "--unset"],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        // The batch door's **field** arm: a payload `set:` key under an undeclared section
+        // lowers to `#<undeclared>/<key>`, the same address the per-leaf `set-field` above
+        // carries — and `author.rs`'s own lowering comment already claimed the engine's
+        // `write.unknown-section` handled it.
+        what: "doc author batch naming an undeclared section carrying a field",
+        args: &["doc", "author", "changelog", "--from-file", "-"],
+        stdin: Some(
+            b"title: Changelog\nsections:\n  - id: no-such-section\n    set:\n      link: \"https://x\"\n",
+        ),
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        // The batch door's **slot** arm: the section's own id is its slot key, which
+        // lowers key-less to `#<undeclared>` — the per-leaf `set-slot` address, through the
+        // other resolver. Both arms are driven, because one fix reaching only one of them
+        // leaves the same payload answering two ways.
+        what: "doc author batch naming an undeclared section carrying a slot",
+        args: &["doc", "author", "changelog", "--from-file", "-"],
+        stdin: Some(
+            b"title: Changelog\nsections:\n  - id: no-such-section\n    set:\n      no-such-section: \"<<A summary.>>\"\n",
+        ),
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
     // ---- The **nested** arm of the same column (M49 Increment 8, T1). Every row above
     // gets the section wrong at the address's FIRST hop; these get it wrong at a later one
     // — `#releases/1-3-0/bogus/xyz…`, where `releases` is declared, `1-3-0` is live, and
@@ -1205,6 +1303,54 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
         CELLS.len(),
         broken.join("\n"),
     );
+}
+
+/// The `doc` write verbs whose address carries **no section hop at all**, so the
+/// undeclared-section column can hold no cell for them — each with the reason it cannot,
+/// stated rather than left as an absence.
+const NO_SECTION_HOP: &[(&[&str], &str)] = &[
+    (
+        &["doc", "create"],
+        "takes a bare doctype id, never an address",
+    ),
+    (
+        &["doc", "rename"],
+        "addresses a whole doc and refuses any `#fragment` outright",
+    ),
+];
+
+/// **The fence over the column.** The rows above are cells of a matrix whose other axis is
+/// the *write-verb surface*, and that surface is code — [`VERB_KINDS`], the table already
+/// fenced against the clap tree. So the column is derived from it rather than hand-counted:
+/// every `doc` write verb either drives an undeclared section hop here, or is named in
+/// [`NO_SECTION_HOP`] with the reason it cannot. A ninth `doc` write verb is then a row to
+/// add, not a rediscovery — which is how this column came to ship over one cell in the
+/// first place.
+#[test]
+fn every_doc_write_verb_taking_a_section_hop_answers_an_undeclared_one() {
+    let surface: Vec<&[&str]> = VERB_KINDS
+        .iter()
+        .filter(|(path, kind)| path.first() == Some(&"doc") && *kind == VerbKind::Write)
+        .map(|(path, _)| *path)
+        .collect();
+    for verb in &surface {
+        let exempt = NO_SECTION_HOP.iter().any(|(path, _)| path == verb);
+        let covered = CELLS
+            .iter()
+            .any(|cell| cell.code == "write.unknown-section" && cell.args.starts_with(verb));
+        assert!(
+            exempt != covered,
+            "`jigc {}`: a `doc` write verb either drives an undeclared section hop in              `CELLS` or states in `NO_SECTION_HOP` why it takes none — exactly one              (exempt: {exempt}, covered: {covered})",
+            verb.join(" "),
+        );
+    }
+    for (verb, _) in NO_SECTION_HOP {
+        assert!(
+            surface.contains(verb),
+            "`NO_SECTION_HOP` names `jigc {}`, which is not a `doc` write verb in              `VERB_KINDS`",
+            verb.join(" "),
+        );
+    }
 }
 
 /// A fixture in the state the collision column never drove: `setup` + `start` and **no

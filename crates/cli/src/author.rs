@@ -158,8 +158,11 @@ fn check_kind(declared: DeclaredKind, raw: &str, addr: &str) -> Result<()> {
 /// The schema view at one section level: the leaf-kind lookups a payload section's
 /// `set` keys and items are cross-checked against. Derived from a top-level
 /// [`Section`] or a nested [`SchemaLeaf::Repeatable`]; [`SchemaCtx::None`] when the
-/// payload addresses a section the schema does not declare (left to the engine's
-/// downstream `write.unknown-section` reject — the cross-check is purely additive).
+/// payload addresses a section the schema does not declare — left to the downstream
+/// `write.unknown-section` reject the lowered leaf's target resolver raises from the
+/// engine's own rank-1 predicate. (True since M49 Increment 11 / T3: before it, that
+/// resolver refused with a bare code-less error, so this sentence named a reject the
+/// batch door did not produce.) The cross-check is purely additive.
 enum SchemaCtx<'a> {
     None,
     Simple {

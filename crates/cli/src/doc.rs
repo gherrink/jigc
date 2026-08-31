@@ -659,8 +659,7 @@ fn run_set_field(
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "set-field", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let target = field_target(&schema, &address)
-        .with_context(|| format!("no field addressed by `{addr}`"))?;
+    let target = field_target(&schema, &address)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
     let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
@@ -793,8 +792,7 @@ fn run_unset_field(
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "set-field --unset", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let target = field_target(&schema, &address)
-        .with_context(|| format!("no field addressed by `{addr}`"))?;
+    let target = field_target(&schema, &address)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
     let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
@@ -3689,8 +3687,7 @@ fn apply_leaf(
         Leaf::SetField { fragment, value } => {
             let addr = format!("{head}#{fragment}");
             let address = parse_addr(&addr)?;
-            let target = field_target(schema, &address)
-                .with_context(|| format!("no field addressed by `{addr}`"))?;
+            let target = field_target(schema, &address)?;
             apply_field_target(schema, source, target, &addr, value)
         }
         Leaf::SetSlot { fragment, prose } => {
@@ -5995,6 +5992,34 @@ pub(crate) fn read_handoff(from_file: &str) -> Result<String> {
     }
 }
 
+/// **Rank 1 at the CLI's own target resolvers: is the addressed section declared at all?**
+///
+/// The item-addressing write doors ask this in the engine (`undeclared_section_splice`,
+/// rank 1 of shape → presence → leaf), which is why an undeclared section hop reads
+/// `write.unknown-section` at all six of them. The **section-level** address forms never
+/// reach a door to ask: `set-slot` at `#<section>` and `set-field` at `#<section>/<leaf>`
+/// bottom out in [`slot_target`] / [`field_target`], which search the schema for a slot or
+/// a field and — finding neither, because the section they would live in does not exist —
+/// used to refuse with a bare `no slot addressed by …`: **code-less, route-less, outside the
+/// finding envelope**, so a driver keying on `(code, target)` saw nothing and an agent got
+/// no recovery. `jigc doc author` reached both resolvers through its batch lowering and so
+/// produced the bare form twice more.
+///
+/// The miss is the same miss, so it earns the same code, the same sentence and the same
+/// `jigc doc schema <doctype>` read — asked here at rank 1, from the engine's own predicate,
+/// rather than inferred from the absent leaf below (M49 Increment 11 / T3, closing M47
+/// increment 6's advisory 2; `design/validation.md` → The `write.*` route split).
+fn undeclared_section_guard(schema: &Schema, section: &str, uri: &str) -> Result<(), DocFailure> {
+    match engine::write::undeclared_section_splice(schema, section) {
+        None => Ok(()),
+        Some(err) => {
+            let mut finding = engine::write::splice_error_finding(&err);
+            stamp_target(&mut finding, uri);
+            Err(DocFailure::block(finding))
+        }
+    }
+}
+
 /// The resolved destination of a `set-field` address: a **section-level** field
 /// (`(section, field)`, adjudicated via `set_field_validated`) or an **item-level**
 /// field on a repeatable item (`(section, item, field)`, spliced via
@@ -6026,22 +6051,38 @@ enum FieldTarget {
 /// search every section for a field of that id), the explicit two-hop
 /// `#<section>/<field>`, and the item-leaf three-hop `#<section>/<item>/<field>`
 /// (M13 Increment 3 — the per-item field, addressed through the item id).
-fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
-    match address.fragment.as_ref()? {
+///
+/// Returns a [`DocFailure`] rather than `None` since M49 Increment 11 / T3, so the one
+/// resolver answers every door that consumes it identically: the two-hop form's
+/// [`undeclared_section_guard`] mints a located, routed `write.unknown-section`, and the
+/// address that genuinely names no declared field keeps the resolver's own sentence — in
+/// the URI normal form the write-path findings key at, not the raw argument.
+fn field_target(schema: &Schema, address: &Address) -> Result<FieldTarget, DocFailure> {
+    let uri = address.to_string();
+    let no_field = || -> DocFailure { anyhow::anyhow!("no field addressed by `{uri}`").into() };
+    let Some(fragment) = address.fragment.as_ref() else {
+        return Err(no_field());
+    };
+    match fragment {
         Fragment::Unit(field) => {
             let field = field.as_str();
-            schema.sections.iter().find_map(|s| match &s.body {
-                SectionBody::Simple { fields, .. } if fields.iter().any(|f| f.id == field) => {
-                    Some(FieldTarget::Section {
-                        section: s.id.clone(),
-                        field: field.to_string(),
-                    })
-                }
-                _ => None,
-            })
+            schema
+                .sections
+                .iter()
+                .find_map(|s| match &s.body {
+                    SectionBody::Simple { fields, .. } if fields.iter().any(|f| f.id == field) => {
+                        Some(FieldTarget::Section {
+                            section: s.id.clone(),
+                            field: field.to_string(),
+                        })
+                    }
+                    _ => None,
+                })
+                .ok_or_else(no_field)
         }
         Fragment::UnitLeaf(section, field) => {
             let (section, field) = (section.as_str(), field.as_str());
+            undeclared_section_guard(schema, section, &uri)?;
             schema
                 .sections
                 .iter()
@@ -6050,6 +6091,7 @@ fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
                     section: s.id.clone(),
                     field: field.to_string(),
                 })
+                .ok_or_else(no_field)
         }
         // The item-leaf field hop. The CLI only extracts the `(section, item, field)`
         // triple; the engine `set_item_field_or_insert` adjudicates shape (item/section
@@ -6059,23 +6101,27 @@ fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
         // `schema-conformance.field-value-conformant` code, and an **undeclared** leaf
         // with `write.unknown-field` before any bytes move (M47 — the undeclared-address
         // table; `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 9).
-        Fragment::UnitItemLeaf(section, item, field) => Some(FieldTarget::Item {
+        Fragment::UnitItemLeaf(section, item, field) => Ok(FieldTarget::Item {
             section: section.as_str().to_string(),
             item: item.as_str().to_string(),
             field: field.as_str().to_string(),
         }),
         // A bare item hop (`#<section>/<item>`) addresses no field leaf.
-        Fragment::UnitItem(_, _) => None,
+        Fragment::UnitItem(_, _) => Err(no_field()),
         // A **nested** path (`#section/item/child/.../field`): the leading hop is the
         // section, the trailing hop is the field leaf, and the hops between are the
         // parent-scoped item id chain the engine locator walks (review finding S1).
         Fragment::Deep(hops) => {
-            let (section, rest) = hops.split_first()?;
-            let (field, items) = rest.split_last()?;
+            let Some((section, rest)) = hops.split_first() else {
+                return Err(no_field());
+            };
+            let Some((field, items)) = rest.split_last() else {
+                return Err(no_field());
+            };
             if items.is_empty() {
-                return None;
+                return Err(no_field());
             }
-            Some(FieldTarget::NestedItem {
+            Ok(FieldTarget::NestedItem {
                 section: section.clone(),
                 items: items.to_vec(),
                 field: field.clone(),
@@ -6133,6 +6179,10 @@ fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFail
         Fragment::Unit(u) => u.as_str(),
         Fragment::UnitLeaf(section, leaf) => {
             let section = section.as_str();
+            // Rank 1: an undeclared **section** outranks the leaf question, exactly as it
+            // does at the item-addressing doors — there is no block on which the leaf
+            // could be declared (M49 Increment 11 / T3).
+            undeclared_section_guard(schema, section, &uri)?;
             // Only a **simple** section can be the section arm's target, so only there is
             // the trailing hop an undeclared leaf; over a repeatable section it is an item
             // id with no leaf, which addresses no slot at all (today's message).
@@ -6191,6 +6241,10 @@ fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFail
         }
         _ => return Err(no_slot()),
     };
+    // The bare `#<section>` form's rank-1 declaredness check — the [`Fragment::Unit`] arm
+    // is the only one that falls through to here, and it is the form the batch lowering
+    // gives a payload section's own slot key.
+    undeclared_section_guard(schema, section_id, &uri)?;
     schema
         .sections
         .iter()
@@ -6532,7 +6586,7 @@ mod tests {
         assert!(
             matches!(
                 field_target(&schema, &canonical),
-                Some(FieldTarget::Section { section, field }) if section == "header" && field == "implements"
+                Ok(FieldTarget::Section { section, field }) if section == "header" && field == "implements"
             ),
             "the canonical section-qualified fragment resolves to (header, implements)",
         );
@@ -6541,7 +6595,7 @@ mod tests {
         assert!(
             matches!(
                 field_target(&schema, &alias),
-                Some(FieldTarget::Section { section, field }) if section == "header" && field == "implements"
+                Ok(FieldTarget::Section { section, field }) if section == "header" && field == "implements"
             ),
             "the flat single-hop alias resolves identically",
         );

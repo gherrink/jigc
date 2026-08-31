@@ -7312,7 +7312,15 @@ fn section_undeclared(schema: &Schema, section_id: &str) -> bool {
 
 /// [`section_undeclared`] as the **splice** path's reject — the ranked-first `?`-able form
 /// the [`SpliceError`]-returning item doors open with.
-fn undeclared_section_splice(schema: &Schema, section_id: &str) -> Option<SpliceError> {
+///
+/// `pub` since M49 Increment 11 / T3: the **section-level** address forms (`set-slot` at
+/// `#<section>`, `set-field` at `#<section>/<leaf>`, and both of their `doc author` batch
+/// arms) never reach one of those doors — the CLI's own target resolvers refuse first,
+/// because a section that is not declared holds neither the slot nor the field they are
+/// looking for. They ask the same question here rather than re-deriving it, so *undeclared
+/// section* is one predicate and one reject sentence at every write verb, whichever side of
+/// the seam adjudicates it (`design/validation.md` → The `write.*` route split).
+pub fn undeclared_section_splice(schema: &Schema, section_id: &str) -> Option<SpliceError> {
     section_undeclared(schema, section_id).then(|| SpliceError::UndeclaredSection {
         section: section_id.to_string(),
     })
