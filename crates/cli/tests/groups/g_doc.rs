@@ -10,6 +10,8 @@ mod address_parse_error_axis;
 
 #[path = "../author_batch_scaling.rs"]
 mod author_batch_scaling;
+#[path = "../clap_error_kind_axis.rs"]
+mod clap_error_kind_axis;
 #[path = "../copy_in_ack.rs"]
 mod copy_in_ack;
 #[path = "../doc_author.rs"]

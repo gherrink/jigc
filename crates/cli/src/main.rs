@@ -52,18 +52,33 @@ fn main() -> ExitCode {
             // contradicting did-you-mean, which used to steer a `task discard-write`
             // guesser at the verb that destroys the whole task — the correction printed
             // under the lie it exists to remove (`cli_tree::unknown_subcommand_block`;
-            // DECISIONS.md 2026-08-13 the Settle, F8). Every other clap error kind
-            // still prints clap's own render, did-you-mean included; the stream, the
-            // plain-text form and the exit code are unchanged either way.
+            // DECISIONS.md 2026-08-13 the Settle, F8).
             //
-            // The same takeover, for the same reason, covers an **unexpected positional**
-            // typed at a leaf whose foreclosed form has a recorded answer (M46 Inc 8 T5):
-            // `jigc describe adr` was a bare exit 2 while the command's own definition
-            // named what answers it (`cli_tree::unexpected_positional_block`; law 2 — the
-            // designated recovery is named by the surface that produces the state).
-            let argv: Vec<String> = std::env::args().collect();
+            // The same takeover, for the same reason, covers an **unexpected argument**
+            // typed at a leaf whose foreclosed form has a recorded answer: `jigc describe
+            // adr` was a bare exit 2 while the command's own definition named what answers
+            // it (M46 Inc 8 T5), and `jigc rename … --task <id>` drew clap's misdirecting
+            // `-- --task` while naming `jigc doc rename` nowhere (M49 T5, S-4) —
+            // `cli_tree::unexpected_argument_block`; law 2 — the designated recovery is
+            // named by the surface that produces the state.
+            //
+            // What happens to every OTHER clap error kind is no longer stated here in
+            // prose: `crates/cli/tests/clap_error_kind_axis.rs` disposes each kind in a
+            // declared table and DRIVES the argv that reaches it, so the claim is checked
+            // rather than asserted (M49 T5). The stream, the plain-text form and the exit
+            // code are unchanged by either takeover.
+            //
+            // `args_os` rather than `args`: this arm runs exactly when clap rejected the
+            // argv, which includes `ErrorKind::InvalidUtf8`, whose whole cause is an
+            // argument that is not valid UTF-8 — and `std::env::args()` PANICS on one,
+            // taking the render down with it (exit 101, a Rust panic, no usage). Read
+            // lossily the render survives, and a lossy token matches no subcommand name,
+            // which is the right answer for a token that is not one.
+            let argv: Vec<String> = std::env::args_os()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
             let block = cli_tree::unknown_subcommand_block(&err, &argv)
-                .or_else(|| cli_tree::unexpected_positional_block(&err, &argv));
+                .or_else(|| cli_tree::unexpected_argument_block(&err, &argv));
             match block {
                 Some(block) => eprint!("{block}"),
                 None => {

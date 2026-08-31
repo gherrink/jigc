@@ -1890,29 +1890,70 @@ pub fn unknown_subcommand_block(err: &clap::Error, argv: &[String]) -> Option<St
     Some(block)
 }
 
-/// A leaf verb whose **foreclosed positional form** already has an answer on record:
-/// the node's argv path below `jigc`, and the tip that names it.
-struct ForeclosedPositionalTip {
-    /// The leaf node the positional was typed at (`["describe"]` for `jigc describe adr`).
-    node: &'static [&'static str],
-    /// Builds the tip served at that node.
-    tip: fn() -> String,
+/// The argument shape a [`ForeclosedArgumentTip`] row answers.
+pub enum ForeclosedArgument {
+    /// **Any** positional typed at this node — the node declares none at all, so every
+    /// positional reaching it is the one foreclosed form.
+    Positional,
+    /// One named flag the node does not declare (`--task` at `jigc rename`).
+    Flag(&'static str),
 }
 
-/// The curated set — one row, by derivation rather than by convenience.
+/// A leaf verb whose **foreclosed argument form** already has an answer on record: the
+/// node's argv path below `jigc`, the argument shape that reaches the row, an argv that
+/// produces it, and the tip that names the answer.
+pub struct ForeclosedArgumentTip {
+    /// The leaf node the argument was typed at (`["describe"]` for `jigc describe adr`).
+    pub node: &'static [&'static str],
+    /// The argument shape this row answers.
+    pub arg: ForeclosedArgument,
+    /// An argv (after the binary name) that reaches this row — driven through the real
+    /// binary by `crates/cli/tests/clap_error_kind_axis.rs`, so a row whose node has since
+    /// grown the argument stops erroring and fails there.
+    pub probe: &'static [&'static str],
+    /// Builds the tip served at that node.
+    pub tip: fn() -> String,
+}
+
+/// The curated set — two rows, by derivation rather than by convenience, one per
+/// [`ForeclosedArgument`] shape.
 ///
-/// Nine leaf verbs take no positional at all (`task list`, `config list`, `setup`,
-/// `uninstall`, `upgrade`, `ingest`, `migrate-corpus`, `describe`, `validate`), and
-/// `describe` is the only one whose own definition **records the answer to the positional
-/// form**: [`Commands::Describe`]'s doc states the single-item form is not built and names
-/// what answers it instead. The eight siblings record no such answer — the nearest,
-/// `validate`'s "distinct from `jigc task validate <id>`", is a two-verb disambiguation,
-/// not a recovery for a typed positional — so law 2 leaves them with nothing to name and
-/// clap's own render stands.
-const FORECLOSED_POSITIONAL_TIPS: &[ForeclosedPositionalTip] = &[ForeclosedPositionalTip {
-    node: &["describe"],
-    tip: tip_describe_positional,
-}];
+/// **The positional row.** Nine leaf verbs take no positional at all (`task list`, `config
+/// list`, `setup`, `uninstall`, `upgrade`, `ingest`, `migrate-corpus`, `describe`,
+/// `validate`), and `describe` is the only one whose own definition **records the answer to
+/// the positional form**: [`Command::Describe`]'s doc states the single-item form is not
+/// built and names what answers it instead. The eight siblings record no such answer — the
+/// nearest, `validate`'s "distinct from `jigc task validate <id>`", is a two-verb
+/// disambiguation, not a recovery for a typed positional — so law 2 leaves them with
+/// nothing to name and clap's own render stands.
+///
+/// **The flag row** (M49, S-4). A rejected flag earns a row only where two things hold at
+/// once: the node does not declare it, and the surface records a **sibling form that does
+/// take it**, so the tip routes somewhere that runs. Measured over the whole tree by
+/// reading each leaf's own help: twelve leaves declare `--task` and thirty-five do not,
+/// and exactly three definitions name a verb across that line at all — `jigc doc rename` →
+/// `jigc rename`, `jigc doc list` → `jigc ingest`/`jigc migrate`, and `jigc describe` →
+/// `jigc start`. Only the first is a **task-scope** split: [`crate::doc::DocCommand::Rename`]
+/// is defined as *"the in-task sibling of the top-level `jigc rename` (which is task-less
+/// and self-committing, and refuses outright while any task is in flight)"*. The other two
+/// fail the second leg rather than the first — `doc list`'s pair routes an unregistered
+/// doc, and `start --task` resumes a task rather than answering a menu — as does the
+/// nearest positional-side near-miss, `validate`'s "distinct from `jigc task validate
+/// <id>`", whose sibling takes its id as a positional and would reject `--task` in turn.
+pub const FORECLOSED_ARGUMENT_TIPS: &[ForeclosedArgumentTip] = &[
+    ForeclosedArgumentTip {
+        node: &["describe"],
+        arg: ForeclosedArgument::Positional,
+        probe: &["describe", "adr"],
+        tip: tip_describe_positional,
+    },
+    ForeclosedArgumentTip {
+        node: &["rename"],
+        arg: ForeclosedArgument::Flag("--task"),
+        probe: &["rename", "adr:x", "--to", "A New Title", "--task", "t1"],
+        tip: tip_rename_task_flag,
+    },
+];
 
 /// The answer `describe`'s foreclosed single-item form has carried on record since M11:
 /// the kind filters narrow the menu, and `jigc start --explain` is the resolution trace
@@ -1939,25 +1980,61 @@ fn tip_describe_positional() -> String {
     )
 }
 
-/// jigc's own render of an **unexpected positional** typed at a leaf whose foreclosed form
-/// has a recorded answer — `None` for every other clap error, which keeps clap's own
-/// render untouched.
+/// The answer the identity split records for a `--task` typed at the top-level
+/// `jigc rename` (M49, S-4).
+///
+/// `jigc rename` is the **committed-store** identity refactor: it is task-less and
+/// self-committing, and refuses outright while any task is in flight. So a `--task` here
+/// is an agent reaching for its in-task sibling, and clap's own answer — *"tip: to pass
+/// `--task` as a value, use `-- --task`"* — is a misdirection twice over: the node's only
+/// positional is already filled by the address, and no value form of `--task` exists at
+/// this node in any case. The recovery is on record at
+/// [`crate::doc::DocCommand::Rename`]'s own definition; law 2 puts it where the state is
+/// produced.
+fn tip_rename_task_flag() -> String {
+    format!(
+        "tip: `jigc rename` is the committed-store identity refactor — task-less and \
+         self-committing, and it refuses while any task is in flight, so it takes no \
+         `--task`. The in-task title change is its sibling: {}",
+        engine::finding::Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "rename",
+                "<address>",
+                "--to",
+                "<title>",
+                "--task",
+                "<task-id>",
+            ],
+            " retitles the doc your task has staged, and re-slugs it while its identity \
+             is still uncommitted",
+        )
+        .as_str(),
+    )
+}
+
+/// jigc's own render of an **unexpected argument** typed at a leaf whose foreclosed form
+/// has a recorded answer — `None` for every other clap error, and for every rejected
+/// argument [`FORECLOSED_ARGUMENT_TIPS`] carries no row for, which keeps clap's own render
+/// untouched.
 ///
 /// Same reasoning, shape and stream as [`unknown_subcommand_block`]: clap emits its block
 /// whole before anything of jigc's can speak, so a tip could only be appended *below* the
 /// bare refusal, and `design/surface-contract.md` → law 2 asks the surface that **produces**
 /// the state to name the designated recovery — not a later one the reader has to go find.
-/// `jigc describe adr` was a bare exit 2 while [`Commands::Describe`] recorded the answer
-/// three lines away (`completions/artifacts/M46/razor-ledger.md` §1, S-2).
+/// `jigc describe adr` was a bare exit 2 while [`Command::Describe`] recorded the answer
+/// three lines away (`completions/artifacts/M46/razor-ledger.md` §1, S-2), and
+/// `jigc rename <type>:<slug> --to X --task <id>` drew clap's *"to pass `--task` as a
+/// value, use `-- --task`"* while naming `jigc doc rename` nowhere (M49, S-4).
 ///
-/// The single-item lookup **stays foreclosed** (`DECISIONS.md` → 2026-08-13 the M48 Settle,
-/// `describe`: the filter only, not the positional form) — this names the answer, it does
-/// not build the form: the run still fails at [`crate::task::EXIT_USAGE`] with no menu.
+/// Neither foreclosed form is **built** here — `describe`'s single-item lookup stays
+/// foreclosed (`DECISIONS.md` → 2026-08-13 the M48 Settle) and `rename` stays task-less:
+/// this names the answer, and the run still fails at [`crate::task::EXIT_USAGE`].
 ///
 /// The parts are read from the error clap already built, never re-derived: the rejected
-/// token (`ContextKind::InvalidArg`) and the node's usage (`ContextKind::Usage`). A
-/// rejected **flag** is left to clap — only a positional reaches the foreclosed form.
-pub fn unexpected_positional_block(err: &clap::Error, argv: &[String]) -> Option<String> {
+/// token (`ContextKind::InvalidArg`) and the node's usage (`ContextKind::Usage`).
+pub fn unexpected_argument_block(err: &clap::Error, argv: &[String]) -> Option<String> {
     use clap::error::{ContextKind, ContextValue};
 
     if err.kind() != clap::error::ErrorKind::UnknownArgument {
@@ -1967,12 +2044,14 @@ pub fn unexpected_positional_block(err: &clap::Error, argv: &[String]) -> Option
         ContextValue::String(token) => token.clone(),
         _ => return None,
     };
-    if token.starts_with('-') {
-        return None;
-    }
     let node = parent_path(argv, &token);
-    let row = FORECLOSED_POSITIONAL_TIPS.iter().find(|row| {
-        row.node.len() == node.len() && row.node.iter().zip(&node).all(|(a, b)| *a == b.as_str())
+    let row = FORECLOSED_ARGUMENT_TIPS.iter().find(|row| {
+        row.node.len() == node.len()
+            && row.node.iter().zip(&node).all(|(a, b)| *a == b.as_str())
+            && match row.arg {
+                ForeclosedArgument::Positional => !token.starts_with('-'),
+                ForeclosedArgument::Flag(flag) => token == flag,
+            }
     })?;
     let mut block = format!("error: unexpected argument '{token}' found\n");
     block.push_str(&format!("\n  {}\n", (row.tip)()));
@@ -2096,27 +2175,50 @@ mod cli_parse {
         }
     }
 
-    /// Every [`FORECLOSED_POSITIONAL_TIPS`] row fires **at the node it names**, with the
-    /// route parse fence installed: the row's argv is typed with a positional, clap's real
-    /// error is the input, and the block carries the row's own tip. A row naming a node
-    /// that has since grown a positional stops erroring and fails here; a row whose tip
-    /// names a ghost verb panics on construction.
+    /// Every [`FORECLOSED_ARGUMENT_TIPS`] row fires **at the node it names, for the
+    /// argument shape it names**, with the route parse fence installed: the row's own probe
+    /// argv is parsed, clap's real error is the input, and the block carries the row's own
+    /// tip. A row naming a node that has since grown the argument stops erroring and fails
+    /// here; a row whose tip names a ghost verb panics on construction.
     ///
-    /// Iterated from the table, so a second row joins the fence the day it lands — the
-    /// integration arm in `tests/describe.rs` drives `describe`'s bytes end to end, but it
-    /// knows only that one node.
+    /// The two legs of the row set are checked as well as its members: the node really does
+    /// **not** declare a `Flag` row's flag (else the row is answering a form that works),
+    /// and the probe really does reject at the row's own token.
+    ///
+    /// Iterated from the table, so a third row joins the fence the day it lands — the
+    /// integration arms in `tests/describe.rs` and `tests/clap_error_kind_axis.rs` drive
+    /// the emitted bytes end to end, but each knows only its own node.
     #[test]
-    fn every_foreclosed_positional_row_fires_at_its_node() {
+    fn every_foreclosed_argument_row_fires_at_its_node() {
+        use clap::CommandFactory;
+
         crate::route_fence::install();
-        for row in FORECLOSED_POSITIONAL_TIPS {
-            let mut argv: Vec<String> = std::iter::once("jigc".to_string())
-                .chain(row.node.iter().map(|token| (*token).to_string()))
+        for row in FORECLOSED_ARGUMENT_TIPS {
+            let argv: Vec<String> = std::iter::once("jigc".to_string())
+                .chain(row.probe.iter().map(|token| (*token).to_string()))
                 .collect();
-            argv.push("some-positional".to_string());
             let shown = argv.join(" ");
+            if let ForeclosedArgument::Flag(flag) = row.arg {
+                let mut node = Cli::command();
+                for token in row.node {
+                    node = node
+                        .find_subcommand(token)
+                        .unwrap_or_else(|| panic!("`{token}` is a node of the clap tree"))
+                        .clone();
+                }
+                assert!(
+                    !node
+                        .get_arguments()
+                        .any(|arg| arg.get_long().map(|long| format!("--{long}"))
+                            == Some(flag.to_string())),
+                    "`jigc {}` declares `{flag}`, so the foreclosed row answers a form \
+                     that works",
+                    row.node.join(" "),
+                );
+            }
             let err = Cli::try_parse_from(&argv)
-                .expect_err("a foreclosed-positional node must reject a positional");
-            let block = unexpected_positional_block(&err, &argv)
+                .expect_err("a foreclosed-argument probe must be rejected");
+            let block = unexpected_argument_block(&err, &argv)
                 .unwrap_or_else(|| panic!("`{shown}` must render jigc's own block"));
             assert!(
                 block.contains(&(row.tip)()),

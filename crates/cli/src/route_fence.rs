@@ -41,9 +41,11 @@ const DUMMY_SUBSTITUTIONS: &[(&str, &str)] = &[
     // advisory's from-knowledge alternative, `jigc start --workflow record-decision
     // <intent>`): a free-text intent an agent fills in with the decision it settled.
     ("<intent>", "a decision I settled"),
-    // The milestone-title positional of the `jigc milestone create "<title>"` route. It
-    // reaches the fence in the **quoted-span** form, which until the quoting half landed
-    // was not recognized as a placeholder at all — so it skipped this table and the
+    // The title an agent supplies: the milestone-title positional of the `jigc milestone
+    // create "<title>"` route, and the `--to` value of the `jigc doc rename` form the
+    // foreclosed-`--task` tip at `jigc rename` names (`cli.rs` → `tip_rename_task_flag`).
+    // It reaches the fence in the **quoted-span** form too, which until the quoting half
+    // landed was not recognized as a placeholder at all — so it skipped this table and the
     // derivability verdict beside it (`milestone.rs` → the unknown-milestone route).
     ("<title>", "A Milestone Title"),
     // The knob-key positional of `jigc config get <key>` — the read rung the read-shaped
