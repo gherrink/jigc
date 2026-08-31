@@ -43,8 +43,17 @@ expect:
   denials: 11
   bare_jigc_denials: 0
   outcome: "the worker exhausts its idioms and halts"
-pinned-by: "UNPINNED: no suite drives the binary under a restricted permission set — the
-  permission layer is the harness's, not jigc's, and nothing in crates/cli/tests models it."
+pinned-by: "stdin_form_naming::every_site_bearing_step_names_the_permitted_form +
+  ::every_composed_workflow_names_the_form_above_its_sites +
+  ::the_named_heredoc_form_runs_verbatim_through_a_real_shell — the NAMING half, which is the
+  half M49 shipped (increment 11 / T8, b5680ba). The `--from-file -` site set is DERIVED from
+  both loaded packs rather than listed; every site-bearing step is disposed — it names the
+  permitted heredoc-on-the-command form, or it is out with a stated reason; the assertion is
+  made on the COMPOSED bytes through the real binary, not on the step file; and the named form
+  is then EXECUTED through a real shell, so the words the pack now prints are runnable rather
+  than plausible. UNPINNED: the DENIAL half — no suite drives the binary under a restricted
+  permission set; the permission layer is the harness's, not jigc's, and nothing in
+  crates/cli/tests models it."
 ```
 
 **The severity was corrected on evidence, and the correction is the useful part.** The first
@@ -90,9 +99,15 @@ expect:
   absent: "any mention of `jigc doc rename`"
 observed_recovery: "the worker then tried the task-less top-level form (exit 1), read
   `jigc doc rename --help`, and only then reached the right verb"
-pinned-by: "UNPINNED: no suite asserts the top-level rename's wrong-form error text.
-  `unknown_subcommand_tip.rs` covers the unknown-SUBCOMMAND tip and names `rename` only as a
-  clap suggestion candidate; it does not drive `jigc rename --task`."
+pinned-by: "clap_error_kind_axis::the_rename_identity_pair_names_its_in_task_sibling — it
+  drives THIS repro's argv (`jigc rename adr:x --to X --task t1`) through the real binary and
+  asserts four things about the emitted stderr: the exit stays `EXIT_USAGE`, clap's own
+  `unexpected argument '--task' found` line is preserved, the tip now names `jigc doc rename`,
+  and the misdirecting `-- --task` value tip is REPLACED rather than printed above the answer
+  (the M48 lesson that a correction below a contradicting suggestion is not a correction).
+  ::every_producible_kind_is_reached_by_driving_its_probe holds the surrounding axis: every
+  clap `ErrorKind` a jigc argv can produce is reached by driving a probe that produces it,
+  which is the completeness proof available where `ErrorKind` is `#[non_exhaustive]`."
 ```
 
 **Disposition: surface/discoverability — SHIPS RECORDED.** T9 was reached and no work was lost;
@@ -116,10 +131,18 @@ expect:
   first:  { exit: 1, stderr_contains: "a different doc already exists at", route: absent }
   second: { exit: 1, route: "check the id (or run `jigc describe` for the doctype surface)" }
   invocation_log: { error_code: null, finding_codes: [] }   # both
-pinned-by: "UNPINNED: `flow37_rename::rename_onto_a_different_existing_slug_blocks` pins the
-  block, the message `a different doc already exists`, and that the incumbent's H1 survives —
-  VERIFIED BY READING ITS ASSERTIONS. It says nothing about a route, either presence or absence,
-  so it does not pin this claim and its citation is not borrowed for it."
+pinned-by: "flow37_rename::every_rename_refusal_carries_an_identity_and_an_exit — it iterates
+  `RefusalKind::ALL` (the nine arms `run_rename` declares, `OccupiedDestination` among them),
+  drives each through the real binary, and asserts per arm: exit 1, the declared code identity
+  in stderr, EXACTLY ONE route line, and then — for a `Command` repair — that the emitted argv
+  leads with `jigc` and RUNS VERBATIM at exit 0, or — for a `Judgment` repair — that prose
+  survives outside the backticked spans, so a bare command cannot wear a judgment label. It
+  also asserts the refusal's code reaches the invocation log's `finding_codes`, which is the
+  identity half. ::every_refusal_kind_is_declared is the enumeration fence: a tenth arm cannot
+  ship without joining `ALL` and gaining a driven scene.
+  `flow37_rename::rename_onto_a_different_existing_slug_blocks` still pins the block, the
+  message and the incumbent's surviving H1, and is deliberately NOT the citation here — it says
+  nothing about a route, which is why it was refused as a pin before this wave."
 ```
 
 **Disposition: surface — SHIPS RECORDED.** The message names the occupied path, so the user is not
@@ -141,9 +164,15 @@ expect:
   absent: 21
   without_a_stated_reason: 3      # increment, ingest-existing, router
 note: "those three are exactly the `creates-task: false` set M46's own audit named"
-pinned-by: "UNPINNED: `flow49_acceptance.rs` iterates the suppressed-set fence M43 shipped, which
-  binds `selectable: false` only — the population this claim is about is the complement, and no
-  suite derives it."
+pinned-by: "describe::describe_states_why_every_off_catalog_workflow_is_absent — the population
+  it iterates IS this claim's: `shipped_off_catalog_workflows()` is the complement (absent from
+  the router catalog), not M43's `selectable: false` set, and the arm asserts a derived
+  NON-VACUITY first — the shipped packs must carry at least one off-catalog member the hidden
+  set does not contain, or the arm would silently re-prove M43. For every member it then
+  asserts the declared reason on BOTH surfaces: `router_hidden` on the `--format json`
+  definition, and the reason string inside the emitted prose.
+  ::describe_projects_the_suppression_reason_for_hidden_workflows keeps the `selectable: false`
+  half separate, so the two populations cannot be conflated again."
 ```
 
 **Disposition: not a defect on the charitable reading, and unreadable on the natural one.** The
@@ -186,9 +215,13 @@ repro:
 context: "the invocation log shows NO ingest and NO migrate before it — the file was still
           foreign and never adopted"
 expect: "`.jigc/AGENT.md` explicitly permits reading an unregistered doc before adopting it"
-pinned-by: "UNPINNED: the permission is stated in the adapter's own text, not asserted by a
-  suite. The 1.0.0-gate record dispositions exactly one such read the same way, so this is the
-  registered handling of the FILESYSTEM channel's declared bound, not a new judgement."
+pinned-by: "cli::adapter::tests::bootstrap_file_states_the_read_rule_and_scopes_the_slices_promise
+  — and the earlier `UNPINNED` was wrong on its facts, which is what reading the test rather
+  than its name buys. The permission is not merely stated in the adapter's text: the test
+  asserts it on the RENDERED `.jigc/AGENT.md` body, which must carry the `unregistered` row
+  clause (not yet managed — readable directly until adopted) alongside the managed-set
+  discriminator, the `jigc doc show` read path, the staged `--task <id>` read and its inverse.
+  A refuted claim's obligation is that the refuting fact HAS a standing test; it does."
 ```
 
 This is the heuristic's declared bound firing in the wild: registration state is not in the
@@ -201,13 +234,13 @@ transcript, the reader flags the read, and a human makes the call.
 These are **not** product findings and are kept out of the trial's yield. Every one was found by
 driving something, none by reading, and each is pinned by a test that preserves the defect.
 
-| # | what was wrong | pinned-by |
+| # | what was wrong | disposition |
 |---|---|---|
-| I-1 | the plant wrote into the channel it is scored on — `observe` read **VERB 6** where the worker had done **2** | `test_observe::ThePlantIsNotTheWorker` |
-| I-2 | a managed-document read and a workbench-bookkeeping read were one number; two runs of the same prompt diverged on exactly that seam | `test_observe::ADocumentReadIsNotABookkeepingRead` |
-| I-3 | `halted_awaiting_human` could not see a **product-blocked** halt — the shape plant F depends on | `test_observe::TheOtherHaltShape` |
-| I-4 | …and the fix for I-3 was itself incomplete: `endswith("?")` missed B1, which asked and then added a closing sentence | `test_observe::TheOtherHaltShape::test_a_question_followed_by_a_closing_sentence_still_counts` |
-| I-5 | the aligned §3.3 counter and its model — `is_shipped_adjacent` compared an argv **prefix** where the grep is a **substring** match | `test_observe::TheShippedCounterDisagrees` |
+| I-1 | the plant wrote into the channel it is scored on — `observe` read **VERB 6** where the worker had done **2** | pinned-by: `test_observe::ThePlantIsNotTheWorker` |
+| I-2 | a managed-document read and a workbench-bookkeeping read were one number; two runs of the same prompt diverged on exactly that seam | pinned-by: `test_observe::ADocumentReadIsNotABookkeepingRead` |
+| I-3 | `halted_awaiting_human` could not see a **product-blocked** halt — the shape plant F depends on | pinned-by: `test_observe::TheOtherHaltShape` |
+| I-4 | …and the fix for I-3 was itself incomplete: `endswith("?")` missed B1, which asked and then added a closing sentence | pinned-by: `test_observe::TheOtherHaltShape::test_a_question_followed_by_a_closing_sentence_still_counts` |
+| I-5 | the aligned §3.3 counter and its model — `is_shipped_adjacent` compared an argv **prefix** where the grep is a **substring** match | pinned-by: `test_observe::TheShippedCounterDisagrees` |
 
 **I-4 is the M45 complete-fix lens turned on my own patch**, and it was found the same way I-3
 was: by running it.
@@ -224,10 +257,12 @@ expect:
 impact:
   scored_channels: unaffected      # VERB 5 and adjacent 6 are all the worker's
   record_count: "42 -> 40"
-pinned-by: "UNPINNED: the `session-start` split handles records made BEFORE a session
-  (`test_observe::ThePlantIsNotTheWorker`); nothing marks records made DURING one by someone
-  other than the worker, and no fence is built. The mitigation is discipline — reproduce in a
-  copy — which is what plant-f-correction.md already requires for the slug check."
+pinned-by: "UNPINNED: no fence was built and none is owed from the product — the `session-start`
+  split handles records made BEFORE a session (`test_observe::ThePlantIsNotTheWorker`), nothing
+  marks records made DURING one by someone other than the worker, and M49 changed no file under
+  `completions/` outside its own artifacts, so nothing here moved. The mitigation stays
+  discipline — reproduce in a copy — which is what plant-f-correction.md already requires for
+  the slug check."
 ```
 
 Recorded because **the rule broken was one written hours earlier in this trial's own
@@ -251,8 +286,10 @@ expect:
   tick: "drains the queue and prunes — and nothing calls it"
 found_by: "B3, unprompted, while writing its architecture doc; verified against the template
   before being believed"
-pinned-by: "UNPINNED: `check-corpus.sh` asserts the doc-code anchor symbols EXIST but not that
-  they are REACHED. Adding that bar is the owed fix."
+pinned-by: "UNPINNED: the owed fix lives in trial-fixture tooling, and M49 touched no file under
+  `completions/trial-corpus-template/` — `check-corpus.sh` still asserts the doc-code anchor
+  symbols EXIST but not that they are REACHED. Carried rather than closed: the bar belongs to
+  the next trial's corpus gate, not to a product wave."
 ```
 
 **Not fixed during the trial**: B3 ran on this fixture and B1/B2 had to match it, so changing the
