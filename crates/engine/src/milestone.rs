@@ -327,6 +327,11 @@ pub struct AddedTask {
 /// `-2`/`-3` suffix is the join's, never incremental add). A slug colliding with a
 /// *non-milestone* task is the existing `task.serial-collision` path inside
 /// [`crate::state::mint_task`], surfaced unchanged.
+///
+/// **No staged snapshot is written here, and that is a stated disposition rather than
+/// an omission** — the `Exempt` member of [`crate::state::MINT_DOORS`] carries the
+/// reason, and `crates/cli/tests/mint_doors.rs` drives it: the per-task finalize
+/// refuses a sub-task first, so no door consumes a snapshot this mint could write.
 pub fn add_task(
     jigc_root: &Path,
     milestone_id: &str,
@@ -1017,6 +1022,10 @@ pub fn reseed_cache_from_record(
 /// status, through the same terminal vocabulary the header guard uses — an item that is over is
 /// over on both loci. An item with **no** status leaf is rebuilt, as before: a record that never
 /// claimed the sub-task settled cannot be read as claiming it.
+/// **No staged snapshot is written here either** — the second `Exempt` member of
+/// [`crate::state::MINT_DOORS`], on the same premise, plus this being a *rebuild* of an
+/// area the committed record already names rather than a door a user staged work in
+/// front of.
 pub fn reseed_sub_task_areas(
     jigc_root: &Path,
     schema: &crate::schema::Schema,

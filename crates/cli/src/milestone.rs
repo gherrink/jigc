@@ -457,8 +457,11 @@ fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
     // door — snapshot the pre-milestone staged state into the milestone area,
     // BEFORE the record commit below touches the index, so the milestone finalize
     // can tell "staged before this milestone existed" from the milestone's own
-    // staging. (Sub-task mints write no snapshot: worktrees are provisioned clean
-    // and a missing snapshot fails open.)
+    // staging. This is one `Written` member of [`engine::state::MINT_DOORS`], which
+    // is where the sub-task mints' *exemption* is stated and driven — this comment
+    // used to carry a second, weaker reason for it ("worktrees are provisioned clean
+    // and a missing snapshot fails open"), which is the fail-open bound, not the
+    // premise (M49 Increment 12 / T1).
     let staged = crate::task::git_staged_snapshot(&repo_root)?;
     let minted = mint_milestone(&jigc_root, title, base).map_err(finding_to_err)?;
     engine::state::write_staged_snapshot(&minted.dir, &staged).with_context(|| {

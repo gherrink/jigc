@@ -114,6 +114,8 @@ pub fn mint_in_repo(
     // carryover gate): probe the pre-task staged state before anything else touches
     // the tree, and persist it into the working area so finalize can tell "staged
     // before this task existed" from the task's own staging.
+    // One `Written` member of [`state::MINT_DOORS`], the registry that says which
+    // mints snapshot and which are exempt (M49 Increment 12 / T1).
     let staged = crate::task::git_staged_snapshot(&repo_root)?;
 
     let minted = state::mint_task(
@@ -192,6 +194,7 @@ pub(crate) fn mint_migration_in_repo(
     // `jigc migrate` is a task-minting door like `start` (the foreign bytes are staged
     // into the gitignored working area, never the git index, so the probe sees only
     // genuinely foreign pre-staged changes).
+    // One `Written` member of [`state::MINT_DOORS`].
     let staged = crate::task::git_staged_snapshot(repo_root)?;
     // The per-file migration id carries a `blake3(source-path)` disambiguator (fork 1),
     // so it is passed **verbatim** via the `slug_override` bypass — never re-slugified by

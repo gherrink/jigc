@@ -758,13 +758,109 @@ pub struct StagedSnapshot {
     pub deletions: std::collections::BTreeSet<String>,
 }
 
+/// What a [`MintDoor`] does about the carryover gate's staged snapshot.
+pub enum Snapshot {
+    /// The door writes `staged-snapshot.json` into the area it mints
+    /// ([`write_staged_snapshot`]), so a committing boundary downstream of it can
+    /// tell *staged before this work-unit existed* from the unit's own staging.
+    Written,
+    /// The door writes **no** snapshot, carrying the reason it does not owe one —
+    /// asserted through the binary by the driven arm, never taken on trust.
+    Exempt(&'static str),
+}
+
+/// One production **working-area mint** — a call site of [`mint_task`] or
+/// [`crate::milestone::mint_milestone`], paired with the door an operator reaches it
+/// by and its snapshot disposition.
+pub struct MintDoor {
+    /// The door as an operator names it — the argv shape that reaches this mint.
+    pub door: &'static str,
+    /// The production call site, `<workspace-relative path>::<enclosing fn>`. This is
+    /// the key the source-level completeness fence matches on, so a mint added
+    /// anywhere in either crate is a red test rather than a silent sixth door.
+    pub site: &'static str,
+    /// The mint this site calls — `mint_task` or `mint_milestone`.
+    pub mint: &'static str,
+    /// Whether this door snapshots the pre-mint staged state, or is exempt with a
+    /// stated reason.
+    pub snapshot: Snapshot,
+}
+
+/// The **mint-door axis** — every production call that opens a working area, with its
+/// staged-snapshot disposition (M49 Increment 12 / T1).
+///
+/// It exists because the disposition was a **remembered list** and the memory was
+/// wrong: [`write_staged_snapshot`]'s doc-comment said *"written at every task-minting
+/// door"* and then named three, while five production sites mint an area. The two it
+/// never named ([`crate::milestone::add_task`],
+/// [`crate::milestone::reseed_sub_task_areas`]) are not a hole — they are **exempt**,
+/// and the exemption is stated here rather than left as an absence, which is the
+/// difference between a disposition and an oversight
+/// (`completions/artifacts/M49/settle-record.md` → the carryover refutation's residue).
+///
+/// One list, two consumers, both in `crates/cli/tests/mint_doors.rs`: a **source-level
+/// completeness fence** over both crates' production code — the call-site set of
+/// [`mint_task`] ∪ [`crate::milestone::mint_milestone`] must equal the `site` set below
+/// — and **one driven cell per member** through the real binary, where a member with no
+/// cell is a hard panic rather than a skip. A grep is not a fence
+/// (`implementation/dev-workflow.md`): the sweep that *found* these five cannot stop the
+/// sixth, so membership is checked where membership is decided.
+pub const MINT_DOORS: &[MintDoor] = &[
+    MintDoor {
+        door: "jigc start \"<intent>\"",
+        site: "crates/cli/src/start.rs::mint_in_repo",
+        mint: "mint_task",
+        snapshot: Snapshot::Written,
+    },
+    MintDoor {
+        door: "jigc migrate <path> --as <doctype>",
+        site: "crates/cli/src/start.rs::mint_migration_in_repo",
+        mint: "mint_task",
+        snapshot: Snapshot::Written,
+    },
+    MintDoor {
+        door: "jigc milestone create \"<title>\"",
+        site: "crates/cli/src/milestone.rs::run_create",
+        mint: "mint_milestone",
+        snapshot: Snapshot::Written,
+    },
+    MintDoor {
+        door: "jigc milestone add-task <milestone> \"<intent>\"",
+        site: "crates/engine/src/milestone.rs::add_task",
+        mint: "mint_task",
+        snapshot: Snapshot::Exempt(
+            "a sub-task's own area is never a committing boundary: `jigc task finalize \
+             <sub>` refuses a milestone sub-task first (`finalize.milestone-sub-task`), \
+             so no door consumes a snapshot written here, and the aggregate boundary \
+             gates on the MILESTONE area's snapshot instead.",
+        ),
+    },
+    MintDoor {
+        door: "any operating milestone op on a fresh clone \
+               (`jigc milestone add-task` / `provision` / `execute` / `join` / \
+               `finalize` / `discard`) — the record-driven re-seed",
+        site: "crates/engine/src/milestone.rs::reseed_sub_task_areas",
+        mint: "mint_task",
+        snapshot: Snapshot::Exempt(
+            "the same premise as `add_task` — the area it rebuilds is a sub-task's, and \
+             the per-task finalize refuses one before any gate runs. It is also a \
+             REBUILD of an area the committed record already names, not a door a user \
+             staged work in front of, so there is no pre-mint index state that belongs \
+             to it.",
+        ),
+    },
+];
+
 /// Write the staged snapshot into a working area (`<dir>/staged-snapshot.json`)
 /// — the base-pin mold: pretty JSON, key-sorted (the `BTreeMap`/`BTreeSet` field
-/// types), one trailing newline (golden-locked frozen on-disk form). Written at
-/// every task-minting door (`jigc start` compose forms, `jigc migrate`,
-/// `jigc milestone create` into the milestone area); a clean index writes an
-/// **empty** snapshot, distinct from the absent pre-M43 case [`read_staged_snapshot`]
-/// maps to `None`.
+/// types), one trailing newline (golden-locked frozen on-disk form). A clean index
+/// writes an **empty** snapshot, distinct from the absent pre-M43 case
+/// [`read_staged_snapshot`] maps to `None`.
+///
+/// **Which doors call this is [`MINT_DOORS`], not a sentence here.** This comment
+/// used to read *"written at every task-minting door"* and then name three, while
+/// five production sites mint a working area — the two it omitted being exempt, but
+/// nowhere stated as such (M49 Increment 12 / T1).
 pub fn write_staged_snapshot(dir: &Path, snapshot: &StagedSnapshot) -> std::io::Result<()> {
     let mut body = serde_json::to_string_pretty(snapshot).expect("StagedSnapshot serializes");
     body.push('\n');
