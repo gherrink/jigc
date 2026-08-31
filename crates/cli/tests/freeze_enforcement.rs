@@ -12,6 +12,9 @@
 //! `design/corpus-migration.md` → The enforcement gate fires at pack-load
 //! (review Finding 3) + `design/worked-examples.md` → the freeze-enforcement flow.
 
+use clap::Parser;
+use cli::cli::{VERB_KINDS, VerbKind};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -133,6 +136,9 @@ fn init_repo(root: &Path) {
     git(&["config", "user.email", "test@example.com"]);
     git(&["config", "user.name", "Test"]);
     fs::write(root.join("README.md"), "hello\n").expect("write file");
+    // The `--from-file` payload the `doc set-slot` / `doc author` / `config` door rows
+    // name. Committed, so no door of the sweep meets it as untracked noise.
+    fs::write(root.join("payload.txt"), "probe prose\n").expect("write payload");
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "initial"]);
     fs::create_dir_all(root.join(".jigc").join("config")).expect("create project layer");
@@ -427,21 +433,692 @@ fn list_packs(repo: &Path, packs: &[&Path]) {
         .expect("write packs.yaml naming the listed packs");
 }
 
-/// The door enumeration every pack-load fence arm sweeps — the read/report verbs
-/// plus the orient front door. Factored into one constant so a *new* fence arm
-/// cannot silently sweep a narrower set than the one before it: the M42 Inc 6
-/// headline is that the freeze assert lives in the pack-source factory, so **every**
-/// door is the claim, and each arm below iterates this same list rather than
-/// re-typing its own.
-const FREEZE_DOORS: [&[&str]; 5] = [
-    &["validate"],
-    &["describe"],
-    &["doc", "schema", "adr"],
-    &["migrate-corpus"],
-    // The orient front door (bare `jigc start` — no workflow, no intent): distinct
-    // from the composing `jigc start --workflow …` the assert already guarded.
-    &["start"],
+/// What a manifest-governed schema drift does to one door of [`FREEZE_DOORS`].
+#[derive(Debug, Clone, Copy)]
+enum FreezeCheck {
+    /// The door's own path reaches `crate::pack::make_pack`, so the drift blocks it
+    /// and the block **names the freeze**.
+    Named,
+    /// The door refuses *before* pack-load, on a precondition of its own that the
+    /// sweep fixture does not satisfy: it never acts, but the diagnosis it prints is
+    /// that precondition's, not the freeze's. `says` is the substring it prints —
+    /// asserted, so the disposition is a measurement rather than a claim — and `why`
+    /// states the precondition.
+    ///
+    /// This is an **ordering** fact, not a hole, and it is proven rather than argued:
+    /// [`the_task_scoped_doors_block_once_their_task_exists`] gives the fixture the task
+    /// these rows name and drives every one of them into `make_pack`, where it blocks
+    /// naming the drift. What the sweep itself proves over them is the half that matters
+    /// for safety — over a drifted corpus the door refuses and writes nothing.
+    RefusedEarlier {
+        says: &'static str,
+        why: &'static str,
+    },
+    /// The door completes at **exit 0** over the drift, because it loads no pack at
+    /// all. The string states why that is the right answer rather than a hole — the
+    /// difference between a disposition and an oversight.
+    Exempt(&'static str),
+}
+
+/// Whether a door's argv exits 0 against a fixture carrying **no drift** and no task,
+/// doc or milestone state — the subset an *inert-gate* arm can assert success over.
+#[derive(Debug, Clone, Copy)]
+enum CleanExit {
+    /// It exits 0.
+    Zero,
+    /// It does not, for the stated reason: the door is fine, the fixture lacks what
+    /// this argv names.
+    Needs(&'static str),
+}
+
+/// One door — the argv after `jigc`, plus its two dispositions.
+struct FreezeDoor {
+    /// The argv a sweep runs, after `jigc`. Its leading segments must be a
+    /// [`VERB_KINDS`] leaf; the fence
+    /// [`every_leaf_verb_has_a_dispositioned_freeze_door`] checks that, and that the
+    /// whole argv parses against the real clap tree.
+    argv: &'static [&'static str],
+    /// What a manifest-governed schema drift does to this door.
+    check: FreezeCheck,
+    /// What this argv does with no drift in the way.
+    clean: CleanExit,
+}
+
+/// **The door axis of the pack-load freeze** — every leaf verb of the CLI, each with
+/// what a manifest-governed schema drift does to it (M49 completion audit).
+///
+/// It exists because the set was a **hand-written literal of five** — `validate`,
+/// `describe`, `doc schema adr`, `migrate-corpus`, `start` — feeding a test named
+/// `a_shape_changing_project_schema_shadow_blocks_every_door`. The constant solved
+/// *arm-to-arm* drift (a later arm cannot sweep a narrower set than the one before
+/// it) and was never a claim about door coverage, so "every door" was a claim about
+/// **47** doors proven over a sample of five. It was also wrong: `jigc setup`,
+/// `jigc uninstall` and `jigc task list` all complete at **exit 0** over a shadow that
+/// blocks every door the five happened to name.
+///
+/// Membership is therefore **derived, not remembered**: the fence
+/// [`every_leaf_verb_has_a_dispositioned_freeze_door`] asserts a bijection with
+/// [`VERB_KINDS`] — the table that bijects the clap leaf tree — so a verb added
+/// anywhere in the CLI owes this table a row before it can ship, and no row may name
+/// a verb the tree does not carry. A grep is not a fence: the sweep that found these
+/// three exit-0 doors cannot stop the fourth.
+///
+/// **Why the table lives in the test and not beside [`VERB_KINDS`] in `cli.rs`.**
+/// Its rows are fixture-shaped — `adr:probe`, `freeze-probe`, `payload.txt`, an
+/// absent milestone id — and a disposition like [`CleanExit`] is a fact about *this*
+/// fixture, not about the shipped binary. Shipping argv fixtures inside the product
+/// would be worse than the derivation is good; the derivation itself does not depend
+/// on where the array sits, because it is checked against the production registry
+/// either way.
+const FREEZE_DOORS: &[FreezeDoor] = &[
+    // ── Top level ────────────────────────────────────────────────────────────────
+    FreezeDoor {
+        argv: &["start"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["workflow", "single-task", "--preview"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["setup"],
+        check: FreezeCheck::Exempt(
+            "the BOOTSTRAP door, and it reads no doctype by design: it wires the \
+             adapter into the repo (the CLAUDE.md reference, the allowlist, the \
+             SessionStart hook, the pre-commit hook, the guides) and none of that \
+             resolves a schema. Refusing to install over a drifted corpus would be \
+             circular — the install is how the operator's agent learns `jigc` exists \
+             at all, and the freeze's own diagnosis, with a route that runs, is \
+             emitted by the first door that does load the pack (`jigc start` among \
+             them, the command setup's trailer points at). What setup asserts at exit \
+             0 is true of what it asserts: it names the files it wrote, and it wrote \
+             them. Declared here rather than left as an absence; it predates M49 — \
+             the pack-layer arm had the same blind spot.",
+        ),
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["uninstall"],
+        check: FreezeCheck::Exempt(
+            "the teardown twin of `setup`, exempt for the mirror reason: removing an \
+             install must not be gated on the corpus being loadable, or a drifted \
+             schema would trap the operator inside an install they cannot remove. It \
+             resolves no doctype either. Its own destructive guard is a different \
+             axis (`uninstall.dirty-worktree`, `tests/destroying_doors.rs`).",
+        ),
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["upgrade"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["ingest"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["migrate", "README.md", "--as", "adr"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["migrate-corpus"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["unmanage", "README.md"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["rename", "adr:probe", "--to", "A New Title"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs("the fixture commits no `adr:probe` to rename"),
+    },
+    FreezeDoor {
+        argv: &["relocate", "vision", "--from", "docs/vision/"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(
+            "`relocate` takes a freeze-EXEMPT doctype, and the only ones shipped are \
+             the methodology pack's; the project-shadow fixture composes the dev pack \
+             alone, which declares no `vision`",
+        ),
+    },
+    FreezeDoor {
+        argv: &["describe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["validate"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    // ── `jigc doc` — the managed-doc surface ─────────────────────────────────────
+    FreezeDoor {
+        argv: &["doc", "create", "adr", "--title", "Freeze Probe"],
+        check: NO_ACTIVE_TASK,
+        clean: CleanExit::Needs(NO_ACTIVE_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &[
+            "doc",
+            "add-item",
+            "adr:probe#options",
+            "--title",
+            "Freeze Probe",
+        ],
+        check: NO_ACTIVE_TASK,
+        clean: CleanExit::Needs(NO_ACTIVE_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &["doc", "remove-item", "adr:probe#options/freeze-probe"],
+        check: NO_ACTIVE_TASK,
+        clean: CleanExit::Needs(NO_ACTIVE_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &[
+            "doc",
+            "retitle-item",
+            "adr:probe#options/freeze-probe",
+            "--title",
+            "Freeze Probe",
+        ],
+        check: NO_ACTIVE_TASK,
+        clean: CleanExit::Needs(NO_ACTIVE_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &["doc", "rename", "adr:probe", "--to", "A New Title"],
+        check: NO_ACTIVE_TASK,
+        clean: CleanExit::Needs(NO_ACTIVE_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &[
+            "doc",
+            "set-field",
+            "adr:probe#status",
+            "--value",
+            "accepted",
+        ],
+        check: NO_ACTIVE_TASK,
+        clean: CleanExit::Needs(NO_ACTIVE_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &[
+            "doc",
+            "set-slot",
+            "adr:probe#context",
+            "--from-file",
+            "payload.txt",
+        ],
+        check: NO_ACTIVE_TASK,
+        clean: CleanExit::Needs(NO_ACTIVE_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &["doc", "author", "adr", "--from-file", "payload.txt"],
+        check: NO_ACTIVE_TASK,
+        clean: CleanExit::Needs(NO_ACTIVE_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &["doc", "show", "adr:probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs("the fixture commits no `adr:probe` to read"),
+    },
+    FreezeDoor {
+        argv: &["doc", "schema", "adr"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["doc", "list"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    // ── `jigc task` — the task lifecycle ─────────────────────────────────────────
+    FreezeDoor {
+        argv: &["task", "list"],
+        check: FreezeCheck::Exempt(
+            "a WORKBENCH listing: it reads `.jigc/tasks/` and reports ids, intents \
+             and workflows, resolving no doctype schema — so the freeze has nothing \
+             to say about it, and blocking it would deny the operator the view of \
+             in-flight work at exactly the moment every other door is refusing. Its \
+             `VerbKind::Read` is a read of the workbench, not of the store.",
+        ),
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["task", "diff", "freeze-probe"],
+        check: NO_SUCH_TASK,
+        clean: CleanExit::Needs(NO_SUCH_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &["task", "validate", "freeze-probe"],
+        check: NO_SUCH_TASK,
+        clean: CleanExit::Needs(NO_SUCH_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &["task", "discard", "freeze-probe"],
+        check: NO_SUCH_TASK,
+        clean: CleanExit::Needs(NO_SUCH_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &["task", "finalize", "freeze-probe"],
+        check: NO_SUCH_TASK,
+        clean: CleanExit::Needs(NO_SUCH_TASK_CLEAN),
+    },
+    FreezeDoor {
+        argv: &["task", "bind", "decision", "adr:probe", "freeze-probe"],
+        check: NO_SUCH_TASK,
+        clean: CleanExit::Needs(NO_SUCH_TASK_CLEAN),
+    },
+    // ── `jigc config` — the cascade surface ──────────────────────────────────────
+    FreezeDoor {
+        argv: &["config", "set", "docs-root", "docs"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &[
+            "config",
+            "insert-step",
+            "--workflow",
+            "single-task",
+            "--after",
+            "orient",
+            "payload.txt",
+        ],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(ANCHOR_ABSENT),
+    },
+    FreezeDoor {
+        argv: &[
+            "config",
+            "replace-step",
+            "workflow:single-task#orient",
+            "payload.txt",
+        ],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(ANCHOR_ABSENT),
+    },
+    FreezeDoor {
+        argv: &["config", "remove-step", "workflow:single-task#orient"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(ANCHOR_ABSENT),
+    },
+    FreezeDoor {
+        argv: &[
+            "config",
+            "fill",
+            "step:orient#freeze-probe",
+            "--from-file",
+            "payload.txt",
+        ],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(
+            "`step:orient#freeze-probe` is no `{{fill:}}` point of the resolved \
+             `orient` step",
+        ),
+    },
+    FreezeDoor {
+        argv: &["config", "fork", "workflow:single-task#orient"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(ANCHOR_ABSENT),
+    },
+    FreezeDoor {
+        argv: &["config", "get", "docs-root"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["config", "list"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    // ── `jigc milestone` — the work-unit surface ─────────────────────────────────
+    FreezeDoor {
+        argv: &["milestone", "create", "Freeze Probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
+    FreezeDoor {
+        argv: &["milestone", "add-task", "m-freeze-probe", "probe intent"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(NO_SUCH_MILESTONE),
+    },
+    FreezeDoor {
+        argv: &["milestone", "add-from-spec", "m-freeze-probe", "spec:probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(NO_SUCH_MILESTONE),
+    },
+    FreezeDoor {
+        argv: &["milestone", "list-tasks", "m-freeze-probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(NO_SUCH_MILESTONE),
+    },
+    FreezeDoor {
+        argv: &["milestone", "provision", "m-freeze-probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(NO_SUCH_MILESTONE),
+    },
+    FreezeDoor {
+        argv: &["milestone", "execute", "m-freeze-probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(NO_SUCH_MILESTONE),
+    },
+    FreezeDoor {
+        argv: &["milestone", "join", "m-freeze-probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(NO_SUCH_MILESTONE),
+    },
+    FreezeDoor {
+        argv: &["milestone", "finalize", "m-freeze-probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(NO_SUCH_MILESTONE),
+    },
+    FreezeDoor {
+        argv: &["milestone", "discard", "m-freeze-probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Needs(NO_SUCH_MILESTONE),
+    },
 ];
+
+/// The eight `jigc doc` write verbs' shared disposition: the active-task pre-check
+/// runs ahead of pack-load, so over a drifted corpus they answer with *that*, and
+/// they act on nothing.
+const NO_ACTIVE_TASK: FreezeCheck = FreezeCheck::RefusedEarlier {
+    says: "no active task",
+    why: "the active-task pre-check runs before pack-load and the sweep fixture holds \
+          no task. The ordering is not a hole: a task minted before the drift landed \
+          carries the same argv into `make_pack`, where it blocks naming the drift. \
+          What is proven here is that the door refuses and writes nothing.",
+};
+
+/// What the same eight verbs lack against an undrifted fixture — the same absence,
+/// stated for the other axis.
+const NO_ACTIVE_TASK_CLEAN: &str = "the fixture holds no active task to write into";
+
+/// The task id the [`NO_SUCH_TASK`] rows name. The sweep fixture deliberately holds
+/// no such task; [`the_task_scoped_doors_block_once_their_task_exists`] mints exactly
+/// it, which is what makes those rows' *ordering* claim checkable rather than argued.
+const TASK_PROBE_ID: &str = "freeze-probe";
+
+/// The five task-lifecycle verbs that take an id: the lookup precedes pack-load.
+const NO_SUCH_TASK: FreezeCheck = FreezeCheck::RefusedEarlier {
+    says: "no task `freeze-probe`",
+    why: "the task lookup runs before pack-load and the sweep fixture holds no task \
+          `freeze-probe`; the door refuses and acts on nothing. With a real id the \
+          same argv reaches `make_pack` and blocks naming the drift.",
+};
+
+/// Their undrifted-axis twin.
+const NO_SUCH_TASK_CLEAN: &str = "the fixture holds no task `freeze-probe`";
+
+/// The four `config` delta verbs that name a step position the shipped `single-task`
+/// does not carry — enough to reach pack-load, not enough to edit anything.
+const ANCHOR_ABSENT: &str = "`orient` is no step of the shipped `single-task`";
+
+/// The eight `milestone` verbs that take an id the fixture never minted.
+const NO_SUCH_MILESTONE: &str = "the fixture holds no milestone `m-freeze-probe`";
+
+/// A repo + `$HOME` pair a sweep drives, holding the temp dirs that back it alive for
+/// as long as the site is.
+struct Site {
+    repo: PathBuf,
+    home: PathBuf,
+    _keep: Vec<TempDir>,
+}
+
+impl Site {
+    fn run(&self, argv: &[&str]) -> std::process::Output {
+        run_listed(&self.repo, &self.home, argv)
+    }
+}
+
+/// The [`VERB_KINDS`] leaf a door's argv reaches — the longest classified prefix, and
+/// its read/write kind.
+fn verb_of(argv: &[&str]) -> (&'static [&'static str], VerbKind) {
+    VERB_KINDS
+        .iter()
+        .filter(|(path, _)| argv.len() >= path.len() && argv[..path.len()] == **path)
+        .max_by_key(|(path, _)| path.len())
+        .map(|(path, kind)| (*path, *kind))
+        .unwrap_or_else(|| panic!("`jigc {}` reaches no VERB_KINDS leaf", argv.join(" ")))
+}
+
+/// The `pack-load freeze check failed` banner — the one string that says *the freeze
+/// fired*, whichever door printed it.
+const FREEZE_BANNER: &str = "pack-load freeze check failed";
+
+/// Assert one door's declared [`FreezeCheck`] against a drifted `site`, returning the
+/// `route:` command it emitted (when it emitted one).
+fn assert_drifted_door(
+    label: &str,
+    site: &Site,
+    door: &FreezeDoor,
+    needles: &[&str],
+) -> Option<String> {
+    let argv = door.argv;
+    let out = site.run(argv);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let said = format!("stdout:\n{stdout}\nstderr:\n{stderr}");
+    match door.check {
+        FreezeCheck::Named => {
+            assert!(
+                !out.status.success(),
+                "[{label}] `jigc {}` is declared `Named` — it must exit non-zero over the \
+                 drift; {said}",
+                argv.join(" "),
+            );
+            for needle in needles {
+                assert!(
+                    stderr.contains(needle),
+                    "[{label}] `jigc {}` stderr must name {needle:?}; got:\n{stderr}",
+                    argv.join(" "),
+                );
+            }
+            stderr
+                .lines()
+                .find(|line| line.trim_start().starts_with("route:"))
+                .map(|_| route_command(&stderr))
+        }
+        FreezeCheck::RefusedEarlier { says, why } => {
+            assert!(
+                !out.status.success(),
+                "[{label}] `jigc {}` is declared `RefusedEarlier` ({why}) — it must still \
+                 exit non-zero over the drift, acting on nothing; {said}",
+                argv.join(" "),
+            );
+            assert!(
+                stderr.contains(says),
+                "[{label}] `jigc {}` must refuse with {says:?} ({why}); got:\n{stderr}",
+                argv.join(" "),
+            );
+            assert!(
+                !stderr.contains(FREEZE_BANNER) && !stdout.contains(FREEZE_BANNER),
+                "[{label}] `jigc {}` is declared `RefusedEarlier` but named the freeze — \
+                 it now reaches pack-load, so its row owes `FreezeCheck::Named`; {said}",
+                argv.join(" "),
+            );
+            None
+        }
+        FreezeCheck::Exempt(why) => {
+            assert!(
+                out.status.success(),
+                "[{label}] `jigc {}` is declared exempt from the pack-load freeze \
+                 ({why}) — it must complete at exit 0 over the drift; {said}",
+                argv.join(" "),
+            );
+            assert!(
+                !stderr.contains(FREEZE_BANNER) && !stdout.contains(FREEZE_BANNER),
+                "[{label}] the exempt door `jigc {}` must not name the freeze; {said}",
+                argv.join(" "),
+            );
+            None
+        }
+    }
+}
+
+/// Drive **every** door of [`FREEZE_DOORS`] against a drifted state, assert each
+/// door's declared disposition, and return the `route:` command the last blocked door
+/// emitted (`None` when the drift's diagnosis carries no route).
+///
+/// `shared` serves the doors that never act — which is sound because *a blocked door
+/// acting* is precisely what the sweep denies. The doors that **do** act
+/// ([`FreezeCheck::Exempt`] — they complete at exit 0) each get their own fixture from
+/// `solo`: `jigc uninstall` removes the `.jigc/` tree the project-layer drift lives
+/// in, and `jigc setup` rewrites `packs.yaml`, so sharing would erase the very state
+/// the remaining doors are meant to meet.
+fn sweep_drifted(
+    label: &str,
+    shared: &Site,
+    needles: &[&str],
+    solo: &dyn Fn(&str) -> Site,
+) -> Option<String> {
+    let mut route = None;
+    for door in FREEZE_DOORS {
+        let acting;
+        let site = match door.check {
+            FreezeCheck::Exempt(_) => {
+                acting = solo(label);
+                &acting
+            }
+            _ => shared,
+        };
+        if let Some(found) = assert_drifted_door(label, site, door, needles) {
+            route = Some(found);
+        }
+    }
+    route
+}
+
+/// The doors a second pass may re-run **on the same fixture**: they report and mutate
+/// nothing (`VerbKind::Read`) and they exit 0 with nothing in the way
+/// ([`CleanExit::Zero`]). A write door's second run would act on the repo, which
+/// proves nothing about the thing the second pass is testing.
+fn reruns_clean(door: &FreezeDoor) -> bool {
+    matches!(door.clean, CleanExit::Zero) && verb_of(door.argv).1 == VerbKind::Read
+}
+
+/// The other half of [`FreezeCheck::RefusedEarlier`]: those thirteen doors are not
+/// *outside* the freeze, they are **ordered behind a precondition of their own**. Give
+/// the fixture the task their rows name — minted before the drift lands, which is the
+/// real sequence: work in flight when someone reshapes a schema — and every one of
+/// them reaches `make_pack` and blocks naming the drift, at the shadow's own path.
+///
+/// Without this arm the sweep's answer for a third of the door set would stop at *"it
+/// refuses for some other reason"* — the safety half, but not the claim. With it,
+/// *blocks every door* holds over both states a door can be met in.
+#[test]
+fn the_task_scoped_doors_block_once_their_task_exists() {
+    let repo = TempDir::new("ordering-repo");
+    let home = TempDir::new("ordering-home");
+    init_repo(repo.path());
+
+    // The task the `RefusedEarlier` rows name, minted BEFORE the drift lands. Its id is
+    // asserted rather than read back, because those rows spell it literally.
+    let minted = run_listed(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "freeze probe"],
+    );
+    let stdout = String::from_utf8_lossy(&minted.stdout);
+    assert!(
+        minted.status.success(),
+        "the fixture task must mint against an undrifted pack; stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&minted.stderr),
+    );
+    assert!(
+        stdout.contains(&format!("task minted: {TASK_PROBE_ID}")),
+        "the minted id must be the one FREEZE_DOORS' task-scoped rows name \
+         (`{TASK_PROBE_ID}`); got:\n{stdout}",
+    );
+
+    let shadow = install_schema_shadow(repo.path(), "adr", &adr_shadow_with_owner());
+    let shadow_path = shadow.display().to_string();
+    let ordered: Vec<&FreezeDoor> = FREEZE_DOORS
+        .iter()
+        .filter(|door| matches!(door.check, FreezeCheck::RefusedEarlier { .. }))
+        .collect();
+    assert!(
+        !ordered.is_empty(),
+        "the `RefusedEarlier` disposition must have members for this arm to mean anything",
+    );
+    for door in ordered {
+        let out = run_listed(repo.path(), home.path(), door.argv);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success(),
+            "`jigc {}` must block once its task exists; stdout:\n{}\nstderr:\n{stderr}",
+            door.argv.join(" "),
+            String::from_utf8_lossy(&out.stdout),
+        );
+        for needle in ["schema-hash mismatch", "adr", shadow_path.as_str()] {
+            assert!(
+                stderr.contains(needle),
+                "`jigc {}` must now name the freeze ({needle:?}) rather than its own \
+                 precondition; got:\n{stderr}",
+                door.argv.join(" "),
+            );
+        }
+    }
+}
+
+/// **The membership fence.** [`FREEZE_DOORS`] bijects [`VERB_KINDS`] — the registry
+/// that bijects the clap leaf tree — so the door axis is *derived* rather than
+/// remembered, and each argv parses against the real CLI rather than against a
+/// plausible spelling of it. A verb added anywhere in the tree reddens here until its
+/// freeze disposition is stated.
+#[test]
+fn every_leaf_verb_has_a_dispositioned_freeze_door() {
+    let mut covered: BTreeSet<Vec<&str>> = BTreeSet::new();
+    for door in FREEZE_DOORS {
+        let mut argv = vec!["jigc"];
+        argv.extend_from_slice(door.argv);
+        cli::cli::Cli::try_parse_from(&argv).unwrap_or_else(|err| {
+            panic!(
+                "a FREEZE_DOORS argv must parse against the real clap tree — \
+                 `{}` did not:\n{err}",
+                argv.join(" "),
+            )
+        });
+        let (leaf, _) = verb_of(door.argv);
+        assert!(
+            covered.insert(leaf.to_vec()),
+            "`jigc {}` is covered twice — one door per leaf verb",
+            leaf.join(" "),
+        );
+    }
+
+    let declared: BTreeSet<Vec<&str>> = VERB_KINDS.iter().map(|(path, _)| path.to_vec()).collect();
+    let missing: Vec<String> = declared
+        .difference(&covered)
+        .map(|path| path.join(" "))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "every leaf verb owes FREEZE_DOORS a row stating what a manifest-governed \
+         schema drift does to it — undisposed: {missing:?}",
+    );
+    let stray: Vec<String> = covered
+        .difference(&declared)
+        .map(|path| path.join(" "))
+        .collect();
+    assert!(
+        stray.is_empty(),
+        "FREEZE_DOORS names verbs the clap tree does not carry: {stray:?}",
+    );
+    assert_eq!(
+        FREEZE_DOORS.len(),
+        VERB_KINDS.len(),
+        "one door per leaf verb, both ways",
+    );
+}
 
 /// A repo + home + listed **drifted** dev-pack copy (with the methodology pack
 /// composed for the `milestone-record` doctype). Every door run against it must
@@ -479,6 +1156,17 @@ impl DriftedProject {
         }
     }
 
+    /// This project as a [`Site`] a sweep can drive, the temp dirs moving with it.
+    fn into_site(self) -> Site {
+        let repo = self.repo.path().to_path_buf();
+        let home = self.home.path().to_path_buf();
+        Site {
+            repo,
+            home,
+            _keep: vec![self.repo, self.home, self._pack],
+        }
+    }
+
     /// Run one door and assert it exits non-zero naming the drift — the emitted exit
     /// code + stderr are the contract.
     fn door_blocks(&self, args: &[&str]) -> std::process::Output {
@@ -506,13 +1194,19 @@ impl DriftedProject {
 /// used to guard. The read/report verbs sailed past it before this task
 /// (`implementation/decisions-pending.md` → the discharged M33 deferral: the trigger
 /// "packs are ever loaded from the filesystem in production" fired at M14).
+///
+/// **The set is [`FREEZE_DOORS`], and it is the whole clap leaf tree** (M49 completion
+/// audit): this arm used to sweep five hand-listed read verbs under a name that
+/// claimed all of them.
 #[test]
-fn every_read_door_blocks_on_a_drifted_frozen_schema() {
+fn every_door_blocks_on_a_drifted_frozen_schema() {
     let project = DriftedProject::new("doors");
+    let needles = project.needles;
+    let shared = project.into_site();
 
-    for door in FREEZE_DOORS {
-        project.door_blocks(door);
-    }
+    let _ = sweep_drifted("doors", &shared, needles, &|seed| {
+        DriftedProject::new(&format!("{seed}-solo")).into_site()
+    });
 }
 
 /// Rewrite the copied manifest's declared `slug-rule.hash` to a well-formed but
@@ -554,15 +1248,12 @@ fn drift_slug_rule_hash(pack: &Path) {
 /// itself a versioned rule (M42)*).
 #[test]
 fn a_drifted_slug_rule_blocks_every_door() {
-    let project = DriftedProject::with(
-        "slugrule",
-        drift_slug_rule_hash,
-        &["the slug rule changed", "bump slug-rule-version + re-pin"],
-    );
+    const NEEDLES: &[&str] = &["the slug rule changed", "bump slug-rule-version + re-pin"];
+    let shared = DriftedProject::with("slugrule", drift_slug_rule_hash, NEEDLES).into_site();
 
-    for door in FREEZE_DOORS {
-        project.door_blocks(door);
-    }
+    let _ = sweep_drifted("slugrule", &shared, NEEDLES, &|seed| {
+        DriftedProject::with(&format!("{seed}-solo"), drift_slug_rule_hash, NEEDLES).into_site()
+    });
 }
 
 /// **Delete** the copied manifest's whole `slug-rule:` block — the third silencer,
@@ -615,15 +1306,12 @@ fn delete_slug_rule_block(pack: &Path) {
 /// must block, and the route must hand the author the block to paste.
 #[test]
 fn a_manifest_omitting_the_slug_rule_blocks_every_door() {
-    let project = DriftedProject::with(
-        "slugless",
-        delete_slug_rule_block,
-        &["declares no `slug-rule:` block", "slug-rule:"],
-    );
+    const NEEDLES: &[&str] = &["declares no `slug-rule:` block", "slug-rule:"];
+    let shared = DriftedProject::with("slugless", delete_slug_rule_block, NEEDLES).into_site();
 
-    for door in FREEZE_DOORS {
-        project.door_blocks(door);
-    }
+    let _ = sweep_drifted("slugless", &shared, NEEDLES, &|seed| {
+        DriftedProject::with(&format!("{seed}-solo"), delete_slug_rule_block, NEEDLES).into_site()
+    });
 }
 
 /// The control (the omitting context's twin): an **unmutated** listed pack — whose
@@ -992,44 +1680,38 @@ fn a_shape_changing_project_schema_shadow_blocks_every_door() {
         ("shadow-home", adr_shadow_relocated()),
     ] {
         for (path_tag, metachar) in [("inert-path", false), ("metachar-path", true)] {
-            let body = body.clone();
             let tag = format!("{shape_tag}/{path_tag}");
-            let repo = if metachar {
-                TempDir::new_metachar(&format!("{shape_tag}-repo"))
-            } else {
-                TempDir::new(&format!("{shape_tag}-repo"))
+            let build = |seed: &str| -> (Site, PathBuf) {
+                let repo = if metachar {
+                    TempDir::new_metachar(&format!("{seed}-repo"))
+                } else {
+                    TempDir::new(&format!("{seed}-repo"))
+                };
+                let home = TempDir::new(&format!("{seed}-home"));
+                init_repo(repo.path());
+                let shadow = install_schema_shadow(repo.path(), "adr", &body);
+                let site = Site {
+                    repo: repo.path().to_path_buf(),
+                    home: home.path().to_path_buf(),
+                    _keep: vec![repo, home],
+                };
+                (site, shadow)
             };
-            let home = TempDir::new(&format!("{shape_tag}-{path_tag}-home"));
-            init_repo(repo.path());
-            let shadow = install_schema_shadow(repo.path(), "adr", &body);
 
-            let mut route = String::new();
-            for door in FREEZE_DOORS {
-                let out = run_listed(repo.path(), home.path(), door);
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                assert!(
-                    !out.status.success(),
-                    "[{tag}] `jigc {}` must exit non-zero over a shape-changing project schema shadow; stdout:\n{}\nstderr:\n{stderr}",
-                    door.join(" "),
-                    String::from_utf8_lossy(&out.stdout),
-                );
-                for needle in ["schema-hash mismatch", "adr", &shadow.display().to_string()] {
-                    assert!(
-                        stderr.contains(needle),
-                        "[{tag}] `jigc {}` stderr must name {needle:?}; got:\n{stderr}",
-                        door.join(" "),
-                    );
-                }
-                route = route_command(&stderr);
-            }
+            let (shared, shadow) = build(&format!("{shape_tag}-{path_tag}"));
+            let shadow_path = shadow.display().to_string();
+            let needles = ["schema-hash mismatch", "adr", shadow_path.as_str()];
+
+            let route = sweep_drifted(&tag, &shared, &needles, &|seed| build(seed).0)
+                .unwrap_or_else(|| panic!("[{tag}] a blocked door must emit a `route:` line"));
 
             // The route is followed **verbatim**, through a real shell, and it must clear
             // the block — a route that names the wrong file (or no file) reddens here.
             let ran = Command::new("sh")
                 .arg("-c")
                 .arg(&route)
-                .current_dir(repo.path())
-                .env("HOME", home.path())
+                .current_dir(&shared.repo)
+                .env("HOME", &shared.home)
                 .output()
                 .expect("spawn sh to follow the route");
             assert!(
@@ -1037,12 +1719,12 @@ fn a_shape_changing_project_schema_shadow_blocks_every_door() {
                 "[{tag}] the emitted route `{route}` must run; stderr:\n{}",
                 String::from_utf8_lossy(&ran.stderr),
             );
-            for door in FREEZE_DOORS {
-                let out = run_listed(repo.path(), home.path(), door);
+            for door in FREEZE_DOORS.iter().filter(|door| reruns_clean(door)) {
+                let out = shared.run(door.argv);
                 assert!(
                     out.status.success(),
                     "[{tag}] `jigc {}` must run clean once the emitted route has been followed; stdout:\n{}\nstderr:\n{}",
-                    door.join(" "),
+                    door.argv.join(" "),
                     String::from_utf8_lossy(&out.stdout),
                     String::from_utf8_lossy(&out.stderr),
                 );
@@ -1060,23 +1742,56 @@ fn a_shape_changing_project_schema_shadow_blocks_every_door() {
 /// for all sixteen shipped doctypes.
 #[test]
 fn a_presentation_only_project_schema_shadow_composes_clean() {
-    let repo = TempDir::new("shadow-prose-repo");
-    let home = TempDir::new("shadow-prose-home");
-    init_repo(repo.path());
-    install_schema_shadow(repo.path(), "adr", &adr_shadow_reworded());
+    let build = |seed: &str| -> Site {
+        let repo = TempDir::new(&format!("{seed}-repo"));
+        let home = TempDir::new(&format!("{seed}-home"));
+        init_repo(repo.path());
+        install_schema_shadow(repo.path(), "adr", &adr_shadow_reworded());
+        Site {
+            repo: repo.path().to_path_buf(),
+            home: home.path().to_path_buf(),
+            _keep: vec![repo, home],
+        }
+    };
 
+    // The read verbs share one fixture — they mutate nothing. Every write verb gets its
+    // own, because here the doors really *run*: with the freeze inert `jigc uninstall`
+    // would remove the shadow the next door is meant to meet.
+    let shared = build("shadow-prose");
     for door in FREEZE_DOORS {
-        let out = run_listed(repo.path(), home.path(), door);
+        let acting;
+        let site = if verb_of(door.argv).1 == VerbKind::Read {
+            &shared
+        } else {
+            acting = build("shadow-prose-solo");
+            &acting
+        };
+        let out = site.run(door.argv);
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let said = format!("stdout:\n{stdout}\nstderr:\n{stderr}");
         assert!(
-            out.status.success(),
-            "`jigc {}` must compose clean over a presentation-only schema shadow; stdout:\n{}\nstderr:\n{}",
-            door.join(" "),
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
+            !stdout.contains(FREEZE_BANNER) && !stderr.contains(FREEZE_BANNER),
+            "`jigc {}` must not fire the freeze over a presentation-only schema shadow; {said}",
+            door.argv.join(" "),
         );
+        match door.clean {
+            CleanExit::Zero => assert!(
+                out.status.success(),
+                "`jigc {}` is declared `CleanExit::Zero` — it must exit 0 with the gate \
+                 inert; {said}",
+                door.argv.join(" "),
+            ),
+            CleanExit::Needs(why) => assert!(
+                !out.status.success(),
+                "`jigc {}` is declared to need what this fixture lacks ({why}), so it must \
+                 exit non-zero — if it now succeeds its row is stale; {said}",
+                door.argv.join(" "),
+            ),
+        }
     }
 
-    let describe = run_listed(repo.path(), home.path(), &["describe"]);
+    let describe = shared.run(&["describe"]);
     let stdout = String::from_utf8_lossy(&describe.stdout);
     assert!(
         stdout.contains(REWORDED_ADR_DESCRIPTION),
