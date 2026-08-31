@@ -361,7 +361,16 @@ const REGISTRY: &[(&[&str], Tier)] = &[
         Tier::Judgment(
             "the composed milestone-execution walk — the pinned `{task, text}` projection",
             Disposition::DeclaredOut(
-                "`execute` renders through `render::composed`, not `render::milestone`: stdout                  IS the pinned `{task, text}` contract, and the agent surface differs from it                  by the routing footer alone. Its one computed side channel — the                  partially-provisioned advisory (M49 Increment 10 / T5) — is not withheld from                  the driver but MOVED by stream discipline: under `--format json` it is emitted                  on stderr, exactly as the finalize `left-out` / carried-over advisories and                  the migrate byte-floor nudge are, so both surfaces state it and the pinned                  document stays one JSON value                  (`milestone_provision_handoff::the_partial_advisory_leaves_the_json_document_alone`)",
+                "`execute` renders through `render::composed`, not \
+                 `render::milestone`: stdout IS the pinned `{task, text}` contract, and \
+                 the agent surface differs from it by the routing footer alone. Its one \
+                 computed side channel — the partially-provisioned advisory (M49 \
+                 Increment 10 / T5) — is not withheld from the driver but MOVED by \
+                 stream discipline: under `--format json` it is emitted on stderr, \
+                 exactly as the finalize `left-out` / carried-over advisories and the \
+                 migrate byte-floor nudge are, so both surfaces state it and the pinned \
+                 document stays one JSON value \
+                 (`milestone_provision_handoff::the_partial_advisory_leaves_the_json_document_alone`)",
             ),
         ),
     ),

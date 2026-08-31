@@ -1765,7 +1765,9 @@ fn unreadable_record_refusal(
     {
         Some(finding) => finding_to_err(finding),
         None => anyhow::anyhow!(
-            "could not read the milestone record `{suspect}`, so whether it names task              `{task_id}` as a sub-task is unknown — restore it to what jigc last wrote, then              re-run this command"
+            "could not read the milestone record `{suspect}`, so whether it names task \
+             `{task_id}` as a sub-task is unknown — restore it to what jigc last wrote, \
+             then re-run this command"
         ),
     }
 }
@@ -2200,13 +2202,18 @@ fn provision_failed_finding(
         Severity::Blocking,
         PROVISION_FAILED_CODE,
         format!(
-            "milestone:{milestone_id}: could not provision sub-task `{sub_id}`'s worktree —              {err:#}. {landed} of {total} worktree(s) landed before it, so the milestone is              now partially provisioned and `jigc milestone execute {milestone_id}` will say              so until the rest are there",
+            "milestone:{milestone_id}: could not provision sub-task `{sub_id}`'s \
+             worktree — {err:#}. {landed} of {total} worktree(s) landed before it, so \
+             the milestone is now partially provisioned and \
+             `jigc milestone execute {milestone_id}` will say so until the rest are \
+             there",
         ),
         Some(Location::addressed(&address, 1, 1)),
         Some(provision_route(
             milestone_id,
             force,
-            " — deal with what the message names at that path first; the re-run reuses every              worktree that landed and adds only the rest",
+            " — deal with what the message names at that path first; the re-run reuses \
+             every worktree that landed and adds only the rest",
         )),
     )
 }
@@ -2675,7 +2682,8 @@ fn partial_worktree_advisories(
             let (found, tail) = match sub.state {
                 WorktreeState::Absent => (
                     "nothing is there",
-                    " — idempotent: it reuses every worktree that landed and adds only the                      missing ones",
+                    " — idempotent: it reuses every worktree that landed and adds \
+                     only the missing ones",
                 ),
                 WorktreeState::Unreadable => (
                     "a directory git cannot read as a worktree of its own stands there",
@@ -2688,7 +2696,10 @@ fn partial_worktree_advisories(
                 Severity::Advisory,
                 PARTIAL_WORKTREES_CODE,
                 format!(
-                    "milestone:{milestone_id}: {provisioned} of {} sub-task worktrees are                      provisioned — sub-task `{}` has none ({found}), so its `Spawn:` line                      below would run in a working area that does not exist",
+                    "milestone:{milestone_id}: {provisioned} of {} sub-task worktrees \
+                     are provisioned — sub-task `{}` has none ({found}), so its \
+                     `Spawn:` line below would run in a working area that does not \
+                     exist",
                     subtasks.len(),
                     sub.id,
                 ),

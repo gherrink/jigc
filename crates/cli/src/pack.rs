@@ -397,8 +397,17 @@ fn assert_project_schema_shadows(
             // function do — it names a location, not a command line.
             let route_path = crate::task::shell_token(&path.display().to_string());
             anyhow::bail!(
-                "pack-load freeze check failed: doctype `{ty}`: schema-hash mismatch                  (manifest declares `{expected}`, recomputed `{actual}`) — the project                  schema shadow {path} changes the shape of a frozen doctype, which the                  freeze forbids at every layer (`design/corpus-migration.md` → The freeze)
-                 route: `rm {route_path}` restores the frozen shape — a project schema shadow may                  only reword the authored presentation keys (`description:`, `usage:`, a slot                  `hint:`); changing the shape or the home of a manifest-governed doctype means                  bumping its `schema-version` in the owning pack's                  `config/schema-manifest.yaml` and shipping a corpus migration",
+                "pack-load freeze check failed: doctype `{ty}`: schema-hash mismatch \
+                 (manifest declares `{expected}`, recomputed `{actual}`) — the project \
+                 schema shadow {path} changes the shape of a frozen doctype, which the \
+                 freeze forbids at every layer \
+                 (`design/corpus-migration.md` → The freeze)\n  \
+                 route: `rm {route_path}` restores the frozen shape — a project schema \
+                 shadow may only reword the authored presentation keys (`description:`, \
+                 `usage:`, a slot `hint:`); changing the shape or the home of a \
+                 manifest-governed doctype means bumping its `schema-version` in the \
+                 owning pack's `config/schema-manifest.yaml` and shipping a corpus \
+                 migration",
                 expected = entry.schema_hash,
                 path = path.display(),
             );

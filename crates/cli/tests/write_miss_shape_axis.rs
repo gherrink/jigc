@@ -1340,14 +1340,17 @@ fn every_doc_write_verb_taking_a_section_hop_answers_an_undeclared_one() {
             .any(|cell| cell.code == "write.unknown-section" && cell.args.starts_with(verb));
         assert!(
             exempt != covered,
-            "`jigc {}`: a `doc` write verb either drives an undeclared section hop in              `CELLS` or states in `NO_SECTION_HOP` why it takes none — exactly one              (exempt: {exempt}, covered: {covered})",
+            "`jigc {}`: a `doc` write verb either drives an undeclared section hop in \
+             `CELLS` or states in `NO_SECTION_HOP` why it takes none — exactly one \
+             (exempt: {exempt}, covered: {covered})",
             verb.join(" "),
         );
     }
     for (verb, _) in NO_SECTION_HOP {
         assert!(
             surface.contains(verb),
-            "`NO_SECTION_HOP` names `jigc {}`, which is not a `doc` write verb in              `VERB_KINDS`",
+            "`NO_SECTION_HOP` names `jigc {}`, which is not a `doc` write verb in \
+             `VERB_KINDS`",
             verb.join(" "),
         );
     }
