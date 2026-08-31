@@ -22,6 +22,15 @@ item, and sub-label heading levels there, so your headings sit below them; Setex
 headings are rejected at every depth, and a rejected write names the shallowest
 depth free at that address.
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task {{task.id}} <<'EOF'
+<the reasoning behind the decision>
+EOF
+
 jigc doc add-item decisions-log:decisions-log#entries --title "<the decision>" --task {{task.id}}
 jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task {{task.id}}
 

@@ -13,6 +13,15 @@ can take:
 
 jigc doc schema deferral-ledger
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot deferral-ledger:deferral-ledger#entries/<id>/body --from-file - --task {{task.id}} <<'EOF'
+<what is owed, and why it was deferred>
+EOF
+
 Then, for each deferral, mint an entry and author it: its `kind` (Decision for a
 deferred decision, Idea for a parked idea), the `trigger` milestone that resurfaces
 it, and the `body` prose for what is owed and why. The `date` is CLI-set on create:

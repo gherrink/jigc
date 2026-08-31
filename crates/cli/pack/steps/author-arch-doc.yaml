@@ -28,6 +28,15 @@ pointing at an uncommitted or absent decision has nothing to resolve against and
 a dangling `cites` blocks finalize forever. Cite only committed ADRs; record and
 commit the decision first, then cite it here.
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot arch-doc:<slug>#components/<id>/description --from-file - --task {{task.id}} <<'EOF'
+<what this component is responsible for>
+EOF
+
 Then add one component per architectural piece. For each, mint the item, write
 its responsibility in prose, and anchor it to the code that implements it. The
 anchor is `<repo-relative-path>#<symbol>`; finalize re-checks it against the

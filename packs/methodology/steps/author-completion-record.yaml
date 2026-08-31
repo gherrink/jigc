@@ -39,6 +39,15 @@ rests on. Nothing gates on it, so fill it only where it earns its place:
 
 jigc doc set-slot completion-record:<slug>#findings/<id>/detail --from-file <path> --task {{task.id}}
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc author completion-record --from-file - --task {{task.id}} <<'EOF'
+<the authoring payload — grammar: `jigc doc author --help`>
+EOF
+
 Or make it one call — the batch alternative to the whole sequence above (run it
 instead of the create + per-leaf verbs, or after them — the create it implies
 over a doc this task already staged acks `already existed — copied in for

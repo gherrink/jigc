@@ -14,6 +14,15 @@ slots and fields, each field's enum members, and every address a write can take:
 
 jigc doc schema research
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot research:<slug>#question --from-file - --task your-task-id <<'EOF'
+<the question this investigation set out to answer>
+EOF
+
 Author the three prose slots — the question it set out to answer, what the evidence
 showed, and where that evidence came from. The `date` is CLI-set on create:
 
@@ -64,6 +73,15 @@ Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-t
 Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
 summary without a type or scope prefix of its own (the `type` field already
 carries it):
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id <<'EOF'
+<one line saying what changed>
+EOF
 
 Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
 

@@ -6887,6 +6887,15 @@ explain what changes (nothing appears if it supersedes none).
         every depth, and a rejected write names the shallowest depth free at that
         address:
 
+        Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+        directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+        jigc itself accepts but an agent harness that statically analyses shell commands
+        can refuse to run:
+
+        jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}} <<'EOF'
+        <the forces that made this decision necessary>
+        EOF
+
         jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}}
         jigc doc set-slot adr:<slug>#decision --from-file - --task {{task.id}}
         jigc doc set-slot adr:<slug>#consequences --from-file - --task {{task.id}}
@@ -6923,7 +6932,18 @@ explain what changes (nothing appears if it supersedes none).
         the address you write — the CLI owns the section, item, and sub-label heading
         levels there, so your headings sit below them; Setext headings are rejected at
         every depth, and a rejected write names the shallowest depth free at that
-        address. Set the type, then stage the summary prose:
+        address.
+
+        Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+        directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+        jigc itself accepts but an agent harness that statically analyses shell commands
+        can refuse to run:
+
+        jigc doc set-slot commit:{{task.id}}#summary --from-file - --task {{task.id}} <<'EOF'
+        <one line saying what changed>
+        EOF
+
+        Set the type, then stage the summary prose:
 
         Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
         Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`

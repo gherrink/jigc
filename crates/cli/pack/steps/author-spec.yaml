@@ -27,6 +27,15 @@ dangling `derived-from` blocks finalize):
 
 jigc doc set-field spec:<slug>#derived-from --value prd:<slug> --task {{task.id}}
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot spec:<slug>#criteria/<id>/statement --from-file - --task {{task.id}} <<'EOF'
+<what this criterion must satisfy, testably phrased>
+EOF
+
 Then add one criterion per thing the change must satisfy, each testably phrased.
 For each, mint the item and write its statement in prose:
 

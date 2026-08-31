@@ -99,6 +99,15 @@ rests on. Nothing gates on it, so fill it only where it earns its place:
 
 jigc doc set-slot completion-record:<slug>#findings/<id>/detail --from-file <path> --task sweep-the-compose-surface
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc author completion-record --from-file - --task sweep-the-compose-surface <<'EOF'
+<the authoring payload — grammar: `jigc doc author --help`>
+EOF
+
 Or make it one call — the batch alternative to the whole sequence above (run it
 instead of the create + per-leaf verbs, or after them — the create it implies
 over a doc this task already staged acks `already existed — copied in for
@@ -130,6 +139,15 @@ required slots and fields, each field's enum members, and every address a write
 can take:
 
 jigc doc schema decisions-log
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task sweep-the-compose-surface <<'EOF'
+<the reasoning behind the decision>
+EOF
 
 Then, for each decision made, mint an entry and author its `why` — the reasoning,
 in a sentence or two. The `date` is CLI-set on create:
@@ -179,6 +197,15 @@ Run: `jigc doc set-field commit:sweep-the-compose-surface#scope --value <SCOPE> 
 Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
 summary without a type or scope prefix of its own (the `type` field already
 carries it):
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface <<'EOF'
+<one line saying what changed>
+EOF
 
 Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
 

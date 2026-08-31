@@ -24,6 +24,15 @@ Set the subject line — it renders as `<type>(<scope>): <summary>`, so write th
 summary without a type or scope prefix of its own (the `type` field already
 carries it):
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:{{task.id}}#summary --from-file - --task {{task.id}} <<'EOF'
+<one line saying what changed>
+EOF
+
 {{ cli.set-commit-summary }}
 
 Set the body — why this change:

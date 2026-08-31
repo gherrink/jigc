@@ -9,6 +9,15 @@ Create the prd, then author its `vision` and `context` slots on the address
 <<author: prd:<slug>#vision>>
 <<author: prd:<slug>#context>>
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot prd:<slug>#vision --from-file - --task {{task.id}} <<'EOF'
+<the outcome this product is for>
+EOF
+
 jigc doc set-slot prd:<slug>#vision --from-file - --task {{task.id}}
 jigc doc set-slot prd:<slug>#context --from-file - --task {{task.id}}
 

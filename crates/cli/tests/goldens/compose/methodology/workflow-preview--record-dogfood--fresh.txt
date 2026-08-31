@@ -55,6 +55,15 @@ reads the artifact's bytes — presence, not content):
 jigc doc set-field dogfood-record:<slug>#meta/verdict --value <green|red> --task your-task-id
 jigc doc set-field dogfood-record:<slug>#meta/owner-artifact --value completions/artifacts/<run>/<file> --task your-task-id
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot dogfood-record:<slug>#judgment --from-file - --task your-task-id <<'EOF'
+<what the counts mean, and what the verdict rests on>
+EOF
+
 Then author the judgment — what the counts mean, where the loop held or
 strained, what the verdict rests on, and what this run did NOT test. The verdict
 is authored judgment over the counts, never computed:
@@ -105,6 +114,15 @@ Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-t
 Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
 summary without a type or scope prefix of its own (the `type` field already
 carries it):
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id <<'EOF'
+<one line saying what changed>
+EOF
 
 Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
 

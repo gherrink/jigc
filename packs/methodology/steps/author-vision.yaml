@@ -35,6 +35,15 @@ until you set `grounded-in` and re-compose; with multiple grounding sources each
 one renders under its own labelled `> **type:slug**` blockquote):
 {{ @task.vision.grounded-in#findings }}
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot vision:vision#thesis --from-file - --task {{task.id}} <<'EOF'
+<the core claim this project rests on>
+EOF
+
 Author the three prose slots — the core claim, the invariants it holds, and the
 questions it leaves open:
 

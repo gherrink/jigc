@@ -214,6 +214,15 @@ slots and fields, each field's enum members, and every address a write can take:
 
 jigc doc schema roadmap
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot roadmap:roadmap#milestones/<id>/proves --from-file - --task your-task-id <<'EOF'
+<what this milestone proves>
+EOF
+
 Then mint this milestone's entry and author it — its `proves` and the prose
 `decomposition` of its increments (one level: each increment's deliverable and the
 tasks that build it, as prose). The item id is minted from the title you give:
@@ -253,6 +262,15 @@ can take:
 
 jigc doc schema deferral-ledger
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot deferral-ledger:deferral-ledger#entries/<id>/body --from-file - --task your-task-id <<'EOF'
+<what is owed, and why it was deferred>
+EOF
+
 Then, for each deferral, mint an entry and author it: its `kind` (Decision for a
 deferred decision, Idea for a parked idea), the `trigger` milestone that resurfaces
 it, and the `body` prose for what is owed and why. The `date` is CLI-set on create:
@@ -281,6 +299,15 @@ required slots and fields, each field's enum members, and every address a write
 can take:
 
 jigc doc schema decisions-log
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task your-task-id <<'EOF'
+<the reasoning behind the decision>
+EOF
 
 Then, for each decision made, mint an entry and author its `why` — the reasoning,
 in a sentence or two. The `date` is CLI-set on create:
@@ -319,6 +346,15 @@ Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-t
 Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
 summary without a type or scope prefix of its own (the `type` field already
 carries it):
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id <<'EOF'
+<one line saying what changed>
+EOF
 
 Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
 

@@ -257,8 +257,15 @@ impl Flow {
 
 /// Extract the one composed command line containing `needle` — the EMITTED
 /// bytes, from the `jigc ` token on (trailing `Run:` backtick stripped).
+///
+/// A line opening a heredoc is skipped (M49 Inc 11, T8): it demonstrates the *form*
+/// that feeds `--from-file -` under a harness which refuses a `cat … | jigc`
+/// pipeline, carrying its own payload and closing `EOF`, so it is neither the write
+/// to run nor a second one — and running it here would swallow the piped prose.
 fn extract_cmd(compose: &str, needle: &str) -> String {
-    let mut hits = compose.lines().filter(|l| l.contains(needle));
+    let mut hits = compose
+        .lines()
+        .filter(|l| l.contains(needle) && !l.trim_end().ends_with("<<'EOF'"));
     let line = hits
         .next()
         .unwrap_or_else(|| panic!("no composed line contains {needle:?}; got:\n{compose}"));

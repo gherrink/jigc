@@ -21,6 +21,15 @@ jigc doc add-item changelog:changelog#releases --title "<version>" --task {{task
 #   → prints e.g. changelog:changelog#releases/1-0-0  (call this <release-addr>)
 jigc doc set-field <release-addr>/link --value "<diff-url>" --task {{task.id}}
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot <group-addr>/notes --from-file - --task {{task.id}} <<'EOF'
+<one bullet per change>
+EOF
+
 Under that release, add one nested change-group per category and author its notes
 (one bullet per change). The category is the group's id (added / changed /
 deprecated / removed / fixed / security). Again, drive the printed address verbatim:

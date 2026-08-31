@@ -12,6 +12,15 @@ slots and fields, each field's enum members, and every address a write can take:
 
 jigc doc schema roadmap
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot roadmap:roadmap#milestones/<id>/proves --from-file - --task {{task.id}} <<'EOF'
+<what this milestone proves>
+EOF
+
 Then mint this milestone's entry and author it — its `proves` and the prose
 `decomposition` of its increments (one level: each increment's deliverable and the
 tasks that build it, as prose). The item id is minted from the title you give:

@@ -28,6 +28,15 @@ dangling `derived-from` blocks finalize):
 
 jigc doc set-field spec:<slug>#derived-from --value prd:<slug> --task sweep-the-compose-surface
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot spec:<slug>#criteria/<id>/statement --from-file - --task sweep-the-compose-surface <<'EOF'
+<what this criterion must satisfy, testably phrased>
+EOF
+
 Then add one criterion per thing the change must satisfy, each testably phrased.
 For each, mint the item and write its statement in prose:
 
@@ -61,7 +70,18 @@ already carries it. Inside slot prose, the reserved heading depths are schema-re
 the address you write — the CLI owns the section, item, and sub-label heading
 levels there, so your headings sit below them; Setext headings are rejected at
 every depth, and a rejected write names the shallowest depth free at that
-address. Set the type, then stage the summary prose:
+address.
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface <<'EOF'
+<one line saying what changed>
+EOF
+
+Set the type, then stage the summary prose:
 
 Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <COMMIT_TYPE> --task sweep-the-compose-surface`
 The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert

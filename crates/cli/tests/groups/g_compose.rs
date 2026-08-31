@@ -63,5 +63,7 @@ mod start_explain;
 mod start_orientation;
 #[path = "../start_resume.rs"]
 mod start_resume;
+#[path = "../stdin_form_naming.rs"]
+mod stdin_form_naming;
 #[path = "../superseding_decision.rs"]
 mod superseding_decision;

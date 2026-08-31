@@ -310,13 +310,22 @@ fn composite_workflows() -> Vec<Workflow> {
 // Counting the emitted writes
 // ---------------------------------------------------------------------------
 
-/// Every emitted line that is a `jigc doc set-…` write against
+/// Every emitted line that is a `jigc doc set-…` **solicit** against
 /// `commit:<task>#<leaf>` — the composed surface's own bytes, with the `Run: ` /
 /// backtick decoration stripped so the remainder is executable verbatim.
+///
+/// A line that *opens a heredoc* is excluded (M49 Inc 11, T8): it is a
+/// **demonstration** of how to feed `--from-file -` under a harness that refuses a
+/// `cat … | jigc` pipeline, not a second instruction to make the write. The
+/// distinction is structural, not a name — the line carries its own payload and its
+/// closing `EOF`, which is why arm 2 must not try to pipe prose into it either — and
+/// the defect this suite was built on (`sub-task` soliciting `#summary` twice, from
+/// two different steps) is two plain solicits, both of which still count.
 fn emitted_writes(text: &str, task: &str, leaf: &str) -> Vec<String> {
     let target = format!("commit:{task}#{leaf} ");
     text.lines()
         .filter(|line| line.contains(&target))
+        .filter(|line| !line.trim_end().ends_with("<<'EOF'"))
         .filter_map(|line| {
             let trimmed = line.trim();
             let command = trimmed

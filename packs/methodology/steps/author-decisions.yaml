@@ -13,6 +13,15 @@ can take:
 
 jigc doc schema decisions-log
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot decisions-log:decisions-log#entries/<id>/why --from-file - --task {{task.id}} <<'EOF'
+<the reasoning behind the decision>
+EOF
+
 Then, for each decision made, mint an entry and author its `why` — the reasoning,
 in a sentence or two. The `date` is CLI-set on create:
 

@@ -16,6 +16,15 @@ and fields, each field's enum members, and every address a write can take:
 
 jigc doc schema adr
 
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}} <<'EOF'
+<the forces that made this decision necessary>
+EOF
+
 Author its three required slots on the address `create` prints — `context` (the
 forces that made a decision necessary), `decision` (the call itself), and
 `consequences` (the tradeoffs and follow-on effects it commits you to):

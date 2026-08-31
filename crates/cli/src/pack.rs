@@ -818,7 +818,13 @@ fn assert_singleton_copy_in_stated(pack: &dyn PackSource) -> anyhow::Result<()> 
 /// placeholder renders only as a whole line (the compose seam's class rule —
 /// `engine::compose` → the command-ref emitter), so the scan is per line rather
 /// than the free-text sweep [`schema_refs`] performs for its own class.
-fn cli_refs(body: &str) -> Vec<String> {
+///
+/// Public for the same reason [`solicits_managed_doc_write`] is: a second consumer
+/// derives an owe-set from these refs and must not re-derive what a ref *is*
+/// (`crates/cli/tests/stdin_form_naming.rs` — the stdin sites a grep over
+/// `--from-file -` cannot see, because their command line is rendered from the
+/// catalog rather than written in the step; M49 Inc 11, T8).
+pub fn cli_refs(body: &str) -> Vec<String> {
     body.lines()
         .filter_map(|line| {
             let inner = line.trim().strip_prefix("{{")?.strip_suffix("}}")?.trim();
@@ -2416,6 +2422,15 @@ mod tests {
         levels there, so your headings sit below them; Setext headings are rejected at
         every depth, and a rejected write names the shallowest depth free at that
         address:
+
+        Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+        directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+        jigc itself accepts but an agent harness that statically analyses shell commands
+        can refuse to run:
+
+        jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}} <<'EOF'
+        <the forces that made this decision necessary>
+        EOF
 
         jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}}
         jigc doc set-slot adr:<slug>#decision --from-file - --task {{task.id}}

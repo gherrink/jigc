@@ -8,7 +8,18 @@ already carries it. Inside slot prose, the reserved heading depths are schema-re
 the address you write — the CLI owns the section, item, and sub-label heading
 levels there, so your headings sit below them; Setext headings are rejected at
 every depth, and a rejected write names the shallowest depth free at that
-address. Set the type, then stage the summary prose:
+address.
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:{{task.id}}#summary --from-file - --task {{task.id}} <<'EOF'
+<one line saying what changed>
+EOF
+
+Set the type, then stage the summary prose:
 
 {{ cli.set-commit-type }}
 {{ cli.set-commit-summary }}
