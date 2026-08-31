@@ -1872,13 +1872,22 @@ impl TaskArea {
         let address = Address::parse(addr)
             .map_err(|err| anyhow::anyhow!("malformed address `{addr}`: {err}"))?;
 
-        // Step 3 — the addr must resolve in the committed store: its canonical
-        // `<location>/<slug>.md` must exist (identity is the path). An unknown type
-        // or a transient (location-less) type has no committed path → unresolved.
+        // Step 3a — an **unknown doctype** is its own fault, and it used to be folded into
+        // the not-found below: `jigc task bind spec nosuch:thing <id>` answered ``no such
+        // doc `nosuch:thing` ``, naming the *doc* when the *doctype* is what does not exist,
+        // with no finding code and no route to the surface that would have shown the caller
+        // the real doctypes (M49 Increment 11 / T1 — the axis's fifteenth door).
         let schemas = self.schemas()?;
-        let resolves = schemas
-            .get(address.r#type.as_str())
-            .and_then(|schema| canonical_path(&self.jigc_home, schema, address.slug.as_str()))
+        let Some(schema) = schemas.get(address.r#type.as_str()) else {
+            return Err(crate::render::finding_error(
+                &engine::store::unknown_doctype(address.r#type.as_str()),
+            ));
+        };
+
+        // Step 3b — the addr must resolve in the committed store: its canonical
+        // `<location>/<slug>.md` must exist (identity is the path). A transient
+        // (location-less) type has no committed path → unresolved.
+        let resolves = canonical_path(&self.jigc_home, schema, address.slug.as_str())
             .is_some_and(|path| path.is_file());
         if !resolves {
             bail!("no such doc `{addr}`");

@@ -281,6 +281,14 @@ const MESSAGE_SITES: &[(&str, &str, Verdict, &str)] = &[
          through — which the ingest row then renders through `finding_line`",
     ),
     (
+        "migrate.rs",
+        "ensure_migratable",
+        Verdict::NotARender,
+        "widens the shared unknown-doctype block's message with `migrate`'s narrower usable \
+         set before handing the finding to `render::finding_error`, which renders it — \
+         nothing is printed here",
+    ),
+    (
         "migrate_corpus.rs",
         "relayed",
         Verdict::Carries,
@@ -317,6 +325,13 @@ const MESSAGE_SITES: &[(&str, &str, Verdict, &str)] = &[
         Verdict::Carries,
         "the migration report's blocked / unadopted / unfilled rows — the row head IS the \
          locus, rendered from the finding's own location",
+    ),
+    (
+        "render.rs",
+        "finding_error",
+        Verdict::Carries,
+        "the shared finding→`anyhow` flattening the four operational-funnel doors \
+         (`migrate` / `relocate` / `rename` / `task bind`) refuse through",
     ),
     (
         "render.rs",

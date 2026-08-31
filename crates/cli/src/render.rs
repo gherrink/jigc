@@ -3849,6 +3849,37 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Flatten a blocking [`Finding`] into an `anyhow::Error` carrying the **whole** finding
+/// surface — `severity · code — message`, the locus, and the route — so a verb whose only
+/// failure channel is the operational funnel ([`operational_error`]) still refuses with an
+/// identity and a recovery.
+///
+/// The shape is the findings surface's own ([`finding_line`]): one funnel must not
+/// describe a break in fewer facts than another (M49 Increment 8 / T4). Three verbs
+/// already flattened findings this way with a private copy each (`config`, `describe`,
+/// `milestone`); this is the shared one, minted when M49 Increment 11 / T1 needed a fourth
+/// — the unknown-doctype block at `jigc migrate --as` / `relocate` / `rename` /
+/// `task bind`, four doors that carried no finding code between them.
+///
+/// **Declared bound:** flattening puts the block in the *message*, so under
+/// `--format json` these doors carry it inside the `{"error": …}` envelope rather than as
+/// the structured finding projection — the posture the three earlier copies already ship.
+pub fn finding_error(finding: &Finding) -> anyhow::Error {
+    let severity = match finding.severity {
+        Severity::Blocking => "blocking",
+        Severity::Warning => "warning",
+        Severity::Advisory => "advisory",
+    };
+    let head = format!("{severity} · {} — {}", finding.code, finding.message);
+    let at = finding_locus(finding)
+        .map(|locus| format!("\n  at: {locus}"))
+        .unwrap_or_default();
+    match &finding.route {
+        Some(route) => anyhow::anyhow!("{head}{at}\n  route: {route}"),
+        None => anyhow::anyhow!("{head}{at}"),
+    }
+}
+
 /// Render an **operational error** (an orchestration/`anyhow` failure — not a
 /// validation outcome) to the surface `format` selects: `json` emits the single-key
 /// envelope `{"error": "<anyhow chain>"}` (so a tooling consumer on `--format json`

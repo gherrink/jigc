@@ -1483,6 +1483,74 @@ pub const VERB_KINDS: &[(&[&str], VerbKind)] = &[
     (&["milestone", "discard"], VerbKind::Write),
 ];
 
+/// **How a doctype id reaches a leaf verb** — the second classification of the clap
+/// tree, beside [`VerbKind`].
+///
+/// It exists because *"one unknown doctype, one answer"* is a claim about **every**
+/// door that takes a doctype, and the doors were never enumerated: five different
+/// shapes shipped across seven of them, two carrying no finding code and one carrying
+/// no route at all, and a sixth leaked `PackResourceKind`'s `{:?}` at six `doc` write
+/// verbs (M49 Increment 11 / T1; `DECISIONS.md` → 2026-08-31).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoctypeArg {
+    /// A **bare** doctype id — the whole argument is the doctype (`jigc doc schema
+    /// <DOCTYPE>`, `jigc migrate <path> --as <DOCTYPE>`, `jigc relocate <TYPE> …`).
+    Bare,
+    /// The `<type>` **head of a doc address** (`jigc doc set-slot <type>:<slug>#<slot>`,
+    /// `jigc rename <type>:<slug> …`, `jigc task bind <role> <type>:<slug> <id>`).
+    Address,
+}
+
+/// The clap **argument ids** that carry a doctype — the vocabulary the door set is
+/// *derived* from rather than remembered.
+///
+/// [`DOCTYPE_DOORS`] is not a hand-kept list: `every_doctype_door_is_registered` walks
+/// the real clap tree and asserts that a leaf verb carries a row **iff** one of its
+/// arguments is named here, so a new verb taking a doctype cannot ship without an
+/// answer for an unknown one. The ids are the derive macro's field names — `type`
+/// (`doc create`, `relocate`), `doctype` (`doc author`/`schema`/`list`), `as`
+/// (`migrate`), `addr` (every addressed `doc` verb and `task bind`), and `old_slug`
+/// (`rename`) — and each one names a doctype at every leaf that carries it, which is
+/// what makes the ⇔ hold.
+pub const DOCTYPE_ARG_IDS: &[&str] = &["type", "doctype", "as", "addr", "old_slug"];
+
+/// **Every leaf verb that takes a doctype**, with the shape it arrives in — derived
+/// from the clap tree by [`DOCTYPE_ARG_IDS`] and fenced against it, so the set is the
+/// binary's, not a remembered one.
+///
+/// The **answer** each door owes is decided by what the doctype is *for*, not by which
+/// verb asked — two shapes, and the split is deliberate:
+///
+///   * a **create-gate** door (`doc create` / `doc author`) is naming a doctype to
+///     *mint*, so its refusal is `create.unknown-doctype` and names the authorable set;
+///   * every other door is naming a doctype that must already **exist** in the resolved
+///     cascade, so its refusal is `store.unknown-type` — one fault, one code, whether
+///     the id arrived bare or as an address head.
+///
+/// A door whose usable set is *narrower* than the cascade's (only `jigc migrate --as`,
+/// which needs a shipped `migrate-<doctype>` workflow) says so in its **message**; the
+/// code stays the fault and the route stays the runnable doctype surface.
+pub const DOCTYPE_DOORS: &[(&[&str], DoctypeArg)] = &[
+    // Top level.
+    (&["migrate"], DoctypeArg::Bare),
+    (&["relocate"], DoctypeArg::Bare),
+    (&["rename"], DoctypeArg::Address),
+    // `jigc doc` — the managed-doc surface.
+    (&["doc", "create"], DoctypeArg::Bare),
+    (&["doc", "author"], DoctypeArg::Bare),
+    (&["doc", "schema"], DoctypeArg::Bare),
+    (&["doc", "list"], DoctypeArg::Bare),
+    (&["doc", "add-item"], DoctypeArg::Address),
+    (&["doc", "remove-item"], DoctypeArg::Address),
+    (&["doc", "retitle-item"], DoctypeArg::Address),
+    (&["doc", "rename"], DoctypeArg::Address),
+    (&["doc", "set-field"], DoctypeArg::Address),
+    (&["doc", "set-slot"], DoctypeArg::Address),
+    (&["doc", "show"], DoctypeArg::Address),
+    // `jigc task` — the task lifecycle.
+    (&["task", "bind"], DoctypeArg::Address),
+];
+
 /// The [`VerbKind`] of a leaf verb path — `None` for a path that names no leaf verb
 /// (a parent node, an unknown token, clap's builtin `help`).
 pub fn verb_kind<S: AsRef<str>>(path: &[S]) -> Option<VerbKind> {
@@ -2039,6 +2107,82 @@ mod cli_parse {
                 "`{shown}` must carry the row's own tip; got:\n{block}",
             );
         }
+    }
+
+    /// **The doctype-door set is derived from the clap tree, not remembered.**
+    ///
+    /// A leaf verb carries a [`DOCTYPE_DOORS`] row **iff** one of its clap arguments is
+    /// named in [`DOCTYPE_ARG_IDS`] — the ⇔ that makes *"one unknown doctype, one
+    /// answer, at every door that takes one"* a claim about the whole surface rather
+    /// than about the seven doors an audit happened to walk. A new verb taking a
+    /// doctype reddens here until it declares how the id arrives, and a row for a verb
+    /// that lost its doctype argument cannot linger.
+    #[test]
+    fn every_doctype_door_is_registered() {
+        for (path, args) in clap_leaves_with_args() {
+            let carries = args.iter().any(|id| DOCTYPE_ARG_IDS.contains(&id.as_str()));
+            let registered = DOCTYPE_DOORS
+                .iter()
+                .any(|(known, _)| known.iter().eq(path.iter()));
+            assert_eq!(
+                carries,
+                registered,
+                "`jigc {}` carries a doctype argument ({carries}) but its DOCTYPE_DOORS \
+                 membership is {registered} — its arguments are [{}]",
+                path.join(" "),
+                args.join(", "),
+            );
+        }
+        let leaves: Vec<Vec<String>> = clap_leaves_with_args()
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect();
+        for (path, _) in DOCTYPE_DOORS {
+            let path: Vec<String> = path.iter().map(|token| (*token).to_string()).collect();
+            assert!(
+                leaves.contains(&path),
+                "DOCTYPE_DOORS carries `jigc {}`, which the clap tree no longer has",
+                path.join(" "),
+            );
+        }
+    }
+
+    /// Every leaf verb path paired with its clap **argument ids** — the derivation
+    /// substrate [`every_doctype_door_is_registered`] reads. The same walk as
+    /// [`clap_tree`], carrying the arguments its callers do not need.
+    fn clap_leaves_with_args() -> Vec<(Vec<String>, Vec<String>)> {
+        fn walk(
+            cmd: &clap::Command,
+            prefix: Vec<String>,
+            out: &mut Vec<(Vec<String>, Vec<String>)>,
+        ) {
+            let subs: Vec<&clap::Command> = cmd
+                .get_subcommands()
+                .filter(|sub| sub.get_name() != "help")
+                .collect();
+            if subs.is_empty() {
+                if !prefix.is_empty() {
+                    let args = cmd
+                        .get_arguments()
+                        .map(|arg| arg.get_id().to_string())
+                        .collect();
+                    out.push((prefix, args));
+                }
+                return;
+            }
+            for sub in subs {
+                let mut child = prefix.clone();
+                child.push(sub.get_name().to_string());
+                walk(sub, child, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(
+            &<Cli as clap::CommandFactory>::command(),
+            Vec::new(),
+            &mut out,
+        );
+        out
     }
 
     /// Walk the clap tree, returning `(leaf verb paths, parent node paths)` — the root

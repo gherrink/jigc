@@ -58,6 +58,27 @@ pub enum PackResourceKind {
     SchemaSnapshots,
 }
 
+/// The resource family's **on-disk name** — the directory a pack ships the kind in
+/// (`schemas/`, `workflows/`, `steps/`, `config/`, `schema-snapshots/`).
+///
+/// It exists so [`PackError::NotFound`] can name the family without `{:?}`. The Debug
+/// rendering was in that error's `#[error]` string, and it reached readers: six `jigc
+/// doc` write verbs answered an unknown doctype with *"no pack resource of kind Schemas
+/// with id `x`"* — a Rust enum variant printed at a user, from a producer that had a
+/// perfectly good name for the thing (M49 Increment 11 / T1). Killing it here kills it at
+/// every site that renders the error, present and future.
+impl std::fmt::Display for PackResourceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PackResourceKind::Schemas => "schemas",
+            PackResourceKind::Workflows => "workflows",
+            PackResourceKind::Steps => "steps",
+            PackResourceKind::Config => "config",
+            PackResourceKind::SchemaSnapshots => "schema-snapshots",
+        })
+    }
+}
+
 /// The `resolving_path` sentinel a pack with no on-disk root reports — the
 /// binary-embedded base, whose bytes ship inside `jigc` rather than at a directory.
 /// `--explain` renders it verbatim as the pack's "path" (`design/worked-examples.md`
@@ -84,7 +105,7 @@ pub struct PackProvenance {
 /// Why a `PackSource::read` failed.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum PackError {
-    #[error("no pack resource of kind {kind:?} with id `{id}`")]
+    #[error("no pack resource of kind {kind} with id `{id}`")]
     NotFound {
         kind: PackResourceKind,
         id: ResourceId,
@@ -416,6 +437,43 @@ mod tests {
                 .is_empty(),
             "a non-owning pack reports no owners",
         );
+    }
+
+    /// **The not-found error names the resource family, never its `{:?}`** (M49
+    /// Increment 11 / T1). The Debug rendering used to ride the `#[error]` string and
+    /// reached readers verbatim through the CLI's write verbs; the fence is here, at the
+    /// producer, so no consumer has to remember to strip it. The match is exhaustive, so
+    /// a sixth variant cannot ship without a name.
+    #[test]
+    fn the_not_found_error_names_the_family_and_leaks_no_debug_spelling() {
+        for kind in [
+            PackResourceKind::Schemas,
+            PackResourceKind::Workflows,
+            PackResourceKind::Steps,
+            PackResourceKind::Config,
+            PackResourceKind::SchemaSnapshots,
+        ] {
+            let expected = match kind {
+                PackResourceKind::Schemas => "schemas",
+                PackResourceKind::Workflows => "workflows",
+                PackResourceKind::Steps => "steps",
+                PackResourceKind::Config => "config",
+                PackResourceKind::SchemaSnapshots => "schema-snapshots",
+            };
+            let rendered = PackError::NotFound {
+                kind,
+                id: ResourceId::from("nosuch"),
+            }
+            .to_string();
+            assert_eq!(
+                rendered,
+                format!("no pack resource of kind {expected} with id `nosuch`"),
+            );
+            assert!(
+                !rendered.contains(&format!("{kind:?}")),
+                "the error must not carry the enum's Debug spelling: {rendered}",
+            );
+        }
     }
 
     /// The trait must be usable behind a `dyn` reference (object-safe) — a

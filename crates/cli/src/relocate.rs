@@ -99,9 +99,12 @@ fn relocate_in_repo(cwd: &Path, ty: &str, from: &str) -> Result<RelocationReport
     let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
     let defs = crate::start::CascadeDefs::new(&resolved, &project_config);
     let schemas = defs.all_schemas(pack)?;
+    // The unknown doctype is the axis's block, not a bare sentence: this door used to
+    // answer `no doctype `x` in the resolved cascade` — no finding code, no route, the
+    // only door on the axis that offered the reader nothing to run (M49 Increment 11 / T1).
     let schema = schemas
         .get(ty)
-        .ok_or_else(|| anyhow!("no doctype `{ty}` in the resolved cascade"))?;
+        .ok_or_else(|| crate::render::finding_error(&engine::store::unknown_doctype(ty)))?;
     let prior = parse_prior_home(from)?;
     let jigc_root = jigc_home.join(".jigc");
     relocate_freeze_exempt(pack, &jigc_home, &jigc_root, schema, prior)

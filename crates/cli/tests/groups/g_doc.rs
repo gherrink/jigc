@@ -7,6 +7,7 @@ mod support;
 
 #[path = "../address_parse_error_axis.rs"]
 mod address_parse_error_axis;
+
 #[path = "../author_batch_scaling.rs"]
 mod author_batch_scaling;
 #[path = "../copy_in_ack.rs"]
@@ -65,6 +66,8 @@ mod schema_load_strictness;
 mod schema_resolution_unified;
 #[path = "../uninstall.rs"]
 mod uninstall;
+#[path = "../unknown_doctype_axis.rs"]
+mod unknown_doctype_axis;
 #[path = "../unknown_subcommand_tip.rs"]
 mod unknown_subcommand_tip;
 #[path = "../write_title_divergence.rs"]

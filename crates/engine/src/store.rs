@@ -328,6 +328,27 @@ fn not_staged_block(
 /// Build a blocking store-read [`Finding`] with a located message and a route
 /// (a plain-`String` route is a [`Route`]-`Human` direction; the transient-type
 /// block and the staged arm's committed-sibling block pass a [`Route::mechanical`]).
+/// **The one `store.unknown-type` block for a doctype-scoped refusal** — a doctype id
+/// that names nothing in the resolved cascade.
+///
+/// Keyed at the **bare doctype id**, because the subject is a doctype and no instance
+/// exists to address (`crate::state`'s `doctype_scoped_location`, the same rule the
+/// create-gate's block follows), and routed at the doctype surface. Minted here so the
+/// doors that raise it cannot drift apart: `jigc doc schema` / `doc list` / every `doc`
+/// write verb (through `cli::doc`), and `jigc migrate --as` / `relocate` / `rename` /
+/// `task bind` (M49 Increment 11 / T1).
+///
+/// [`read_slice`]'s own refusal carries the same code and route but names the **address**
+/// the caller supplied — there a doc was addressed, so the message says which one.
+pub fn unknown_doctype(type_name: &str) -> Finding {
+    block(
+        "store.unknown-type",
+        format!("unknown doctype `{type_name}`"),
+        type_name,
+        "list the available doctypes with `jigc describe`".to_string(),
+    )
+}
+
 fn block(code: &str, message: String, address: &str, route: impl Into<Route>) -> Finding {
     Finding::graded(
         Severity::Blocking,

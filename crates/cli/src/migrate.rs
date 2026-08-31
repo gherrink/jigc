@@ -163,20 +163,30 @@ fn ensure_migratable(pack: &dyn PackSource, doctype: &str) -> Result<()> {
         .collect();
     let set = migratable.join(", ");
 
+    // An **unknown** doctype is the axis's fault, not this door's: it names nothing in the
+    // resolved cascade, which is `store.unknown-type` wherever it is typed, so it carries
+    // that code and the runnable doctype-surface route every other door carries (M49
+    // Increment 11 / T1). What stays door-local is the *message*: `migrate`'s usable set is
+    // narrower than the cascade's, so the refusal still names the migratable set.
     let known = pack
         .list(PackResourceKind::Schemas)
         .iter()
         .any(|id| *id == ResourceId::from(doctype));
-    let message = if known {
-        format!(
-            "doctype `{doctype}` exists but is not migratable (no `migrate-{doctype}` workflow)"
-        )
-    } else {
-        format!("unknown doctype `{doctype}`")
-    };
+    if !known {
+        let mut finding = engine::store::unknown_doctype(doctype);
+        finding.message = format!("{}; migratable doctypes: {set}", finding.message);
+        return Err(crate::render::finding_error(&finding));
+    }
+
+    // A **known** doctype with no `migrate-<doctype>` workflow is a different fault — the
+    // doctype exists — so it keeps its own sentence and its re-run route, whose `<path>`
+    // is a declared non-derivable placeholder (`design/surface-contract.md` → P6).
     let route =
         engine::finding::Route::mechanical(["jigc", "migrate", "<path>", "--as", "<doctype>"], "");
-    bail!("{message}; migratable doctypes: {set}\n  route: re-run {route} with one of: {set}");
+    bail!(
+        "doctype `{doctype}` exists but is not migratable (no `migrate-{doctype}` workflow); \
+         migratable doctypes: {set}\n  route: re-run {route} with one of: {set}"
+    );
 }
 
 /// Normalize the verb's `path` arg to a clean repo-relative string for recording as the

@@ -3950,13 +3950,7 @@ fn run_schema(cwd: &Path, doctype: &str, format: Format) -> Result<(), DocFailur
     let pack = make_pack()?;
     let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
     let Some(schema) = schemas.get(doctype) else {
-        return Err(DocFailure::block(Finding::graded(
-            Severity::Blocking,
-            "store.unknown-type",
-            format!("unknown doctype `{doctype}`"),
-            Some(Location::addressed(doctype, 1, 1)),
-            Some("list the available doctypes with `jigc describe`".into()),
-        )));
+        return Err(unknown_doctype_block(doctype));
     };
     // The pinned top-level `schema-version`: the doctype's freeze-manifest version
     // when its owning pack declares one (the dev frozen set), else null (the
@@ -4174,13 +4168,7 @@ fn render_listing(format: Format, docs: &[DocRow], empty_line: &str) {
 /// refusal the read-side `doc show` / `doc schema` raise, so a doctype the cascade does
 /// not define gets one answer whichever surface asked.
 fn unknown_doctype_block(doctype: &str) -> DocFailure {
-    DocFailure::block(Finding::graded(
-        Severity::Blocking,
-        "store.unknown-type",
-        format!("unknown doctype `{doctype}`"),
-        Some(Location::addressed(doctype, 1, 1)),
-        Some("list the available doctypes with `jigc describe`".into()),
-    ))
+    DocFailure::block(engine::store::unknown_doctype(doctype))
 }
 
 /// The **staged-listing hint** — the index read's counterpart to [`stale_read_hint`]
@@ -5596,9 +5584,33 @@ impl ActiveTask {
     /// `location:`, so a shadow-blind read here staged a **blank skeleton** over a
     /// committed document whose prose the store still held — `doc create` acked a fresh
     /// mint for a doc the read surfaces were serving (M49 Increment 3 T2).
-    fn schema(&self, type_name: &str) -> Result<Schema> {
-        crate::start::resolved_schema(self.pack.as_ref(), &self.project_config(), type_name)
-            .with_context(|| format!("unknown doctype `{type_name}`"))
+    fn schema(&self, type_name: &str) -> Result<Schema, DocFailure> {
+        // The unknown doctype is a **block**, not an orchestration error. Before M49
+        // Increment 11 / T1 it fell through to `with_context` over the pack read, so all
+        // six write verbs answered *"unknown doctype `x`: the embedded pack is missing
+        // `x`: no pack resource of kind Schemas with id `x`"* — no finding code, no route,
+        // and `PackResourceKind`'s `{:?}` at a reader. It is the same fault the read
+        // surfaces already block on, so it gets the same answer
+        // ([`unknown_doctype_block`]; `design/surface-contract.md` → law 2 / the route
+        // fence).
+        //
+        // Membership is the **pack's schema listing**, which is exactly the set
+        // `CascadeDefs::declared_schemas` builds the doctype map from (a project layer
+        // shadows ids the pack ships; it never introduces one) — cheap, and it adds no
+        // failure mode: an unrelated doctype's malformed shadow must not make every write
+        // to a different doctype fail.
+        if !self
+            .pack
+            .list(PackResourceKind::Schemas)
+            .iter()
+            .any(|id| id.as_str() == type_name)
+        {
+            return Err(unknown_doctype_block(type_name));
+        }
+        Ok(
+            crate::start::resolved_schema(self.pack.as_ref(), &self.project_config(), type_name)
+                .with_context(|| format!("could not resolve the `{type_name}` schema"))?,
+        )
     }
 
     /// Every cascade-resolved schema, keyed by doctype — the set `create_gated`

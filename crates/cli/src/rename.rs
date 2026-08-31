@@ -606,7 +606,7 @@ fn parse_addr(addr: &str) -> Result<(String, String)> {
 fn doc_path(schema_map: &BTreeMap<String, Schema>, ty: &str, slug: &str) -> Result<String> {
     let schema = schema_map
         .get(ty)
-        .ok_or_else(|| anyhow!("unknown doctype `{ty}`"))?;
+        .ok_or_else(|| crate::render::finding_error(&engine::store::unknown_doctype(ty)))?;
     if let Some(placement) = &schema.placement {
         return Ok(placement.file.clone());
     }

@@ -522,9 +522,16 @@ fn the_gate_aware_refusal_routes_land_where_they_claim() {
 
 // ── the migrate rejects (`migrate.rs`) ──────────────────────────────────────────────
 
-/// A non-migratable doctype routes back to the verb with the live set; the
+/// A **known-but-not-migratable** doctype routes back to the verb with the live set; the
 /// placeholder-carrying span rides the checked constructor (the `<path>` placeholder
 /// joins the declared dummy table).
+///
+/// The subject is `commit` — a doctype that ships a schema but no `migrate-commit`
+/// workflow — rather than a typo. A typo is a different fault (the doctype exists
+/// nowhere), and since M49 Increment 11 / T1 it answers on the unknown-doctype axis with
+/// `store.unknown-type` and the runnable doctype-surface route, which is asserted over
+/// every door in `unknown_doctype_axis.rs`. This case keeps the placeholder span, which is
+/// what it was always here to cover.
 #[test]
 fn not_migratable_doctype_routes_back_to_migrate() {
     let repo = TempDir::new("bad-doctype");
@@ -534,12 +541,13 @@ fn not_migratable_doctype_routes_back_to_migrate() {
     let out = jigc(
         repo.path(),
         home.path(),
-        &["migrate", "README.md", "--as", "bogus"],
+        &["migrate", "README.md", "--as", "commit"],
     );
     assert_error_contains(
         &out,
         &[
-            "unknown doctype `bogus`; migratable doctypes: ",
+            "doctype `commit` exists but is not migratable (no `migrate-commit` workflow); \
+             migratable doctypes: ",
             "\n  route: re-run `jigc migrate <path> --as <doctype>` with one of: ",
         ],
     );
