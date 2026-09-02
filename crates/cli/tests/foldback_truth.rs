@@ -217,12 +217,19 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// pre-audit direction and follow the marker, rather than accumulating one dead pin per
 /// wave.
 ///
-/// The owed **version bump** is deliberately outside this fence. It is discharged as a
-/// named obligation rather than performed here, and it carries **no numeral**: the roadmap's
-/// M49 section names no target version and the 1.0.0 call is the human's, so asserting a
-/// version string would be this fence choosing it.
+/// **Flipped at the M49 completion fold-back (2026-09-02), which is this fence working.**
+/// The audit ran, its verdict is persisted, and the overstatement available *now* is the
+/// opposite of the one available during the build: a wave that took **7 findings — one of
+/// them a HIGH that lost committed docs to `.git/` — may not call itself *audited clean*.
+/// So the assertions invert, for the fourth time in this arm's life, rather than
+/// accumulating a dead pin per wave.
+///
+/// The **version bump** leaves this fence's exclusion list at the same moment. It was held
+/// out during the build because the roadmap named no numeral and the 1.0.0 call is the
+/// human's; it is now performed and discharged (`1.0.0-rc.13`), so the claim may cite it —
+/// but this fence still does not assert the string, for the same reason it never did.
 #[test]
-fn claude_md_names_m49_and_claims_only_the_build() {
+fn claude_md_names_m49_and_cites_what_its_audit_found() {
     let body = read_doc("CLAUDE.md");
     // The project-state paragraph is a single line; the sections that follow it (build /
     // lint / test, quickstart, code architecture) are not milestone claims, and M49 is the
@@ -245,24 +252,30 @@ fn claude_md_names_m49_and_claims_only_the_build() {
         );
     }
 
-    // The bound is stated, not merely implied by an absence: a reader must be able to see
-    // that the audit is owed, and a paragraph that simply omits the word cannot say so.
+    // The audit has run, so the claim owes its result — and the persisted verdict is the
+    // record, not this paragraph, so the paragraph must point at it.
     assert!(
-        span.contains("built, not audited"),
-        "M49 is built and not yet audited, and the claim must say so in those words:\n{span}",
+        span.contains("built + audited"),
+        "M49's audit has run and the claim must say so in those words:\n{span}",
+    );
+    assert!(
+        span.contains("VERDICT"),
+        "the M49 claim must cite the persisted verdict now that it exists:\n{span}",
     );
     for forbidden in [
-        // No audit has run, so every one of these claims a verdict nobody reached.
+        // The pre-audit bound, now false: leaving it standing would be the stale-claim
+        // failure this arm exists to catch, in the direction nobody watches for.
+        "built, not audited",
+        // 7 findings landed, one of them a HIGH with committed-doc loss. "Clean" is a
+        // verdict this audit did not reach, and the paragraph may say no more than it found.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // The verdict artifact does not exist yet; a link to one would be a law-1 lie.
-        "VERDICT",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M49 claim may not claim an audit that has not run, but contains \
-             `{forbidden}`:\n{span}",
+            "the M49 claim may say no more about the audit than the audit found, but \
+             contains `{forbidden}`:\n{span}",
         );
     }
 }

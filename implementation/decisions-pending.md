@@ -41,6 +41,43 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 
 - **(D) Two non-prose items are flagged so they are not lost a second time.** `milestone provision`'s mid-phase-2 non-rollback, which [next-wave-scope.md](../completions/artifacts/RC-1.0-gate/next-wave-scope.md) marked *"IN, if cheap"* and **no M46 increment took**; and an undischarged standing order — *"the carryover gate protects staging that exists at the mint, not staging that existed before the session — verify it before the Settle… do not drop it"* — which no M46 artifact records verifying. *Trigger:* the M49 Settle, as scope questions rather than as prose fixes.
 
+### Chartered and cut, awaiting a wave — the Fix phase rides the fan-out
+
+*(Settled 2026-09-02 against an independent [robust-advocate](../completions/artifacts/M49/) brief that drove the whole shape end to end on `1.0.0-rc.13` across nine throwaway repos. The fork was **(a) fan out the Fix phase** vs **(b) enforce seriality with a fence**; **(a) taken**. Written in increment form so it drops into a decomposition unchanged.)*
+
+**Why (a), in one line each.** (b) can only live in `.claude/agents/*.md` or the JS harness — **outside anything `cargo test` can red** — because jigc structurally cannot build it without revising *Concurrency is one bounded primitive only* **and** contradicting a pinned surface (`crates/cli/src/render.rs:312` composes *"several open tasks are legal… you can run them in parallel while their work stays disjoint"*, with a standing test pinning that affordance). So (b) is **tier 3 forever, and is remedy #4 of a shape that has failed three times** — M38 reinforced the prose, M42 added the ⚠, M49 put it in an agent file, and each remedy is the object the doc itself indicts (*"a rule that lives in prose the actor must remember to read… rots at exactly the moment it is needed"*). (a) is **tier 1**, needs **zero Rust**, and is the transcription [DECISIONS.md](../DECISIONS.md) → 2026-06-21 Direction already committed to (*"the eventual encode is transcription, not redesign"*).
+
+**Not a one-way door, and the advocate declined to claim it was** — no schema bump, no frozen-doctype change, no new engine primitive; reversal is a step rewrite plus a golden regeneration.
+
+**Not sold on speed, on the advocate's own measurement**: cold gate **8m39s**, warm **4m34s–5m18s**, ~1.5 G `target/` per worktree; four serial warm gates ≈ four parallel cold ones. **The win is correctness and unattended safety.** And the human's supporting argument was corrected in the same brief: increments run **serially by design** (*each task builds on the last*), so self-hosting will not make *them* fan out — but **audit fixes are the one set in this methodology that is independent by construction**, which is why the primitive fits here and nowhere else.
+
+**There is no "do nothing" arm.** `packs/methodology/steps/fix-gate.yaml:7` still says *"strictly serial over the one shared working tree"*, and the doc's interim mitigation (*gate in an isolated worktree, stage only your own paths*) **reaches no composed step at all** — `worktree` appears **once** in the whole methodology pack, in `migration-finalize.yaml`, about something else. Even (b) would require a pack edit.
+
+---
+
+#### PREREQUISITE increment — the milestone boundary gates as hard as the task doors
+
+**Deliverable.** `jigc milestone finalize` gates a sub-task's transient `commit:<sub-id>` doc the way `jigc task finalize` does. [validation.md](../design/validation.md) states the door list is complete and that *"for every finding the trailer counts, **that door gates as hard as the two task doors**"* — **false at HEAD**, driven: a sub-task commit doc with `type` unset blocks at **exit 3** on the task door and lands at **exit 0** through the milestone door, because the transient doc is materialized by the join, never promoted, and so never enters the merged doc set the M45 conformance gate validates.
+**Grouped scope.** The gate's subject widened to the materialized sub-task commit docs · a red test at the milestone door for an author-required field · the axis stated (every `squash: false` fan-out, not the reported cell) · `validation.md`'s claim made true rather than softened.
+**Proves.** A pre-existing defect on any `squash: false` fan-out, and a **hard precondition** of the increment below — routing every audit fix through the milestone boundary would otherwise ship worse commit messages than the serial path it replaces.
+
+#### Increment — the completion workflow's Fix phase composes fan-out/join over confirmed findings
+
+**Deliverable.** A confirmed audit finding becomes a milestone sub-task, provisioned into its own git worktree at the audited base pin, fixed concurrently, and joined at the barrier — so **two fixers physically cannot race one index**, and the concurrency rule stops being a thing an orchestrator must remember. **Zero engine or CLI change; no new `fan-out:` marker in the methodology pack** — the fan-out already ships in the dev pack's `milestone-execution` walk, and `jigc milestone execute <id>` composes it whole.
+
+**Grouped scope.**
+- **`steps/triage.yaml`** (edit) — a confirmed finding becomes `jigc milestone add-task <fix-milestone> "<code>: <finding>" --workflow fix-task`. Same-file findings are **partitioned at triage** into one sub-task or the next round; `join` is a free pre-check that commits nothing.
+- **`steps/fix-gate.yaml`** (edit) — the *"strictly serial over the one shared working tree"* clause is replaced by `Run: jigc milestone execute <fix-milestone-id>`. The `checkpoint:` front-matter and the three-round cap are untouched. (The step cannot itself carry `fan-out:` — `compose.rs` enforces *a step is one kind* — which is what keeps the cut minimal.)
+- **`workflows/fix-task.yaml`** (new) — mirrors the dev pack's `sub-task`: `creates-task: true`, `selectable: false`, `suppressed: {reason, expires: never}`, `allows-create: [{type: adr, as: decision}]`.
+- **`steps/fix-finding.yaml`** (new) — **transcribed** from `fix-gate.yaml`'s existing body: the red that fails *because of the defect*, the minimal green, and the **derive-the-axis-not-the-site-list** brief. The serial sentence is the only clause that does not survive the move, because the worktree makes it unnecessary.
+- The pack-load fences these must satisfy (`suppressed` reason/expiry · `when:`/`description:`/`usage:` presence · the named-fact map · `read.staged-read-back`) and a compose-golden regeneration.
+
+**Proves.** The fence is the primitive rather than the prose: the rule that failed at M38, M42 and M49 becomes unstatable-because-unnecessary. Driven acceptance — run the completion loop over ≥2 confirmed findings and land **one conventional commit per finding** in task-id order (`finalize.fan-out.squash: false`), then prove a same-file pair blocks at `join` with `combine.code-collision`, its contending sub-task ids, its route, and **nothing committed**.
+
+**Declared bounds, carried in.** Same-file findings need partitioning at triage — serial execution handles them better, because fixer 2's red test would run against fixer 1's *committed* fix; this is the genuine simplicity the cheap arm keeps. A dirty main checkout is safe **unless** it holds edits to a file a fixer also touched, which fails as a raw `git merge --ff-only` error with **no jigc code and no route** — pre-existing on the shipped primitive, not introduced here, and worth its own entry.
+
+*Trigger:* the next chartered wave — this is cut, not deferred; it awaits a milestone to belong to, and the prerequisite increment lands first.
+
 ### Discharged at the M49 Settle — fired triggers, disposed in the same edit
 
 *(The review caught the first draft writing new triggers while leaving four **already-fired** ones
