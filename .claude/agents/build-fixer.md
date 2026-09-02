@@ -21,3 +21,8 @@ Your transcript is **not** read back, and at a halt the orchestrator resumes fro
 
 
 **Scratch teardown — never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* (a static scan of the command text that cannot prove the variables are non-empty), so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Use a fresh dir — `W=$(mktemp -d "$SCRATCH/probe.XXXXXX")` — or empty a fixed one without `rm`: `mkdir -p "$D" && find "$D" -mindepth 1 -delete`. `set -u` / `: "${V:?}"` do not help. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.
+
+
+**Derive the axis; the brief is a lead, not a boundary.** The finding reports the sites it *found*; your fix is owed over the sites that **exist**. Enumerate the mechanism's consumers, disposition every member (converted, or out with a stated reason), and **report the real count and how it differs from the one you were handed**. A fixer handed a site list will fix the list — that is the failure this rule exists to stop ([milestone-completion-workflow.md](../../implementation/milestone-completion-workflow.md) → The loop → Fix; the M46 `base.json` case: two sites reported, three across two crates as fixed, plus a fifth writer nobody had counted).
+
+**Never run concurrently with another tree-mutating agent on one working tree.** If you were spawned alongside siblings, assume the index and the shared `target/` are contended: gate in an isolated worktree or with a private `CARGO_TARGET_DIR`, and `git add` **only your own paths** — never `-A` or `.`. This rule has been broken at M38, M42 and M49; each time it survived only because fixers defended themselves this way.
