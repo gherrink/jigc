@@ -1,0 +1,600 @@
+#!/usr/bin/env bash
+#
+# dev/jigc-rig — build a named jigc corpus state in a throwaway repo, from bash.
+#
+# The states are the ones `crates/cli/tests/support/trial_corpus.rs` already builds
+# for the Rust suites. That builder is the source of truth and this is a front door
+# onto the same construction — same state names, same verbs, same order — because
+# reaching it from a shell otherwise means writing a `#[test]`, registering it in one
+# of twelve group roots (`autotests = false`) and running a group target, for a
+# thirty-second throwaway probe. A scan of 139 subagent transcripts found 48 agents
+# hand-building a rig anyway, 92 running `git init` (331 invocations), and 22 reading
+# trial_corpus.rs before hand-rolling its API in bash.
+#
+# It prints SHELL ASSIGNMENTS to stdout and nothing else, so the caller evals it:
+#
+#     eval "$(dev/jigc-rig committed-singletons)"
+#     $JIGC doc show vision --format json
+#
+# The eval also `cd`s into $REPO and repoints $HOME at $RIG_HOME, so every jigc call
+# the caller makes afterwards is as isolated as the construction was. Everything the
+# construction says goes to stderr.
+#
+# THERE IS NO TEARDOWN, AND THAT IS THE DESIGN. Every root comes from `mktemp -d`, a
+# path that did not exist a moment ago, so there is nothing to remove. `rm -rf $V/$D`
+# is refused by a static scan BEFORE it runs — it prompts a human and parks a
+# delegated agent with no transcript — and 71 agents wrote that shape anyway (390
+# calls, against 40 uses of the prescribed `mktemp -d`). So this tool has no --clean
+# and no --reset: a reset flag is a destructive-command generator with a friendly
+# name. `crates/cli/tests/dev_rig_parity.rs` fences both halves — the state set, and
+# the absence of a recursive removal on a variable path anywhere under dev/.
+#
+# Usage:
+#   dev/jigc-rig <state> [options]
+#   dev/jigc-rig --list-states
+#
+# States (the same set `State::ALL` declares):
+#   fresh                 `jigc setup` only
+#   committed-singletons  vision + roadmap (populated milestone) + decisions-log +
+#                         changelog (staged group, cut release, nested group)
+#   migrated              a foreign doc landed through `migrate … --as vision --approve`
+#   refs-post-hoc         committed-singletons + research, then a LIVE task holding a
+#                         staged edge on the committed vision ($RIG_TASK)
+#   chatty-hooks          a foreign pre-commit hook that prints on success
+#   vendored              a gitignored vendor tree beside tracked source, plus a spec
+#                         and an arch-doc whose code anchors resolve
+#
+# Options:
+#   --binary <path>       jigc to drive (default <repo>/target/debug/jigc)
+#   --pack-from-dev       throwaway copy of the dev pack; its freeze manifest is
+#                         DROPPED, so schemas are reshapeable. Exports JIGC_PACK_DIR.
+#   --schema <type> <f>   install <f> as the pack's <type>.yaml     (implies a pack copy)
+#   --workflow <id> <f>   install <f> as the pack's <id>.yaml       (implies a pack copy)
+#   --repin               KEEP the freeze manifest and re-pin every drifted schema-hash
+#                         after the edits, then assert the pack loads clean
+#                         (implies a pack copy)
+#   --start <wf> <intent> mint a task after the state is built; sets RIG_TASK
+#   --print-only          print the construction script instead of running it
+#   --keep                print the root and state to stderr so nothing reaps it
+#                         (nothing reaps it either way — this only says so out loud)
+#
+# Env in: SCRATCH if set, else TMPDIR.
+# Exit status: 0 iff the whole construction succeeded.
+
+set -u
+
+# --- where are we -----------------------------------------------------------
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 2
+repo_root=$(dirname -- "$script_dir")
+
+tmp_root=${SCRATCH:-${TMPDIR:-/tmp}}
+tmp_root=${tmp_root%/}
+
+# --- the state set ----------------------------------------------------------
+# One list. `--list-states` prints it, the argument check reads it, and each entry
+# dispatches to `gen_state_<name-with-underscores>` — so a state declared without a
+# construction path is caught here rather than by a probe that silently builds the
+# wrong corpus. `crates/cli/tests/dev_rig_parity.rs` asserts this list and
+# `State::ALL` are the same set.
+RIG_STATES=(
+    fresh
+    committed-singletons
+    migrated
+    refs-post-hoc
+    chatty-hooks
+    vendored
+)
+
+state_fn() { printf 'gen_state_%s' "${1//-/_}"; }
+
+die() { printf 'jigc-rig: %s\n' "$*" >&2; exit 2; }
+
+# Single-quote a value for safe inclusion in generated shell.
+sq() {
+    local s=$1
+    s=${s//\'/\'\\\'\'}
+    printf "'%s'" "$s"
+}
+
+# ============================================================================
+# Generation. The construction is ONE script text; running it and printing it are
+# two dispositions of the same bytes, so --print-only cannot drift from what the
+# rig actually does.
+# ============================================================================
+
+gen_header() {
+    cat <<EOF
+#!/usr/bin/env bash
+# Generated by dev/jigc-rig — corpus state: $state
+#
+# Construction chatter goes to stderr; the block at the end goes to stdout, which is
+# what \`eval "\$(dev/jigc-rig $state)"\` evaluates. There is no teardown: the root is
+# minted by \`mktemp -d\`, so nothing here removes anything.
+set -eEu
+trap 'code=\$?; printf "jigc-rig: FAILED (exit %s) at line %s\njigc-rig: command: %s\n" "\$code" "\$LINENO" "\$BASH_COMMAND" >&2; exit "\$code"' ERR
+EOF
+}
+
+gen_preamble() {
+    cat <<'EOF'
+
+# --- helpers ----------------------------------------------------------------
+# `cap` is the only command runner that hides output, so it is the only one that
+# has to hand it back on failure: a rig that half-builds and exits 0 poisons every
+# probe downstream. Nothing below reads an exit status through a pipe.
+cap() {
+    local out status
+    out=$("$JIGC" "$@") && status=0 || status=$?
+    if [ "$status" -ne 0 ]; then
+        printf 'jigc-rig: FAILED (exit %s): jigc %s\n--- stdout ---\n%s\n' \
+            "$status" "$*" "$out" >&2
+        exit "$status"
+    fi
+    printf '%s' "$out"
+}
+
+# Mint a task and return the id the binary PRINTED — never a reconstruction of the
+# slug rule, which is the binary's and would drift silently.
+mint() {
+    local out line
+    out=$(cap "$@")
+    while IFS= read -r line; do
+        case $line in 'task minted: '*) printf '%s' "${line#task minted: }"; return 0 ;; esac
+    done <<< "$out"
+    printf 'jigc-rig: no `task minted: <id>` line in:\n%s\n' "$out" >&2
+    exit 1
+}
+
+# Add one repeatable item and return the address the binary EMITTED.
+item() { cap doc add-item "$1" --title "$2" --task "$3"; }
+
+# set-field(address, task, value) / set-slot(address, task, prose) — argument order
+# mirrors trial_corpus.rs's `set_field` / `set_slot`.
+setf() { "$JIGC" doc set-field "$1" --value "$3" --task "$2"; }
+slot() {
+    "$JIGC" doc set-slot "$1" --from-file - --task "$2" <<SLOT
+$3
+SLOT
+}
+
+# Author the task's commit doc and finalize. Every fixture commit is a `docs`
+# change, so only scope and summary vary; pass `approve` for a destructive land.
+finalize() {
+    setf "commit:$1#type" "$1" docs
+    setf "commit:$1#scope" "$1" "$2"
+    slot "commit:$1#summary" "$1" "$3"
+    slot "commit:$1#body" "$1" 'Built by the trial-corpus fixture builder.'
+    if [ "${4:-}" = approve ]; then
+        "$JIGC" task finalize "$1" --approve
+    else
+        "$JIGC" task finalize "$1"
+    fi
+}
+
+sq() { local s=$1; s=${s//\'/\'\\\'\'}; printf "'%s'" "$s"; }
+emit() { printf 'export %s=%s\n' "$1" "$(sq "$2")"; }
+EOF
+}
+
+gen_env() {
+    printf '\n# --- the root: minted, never reused, so there is nothing to tear down ---\n'
+    printf 'JIGC=%s\n' "$(sq "$binary")"
+    printf 'RIG=$(mktemp -d %s)\n' "$(sq "$tmp_root/jigc-rig-$state-XXXXXX")"
+    cat <<'EOF'
+REPO=$RIG/repo
+RIG_HOME=$RIG/home
+RIG_TASK=
+mkdir -p "$REPO" "$RIG_HOME"
+export HOME=$RIG_HOME
+EOF
+}
+
+gen_pack() {
+    if [ "$pack_copy" -eq 0 ]; then
+        cat <<'EOF'
+# No pack flag: the child composes the EMBEDDED packs. An inherited JIGC_PACK_DIR
+# silently swaps the pack under every probe — it corrupted 173 of 211 Rust suites
+# before M45 — so it is removed rather than trusted.
+unset JIGC_PACK_DIR
+EOF
+        return
+    fi
+    printf '\n# --- a throwaway pack copy the caller may reshape ---\n'
+    printf 'PACK=$RIG/pack\n'
+    printf 'cp -R %s "$PACK"\n' "$(sq "$dev_pack")"
+    if [ "$keep_manifest" -eq 1 ]; then
+        cat <<'EOF'
+# --repin keeps config/schema-manifest.yaml, so the freeze assert stays live and the
+# re-pin below is a real assertion rather than a formality.
+EOF
+    else
+        cat <<'EOF'
+# Drop the copied freeze manifest: a manifest-less constituent is freeze-exempt, so
+# this is a different, UNFROZEN pack rather than a forged v1 dev pack. Single file,
+# literal name — never a recursive removal on a variable path.
+rm -f -- "$PACK/config/schema-manifest.yaml"
+EOF
+    fi
+    local i
+    for i in "${!schema_types[@]}"; do
+        printf 'cp %s "$PACK/schemas/%s.yaml"\n' \
+            "$(sq "$(abspath "${schema_files[$i]}")")" "${schema_types[$i]}"
+    done
+    for i in "${!workflow_ids[@]}"; do
+        printf 'cp %s "$PACK/workflows/%s.yaml"\n' \
+            "$(sq "$(abspath "${workflow_files[$i]}")")" "${workflow_ids[$i]}"
+    done
+    printf 'export JIGC_PACK_DIR=$PACK\n'
+}
+
+gen_git() {
+    cat <<'EOF'
+
+# --- unmanaged repo furniture: a real repo, a per-repo identity, one commit ------
+cd "$REPO"
+git init -q
+git config user.email 'trial@example.com'
+git config user.name 'Trial Corpus'
+printf 'trial corpus\n' > README.md
+git add .
+git commit -q -m initial
+
+# --- managed state through the binary, never by writing into .jigc/ -------------
+"$JIGC" setup
+EOF
+}
+
+gen_repin() {
+    [ "$repin" -eq 1 ] || return 0
+    cat <<'EOF'
+
+# --- --repin: re-pin the drifted schema-hashes the reshaped pack now recomputes --
+# The freeze assert names exactly one doctype per pass (the first in sorted order),
+# so this is a loop, and it ends by asserting the pack loads CLEAN — the half a
+# hand-rolled repin usually skips.
+MANIFEST=$PACK/config/schema-manifest.yaml
+repin_pass=0
+while :; do
+    if repin_out=$("$JIGC" describe 2>&1); then
+        printf 'jigc-rig: pack loads clean after %s repin pass(es)\n' "$repin_pass" >&2
+        break
+    fi
+    if [[ $repin_out =~ doctype\ \`([A-Za-z0-9_-]+)\`:\ schema-hash\ mismatch\ \(manifest\ declares\ \`([0-9a-f]+)\`,\ recomputed\ \`([0-9a-f]+)\`\) ]]; then
+        printf 'jigc-rig: repin %s: %s -> %s\n' \
+            "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" >&2
+        repin_tmp=$(mktemp "$RIG/manifest-XXXXXX")
+        sed "s/${BASH_REMATCH[2]}/${BASH_REMATCH[3]}/" "$MANIFEST" > "$repin_tmp"
+        mv "$repin_tmp" "$MANIFEST"
+        repin_pass=$((repin_pass + 1))
+        [ "$repin_pass" -le 64 ] || { printf 'jigc-rig: --repin gave up after 64 passes\n' >&2; exit 1; }
+    else
+        printf 'jigc-rig: --repin: pack-load failed for a reason a re-pin cannot fix:\n%s\n' \
+            "$repin_out" >&2
+        exit 1
+    fi
+done
+EOF
+}
+
+# --- the states -------------------------------------------------------------
+# Each mirrors the same-named `build_*` in crates/cli/tests/support/trial_corpus.rs:
+# same verbs, same order, same prose. If the two ever diverge, THIS is what is
+# wrong — trial_corpus.rs is the source of truth.
+
+gen_state_fresh() { printf '\n# state `fresh`: setup only.\n'; }
+
+gen_committed_singletons_body() {
+    cat <<'EOF'
+
+# --- committed-singletons -------------------------------------------------------
+# Each singleton created through its OWN driving workflow and finalized, so all four
+# land committed at their placement homes. Two are POPULATED, not merely minted: the
+# roadmap milestone is the only multi-slot repeatable either pack ships, and the
+# changelog carries the only nested repeatable / id-from enum.
+plan=$(mint start --workflow planning 'plan the first wave')
+"$JIGC" doc create roadmap --title Roadmap --task "$plan"
+milestone=$(item 'roadmap:roadmap#milestones' M-Alpha "$plan")
+slot "$milestone/proves" "$plan" 'That the composed loop lands one task end to end.'
+slot "$milestone/decomposition" "$plan" 'Increment 1 — the enumeration seam. Increment 2 — the fixture builder.'
+"$JIGC" doc create decisions-log --title 'Decisions Log' --task "$plan"
+finalize "$plan" planning 'mint the running docs'
+
+vision=$(mint start --workflow form-vision 'form the project vision')
+"$JIGC" doc create vision --title Vision --task "$vision"
+slot 'vision:vision#thesis' "$vision" 'A deterministic CLI assembles exactly the context a task needs.'
+slot 'vision:vision#invariants' "$vision" 'Structure belongs to the CLI; prose belongs to the model.'
+slot 'vision:vision#open-questions' "$vision" 'Which domains earn a pack of their own.'
+finalize "$vision" vision 'form the project vision'
+
+changes=$(mint start --workflow record-change 'cut the first release')
+"$JIGC" doc create changelog --title Changelog --task "$changes"
+staged=$(item 'changelog:changelog#unreleased-changes' changed "$changes")
+slot "$staged/notes" "$changes" '- the fixture builder gained shape-class coverage'
+release=$(item 'changelog:changelog#releases' 1.0.0 "$changes")
+setf "$release/link" "$changes" 'https://example.com/compare/0.9.0...1.0.0'
+group=$(item "$release/changes" added "$changes")
+slot "$group/notes" "$changes" '- the trial-shaped fixture builder'
+finalize "$changes" changelog 'cut the first release'
+EOF
+}
+
+gen_state_committed_singletons() { gen_committed_singletons_body; }
+
+gen_state_migrated() {
+    cat <<'EOF'
+
+# --- migrated -------------------------------------------------------------------
+# The foreign document is unmanaged furniture: written directly and committed BEFORE
+# the migration, so its retirement is a real deletion rather than an untracked-file
+# removal. Deliberately non-conformant, so `migrate` has real prose to route.
+mkdir -p docs
+cat > docs/direction.md <<'FOREIGN'
+# Product Direction
+
+We build a deterministic context compiler.
+
+## Principles
+
+Structure belongs to the CLI; prose belongs to the model.
+FOREIGN
+git add docs/direction.md
+git commit -q -m 'add the direction doc'
+
+migrating=$(mint migrate docs/direction.md --as vision)
+"$JIGC" doc author vision --from-file - --task "$migrating" <<'PAYLOAD'
+title: Vision
+sections:
+  - id: thesis
+    set:
+      thesis: |-
+        <<We build a deterministic context compiler.>>
+  - id: invariants
+    set:
+      invariants: |-
+        <<Structure belongs to the CLI; prose belongs to the model.>>
+  - id: open-questions
+    set:
+      open-questions: |-
+        <<Which domains earn a pack of their own.>>
+PAYLOAD
+finalize "$migrating" vision 'migrate the direction doc into the managed vision' approve
+EOF
+}
+
+gen_state_refs_post_hoc() {
+    gen_committed_singletons_body
+    cat <<'EOF'
+
+# --- refs-post-hoc --------------------------------------------------------------
+# committed-singletons plus a committed `research` doc, then a task left LIVE whose
+# only write is the `vision —grounded-in→ research` edge on the already-committed
+# vision — so the corpus carries `edited-from-base` provenance and a staged copy
+# diverging from committed bytes. finalize erases that, so no finalized state has it.
+research=$(mint start --workflow do-research 'how agents lose context')
+"$JIGC" doc create research --title 'Context Loss' --task "$research"
+slot 'research:context-loss#question' "$research" 'How does a coding agent lose the context it was given?'
+slot 'research:context-loss#findings' "$research" 'Static rules files go stale and are read once, not just in time.'
+slot 'research:context-loss#sources' "$research" 'The adoption trial records, 2026.'
+finalize "$research" research 'record the context-loss research'
+
+RIG_TASK=$(mint start --workflow form-vision 'ground the vision in research')
+"$JIGC" doc set-field 'vision:vision#meta/grounded-in' --value '[research:context-loss]' --task "$RIG_TASK"
+EOF
+}
+
+gen_state_chatty_hooks() {
+    cat <<'EOF'
+
+# --- chatty-hooks ---------------------------------------------------------------
+# A foreign, chatty, NON-blocking pre-commit hook, REPLACING jigc setup's own rather
+# than wrapping it: appending would leave both streams in play and an observer could
+# not tell whose bytes it read. The price, stated: this corpus commits without jigc's
+# warn-only doc-code backstop and without its out-of-band-rename block.
+cat > .git/hooks/pre-commit <<'HOOK'
+#!/bin/sh
+echo 'chatty-hook: pre-commit spoke on success'
+exit 0
+HOOK
+chmod 755 .git/hooks/pre-commit
+EOF
+}
+
+gen_state_vendored() {
+    cat <<'EOF'
+
+# --- vendored -------------------------------------------------------------------
+# A gitignored vendor tree PRESENT ON DISK yet absent from
+# `git ls-files --cached --others --exclude-standard` (the ingest funnel's candidate
+# walk), beside tracked source that is visible to it. The ignore line is APPENDED so
+# whatever setup left survives, and the source is committed — an untracked file would
+# also appear in the walk, making the contrast prove nothing.
+printf 'node_modules/\n' >> .gitignore
+mkdir -p node_modules/left-pad src tests
+cat > node_modules/left-pad/index.js <<'JS'
+module.exports = function pad() { return ''; };
+JS
+cat > src/pad.ts <<'TS'
+export function pad(s: string): string {
+  return s;
+}
+TS
+cat > tests/pad_test.rs <<'RS'
+#[test]
+fn pads_the_input() {
+    assert_eq!(pad("x"), "x");
+}
+RS
+git add .gitignore src/pad.ts tests/pad_test.rs
+git commit -q -m 'vendor the runtime, track the source'
+
+# The code-anchored half: `symbol-exists` and `criterion-maps-to-test` are BLOCKING
+# at finalize and the doc-code probe ships beside the binary, so these two finalizes
+# landing at all is the resolution proof, not a claim about it. The anchors are
+# deliberately different checks over different grammars — a TypeScript declaration
+# and a Rust `#[test]` fn.
+spec=$(mint start --workflow plan 'spec the padding helper')
+spec_id=$(cap doc create spec --title Padding --task "$spec")
+slot "$spec_id#goal" "$spec" 'A helper that pads a string to a fixed width.'
+slot "$spec_id#context" "$spec" 'The vendored runtime shipped its own; the tracked source replaces it.'
+criterion=$(item "$spec_id#criteria" 'Pads the input' "$spec")
+slot "$criterion/statement" "$spec" 'Padding a string returns it unchanged when it is already wide enough.'
+setf "$criterion/maps-to-test" "$spec" 'tests/pad_test.rs#pads_the_input'
+finalize "$spec" spec 'spec the padding helper'
+
+arch=$(mint start --workflow architecture-documentation 'document the padding layer')
+arch_id=$(cap doc create arch-doc --title 'Padding layer' --task "$arch")
+slot "$arch_id#overview" "$arch" 'The padding layer owns string-width normalization for the tracked source.'
+# The component title IS the symbol, so `title-names-symbol` holds by construction.
+component=$(item "$arch_id#components" pad "$arch")
+slot "$component/description" "$arch" 'Pads a string to the requested width.'
+setf "$component/implemented-by" "$arch" 'src/pad.ts#pad'
+finalize "$arch" arch-doc 'document the padding layer'
+EOF
+}
+
+gen_start() {
+    [ -n "$start_workflow" ] || return 0
+    printf '\n# --- --start: mint a task over the built state ---\n'
+    printf 'RIG_TASK=$(mint start --workflow %s %s)\n' \
+        "$(sq "$start_workflow")" "$(sq "$start_intent")"
+}
+
+gen_exports() {
+    cat <<'EOF'
+
+# --- what the caller evaluates --------------------------------------------------
+emit RIG "$RIG"
+emit REPO "$REPO"
+emit RIG_HOME "$RIG_HOME"
+emit JIGC "$JIGC"
+emit RIG_TASK "$RIG_TASK"
+emit HOME "$RIG_HOME"
+EOF
+    if [ "$pack_copy" -eq 1 ]; then
+        printf 'emit JIGC_PACK_DIR "$PACK"\n'
+    else
+        printf "printf 'unset JIGC_PACK_DIR\\\\n'\n"
+    fi
+    cat <<'EOF'
+printf 'cd %s\n' "$(sq "$REPO")"
+printf 'jigc-rig: %s\n' "$RIG" >&2
+EOF
+}
+
+# ============================================================================
+# Assemble, then either print it or run it.
+# ============================================================================
+
+# --- arguments --------------------------------------------------------------
+state=""
+binary=""
+pack_copy=0
+keep_manifest=0
+repin=0
+print_only=0
+keep=0
+start_workflow=""
+start_intent=""
+schema_types=()
+schema_files=()
+workflow_ids=()
+workflow_files=()
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --list-states)
+            for s in "${RIG_STATES[@]}"; do
+                fn=$(state_fn "$s")
+                declare -F "$fn" >/dev/null 2>&1 || die "state \`$s\` is listed but has no \`$fn\` builder"
+                printf '%s\n' "$s"
+            done
+            exit 0
+            ;;
+        -h|--help) sed -n '2,70p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --binary) [ $# -ge 2 ] || die "--binary needs a path"; binary=$2; shift 2 ;;
+        --pack-from-dev) pack_copy=1; shift ;;
+        --repin) pack_copy=1; keep_manifest=1; repin=1; shift ;;
+        --schema)
+            [ $# -ge 3 ] || die "--schema needs <doctype> <file>"
+            pack_copy=1; schema_types+=("$2"); schema_files+=("$3"); shift 3 ;;
+        --workflow)
+            [ $# -ge 3 ] || die "--workflow needs <id> <file>"
+            pack_copy=1; workflow_ids+=("$2"); workflow_files+=("$3"); shift 3 ;;
+        --start)
+            [ $# -ge 3 ] || die "--start needs <workflow> <intent>"
+            start_workflow=$2; start_intent=$3; shift 3 ;;
+        --print-only) print_only=1; shift ;;
+        --keep) keep=1; shift ;;
+        --) shift ;;
+        -*) die "unknown option: $1 (try --help)" ;;
+        *)
+            [ -z "$state" ] || die "one state at a time; got \`$state\` and \`$1\`"
+            state=$1; shift ;;
+    esac
+done
+
+[ -n "$state" ] || die "which state? one of: ${RIG_STATES[*]} (or --list-states)"
+
+known=0
+for s in "${RIG_STATES[@]}"; do [ "$s" = "$state" ] && known=1; done
+[ "$known" -eq 1 ] || die "unknown state \`$state\`; one of: ${RIG_STATES[*]}"
+
+# --- the binary -------------------------------------------------------------
+[ -n "$binary" ] || binary=$repo_root/target/debug/jigc
+case "$binary" in
+    /*) ;;
+    *) binary=$(CDPATH= cd -- "$(dirname -- "$binary")" 2>/dev/null && pwd -P)/$(basename -- "$binary") || die "cannot resolve --binary path" ;;
+esac
+[ -x "$binary" ] || die "no jigc binary at $binary — run \`cargo build\` (or pass --binary <path>)"
+
+# --- validate the pack inputs before anything is built ----------------------
+dev_pack=$repo_root/crates/cli/pack
+if [ "$pack_copy" -eq 1 ]; then
+    [ -d "$dev_pack" ] || die "no dev pack at $dev_pack"
+fi
+for f in ${schema_files[@]+"${schema_files[@]}"} ${workflow_files[@]+"${workflow_files[@]}"}; do
+    [ -f "$f" ] || die "no such file: $f"
+done
+
+abspath() {
+    case "$1" in
+        /*) printf '%s' "$1" ;;
+        *) printf '%s/%s' "$(CDPATH= cd -- "$(dirname -- "$1")" && pwd -P)" "$(basename -- "$1")" ;;
+    esac
+}
+
+# The construction runs with stdout folded onto stderr so that ONLY the final export
+# block reaches the caller's `eval`. It is a brace group rather than `exec 3>&1 1>&2`
+# so the printed script stays paste-runnable without permanently redirecting an
+# interactive shell.
+emit_script() {
+    gen_header
+    gen_preamble
+    printf '\n{\n'
+    gen_env
+    gen_pack
+    gen_git
+    gen_repin
+    "$(state_fn "$state")"
+    gen_start
+    printf '\n} 1>&2\n'
+    gen_exports
+}
+
+script_text=$(emit_script) || exit 2
+
+if [ "$print_only" -eq 1 ]; then
+    printf '%s\n' "$script_text"
+    exit 0
+fi
+
+script_file=$(mktemp "$tmp_root/jigc-rig-script-XXXXXX") || die "cannot mint a script file"
+printf '%s\n' "$script_text" > "$script_file"
+
+if [ "$keep" -eq 1 ]; then
+    printf 'jigc-rig: state %s — the root below is never reaped (there is no teardown)\n' "$state" >&2
+    printf 'jigc-rig: construction script: %s\n' "$script_file" >&2
+fi
+
+bash "$script_file"
+exit $?
