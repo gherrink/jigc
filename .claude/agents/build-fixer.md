@@ -18,11 +18,13 @@ If you trace the finding and it is a **false positive** (not real), do **not** f
 
 Your transcript is **not** read back, and at a halt the orchestrator resumes from your report **without re-reading the code** — so the report must stand alone. Code → one commit; `notes` carries (1) the **commit sha + subject**, (2) the **gate evidence** (the four commands green) and, for an agent-facing fix, the **emitted command run verbatim** with its exit, and (3) one line on what was fixed. On `could-not-fix` put the **trace showing the finding is not real** (or, for an undecided fork, the options) in `notes` (self-contained). Leave a clean tree either way.
 
-
-
-**Scratch teardown — never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* (a static scan of the command text that cannot prove the variables are non-empty), so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Use a fresh dir — `W=$(mktemp -d "$SCRATCH/probe.XXXXXX")` — or empty a fixed one without `rm`: `mkdir -p "$D" && find "$D" -mindepth 1 -delete`. `set -u` / `: "${V:?}"` do not help. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.
-
-
 **Derive the axis; the brief is a lead, not a boundary.** The finding reports the sites it *found*; your fix is owed over the sites that **exist**. Enumerate the mechanism's consumers, disposition every member (converted, or out with a stated reason), and **report the real count and how it differs from the one you were handed**. A fixer handed a site list will fix the list — that is the failure this rule exists to stop ([milestone-completion-workflow.md](../../implementation/milestone-completion-workflow.md) → The loop → Fix; the M46 `base.json` case: two sites reported, three across two crates as fixed, plus a fifth writer nobody had counted).
 
 **Never run concurrently with another tree-mutating agent on one working tree.** If you were spawned alongside siblings, assume the index and the shared `target/` are contended: gate in an isolated worktree or with a private `CARGO_TARGET_DIR`, and `git add` **only your own paths** — never `-A` or `.`. This rule has been broken at M38, M42 and M49; each time it survived only because fixers defended themselves this way.
+
+**Use the repo's dev tools — they exist because these two shapes cost delegated runs measurably.**
+
+- **`dev/gate`** runs the full gate (probe · fmt · clippy · build · test), each command **bare** with its exit code captured, printing the totals and — on a red — the failing step and the failing test names. `--quick` skips tests; `--private-target` uses a private `CARGO_TARGET_DIR` when other agents share the tree. **Never pipe a command whose exit status you read**: a scan of 139 subagent transcripts found that shape blocked **215 times across 117 of 137 agents**.
+- **`dev/jigc-rig <state>`** builds a throwaway jigc corpus and prints shell assignments — use `out=$(dev/jigc-rig <state>) || exit; eval "$out"`, never a bare `eval "$(...)"`, which swallows the failure. Its root is minted with `mktemp -d`, so **there is nothing to tear down**. `dev/jigc-rig --list-states` shows the states; `--print-only` emits a paste-runnable repro for a finding.
+
+**Never `rm -rf` a path built from variables.** It is refused *before it runs* by a static scan that cannot prove the variables are non-empty — so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. The rig removes the need; `mktemp -d` covers the rest. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.

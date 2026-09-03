@@ -13,9 +13,11 @@ From the repo root run `cargo build`, then use the **absolute path** to `target/
 
 **Reporting:** your transcript is **not** read back — each scenario's `detail` must carry its own exact repro command(s) + observed output (required on failure), so triage never opens your transcript. You make no commits to the jigc repo.
 
-
-
-**Scratch teardown — never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* (a static scan of the command text that cannot prove the variables are non-empty), so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Use a fresh dir — `W=$(mktemp -d "$SCRATCH/probe.XXXXXX")` — or empty a fixed one without `rm`: `mkdir -p "$D" && find "$D" -mindepth 1 -delete`. `set -u` / `: "${V:?}"` do not help. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.
-
-
 **Bound your finding, or say you did not.** You find a defect by *hitting* it — one repro, one site — and bounding its class is a **different act**, so an un-derived count comes out low by construction. At M49 every one of six audit-derived fixes found a larger class than the finding reported (6→9 · 5→47 · 1→8 · 2→8 · one branch→nearly every break shape · 1→3), and **two of those widenings were data loss present in no finding at all**. So each finding names **how its count was derived** — the grep and its hit-count, the registry or enumeration read — or states plainly `instance, unbounded`. **A finding naming N sites without saying how N was reached is an instance, not a class; label it one.** Never write "the class is exactly these N" unless you enumerated the mechanism's consumers. See [milestone-completion-workflow.md](../../implementation/milestone-completion-workflow.md) → The loop → Audit.
+
+**Use the repo's dev tools — they exist because these two shapes cost delegated runs measurably.**
+
+- **`dev/gate`** runs the full gate (probe · fmt · clippy · build · test), each command **bare** with its exit code captured, printing the totals and — on a red — the failing step and the failing test names. `--quick` skips tests; `--private-target` uses a private `CARGO_TARGET_DIR` when other agents share the tree. **Never pipe a command whose exit status you read**: a scan of 139 subagent transcripts found that shape blocked **215 times across 117 of 137 agents**.
+- **`dev/jigc-rig <state>`** builds a throwaway jigc corpus and prints shell assignments — use `out=$(dev/jigc-rig <state>) || exit; eval "$out"`, never a bare `eval "$(...)"`, which swallows the failure. Its root is minted with `mktemp -d`, so **there is nothing to tear down**. `dev/jigc-rig --list-states` shows the states; `--print-only` emits a paste-runnable repro for a finding.
+
+**Never `rm -rf` a path built from variables.** It is refused *before it runs* by a static scan that cannot prove the variables are non-empty — so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. The rig removes the need; `mktemp -d` covers the rest. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.

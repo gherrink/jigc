@@ -19,11 +19,22 @@ The loop is shaped as named, ordered steps on purpose: each maps onto a future j
 
    **Measure the gate unpiped — `cmd | tail` reports *tail's* exit status, not the command's** (2026-08-13, the pre-1.0.0 trial session, where this one habit produced **four** near-misses in a day). A pipeline's `$?` is its *last* stage, so `cargo test 2>&1 | tail -40` exits 0 over a failing suite, and `cargo fmt --check | tail -3` exits 0 over a real diff — both were nearly recorded as green, and a `tail` also silently discarded the per-target counts that would have shown the run was never measured at all. The same shape produced two *false findings* against the product in the same session (`jigc validate`'s exit code read through a pipe; an authored item "missing" because `head -8` cut the render before it), both caught only by re-measuring and both recorded as died-in-verification in [the trial's verification](../completions/artifacts/RC-pre-1.0/findings-verification.md).
 
-   **So: redirect, capture `$?` directly, then inspect the file.**
+   **So: run `dev/gate`.** It is the five commands above, in order, each run **bare** with its exit code
+   captured directly — plus the aggregate totals and, on a red, the failing step *and the failing test
+   names*. It exists because this habit is a **reflex, not an oversight**: a scan of 139 subagent
+   transcripts found the piped form blocked **215 times across 117 of 137 agents**, and an independent
+   verifier that had the tool named in its context from the first token still reached for
+   `cargo build 2>&1 | tail -5`. Naming the alternative is the fix; forbidding without naming one is
+   what produced 239 post-rule violations of the rule two paragraphs above.
 
    ```sh
-   cargo test > /tmp/gate.log 2>&1; echo "EXIT=$?"   # then grep the log
+   dev/gate                  # the full gate — probe · fmt · clippy · build · test
+   dev/gate --quick          # fmt · clippy · build, no tests
+   dev/gate --private-target # a private CARGO_TARGET_DIR, for a tree with concurrent gates
    ```
+
+   By hand, if you must: redirect, capture `$?` directly, then inspect the file —
+   `cargo test > /tmp/gate.log 2>&1; echo "EXIT=$?"`. Never through a pipe.
 
    The general form is the one this doc already legislates elsewhere: **a green that means "nothing was measured" is indistinguishable from "nothing was wrong."** It is the vacuous-pass family — a filter that matches no test, a snapshot that cannot witness an invariant, a fixture reachable only by the defect — arriving through the shell instead of through the test. **Pack-shape: step prose in `step:gate`**, beside the no-masking rule: *"Did you read the command's own exit code, or a pipe's? Did the run report the counts you expected, or zero?"*
 
