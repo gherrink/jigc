@@ -176,9 +176,24 @@ fn dev_files() -> Vec<PathBuf> {
 
 /// Does this line carry a *recursive* removal whose subject is a shell variable?
 ///
-/// Two shapes, both refused before they run by the static scan the rule exists for:
-/// `rm` with a recursive flag, and `find … -delete` / `find … -exec rm`. The subject
-/// is "variable" when any token after the verb interpolates (`$X`, `${X}`, `"$X/y"`).
+/// Shapes caught: `rm` with a recursive flag **anywhere in its argv** (the flag may
+/// follow the operand — `rm "$D" -rf` is the same command), `find … -delete`,
+/// `find … -exec rm`, and `find … | xargs … rm -r`. The subject is "variable" when any
+/// token after the verb interpolates (`$X`, `${X}`, `"$X/y"`).
+///
+/// **Bound, stated because a claim wider than its check is what this suite exists to
+/// prevent:** a token scan over shell text can never be exhaustive — `eval`, an alias,
+/// a variable holding the verb, or `$(printf 'r''m')` all evade it. The generative hole
+/// this could not see (a flag argument interpolated into an emitted script) is closed at
+/// the *input* instead, by slug-validating the two flags that reach the script text, and
+/// by the runtime arm below that drives `--print-only` adversarially. This scan is the
+/// cheap first line, not the proof.
+/// A `-r`/`-R`/`--recursive` flag in any of its spellings, clustered or not.
+fn is_recursive_flag(t: &str) -> bool {
+    t == "--recursive"
+        || (t.starts_with('-') && !t.starts_with("--") && (t.contains('r') || t.contains('R')))
+}
+
 fn recursive_removal_of_a_variable_path(line: &str) -> bool {
     let code = match line.split_once('#') {
         // A `#` inside a quoted string is not a comment, so only strip a comment that
@@ -194,18 +209,18 @@ fn recursive_removal_of_a_variable_path(line: &str) -> bool {
         if !interpolates {
             continue;
         }
-        if *token == "rm" || token.ends_with("/rm") {
-            let recursive = rest.iter().take_while(|t| t.starts_with('-')).any(|t| {
-                *t == "--recursive"
-                    || (t.starts_with('-')
-                        && !t.starts_with("--")
-                        && (t.contains('r') || t.contains('R')))
-            });
-            if recursive {
-                return true;
-            }
+        // The recursive flag may sit anywhere in the argv — `rm "$D" -rf` is the same
+        // command as `rm -rf "$D"`, and scanning only the leading flag run missed it.
+        if (*token == "rm" || token.ends_with("/rm")) && rest.iter().any(|t| is_recursive_flag(t)) {
+            return true;
         }
-        if *token == "find" && rest.iter().any(|t| *t == "-delete" || *t == "-exec") {
+        if *token == "find"
+            && (rest.iter().any(|t| *t == "-delete" || *t == "-exec")
+                // `find "$D" -print0 | xargs -0 rm -rf` reaches the same end by a pipe,
+                // and the `rm` there has no interpolating operand of its own to catch.
+                || (rest.iter().any(|t| *t == "rm" || t.ends_with("/rm"))
+                    && rest.iter().any(|t| is_recursive_flag(t))))
+        {
             return true;
         }
     }
@@ -244,6 +259,10 @@ fn the_recursive_removal_scanner_discriminates() {
         "    rm -fr \"${RIG}\"",
         "/bin/rm -R \"$D\"",
         "rm --recursive \"$D\"",
+        // Both of these passed the scanner before 2026-09-03 — the flag after the
+        // operand, and the pipe that puts the removal out of the variable's reach.
+        "rm \"$D\" -rf",
+        "find \"$D\" -print0 | xargs -0 rm -rf",
         "find \"$D\" -mindepth 1 -delete",
         "find \"$D\" -type f -exec rm {} +",
     ] {
