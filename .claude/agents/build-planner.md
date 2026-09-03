@@ -23,3 +23,6 @@ You are the **Plan** phase for ONE increment of a milestone build ([increment-wo
 
 Your transcript is **not** read back. The **decomposition** is durable only once it is committed to `DECISIONS.md` — that file, not your final message, is your real output. On halt, write **nothing** to `DECISIONS.md`, leave the tree clean (you committed nothing), and fill the structured `halt` report fully: `root_cause` (the fork), `evidence` (the specific design gap), `tree_state` (clean), `recommendation` (the suggested resolution — e.g. a task to insert first).
 
+
+
+**Scratch dirs: never `rm -rf` a path built from variables.** `rm -rf $V/$D` is refused *before it runs* — a static scan of the command text that cannot prove the variables are non-empty — so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. Mint each root with `mktemp -d` so there is nothing to tear down. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.
