@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+#
+# dev/gate — run this project's dev-workflow gate and report it honestly.
+#
+# The gate is five commands (implementation/dev-workflow.md -> Gate). Running them
+# by hand is where the two standing shell rules get broken:
+#
+#   * `cargo test 2>&1 | tail -5` reports *tail's* exit status, so a red gate reads
+#     as green. A scan of 139 subagent transcripts in one session recorded 215
+#     claude-shell-guard blocks on exactly this shape, across 117 of 137 agents.
+#     Every command below is run BARE and its `$?` captured directly; nothing this
+#     script reads the status of is ever on the left of a pipe.
+#   * `rm -rf $V/$D` is refused before it runs. So this script has no teardown and
+#     no --clean: logs go to a mktemp-minted path and stay there.
+#
+# It writes only to the repo's own target/ (via cargo) and to $TMPDIR. Never ~/.local.
+#
+# Usage:
+#   dev/gate                     # full gate: probe prebuild, fmt, clippy, build, test
+#   dev/gate --quick             # fmt, clippy, build only -- a fast pre-check
+#   dev/gate --private-target    # build in a private CARGO_TARGET_DIR (no lock
+#                                #   contention with a concurrent gate in this tree).
+#                                #   Reuse one across runs: JIGC_GATE_TARGET=<dir>
+#
+# Exit status: 0 iff every step it ran exited 0.
+
+set -u
+
+# --- where are we -----------------------------------------------------------
+# Resolve the repo root from the script's own location, so the tool works from
+# the repo root and from any subdirectory, with or without git.
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 2
+repo_root=$(dirname -- "$script_dir")
+cd "$repo_root" || exit 2
+
+tmp_root=${TMPDIR:-/tmp}
+tmp_root=${tmp_root%/}
+
+# --- arguments --------------------------------------------------------------
+quick=0
+private_target=0
+for arg in "$@"; do
+    case "$arg" in
+        --quick) quick=1 ;;
+        --private-target) private_target=1 ;;
+        -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *)
+            printf 'dev/gate: unknown option: %s\n' "$arg" >&2
+            printf 'dev/gate: try --quick, --private-target, --help\n' >&2
+            exit 2
+            ;;
+    esac
+done
+
+log=$(mktemp "$tmp_root/jigc-gate-XXXXXX") || exit 2
+
+target_desc="shared (<repo>/target)"
+if [ "$private_target" -eq 1 ]; then
+    if [ -n "${JIGC_GATE_TARGET:-}" ]; then
+        CARGO_TARGET_DIR=$JIGC_GATE_TARGET
+        mkdir -p "$CARGO_TARGET_DIR" || exit 2
+    else
+        CARGO_TARGET_DIR=$(mktemp -d "$tmp_root/jigc-gate-target-XXXXXX") || exit 2
+    fi
+    export CARGO_TARGET_DIR
+    target_desc="$CARGO_TARGET_DIR"
+fi
+
+printf 'gate: repo   %s\n' "$repo_root"
+printf 'gate: log    %s\n' "$log"
+printf 'gate: target %s\n' "$target_desc"
+if [ "$private_target" -eq 1 ] && [ -z "${JIGC_GATE_TARGET:-}" ]; then
+    printf 'gate:        reuse it next run with: JIGC_GATE_TARGET=%s\n' "$CARGO_TARGET_DIR"
+fi
+if [ "$quick" -eq 1 ]; then
+    printf 'gate: mode   quick (fmt, clippy, build -- NOT the full gate, do not commit on it)\n'
+else
+    printf 'gate: mode   full\n'
+fi
+printf '\n'
+
+# --- step runner ------------------------------------------------------------
+# Every step appends to $log and its own exit code is captured from the bare
+# command. Steps are recorded as "<name> <code>" lines in $results.
+results=$(mktemp "$tmp_root/jigc-gate-steps-XXXXXX") || exit 2
+failed_steps=""
+
+run_step() {
+    name=$1
+    shift
+    printf '\n===== STEP %s =====\n$ %s\n' "$name" "$*" >>"$log"
+    started=$(date +%s)
+    # Bare: no pipe, so $? is this command's own status.
+    "$@" >>"$log" 2>&1
+    code=$?
+    elapsed=$(( $(date +%s) - started ))
+    printf '%s %s\n' "$name" "$code" >>"$results"
+    if [ "$code" -eq 0 ]; then
+        printf '==> %-7s ok        (%ss)\n' "$name" "$elapsed"
+    else
+        printf '==> %-7s FAILED %-3s (%ss)\n' "$name" "$code" "$elapsed"
+        failed_steps="$failed_steps $name"
+    fi
+    return 0
+}
+
+# The gate, in order. The probe prebuild comes first: dozens of suites shell out
+# to cargo for the detached doc-code probe and share one target dir, so co-resident
+# in a group target one suite can replace target/debug/doc-code while another runs
+# it. Prebuilt, every in-test build is an up-to-date no-op.
+#
+# --target-dir is pinned to the same path crates/cli/build.rs and the suites pass
+# explicitly. Without it, --private-target would send the prebuild to the private
+# dir while the suites still built into probes/doc-code/target -- i.e. the prebuild
+# would silently stop preventing the race it exists to prevent.
+if [ "$quick" -eq 0 ]; then
+    run_step probe cargo build --manifest-path crates/cli/probes/doc-code/Cargo.toml \
+        --target-dir crates/cli/probes/doc-code/target
+fi
+run_step fmt cargo fmt --check
+run_step clippy cargo clippy --all-targets -- -D warnings
+run_step build cargo build
+if [ "$quick" -eq 0 ]; then
+    run_step test cargo test
+fi
+
+# --- what the run actually measured ----------------------------------------
+# Sum every "test result: ok. N passed; M failed; ..." line in the log, so a run
+# that compiled nothing is distinguishable from a run that passed.
+totals=$(awk '
+    /^test result:/ {
+        for (i = 2; i <= NF; i++) {
+            if ($i == "passed;") p += $(i-1)
+            if ($i == "failed;") f += $(i-1)
+        }
+        n++
+    }
+    END { printf "%d %d %d", p+0, f+0, n+0 }
+' "$log")
+passed=${totals%% *}
+rest=${totals#* }
+failed=${rest%% *}
+binaries=${rest#* }
+
+printf '\n--- summary ---\n'
+while read -r sname scode; do
+    printf '%-7s exit=%s\n' "$sname" "$scode"
+done <"$results"
+
+if [ "$quick" -eq 0 ]; then
+    printf 'tests   passed=%s failed=%s  (over %s test binaries)\n' \
+        "$passed" "$failed" "$binaries"
+fi
+
+# --- failure detail: named, never a blind tail ------------------------------
+if [ -n "$failed_steps" ]; then
+    first_failed=${failed_steps# }
+    first_failed=${first_failed%% *}
+    printf '\nGATE: FAIL (step:%s)\n' "$failed_steps"
+
+    # Failing test names, from the "failures:" list block cargo prints after the
+    # per-test stdout. The first such block is followed by "---- <name> stdout ----",
+    # which does not match the indented-name shape, so only the list block is read.
+    names=$(awk '
+        /^failures:$/   { inblk = 1; next }
+        inblk && /^$/   { next }
+        inblk && /^    [^ ]/ { print substr($0, 5); next }
+        inblk           { inblk = 0 }
+    ' "$log" | sort -u)
+    if [ -n "$names" ]; then
+        printf '\nfailing tests:\n'
+        printf '%s\n' "$names" | sed 's/^/  /'
+    fi
+
+    # For a non-test failure the useful lines are the compiler's/fmt's own, not
+    # the last N lines of the log.
+    errs=$(grep -E '^(error|error\[|Diff in )' "$log" | sort -u | head -20)
+    if [ -n "$errs" ]; then
+        printf '\nerrors (first 20 distinct):\n'
+        printf '%s\n' "$errs" | sed 's/^/  /'
+    fi
+
+    printf '\nfull output: %s\n' "$log"
+    printf 'the failing step is %s -- read its "===== STEP %s =====" block in that log\n' \
+        "$first_failed" "$first_failed"
+    exit 1
+fi
+
+printf '\nGATE: PASS\n'
+printf 'full output: %s\n' "$log"
+exit 0
