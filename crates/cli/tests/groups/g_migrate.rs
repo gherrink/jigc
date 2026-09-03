@@ -9,6 +9,8 @@ mod support;
 mod adapter_artifact;
 #[path = "../anchor_root_truth.rs"]
 mod anchor_root_truth;
+#[path = "../dev_gate_report.rs"]
+mod dev_gate_report;
 #[path = "../dev_rig_parity.rs"]
 mod dev_rig_parity;
 #[path = "../duplicate_field_finding_keys.rs"]

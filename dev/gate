@@ -21,6 +21,15 @@
 #   dev/gate --private-target    # build in a private CARGO_TARGET_DIR (no lock
 #                                #   contention with a concurrent gate in this tree).
 #                                #   Reuse one across runs: JIGC_GATE_TARGET=<dir>
+#   dev/gate --report <log>      # re-print the report for an existing log and stop.
+#                                #   Runs no cargo: the report layer is pure text over
+#                                #   a log, so this is also how it is TESTED
+#                                #   (crates/cli/tests/dev_gate_report.rs), in
+#                                #   milliseconds instead of a five-minute gate run.
+#
+# A step that exits 127 DID NOT RUN -- the command was not found -- and is reported as
+# that rather than as a failure, because the two are indistinguishable otherwise and
+# only one of them is a verdict about this repo.
 #
 # Exit status: 0 iff every step it ran exited 0.
 
@@ -36,21 +45,105 @@ cd "$repo_root" || exit 2
 tmp_root=${TMPDIR:-/tmp}
 tmp_root=${tmp_root%/}
 
+# --- the report layer -------------------------------------------------------
+# Pure text over a log file, in three functions, so `--report <log>` runs exactly
+# what a real gate run's tail runs and a fixture log can fence it without cargo.
+
+# `passed failed binaries`, summed over the per-target summary lines.
+#
+# The match is on the first two FIELDS, not on /^test result:/. Undelimited, that
+# pattern also matches every test NAMED `result::...` -- cargo prints
+# `test result::tests::alpha ... ok` for engine/src/result.rs's `mod tests` -- so the
+# binary count read 33 for a 17-binary run (`passed=`/`failed=` were unaffected: those
+# lines carry no `passed;` field). The count exists to prove the run measured
+# something, so an inflated one is exactly the lie it was added to prevent.
+gate_totals() {
+    awk '
+        $1 == "test" && $2 == "result:" {
+            for (i = 2; i <= NF; i++) {
+                if ($i == "passed;") p += $(i-1)
+                if ($i == "failed;") f += $(i-1)
+            }
+            n++
+        }
+        END { printf "%d %d %d", p+0, f+0, n+0 }
+    ' "$1"
+}
+
+# Failing test names, from the "failures:" list block cargo prints after the per-test
+# stdout. The first such block is followed by "---- <name> stdout ----", which does
+# not match the indented-name shape, so only the list block is read.
+gate_failing_names() {
+    awk '
+        /^failures:$/   { inblk = 1; next }
+        inblk && /^$/   { next }
+        inblk && /^    [^ ]/ { print substr($0, 5); next }
+        inblk           { inblk = 0 }
+    ' "$1" | sort -u
+}
+
+# For a non-test failure the useful lines are the compiler's/fmt's own, not the last
+# N lines of the log.
+gate_errors() {
+    grep -E '^(error|error\[|Diff in )' "$1" | sort -u | head -20
+}
+
+gate_report() {
+    report_log=$1
+    totals=$(gate_totals "$report_log")
+    passed=${totals%% *}
+    rest=${totals#* }
+    failed=${rest%% *}
+    binaries=${rest#* }
+    printf 'tests   passed=%s failed=%s  (over %s test binaries)\n' \
+        "$passed" "$failed" "$binaries"
+
+    names=$(gate_failing_names "$report_log")
+    if [ -n "$names" ]; then
+        printf '\nfailing tests:\n'
+        printf '%s\n' "$names" | sed 's/^/  /'
+    fi
+
+    errs=$(gate_errors "$report_log")
+    if [ -n "$errs" ]; then
+        printf '\nerrors (first 20 distinct):\n'
+        printf '%s\n' "$errs" | sed 's/^/  /'
+    fi
+}
+
 # --- arguments --------------------------------------------------------------
 quick=0
 private_target=0
-for arg in "$@"; do
-    case "$arg" in
-        --quick) quick=1 ;;
-        --private-target) private_target=1 ;;
-        -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+report_only=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --quick) quick=1; shift ;;
+        --private-target) private_target=1; shift ;;
+        --report)
+            if [ $# -lt 2 ]; then
+                printf 'dev/gate: --report needs a log path\n' >&2
+                exit 2
+            fi
+            report_only=$2; shift 2 ;;
+        # The help text is this file's own leading comment block, read to its end
+        # rather than to a hard-coded line number that silently truncates on an edit.
+        -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
         *)
-            printf 'dev/gate: unknown option: %s\n' "$arg" >&2
-            printf 'dev/gate: try --quick, --private-target, --help\n' >&2
+            printf 'dev/gate: unknown option: %s\n' "$1" >&2
+            printf 'dev/gate: try --quick, --private-target, --report <log>, --help\n' >&2
             exit 2
             ;;
     esac
 done
+
+if [ -n "$report_only" ]; then
+    if [ ! -f "$report_only" ]; then
+        printf 'dev/gate: no such log: %s\n' "$report_only" >&2
+        exit 2
+    fi
+    gate_report "$report_only"
+    exit 0
+fi
 
 log=$(mktemp "$tmp_root/jigc-gate-XXXXXX") || exit 2
 
@@ -84,6 +177,7 @@ printf '\n'
 # command. Steps are recorded as "<name> <code>" lines in $results.
 results=$(mktemp "$tmp_root/jigc-gate-steps-XXXXXX") || exit 2
 failed_steps=""
+unrun_steps=""
 
 run_step() {
     name=$1
@@ -97,6 +191,13 @@ run_step() {
     printf '%s %s\n' "$name" "$code" >>"$results"
     if [ "$code" -eq 0 ]; then
         printf '==> %-7s ok        (%ss)\n' "$name" "$elapsed"
+    elif [ "$code" -eq 127 ]; then
+        # 127 is the shell's "command not found", not a verdict about this repo. A
+        # bare `FAILED 127 (0s)` with no error detail is indistinguishable from a
+        # real red gate, so it is named for what it is and the missing binary said.
+        printf '==> %-7s DID NOT RUN -- `%s` not found on PATH (%ss)\n' "$name" "$1" "$elapsed"
+        failed_steps="$failed_steps $name"
+        unrun_steps="$unrun_steps $name"
     else
         printf '==> %-7s FAILED %-3s (%ss)\n' "$name" "$code" "$elapsed"
         failed_steps="$failed_steps $name"
@@ -125,56 +226,48 @@ if [ "$quick" -eq 0 ]; then
 fi
 
 # --- what the run actually measured ----------------------------------------
-# Sum every "test result: ok. N passed; M failed; ..." line in the log, so a run
-# that compiled nothing is distinguishable from a run that passed.
-totals=$(awk '
-    /^test result:/ {
-        for (i = 2; i <= NF; i++) {
-            if ($i == "passed;") p += $(i-1)
-            if ($i == "failed;") f += $(i-1)
-        }
-        n++
-    }
-    END { printf "%d %d %d", p+0, f+0, n+0 }
-' "$log")
-passed=${totals%% *}
-rest=${totals#* }
-failed=${rest%% *}
-binaries=${rest#* }
-
 printf '\n--- summary ---\n'
 while read -r sname scode; do
-    printf '%-7s exit=%s\n' "$sname" "$scode"
+    if [ "$scode" = 127 ]; then
+        printf '%-7s exit=%s  (did not run: command not found)\n' "$sname" "$scode"
+    else
+        printf '%-7s exit=%s\n' "$sname" "$scode"
+    fi
 done <"$results"
 
+# Sum the per-target summary lines, so a run that compiled nothing is
+# distinguishable from a run that passed.
 if [ "$quick" -eq 0 ]; then
+    totals=$(gate_totals "$log")
+    passed=${totals%% *}
+    rest=${totals#* }
+    failed=${rest%% *}
+    binaries=${rest#* }
     printf 'tests   passed=%s failed=%s  (over %s test binaries)\n' \
         "$passed" "$failed" "$binaries"
 fi
 
 # --- failure detail: named, never a blind tail ------------------------------
+# The named failures and the error lines come from the report layer above -- the same
+# functions `--report <log>` runs, which is what makes them fenceable without cargo.
 if [ -n "$failed_steps" ]; then
     first_failed=${failed_steps# }
     first_failed=${first_failed%% *}
     printf '\nGATE: FAIL (step:%s)\n' "$failed_steps"
 
-    # Failing test names, from the "failures:" list block cargo prints after the
-    # per-test stdout. The first such block is followed by "---- <name> stdout ----",
-    # which does not match the indented-name shape, so only the list block is read.
-    names=$(awk '
-        /^failures:$/   { inblk = 1; next }
-        inblk && /^$/   { next }
-        inblk && /^    [^ ]/ { print substr($0, 5); next }
-        inblk           { inblk = 0 }
-    ' "$log" | sort -u)
+    if [ -n "$unrun_steps" ]; then
+        printf '\nthese steps DID NOT RUN (exit 127 -- the command was not found, so\n'
+        printf 'this is not a verdict about the code):%s\n' "$unrun_steps"
+        printf 'nothing was measured for them -- is cargo on PATH?\n'
+    fi
+
+    names=$(gate_failing_names "$log")
     if [ -n "$names" ]; then
         printf '\nfailing tests:\n'
         printf '%s\n' "$names" | sed 's/^/  /'
     fi
 
-    # For a non-test failure the useful lines are the compiler's/fmt's own, not
-    # the last N lines of the log.
-    errs=$(grep -E '^(error|error\[|Diff in )' "$log" | sort -u | head -20)
+    errs=$(gate_errors "$log")
     if [ -n "$errs" ]; then
         printf '\nerrors (first 20 distinct):\n'
         printf '%s\n' "$errs" | sed 's/^/  /'

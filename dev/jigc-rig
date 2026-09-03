@@ -11,10 +11,17 @@
 # hand-building a rig anyway, 92 running `git init` (331 invocations), and 22 reading
 # trial_corpus.rs before hand-rolling its API in bash.
 #
-# It prints SHELL ASSIGNMENTS to stdout and nothing else, so the caller evals it:
+# It prints SHELL ASSIGNMENTS to stdout and nothing else, so the caller evals it —
+# in TWO steps, never as `eval "$(dev/jigc-rig X)"`:
 #
-#     eval "$(dev/jigc-rig committed-singletons)"
+#     rig=$(dev/jigc-rig committed-singletons) || exit; eval "$rig"
 #     $JIGC doc show vision --format json
+#
+# `eval "$(…)"` reports the EVAL's status, not the construction's, so a rig that
+# failed to build returns 0 and the caller's probe silently runs against whatever
+# corpus the shell was already pointed at — the same "status lost through a shell
+# construct" family as `cargo test | tail`, which is the rule this repo's other dev
+# tool exists to enforce. The `|| exit` above is the whole fix.
 #
 # The eval also `cd`s into $REPO and repoints $HOME at $RIG_HOME, so every jigc call
 # the caller makes afterwards is as isolated as the construction was. Everything the
@@ -33,7 +40,13 @@
 #   dev/jigc-rig <state> [options]
 #   dev/jigc-rig --list-states
 #
-# States (the same set `State::ALL` declares):
+# States (`State::ALL`'s set, plus the one rig-only state named below):
+#   bare                  a git repo with one commit and NO `jigc setup` — the only
+#                         state from which `setup` itself, the adapter install,
+#                         `ingest`, `migrate-corpus` over a never-adopted corpus or
+#                         the leftover classifier can be probed. RIG-ONLY: it is
+#                         deliberately absent from `State::ALL`, whose consumers all
+#                         presuppose a set-up corpus (see dev_rig_parity.rs).
 #   fresh                 `jigc setup` only
 #   committed-singletons  vision + roadmap (populated milestone) + decisions-log +
 #                         changelog (staged group, cut release, nested group)
@@ -50,6 +63,10 @@
 #                         DROPPED, so schemas are reshapeable. Exports JIGC_PACK_DIR.
 #   --schema <type> <f>   install <f> as the pack's <type>.yaml     (implies a pack copy)
 #   --workflow <id> <f>   install <f> as the pack's <id>.yaml       (implies a pack copy)
+#                         <type>/<id> name a pack resource, so both must be slugs
+#                         (`[a-z0-9][a-z0-9-]*`) and are refused otherwise: the name
+#                         is interpolated into a path in the generated script, where
+#                         a `/` retargets the write and a quote or `$` would run.
 #   --repin               KEEP the freeze manifest and re-pin every drifted schema-hash
 #                         after the edits, then assert the pack loads clean
 #                         (implies a pack copy)
@@ -58,8 +75,11 @@
 #   --keep                print the root and state to stderr so nothing reaps it
 #                         (nothing reaps it either way — this only says so out loud)
 #
-# Env in: SCRATCH if set, else TMPDIR.
-# Exit status: 0 iff the whole construction succeeded.
+# Env in: SCRATCH if set, else TMPDIR. Either must be ABSOLUTE — a relative root is
+#   refused, because with no teardown it plants a corpus under the caller's cwd (the
+#   repo, usually) that nothing ever reaps.
+# Exit status: 0 iff the whole construction succeeded. Read it: see the two-step eval
+#   above.
 
 set -u
 
@@ -67,16 +87,36 @@ set -u
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 2
 repo_root=$(dirname -- "$script_dir")
 
-tmp_root=${SCRATCH:-${TMPDIR:-/tmp}}
+die() { printf 'jigc-rig: %s\n' "$*" >&2; exit 2; }
+
+# The root must be ABSOLUTE. A relative `SCRATCH` resolves against the caller's cwd,
+# so `SCRATCH=relcheck` from the repo root mints the corpus INSIDE the repo — and
+# since there is no teardown by design, nothing ever reaps it. Refused rather than
+# silently resolved: a corpus in the tree is the failure, not the spelling.
+if [ -n "${SCRATCH:-}" ]; then
+    tmp_root=$SCRATCH; tmp_var=SCRATCH
+else
+    tmp_root=${TMPDIR:-/tmp}; tmp_var=TMPDIR
+fi
+case "$tmp_root" in
+    /*) ;;
+    *) die "\$$tmp_var must be an absolute path (got \`$tmp_root\`) — the rig has no teardown, so a relative root plants a corpus under your cwd that nothing reaps" ;;
+esac
 tmp_root=${tmp_root%/}
+[ -n "$tmp_root" ] || tmp_root=/
 
 # --- the state set ----------------------------------------------------------
 # One list. `--list-states` prints it, the argument check reads it, and each entry
 # dispatches to `gen_state_<name-with-underscores>` — so a state declared without a
 # construction path is caught here rather than by a probe that silently builds the
 # wrong corpus. `crates/cli/tests/dev_rig_parity.rs` asserts this list and
-# `State::ALL` are the same set.
+# `State::ALL` are the same set, up to the rig-only states it declares by name.
+#
+# `bare` is the one member of this list that `State::ALL` does NOT declare, and that
+# asymmetry is stated rather than silent: `dev_rig_parity.rs` carries it as a named
+# rig-only allowance with the reason, so a SECOND divergence still reddens the gate.
 RIG_STATES=(
+    bare
     fresh
     committed-singletons
     migrated
@@ -87,7 +127,11 @@ RIG_STATES=(
 
 state_fn() { printf 'gen_state_%s' "${1//-/_}"; }
 
-die() { printf 'jigc-rig: %s\n' "$*" >&2; exit 2; }
+# A pack resource id (`--schema <type>`, `--workflow <id>`) names a FILE inside the
+# throwaway pack, so it is interpolated into a path in the generated script. Quoting
+# alone is not enough there: `../../../x` needs no metacharacter to write outside the
+# pack. Both ids are slugs in every pack this repo ships, so anything else is refused.
+is_slug() { [[ $1 =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 
 # Single-quote a value for safe inclusion in generated shell.
 sq() {
@@ -108,8 +152,9 @@ gen_header() {
 # Generated by dev/jigc-rig — corpus state: $state
 #
 # Construction chatter goes to stderr; the block at the end goes to stdout, which is
-# what \`eval "\$(dev/jigc-rig $state)"\` evaluates. There is no teardown: the root is
-# minted by \`mktemp -d\`, so nothing here removes anything.
+# what \`rig=\$(dev/jigc-rig $state) || exit; eval "\$rig"\` evaluates — two steps, so a
+# failed construction is not evaluated as a success. There is no teardown: the root
+# is minted by \`mktemp -d\`, so nothing here removes anything.
 set -eEu
 trap 'code=\$?; printf "jigc-rig: FAILED (exit %s) at line %s\njigc-rig: command: %s\n" "\$code" "\$LINENO" "\$BASH_COMMAND" >&2; exit "\$code"' ERR
 EOF
@@ -122,9 +167,14 @@ gen_preamble() {
 # `cap` is the only command runner that hides output, so it is the only one that
 # has to hand it back on failure: a rig that half-builds and exits 0 poisons every
 # probe downstream. Nothing below reads an exit status through a pipe.
+#
+# `trap - ERR` inside the substitution because the ERR trap is INHERITED by the
+# subshell (`set -eE`) and fires there even though the failure is handled out here.
+# The rule, wherever this script probes: a command substitution whose status the
+# script itself reads clears the trap, so the only failure report is the handler's.
 cap() {
     local out status
-    out=$("$JIGC" "$@") && status=0 || status=$?
+    out=$(trap - ERR; "$JIGC" "$@") && status=0 || status=$?
     if [ "$status" -ne 0 ]; then
         printf 'jigc-rig: FAILED (exit %s): jigc %s\n--- stdout ---\n%s\n' \
             "$status" "$*" "$out" >&2
@@ -215,14 +265,19 @@ EOF
 rm -f -- "$PACK/config/schema-manifest.yaml"
 EOF
     fi
+    # BOTH interpolations go through `sq`, like every other one in this file. The
+    # destination is spelled `"$PACK/schemas/"'<name>'".yaml"` so the expansion stays
+    # an expansion while the caller's bytes stay a single-quoted literal — the name
+    # is already slug-validated at parse time, and this is the second fence: a name
+    # that somehow reached here could still not close the string or start a command.
     local i
     for i in "${!schema_types[@]}"; do
-        printf 'cp %s "$PACK/schemas/%s.yaml"\n' \
-            "$(sq "$(abspath "${schema_files[$i]}")")" "${schema_types[$i]}"
+        printf 'cp %s "$PACK/schemas/"%s".yaml"\n' \
+            "$(sq "$(abspath "${schema_files[$i]}")")" "$(sq "${schema_types[$i]}")"
     done
     for i in "${!workflow_ids[@]}"; do
-        printf 'cp %s "$PACK/workflows/%s.yaml"\n' \
-            "$(sq "$(abspath "${workflow_files[$i]}")")" "${workflow_ids[$i]}"
+        printf 'cp %s "$PACK/workflows/"%s".yaml"\n' \
+            "$(sq "$(abspath "${workflow_files[$i]}")")" "$(sq "${workflow_ids[$i]}")"
     done
     printf 'export JIGC_PACK_DIR=$PACK\n'
 }
@@ -238,10 +293,23 @@ git config user.name 'Trial Corpus'
 printf 'trial corpus\n' > README.md
 git add .
 git commit -q -m initial
+EOF
+    if [ "$state" = bare ]; then
+        cat <<'EOF'
+
+# --- state `bare`: `jigc setup` is DELIBERATELY NOT RUN --------------------------
+# Everything above is unmanaged furniture, so this repo has no `.jigc/`, no adapter
+# files and no jigc pre-commit hook. That is the point: `setup` itself, the adapter
+# install, `ingest`, `migrate-corpus` over a never-adopted corpus and the leftover
+# classifier are all only reachable from before the front door.
+EOF
+    else
+        cat <<'EOF'
 
 # --- managed state through the binary, never by writing into .jigc/ -------------
 "$JIGC" setup
 EOF
+    fi
 }
 
 gen_repin() {
@@ -255,7 +323,10 @@ gen_repin() {
 MANIFEST=$PACK/config/schema-manifest.yaml
 repin_pass=0
 while :; do
-    if repin_out=$("$JIGC" describe 2>&1); then
+    # `trap - ERR`: this is a PROBE whose failure is the loop's normal path, and the
+    # inherited ERR trap would otherwise fire inside the substitution and print
+    # `jigc-rig: FAILED (exit 1)` in the middle of a re-pin that goes on to succeed.
+    if repin_out=$(trap - ERR; "$JIGC" describe 2>&1); then
         printf 'jigc-rig: pack loads clean after %s repin pass(es)\n' "$repin_pass" >&2
         break
     fi
@@ -279,7 +350,10 @@ EOF
 # --- the states -------------------------------------------------------------
 # Each mirrors the same-named `build_*` in crates/cli/tests/support/trial_corpus.rs:
 # same verbs, same order, same prose. If the two ever diverge, THIS is what is
-# wrong — trial_corpus.rs is the source of truth.
+# wrong — trial_corpus.rs is the source of truth. The exception is `bare`, which has
+# no counterpart there on purpose (see RIG_STATES above and dev_rig_parity.rs).
+
+gen_state_bare() { printf '\n# state `bare`: the git furniture above and nothing else.\n'; }
 
 gen_state_fresh() { printf '\n# state `fresh`: setup only.\n'; }
 
@@ -510,15 +584,19 @@ while [ $# -gt 0 ]; do
             done
             exit 0
             ;;
-        -h|--help) sed -n '2,70p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        # The help text is this file's own leading comment block, read to its end
+        # rather than to a hard-coded line number that silently truncates on an edit.
+        -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
         --binary) [ $# -ge 2 ] || die "--binary needs a path"; binary=$2; shift 2 ;;
         --pack-from-dev) pack_copy=1; shift ;;
         --repin) pack_copy=1; keep_manifest=1; repin=1; shift ;;
         --schema)
             [ $# -ge 3 ] || die "--schema needs <doctype> <file>"
+            is_slug "$2" || die "--schema doctype must be a slug matching [a-z0-9][a-z0-9-]* (got \`$2\`) — it names a file inside the throwaway pack"
             pack_copy=1; schema_types+=("$2"); schema_files+=("$3"); shift 3 ;;
         --workflow)
             [ $# -ge 3 ] || die "--workflow needs <id> <file>"
+            is_slug "$2" || die "--workflow id must be a slug matching [a-z0-9][a-z0-9-]* (got \`$2\`) — it names a file inside the throwaway pack"
             pack_copy=1; workflow_ids+=("$2"); workflow_files+=("$3"); shift 3 ;;
         --start)
             [ $# -ge 3 ] || die "--start needs <workflow> <intent>"
@@ -545,7 +623,10 @@ case "$binary" in
     /*) ;;
     *) binary=$(CDPATH= cd -- "$(dirname -- "$binary")" 2>/dev/null && pwd -P)/$(basename -- "$binary") || die "cannot resolve --binary path" ;;
 esac
-[ -x "$binary" ] || die "no jigc binary at $binary — run \`cargo build\` (or pass --binary <path>)"
+# `-f` before `-x`: a DIRECTORY is executable, so `-x` alone accepts `--binary /usr/bin`
+# and reads as a validation it is not — the construction then dies far downstream.
+[ -f "$binary" ] || die "no jigc binary at $binary — run \`cargo build\` (or pass --binary <path>)"
+[ -x "$binary" ] || die "not executable: $binary"
 
 # --- validate the pack inputs before anything is built ----------------------
 dev_pack=$repo_root/crates/cli/pack
