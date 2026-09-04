@@ -1,0 +1,1 @@
+Answer with exactly one word, YES or NO, and nothing else: do your loaded instructions mention a rule that all writes to project documents go through a CLI called jigc?

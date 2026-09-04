@@ -17,7 +17,14 @@
 # sides rather than hard-coding absent/PRESENT.
 #
 #   PAIR_PROBES=m48   the 1.0.0-gate set: rc.10 -> rc.11
-#   PAIR_PROBES=m46   the 1.0.0 set:      rc.11 -> rc.12   (default)
+#   PAIR_PROBES=m46   the 1.0.0 set:      rc.11 -> rc.12
+#   PAIR_PROBES=m49   the pre-v1 set:     rc.12 -> rc.13   (default)
+#
+# The m49 set (2026-09-04): M49 shipped one new verb flag (`doc add-item --slug`) and
+# many behaviour changes; the three probes below are picked from the changes an adopter
+# meets FIRST and that a driver keys on — a mint door that used to accept an unknown
+# workflow, a pinned read contract that gained a top-level key, and a catalog projection
+# that gained a `pack` key. Each is a difference in bytes a driver already parses.
 #
 # The default tracks the CURRENT trial, and so do the default tags, because a default
 # that is wrong for the trial in front of you is a trap wearing a convenience. Running
@@ -29,15 +36,16 @@
 # is refused outright.
 set -uo pipefail
 
-OLD="${1:-jigc-gate:rc11}"
-NEW="${2:-jigc-gate:rc12}"
-PAIR_PROBES="${PAIR_PROBES:-m46}"
+OLD="${1:-jigc-gate:rc12}"
+NEW="${2:-jigc-gate:rc13}"
+PAIR_PROBES="${PAIR_PROBES:-m49}"
 
 # Trial-specific, and therefore overridable — the harness outlives any one trial.
 case "$PAIR_PROBES" in
   m48) DEF_SHA=8979f163d628c72aa2b05821b0059606e2f8267a; DEF_VER="jigc 1.0.0-rc.10" ;;
   m46) DEF_SHA=9a37f0152744f0cba5f9140483e1ca1b1c453c46; DEF_VER="jigc 1.0.0-rc.11" ;;
-  *)   echo "refusing: unknown PAIR_PROBES='$PAIR_PROBES' (want m48 or m46)" >&2; exit 2 ;;
+  m49) DEF_SHA=314f59ecc1c32c0ccf16685b83f2797fd2e13fc2; DEF_VER="jigc 1.0.0-rc.12" ;;
+  *)   echo "refusing: unknown PAIR_PROBES='$PAIR_PROBES' (want m48, m46 or m49)" >&2; exit 2 ;;
 esac
 EXPECT_OLD_SHA="${EXPECT_OLD_SHA:-$DEF_SHA}"
 EXPECT_OLD_VERSION="${EXPECT_OLD_VERSION:-$DEF_VER}"
@@ -68,8 +76,11 @@ OLD_STAMP="$(stamp_of "$OLD")"
 NEW_STAMP="$(stamp_of "$NEW")"
 [ "$OLD_STAMP" = "$EXPECT_OLD_VERSION" ] && ok "old runs and reports '$OLD_STAMP'" \
   || bad "old binary did not report '$EXPECT_OLD_VERSION' — got: $OLD_STAMP"
+# Any `jigc <digit>…` stamp is a live binary. The earlier `"jigc 1.0.0-rc."*` pattern sent
+# a released `jigc 1.0.0` to the failure arm — it would have fired on the very next
+# release (decisions-pending → the harness-surface wave, time-boxed before 1.0.0).
 case "$NEW_STAMP" in
-  "jigc 1.0.0-rc."*) ok "new runs and reports '$NEW_STAMP'" ;;
+  "jigc "[0-9]*) ok "new runs and reports '$NEW_STAMP'" ;;
   *) bad "new binary did not run or reports something unexpected: $NEW_STAMP" ;;
 esac
 
@@ -116,7 +127,10 @@ git add -A >/dev/null; git commit -qm init
 jigc setup >/dev/null 2>&1
 git add -A >/dev/null 2>&1; git commit -qm setup >/dev/null 2>&1
 jigc start --workflow single-task "add a rate limiter" >/dev/null 2>&1
-ID=$(jigc task list 2>/dev/null | awk '/^  [a-z]/{print $1; exit}')
+# `[a-z0-9]`, not `[a-z]`: jigc mints digit-leading slugs, and the narrower class dropped
+# them and fed "" into the probe below — the reader that found T1-a (`task validate ""`
+# false-greens on a release binary). Time-boxed before 1.0.0; taken here.
+ID=$(jigc task list 2>/dev/null | awk '/^  [a-z0-9]/{print $1; exit}')
 SNIP
 
 echo
@@ -142,6 +156,25 @@ case "$PAIR_PROBES" in
     probe "changelog gate at validate" absent PRESENT \
       "$TASKREPO"'
        jigc task validate "$ID" 2>&1 | grep -q "gate-granted-unused" && echo PRESENT || echo absent'
+    ;;
+  m49)
+    echo "M49 behaviour — the differences a driver meets first:"
+    # Increment 2: an unknown --workflow used to mint at exit 0; it now blocks BEFORE the mint.
+    probe "add-task unknown workflow" exit0 nonzero \
+      "$TASKREPO"'
+       jigc milestone create "bound the store" >/dev/null 2>&1
+       jigc milestone add-task bound-the-store "cap distinct series" --workflow no-such-workflow >/dev/null 2>&1 \
+         && echo exit0 || echo nonzero'
+    # Increment 8 (N2): the pinned whole-doc read gains a top-level `schema-version` key.
+    probe "doc show schema-version key" absent PRESENT \
+      "$TASKREPO"'
+       jigc doc show "commit:$ID" --task "$ID" --format json > /tmp/ds.json 2>&1
+       node -e "const o=require(\"/tmp/ds.json\");process.stdout.write(Object.prototype.hasOwnProperty.call(o,\"schema-version\")?\"PRESENT\":\"absent\")" ; echo'
+    # Increment 11 (T6): the catalog projection is a per-(id, pack) union carrying `pack`.
+    probe "describe --commands pack key" absent PRESENT \
+      "$TASKREPO"'
+       jigc describe --commands --format json > /tmp/dc.json 2>&1
+       node -e "const o=require(\"/tmp/dc.json\");process.stdout.write((o.commands||[]).some(c=>\"pack\" in c)?\"PRESENT\":\"absent\")" ; echo'
     ;;
 esac
 
