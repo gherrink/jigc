@@ -1,0 +1,8 @@
+{"timestamp":"2026-09-04T18:08:59Z","argv":["validate","--format","json"],"exit_code":0,"duration_ms":26,"finding_codes":[],"output_bytes":112,"binary_version":"1.0.0-rc.13","error_code":null}
+{"timestamp":"2026-09-04T18:08:59Z","argv":["config","get","invocation-log"],"exit_code":0,"duration_ms":12,"finding_codes":[],"output_bytes":33,"binary_version":"1.0.0-rc.13","error_code":null}
+{"timestamp":"2026-09-04T18:16:49Z","argv":["start"],"exit_code":0,"duration_ms":13,"finding_codes":[],"output_bytes":2114,"binary_version":"1.0.0-rc.13","error_code":null}
+{"timestamp":"2026-09-04T18:16:54Z","argv":["start","--format","json"],"exit_code":0,"duration_ms":13,"finding_codes":[],"output_bytes":2186,"binary_version":"1.0.0-rc.13","error_code":null}
+{"timestamp":"2026-09-04T18:16:56Z","argv":["workflow","planning","--preview"],"exit_code":0,"duration_ms":16,"finding_codes":[],"output_bytes":41732,"binary_version":"1.0.0-rc.13","error_code":null}
+{"timestamp":"2026-09-04T18:17:11Z","argv":["workflow","planning","--preview"],"exit_code":0,"duration_ms":17,"finding_codes":[],"output_bytes":41732,"binary_version":"1.0.0-rc.13","error_code":null}
+{"timestamp":"2026-09-04T18:17:22Z","argv":["doc","list","--format","json"],"exit_code":0,"duration_ms":22,"finding_codes":[],"output_bytes":17,"binary_version":"1.0.0-rc.13","error_code":null}
+{"timestamp":"2026-09-04T18:22:04Z","argv":["task","list"],"exit_code":0,"duration_ms":17,"finding_codes":[],"output_bytes":108,"binary_version":"1.0.0-rc.13","error_code":null}

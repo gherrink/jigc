@@ -1,0 +1,10 @@
+Everything is clean: `jigc validate` reports zero findings, all 31 tests pass, and the store is fully committed. Here's what landed, in order:
+
+1. **Finished the half-done task** — the abandoned `record-the-ingest-queue-overflow` ADR had a wrong `status: superseded` (nothing superseded it) and an empty commit doc. Fixed the status to `accepted`, filled in the commit, finalized.
+2. **Changelog** — backfilled `CHANGELOG.md` under a `0.3.0` release covering everything shipped: validation, config, the ingest queue, the store, rollups/summaries, and the HTTP router.
+3. **Series-cardinality spec + fix** — wrote `docs/specs/bound-total-series-cardinality.md`, then implemented it: `MemoryStore` now takes a `maxSeries` cap (new `ROLLUP_MAX_SERIES` env var, default 1000), rejecting samples for a new series once the cap is hit while leaving existing series untouched, with a `rejectedSeriesCount()` counter. Recorded the overflow-policy choice as `adr:reject-a-new-series-once`, added tests in `test/store.test.ts` and `test/config.test.ts`.
+4. **Architecture doc** — `docs/architecture/ingest-store-and-rollup.md`, covering validation, ingest, store, rollup/summary, router, and service wiring, citing all three ADRs.
+
+I also adopted a pre-existing foreign ADR (`docs/decisions/0002-keep-the-sample-store-in-memory.md`) into jigc's managed format so the corpus was clean before writing the architecture doc.
+
+One real finding worth your attention: while writing the architecture doc I noticed `IngestQueue` is fully implemented and wired into `Service.tick()`, but **nothing ever calls `push()` on it** — the live `POST /samples` route in `router.ts` writes straight to `MemoryStore`, bypassing the queue entirely. I documented this gap plainly in the arch doc rather than paper over it, but didn't fix it since it wasn't part of the requested scope — let me know if you'd like that wired up or the dead queue path removed.

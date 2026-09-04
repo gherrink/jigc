@@ -1,0 +1,8 @@
+image        jigc-gate:rc13
+jigc-version jigc 1.0.0-rc.13
+jigc-sha     979bacaf31cbf513ca8afcb0bade447a88c06ba1
+model        claude-sonnet-5
+permissions  bypassPermissions
+corpus-src   /Users/maurice/ideas/saltmarsh-adopted
+session-start 2026-09-04T18:16:48Z
+exit-code    0

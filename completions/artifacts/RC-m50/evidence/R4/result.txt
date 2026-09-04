@@ -1,0 +1,9 @@
+The ADR and commit doc are fully authored and staged — but `jigc task finalize` hit a git pre-commit hook I shouldn't bypass myself.
+
+The repo has a docs gate (`.githooks/pre-commit`, added in commit `312749c`): any commit touching `docs/` is refused until a docs reviewer creates a sign-off marker (`$(git rev-parse --git-dir)/docs-approved`) — deliberately kept out of git tracking so it can't be committed by accident. This is a human-review checkpoint, not something jigc or I can satisfy on our own authority; creating that marker myself would just be self-approving the review it exists to require.
+
+Two ways forward, your call:
+1. If you (or whoever owns docs review here) want to sign off now, run `touch "$(git rev-parse --git-dir)/docs-approved"` and I'll re-run `jigc task finalize ingestqueue-drops-the-oldest-sample`.
+2. Otherwise I'll leave the task staged in jigc (`ingestqueue-drops-the-oldest-sample`, nothing committed, nothing lost) until review happens.
+
+The pre-existing staged `router.ts`/`retention-sweep.sh` changes are still safely unstaged in your working tree, untouched otherwise. How would you like to proceed on the sign-off?
