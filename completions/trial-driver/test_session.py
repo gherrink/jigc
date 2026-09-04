@@ -262,3 +262,20 @@ class IncrementOne(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class CarryLeavesTheWalksOwnOutputBehind(unittest.TestCase):
+    """walk.py persists `ARM-OUTPUT.txt` beside an arm's evidence (2026-09-04); carried
+    into the migration pair's second half it read as an unclean corpus."""
+
+    def test_arm_output_is_evidence_not_corpus(self) -> None:
+        import tempfile
+        from driver import session
+        with tempfile.TemporaryDirectory() as td:
+            out = pathlib.Path(td) / "out"; out.mkdir()
+            (out / "ARM-OUTPUT.txt").write_text("ARM 14 PASS\n")
+            (out / "ARM-STDERR.txt").write_text("")
+            (out / "PROVENANCE.txt").write_text("exit-code 0\n")
+            (out / "README.md").write_text("# corpus\n")
+            dest = session.carry_forward(out, pathlib.Path(td) / "dest")
+            self.assertEqual(sorted(p.name for p in dest.iterdir()), ["README.md"])

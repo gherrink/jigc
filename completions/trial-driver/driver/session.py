@@ -154,7 +154,11 @@ def _stage_home(stage: pathlib.Path, session_id: str,
 #: the rig's own evidence, and copying them into `/work` would plant apparatus
 #: artefacts in the tree under test, in every turn after the first.
 _EVIDENCE_NAMES = frozenset(
-    (".session-transcript", "PROVENANCE.txt", "stream.jsonl", "stderr.txt")
+    (".session-transcript", "PROVENANCE.txt", "stream.jsonl", "stderr.txt",
+     # walk.py persists each arm's captured output beside its evidence (2026-09-04);
+     # carried forward it planted `?? ARM-OUTPUT.txt` in the migration pair's second
+     # half and reddened three bars about the corpus arriving clean.
+     "ARM-OUTPUT.txt", "ARM-STDERR.txt")
 )
 
 

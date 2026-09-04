@@ -355,7 +355,20 @@ _PATHISH = re.compile(r"[^\s'\"|;&<>()]*/[^\s'\"|;&<>()]*")
 
 
 def _looks_managed(text: str) -> Optional[str]:
-    """The hint a managed path in `text` matched, or None.
+    """The hint a managed path in `text` matched, or None."""
+    got = _managed_match(text)
+    return got[0] if got else None
+
+
+def _managed_match(text: str) -> Optional[tuple[str, str]]:
+    """`(hint, candidate)` for the first managed path in `text`, or None.
+
+    The candidate is what `Read.path` must carry for a Bash read. Until 2026-09-04
+    `filesystem_reads` stored the **hint** there, so `is_document` tested
+    `.jigc/tasks/` for a `.md` suffix and every `cat` of a staged document under
+    the workbench was filed as bookkeeping — B3-h2's one read of the planted doc,
+    the duress cell itself, rendered as `wkbn`. The `Read` tool path never had the
+    bug because it stores the real target.
 
     Exclusions are applied **per path, not per segment.** Testing the whole string
     meant one excluded path suppressed every other path beside it, so
@@ -376,7 +389,7 @@ def _looks_managed(text: str) -> Optional[str]:
             continue
         for hint in MANAGED_PATH_HINTS:
             if hint in candidate:
-                return hint
+                return hint, candidate
     return None
 
 
@@ -416,9 +429,10 @@ def filesystem_reads(path: pathlib.Path) -> list[Read]:
             for program, segment in _segments(cmd):
                 if program == "jigc" or program not in _SHELL_READERS:
                     continue
-                hint = _looks_managed(segment)
-                if hint:
-                    hits.append(Read(tool="Bash", detail=segment[:200], path=hint))
+                got = _managed_match(segment)
+                if got:
+                    hint, candidate = got
+                    hits.append(Read(tool="Bash", detail=segment[:200], path=candidate))
     return hits
 
 

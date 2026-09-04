@@ -648,3 +648,26 @@ class ChannelPredicates(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ABashReadOfAStagedDocumentIsADocumentRead(unittest.TestCase):
+    """B3-h2 (2026-09-04): its one read of the planted doc was
+    `cat ".jigc/tasks/<id>/docs/adr:….md"` and the reader filed it as workbench
+    bookkeeping, because a Bash hit stored the matched HINT as its path and the
+    hint never ends in `.md`. The duress cell itself was mis-filed."""
+
+    def test_the_path_is_the_path_read_not_the_hint(self) -> None:
+        from driver import observe
+        got = observe._managed_match(
+            'cat "/work/.jigc/tasks/t1/docs/adr:reject-the-newest-sample-when.md"')
+        self.assertIsNotNone(got)
+        hint, candidate = got
+        self.assertTrue(candidate.endswith(".md"), candidate)
+        self.assertNotEqual(candidate, hint)
+        self.assertTrue(observe.Read(tool="Bash", detail="", path=candidate).is_document)
+
+    def test_a_workbench_read_stays_bookkeeping(self) -> None:
+        from driver import observe
+        got = observe._managed_match("cat /work/.jigc/tasks/t1/roles.json")
+        self.assertIsNotNone(got)
+        self.assertFalse(observe.Read(tool="Bash", detail="", path=got[1]).is_document)
