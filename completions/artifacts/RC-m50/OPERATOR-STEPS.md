@@ -25,7 +25,7 @@ cat completions/artifacts/RC-m50/paste/b2-prompt.txt
 
 ```sh
 cd ~/projects/gherrink-jigc
-./completions/trial-harness/run-session.sh ~/ideas/quillon-planted ~/out/B2i jigc-gate:rc13
+./completions/trial-harness/run-session.sh ~/ideas/quillon-planted ~/out/M50-B2 jigc-gate:rc13
 ```
 
 You will get a Claude Code session inside the container, `cwd=/work`. It will ask you to confirm
@@ -69,7 +69,7 @@ earlier contaminates the measurement.
 
 ## Step 7 — exit
 
-`Ctrl-D` or `/exit`. The harness copies everything out to `~/out/B2i` and destroys the container.
+`Ctrl-D` or `/exit`. The harness copies everything out to `~/out/M50-B2` and destroys the container.
 
 ---
 
@@ -82,7 +82,7 @@ earlier contaminates the measurement.
 ```sh
 cd ~/projects/gherrink-jigc
 ./completions/trial-harness/run-session.sh --cid-file /tmp/b1-cid.txt \
-    ~/ideas/larkspur ~/out/B1i jigc-gate:rc13
+    ~/ideas/larkspur ~/out/M50-B1 jigc-gate:rc13
 ```
 
 ## Step 2 — paste `paste/b1-prompt.txt` verbatim
@@ -116,10 +116,11 @@ in a throwaway copy, never in the live corpus**:
 
 ```sh
 SC=$(mktemp -d "${TMPDIR:-/tmp}/slugcheck.XXXXXX") && cp -R ~/ideas/larkspur/. "$SC" && cd "$SC"
-jigc setup >/dev/null 2>&1
-jigc start --workflow record-decision "slug check" >/dev/null 2>&1
-jigc doc create adr --title "<YOUR NEW TITLE>" \
-    --task "$(jigc task list | awk '/^  [a-z0-9]/{print $1; exit}')"
+J=~/projects/gherrink-jigc/target/release/jigc   # built from HEAD; ~/.local/bin/jigc predates the gate fix
+"$J" setup >/dev/null 2>&1
+"$J" start --workflow record-decision "slug check" >/dev/null 2>&1
+"$J" doc create adr --title "<YOUR NEW TITLE>" \
+    --task "$("$J" task list | awk '/^  [a-z0-9]/{print $1; exit}')"
 cd ~/projects/gherrink-jigc
 ```
 
@@ -175,7 +176,7 @@ Tell me, and I will:
 
 ## If something goes wrong
 
-- **The session dies or you need to abandon it** — just exit. `~/out/B1i` / `~/out/B2i` must not
+- **The session dies or you need to abandon it** — just exit. `~/out/M50-B1` / `~/out/M50-B2` must not
   already exist on a re-run; delete them and start over. The corpora are never modified.
 - **You said something not in the key** — log it verbatim anyway and tell me. A logged drift is
   recoverable; an unlogged one is not.
