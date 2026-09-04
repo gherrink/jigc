@@ -1567,6 +1567,257 @@ pub const DOCTYPE_DOORS: &[(&[&str], DoctypeArg)] = &[
     (&["task", "bind"], DoctypeArg::Address),
 ];
 
+/// The token a [`WORK_UNIT_ID_DOORS`] row's `argv` carries **in place of** the work-unit
+/// id, so one row serves every cell of the axis (`""`, a traversal, an absolute path, a
+/// well-formed-but-unknown id) instead of four hand-written argvs per door.
+pub const WORK_UNIT_ID_SLOT: &str = "<id>";
+
+/// The clap **argument ids** that carry a **work-unit id** — a task id or a milestone id
+/// — the vocabulary the door set is *derived* from rather than remembered.
+///
+/// The shipped [`DOCTYPE_ARG_IDS`] mold, applied to the second identity a caller hands
+/// jigc. It exists because `.jigc/tasks/<id>/` and `.jigc/milestones/<id>/` are built by
+/// joining a caller token onto a path, and *"every door asks whether that token is an
+/// id"* is a claim about **every** door that takes one — which nobody had counted. Driven
+/// at `M50 Inc 1 / T1`'s parent, `jigc task discard "../.."` removed the repository
+/// (`DECISIONS.md` → 2026-09-05).
+///
+/// The ids are the derive macro's field names — `id` (`task diff`/`validate`/`discard`/
+/// `finalize`/`bind`), `task` (the `--task <id>` scope flag on `start`, `workflow` and
+/// every `doc` verb) and `milestone_id` (every operating `milestone` verb) — and each one
+/// names a work-unit id at **every** leaf that carries it, which is what makes the ⇔ in
+/// `cli_parse::every_work_unit_id_door_is_registered` hold.
+pub const WORK_UNIT_ID_ARG_IDS: &[&str] = &["id", "task", "milestone_id"];
+
+/// The payload path the two `--from-file` rows of [`WORK_UNIT_ID_DOORS`] name.
+///
+/// Those rows must carry a `--from-file` that is *not itself* a fault, or the door would
+/// answer about a missing file instead of about the id. The literal lives beside the
+/// table rather than in the suite that runs it, so the argv a row declares and the file
+/// the suite plants cannot drift apart.
+pub const WORK_UNIT_ID_DOOR_PAYLOAD: &str = "payload.yaml";
+
+/// **One door that takes a work-unit id** — a leaf verb, the argument the id arrives
+/// through, and a runnable argv carrying [`WORK_UNIT_ID_SLOT`] where the id goes.
+pub struct WorkUnitIdDoor {
+    /// The leaf verb path, as an operator types it after `jigc`.
+    pub door: &'static [&'static str],
+    /// The clap argument id the work-unit id arrives through — a member of
+    /// [`WORK_UNIT_ID_ARG_IDS`], fenced against what `argv` actually parses into, so a
+    /// renamed argument reddens rather than reading as documentation.
+    pub arg: &'static str,
+    /// A **runnable** argv for this door with [`WORK_UNIT_ID_SLOT`] standing in for the
+    /// id — every other argument present and well-formed, so the id is the *only* thing
+    /// the door can fault on.
+    pub argv: &'static [&'static str],
+}
+
+/// **Every leaf verb that takes a work-unit id** — derived from the clap tree by
+/// [`WORK_UNIT_ID_ARG_IDS`] and fenced ⇔ against it
+/// (`cli_parse::every_work_unit_id_door_is_registered`), so the set is the binary's, not
+/// a remembered one.
+///
+/// Twenty-five doors. The guard that refuses a malformed id
+/// (`crate::task::reject_malformed_work_unit_id`) sits at five *resolve seams*, and a
+/// seam is not a door: the M50 baseline counted the seams by reading the source, which is
+/// exactly the shape that has left a class half-swept in four waves running. This table
+/// is the door side of that claim, and `crates/cli/tests/work_unit_id_axis.rs` drives
+/// every row over the whole token axis.
+pub const WORK_UNIT_ID_DOORS: &[WorkUnitIdDoor] = &[
+    // Top level — the two composing doors, whose `--task <id>` resumes or re-enters.
+    WorkUnitIdDoor {
+        door: &["start"],
+        arg: "task",
+        argv: &["start", "--task", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["workflow"],
+        arg: "task",
+        argv: &["workflow", "single-task", "--task", WORK_UNIT_ID_SLOT],
+    },
+    // `jigc doc` — every managed-doc verb scopes to a task's working area.
+    WorkUnitIdDoor {
+        door: &["doc", "create"],
+        arg: "task",
+        argv: &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Axis",
+            "--task",
+            WORK_UNIT_ID_SLOT,
+        ],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "author"],
+        arg: "task",
+        argv: &[
+            "doc",
+            "author",
+            "adr",
+            "--from-file",
+            WORK_UNIT_ID_DOOR_PAYLOAD,
+            "--task",
+            WORK_UNIT_ID_SLOT,
+        ],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "add-item"],
+        arg: "task",
+        argv: &[
+            "doc",
+            "add-item",
+            "adr:axis#entries",
+            "--title",
+            "Axis",
+            "--task",
+            WORK_UNIT_ID_SLOT,
+        ],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "remove-item"],
+        arg: "task",
+        argv: &[
+            "doc",
+            "remove-item",
+            "adr:axis#entries/one",
+            "--task",
+            WORK_UNIT_ID_SLOT,
+        ],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "retitle-item"],
+        arg: "task",
+        argv: &[
+            "doc",
+            "retitle-item",
+            "adr:axis#entries/one",
+            "--title",
+            "Axis",
+            "--task",
+            WORK_UNIT_ID_SLOT,
+        ],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "rename"],
+        arg: "task",
+        argv: &[
+            "doc",
+            "rename",
+            "adr:axis",
+            "--to",
+            "Axis",
+            "--task",
+            WORK_UNIT_ID_SLOT,
+        ],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "set-field"],
+        arg: "task",
+        argv: &[
+            "doc",
+            "set-field",
+            "adr:axis#status",
+            "--value",
+            "accepted",
+            "--task",
+            WORK_UNIT_ID_SLOT,
+        ],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "set-slot"],
+        arg: "task",
+        argv: &[
+            "doc",
+            "set-slot",
+            "adr:axis#context",
+            "--from-file",
+            WORK_UNIT_ID_DOOR_PAYLOAD,
+            "--task",
+            WORK_UNIT_ID_SLOT,
+        ],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "show"],
+        arg: "task",
+        argv: &["doc", "show", "adr:axis", "--task", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["doc", "list"],
+        arg: "task",
+        argv: &["doc", "list", "adr", "--task", WORK_UNIT_ID_SLOT],
+    },
+    // `jigc task` — the task lifecycle, where the id is the positional subject.
+    WorkUnitIdDoor {
+        door: &["task", "diff"],
+        arg: "id",
+        argv: &["task", "diff", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["task", "validate"],
+        arg: "id",
+        argv: &["task", "validate", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["task", "discard"],
+        arg: "id",
+        argv: &["task", "discard", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["task", "finalize"],
+        arg: "id",
+        argv: &["task", "finalize", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["task", "bind"],
+        arg: "id",
+        argv: &["task", "bind", "spec", "adr:axis", WORK_UNIT_ID_SLOT],
+    },
+    // `jigc milestone` — every verb that operates on an existing milestone. `create` is
+    // absent because it MINTS its id from a title rather than taking one.
+    WorkUnitIdDoor {
+        door: &["milestone", "add-task"],
+        arg: "milestone_id",
+        argv: &["milestone", "add-task", WORK_UNIT_ID_SLOT, "Axis intent"],
+    },
+    WorkUnitIdDoor {
+        door: &["milestone", "add-from-spec"],
+        arg: "milestone_id",
+        argv: &["milestone", "add-from-spec", WORK_UNIT_ID_SLOT, "spec:axis"],
+    },
+    WorkUnitIdDoor {
+        door: &["milestone", "list-tasks"],
+        arg: "milestone_id",
+        argv: &["milestone", "list-tasks", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["milestone", "provision"],
+        arg: "milestone_id",
+        argv: &["milestone", "provision", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["milestone", "execute"],
+        arg: "milestone_id",
+        argv: &["milestone", "execute", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["milestone", "join"],
+        arg: "milestone_id",
+        argv: &["milestone", "join", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["milestone", "finalize"],
+        arg: "milestone_id",
+        argv: &["milestone", "finalize", WORK_UNIT_ID_SLOT],
+    },
+    WorkUnitIdDoor {
+        door: &["milestone", "discard"],
+        arg: "milestone_id",
+        argv: &["milestone", "discard", WORK_UNIT_ID_SLOT],
+    },
+];
+
 /// The [`VerbKind`] of a leaf verb path — `None` for a path that names no leaf verb
 /// (a parent node, an unknown token, clap's builtin `help`).
 pub fn verb_kind<S: AsRef<str>>(path: &[S]) -> Option<VerbKind> {
@@ -2261,6 +2512,96 @@ mod cli_parse {
                 leaves.contains(&path),
                 "DOCTYPE_DOORS carries `jigc {}`, which the clap tree no longer has",
                 path.join(" "),
+            );
+        }
+    }
+
+    /// **The work-unit-id door set is derived from the clap tree, not remembered.**
+    ///
+    /// A leaf verb carries a [`WORK_UNIT_ID_DOORS`] row **iff** one of its clap arguments
+    /// is named in [`WORK_UNIT_ID_ARG_IDS`] — the same ⇔ that fences the doctype doors,
+    /// applied to the second identity a caller hands jigc. Without it *"a malformed
+    /// work-unit id is refused at every door"* would be a claim about the five resolve
+    /// **seams** an audit read in the source, and a door is not a seam: the guard could
+    /// be complete over the seams and still leave a door that reaches the filesystem by
+    /// some other path with nothing to say.
+    ///
+    /// Three assertions, and the second is the one a renamed argument trips:
+    ///
+    ///   1. the ⇔ over every leaf — a new verb taking a work-unit id reddens here until
+    ///      it declares how the id arrives, and a row for a verb that lost its id
+    ///      argument cannot linger;
+    ///   2. each row's `argv` **actually parses** against the real CLI, lands on the leaf
+    ///      the row names, and delivers [`WORK_UNIT_ID_SLOT`]'s stand-in into the row's
+    ///      declared `arg` — so a row cannot describe a door it does not reach, and
+    ///      `arg` is checked rather than believed;
+    ///   3. every declared `arg` is a member of [`WORK_UNIT_ID_ARG_IDS`], so the
+    ///      vocabulary the derivation reads and the vocabulary the rows use are one set.
+    #[test]
+    fn every_work_unit_id_door_is_registered() {
+        // (1) The ⇔ against the real clap tree.
+        for (path, args) in clap_leaves_with_args() {
+            let carries = args
+                .iter()
+                .any(|id| WORK_UNIT_ID_ARG_IDS.contains(&id.as_str()));
+            let registered = WORK_UNIT_ID_DOORS
+                .iter()
+                .any(|row| row.door.iter().eq(path.iter()));
+            assert_eq!(
+                carries,
+                registered,
+                "`jigc {}` carries a work-unit-id argument ({carries}) but its \
+                 WORK_UNIT_ID_DOORS membership is {registered} — its arguments are [{}]",
+                path.join(" "),
+                args.join(", "),
+            );
+        }
+
+        // (2) + (3) Each row's argv reaches the leaf it names, through the arg it names.
+        const SENTINEL: &str = "fence-id";
+        for row in WORK_UNIT_ID_DOORS {
+            let shown = row.door.join(" ");
+            assert!(
+                WORK_UNIT_ID_ARG_IDS.contains(&row.arg),
+                "`jigc {shown}` declares `{}`, which is not a work-unit-id argument",
+                row.arg,
+            );
+            assert_eq!(
+                row.argv
+                    .iter()
+                    .filter(|token| **token == WORK_UNIT_ID_SLOT)
+                    .count(),
+                1,
+                "`jigc {shown}`: the argv must carry the id slot exactly once",
+            );
+            let mut argv: Vec<String> = vec!["jigc".to_string()];
+            argv.extend(row.argv.iter().map(|token| {
+                if *token == WORK_UNIT_ID_SLOT {
+                    SENTINEL.to_string()
+                } else {
+                    (*token).to_string()
+                }
+            }));
+            let matches = <Cli as clap::CommandFactory>::command()
+                .try_get_matches_from(&argv)
+                .unwrap_or_else(|err| panic!("`jigc {shown}`: the row's argv must parse: {err}"));
+            let mut leaf = &matches;
+            let mut reached: Vec<String> = Vec::new();
+            while let Some((name, sub)) = leaf.subcommand() {
+                reached.push(name.to_string());
+                leaf = sub;
+            }
+            assert_eq!(
+                reached,
+                row.door,
+                "`jigc {shown}`: the row's argv lands on `jigc {}`",
+                reached.join(" "),
+            );
+            assert_eq!(
+                leaf.get_one::<String>(row.arg).map(String::as_str),
+                Some(SENTINEL),
+                "`jigc {shown}`: the argv must deliver the id through `{}`",
+                row.arg,
             );
         }
     }

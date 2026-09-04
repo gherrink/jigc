@@ -79,3 +79,5 @@ mod staged_snapshot;
 mod subtask_discard_record;
 #[path = "../uninstall_worktree_guard.rs"]
 mod uninstall_worktree_guard;
+#[path = "../work_unit_id_axis.rs"]
+mod work_unit_id_axis;
