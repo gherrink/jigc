@@ -3446,8 +3446,8 @@ fn run_milestone_finalize(
     // (empty for a docs-only milestone) — hoisted above the record flip because the
     // boundary conformance gate below reads the worktree set, and it must run before any
     // durable write. Both feed the message, the empty-commit signal, the contribution facts,
-    // and the combine channel below (the M31 sibling-site shape — the gate is
-    // knob-independent, so its inputs sit above the record flip and the `squash` read).
+    // and the combine channel below (the M31 sibling-site shape — the gate's inputs sit
+    // above the record flip, and the `squash` read it needs was hoisted to join them).
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
     // The boundary lands the **live** sub-tasks: a settled one contributed nothing by
@@ -3469,6 +3469,20 @@ fn run_milestone_finalize(
         .expect("the materialized docs dir has a parent staging area")
         .to_path_buf();
 
+    // The `finalize.fan-out.squash` knob (`design/finalize.md` → `fan-out` finalize) shapes
+    // the commit. Resolve it from the project cascade (a missing `.jigc/config/` layer
+    // yields the pack-default base — `squash` defaults `true`, the M7 single-aggregate form
+    // whose bytes stay byte-identical to today, the read-side determinism guard). `false`
+    // lays down one commit per sub-task in **id-sorted order** (rendering each sub-task's
+    // own authored `commit:<sub-id>` doc) BEFORE the parent's synthesized aggregate — the
+    // commit *sequence* is a pure function of the id set (hardening #7), even though each
+    // sub-task message carries the sub-agent's authored prose (the CLI owns the ordering).
+    // Read HERE — above the boundary gate, which needs it to know whether any transient
+    // commit doc is part of what this boundary commits — and still before any sub-task
+    // commit moves HEAD; the per-sub-task commits are laid down only AFTER the planner's
+    // preflight validates base == HEAD below.
+    let squash = resolve_squash(&jigc_home)?;
+
     // The milestone-boundary conformance gate (M45 — `design/finalize.md` → 2. Validate;
     // `design/validation.md` → The milestone-boundary gate): validate the **merged effective
     // state** — the by-task-id merged doc set (`materialize`'s output, on disk in
@@ -3478,10 +3492,10 @@ fn run_milestone_finalize(
     // Positioned after `materialize` (whose output IS the merged doc set — a gate ahead of it
     // would re-implement the merge), after the base guard (the gate reads `base.sha`, not the
     // literal `HEAD`), after `provisioned_worktrees`, and BEFORE the record flip + the plan +
-    // the `squash` branch — knob-independent. Nothing durable is written yet (`materialize`
-    // rebuilds its dir every call, and the `RecordFlipGuard` is not yet armed), so a block
-    // here truly commits nothing. A same-path collision (no single merged tree) is NOT the
-    // gate's concern — it falls through to the knob branch's own collision handling below.
+    // the `squash` branch. Nothing durable is written yet (`materialize` rebuilds its dir
+    // every call, and the `RecordFlipGuard` is not yet armed), so a block here truly commits
+    // nothing. A same-path collision (no single merged tree) is NOT the gate's concern — it
+    // falls through to the knob branch's own collision handling below.
     if let Some(outcome) = milestone_boundary_gate(
         &repo_root,
         &jigc_home,
@@ -3491,6 +3505,7 @@ fn run_milestone_finalize(
         &base,
         &worktrees,
         &materialized.sources,
+        squash,
         format,
     )? {
         return Ok(outcome);
@@ -3512,18 +3527,6 @@ fn run_milestone_finalize(
 
     // Step 2 — the CLI-synthesized message (a milestone has no commit doc to render).
     let message = synthesized_message(milestone_id, &live);
-
-    // The `finalize.fan-out.squash` knob (`design/finalize.md` → `fan-out` finalize) shapes
-    // the commit. Resolve it from the project cascade (a missing `.jigc/config/` layer
-    // yields the pack-default base — `squash` defaults `true`, the M7 single-aggregate form
-    // whose bytes stay byte-identical to today, the read-side determinism guard). `false`
-    // lays down one commit per sub-task in **id-sorted order** (rendering each sub-task's
-    // own authored `commit:<sub-id>` doc) BEFORE the parent's synthesized aggregate — the
-    // commit *sequence* is a pure function of the id set (hardening #7), even though each
-    // sub-task message carries the sub-agent's authored prose (the CLI owns the ordering).
-    // Read here (before any sub-task commit moves HEAD); the per-sub-task commits are laid
-    // down only AFTER the planner's preflight validates base == HEAD below.
-    let squash = resolve_squash(&jigc_home)?;
 
     // The diff-presence signal the planner's empty-commit guard needs, narrowed to the
     // worktree-isolation model (M31 Inc 4): the materialized docs that will be promoted, OR
@@ -4150,8 +4153,14 @@ fn resolve_squash(repo_root: &Path) -> Result<bool> {
 /// `doc-code` code-anchor re-resolution — one validate run, never N per-area. The gate is
 /// **read-only**: the loaded [`FileStateRecord`] is never persisted (the `task validate`
 /// idiom — the record advances only at a landed commit). It runs BEFORE the record flip +
-/// the plan + the `squash` branch, so it is knob-independent, and nothing durable is written
-/// yet, so a block truly commits nothing.
+/// the plan + the `squash` branch, so nothing durable is written yet and a block truly
+/// commits nothing.
+///
+/// **Its subject is every doc this boundary commits** — the persisted merged docs, plus the
+/// transient `commit:<sub-id>` docs the `squash: false` chain renders into commit messages.
+/// The knob is therefore an *input* (`squash`) rather than something the gate is independent
+/// of: which docs the boundary commits is exactly what the knob decides. The filter below
+/// carries the derivation.
 ///
 /// The `doc-code` arm needs the merged tree **on disk** (the probe resolves anchors by
 /// filesystem path while [`combine_worktree_trees`](crate::combine::combine_worktree_trees)
@@ -4169,6 +4178,7 @@ fn milestone_boundary_gate(
     base: &BasePin,
     worktrees: &[PathBuf],
     sources: &BTreeMap<String, String>,
+    squash: bool,
     format: Format,
 ) -> Result<Option<Outcome>> {
     // Fold the N worktree-staged code-sets onto the milestone's shared base (`base.sha`, NOT
@@ -4180,13 +4190,38 @@ fn milestone_boundary_gate(
         crate::combine::CombineOutcome::Blocked(_) => return Ok(None),
     };
 
-    // The merged docs the gate validates are the **persisted** ones — those with a committed
-    // home. A sub-task's transient `commit:<id>` skeleton is materialized into `merged/docs/`
-    // too, but it is NOT part of the committed merged state (it renders into a message,
-    // validated at its own render/finalize path, and is unused under the `squash: true`
-    // synthesized aggregate), so validating it would false-block a clean milestone whose
-    // aggregate never uses it. Copy the persisted subset into a fresh scratch staging area and
-    // gate over that; the promote plan below still reads the full `staging_dir`.
+    // The gate's subject is **everything this boundary commits**, in the two shapes the merged
+    // docs dir holds it:
+    //
+    //   * a **persisted** doc — one whose doctype declares a committed home (`location:` or
+    //     `placement:`) — which the promote plan below lands as a repo file; and
+    //   * a **rendered transient** doc — a sub-task's `commit:<sub-id>` skeleton, which
+    //     declares no home but, under `squash: false`, IS the bytes of that sub-task's commit
+    //     message, exactly as a task's commit doc is at `jigc task finalize`.
+    //
+    // The transient half was missing, and `design/validation.md` → the door list stated the
+    // opposite ("that door gates as hard as the two task doors"): an author-required leaf left
+    // unfilled — `type` and `summary` are the whole set — blocked `jigc task validate <sub-id>`
+    // at exit 3 and landed a `: <subject>` / `feat:` commit through this door at exit 0.
+    //
+    // **The modes genuinely differ, and the reason is what the boundary reads.** Under
+    // `squash: true` the aggregate message is CLI-synthesized (`synthesized_message` — "a
+    // milestone has no commit doc to render") and NO commit doc is read at all, so a sub-task's
+    // is not part of the committed state and gating it would refuse a milestone whose output is
+    // entirely correct. Under `squash: false` only the **code-carrying** sub-tasks get a
+    // commit, so only their commit docs are read — the subject is therefore keyed on the very
+    // set the render uses ([`code_carrying_worktrees`]), never on a parallel derivation.
+    //
+    // Copy that subject into a fresh scratch staging area and gate over it; the promote plan
+    // below still reads the full `staging_dir`.
+    let rendered: std::collections::BTreeSet<String> = if squash {
+        std::collections::BTreeSet::new()
+    } else {
+        code_carrying_worktrees(worktrees)?
+            .into_iter()
+            .map(|(id, _)| format!("{COMMIT_TYPE}:{id}"))
+            .collect()
+    };
     let gate_staging = crate::task::ScratchTree::new();
     let gate_docs = gate_staging.path().join("docs");
     std::fs::create_dir_all(&gate_docs)
@@ -4200,19 +4235,16 @@ fn milestone_boundary_gate(
         if path.extension().and_then(|x| x.to_str()) != Some("md") {
             continue;
         }
-        let Some(ty) = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(|stem| stem.split(':').next().unwrap_or(stem))
-        else {
+        let Some(address) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
+        let ty = address.split(':').next().unwrap_or(address);
         // Persisted iff the doctype declares a committed home (`location:` or `placement:`)
         // — the transient-sink `commit` type declares neither.
         let persisted = schemas
             .get(ty)
             .is_some_and(|s| s.location.is_some() || s.placement.is_some());
-        if persisted {
+        if persisted || rendered.contains(address) {
             std::fs::copy(&path, gate_docs.join(entry.file_name()))
                 .with_context(|| format!("could not stage {path:?} into the gate area"))?;
         }
@@ -4408,22 +4440,7 @@ fn subtask_patches_and_messages(
     // worktree (M31 WF3); outside a worktree the two coincide.
     let tasks_root = jigc_home.join(".jigc").join("tasks");
 
-    // The id-ordered worktrees that staged code, paired with their staged patch — a
-    // worktree with nothing staged contributes no per-sub-task commit (no `--allow-empty`);
-    // its docs ride the parent aggregate. `worktrees` is already id-sorted (the provisioned
-    // set), the deterministic order the commit sequence is laid down in.
-    let mut coded: Vec<(String, Vec<u8>)> = Vec::new();
-    for wt in worktrees {
-        let id = wt
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let patch = worktree_staged_patch(wt)?;
-        if patch.is_empty() {
-            continue;
-        }
-        coded.push((id, patch));
-    }
+    let coded = code_carrying_worktrees(worktrees)?;
 
     // Render each code-carrying sub-task's authored commit doc in id order (one engine
     // call) — the message each per-sub-task commit carries.
@@ -4449,6 +4466,34 @@ fn subtask_patches_and_messages(
         .map(|(_, patch)| patch)
         .zip(messages)
         .collect())
+}
+
+/// The **code-carrying** sub-tasks, id-ordered: each provisioned worktree that staged
+/// something, paired with its staged patch. A worktree with **nothing staged** contributes
+/// no per-sub-task commit (the retired `--allow-empty` tree-empty form is gone) and so is
+/// absent; `worktrees` is already id-sorted (the provisioned set), which makes the commit
+/// *sequence* a pure function of the id set (hardening #7).
+///
+/// **One producer, because two consumers must agree on the set.** The `squash: false` render
+/// ([`subtask_patches_and_messages`]) reads it to decide which sub-tasks get a commit, and
+/// the boundary gate ([`milestone_boundary_gate`]) reads it to decide whose transient
+/// `commit:<sub-id>` doc is part of what the boundary commits — and therefore gets validated.
+/// A gate keyed on a *different* set than the render is the hole this function exists to make
+/// unstatable: it would either skip a doc that lands or block one that does not.
+fn code_carrying_worktrees(worktrees: &[PathBuf]) -> Result<Vec<(String, Vec<u8>)>> {
+    let mut coded: Vec<(String, Vec<u8>)> = Vec::new();
+    for wt in worktrees {
+        let id = wt
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let patch = worktree_staged_patch(wt)?;
+        if patch.is_empty() {
+            continue;
+        }
+        coded.push((id, patch));
+    }
+    Ok(coded)
 }
 
 /// A provisioned worktree's staged patch (`git diff --cached --binary`) as raw bytes —

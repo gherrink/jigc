@@ -334,6 +334,51 @@ fn a_serial_task_render_tells_an_absent_commit_doc_from_a_read_fault() {
 /// difference between the two arms: `beta-area` is **re-entered** (which provisions its
 /// commit doc) only when the arm needs a doc to break, and is left in the repro's own
 /// never-entered state otherwise.
+/// Fill a provisioned sub-task's `commit:<sub>` skeleton — its `type` field and its `summary`
+/// slot, the doctype's whole author-required leaf set. **The fixture must do this**: since the
+/// milestone-boundary gate's subject grew to the transient commit docs a `squash: false`
+/// boundary renders (`design/validation.md` → The milestone-boundary gate), an unfilled
+/// skeleton on the *entered* sub-task blocks the boundary at the gate and this suite's
+/// subject — the render's two read outcomes on the *other* sub-task — is never reached.
+fn author_commit_doc(worktree: &Path, home: &Path, sub: &str) {
+    let addr = format!("commit:{sub}");
+    assert_ok(
+        &run_jigc(
+            worktree,
+            home,
+            &[
+                "doc",
+                "set-field",
+                &format!("{addr}#header/type"),
+                "--task",
+                sub,
+                "--value",
+                "feat",
+            ],
+        ),
+        "`jigc doc set-field commit:<sub>#header/type`",
+    );
+    let prose = worktree.join(format!(".{sub}-summary"));
+    fs::write(&prose, "rework the cache path\n").expect("write the summary prose");
+    assert_ok(
+        &run_jigc(
+            worktree,
+            home,
+            &[
+                "doc",
+                "set-slot",
+                &format!("{addr}#summary"),
+                "--task",
+                sub,
+                "--from-file",
+                prose.to_str().expect("utf-8 prose path"),
+            ],
+        ),
+        "`jigc doc set-slot commit:<sub>#summary`",
+    );
+    fs::remove_file(&prose).expect("the prose source is scratch, not worktree content");
+}
+
 fn setup_fanout(repo: &Path, home: &Path, enter_beta: bool) {
     assert_ok(
         &run_jigc(repo, home, &["milestone", "create", "Cache rework"]),
@@ -360,6 +405,7 @@ fn setup_fanout(repo: &Path, home: &Path, enter_beta: bool) {
                 &run_jigc(&worktree, home, &["workflow", "sub-task", "--task", sub]),
                 "`jigc workflow sub-task --task <sub>` (the re-entry that provisions the doc)",
             );
+            author_commit_doc(&worktree, home, sub);
         }
         let code = format!("{sub}.rs");
         fs::write(worktree.join(&code), "pub fn f() {}\n").expect("write worktree code");

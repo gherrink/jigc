@@ -420,3 +420,299 @@ fn cross_worktree_anchor_dangle_blocks_at_exit_3() {
         "the gate's throwaway detached worktree is torn down on the blocked exit"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// The transient `commit:<sub-id>` subject (M49 prerequisite increment)
+//
+// `design/validation.md` → the door list states that for every finding the trailer counts,
+// `jigc milestone finalize` "gates as hard as the two task doors". It did not: the gate's
+// copy filter admitted only doctypes declaring a committed home (`location:`/`placement:`),
+// and `commit` — the one transient doctype either shipped pack carries — declares neither.
+// Under `squash: false` each code-carrying sub-task's authored `commit:<sub-id>` doc IS
+// rendered into a commit the boundary lands, so an unfilled author-required leaf reached the
+// git history at exit 0 while `jigc task validate <sub-id>` blocked on the identical omission
+// at exit 3.
+//
+// The axis is the `commit` doctype's **author-required leaf set**, derived below from the
+// binary's own pinned schema projection rather than restated — the reported cell was `type`,
+// and the second member (`summary`) lands an empty-subject commit through the same hole.
+// ---------------------------------------------------------------------------------------
+
+/// One author-required leaf of a doctype, in the two shapes the schema projection
+/// distinguishes: a header **field** and a required **slot** section.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum CommitLeaf {
+    Field(String),
+    Slot(String),
+}
+
+impl CommitLeaf {
+    /// The stable key the coverage assertion below compares on.
+    fn key(&self) -> String {
+        match self {
+            CommitLeaf::Field(id) => format!("field:{id}"),
+            CommitLeaf::Slot(id) => format!("slot:{id}"),
+        }
+    }
+}
+
+/// The leaf keys [`commit_body`] knows how to leave unfilled. The derived set is asserted
+/// **equal** to this, so a `commit` schema that grows a third author-required leaf reddens
+/// here instead of silently shrinking the axis this suite iterates.
+const HANDLED_COMMIT_LEAVES: [&str; 2] = ["field:type", "slot:summary"];
+
+/// The `commit` doctype's author-required leaves, **derived from the shipped schema** through
+/// the binary's own pinned projection (`jigc doc schema commit --format json`) — a field is a
+/// member when the projection marks it `author-required`, a slot section when it is not
+/// `optional`. The repeatable `trailers` footer is neither (an empty repeatable is advisory,
+/// never a gate), so it is correctly absent.
+fn author_required_commit_leaves(repo: &Path, home: &Path) -> Vec<CommitLeaf> {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["doc", "schema", "commit", "--format", "json"])
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary");
+    let projection: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
+        panic!(
+            "`jigc doc schema commit --format json` must emit the pinned projection ({err}); \
+             stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        )
+    });
+    let mut leaves = Vec::new();
+    for field in projection["fields"].as_array().into_iter().flatten() {
+        if field["author-required"] == serde_json::Value::Bool(true) {
+            leaves.push(CommitLeaf::Field(
+                field["id"].as_str().expect("a field id").to_string(),
+            ));
+        }
+    }
+    for section in projection["sections"].as_array().into_iter().flatten() {
+        let required_slot = section["kind"] == serde_json::Value::String("slot".into())
+            && section["optional"] != serde_json::Value::Bool(true);
+        if required_slot {
+            leaves.push(CommitLeaf::Slot(
+                section["id"].as_str().expect("a section id").to_string(),
+            ));
+        }
+    }
+    leaves.sort();
+    leaves
+}
+
+/// A staged `commit:<sub>` body with every author-required leaf filled — except `omit`, left
+/// exactly as the workflow-provisioned skeleton leaves it (an empty enum field / an empty
+/// slot). `None` fills them all: the conformant body a correct sub-task authors.
+fn commit_body(sub: &str, omit: Option<&CommitLeaf>) -> String {
+    let key = omit.map(CommitLeaf::key).unwrap_or_default();
+    let ty = if key == "field:type" { "" } else { "feat" };
+    let summary = if key == "slot:summary" {
+        ""
+    } else {
+        "rework the cache path"
+    };
+    format!(
+        "---\ntype: {ty}\nscope: \n---\n\n# {sub}\n\n## Summary\n\n{summary}\n\n## Body\n\n\n\n## Trailers\n"
+    )
+}
+
+/// `.jigc/config/manifest.yaml` opting the project into per-sub-task commits — the mode
+/// under which a sub-task's transient commit doc is rendered into a commit that lands.
+fn set_squash_false(repo: &Path) {
+    let config = repo.join(".jigc").join("config");
+    fs::create_dir_all(&config).expect("mk the project config layer");
+    fs::write(
+        config.join("manifest.yaml"),
+        "scalar:\n  finalize.fan-out.squash: false\n",
+    )
+    .expect("write the project manifest");
+}
+
+/// The subject lines HEAD carries, newest first — the witness that the empty-`type` /
+/// empty-`summary` commit the hole used to land is not in the history.
+fn head_subjects(repo: &Path) -> Vec<String> {
+    git(repo, &["log", "--format=%s", "-5"])
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// One axis arm: a `squash: false` fan-out whose code-carrying sub-task (`code-area`) has
+/// authored a `commit:code-area` doc with exactly `omit` left unfilled. That doc is rendered
+/// into a commit this boundary lands, so it must block at exit 3 committing nothing.
+fn assert_unfilled_commit_leaf_blocks(omit: &CommitLeaf) {
+    let tag = omit.key().replace(':', "-");
+    let repo = TempDir::new(&format!("commit-{tag}"));
+    let home = TempDir::new(&format!("commit-{tag}-home"));
+    init_repo(repo.path(), &[]);
+    set_squash_false(repo.path());
+    create_and_add_tasks(repo.path(), home.path());
+
+    stage_doc(
+        repo.path(),
+        "doc-area",
+        "adr:doc-policy",
+        &adr_plain("Doc policy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo.path(),
+        "code-area",
+        "commit:code-area",
+        &commit_body("code-area", Some(omit)),
+        "created",
+    );
+    expect_ok(
+        &run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]),
+        "milestone provision",
+    );
+    stage_worktree_code(
+        repo.path(),
+        "code-area",
+        "src/beta.rs",
+        "pub fn beta() {}\n",
+    );
+
+    let before = head_count(repo.path());
+    let out = run_milestone_json(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    let output =
+        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "an unfilled author-required `{}` on a rendered `commit:code-area` must block the \
+         milestone boundary at exit 3; got {:?}\n{output}",
+        omit.key(),
+        out.status.code(),
+    );
+    assert!(
+        output.contains("commit:code-area"),
+        "the block names the transient commit doc it gated; got:\n{output}",
+    );
+    assert_eq!(
+        head_count(repo.path()),
+        before,
+        "a blocked milestone boundary commits nothing"
+    );
+    assert!(
+        combine_worktree_dirs(repo.path()).is_empty(),
+        "the gate's throwaway checkout is torn down on the blocked exit"
+    );
+}
+
+/// **The axis, iterated.** Every author-required leaf of the `commit` doctype — derived from
+/// the shipped schema, not from the reported repro — blocks `jigc milestone finalize` under
+/// `squash: false`, exactly as it blocks `jigc task validate` / `jigc task finalize`.
+#[test]
+fn every_author_required_commit_leaf_blocks_the_milestone_boundary() {
+    let probe = TempDir::new("leaf-axis");
+    let home = TempDir::new("leaf-axis-home");
+    init_repo(probe.path(), &[]);
+    set_squash_false(probe.path());
+    let leaves = author_required_commit_leaves(probe.path(), home.path());
+
+    let keys: Vec<String> = leaves.iter().map(CommitLeaf::key).collect();
+    assert_eq!(
+        keys, HANDLED_COMMIT_LEAVES,
+        "the `commit` doctype's author-required leaf set is this arm's axis — it changed, so \
+         extend `commit_body` and `HANDLED_COMMIT_LEAVES` rather than let the axis shrink",
+    );
+
+    for omit in &leaves {
+        assert_unfilled_commit_leaf_blocks(omit);
+    }
+}
+
+/// **The mode difference, stated as a test.** Under `squash: true` the aggregate message is
+/// CLI-synthesized and **no** commit doc is read at all, so a sub-task's transient commit doc
+/// is not part of what the boundary lands — gating it would refuse a milestone whose
+/// committed output is entirely correct. The identical omission that blocks above is inert
+/// here, and the boundary lands its one aggregate.
+#[test]
+fn a_squash_true_boundary_is_inert_over_an_unfilled_commit_doc() {
+    let repo = TempDir::new("squash-true");
+    let home = TempDir::new("squash-true-home");
+    init_repo(repo.path(), &[]);
+    create_and_add_tasks(repo.path(), home.path());
+
+    stage_doc(
+        repo.path(),
+        "code-area",
+        "commit:code-area",
+        &commit_body("code-area", Some(&CommitLeaf::Field("type".into()))),
+        "created",
+    );
+    expect_ok(
+        &run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]),
+        "milestone provision",
+    );
+    stage_worktree_code(
+        repo.path(),
+        "code-area",
+        "src/beta.rs",
+        "pub fn beta() {}\n",
+    );
+
+    let before = head_count(repo.path());
+    let out = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    expect_ok(&out, "a squash:true boundary over an unfilled commit doc");
+    assert_eq!(
+        head_count(repo.path()),
+        before + 1,
+        "the squash:true boundary lands exactly one synthesized aggregate"
+    );
+}
+
+/// **The negative half of the widened subject.** Under `squash: false` a sub-task that stages
+/// **no code** contributes no commit, so its transient commit doc is never rendered and stays
+/// outside the gate's subject — while the code-carrying sub-task's conformant doc renders into
+/// the per-sub-task commit the boundary lands. Both halves in one boundary: it lands, and the
+/// authored subject is on HEAD.
+#[test]
+fn a_squash_false_boundary_gates_only_the_commit_docs_it_renders() {
+    let repo = TempDir::new("squash-false-clean");
+    let home = TempDir::new("squash-false-clean-home");
+    init_repo(repo.path(), &[]);
+    set_squash_false(repo.path());
+    create_and_add_tasks(repo.path(), home.path());
+
+    // `doc-area` stages no code, so its commit doc is never rendered — unfilled `type` and
+    // all. It must not gate.
+    stage_doc(
+        repo.path(),
+        "doc-area",
+        "commit:doc-area",
+        &commit_body("doc-area", Some(&CommitLeaf::Field("type".into()))),
+        "created",
+    );
+    stage_doc(
+        repo.path(),
+        "code-area",
+        "commit:code-area",
+        &commit_body("code-area", None),
+        "created",
+    );
+    expect_ok(
+        &run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]),
+        "milestone provision",
+    );
+    stage_worktree_code(
+        repo.path(),
+        "code-area",
+        "src/beta.rs",
+        "pub fn beta() {}\n",
+    );
+
+    let out = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    expect_ok(
+        &out,
+        "a squash:false boundary whose rendered commit doc conforms",
+    );
+    let subjects = head_subjects(repo.path());
+    assert!(
+        subjects.contains(&"feat: rework the cache path".to_string()),
+        "the code-carrying sub-task's authored message is on HEAD; got {subjects:?}",
+    );
+}
