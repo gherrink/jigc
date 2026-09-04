@@ -14,7 +14,7 @@ active task) and `refs-post-hoc` (one live task):
 | door | release `~/.local/bin/jigc` (rc.13) | debug `target/debug/jigc` (rc.13) |
 |---|---|---|
 | `jigc task validate ""` | *"no findings — the task validates clean"*, **exit 0**; `--format json` → `{"schema_version": 2, "findings": []}` | panic at `crates/engine/src/finding.rs:741`, **exit 101** — `Route::mechanical` refuses argv `["jigc","task","discard",""]` |
-| `jigc task discard ""` | *"discarded task "*, **exit 0** | same |
+| `jigc task discard ""` | *"discarded task "*, **exit 0** — **and `.jigc/tasks/` is gone** (see the amendment) | same |
 
 The assert is the M43 route fence's parse half, installed debug-only (`finding.rs:737`,
 `#[cfg(debug_assertions)]` — *"a release binary never pays or panics"*). So the class the fence
@@ -45,3 +45,11 @@ completion audits keep catching, this time on the *other* side (a tree changed a
 rather than a stamp left unbumped). Consequence: the trial image is built from `979baca` and the
 gate record carries the sha; the installed binary is rebuilt from HEAD only **after** the trial,
 so the walk's `--binary`-less host probes cannot drift from the image mid-trial.
+
+**Amended 2026-09-04, after walk arm 17.** The `task discard ""` row above understated what the
+door does: it does not *ack* — it **removes `.jigc/tasks/` wholesale**, live task, staged prose
+and all, at exit 0. The probe that produced this table printed *"task list after: no active
+tasks"* and the orchestrator read that as the ack's consequence rather than as the loss it was.
+Recorded as **W-13** in [session-findings.md](session-findings.md), driven again in isolation,
+and it is §1 row 1. *An agent's report is a lead, not a measurement* — and so is the
+orchestrator's.
