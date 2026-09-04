@@ -715,6 +715,53 @@ pub(crate) fn no_such_task(id: &str) -> anyhow::Error {
     anyhow::anyhow!("no task `{id}` — list live tasks with {route}")
 }
 
+/// The **grammar** every work-unit id obeys — the one sentence the three `--slug` doors
+/// already state (`crate::start`'s mint, `crate::doc::reject_malformed_slug`,
+/// `crate::migrate`'s adoption), reused verbatim so a fourth spelling of *"what an id
+/// is"* never enters the surface (`design/surface-contract.md` → law 1).
+pub(crate) const WORK_UNIT_ID_GRAMMAR: &str =
+    "use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)";
+
+/// The blocking finding code every malformed work-unit id carries — **one** code for the
+/// whole family, task doors and milestone doors alike, because it is one fault.
+pub(crate) const MALFORMED_WORK_UNIT_ID: &str = "work-unit.malformed-id";
+
+/// Refuse a caller-supplied work-unit id that is not a well-formed slug — the guard at
+/// every **resolve seam**, below clap and above the filesystem op
+/// (`completions/artifacts/M50/settle-record.md` → D2).
+///
+/// `.jigc/tasks/<id>/` and `.jigc/milestones/<id>/` are built by joining a caller token
+/// onto a path, and until M50 no door asked whether that token was an id at all: driven,
+/// `jigc task discard "../.."` resolved the *repository root* as a working area and
+/// `remove_dir_all`'d it — `.git` included — at **exit 0**. So membership is decided
+/// where the token becomes a path component, never on a remembered list of shapes.
+///
+/// **Not a clap `value_parser`**: clap rejects with exit 2 carrying no code and no route,
+/// which is the M43 route-floor breach at every door that takes an id. This produces a
+/// [`Finding`] instead, flattened through the shared [`crate::render::finding_error`]
+/// carrier, so the refusal has an identity the surface prints and the log can record.
+///
+/// The predicate is [`engine::slug::is_slug`] — the **recognition** rule, the one every
+/// frozen id read back from disk is checked against. `slugify(x) == x` would be the wrong
+/// test: the mint-time word cap and edge-stopword drop make it reject ids the mint itself
+/// produced.
+///
+/// The route **states the grammar** and deliberately does *not* name `jigc task list`: a
+/// malformed token was never an id, so routing to the roster would be a law-1
+/// misdirection. A *well-formed but unknown* id keeps that route ([`no_such_task`]).
+pub(crate) fn reject_malformed_work_unit_id(id: &str) -> Result<()> {
+    if engine::slug::is_slug(id) {
+        return Ok(());
+    }
+    Err(crate::render::finding_error(&Finding::graded(
+        Severity::Blocking,
+        MALFORMED_WORK_UNIT_ID,
+        format!("{id:?} is not a valid work-unit id"),
+        None,
+        Some(engine::finding::Route::human(WORK_UNIT_ID_GRAMMAR)),
+    )))
+}
+
 /// Which finalize-time gates a [`TaskArea::validate`] sweep additionally **previews**
 /// (M47 Inc 4, `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 1).
 ///
@@ -757,6 +804,8 @@ impl TaskArea {
     /// `<jigc_home>/.jigc/tasks/<id>/`. A task that does not exist rejects with the
     /// task-list route ([`no_such_task`]).
     fn resolve(cwd: &Path, id: &str) -> Result<Self> {
+        // Before anything joins `id` onto a path (M50 Inc 1 / T1).
+        reject_malformed_work_unit_id(id)?;
         let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
         let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
         let jigc_root = jigc_home.join(".jigc");

@@ -200,6 +200,19 @@ impl MilestoneCommand {
     /// finding (serial collision, unknown milestone) surfaces on stderr with its
     /// route and exits non-zero (`design/write-commands.md` → Minting a milestone).
     pub fn dispatch(self, cwd: &Path, format: Format) -> Outcome {
+        // The work-unit id guard, at the door rather than at the seam it protects (M50
+        // Inc 1 / T1). `milestone_dir` is a pure join, and every operating verb reaches
+        // the shared `reseed_cache` — which reads the committed record and REBUILDS both
+        // the milestone cache area and the sub-task working areas — *before* its own
+        // `is_dir()` check. Driven at `HEAD~`, `jigc milestone execute "probe-"`
+        // materialized both from a record filed under that malformed slug and composed at
+        // exit 0. So the ask sits above all of it, where the token arrives.
+        if let Some(id) = self.milestone_id()
+            && let Err(err) = crate::task::reject_malformed_work_unit_id(id)
+        {
+            eprintln!("{}", render::operational_error(format, &err));
+            return Outcome::failure();
+        }
         // The `join` verb reports a `JoinOutcome` (overlay + findings), not a one-line
         // summary, and a same-doc clash is a *blocking finding inside an Ok outcome*
         // (the merge ran, then routed the contention) — so it has its own dispatch arm.
@@ -277,6 +290,25 @@ impl MilestoneCommand {
                     Outcome::failure()
                 }
             },
+        }
+    }
+
+    /// The caller-supplied milestone id this verb carries, or `None` for the one verb that
+    /// takes none ([`MilestoneCommand::Create`] mints its id from a title).
+    ///
+    /// Matched exhaustively on purpose: a verb added with an id it forgot to declare here
+    /// does not compile, so the guard's subject cannot silently shrink.
+    fn milestone_id(&self) -> Option<&str> {
+        match self {
+            MilestoneCommand::Create { .. } => None,
+            MilestoneCommand::AddTask { milestone_id, .. }
+            | MilestoneCommand::AddFromSpec { milestone_id, .. }
+            | MilestoneCommand::ListTasks { milestone_id }
+            | MilestoneCommand::Provision { milestone_id, .. }
+            | MilestoneCommand::Execute { milestone_id }
+            | MilestoneCommand::Join { milestone_id }
+            | MilestoneCommand::Finalize { milestone_id, .. }
+            | MilestoneCommand::Discard { milestone_id, .. } => Some(milestone_id),
         }
     }
 

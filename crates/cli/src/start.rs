@@ -1904,6 +1904,8 @@ fn blanket_base_pin_refusal(
 /// task) — **unless the id is a milestone sub-task**, whose commit door is the
 /// milestone's, not this task's ([`blanket_base_pin_refusal`]).
 pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
+    // Before anything joins `id` onto a path (M50 Inc 1 / T1).
+    crate::task::reject_malformed_work_unit_id(id)?;
     let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 
@@ -2022,6 +2024,8 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
 /// rejects with a routed `workflow-refs.workflow-mismatch` block naming both ids + the
 /// sub-task; a base mismatch rejects with the divergence-routing prompt.
 pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Composition> {
+    // Before anything joins `id` onto a path (M50 Inc 1 / T1).
+    crate::task::reject_malformed_work_unit_id(id)?;
     let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
     let project_config = require_project_config(start)?;
 

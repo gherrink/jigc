@@ -5377,6 +5377,12 @@ impl ActiveTask {
     /// directory under `<repo>/.jigc/tasks/`; **none** rejects with the start-a-task
     /// route, **more than one** with no `--task` rejects asking for the selector.
     fn resolve(cwd: &Path, task_id: Option<&str>) -> Result<Self> {
+        // Before anything joins an explicit `--task <id>` onto a path (M50 Inc 1 / T1).
+        // The enumerated branch below reads ids off the filesystem, so only the caller's
+        // own token needs asking.
+        if let Some(id) = task_id {
+            crate::task::reject_malformed_work_unit_id(id)?;
+        }
         let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
         let jigc_root = jigc_home.join(".jigc");
         let tasks = jigc_root.join("tasks");

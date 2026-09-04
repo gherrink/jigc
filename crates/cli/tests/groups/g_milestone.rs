@@ -11,6 +11,8 @@ mod flow42_acceptance;
 mod flow43_acceptance;
 #[path = "../leftover_probe_fail_closed.rs"]
 mod leftover_probe_fail_closed;
+#[path = "../malformed_work_unit_id.rs"]
+mod malformed_work_unit_id;
 #[path = "../milestone.rs"]
 mod milestone;
 #[path = "../milestone_abort_survives.rs"]
