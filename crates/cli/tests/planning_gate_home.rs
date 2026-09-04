@@ -35,8 +35,16 @@
 //! checklist is the failure; citing a handful of gates where their worked instance
 //! lives is the point.
 //!
-//! **Scope: `design/` + `implementation/`.** `DECISIONS.md` is history — a dated
-//! entry records what a wave decided and is deliberately outside the rule.
+//! **Scope: `design/` + `implementation/` + `.claude/`.** The third tree is where the
+//! runnable overlays live, and `.claude/commands/milestone-plan.md` is the file whose
+//! job is to *force* the gates — the likeliest place for a second copy to grow, and it
+//! did: an eleven-of-fourteen restatement, three gates short, standing from 2026-06-25
+//! until this scan reached it. Two trees stay deliberately outside. `DECISIONS.md` is
+//! history — a dated entry records what a wave decided. `completions/` holds the
+//! **filled instances** of the gate-record: a milestone's own `planning-gate-record.md`
+//! legitimately answers all fourteen rows, because that is the record itself, not a
+//! restatement of the checklist. The rule is against a *second copy of the checklist*,
+//! never against history or against the artifacts the checklist produces.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -57,9 +65,11 @@ const GATE_TABLE_HEADING: &str = "## The planning gate-record";
 /// The gate table's first column header (the gate id).
 const GATE_COLUMN: &str = "Gate";
 
-/// The trees the single-home rule governs. `DECISIONS.md` is history, and the
-/// `completions/` artifacts are a wave's own record — both deliberately outside.
-const GOVERNED_TREES: [&str; 2] = ["design", "implementation"];
+/// The trees the single-home rule governs: the design + implementation prose, and the
+/// `.claude/` runnable overlays that drive the planning loop. `DECISIONS.md` is history
+/// and `completions/` holds the *filled* gate-records — both deliberately outside (see
+/// the module doc's *Scope*).
+const GOVERNED_TREES: [&str; 3] = ["design", "implementation", ".claude"];
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
