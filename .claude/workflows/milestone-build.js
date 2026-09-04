@@ -31,9 +31,18 @@
 //   - INTERRUPTION (the run was killed mid-flight — process died, session dropped):
 //     the in-flight agent() call never returned, so it is NOT cached — it is a natural
 //     cache-miss that re-runs live on a plain resume. But a killed agent may have left a
-//     DIRTY TREE (a partial write it hadn't committed, e.g. a planner's uncommitted
-//     DECISIONS entry). Before resuming: inspect `git status`, REVERT the partial/
-//     uncommitted work (the agent re-does it from a clean base), then plain-resume
+//     DIRTY TREE — and a dirty tree has THREE states, not two. NEVER resume onto one, and
+//     never assume it is junk: a killed executor can die between GREEN and COMMIT (M48 lost
+//     511 insertions across four files that compiled and whose acceptance suite passed).
+//     (PRECEDENCE — this rule is stated in three places and they must not drift: canonical is
+//     implementation/increment-workflow.md -> Halt and resume; note 7(b) below restates it;
+//     this is its short form. If they ever disagree, increment-workflow.md wins.)
+//     So CLASSIFY before acting: (a) does it build, (b) does the halted task's own
+//     done-criterion pass, (c) does the FULL unscoped gate pass (`dev/gate`). All three =>
+//     the work is FINISHED and only the commit is owed — COMMIT IT, and say in the message
+//     that it was recovered rather than authored. Any of the three failing (or an obvious
+//     half-write, e.g. a planner's uncommitted DECISIONS entry) => revert it and let the
+//     agent re-do it from a clean base. Then plain-resume
 //     `Workflow({scriptPath: <snapshot>, args: { milestone, base }, resumeFromRunId})`
 //     (args per RULE 0) — NO script surgery (the killed call cache-misses on its own;
 //     the committed prefix replays from cache).
@@ -179,16 +188,78 @@ const skipThrough = a.skipThrough != null ? Number(a.skipThrough) : 0
 // interpolated so the line is copy-paste-ready.
 //
 // `transient` (M43 lesson, 2026-07-17): an agent that "returned no result" died on
-// infrastructure (API 529/kill after retries), NOT on a design blocker — the tree is
-// clean and there is nothing to fix. The old one-size message said "first resolve the
+// infrastructure (API 529/kill after retries), NOT on a design blocker — so there is no
+// blocker to RESOLVE. (It does not follow that there is nothing to DO: the tree still has
+// the three states of the RESUMING block above.) The old one-size message said "first resolve the
 // blocker via a build-fixer", which for this class sends the operator hunting for a
 // blocker that does not exist. The halt return is the surface that produces the
 // "how do I resume?" state, so it carries the right recovery for its own cause
 // (the surface-contract law-2 discipline, applied to this harness).
-function resumeLine(id, baseRef, transient) {
+//
+// TWO printed surfaces, ONE mode, ONE tree rule. `haltMode` classifies a halt once;
+// `haltMessage` and `resumeLine` each take that mode plus the halt's PHASE, and both defer
+// the tree rule to the single `treeGuidance` below. Before this split, `msg` checked
+// `breakerTripped` first while `resume` read the raw `transient` flag — so a transient halt
+// during a TRIPPED breaker (they are simultaneously true whenever the breaker trips on a null
+// return) put "wait for the window" and "resume immediately" in the same return object.
+// Following the resume line inside a limit window is exactly the thrash the breaker exists
+// to prevent, so the breaker's guidance WINS whenever it is tripped.
+// (`breakerTripped`/`exhaustedLabels` are declared further down with the breaker itself;
+// these functions only read them at call time, which is always after.)
+function haltMode(transient) {
+  return breakerTripped ? 'breaker' : transient === true ? 'transient' : 'blocker'
+}
+
+// treeGuidance — the ONE statement of the M48 three-state tree rule on the printed surfaces,
+// so the message and the resume line cannot drift from each other. Canonical is
+// implementation/increment-workflow.md -> Halt and resume; the RESUMING header block above
+// restates it; this is the surface form. If they disagree, increment-workflow.md wins.
+//
+// PHASE-AWARE, because the generic three-state text is WRONG for a phase whose agent has no
+// code deliverable. At `plan` the only thing that can be in the tree is the planner's
+// uncommitted DECISIONS entry: `dev/gate` over a docs-only change is green BY CONSTRUCTION,
+// and a half-written entry reads as satisfying "record the decomposition" — so all three
+// printed conditions pass and the operator commits a half-write whose real product (the
+// ordered task list) died with the agent anyway. The header block already carries the
+// discriminating clause ("or an obvious half-write, e.g. a planner's uncommitted DECISIONS
+// entry => revert it"); this file's own rationale is that the header is NOT re-read mid-run,
+// so it is carried onto the surfaces that ARE read at halt time.
+//
+// It states what to do to the TREE and never when to resume — the caller owns the timing
+// (the breaker's is "not until the window resets", everyone else's is "now").
+function treeGuidance(haltPhase) {
+  if (haltPhase === 'read') {
+    return 'The milestone-reader is READ-ONLY, so nothing in the tree is its work: a dirty tree here predates this run and is yours to explain — the harness has nothing to commit or revert on its behalf. '
+  }
+  if (haltPhase === 'plan') {
+    return 'CLASSIFY THE TREE before anything else: clean => nothing to do to it; dirty => it is the planner\'s uncommitted DECISIONS entry, and a finished planner commits that ITSELF, so uncommitted means it did not finish — that is a HALF-WRITE, so REVERT it and let the planner re-do it from a clean base. Do NOT run `dev/gate` over it and read green as done (a docs-only change is green by construction), and do NOT read a half-written entry as satisfying "record the decomposition": the planner\'s real product, the ordered task list, is a structured return that died with the agent. Never resume onto a dirty tree. '
+  }
+  if (haltPhase === 'validate') {
+    return 'CLASSIFY THE TREE before anything else — and note the increment-validator is READ-ONLY, so anything dirty is a `build-fixer`\'s work, not the halted call\'s: clean => nothing to do to it; dirty AND the full `dev/gate` is green AND the finding that fixer was handed is genuinely fixed => it died between green and commit, so COMMIT that work (say it was recovered, not authored); dirty otherwise, or an obvious half-write => REVERT it and let it re-run from a clean base. Never resume onto a dirty tree. '
+  }
+  return 'CLASSIFY THE TREE before anything else, it has three states: clean => nothing to do to it; dirty AND the full `dev/gate` is green AND the halted call\'s own done-criterion holds => the agent died between green and commit, so COMMIT that work (say it was recovered, not authored); dirty otherwise — any of the three failing, or an obvious half-write (e.g. a planner\'s uncommitted DECISIONS entry) => REVERT it and let the call re-do it from a clean base. Never resume onto a dirty tree. '
+}
+
+// haltMessage — the ONE producer of a halt's headline message, for every halt construction
+// (the read-phase return included, which used to carry no `message` key at all).
+function haltMessage(id, mode, haltPhase) {
+  if (mode === 'breaker') {
+    return id + ' build STOPPED by the rate-limit breaker: two different agents exhausted their retries (' + exhaustedLabels.join(', ') + '), so the run stopped spawning rather than thrash through the limit window. THIS IS NOT A CODE FAULT and there is no blocker to resolve — confirm by grepping the run transcript dir for \'"error":"rate_limit"\' / apiErrorStatus 429. Prior committed work stands (it may be UNPUSHED — push before diagnosing). ' + treeGuidance(haltPhase) + 'THEN WAIT for the window to reset before resuming — a resume inside it just re-spends it — and resume with args: { milestone, base, skipThrough: <highest increment that is both built AND validated clean> } — note those are different: an increment whose validator ran before its fixes landed is not validated.'
+  }
+  if (mode === 'transient') {
+    return id + ' build HALTED on a transient infrastructure failure (an agent returned no result after retries). Prior committed work stands and there is no blocker to resolve. ' + treeGuidance(haltPhase)
+  }
+  return id + ' build HALTED — human attention needed before continuing. Prior committed work stands.'
+}
+
+function resumeLine(id, baseRef, mode, haltPhase) {
   const argsObj = "{ milestone: '" + id + "'" + (baseRef ? ", base: '" + baseRef + "'" : '') + ' }'
-  const prep = transient
-    ? 'This halt is transient-infrastructure-shaped (an agent returned no result after retries — API overload/kill, not a design blocker): if `git status` is clean there is NOTHING to fix — resume immediately; the failed call cache-misses and re-runs live while completed work replays from cache. Then: '
+  const prep = mode === 'breaker'
+    ? 'The rate-limit breaker is tripped, so this is NOT a blocker and there is nothing to resolve — but do NOT resume yet: a resume inside the usage window just re-spends it. `git push origin main` FIRST (prior committed work may be UNPUSHED). ' + treeGuidance(haltPhase) + 'Then, once the window has reset and the tree is clean: '
+    : mode === 'transient'
+    ? 'This halt is transient-infrastructure-shaped (an agent returned no result after retries — API overload/kill, not a design blocker), so there is no blocker to resolve. ' + treeGuidance(haltPhase) + 'The failed call cache-misses and re-runs live while completed work replays from cache. Then, with the tree clean: '
+    : haltPhase === 'read'
+    ? 'There is no CODE blocker here and a `build-fixer` is the wrong instrument: the roadmap simply carries no decomposition for this milestone, so run the MILESTONE-PLANNING workflow to produce one (or re-invoke with the correct milestone id), leave the tree CLEAN, then: '
     : 'First resolve the blocker on `main` via a build-fixer subagent and leave the tree CLEAN, then: '
   return (
     'TO RESUME — re-pass args ALWAYS (RULE 0: resumeFromRunId does NOT restore args; omit them and ' +
@@ -271,7 +342,7 @@ const VALIDATION_SCHEMA = {
   required: ['gate_green', 'gate_evidence', 'deliverable_holds', 'blocking', 'advisory', 'verdict'],
   properties: {
     gate_green: { type: 'boolean' },
-    gate_evidence: { type: 'string', description: 'PROOF the FULL gate was run, not a claim: paste the verbatim `test result: ok. N passed; 0 failed` summary line for EVERY test binary from one UNSCOPED `cargo test` run — the WHOLE suite, no -p, no name filter, no single test — plus the fmt/clippy/build exit confirmations. gate_green=true is INVALID without this evidence; a scoped run does not count — the pack/describe goldens live in the `--bin jigc` target a scoped run misses.' },
+    gate_evidence: { type: 'string', description: 'PROOF the FULL gate was run, not a claim: paste `dev/gate`\'s own summary block VERBATIM from ONE full run (no --quick) — at minimum its `tests   passed=N failed=0  (over B test binaries)` totals line AND its `GATE: PASS` line. gate_green=true is INVALID without BOTH: the totals line is printed only in full mode (--quick omits it) and `GATE: PASS` only when every step exited 0. Raw `cargo test` output does NOT count — `test result:` says nothing about scope (a -p-scoped run prints it too, and the string also matches test NAMES like `test result::tests::…`); dev/gate takes no scope arguments, so its own verdict — not cargo\'s — is what one full run leaves behind. This checks WHAT YOU PASTE, not provenance: `--report <log>` prints the totals line over any log without running cargo, and `--quick` prints `GATE: PASS` without running tests, so pasting either in place of one real full run is a deliberate falsification rather than a slip.' },
     deliverable_holds: { type: 'boolean' },
     blocking: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string', description: 'file:line + the exact command and its observed output that proves the finding' }, fix_hint: { type: 'string' } } } },
     advisory: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string', description: 'file:line + the proof' } } } },
@@ -326,8 +397,11 @@ function execPrompt(inc, task, all) {
     'Run the full dev-workflow for THIS ONE task per your role; earlier tasks of this increment are already committed.',
   ].join('\n')
 }
-function validatePrompt(inc) {
-  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself, UNSCOPED — `cargo test` over the WHOLE suite (no -p, no name filter, no single test — the pack/describe goldens live in the `--bin jigc` target a scoped run silently misses), plus `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo build`. Paste the verbatim `test result:` summary line for EVERY binary into `gate_evidence`. gate_green=true is INVALID without that pasted evidence; any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n')
+// `addendum` — a corrective for the NEXT round only (empty on round 0, so that call stays
+// cache-key-identical on resume). Appended, never interleaved, so the base prompt is byte-
+// identical to what it has always been.
+function validatePrompt(inc, addendum) {
+  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself with `dev/gate` — never `--quick`, which skips the tests. It runs probe/fmt/clippy/build/test each BARE with its exit code captured, and it accepts no scope arguments at all, so a dev/gate run cannot be the scoped `cargo test` that has landed a red gate before (M23 inc-1). Paste its summary block VERBATIM into `gate_evidence` — at minimum the `tests   passed=… failed=…  (over N test binaries)` totals line AND the `GATE: PASS` line. gate_green=true is INVALID without both pasted lines (a `--quick` run omits the totals line and does not count); any `GATE: FAIL` / any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n') + (addendum ? '\n\n' + addendum : '')
 }
 function fixPrompt(inc, f) {
   return [
@@ -449,19 +523,36 @@ const increments = read && read.increments ? read.increments : []
 // when the caller passed no args and the workflow auto-selected the next milestone.
 const builtMilestone = read && read.milestone ? String(read.milestone) : milestone
 if (increments.length === 0) {
-  // A read-phase halt is the classic DROPPED-ARGS symptom on a resume: if `milestone` is
-  // 'the next milestone', the caller almost certainly omitted args on the re-invoke (RULE 0).
-  const droppedArgs = milestone === 'the next milestone'
+  // TWO causes reach here and they are NOT interchangeable — the fourth halt construction,
+  // and the one the `transient` flag was never wired into:
+  //   * the reader RETURNED NOTHING (agentR exhausted its retries — 529, kill, user skip).
+  //     The roadmap was never read, so nothing here is a statement about the decomposition.
+  //   * the reader READ a roadmap that carries no decomposition for this milestone. That is
+  //     the genuine "go plan it first" (or, on a resume, the dropped-args symptom).
+  // Reporting the first AS the second told the operator to re-plan an already-planned
+  // milestone and to clear a blocker that does not exist. The fail-safe default stands:
+  // `transient` is set only on the one condition that means it, so unset => non-transient.
+  const transient = !read
+  // The dropped-args reading only applies when a roadmap was actually read: a null reader
+  // says nothing about which milestone was asked for.
+  const droppedArgs = !transient && milestone === 'the next milestone'
+  // The breaker cannot be tripped here — it needs a SECOND distinct label to exhaust and the
+  // reader is the first call of the run — so `haltMode` can only return transient/blocker.
+  const mode = haltMode(transient)
   return {
     status: 'halted',
     halted: {
       phase: 'read',
-      reason: 'no roadmap decomposition for ' + milestone + ' — '
-        + (droppedArgs
-            ? 'this is almost certainly a DROPPED-ARGS resume (RULE 0): re-invoke with args: { milestone: "<id>", base } explicitly.'
-            : 'run the milestone-planning workflow first.'),
+      transient,
+      reason: transient
+        ? 'the milestone-reader returned no result after retries for ' + milestone + ' — the roadmap was never read, so this is NOT a verdict about the decomposition: it is the transient/rate-limit shape (see the failures channel above). Re-run the reader before concluding anything about the roadmap.'
+        : 'no roadmap decomposition for ' + milestone + ' — '
+          + (droppedArgs
+              ? 'this is almost certainly a DROPPED-ARGS resume (RULE 0): re-invoke with args: { milestone: "<id>", base } explicitly.'
+              : 'run the milestone-planning workflow first.'),
     },
-    resume: resumeLine(milestone, base),
+    message: haltMessage(milestone, mode, 'read'),
+    resume: resumeLine(milestone, base, mode, 'read'),
     note: read ? read.note : null,
   }
 }
@@ -484,7 +575,10 @@ for (const inc of increments) {
   log('Increment ' + inc.n + ' — planning (' + inc.title + ')')
   const plan = await agentR(planPrompt(inc), { label: 'plan:inc' + inc.n, phase: 'Build increments', agentType: 'build-planner', schema: PLAN_SCHEMA })
   if (!plan || plan.status === 'halted' || !plan.tasks || plan.tasks.length === 0) {
-    halted = { increment: inc.n, phase: 'plan', halt: plan && plan.halt ? plan.halt : { root_cause: plan ? 'planner produced no tasks' : 'planner returned no result', tree_state: 'clean (planner writes only the DECISIONS entry, nothing on halt)' } }
+    // `transient` is set HERE, by the harness, on the one condition that means it
+    // (agentR exhausted its retries and returned null) — never re-derived downstream
+    // from `halt.root_cause`, which is agent-written prose.
+    halted = { increment: inc.n, phase: 'plan', transient: !plan, halt: plan && plan.halt ? plan.halt : { root_cause: plan ? 'planner produced no tasks' : 'planner returned no result', tree_state: 'clean (planner writes only the DECISIONS entry, nothing on halt)' } }
     incrementReports.push({ increment: inc.n, plan })
     break
   }
@@ -496,7 +590,7 @@ for (const inc of increments) {
     const r = await agentR(execPrompt(inc, task, plan.tasks), { label: 'exec:inc' + inc.n + ':' + task.id, phase: 'Build increments', agentType: 'build-executor', schema: EXEC_TASK_SCHEMA })
     execResults.push({ task: task.id, result: r })
     if (!r || r.status === 'halted') {
-      halted = { increment: inc.n, phase: 'execute', task: task.id, halt: r && r.halt ? r.halt : { root_cause: r ? 'executor halted without detail' : 'executor returned no result' } }
+      halted = { increment: inc.n, phase: 'execute', task: task.id, transient: !r, halt: r && r.halt ? r.halt : { root_cause: r ? 'executor halted without detail' : 'executor returned no result' } }
       break
     }
   }
@@ -504,22 +598,124 @@ for (const inc of increments) {
 
   let round = 0
   let lastValidation = null
+  let nullRounds = 0
+  let fixerNulls = 0
+  let fixerUnfixed = 0
+  let gateAddendum = ''
   while (true) {
     log('Increment ' + inc.n + ' — independent validation (after ' + round + ' fix round(s))')
-    const v = await agentR(validatePrompt(inc), { label: 'validate:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'increment-validator', schema: VALIDATION_SCHEMA })
+    const v = await agentR(validatePrompt(inc, gateAddendum), { label: 'validate:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'increment-validator', schema: VALIDATION_SCHEMA })
     lastValidation = v
+    if (!v) nullRounds++
     const blocking = v && v.blocking ? v.blocking : []
-    // gate_green must be BACKED by pasted evidence (a real `test result:` summary line),
-    // not a bare boolean — an evidence-less green is treated as not-green (M23: inc-1
+    // gate_green must be BACKED by pasted evidence, not a bare boolean — and the evidence
+    // is `dev/gate`'s OWN VERDICT, never raw cargo output. dev/gate is unscopeable (its arg
+    // loop takes only --quick/--private-target/--report/--help and exits 2 on anything else),
+    // it prints `GATE: PASS` only after every step exited 0, and it prints the
+    // `tests   passed=… failed=…  (over N test binaries)` totals line ONLY in full mode
+    // (--quick omits it entirely). So demanding BOTH lines rejects a red gate, a bare
+    // --quick run, and the ACCIDENTAL scoped paste this check exists to catch (M23: inc-1
     // landed a red gate because the validator claimed green off a scoped/lacon-trimmed run).
-    const gateProven = v && v.gate_green && typeof v.gate_evidence === 'string' && /test result:/.test(v.gate_evidence)
+    // HONEST BOUND — this is NOT proof of provenance, and must not be read as one: the
+    // predicate tests PASTED TEXT, not that `dev/gate` ran unscoped. Both lines are
+    // assemblable from two sanctioned fast invocations. `dev/gate --report <log>` runs NO
+    // cargo at all (dev/gate:139-146) and prints the totals line over ANY log — driven over
+    // a `cargo test -p engine` log it printed `tests   passed=948 failed=0  (over 1 test
+    // binaries)`, which satisfies this regex — and `dev/gate --quick` reaches `GATE: PASS`
+    // (dev/gate:282) without running tests. So the check raises the forgery cost from a
+    // careless paste to a deliberate two-command assembly; it cannot detect the latter.
+    // The OLD predicate, /test result:/ over pasted cargo output, caught NONE of that:
+    //   * a scoped `cargo test -p engine` prints a genuine `test result: ok. …` summary too,
+    //     so it passed on exactly the input it was written to reject; and
+    //   * the pattern is UNDELIMITED, so it also matches test NAMES — engine's `pub mod
+    //     result` has a `mod tests`, so cargo prints `test result::tests::alpha ... ok`.
+    //     Measured on `cargo test -p engine --lib`: 17 matches, 16 of them names and 1 a
+    //     real summary — i.e. evidence with zero real summaries could still pass.
+    // Same undelimited-match bug, second site: 4171e10 fixed it in dev/gate's own counting
+    // awk (33 binaries reported for a 17-binary run) by matching fields instead.
+    // The binary count is deliberately NOT hard-coded here — it is derived inside dev/gate
+    // from the run itself; pinning it would only mint a drift point against tests/groups/.
+    // The leading `(?:[>*+-][ \t]*)*` tolerates a PREFIX-decorated paste and nothing wider:
+    // a quote marker or a list bullet in front of the line (`> tests   passed=…`, `- GATE: PASS`,
+    // `  * GATE: PASS`), plus leading indent/tabs. It deliberately does NOT admit the WRAPPING
+    // forms — `**GATE: PASS**`, `` `GATE: PASS` `` and `1. GATE: PASS` are all REJECTED — because
+    // the property that rejects prose is that NOTHING trailing is tolerated (`The run reported
+    // GATE: PASS.` does not match), and every wrapping form needs exactly that property loosened.
+    // Failing closed on them is cheap now: a gate_green=true paste that misses lands in `missing`
+    // below and comes back as a targeted addendum on the very next round.
+    const gatePassRe = /^[ \t]*(?:[>*+-][ \t]*)*GATE: PASS[ \t]*$/m
+    const gateTotalsRe = /^[ \t]*(?:[>*+-][ \t]*)*tests[ \t]+passed=\d+[ \t]+failed=0[ \t]+\(over [1-9]\d* test binaries\)[ \t]*$/m
+    const ev = v && typeof v.gate_evidence === 'string' ? v.gate_evidence : ''
+    const gateProven = !!(v && v.gate_green && gatePassRe.test(ev) && gateTotalsRe.test(ev))
     if (blocking.length === 0 && gateProven) { log('Increment ' + inc.n + ' — validated CLEAN'); break }
-    if (blocking.length === 0 && v && v.gate_green && !gateProven) { log('Increment ' + inc.n + ' — gate claimed green WITHOUT pasted `test result:` evidence; treating as unverified → fix round') }
-    if (round >= 3) { halted = { increment: inc.n, phase: 'validate', reason: blocking.length > 0 ? blocking.length + ' blocking finding(s) remain after 3 fix rounds' : 'gate green could not be verified (no pasted `test result:` evidence from a full unscoped run) after 3 validation rounds — verify the gate by hand', blocking }; break }
+    // The diagnosis must reach the NEXT ROUND'S PROMPT, not only the log: with zero blocking
+    // findings no fixer spawns, so the tree does not change either — and validatePrompt is a
+    // pure function of `inc`, so an un-addended retry is byte-identical and fails identically
+    // for rounds 0..3, burning four full gate runs to reach a halt. Empty => nothing appended.
+    //
+    // TWO ways a round can leave the gate unproven with NOTHING to fix, and both need their
+    // own addendum — the second is the sibling arm of this ternary, and it was the one left
+    // un-swept: a validator that honestly reports gate_green=FALSE while filing the red gate
+    // as *advisory* (or nowhere) yields no `missing`, no addendum and no fixer, so the round
+    // is a pure no-op that repeats to the 3-round halt — whose reason then blamed the
+    // EVIDENCE, the same confident-wrong-cause shape the `nullRounds` branch exists to kill.
+    const missing = (v && v.gate_green && !gateProven)
+      ? [gatePassRe.test(ev) ? null : 'the `GATE: PASS` verdict line', gateTotalsRe.test(ev) ? null : 'the full-run `tests   passed=… failed=0  (over N test binaries)` totals line (a --quick run omits it)'].filter(Boolean).join(' and ')
+      : ''
+    const redGateUnfiled = !!(v && !v.gate_green && blocking.length === 0)
+    if (blocking.length === 0 && missing) {
+      log('Increment ' + inc.n + ' — gate claimed green but gate_evidence is missing ' + missing + ' from a full `dev/gate` run; treating as unverified → fix round')
+    }
+    if (redGateUnfiled) {
+      log('Increment ' + inc.n + ' — validator reported gate_green=false yet filed ZERO blocking findings, so no fixer can spawn; re-asking with the "a non-green gate is BLOCKING" addendum')
+    }
+    gateAddendum = missing
+      ? 'PREVIOUS ROUND REJECTED: you reported gate_green=true but `gate_evidence` was missing ' + missing + ', so the gate is unverified and this increment is still unvalidated. Re-run the FULL gate yourself — `dev/gate` with NO flags (`--quick` skips the tests and omits the totals line; `--report <log>` runs no cargo at all) — and paste its summary block VERBATIM and UNEDITED: both the totals line and the `GATE: PASS` line, each on its own line. Do not paraphrase it, do not substitute raw `cargo test` output.'
+      : redGateUnfiled
+      ? 'PREVIOUS ROUND REJECTED: you reported gate_green=false and filed ZERO blocking findings. That combination cannot make progress — a fixer only ever spawns for a BLOCKING finding, so nothing changed in the tree and this prompt would otherwise repeat unaltered to the round limit. Your role contract is explicit: any `GATE: FAIL`, any non-zero exit, any `FAILED` is a BLOCKING finding, never advisory. So this round: re-run the FULL gate (`dev/gate`, no flags), and if it is still not green FILE IT AS BLOCKING — one finding whose `evidence` names dev/gate\'s failing step and the failing test name(s) it prints. If it IS green, report gate_green=true and paste the summary block verbatim (both the totals line and the `GATE: PASS` line).'
+      : ''
+    if (round >= 3) {
+      // A null validator result is NOT a statement about the gate — it never ran. Saying
+      // "gate_evidence never carried both lines" there is a confident wrong cause. Same for a
+      // round the fixers never worked, and same for a red gate the validator filed as advisory.
+      const reason = blocking.length > 0
+        ? blocking.length + ' blocking finding(s) remain after 3 fix rounds'
+          + (fixerNulls ? ' — but ' + fixerNulls + ' fixer call(s) returned NO RESULT, so the findings may never have been worked at all: that is the transient/rate-limit shape, not a verdict that they are unfixable. Re-run the fixers before triaging, and note anything a dead fixer left is UNCOMMITTED in the tree.' : '')
+          + (fixerUnfixed ? ' — ' + fixerUnfixed + ' fixer call(s) reported could-not-fix; read their notes (they carry the trace showing the finding is not real) before assuming the findings stand.' : '')
+        : !v
+        ? 'the validator returned NO RESULT on the last of 4 rounds (' + nullRounds + ' of 4 returned none) — the increment was never actually validated, so this is not a verdict about the code: it is the transient/rate-limit shape (see the failures channel and the breaker log above). Re-run the validator before triaging anything.'
+        : !v.gate_green
+        ? 'the validator reported gate_green=FALSE on the last of 4 rounds while filing ZERO blocking findings — so the real cause is a RED GATE recorded as advisory (or not recorded at all), NOT missing evidence and NOT the code being unfixable: no fixer ever spawned, because a fixer only spawns for a blocking finding. Run `dev/gate` by hand, read its failing step and test names, and fix that.'
+        : 'gate green could not be verified after 3 validation rounds (gate_evidence never carried both `GATE: PASS` and the full-run `tests … (over N test binaries)` totals line from one `dev/gate` run) — verify the gate by hand'
+      halted = { increment: inc.n, phase: 'validate', transient: !v && blocking.length === 0, reason, blocking }
+      break
+    }
     round++
-    log('Increment ' + inc.n + ' — fix round ' + round + ': ' + blocking.length + ' blocking finding(s)')
+    // Only a round that actually spawns a fixer is a FIX round. Logging "fix round N: 0
+    // blocking finding(s)" three times over described a loop that fixed nothing as if it had
+    // been fixing — the log is the operator's only live view of the loop, so it says which
+    // no-op this is and that no fixer will spawn.
+    log('Increment ' + inc.n + ' — ' + (blocking.length > 0
+      ? 'fix round ' + round + ': ' + blocking.length + ' blocking finding(s)'
+      : 're-validation round ' + round + ': NOTHING TO FIX (0 blocking findings), so no fixer spawns — '
+        + (missing ? 'the gate evidence was short ' + missing : redGateUnfiled ? 'the validator reported the gate NOT green but filed no blocking finding' : 'the gate was not proven')
+        + '; re-asking with a corrective addendum'))
     for (const f of blocking) {
-      await agentR(fixPrompt(inc, f), { label: 'fix:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'build-fixer', schema: FIX_SCHEMA })
+      // The fixer's result is CAPTURED, not discarded. A null return means the fixer landed
+      // nothing (agentR exhausted its retries, or the breaker is tripped) — and it may have
+      // died between gate-green and commit, leaving that work loose in the tree, which is
+      // precisely the third tree state the validate-phase guidance now names. Deliberately
+      // NOT a halt of its own: the finding still stands, re-validation is the honest next
+      // step, and the bounded round budget still ends the run — but the ROUND-LIMIT REASON
+      // must not report "3 fix rounds could not fix it" when zero fixers ever ran.
+      const fr = await agentR(fixPrompt(inc, f), { label: 'fix:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'build-fixer', schema: FIX_SCHEMA })
+      if (!fr) {
+        fixerNulls++
+        log('Increment ' + inc.n + ' — fixer returned NO RESULT on round ' + round + ' (' + f.title + '); the finding stands and anything it left is UNCOMMITTED in the tree')
+      } else if (fr.status === 'could-not-fix') {
+        fixerUnfixed++
+        log('Increment ' + inc.n + ' — fixer reported could-not-fix on round ' + round + ' (' + f.title + '): ' + (fr.notes || '(no notes)'))
+      }
     }
   }
 
@@ -529,14 +725,19 @@ for (const inc of increments) {
 
 if (halted) {
   // Transient-infrastructure halts (an agent returned no result after retries) get the
-  // nothing-to-fix resume message; genuine blockers keep the resolve-first one.
-  const transient = !!(halted.halt && /returned no result/.test(halted.halt.root_cause || ''))
-  const msg = breakerTripped
-    ? builtMilestone + ' build STOPPED by the rate-limit breaker: two different agents exhausted their retries (' + exhaustedLabels.join(', ') + '), so the run stopped spawning rather than thrash through the limit window. THIS IS NOT A CODE FAULT and nothing needs fixing — confirm by grepping the run transcript dir for \'"error":"rate_limit"\' / apiErrorStatus 429. Prior committed work stands (it may be UNPUSHED — push before diagnosing). Wait for the window, then resume with args: { milestone, base, skipThrough: <highest increment that is both built AND validated clean> } — note those are different: an increment whose validator ran before its fixes landed is not validated.'
-    : transient
-    ? builtMilestone + ' build HALTED on a transient infrastructure failure (an agent returned no result after retries). Prior committed work stands — if the tree is clean, resume immediately; nothing needs fixing.'
-    : builtMilestone + ' build HALTED — human attention needed before continuing. Prior committed work stands.'
-  return { status: 'halted', halted, message: msg, resume: resumeLine(builtMilestone, base, transient), milestone: builtMilestone, incrementReports }
+  // no-blocker-to-resolve resume message; genuine blockers keep the resolve-first one.
+  // The discriminator is the flag the HARNESS set at halt construction, never a pattern over
+  // `halt.root_cause` — that is a field an LLM fills with prose, and the old
+  // /returned no result/ test matched real design forks verbatim ("the census grep for
+  // existing `slot_ceiling` callers returned no result…", "`jigc doc show …` returned no
+  // results" — note the plural matches an undelimited substring test too), printing
+  // "nothing to fix, resume immediately" over an unresolved fork at exit 0.
+  // ONE mode for BOTH surfaces — the message and the resume line are generated from the same
+  // classification, so they cannot hand the operator two instructions. The breaker wins over
+  // `transient` (they are simultaneously true whenever the breaker trips on a null return),
+  // and the tree rule comes from the single phase-aware `treeGuidance` in both.
+  const mode = haltMode(halted.transient)
+  return { status: 'halted', halted, message: haltMessage(builtMilestone, mode, halted.phase), resume: resumeLine(builtMilestone, base, mode, halted.phase), milestone: builtMilestone, incrementReports }
 }
 
 // ---- milestone-completion audit (independent, adversarial, parallel) ----
