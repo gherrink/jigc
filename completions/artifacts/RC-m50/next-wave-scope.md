@@ -42,6 +42,9 @@ It settles nothing; the Settle is M50's.
 - **W-6** `house/vfs-local` on `--explain`. **W-7** `describe` carries no origin pack (capability,
   cheap to add as an additive key — but the additive-key window is closed, so it is a
   `contract-version` question; decide, do not drift).
+- **F-1 / F-2 (B1's feedback)** — the `code-anchor` grammar is stated nowhere a worker looks (`doc schema`
+  names the type, `set-field --help` and SKILL.md show no form), and the `file:line` miss says *"resolves
+  to no file"* instead of naming the `path#Symbol` grammar. A `hint:` on the field type plus one message.
 - **W-8** `setup` at 0/4 over a shape-changing shadow — declared bound; M50 may let the bootstrap
   door *say* what the next door will refuse without refusing itself.
 
@@ -66,7 +69,7 @@ code each raises).
 
 ## What this trial did not reach, stated
 
-B1 and B2 (interactive) had not run when this brief was written; their feedback reports and
-the plant-F delivery join the ledger when they do, and any REFUTED rows come from there.
+B1 ran (plant F delivered; two feedback claims confirmed, above). B2 (interactive) had not run when
+this brief was written; its feedback joins the ledger when it does, and any REFUTED row comes from there.
 B4's seeded re-run is scored in [trial-record.md](trial-record.md). The §6 *neither* set is
 four rows, each explained in [coverage.md](coverage.md).

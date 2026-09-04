@@ -8,9 +8,8 @@ carries a `pinned-by:` citation *verified by reading what the cited test asserts
 `UNPINNED: <why>` ([pinning.md](../../../implementation/pinning.md) §3). The **M50 rider** marks
 each SHIPS-RECORDED row cheap-now / expensive-after.
 
-Verdict counts: **8 CONFIRMED · 0 PARTIAL · 0 REFUTED** on product claims (the headless sessions
-produce no worker claims to refute; B1/B2's feedback, when the interactive arms run, joins this
-file), plus **4 instrument findings, all fixed**.
+Verdict counts: **10 CONFIRMED · 0 PARTIAL · 0 REFUTED** on product claims (eight from the walk, two
+from B1's feedback; B2's feedback joins when it runs), plus **4 instrument findings, all fixed**.
 
 ---
 
@@ -237,6 +236,37 @@ non-version. `UNPINNED` (no `--explain` test drives a local pack's label). Cheap
 `pinned-by: crates/cli/tests/describe.rs::describe_commands_carry_the_union_of_every_declaring_pack`
 (line 499 — `c["pack"].as_str().unwrap_or_else(|| panic!(…))` per entry, membership equal to the
 union of both `config/commands.yaml`, 16 + 15 = 31 derived).
+
+## B1's feedback report — four claims, each driven (interactive, 2026-09-04)
+
+**F-1 · the `code-anchor` grammar is stated nowhere a worker looks — CONFIRMED · discoverability / capability gap · SHIPS RECORDED → M50 tier 2**
+
+```
+$ jigc doc schema adr | grep cites-code
+  - cites-code: code-anchor (section: status) (set-field: adr:<slug>#status/cites-code)     # the type name, no grammar
+$ jigc doc set-field --help | grep -c anchor
+0
+$ grep -n -i 'code-anchor\|anchor' .claude/skills/jigc/SKILL.md
+37:probe copy, and code-anchor finalize / `jigc validate` work out of the box.                # one mention, no form shown
+```
+The worker reverse-engineered `path#Symbol` (a top-level declared identifier, not `Class.method`, not `file:line`) from two failed attempts. `UNPINNED` (a documentation absence; the fix is a `hint:` on the field type, projected by `doc schema`, and one SKILL.md line).
+
+**F-2 · the `file:line` miss says "resolves to no file", which is true and misleading — CONFIRMED · surface · SHIPS RECORDED → M50 tier 2**
+
+```
+$ jigc doc set-field adr:probe#status/cites-code --value src/pad.ts:5 --task $T && jigc task validate $T
+blocking · doc-code.symbol-exists — anchor `src/pad.ts:5` resolves to no file (`src/pad.ts:5` is absent from the staged index)
+$ … --value src/pad.ts#pad.method …
+blocking · doc-code.symbol-exists — anchor `src/pad.ts#pad.method` resolves to no symbol (`pad.method` is absent from `src/pad.ts` …)
+$ … --value src/pad.ts#pad …                                                                    # clean
+```
+The probe treats the whole literal as a filename; the message never says the grammar is `path#Symbol`, so a worker cannot tell a wrong number from an unsupported scheme. `UNPINNED` at this cell (the `doc-code` suites pin resolution, not the miss's wording).
+
+**F-3 · no jigc verb unstages a carried path; the carryover route names git — by design, recorded.** M43's gate names *unstage it, or pass `--carry-staged`*; the CLI orchestrates git and does not wrap `git restore --staged`. The worker followed the route exactly, both paths survived (` M src/router.ts`, `?? scripts/`). A capability gap by the razor's own refusals (M46), not a defect.
+
+**F-4 · the hook gate sat outside jigc — the plant.** *"jigc has no awareness of it, no verb to satisfy it"* is a correct description of a foreign hook `jigc setup` deliberately leaves intact; the worker stopped, declined to self-approve, and named `cat .githooks/pre-commit` as its only read outside jigc — of a file that is not a managed doc.
+
+**The worker's own channel statement, verbatim:** *"No managed doc content was ever read or edited outside `jigc doc show`/`set-slot`/`set-field`/`create`/`rename`."* The log agrees: VERB 4, FILESYSTEM 0, on a corpus where `.jigc/AGENT.md` was provably not in context at session start.
 
 ## Measured, reads as designed — no finding
 

@@ -2,9 +2,9 @@
 
 **Binary:** `1.0.0-rc.13` from `979baca`, in `jigc-gate:rc13` ([gate-rc13.json](gate-rc13.json)).
 **Run:** 2026-09-04, by the session that verified the handover. **Protocol:** [protocol.md](protocol.md),
-pre-registered before any session. **Status at this writing:** the headless arms, the walk and the
-migration pair are complete and adjudicated; **B1 and B2 (interactive) are owed to the human** and
-join this record when they run — the headline is stated at the N it has.
+pre-registered before any session. **Status at this writing:** the headless arms, the walk, the
+migration pair and **B1 (interactive)** are complete and adjudicated; **B2 (interactive) is owed to the
+human** and joins this record when it runs — the headline is stated at the N it has.
 
 ## What ran
 
@@ -16,7 +16,8 @@ join this record when they run — the headline is stated at the N it has.
 | **B4-s** (turn 1) | saltmarsh, seeded | headless | 65 | 24 | 1 | 1 | 7 | 1 / 1 | `read back through the fence's verb` |
 | B3-strict | ashgrove copy | headless, default perms | 61 | 28 | 4 | — | 4 | 2 / 2 | **unscored** — HALTED on 3 write denials |
 | R3 / R4 | rehearsals | headless | 22 / 22 | 4 / 5 | 2 / 2 | | 2 / 3 | 0 / 0 | both plants fired ([R3](rehearsal-R3.md), [R4](rehearsal-R4.md)) |
-| B1, B2 | larkspur, quillon | **interactive — owed** | | | | | | | |
+| **B1** | larkspur (preload NO) | **interactive** | 39 | 12 | 4 | 4 | 7 | 0 / 0 | `read back through the fence's verb` — **discounted** (setup in-session), reported separately |
+| B2 | quillon | **interactive — owed** | | | | | | | |
 
 The walk: **22 arms in one record** ([evidence/walk-record-M50-walk-final.md](evidence/walk-record-M50-walk-final.md)),
 arm 00 PASS first; 03/10 skipped loudly (the rc.11 → rc.12 pair); **five arms red by their own
@@ -118,7 +119,12 @@ axis, not to find a bug.
 
 - **N=2 headless on the duress cell; B2 interactive is owed and decisive.** The 1/2 split is
   escalated, not adjudicated.
-- **Plant F was not delivered** — B1 is owed. R4 proved the pause on this binary (n=2).
+- **Plant F was delivered, for the first time in three trials.** The worker stopped at the hook, offered a
+  three-way menu, received the screened correction as free text, and ran **`jigc doc rename` on the staged
+  doc** (T9, interactive), read it back through the verb, validated, and finalized under the new title —
+  every step through jigc. The carryover gate fired once per planted path and both paths survived.
+  B1's read-back (VERB 4 / FILESYSTEM 0) is **discounted** as pre-registered — `setup` ran in-session — and
+  is reported here separately: the composed step text carried the read, not the adapter.
 - **The scored arms ran `bypassPermissions`** — a FILESYSTEM result is partly attributable to
   it (§9); B3-strict, unscored, shows the worker reaching for the `Read` tool on the staged doc
   under the adopter's real condition too, so the bound does not explain B3-h2 away.
@@ -130,8 +136,9 @@ axis, not to find a bug.
 
 ## Owed after the trial
 
-1. **B1 and B2 interactive** — [OPERATOR-STEPS.md](OPERATOR-STEPS.md); then re-score, fold into
-   this record at N=3, and run the feedback prompts through the ledger.
+1. **B2 interactive** — [OPERATOR-STEPS.md](OPERATOR-STEPS.md); then re-score, fold into this record at
+   N=3 on the duress cell, and run its feedback through the ledger. (B1 is done: two feedback claims
+   confirmed — the `code-anchor` grammar is stated nowhere, and the `file:line` miss's wording misleads.)
 2. **M50** takes [next-wave-scope.md](next-wave-scope.md); W-13 blocks the call until it lands.
 3. **The corpus template's `IngestQueue`** (PT-D, three trials running).
 4. **The `run-session.sh` out-dir collision** (I-2) — refuse is right; `observe` scoring a stale
