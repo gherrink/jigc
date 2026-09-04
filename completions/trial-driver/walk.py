@@ -38,6 +38,10 @@ HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 RUN_SESSION = REPO / "completions" / "trial-harness" / "run-session.sh"
 ARMS = HERE / "arms" / "walk"
+#: The arm's captured stdout/stderr, written into its out-dir so a later pass can
+#: re-render the block instead of pointing at a directory (see `run_arm`).
+ARM_OUTPUT = "ARM-OUTPUT.txt"
+ARM_STDERR = "ARM-STDERR.txt"
 
 
 def discover() -> list[pathlib.Path]:
@@ -58,6 +62,15 @@ def run_arm(arm: pathlib.Path, corpus: pathlib.Path, out: pathlib.Path,
         for line in provenance.read_text().splitlines():
             if line.startswith("exit-code"):
                 rc = int(line.split()[1])
+    # Persist the arm's own output beside its evidence. Before this, the bar lines
+    # lived only in the pass that ran the arm: a record assembled from several
+    # `--only` passes (the M50 trial's first walk) kept every exit code and lost
+    # every PASS/FAIL line — an "earlier pass" block that could say the arm ran and
+    # not what it saw. The out-dir must not pre-exist, so this cannot clobber.
+    if out.is_dir():
+        (out / ARM_OUTPUT).write_text(got.stdout)
+        if got.stderr.strip():
+            (out / ARM_STDERR).write_text(got.stderr)
     return {"arm": arm.name, "rc": rc, "driver_rc": got.returncode,
             "stdout": got.stdout, "stderr": got.stderr, "out": out}
 
@@ -81,8 +94,10 @@ def render(results: list[dict], every: list[pathlib.Path], out: pathlib.Path) ->
         for line in provenance.read_text().splitlines():
             if line.startswith("exit-code"):
                 rc = int(line.split()[1])
-        return {"arm": arm.name, "rc": rc, "out": d, "stdout": "", "stderr": "",
-                "earlier": True}
+        stdout = (d / ARM_OUTPUT).read_text() if (d / ARM_OUTPUT).is_file() else ""
+        stderr = (d / ARM_STDERR).read_text() if (d / ARM_STDERR).is_file() else ""
+        return {"arm": arm.name, "rc": rc, "out": d, "stdout": stdout,
+                "stderr": stderr, "earlier": True}
     lines = ["# Operator walk — recorded per arm", "",
              "One block per arm. An arm that did not run says so, with the command that",
              "would run it: a narrative walk loses a chartered probe silently, a table",
@@ -109,6 +124,11 @@ def render(results: list[dict], every: list[pathlib.Path], out: pathlib.Path) ->
         if got.get("earlier"):
             lines += [f"Run in an **earlier pass**, exit **{got['rc']}**. Its evidence is "
                       f"in `{got['out'].name}/`; delete that directory to re-run.", ""]
+            if got["stdout"]:
+                lines += ["```", got["stdout"].rstrip(), "```", ""]
+            else:
+                lines += ["*(its output was not persisted — a pass before "
+                          f"`{ARM_OUTPUT}` existed; only the exit code survives)*", ""]
         else:
             lines += [f"exit **{got['rc']}**", "", "```"]
             lines += [got["stdout"].rstrip() or "(no output)"]
