@@ -71,6 +71,25 @@ corrected `3` rather than the running note's `5`.
   fallback fires too. **Fixed 2026-08-28** in the same patch: the counter's `count()`
   helper assigns on failure instead of falling through to a second `echo`.
 
+### Found on the RC-m50 trial (2026-09-04) — three more, two of them on the duress cell
+
+- **A Bash read stored the matched *hint* as its path**, so `is_document` tested `.jigc/tasks/` for a
+  `.md` suffix and every `cat` of a staged document under the workbench was filed as bookkeeping —
+  B3-h2's one read of the planted doc rendered `wkbn`. Fixed: the path is the path read
+  (`test_observe.py::ABashReadOfAStagedDocumentIsADocumentRead`).
+- **`find <task dir> -type f | xargs … cat {}` scored FILESYSTEM 0** — `find` is not a reader, the `cat`
+  stage carries no path, and the `;` inside `sh -c` split the statement before the `cat` was seen.
+  B2's duress read, found from the worker's own debrief, not by the reader. Fixed: a `find`/`ls` head
+  piped into `xargs` is one read of everything under the head; `find | grep -v` stays the dead false
+  positive it was (`test_observe.py::AFindPipedIntoCatIsARead`).
+- **`walk.py` lost every arm's stdout across `--only` passes** (exit codes kept, bar lines gone) —
+  fixed by persisting `ARM-OUTPUT.txt` beside the evidence; and then **`carry` handed that file on as
+  corpus**, the fix's own sibling one layer out, fixed in `_EVIDENCE_NAMES` (`test_walk.py`,
+  `test_session.py::CarryLeavesTheWalksOwnOutputBehind`).
+
+The pattern holds: none was found by reading. Two of the three sat on the cell the headline rests
+on, and the second was invisible to the reader until a worker said what it had done.
+
 ## Bounds — read these before believing a number
 
 **Headless is a different channel from the one every archived trial measured.**
