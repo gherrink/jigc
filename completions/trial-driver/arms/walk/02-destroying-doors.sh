@@ -177,8 +177,45 @@ N4="$(jigc uninstall --force 2>&1)"
 printf '%s\n' "$N4"
 bar "uninstall --force narrates" "printf '%s' \"\$N4\" | grep -qi 'discards work that is not in git'"
 
+# ---------------------------------------------------------------------------
+say "C · the NON-DIRECTORY leftover at the uninstall door (M49's completion audit)"
+# M49's audit found `jigc uninstall` destroying planted files at exit 0:
+# `fanout_worktree_paths` filtered its subject with `path.is_dir()` — a claim about
+# SHAPE where the door's question is about BYTES — so a regular file at a fan-out
+# worktree path was invisible to M48's destroying-door guard AND to the loss
+# narration, while `remove_dir_all(.jigc)` took it anyway. The fix dropped the
+# filter and left the shape to `probe_leftover`'s fail-closed verdict.
+#
+# Both shapes are planted AT ONCE — a regular file and a real directory leftover —
+# so the door has to answer for the FILE by name; a refusal that only names the
+# directory would be the pre-fix behaviour wearing a green bar. B3 above tore the
+# workbench down with `--force`, so the door is re-armed with a fresh `setup`.
+jigc setup >/dev/null 2>&1
+mkdir -p .jigc/worktrees/leftover-dir && echo 'sole copy' > .jigc/worktrees/leftover-dir/notes.txt
+echo 'sole copy of a file' > .jigc/worktrees/leftover-file
+ls -la .jigc/worktrees/
+step jigc uninstall
+C1="$(jigc uninstall 2>&1)"; C1RC=$?
+# MEASURED on 1.0.0-rc.13 (979baca), 2026-09-04, and left as FAILing bars rather than
+# re-worded to pass: the door refuses at exit 1 and the file survives — the audit's
+# data-loss hole is closed — but the refusal is the fail-closed PROBE-ERROR shape
+# (`could not read the leftover directory ".../leftover-file": Not a directory (os
+# error 20)`, routed at "make sure git is on PATH … git worktree remove"), so it
+# names neither the directory leftover beside the file nor `--force` as the consent,
+# which cell A above asserts for the same door over a directory-shaped leftover.
+bar "uninstall (no --force) refuses over the planted shapes (exit non-zero)" "test $C1RC -ne 0"
+bar "…carries uninstall.dirty-worktree" "printf '%s' \"\$C1\" | grep -q 'uninstall.dirty-worktree'"
+bar "…names the regular FILE at the worktree path" "printf '%s' \"\$C1\" | grep -q 'leftover-file'"
+bar "…and the directory leftover beside it" "printf '%s' \"\$C1\" | grep -q 'leftover-dir'"
+bar "…and names the consent" "printf '%s' \"\$C1\" | grep -q -- '--force'"
+bar "the FILE still exists afterwards" "test -f .jigc/worktrees/leftover-file"
+bar "…with its bytes intact" "grep -q 'sole copy of a file' .jigc/worktrees/leftover-file"
+bar "the directory leftover still exists afterwards" "test -f .jigc/worktrees/leftover-dir/notes.txt"
+bar ".jigc/ itself was not removed" "test -d .jigc/config"
+
 say "SUMMARY"
 echo "  doors this arm was written against : $DOORS_EXPECTED ($REFUSING_DOORS_EXPECTED refusing + 1 narrate-only)"
 echo "  the registry fence lives in flow49_acceptance.rs, not here"
+echo "  cell C (M49 audit): a regular FILE at a fan-out worktree path is a subject, not a shape"
 if [ "$FAIL" -eq 0 ]; then echo "ARM 02 PASS"; else echo "ARM 02 FAIL"; fi
 exit "$FAIL"
