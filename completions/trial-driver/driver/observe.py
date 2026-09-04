@@ -84,13 +84,29 @@ def _segments(command: str) -> Iterable[tuple[str, str]]:
     three false positives this function was rewritten to kill.
     """
     for statement in _STATEMENT.split(command):
-        stage = statement.split("|")[0].strip()
+        stages = [st.strip() for st in statement.split("|")]
+        stage = stages[0]
         if not stage:
             continue
         words = stage.split()
         while words and words[0] in ("sudo", "command", "time"):
             words = words[1:]
         if not words:
+            continue
+        # A pipeline whose HEAD names the path and whose LATER stage does the reading
+        # is one read: `find .jigc/tasks/<id> -type f | xargs -I{} sh -c 'cat {}'` took
+        # every staged file including the planted ADR (B2, 2026-09-04 — the worker's
+        # own feedback named it as the bypass) and scored nothing, because `find` is
+        # not a reader and `cat {}` carries no path. The head still cannot be a
+        # stdin-filter false positive: the head is where the path is, and it is
+        # yielded under the LATER stage's program only when that stage is a reader
+        # of what the head enumerated (`xargs`/`sh -c` wrapping one).
+        # `xargs` is the signal, not a reader name: the `;` inside `sh -c '…; cat {}'`
+        # splits the statement before the `cat` is seen, and `find | grep -v` (a
+        # filter on the listing, the archive's dead false positive) must stay dead.
+        if words[0] in ("find", "ls") and any(
+                later.split()[:1] == ["xargs"] for later in stages[1:]):
+            yield "cat", stage + "  | xargs … (pipeline read of every file under the head)"
             continue
         yield words[0], stage
 
@@ -140,6 +156,8 @@ class Read:
         being markdown, which is what every managed doc is and no workbench file
         is. The human call stays the human's.
         """
+        if "pipeline read of every file" in self.detail and "/tasks/" in self.path:
+            return True   # a task area holds docs/*.md; reading all of it read them
         return self.path.lower().endswith(".md")
 
 

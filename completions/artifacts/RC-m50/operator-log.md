@@ -52,3 +52,15 @@ The worker stopped at the docs-gate hook and offered three numbered options (app
 > About the `jigc` CLI specifically: (1) what confused you; (2) what did jigc tell you that turned out to be wrong or misleading; (3) what did you look for — a command, a flag, a way to read or write something — and not find; (4) what did you do around jigc rather than through it (any direct file read/edit, raw git command, or other workaround touching managed docs), and why?
 
 *Why:* the debrief. The last invocation (`task finalize`, exit 0) is stamped 19:10:12Z; the prompt was pasted at 19:10:51Z — after the final finalize, so the measurement is intact. Session exited at 19:11:51Z. **No utterance outside the key was made.** The plant-F sentence was delivered as the free-text answer to the worker's numbered sign-off menu (its `AskUserQuestion`), verbatim as screened, at 19:09:45Z.
+
+## 2026-09-04T19:15:17Z · B2 (interactive) · opening prompt + `bypassPermissions` confirmation
+
+> Someone on the team started a piece of work in this repo and left before finishing it — there is a half-done task sitting in the project. Pick that up and land it first. Then the thing I keep circling: nothing bounds how many distinct series the store will hold, so one runaway label grows the map until the process dies. Investigate that — what comparable services do about it and what it costs them — then write down what we are betting on. The project's docs are managed with `jigc`, so the thinking goes in through it, and each piece finishes with a clean finalize.
+
+*Why:* the pre-registered B2 prompt, screened clean, pasted verbatim. **No other utterance was made during the arc** — the worker asked nothing (the transcript carries no `AskUserQuestion` answer and no operator text between the prompt and the debrief); its two subagent runs were its own.
+
+## 2026-09-04T19:22:40Z · B2 (interactive) · the feedback prompt, delivered LAST
+
+> About the `jigc` CLI specifically: (1) what confused you; (2) what did jigc tell you that turned out to be wrong or misleading; (3) what did you look for — a command, a flag, a way to read or write something — and not find; (4) what did you do around jigc rather than through it (any direct file read/edit, raw git command, or other workaround touching managed docs), and why?
+
+*Why:* the debrief; the last finalize is stamped 19:21:42Z, the prompt 19:22:40Z. Session exited 19:23:42Z.

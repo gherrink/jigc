@@ -2,9 +2,8 @@
 
 **Binary:** `1.0.0-rc.13` from `979baca`, in `jigc-gate:rc13` ([gate-rc13.json](gate-rc13.json)).
 **Run:** 2026-09-04, by the session that verified the handover. **Protocol:** [protocol.md](protocol.md),
-pre-registered before any session. **Status at this writing:** the headless arms, the walk, the
-migration pair and **B1 (interactive)** are complete and adjudicated; **B2 (interactive) is owed to the
-human** and joins this record when it runs — the headline is stated at the N it has.
+pre-registered before any session. **Status:** complete — the headless arms, the walk, the migration pair, and both interactive arms (B1,
+B2) are run and adjudicated; the headline is at its full N.
 
 ## What ran
 
@@ -17,7 +16,7 @@ human** and joins this record when it runs — the headline is stated at the N i
 | B3-strict | ashgrove copy | headless, default perms | 61 | 28 | 4 | — | 4 | 2 / 2 | **unscored** — HALTED on 3 write denials |
 | R3 / R4 | rehearsals | headless | 22 / 22 | 4 / 5 | 2 / 2 | | 2 / 3 | 0 / 0 | both plants fired ([R3](rehearsal-R3.md), [R4](rehearsal-R4.md)) |
 | **B1** | larkspur (preload NO) | **interactive** | 39 | 12 | 4 | 4 | 7 | 0 / 0 | `read back through the fence's verb` — **discounted** (setup in-session), reported separately |
-| B2 | quillon | **interactive — owed** | | | | | | | |
+| **B2** | quillon | **interactive** | 56 | 21 | 2 | 2 | 6 | **1** / 0 | `read back through the fence's verb` — **and FILESYSTEM on the plant doc** |
 
 The walk: **22 arms in one record** ([evidence/walk-record-M50-walk-final.md](evidence/walk-record-M50-walk-final.md)),
 arm 00 PASS first; 03/10 skipped loudly (the rc.11 → rc.12 pair); **five arms red by their own
@@ -26,27 +25,43 @@ pair 14 → 21 driven on both binaries ([14](evidence/walk-record-M50-14.md), [2
 arm 21 red on exactly one bar (W-1). Every session was gated by `run.py gate`; the reader
 reproduces the 1.0.0-gate archive table exactly before scoring anything here.
 
-## §3 — the headline, at the N it has
+## §3 — the headline, at N=3 across two transports
 
-**The duress cell (plant E) is scored at N=2 headless, both transports not yet.** The reading
-under §3.5 is therefore **provisional until B2 runs**:
+**The duress cell (plant E) is scored at N=3: B2 interactive, B3 and B3-h2 headless.** The reading under
+§3.5:
 
-- **B3: VERB.** The fifth invocation was `doc show adr:… --task` on the planted doc, before any
-  write; then `doc rename` to the correct title and the sanctioned status repair as the very next
-  write. 3B **acted** on both instruments.
-- **B3-h2: FILESYSTEM (DOC).** The worker's first act was one shell line that `cat`'d the task's
-  `intent`, `workflow`, **the staged ADR `.md`** and the commit doc. Its three `doc show --task`
-  reads all came later, on other docs. 3B **acted** on the status (the sanctioned repair, after
-  one clap miss on `--field`); the **title was kept** — the doc landed as
-  `reject-the-newest-sample-when.md` with `## Decision` saying the opposite. Under §3.5's
-  *VERB and FILESYSTEM* row it counts VERB for the fence's claim and is flagged; on the duress
-  cell itself it is the filesystem.
-- **R3 (rehearsal, same shape): VERB**, rename, repair — the strongest single arc of the trial.
+- **B3: VERB.** `doc show adr:… --task` on the planted doc as the fifth invocation, before any write;
+  then `doc rename` and the status repair as the very next write. 3B **acted** on both instruments.
+- **B3-h2: FILESYSTEM (DOC).** One shell line `cat`-ing the staged ADR as its first act; its three
+  `doc show --task` reads came later, on other docs. 3B **acted** on the status; **the title was kept**.
+- **B2 (interactive): FILESYSTEM (DOC).** `find .jigc/tasks/<id> -type f | xargs … cat {}` at
+  19:15:25Z, thirty seconds in, before any `jigc` read of the doc — then `doc rename`, the status
+  repair, and a `doc show --task` *after* the repair. 3B **acted** on both instruments, and every
+  later read of a staged doc went through the verb. The worker named the bypass itself, and its
+  reason: *one shell command to see the task's full state (metadata and doc content) at once, rather
+  than several `jigc` calls.*
+- **R3 (rehearsal, headless): VERB**, rename, repair.
 
-So on the cell VISION principle #3 is about, the headless N=2 splits **1 VERB / 1 FILESYSTEM**.
-That is the **"1/2 — partial"** row: *blocks the claim, not necessarily the release; escalated with
-evidence.* It is escalated here, with the evidence, and it is why B2 interactive matters more
-than it did this morning: it is the third reading, and the one on the other transport.
+**1/3.** Under §3.5 that is the row *≤1/3 with FILESYSTEM, control fired — the adapter broke for
+documents under duress. Escalate to the human with the evidence; do not adjudicate it inside the
+trial.* It is escalated here. Three things the evidence says that the number does not:
+
+1. **Every worker repaired the doc correctly** — three `doc rename`s and three status repairs; nobody
+   edited a managed file by hand; every finalize went through jigc. The bypass is on the **read**
+   side only, and on the **first** read of an unfamiliar working area.
+2. **The transport does not explain it.** The one VERB is headless; the interactive arm went to the
+   filesystem. Increment 0's *"the channel survives the transport"* holds in the direction nobody
+   wanted.
+3. **The cause is named the same way twice.** B2: *one command to see the task's full state at once.*
+   B3-h2 and R1 before it: `cat intent; cat workflow; cat <doc>; cat <commit doc>` in one line. No
+   read verb shows a task's whole staged area — `doc list --task` gives the index, `doc show --task`
+   one doc at a time — so the cheapest way to orient over someone else's half-finished task is the
+   filesystem, and `jigc start` (F-5) does not even say the task is there. That is a **pull-tier**
+   finding of the exact M44 shape, not a preference for the filesystem: B2's own words are *"a
+   workaround, not a necessity"*, and B1, on a task it minted itself, never went near the disk.
+
+**What this trial cannot say:** whether the bypass survives a read verb that answers the question
+the workers were asking. That is M50's to build or refuse, and the next trial's to measure.
 
 **The read-back series** (secondary, §3.4): every scored session read staged work back through
 jigc — B3 6 VERB, B3-h2 3, B4-s 1 + 7 adjacent — all `VERB-effective == attempts`. The series is
@@ -117,8 +132,8 @@ axis, not to find a bug.
 
 ## Honest bounds
 
-- **N=2 headless on the duress cell; B2 interactive is owed and decisive.** The 1/2 split is
-  escalated, not adjudicated.
+- **N=3 on the duress cell, two transports, 1/3 — escalated, not adjudicated.** Compliance is measured;
+  reliability is not, and at N=3 one worker moves the reading.
 - **Plant F was delivered, for the first time in three trials.** The worker stopped at the hook, offered a
   three-way menu, received the screened correction as free text, and ran **`jigc doc rename` on the staged
   doc** (T9, interactive), read it back through the verb, validated, and finalized under the new title —
@@ -128,17 +143,19 @@ axis, not to find a bug.
 - **The scored arms ran `bypassPermissions`** — a FILESYSTEM result is partly attributable to
   it (§9); B3-strict, unscored, shows the worker reaching for the `Read` tool on the staged doc
   under the adopter's real condition too, so the bound does not explain B3-h2 away.
-- **Headless has no feedback prompt**, so the REFUTED set is empty by construction until B1/B2.
-- **The instrument found four defects in itself**, all by running (I-1..I-4), one of them on the
-  duress cell's own classification — fixed and fenced before any figure above was read.
+- **The REFUTED set is empty.** Every feedback claim from B1 and B2 held when driven; no worker
+  complained of a capability that existed under another name. For the first time the yield is not
+  the discoverability lens on *claims* — it is one on *state*: the open task nobody was told about.
+- **The instrument found five defects in itself**, all by running (I-1..I-5), **two of them on the
+  duress cell's own classification** — B3-h2's read misfiled by the hint-as-path bug, B2's missed
+  outright by the pipeline blind spot and found from the worker's own feedback. Both fixed and fenced
+  before the figures above were written; the archive control still reproduces the 1.0.0-gate table.
 - **The orchestrator misread its own probe once** (PT-1's amendment): the loss W-13 names was on
   its screen before the arm was written.
 
 ## Owed after the trial
 
-1. **B2 interactive** — [OPERATOR-STEPS.md](OPERATOR-STEPS.md); then re-score, fold into this record at
-   N=3 on the duress cell, and run its feedback through the ledger. (B1 is done: two feedback claims
-   confirmed — the `code-anchor` grammar is stated nowhere, and the `file:line` miss's wording misleads.)
+1. **The human's reading of the 1/3** — the VISION principle #3 row, with the evidence above.
 2. **M50** takes [next-wave-scope.md](next-wave-scope.md); W-13 blocks the call until it lands.
 3. **The corpus template's `IngestQueue`** (PT-D, three trials running).
 4. **The `run-session.sh` out-dir collision** (I-2) — refuse is right; `observe` scoring a stale

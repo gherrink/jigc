@@ -30,6 +30,14 @@ It settles nothing; the Settle is M50's.
   who chose `.jigc` before the change has a corpus the guard then refuses — cheaper before 1.0.0.
 - **W-5 · `read_pack`'s literal** blames the embedded pack for a listed pack's missing resource,
   at four sites; the closure needs the pack identity. The first door a pack author meets.
+- **F-5 · `jigc start` and `jigc start "<intent>"` do not name an open task** (B2). The two doors an agent
+  meets first are silent about the one state that changes what it should do next; M43's resume line
+  binds only the post-mint composition. One block on the orientation and the router — and the
+  strongest single lead on the trial's escalated headline: three of four workers went to the
+  filesystem to *orient over someone else's task*, and two of them said why (*one command for the
+  task's full state*). Whether a read verb answers that — `doc list --task` is the index, `doc show
+  --task` one doc — is M50's to decide under *we do not bend the CLI to fit the project*; here the
+  project is three adopters' workers, not this repo.
 - **The handover's item 2 · `AddedNestedRepeatable`** — re-adjudicate under the criterion: a
   shipped nested block (`changelog.releases/changes`) that no migration can reshape, with a route
   into a file no adopter can edit, is the definition of *expensive after*.
@@ -45,6 +53,8 @@ It settles nothing; the Settle is M50's.
 - **F-1 / F-2 (B1's feedback)** — the `code-anchor` grammar is stated nowhere a worker looks (`doc schema`
   names the type, `set-field --help` and SKILL.md show no form), and the `file:line` miss says *"resolves
   to no file"* instead of naming the `path#Symbol` grammar. A `hint:` on the field type plus one message.
+- **F-6 / F-7 (B2)** — no `ref` field from `adr` to `research` (a frozen-doctype one-way door; the razor's
+  call), and `--dry-run` shows the manifest but not the composed subject line.
 - **W-8** `setup` at 0/4 over a shape-changing shadow — declared bound; M50 may let the bootstrap
   door *say* what the next door will refuse without refusing itself.
 
@@ -69,7 +79,7 @@ code each raises).
 
 ## What this trial did not reach, stated
 
-B1 ran (plant F delivered; two feedback claims confirmed, above). B2 (interactive) had not run when
-this brief was written; its feedback joins the ledger when it does, and any REFUTED row comes from there.
+Both interactive arms ran; every feedback claim held; the REFUTED set is empty. The headline's 1/3 is
+escalated to the human in the record, not adjudicated here or there.
 B4's seeded re-run is scored in [trial-record.md](trial-record.md). The §6 *neither* set is
 four rows, each explained in [coverage.md](coverage.md).

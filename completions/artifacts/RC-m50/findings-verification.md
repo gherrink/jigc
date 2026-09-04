@@ -8,8 +8,8 @@ carries a `pinned-by:` citation *verified by reading what the cited test asserts
 `UNPINNED: <why>` ([pinning.md](../../../implementation/pinning.md) §3). The **M50 rider** marks
 each SHIPS-RECORDED row cheap-now / expensive-after.
 
-Verdict counts: **10 CONFIRMED · 0 PARTIAL · 0 REFUTED** on product claims (eight from the walk, two
-from B1's feedback; B2's feedback joins when it runs), plus **4 instrument findings, all fixed**.
+Verdict counts: **13 CONFIRMED · 0 PARTIAL · 0 REFUTED** on product claims (eight from the walk, two
+from B1's feedback, three from B2's), plus **5 instrument findings, all fixed**.
 
 ---
 
@@ -268,6 +268,32 @@ The probe treats the whole literal as a filename; the message never says the gra
 
 **The worker's own channel statement, verbatim:** *"No managed doc content was ever read or edited outside `jigc doc show`/`set-slot`/`set-field`/`create`/`rename`."* The log agrees: VERB 4, FILESYSTEM 0, on a corpus where `.jigc/AGENT.md` was provably not in context at session start.
 
+## B2's feedback report — four claims, each driven (interactive, 2026-09-04)
+
+**F-5 · neither `jigc start` nor `jigc start "<intent>"` mentions an open task — CONFIRMED · discoverability · SHIPS RECORDED → M50 tier 1**
+
+```
+$ rig=$(dev/jigc-rig refs-post-hoc --binary target/release/jigc) || exit; eval "$rig"    # one live task
+$ jigc start | grep -c ground-the-vision-in-research
+0                                   # the orientation: packs, workflows, four Run: lines — no task
+$ jigc start "pick up the half-done task" | grep -c -i 'task list\|--task\|active'
+0                                   # the router: the selectable catalog, "pick one and re-run" — no task
+```
+The worker's first act was the intent form and it *"just returned the generic workflow-menu … as if
+starting fresh"*; it found the task via `task list`. M43's *composed output names resume `start
+--task <id>` and states the single-active-task default* binds the **post-mint** composition, not
+the two doors an agent meets first. This is the pull-tier shape exactly: the capability (`task
+list`, `start --task`) exists and the orienting surface does not name the state that makes it
+relevant. `UNPINNED` (the orientation goldens pin bytes, not this absence).
+
+**F-6 · no `ref`-typed field on `adr` cites a `research` doc — CONFIRMED · capability gap · SHIPS RECORDED.** `jigc doc schema adr` exposes `supersedes` (adr→adr) and `cites-code`; the worker named the research doc in prose, unvalidated. M46's razor refused a managed `roadmap-entry → milestone-record` edge as a feature; this is the same shape on a frozen doctype (a one-way door), and it goes to M50 under the human's criterion, not this trial's.
+
+**F-7 · `task finalize --dry-run` shows the manifest, not the composed commit subject — CONFIRMED · capability gap · SHIPS RECORDED.** Driven: the dry run over an unauthored commit doc prints the gate findings; over an authored one, the promote manifest. The rendered subject line appears only in `finalize`'s own ack.
+
+**F-8 · `jigc rename` vs `jigc doc rename` — known.** RC-1.0-final's S-4; M49 T5 routed the wrong turn at `--task`. The worker resolved it by reading both `--help`s — S-4's discharge, as walk 18 measured.
+
+**The worker's own channel statement, verbatim:** *"Once, at the very start … I ran a raw `find .jigc/tasks/… -type f | xargs cat` and read every file in the task's working area directly off disk — including the staged ADR markdown. That's exactly the 'storage, not your interface' line in `AGENT.md` that I'm supposed to not do. I did it for speed — one shell command to see the task's full state (metadata and doc content) at once, rather than several `jigc` calls."* The log agrees: the read at 19:15:25Z precedes every `jigc` read of that doc; the rename and the status repair followed from it. **This is the duress cell, on the interactive transport, and it is FILESYSTEM.**
+
 ## Measured, reads as designed — no finding
 
 | item | measured | standard |
@@ -299,6 +325,7 @@ The probe treats the whole literal as a filename; the message never says the gra
 | I-2 | `~/out/<arm>` collided with the previous trial's out-dirs; `observe` scored stale evidence silently after the refusal | relaunched under `M50-*`; recorded |
 | I-3 | a Bash read stored the matched *hint* as its path, so a `cat` of a staged `.md` never classified as a document — B3-h2's duress read rendered as bookkeeping | `abb64dd` · `test_observe.py::ABashReadOfAStagedDocumentIsADocumentRead` |
 | I-4 | `carry` handed `ARM-OUTPUT.txt` on as corpus (I-1's fix, one layer out) | `abb64dd` · `test_session.py::CarryLeavesTheWalksOwnOutputBehind` |
+| I-5 | `find <task dir> -type f \| xargs … cat {}` scored FILESYSTEM **0** — `find` is not a reader and the `cat` stage carries no path, and the `;` inside `sh -c` split the statement before the `cat` was seen. **B2's duress read, the cell the headline rests on, misfiled by a second mechanism.** Found from the worker's own feedback, not by the reader | this commit · `test_observe.py::AFindPipedIntoCatIsARead` (the archive's `find \| grep -v` false positive kept dead) |
 
 ## Not pinned, and said so — the conversion ledger
 

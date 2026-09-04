@@ -671,3 +671,27 @@ class ABashReadOfAStagedDocumentIsADocumentRead(unittest.TestCase):
         got = observe._managed_match("cat /work/.jigc/tasks/t1/roles.json")
         self.assertIsNotNone(got)
         self.assertFalse(observe.Read(tool="Bash", detail="", path=got[1]).is_document)
+
+
+class AFindPipedIntoCatIsARead(unittest.TestCase):
+    """B2 (interactive, 2026-09-04): `find .jigc/tasks/<id> -type f | xargs -I{} sh -c
+    'echo "=== {} ==="; cat {}'` read every staged file — the planted ADR included, as the
+    worker's own feedback said — and the reader scored FILESYSTEM 0, because `find` is
+    not a reader and the `cat` stage carries no path. The duress cell, misfiled a second
+    time by a second mechanism."""
+
+    def test_the_pipeline_read_scores_as_a_document_read(self) -> None:
+        from driver import observe
+        cmd = ("find .jigc/tasks/record-the-ingest-queue-overflow -type f "
+               "| xargs -I{} sh -c 'echo \"=== {} ===\"; cat {}'")
+        segs = list(observe._segments(cmd))
+        self.assertTrue(segs and segs[0][0] == "cat", segs)
+        got = observe._managed_match(segs[0][1])
+        self.assertIsNotNone(got)
+        read = observe.Read(tool="Bash", detail=segs[0][1][:200], path=got[1])
+        self.assertTrue(read.is_document, "the task area holds the doc; reading all of it read it")
+
+    def test_a_find_piped_into_a_filter_is_still_not_a_read(self) -> None:
+        from driver import observe
+        segs = list(observe._segments('find /work -type d | grep -v "/work/.jigc/worktrees"'))
+        self.assertEqual(segs[0][0], "find", "the archive's false positive must stay dead")
