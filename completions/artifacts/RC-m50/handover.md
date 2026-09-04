@@ -66,6 +66,14 @@ composed packs, N1's converged codes and N2's additive integer. Plus the two pos
    transcripts of the M49 build: **390** `rm`-on-a-variable-path calls by 77 of 137 agents, and **215**
    piped-gate blocks across 117 of 137. **This is measured in M50's *build* transcripts, not this
    trial's** — trial workers drive `jigc`, not `cargo`.
+6. **One product defect is routed here from the harness sweep** — `jigc task validate ""` **panics at
+   exit 101** on `1.0.0-rc.13` (`crates/engine/src/finding.rs:741`: the route fence asserts on a route
+   built from an id the door never validated). It is the un-swept sibling of M49's own *"one of them
+   panicked at exit 101"*. The class was sized by driving: of seven id-taking doors, one panics and
+   `jigc task discard ""` acks at **exit 0**. Everything else the sweep found is harness, not product,
+   and is chartered away from M50 on purpose
+   ([decisions-pending.md](../../../implementation/decisions-pending.md) → *The harness-surface wave*).
+
 5. **The shell-guard `rm` rule** is handed to the human for a session in `~/ideas/claude-work/shell-guard`.
    It is the actual fix; everything shipped here is mitigation. A guard that **blocks** is
    self-correcting (198 of 215 recovered in ≤3 calls); one that **prompts** parks an agent and leaves
