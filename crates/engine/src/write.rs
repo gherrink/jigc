@@ -5951,7 +5951,7 @@ fn write_route(code: &str) -> Route {
 /// so the route can put the re-run branch first. `<task-id>` is a declared placeholder of
 /// the fence's dummy-substitution table; the agent fills it with the task it is in.
 fn discard_span() -> String {
-    Route::mechanical(["jigc", "task", "discard", "<task-id>"], "")
+    Route::mechanical(["jigc", "task", "discard", "<task-id>", "--force"], "")
         .as_str()
         .to_owned()
 }
@@ -8019,7 +8019,9 @@ Each service drops its local limiter.
         for code in ["write.non-reparseable", "write.target-escape"] {
             let route = write_route(code);
             assert!(
-                route.as_str().contains("`jigc task discard <task-id>`"),
+                route
+                    .as_str()
+                    .contains("`jigc task discard <task-id> --force`"),
                 "`{code}` routes the escape hatch beyond re-running; got: {route}",
             );
             assert!(

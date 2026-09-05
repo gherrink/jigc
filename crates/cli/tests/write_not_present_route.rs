@@ -589,9 +589,10 @@ fn a_broken_staged_source_names_the_discard_escape_hatch() {
         .unwrap_or_else(|| panic!("the route names a `jigc task discard` command; route:\n{route}"))
         .to_owned();
     assert_eq!(
-        discard, "jigc task discard <task-id>",
+        discard, "jigc task discard <task-id> --force",
         "the route's escape hatch is the shipped discard verb with the declared \
-         placeholder; route:\n{route}",
+         placeholder — and the consent the staged-prose guard requires, since the state \
+         that prints this route is one whose task stages a doc (M50 Inc 3 / T2); route:\n{route}",
     );
 
     // Follow it: the emitted argv, `<task-id>` filled with this task's id, retires the task.

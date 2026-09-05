@@ -517,7 +517,7 @@ fn clobber_finding(destination: &str, migration_source: Option<&str>) -> Finding
                 "a file already occupies `{destination}`, and this migration's recorded \
                  source is the different file `{source}`: if the occupant is another \
                  managed doc, land this migration under a different id — re-author with a \
-                 title that slugs differently, or `jigc task discard <id>` and re-mint \
+                 title that slugs differently, or `jigc task discard <id> --force` and re-mint \
                  with `jigc migrate {source} --as <doctype> --slug <different-slug>`; if \
                  the occupant is itself foreign, adopt it through its own `jigc migrate` \
                  task first; then re-run `jigc task finalize <id>` to review the fidelity \
@@ -1194,8 +1194,10 @@ fn file_location(path: impl std::fmt::Display) -> Location {
 /// the code; nothing else about them is the same:
 ///
 /// - **Task** — a serial task pinned to `<A>` while HEAD moved: switch back to `<A>`, or
-///   discard the task (a cheap, honest exit for a task — `jigc task discard`, which also
-///   re-mints). Unchanged.
+///   discard the task (a cheap, honest exit for a task — `jigc task discard <id> --force`,
+///   which also re-mints). Since M50 the exit names the task's **own id** rather than the bare
+///   verb, and carries the consent the staged-prose guard requires: the arm binds the id
+///   already, and a route whose argv cannot be run is a route floor breach (M43 P6).
 /// - **Milestone** — a milestone's base is pinned once at `create` and **never** re-pinned
 ///   ([`decide_base_repin`] is consciously task-only: a task's footprint is its dirty paths +
 ///   promote destinations, which the overlap test can see; a milestone's is code sitting in
@@ -1217,9 +1219,12 @@ fn file_location(path: impl std::fmt::Display) -> Location {
 fn base_mismatch_finding(unit: Unit, base: &BasePin, head_sha: &str) -> Finding {
     let base_sha = &base.sha;
     let (message, route) = match unit {
-        Unit::Task(_) => (
+        Unit::Task(id) => (
             format!("the task was started at base `{base_sha}` but HEAD is now `{head_sha}`"),
-            format!("switch back to `{base_sha}` or discard the task with `jigc task discard`"),
+            format!(
+                "switch back to `{base_sha}` or discard the task with \
+                 `jigc task discard {id} --force`"
+            ),
         ),
         Unit::Milestone(_) => (
             format!(
@@ -1262,6 +1267,10 @@ fn base_overlap_finding(
     overlapping: &[&str],
 ) -> Finding {
     let paths = overlapping.join("`, `");
+    // Task-only by its own message (*"the task was started at base …"*) and by its one call
+    // site, so the abandon exit carries the real id rather than a placeholder the caller can
+    // derive (M43 P6 — a derivable placeholder on a blocking route is a route floor breach).
+    let (Unit::Task(id) | Unit::Milestone(id)) = unit;
     Finding::graded(
         Severity::Blocking,
         "finalize.base-mismatch",
@@ -1274,7 +1283,7 @@ fn base_overlap_finding(
         Some(
             format!(
                 "resolve the overlap on `{paths}` against the new history, or discard the task \
-             with `jigc task discard`"
+             with `jigc task discard {id} --force`"
             )
             .into(),
         ),
@@ -1299,7 +1308,7 @@ fn empty_commit_finding(unit: Unit) -> Finding {
             "task validated but produced no diff — nothing to finalize".to_string(),
             format!(
                 "make a change, then re-run `jigc task finalize {id}` — or, if the task is done \
-                 with nothing to show, abandon it with `jigc task discard {id}`"
+                 with nothing to show, abandon it with `jigc task discard {id} --force`"
             ),
         ),
         Unit::Milestone(id) => (
@@ -1357,7 +1366,8 @@ impl RenderSubject<'_> {
                     format!(
                         " — it lists what the task still stages; a commit doc is provisioned \
                          once, at compose, so a task whose copy is gone is abandoned with \
-                         `jigc task discard {id}` and the work re-started with `jigc start`"
+                         `jigc task discard {id} --force` and the work re-started with \
+                         `jigc start`"
                     ),
                 ),
             ),
@@ -1371,7 +1381,7 @@ impl RenderSubject<'_> {
                     format!(
                         " — it prints sub-task `{id}`'s launch line; run that in the \
                          sub-task's worktree, author the commit doc, then re-run the finalize \
-                         — or settle the sub-task with `jigc task discard {id}`"
+                         — or settle the sub-task with `jigc task discard {id} --force`"
                     ),
                 ),
             ),
@@ -3055,8 +3065,9 @@ sections:
     /// milestone "the task", and where the only honest reading of `discard` is *throw the work
     /// away*.
     ///
-    /// - The **task** arm stays byte-identical (its switch-back-or-discard route is correct for
-    ///   a task, whose `discard` is a genuine, cheap exit).
+    /// - The **task** arm keeps its shape (its switch-back-or-discard route is correct for a
+    ///   task, whose `discard` is a genuine, cheap exit); since M50 its discard span is
+    ///   substituted with the real id and carries `--force`.
     /// - The **milestone** arm names the *milestone*, names the **cause** (commits landed after
     ///   this milestone's base, so the sub-task worktrees were cut from a base HEAD no longer
     ///   reflects and the combine cannot be proven sound against it), and names the two **real**
@@ -3098,7 +3109,8 @@ sections:
             err[0].route.as_deref(),
             Some(
                 format!(
-                    "switch back to `{}` or discard the task with `jigc task discard`",
+                    "switch back to `{}` or discard the task with \
+                     `jigc task discard add-rate-limiter --force`",
                     base().sha
                 )
                 .as_str()

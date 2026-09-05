@@ -1,0 +1,441 @@
+//! M50 Increment 3 / T2 — **the destroying-door consent pair, driven over one workbench**
+//! (`completions/artifacts/M50/settle-record.md` → D1; `design/team-ready-state.md` → The
+//! lifecycle · `jigc task discard <sub-id>`; `design/project-setup.md` → the two states
+//! `uninstall` refuses).
+//!
+//! Driven at `39cd84d`, both halves on one state: `jigc uninstall` exited **1** with
+//! `blocking · uninstall.staged-prose` over an open task's staged docs and removed nothing,
+//! while `jigc task discard <that same id>` exited **0** and removed those very bytes —
+//! two doors answering opposite ways about the identical files, with the refusing one's own
+//! route pointing at the destroying one. That is not two bugs; it is one probe missing from
+//! one door, which is why M50's D1 settles it as a *shared* guard rather than a second copy
+//! ([`cli::task::staged_task_prose`], landed in T1).
+//!
+//! **The four arms are the consent axis, not the reported repro:**
+//!
+//! - **(a) the contradiction, closed.** Both doors refuse the *same* staged bytes, each
+//!   under **its own** code — `uninstall.staged-prose` names the install it will not remove,
+//!   `task-discard.staged-prose` names the task it will not throw away — each carrying
+//!   exactly one route, and each route naming `--force`, the single consent. The staged
+//!   files are byte-intact after both refusals.
+//! - **(b) the consent performs its own act.** `--force` is not one behaviour: `uninstall
+//!   --force` removes `.jigc/`; `task discard --force` removes that one working area and
+//!   still acks the dropped set with its transient marks. A shared guard must not collapse
+//!   two doors into one.
+//! - **(c) the guard is keyed on staged bytes, not on being a task.** A `milestone add-task`
+//!   sub-task stages nothing at mint, so it discards at exit 0 **without** `--force` and its
+//!   committed record still settles — the omitting context, which is where a blanket
+//!   refusal would show.
+//! - **(d) the stated behaviour change, asserted rather than discovered.** `jigc start`
+//!   itself stages `commit:<task>.md`, so from the moment a task is minted its ordinary
+//!   discard needs the consent. That is bigger than D1's rationale anticipated and it is
+//!   pinned here, on purpose, so a later narrowing of the predicate reddens instead of
+//!   quietly re-opening the pair's disagreement (`DECISIONS.md` → 2026-09-05 M50 Increment 3
+//!   planning, declared bounds (i) and (ii)).
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "jigc-staged-prose-consent-{tag}-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Run `git <args>` in `repo`, asserting success.
+fn git(repo: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// Run `jigc <args>` with `cwd = repo` and `$HOME = home`, against the embedded packs.
+fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env_remove("JIGC_PACK_DIR")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the jigc binary")
+        .wait_with_output()
+        .expect("wait for jigc")
+}
+
+/// Run `jigc <args>` asserting exit 0, returning stdout.
+fn ok(repo: &Path, home: &Path, args: &[&str], what: &str) -> String {
+    let out = jigc(repo, home, args);
+    assert!(
+        out.status.success(),
+        "`{what}` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// Both streams of a run — a refusal's identity and its route are rendered on stderr,
+/// the acks on stdout, and no arm here cares which.
+fn both_streams(out: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    )
+}
+
+/// The `route:` lines of a rendered findings surface — the route floor's unit, so an arm
+/// can assert *exactly one* rather than "contains a route somewhere".
+fn route_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|line| line.trim_start().starts_with("route:"))
+        .map(|line| line.trim().to_string())
+        .collect()
+}
+
+/// The top-level task: minted by `jigc start`, which stages `commit:<id>.md` at mint.
+const TOP_INTENT: &str = "Fix the retry cap";
+const TOP_TASK: &str = "fix-the-retry-cap";
+
+/// The milestone and its sub-task — the cell that stages nothing.
+const MILESTONE_TITLE: &str = "Cache rework";
+const MILESTONE_ID: &str = "cache-rework";
+const SUB_INTENT: &str = "Warm the read cache";
+const SUB_TASK: &str = "warm-the-read-cache";
+
+/// The prose an operator typed into the staged commit doc — bytes no commit has a copy of,
+/// which is the whole subject of both guards.
+const AUTHORED: &str = "Cap the retry budget at three attempts.";
+
+/// **The one workbench state every arm drives**: a real install (`jigc setup`), a milestone
+/// carrying one sub-task that stages nothing, and one `jigc start`-minted top-level task
+/// whose staged commit doc carries authored prose.
+fn workbench(tag: &str) -> (TempDir, TempDir) {
+    let repo = TempDir::new(tag);
+    let home = TempDir::new(&format!("{tag}-home"));
+    git(repo.path(), &["init", "-q"]);
+    git(repo.path(), &["config", "user.email", "test@example.com"]);
+    git(repo.path(), &["config", "user.name", "Test"]);
+    fs::write(repo.path().join("README.md"), "hello\n").expect("write README");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial"]);
+
+    ok(repo.path(), home.path(), &["setup"], "jigc setup");
+    ok(
+        repo.path(),
+        home.path(),
+        &["milestone", "create", MILESTONE_TITLE],
+        "milestone create",
+    );
+    ok(
+        repo.path(),
+        home.path(),
+        &["milestone", "add-task", MILESTONE_ID, SUB_INTENT],
+        "milestone add-task",
+    );
+    ok(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "quick-fix", TOP_INTENT],
+        "start --workflow quick-fix",
+    );
+    let write = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args([
+            "doc",
+            "set-slot",
+            &format!("commit:{TOP_TASK}#summary"),
+            "--task",
+            TOP_TASK,
+            "--from-file",
+            "-",
+        ])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .env_remove("JIGC_PACK_DIR")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child
+                .stdin
+                .as_mut()
+                .expect("stdin")
+                .write_all(AUTHORED.as_bytes())?;
+            child.wait_with_output()
+        })
+        .expect("run doc set-slot");
+    assert!(
+        write.status.success(),
+        "the authored slot must land; stderr:\n{}",
+        String::from_utf8_lossy(&write.stderr),
+    );
+    (repo, home)
+}
+
+/// The staged commit doc of `task` in `repo`.
+fn staged_doc(repo: &Path, task: &str) -> PathBuf {
+    repo.join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("commit:{task}.md"))
+}
+
+/// **Arm (a)** — one state, both doors, one shared probe: each refuses the same staged
+/// bytes under its own code, with exactly one route, and each route names the consent.
+#[test]
+fn both_doors_refuse_the_same_staged_bytes_each_under_its_own_code() {
+    let (repo, home) = workbench("pair");
+    let (repo, home) = (repo.path(), home.path());
+    let staged = staged_doc(repo, TOP_TASK);
+    let before = fs::read(&staged).expect("the staged commit doc is on disk");
+    assert!(
+        String::from_utf8_lossy(&before).contains(AUTHORED),
+        "the fixture's authored prose is in the staged bytes",
+    );
+
+    // The install door.
+    let refused_install = jigc(repo, home, &["uninstall"]);
+    let install_text = both_streams(&refused_install);
+    assert!(
+        !refused_install.status.success(),
+        "`jigc uninstall` must refuse over an open task's staged docs; got:\n{install_text}",
+    );
+    assert!(
+        install_text.contains("blocking · uninstall.staged-prose"),
+        "the install door refuses under its own code; got:\n{install_text}",
+    );
+    let install_routes = route_lines(&install_text);
+    assert_eq!(
+        install_routes.len(),
+        1,
+        "the install refusal carries exactly one route; got:\n{install_text}",
+    );
+    assert!(
+        install_routes[0].contains("jigc uninstall --force"),
+        "the install door's route names its own consent; got:\n{}",
+        install_routes[0],
+    );
+
+    // The task door — the same bytes, the other door.
+    let refused_discard = jigc(repo, home, &["task", "discard", TOP_TASK]);
+    let discard_text = both_streams(&refused_discard);
+    assert!(
+        !refused_discard.status.success(),
+        "`jigc task discard` must refuse over its own staged docs; got:\n{discard_text}",
+    );
+    assert!(
+        discard_text.contains("blocking · task-discard.staged-prose"),
+        "the task door refuses under its OWN code, never the install door's — the two \
+         doors name different subjects; got:\n{discard_text}",
+    );
+    let discard_routes = route_lines(&discard_text);
+    assert_eq!(
+        discard_routes.len(),
+        1,
+        "the task refusal carries exactly one route; got:\n{discard_text}",
+    );
+    assert!(
+        discard_routes[0].contains(&format!("jigc task discard {TOP_TASK} --force")),
+        "the task door's route names its own consent, substituted with the real id; got:\n{}",
+        discard_routes[0],
+    );
+
+    // Both refusals name the same staged identity — one probe, one subject.
+    for text in [&install_text, &discard_text] {
+        assert!(
+            text.contains(&format!("commit:{TOP_TASK}")),
+            "each refusal names the staged doc it is refusing over; got:\n{text}",
+        );
+    }
+
+    // And neither took a byte.
+    assert_eq!(
+        fs::read(&staged).expect("the staged commit doc survives both refusals"),
+        before,
+        "a refusal removes nothing",
+    );
+    assert!(
+        repo.join(".jigc").is_dir(),
+        "the refused uninstall left `.jigc/` in place",
+    );
+}
+
+/// **Arm (b)** — the shared guard must not collapse the two doors: each `--force`
+/// performs that door's own act.
+#[test]
+fn each_doors_force_performs_its_own_post_condition() {
+    // The install door's consent takes the install.
+    let (repo, home) = workbench("force-uninstall");
+    let (repo, home) = (repo.path(), home.path());
+    ok(repo, home, &["uninstall", "--force"], "uninstall --force");
+    assert!(
+        !repo.join(".jigc").exists(),
+        "`jigc uninstall --force` removes `.jigc/`",
+    );
+
+    // The task door's consent takes one working area — and still says what it dropped.
+    let (repo, home) = workbench("force-discard");
+    let (repo, home) = (repo.path(), home.path());
+    let ack = ok(
+        repo,
+        home,
+        &["task", "discard", TOP_TASK, "--force"],
+        "task discard --force",
+    );
+    assert!(
+        ack.contains(&format!("commit:{TOP_TASK} (transient)")),
+        "the forced discard still acks the dropped set with its transient marks; got:\n{ack}",
+    );
+    assert!(
+        !repo.join(".jigc").join("tasks").join(TOP_TASK).exists(),
+        "`jigc task discard --force` removes the working area",
+    );
+    assert!(
+        repo.join(".jigc").is_dir(),
+        "and takes nothing else — the install is untouched",
+    );
+}
+
+/// **Arm (c)** — the omitting context: a sub-task that stages nothing discards at exit 0
+/// with no consent, and its committed record still settles.
+#[test]
+fn a_sub_task_with_nothing_staged_discards_without_the_consent() {
+    let (repo, home) = workbench("sub-task");
+    let (repo, home) = (repo.path(), home.path());
+    assert!(
+        !repo
+            .join(".jigc")
+            .join("tasks")
+            .join(SUB_TASK)
+            .join("docs")
+            .exists(),
+        "the premise: `milestone add-task` stages nothing at mint",
+    );
+
+    ok(
+        repo,
+        home,
+        &["task", "discard", SUB_TASK],
+        "task discard <sub-id> with nothing staged",
+    );
+    assert!(
+        !repo.join(".jigc").join("tasks").join(SUB_TASK).exists(),
+        "the sub-task's area is gone",
+    );
+
+    let record: serde_json::Value = serde_json::from_str(&ok(
+        repo,
+        home,
+        &[
+            "doc",
+            "show",
+            &format!("milestone-record:{MILESTONE_ID}"),
+            "--format",
+            "json",
+        ],
+        "doc show milestone-record --format json",
+    ))
+    .expect("the pinned read contract parses");
+    let settled: Vec<(&str, &str)> = record["sections"]["tasks"]
+        .as_array()
+        .expect("the record's `tasks` section")
+        .iter()
+        .map(|item| {
+            (
+                item["task-id"].as_str().expect("item `task-id`"),
+                item["status"].as_str().expect("item `status`"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        settled,
+        vec![(SUB_TASK, "discarded")],
+        "the record settles the abandoned sub-task rather than going on calling it active",
+    );
+}
+
+/// **Arm (d)** — the stated behaviour change: `jigc start` stages the commit doc itself, so
+/// an immediate discard of a freshly minted task needs the consent.
+#[test]
+fn a_freshly_minted_task_needs_the_consent_from_the_moment_it_exists() {
+    let (repo, home) = workbench("mint");
+    let (repo, home) = (repo.path(), home.path());
+    ok(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "record-decision",
+            "Adopt the retry cap",
+        ],
+        "start --workflow record-decision",
+    );
+    let minted = "adopt-the-retry-cap";
+    assert!(
+        staged_doc(repo, minted).exists(),
+        "the premise: the mint itself stages `commit:{minted}.md`",
+    );
+
+    let refused = jigc(repo, home, &["task", "discard", minted]);
+    let text = both_streams(&refused);
+    assert!(
+        !refused.status.success(),
+        "an ordinary discard of a just-minted task refuses — the intended behaviour change, \
+         not an accident of the fixture; got:\n{text}",
+    );
+    assert!(
+        text.contains("blocking · task-discard.staged-prose")
+            && text.contains(&format!("commit:{minted}")),
+        "and it names the pristine skeleton it will not destroy without consent; got:\n{text}",
+    );
+    assert!(
+        repo.join(".jigc").join("tasks").join(minted).is_dir(),
+        "nothing was removed",
+    );
+
+    // The consent it printed runs as printed.
+    ok(
+        repo,
+        home,
+        &["task", "discard", minted, "--force"],
+        "the printed consent",
+    );
+    assert!(
+        !repo.join(".jigc").join("tasks").join(minted).exists(),
+        "and it takes the area",
+    );
+}

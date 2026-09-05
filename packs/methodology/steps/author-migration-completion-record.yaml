@@ -11,9 +11,10 @@ this file or place anything yourself):
 FIRST, the refusal rung: a completion record RECORDS A CLOSE, so it needs a
 derivable verdict. When the foreign document states NO outcome at all — nothing
 done/shipped/passed-shaped and nothing failed/blocked-shaped — it is NOT a
-completion record: author nothing, run `jigc task discard {{task.id}}`, and either
-leave the file unmanaged or re-run `jigc migrate <path> --as <doctype>` with the
-doctype it actually is. There is NO rung that fabricates a verdict.
+completion record: author nothing, run `jigc task discard {{task.id}} --force`, and
+either leave the file unmanaged or re-run `jigc migrate <path> --as <doctype>` with
+the doctype it actually is (the consent is required because a migrate task stages
+its `commit:<id>` doc at mint). There is NO rung that fabricates a verdict.
 
 Otherwise the target schema and its batch payload, both generated from the resolved
 `completion-record` schema, follow — the CLI creates the per-milestone record (the

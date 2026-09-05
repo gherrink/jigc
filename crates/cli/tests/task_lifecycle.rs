@@ -378,7 +378,7 @@ fn task_discard_removes_the_working_area_and_exits_zero() {
     let area = repo.path().join(".jigc").join("tasks").join(task);
     assert!(area.is_dir(), "the started task working area must exist");
 
-    let out = run_task(repo.path(), home.path(), &["discard", task]);
+    let out = run_task(repo.path(), home.path(), &["discard", task, "--force"]);
     assert!(
         out.status.success(),
         "`jigc task discard` must exit 0; stderr:\n{}",

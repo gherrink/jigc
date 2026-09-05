@@ -736,8 +736,10 @@ fn an_ordinary_tasks_conflict_is_offered_no_baseline_drop() {
     let argv = route_argv(&text);
     assert_eq!(
         argv,
-        vec!["jigc", "task", "discard", task.as_str()],
-        "the general route stays the single-argv whole-task discard, with the real id"
+        vec!["jigc", "task", "discard", task.as_str(), "--force"],
+        "the general route stays the single-argv whole-task discard, with the real id — and \
+         since M50 Inc 3 / T2 with the consent that door now requires, because the state \
+         printing this route is one whose task stages a write"
     );
     let route = route_text(&text);
     assert!(
@@ -896,8 +898,9 @@ fn the_migration_source_route_does_not_promise_a_review_it_does_not_get() {
         });
     assert_eq!(
         preserving,
-        vec!["jigc", "task", "discard", task.as_str()],
-        "the preserving exit carries the real task id, substituted"
+        vec!["jigc", "task", "discard", task.as_str(), "--force"],
+        "the preserving exit carries the real task id, substituted, and the consent the \
+         staged-prose guard requires of this door"
     );
 
     // And it preserves: run it verbatim, the operator's edit is still on disk.

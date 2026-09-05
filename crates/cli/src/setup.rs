@@ -1914,7 +1914,11 @@ fn uninstall(
         if !dirty.is_empty() {
             return Err(dirty_worktree_finding(&dirty));
         }
-        let staged = crate::task::staged_task_prose(repo_root, None)?;
+        let staged = crate::task::staged_task_prose(
+            repo_root,
+            None,
+            &crate::task::unverified_prose_finding,
+        )?;
         if !staged.is_empty() {
             return Err(staged_prose_finding(&staged));
         }
@@ -2248,7 +2252,9 @@ fn narrate_teardown(repo_root: &Path) {
 /// rather than failing a teardown the guards already cleared. It is surface over a removal,
 /// never itself a gate — the declared bound stays *visible, not prevented*.
 pub(crate) fn narrate_staged_prose(repo_root: &Path, action: &str, only: Option<&[String]>) {
-    let Ok(staged) = crate::task::staged_task_prose(repo_root, only) else {
+    let Ok(staged) =
+        crate::task::staged_task_prose(repo_root, only, &crate::task::unverified_prose_finding)
+    else {
         return;
     };
     if staged.is_empty() {
@@ -2392,6 +2398,12 @@ fn unverified_worktrees_finding(err: anyhow::Error) -> Finding {
 /// discard` leads and `finalize` follows with the condition that makes it available. The
 /// listed identities are the addresses `jigc doc show <addr> --task <id>` takes, so reading
 /// what you are about to lose is followable as printed.
+///
+/// **Its discard span carries `--force`** (M50 Inc 3 / T2). Since the task door took the same
+/// guard, a bare `jigc task discard <task-id>` refuses in exactly the state that printed this
+/// route — this finding fires *because* that task stages a doc — so the exit it names would
+/// have been a route the wave's own guard blocks. `--force` is inert where nothing is staged,
+/// so the consent can be named unconditionally.
 fn staged_prose_finding(staged: &[(String, Vec<String>)]) -> Finding {
     let listing: Vec<String> = staged
         .iter()
@@ -2407,9 +2419,10 @@ fn staged_prose_finding(staged: &[(String, Vec<String>)]) -> Finding {
             listing.join("\n"),
         ),
         "read what is in them with `jigc doc show <address> --task <task-id>`, then throw the \
-         task away with `jigc task discard <task-id>` — or, once its doc is complete, land it \
-         with `jigc task finalize <task-id>` (which refuses while a required slot is empty) — \
-         then re-run `jigc uninstall`; `jigc uninstall --force` deletes them with the install",
+         task away with `jigc task discard <task-id> --force` — or, once its doc is complete, \
+         land it with `jigc task finalize <task-id>` (which refuses while a required slot is \
+         empty) — then re-run `jigc uninstall`; `jigc uninstall --force` deletes them with the \
+         install",
     )
 }
 

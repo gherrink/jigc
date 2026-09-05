@@ -338,7 +338,7 @@ impl ConflictBlock {
         let mut block = Self::new(
             "an external edit and this task's staged writes both changed it",
             crate::finding::Route::mechanical(
-                ["jigc", "task", "discard", task_id],
+                ["jigc", "task", "discard", task_id, "--force"],
                 format!(
                     " to drop this task's staged writes (discard retires the whole task — no \
                      per-doc discard exists), or revert the external edit on disk to keep \
@@ -362,7 +362,7 @@ impl ConflictBlock {
                          recorded it at mint, so an edit made to the file since is replaced \
                          without appearing in the `--approve` fidelity diff (which renders \
                          the recorded source, not what is on disk now). To keep the file as \
-                         it stands, `jigc task discard {task_id}` retires the migration \
+                         it stands, `jigc task discard {task_id} --force` retires the migration \
                          instead and leaves it untouched"
                     ),
                 ),
@@ -1684,8 +1684,8 @@ Referrers must point at the new decision.
         // `<task-id>` placeholder the classifier used to mint is gone.
         assert_eq!(
             route.as_str(),
-            "`jigc task discard drift-the-cache` to drop this task's staged writes (discard \
-             retires the whole task — no per-doc discard exists), or revert the external \
+            "`jigc task discard drift-the-cache --force` to drop this task's staged writes \
+             (discard retires the whole task — no per-doc discard exists), or revert the external \
              edit on disk to keep them — the damage was made out-of-band, so it is repaired \
              where it happened",
             "the task-scope conflict route names real verbs AND the real task id, and the \
@@ -1799,8 +1799,8 @@ Referrers must point at the new decision.
                  mint, so an edit made to the file since is replaced without appearing in the \
                  `--approve` fidelity diff (which renders the recorded source, not what is on \
                  disk now). To keep the file as it stands, \
-                 `jigc task discard migrate-adr-decisions-cache` retires the migration instead \
-                 and leaves it untouched"
+                 `jigc task discard migrate-adr-decisions-cache --force` retires the \
+                 migration instead and leaves it untouched"
             ),
             "the source arm routes at the baseline drop, with the path substituted, the cost \
              stated, and the exit that keeps the on-disk bytes still named"

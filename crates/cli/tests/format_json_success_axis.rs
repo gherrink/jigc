@@ -665,7 +665,9 @@ fn recipes() -> Vec<Recipe> {
             base: Base::Fresh,
             drive: |c| {
                 let task = live_adr_task(c);
-                json(c, &["task", "discard", &task])
+                // A live task always stages its `commit:<id>` doc, so the success path
+                // of this door runs under the consent (M50 Inc 3 / T2).
+                json(c, &["task", "discard", &task, "--force"])
             },
         },
         Recipe {

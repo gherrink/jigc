@@ -676,8 +676,12 @@ fn drive(verb: &str) -> DoorCase {
             install_rejecting_hook(repo.path());
             DoorCase {
                 survived: "the task's working area is intact".to_string(),
-                expected_rerun: owned(&["jigc", "task", "discard", "area-low"]),
-                driven: owned(&["task", "discard", "area-low"]),
+                // The frame echoes the consent the run carried (M50 Inc 3 / T2): since the
+                // staged-prose guard, a bare re-run refuses in exactly the state that
+                // printed the frame whenever the area stages a doc, so a re-run line that
+                // dropped the flag would not reach the commit phase the frame promises.
+                expected_rerun: owned(&["jigc", "task", "discard", "area-low", "--force"]),
+                driven: owned(&["task", "discard", "area-low", "--force"]),
                 repo,
                 home,
             }

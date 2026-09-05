@@ -450,8 +450,12 @@ fn every_gate_is_a_fence_finalize_blocks_on_each_one_held_out() {
 
         // Leave no active task behind for the next iteration.
         assert_ok(
-            &jigc(repo.path(), home.path(), &["task", "discard", &task]),
-            &format!("`jigc task discard {task}`"),
+            &jigc(
+                repo.path(),
+                home.path(),
+                &["task", "discard", &task, "--force"],
+            ),
+            &format!("`jigc task discard {task} --force`"),
         );
     }
 }

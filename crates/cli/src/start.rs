@@ -1863,7 +1863,7 @@ fn blanket_base_pin_refusal(
         return anyhow!(
             "{pinned_to} — switch back with `git checkout {}` or {}",
             pinned.short,
-            engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
+            engine::finding::Route::mechanical(["jigc", "task", "discard", id, "--force"], ""),
         );
     };
     anyhow!(
@@ -1994,7 +1994,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
         .with_context(|| {
             format!(
                 "task `{id}` has no recorded workflow — discard it with {} and re-start with {}",
-                engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
+                engine::finding::Route::mechanical(["jigc", "task", "discard", id, "--force"], ""),
                 engine::finding::Route::mechanical(["jigc", "start"], ""),
             )
         })?;
@@ -2083,7 +2083,7 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
             // span never parsed (required args short); the T7 fence forces it honest.
             format!(
                 "task `{id}` has no recorded workflow — discard it with {} and re-seed it with {}",
-                engine::finding::Route::mechanical(["jigc", "task", "discard", id], ""),
+                engine::finding::Route::mechanical(["jigc", "task", "discard", id, "--force"], ""),
                 engine::finding::Route::mechanical(
                     [
                         "jigc",

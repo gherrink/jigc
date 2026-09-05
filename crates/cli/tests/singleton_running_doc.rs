@@ -619,7 +619,7 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
     let argv = lifted_route_argv(&rendered, "jigc task discard");
     assert_eq!(
         argv,
-        vec!["jigc", "task", "discard", warm],
+        vec!["jigc", "task", "discard", warm, "--force"],
         "the emitted route names the real task id",
     );
     let discarded = jigc(

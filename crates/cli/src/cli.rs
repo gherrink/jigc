@@ -188,8 +188,8 @@ pub enum Command {
     /// `jigc milestone discard <milestone-id> --force`), and an open task
     /// under `.jigc/tasks/` holding a staged doc no commit has a copy of blocks
     /// with `uninstall.staged-prose` (throw the task away with `jigc task discard
-    /// <task-id>`, or land it with `jigc task finalize <task-id>` once its doc is
-    /// complete). Either way it removes nothing until you re-run — or pass
+    /// <task-id> --force`, or land it with `jigc task finalize <task-id>` once its doc
+    /// is complete). Either way it removes nothing until you re-run — or pass
     /// `--force`, which deletes both with the install.
     Uninstall {
         /// Remove `.jigc/` even when it holds a fan-out worktree with content or an
@@ -2078,7 +2078,7 @@ fn tip_task_discard_write() -> String {
     format!(
         "tip: no per-write discard exists — {}",
         engine::finding::Route::mechanical(
-            ["jigc", "task", "discard", "<task-id>"],
+            ["jigc", "task", "discard", "<task-id>", "--force"],
             " abandons the WHOLE task (removes its working area and every staged \
              write); to back out a single external edit, revert that file on disk \
              instead",

@@ -327,7 +327,7 @@ fn task_discard_write_guess_gets_the_whole_task_effect_tip() {
         .unwrap_or_else(|| panic!("the honest tip is missing from:\n{stderr}"));
     let tip = &stderr[tip_at..];
     assert!(
-        tip.contains("`jigc task discard <task-id>`"),
+        tip.contains("`jigc task discard <task-id> --force`"),
         "the tip names the real sibling; got:\n{tip}",
     );
     assert!(

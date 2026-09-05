@@ -5650,7 +5650,10 @@ impl ActiveTask {
                 // constructor like every T7 span.
                 format!(
                     "the active task has no recorded workflow — discard it with {} and re-start with {}",
-                    engine::finding::Route::mechanical(["jigc", "task", "discard", &self.id], ""),
+                    engine::finding::Route::mechanical(
+                        ["jigc", "task", "discard", &self.id, "--force"],
+                        "",
+                    ),
                     engine::finding::Route::mechanical(["jigc", "start"], ""),
                 )
             })?;

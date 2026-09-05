@@ -229,7 +229,11 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
     // committing the spec advanced HEAD. Re-mint the task on the new HEAD so the
     // store resolve sees the committed spec. (bind itself does not touch the base
     // pin — the doctype/store checks read the committed store, not the task base.)
-    run(repo.path(), home.path(), &["task", "discard", task_id]);
+    run(
+        repo.path(),
+        home.path(),
+        &["task", "discard", task_id, "--force"],
+    );
     let remint = run(
         repo.path(),
         home.path(),
@@ -299,7 +303,11 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
     // Re-bind overwrites (last-write-wins). Commit a second spec, re-mint on that
     // HEAD, and re-bind the same role to the new addr.
     commit_spec(repo.path(), "rate-limit-the-api");
-    run(repo.path(), home.path(), &["task", "discard", task_id]);
+    run(
+        repo.path(),
+        home.path(),
+        &["task", "discard", task_id, "--force"],
+    );
     run(
         repo.path(),
         home.path(),
@@ -440,7 +448,7 @@ fn the_task_state_verbs_ack_their_mutation() {
     let discarded = run(
         repo.path(),
         home.path(),
-        &["task", "discard", task_id, "--format", "json"],
+        &["task", "discard", task_id, "--force", "--format", "json"],
     );
     assert!(
         discarded.status.success(),
@@ -497,7 +505,11 @@ fn the_task_state_verbs_ack_their_mutation() {
             "implement the spec",
         ],
     );
-    let plain_discard = run(repo.path(), home.path(), &["task", "discard", task_id]);
+    let plain_discard = run(
+        repo.path(),
+        home.path(),
+        &["task", "discard", task_id, "--force"],
+    );
     assert!(
         plain_discard.status.success(),
         "the re-discard must succeed"

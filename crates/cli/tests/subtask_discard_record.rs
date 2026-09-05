@@ -419,8 +419,8 @@ fn an_ordinary_task_discard_writes_no_record_and_lands_no_commit() {
     ok(
         repo,
         home,
-        &["task", "discard", ordinary],
-        "task discard <ordinary-id>",
+        &["task", "discard", ordinary, "--force"],
+        "task discard <ordinary-id> --force",
     );
 
     assert!(
@@ -739,7 +739,7 @@ fn an_unreadable_record_fails_closed_for_an_ordinary_task_and_clears_once_restor
     let pristine = fs::read(repo.join(RECORD_SPEC)).expect("read the record");
     corrupt_record(repo, UNREADABLE_RECORD_KINDS[1].1);
 
-    let out = jigc(repo, home, &["task", "discard", ordinary]);
+    let out = jigc(repo, home, &["task", "discard", ordinary, "--force"]);
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(
         !out.status.success() && stderr.contains(RECORD_CONFLICT_CODE),
@@ -756,8 +756,8 @@ fn an_unreadable_record_fails_closed_for_an_ordinary_task_and_clears_once_restor
     ok(
         repo,
         home,
-        &["task", "discard", ordinary],
-        "task discard <ordinary-id> once the record reads again",
+        &["task", "discard", ordinary, "--force"],
+        "task discard <ordinary-id> --force once the record reads again",
     );
     assert!(
         !task_area(repo, ordinary).exists(),

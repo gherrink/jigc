@@ -740,7 +740,7 @@ fn pinned_base_mismatch_routes_by_unit_kind() {
         &[
             "task `top-task` is pinned to base ",
             " — switch back with `git checkout ",
-            "` or `jigc task discard top-task`\n",
+            "` or `jigc task discard top-task --force`\n",
         ],
     );
 }
@@ -767,7 +767,7 @@ fn missing_workflow_record_family_routes_to_discard_and_restart() {
     assert_error_bytes(
         &resume,
         "task `my-task` has no recorded workflow — discard it with \
-         `jigc task discard my-task` and re-start with `jigc start`\n",
+         `jigc task discard my-task --force` and re-start with `jigc start`\n",
     );
 
     let doc_verb = jigc(
@@ -778,7 +778,7 @@ fn missing_workflow_record_family_routes_to_discard_and_restart() {
     assert_error_bytes(
         &doc_verb,
         "the active task has no recorded workflow — discard it with \
-         `jigc task discard my-task` and re-start with `jigc start`\n",
+         `jigc task discard my-task --force` and re-start with `jigc start`\n",
     );
 
     let bind = jigc(
@@ -807,7 +807,7 @@ fn missing_workflow_record_family_routes_to_discard_and_restart() {
     assert_error_bytes(
         &reentry,
         "task `do-the-thing` has no recorded workflow — discard it with \
-         `jigc task discard do-the-thing` and re-seed it with \
+         `jigc task discard do-the-thing --force` and re-seed it with \
          `jigc milestone add-task <milestone-id> \"<intent>\"`\n",
     );
 }

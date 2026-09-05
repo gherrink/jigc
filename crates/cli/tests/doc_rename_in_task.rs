@@ -576,7 +576,7 @@ fn a_committed_doc_is_retitle_only_and_a_reslug_routes_at_jigc_rename() {
     );
 
     // Run it **verbatim** — after the precondition the route's own tail states.
-    corpus.jigc_ok(&["task", "discard", &second]);
+    corpus.jigc_ok(&["task", "discard", &second, "--force"]);
     let argv = shell_split(&corpus, &cmd);
     let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
     corpus.jigc_ok(&args);
@@ -729,7 +729,7 @@ fn the_committed_reslug_route_survives_a_real_shell() {
     let cmd = backticked(&route, "committed re-slug, metachar title").to_string();
 
     // The route's own stated precondition, then the emitted bytes through a real shell.
-    corpus.jigc_ok(&["task", "discard", &second]);
+    corpus.jigc_ok(&["task", "discard", &second, "--force"]);
     let argv = shell_split(&corpus, &cmd);
     let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
     corpus.jigc_ok(&args);
@@ -1345,7 +1345,7 @@ fn the_reslug_destination_guard_answers_over_both_homes() {
                 dest_staged.is_file() && !source.exists(),
                 "{cell:?}: the identity moved to the free destination"
             );
-            corpus.jigc_ok(&["task", "discard", &task]);
+            corpus.jigc_ok(&["task", "discard", &task, "--force"]);
             continue;
         }
 
@@ -1471,7 +1471,7 @@ fn the_reslug_destination_guard_answers_over_both_homes() {
                 "{cell:?}: the committed occupant is still there, unclobbered:\n{occupant}"
             );
         } else {
-            corpus.jigc_ok(&["task", "discard", &task]);
+            corpus.jigc_ok(&["task", "discard", &task, "--force"]);
         }
     }
 }

@@ -73,6 +73,8 @@ mod provision_leftover_guard;
 mod read_verb_acts_nothing;
 #[path = "../spawn_template_executes.rs"]
 mod spawn_template_executes;
+#[path = "../staged_prose_consent_axis.rs"]
+mod staged_prose_consent_axis;
 #[path = "../staged_snapshot.rs"]
 mod staged_snapshot;
 #[path = "../subtask_discard_record.rs"]

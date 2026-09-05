@@ -46,7 +46,7 @@ fn a_discarded_plain_task_orphans_no_file_state_and_never_blocks_the_next() {
     corpus.jigc_ok(&[
         "doc", "create", "roadmap", "--title", "Roadmap", "--task", &doomed,
     ]);
-    let discard = corpus.jigc(&["task", "discard", &doomed]);
+    let discard = corpus.jigc(&["task", "discard", &doomed, "--force"]);
     assert!(
         discard.status.success(),
         "`task discard` must exit 0; stderr:\n{}",

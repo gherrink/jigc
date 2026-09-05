@@ -280,7 +280,7 @@ fn a_traversal_override_commits_nothing_out_of_the_docs_root() {
     // The rename door refuses a dirty tree, and the axis fixture's `jigc start` leaves the
     // working area gitignored but the task in flight — discard it so this arm reaches the
     // slug guard rather than the in-flight guard.
-    fixture.ok(&["task", "discard", "axis-intent"]);
+    fixture.ok(&["task", "discard", "axis-intent", "--force"]);
     let before = fixture.git(&["rev-parse", "HEAD"]);
 
     let out = fixture.run(&[

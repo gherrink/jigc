@@ -915,7 +915,8 @@ fn collision_finding(id: &str) -> Finding {
         Some(Location::addressed(format!("task:{id}"), 1, 1)),
         Some(
             format!(
-                "resume with `jigc start --task {id}` or abandon with `jigc task discard {id}`"
+                "resume with `jigc start --task {id}` or abandon with \
+                 `jigc task discard {id} --force`"
             )
             .into(),
         ),

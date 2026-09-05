@@ -780,7 +780,11 @@ fn scenario_5c_discard_cleans_the_working_area() {
     let area = repo.path().join(".jigc").join("tasks").join(task);
     assert!(area.is_dir(), "the started working area must exist");
 
-    let discard = jigc(repo.path(), home.path(), &["task", "discard", task]);
+    let discard = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "discard", task, "--force"],
+    );
     assert_ok(&discard, "`jigc task discard`");
     assert!(!area.exists(), "discard must remove the working area");
 }
@@ -966,7 +970,11 @@ fn compose_single_task(repo: &Path, home: &Path) -> String {
         &["start", "--workflow", "single-task", "add rate limiter"],
     );
     assert_ok(&out, "`jigc start --workflow single-task` compose");
-    let discard = jigc(repo, home, &["task", "discard", "add-rate-limiter"]);
+    let discard = jigc(
+        repo,
+        home,
+        &["task", "discard", "add-rate-limiter", "--force"],
+    );
     assert_ok(&discard, "`jigc task discard` after a compose");
     String::from_utf8(out.stdout).expect("utf-8 stdout")
 }

@@ -219,6 +219,13 @@ pub enum TaskCommand {
     Discard {
         /// The task id (the working-area slug under `.jigc/tasks/`).
         id: String,
+        /// Remove the working area even when it holds staged docs no commit has a copy
+        /// of — the explicit consent to destroy them. `jigc start` stages the task's
+        /// `commit:<id>` doc at mint, so an ordinary discard needs this from the moment
+        /// the task exists. Inert when the area stages nothing (a `milestone add-task`
+        /// sub-task before its first re-entry).
+        #[arg(long)]
+        force: bool,
     },
     /// The commit boundary — validate, render, stage, `git commit`, post-commit.
     Finalize {
@@ -272,14 +279,29 @@ impl TaskCommand {
             TaskCommand::Validate { id, carry_staged } => {
                 return run_validate(cwd, &id, format, carry_staged);
             }
-            TaskCommand::Discard { id } => {
+            TaskCommand::Discard { id, force } => {
                 // Its own arm: a sub-task discard commits the record, so a rejecting hook is
                 // framed with this door's state-truth clause + re-run and names itself in the
                 // invocation log, instead of falling to the plain operational envelope.
-                let frame = discard_rejection_frame(&id);
-                return match run_discard(cwd, &id, format) {
+                let frame = discard_rejection_frame(&id, force);
+                return match run_discard(cwd, &id, format, force) {
                     Ok(()) => Outcome::success(),
-                    Err(err) => surface_commit_rejection(format, &err, &frame),
+                    Err(err) => {
+                        // The **staged-prose refusal** names itself (M50 Inc 3 / T2, the
+                        // `rename` precedent): it travels as a `render::BlockedFinding`, so
+                        // the identity the surface prints is the identity the invocation log
+                        // records — a refused discard is legible there rather than one more
+                        // exit-1-with-nothing. The printed bytes are the house findings line,
+                        // emitted through the same operational funnel.
+                        if let Some(finding) = render::blocked_finding(&err) {
+                            eprintln!("{}", render::operational_error(format, &err));
+                            return Outcome::with_findings(
+                                EXIT_ERROR,
+                                std::slice::from_ref(finding),
+                            );
+                        }
+                        surface_commit_rejection(format, &err, &frame)
+                    }
                 };
             }
             TaskCommand::Finalize {
@@ -456,8 +478,23 @@ fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Out
 /// → Stream discipline) rather than added to the ack envelope: the pre-1.0 additive-key
 /// window is closed (M48), and the relay delivers the hook's words on both surfaces without
 /// minting new contract shape.
-fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
+///
+/// **It refuses over the task's own staged docs unless `force`** (M50 → the Settle, D1;
+/// `design/team-ready-state.md` → The lifecycle). `jigc uninstall` has refused over exactly
+/// these bytes since M48 while this door removed them at exit 0 — two destroying doors
+/// answering opposite ways about the identical files, with the refusing one's route pointing
+/// at the destroying one. Both now ask the **one** probe
+/// ([`staged_task_prose`], scoped to this task's area), so they cannot disagree.
+///
+/// **Placement is load-bearing** and the order is `resolve` → guard → settle → remove:
+/// [`TaskArea::resolve`] carries Increment 1's malformed-id refusal and stays outermost, and
+/// the guard must sit **before** [`crate::milestone::settle_discarded_sub_task`], which
+/// *commits* the milestone record — a refusal after it would leave a committed record
+/// settling a sub-task whose working area survives, which is the lying-record defect M49
+/// closed, re-opened by the fix for it.
+fn run_discard(cwd: &Path, id: &str, format: Format, force: bool) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
+    refuse_over_staged_prose(&task, id, force)?;
     let dropped = dropped_staged_docs(&task);
     let hook_output = crate::milestone::settle_discarded_sub_task(
         &task.jigc_home,
@@ -490,14 +527,24 @@ fn run_discard(cwd: &Path, id: &str, format: Format) -> Result<()> {
 /// The clause is written to *this* door's truth: the record commit runs **before** the area
 /// is removed and restores its captured pre-image on rejection, so both the record and the
 /// task survive — which is what makes the re-run land what the rejected run would have.
-fn discard_rejection_frame(id: &str) -> RejectionFrame {
+///
+/// The re-run **echoes the consent the run carried** (M50 Inc 3 / T2). Since the
+/// staged-prose guard, a bare `jigc task discard <id>` refuses in exactly the state that
+/// printed this frame — a sub-task whose record commit was rejected has a working area, and
+/// a re-entered sub-task's area stages its commit doc — so a re-run line without `--force`
+/// would be a route that cannot land what the rejected run would have.
+fn discard_rejection_frame(id: &str, force: bool) -> RejectionFrame {
     RejectionFrame {
         code: crate::invocation_log::ERROR_TASK_DISCARD_REJECTED,
         survived: format!(
             "nothing was committed — the milestone record still names task:{id} as it did, \
              and the task's working area is intact"
         ),
-        rerun: format!("jigc task discard {}", shell_token(id)),
+        rerun: format!(
+            "jigc task discard {}{}",
+            shell_token(id),
+            if force { " --force" } else { "" },
+        ),
     }
 }
 
@@ -546,6 +593,14 @@ pub(crate) fn staged_doc_ids(docs_dir: &Path) -> std::io::Result<Vec<String>> {
 /// so an out-of-scope area is skipped before it is probed at all: its readability is not
 /// this call's business.
 ///
+/// `unverified` is the **caller's** fail-closed refusal (M50 Inc 3 / T2). The probe measures
+/// bytes and holds no opinion about which door asked, but a refusal names a door: the
+/// install door's is [`unverified_prose_finding`], the task door's
+/// [`discard_unverified_prose_finding`]. Minting one identity here for both would put
+/// *"re-run `jigc uninstall`"* in front of an operator who ran `jigc task discard` — the
+/// cross-door misdirection this pair exists to close (`design/surface-contract.md` → law 1),
+/// reintroduced by the very sharing that closes it.
+///
 /// **It measures staging, not authorship.** A staged `*.md` is a doc no commit has a copy
 /// of; whether a human or the mint wrote its bytes is not something this probe (or any
 /// other) can tell, and the guard deliberately fires either way — the pristine skeleton
@@ -565,15 +620,16 @@ pub(crate) fn staged_doc_ids(docs_dir: &Path) -> std::io::Result<Vec<String>> {
 pub(crate) fn staged_task_prose(
     repo_root: &Path,
     only: Option<&[String]>,
+    unverified: &dyn Fn(std::io::Error) -> Finding,
 ) -> Result<Vec<(String, Vec<String>)>, Finding> {
     let tasks_root = repo_root.join(".jigc").join("tasks");
     if !tasks_root.is_dir() {
         return Ok(Vec::new());
     }
     let mut staged = Vec::new();
-    let entries = std::fs::read_dir(&tasks_root).map_err(unverified_prose_finding)?;
+    let entries = std::fs::read_dir(&tasks_root).map_err(unverified)?;
     for entry in entries {
-        let entry = entry.map_err(unverified_prose_finding)?;
+        let entry = entry.map_err(unverified)?;
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -585,7 +641,7 @@ pub(crate) fn staged_task_prose(
             continue;
         }
         let docs = staged_doc_ids(&path.join("docs")).map_err(|err| {
-            unverified_prose_finding(std::io::Error::other(format!(
+            unverified(std::io::Error::other(format!(
                 "{}: {err}",
                 path.join("docs").display()
             )))
@@ -599,12 +655,14 @@ pub(crate) fn staged_task_prose(
     Ok(staged)
 }
 
-/// The fail-closed half of [`staged_task_prose`]: the staged set could not be enumerated,
-/// so the teardown refuses rather than remove `.jigc/` with the staged docs' existence
-/// unknown. Same code as the refusal it stands in for
-/// ([`crate::setup::staged_prose_finding`]) — the operator's next action is identical, and
-/// the same claim discipline binds: the probe never ran, so it can name only what it was
-/// looking for (staged docs), never what they contain.
+/// The **install** door's fail-closed refusal: the staged set could not be enumerated, so
+/// the teardown refuses rather than remove `.jigc/` with the staged docs' existence unknown.
+/// Same code as the refusal it stands in for ([`crate::setup::staged_prose_finding`]) — the
+/// operator's next action is identical, and the same claim discipline binds: the probe never
+/// ran, so it can name only what it was looking for (staged docs), never what they contain.
+///
+/// Its sibling at the other destroying door is [`discard_unverified_prose_finding`]; the two
+/// exist separately because a refusal names a door and this one names `jigc uninstall`.
 pub(crate) fn unverified_prose_finding(err: std::io::Error) -> Finding {
     Finding::block(
         "uninstall.staged-prose",
@@ -615,6 +673,103 @@ pub(crate) fn unverified_prose_finding(err: std::io::Error) -> Finding {
         "make sure `.jigc/tasks/` is readable, then re-run `jigc uninstall` — or, once you \
          have confirmed the open tasks hold nothing you need, `jigc uninstall --force` \
          deletes them with the install",
+    )
+}
+
+/// The **task** door's staged-prose code — its own, never the install door's
+/// (`uninstall.staged-prose`). The two doors destroy different things and their routes lead
+/// different ways, so one code for both would name the wrong subject at one of them
+/// ([surface-contract.md](../../design/surface-contract.md) → law 1); the per-door precedent
+/// is the shipped `uninstall.dirty-worktree` / `milestone.dirty-worktree` pair, and the
+/// `task-discard.` namespace is the one [`crate::invocation_log::ERROR_TASK_DISCARD_REJECTED`]
+/// already uses.
+///
+/// It is a **door refusal**, not a probe result and not a commit-phase rejection, so it joins
+/// neither `engine::result::CHECK_INVENTORY` nor
+/// [`crate::invocation_log::ERROR_CODE_REGISTRY`] — exactly like the sibling it pairs with.
+const DISCARD_STAGED_PROSE: &str = "task-discard.staged-prose";
+
+/// The `jigc task discard` door's WIP guard: refuse while the working area holds staged docs
+/// no commit has a copy of, unless the operator consented with `--force`
+/// (M50 → the Settle, D1; `design/write-commands.md` → Abandoning a task).
+///
+/// **The subject is staging, never authorship.** [`staged_task_prose`] cannot tell prose
+/// someone typed from the pristine skeleton `jigc start` mints — and the skeleton is the
+/// *dominant* cell, since the mint itself stages `commit:<id>.md` — so this refuses over both
+/// on the one ground it can prove: the bytes exist nowhere else. That is the shipped, doc-of-
+/// record posture of the install door's identical guard (`design/project-setup.md` → the two
+/// states `uninstall` refuses), and applying it here is what makes the pair agree.
+///
+/// **Scoped to this task's area.** A door must neither claim nor refuse over prose it will
+/// not touch, so a sibling task's staged docs are none of this door's business — which is
+/// why the probe carries the scope rather than the caller filtering afterwards.
+fn refuse_over_staged_prose(task: &TaskArea, id: &str, force: bool) -> Result<()> {
+    if force {
+        return Ok(());
+    }
+    let only = [id.to_string()];
+    let staged = staged_task_prose(&task.jigc_home, Some(&only), &|err| {
+        discard_unverified_prose_finding(id, err)
+    })
+    .map_err(|finding| crate::render::finding_error(&finding))?;
+    let docs: Vec<String> = staged.into_iter().flat_map(|(_, docs)| docs).collect();
+    if docs.is_empty() {
+        return Ok(());
+    }
+    Err(crate::render::finding_error(&discard_staged_prose_finding(
+        id, &docs,
+    )))
+}
+
+/// The task door's staged-doc refusal: a blocking, route-bearing finding naming the task and
+/// the doc identities its area stages.
+///
+/// **It claims "staged doc(s)", not "authored prose"** — the claim discipline its install-door
+/// sibling ([`crate::setup::staged_prose_finding`]) already carries: that the docs are staged
+/// and in no commit is exactly what the probe measured, and whether a human or the mint wrote
+/// their bytes is not something it can tell.
+///
+/// **The route names the reachable exits in the order they are reachable.** The listed
+/// identities are the addresses `jigc doc show <addr> --task <id>` takes, so reading what you
+/// are about to lose is followable as printed; `jigc task finalize` follows with the condition
+/// that makes it available (over the dominant skeleton cell it cannot succeed — the empty doc
+/// fails `schema-conformance`); and the consent lands last, carrying the real id.
+fn discard_staged_prose_finding(id: &str, docs: &[String]) -> Finding {
+    Finding::block(
+        DISCARD_STAGED_PROSE,
+        format!(
+            "task `{id}` stages {} doc(s) that no commit has a copy of — discarding it would \
+             destroy them: {}",
+            docs.len(),
+            docs.join(", "),
+        ),
+        format!(
+            "read what is in them with `jigc doc show <address> --task {id}`, or land them \
+             with `jigc task finalize {id}` (which refuses while a required slot is empty) — \
+             or, once you have confirmed the task holds nothing you need, `jigc task discard \
+             {id} --force` removes the working area with them"
+        ),
+    )
+}
+
+/// The task door's fail-closed refusal — the [`unverified_prose_finding`] sibling, keyed to
+/// *this* door. The staged set could not be enumerated, so the area is not removed with its
+/// staged docs' existence unknown: "enumerated nothing" and "there is nothing" are the same
+/// bytes to a caller about to `remove_dir_all`, and only one of them is safe.
+///
+/// Same claim discipline: the probe never ran, so it names only what it was looking for.
+fn discard_unverified_prose_finding(id: &str, err: std::io::Error) -> Finding {
+    Finding::block(
+        DISCARD_STAGED_PROSE,
+        format!(
+            "cannot check task `{id}`'s working area for staged docs, so discarding it could \
+             destroy work no commit has a copy of: {err}"
+        ),
+        format!(
+            "make sure `.jigc/tasks/{id}/` is readable, then re-run `jigc task discard {id}` \
+             — or, once you have confirmed the task holds nothing you need, `jigc task \
+             discard {id} --force` removes the working area unchecked"
+        ),
     )
 }
 
@@ -5261,7 +5416,12 @@ mod tests {
             ],
         );
 
-        let scoped = staged_task_prose(&root, Some(&["t-alpha".to_string()])).expect("scoped");
+        let scoped = staged_task_prose(
+            &root,
+            Some(&["t-alpha".to_string()]),
+            &unverified_prose_finding,
+        )
+        .expect("scoped");
         assert_eq!(
             scoped,
             vec![(
@@ -5272,7 +5432,7 @@ mod tests {
              about `t-beta`",
         );
 
-        let whole = staged_task_prose(&root, None).expect("unscoped");
+        let whole = staged_task_prose(&root, None, &unverified_prose_finding).expect("unscoped");
         assert_eq!(
             whole
                 .iter()
@@ -5307,9 +5467,22 @@ mod tests {
         std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o000))
             .expect("seal t-beta's docs dir");
 
-        let whole = staged_task_prose(&root, None);
-        let scoped_in = staged_task_prose(&root, Some(&["t-beta".to_string()]));
-        let scoped_out = staged_task_prose(&root, Some(&["t-alpha".to_string()]));
+        let whole = staged_task_prose(&root, None, &unverified_prose_finding);
+        // The *task* door's own fail-closed identity over the same unreadable dir — the
+        // refusal names the door that asked, never its sibling's (M50 Inc 3 / T2).
+        let at_task_door = staged_task_prose(&root, Some(&["t-beta".to_string()]), &|err| {
+            discard_unverified_prose_finding("t-beta", err)
+        });
+        let scoped_in = staged_task_prose(
+            &root,
+            Some(&["t-beta".to_string()]),
+            &unverified_prose_finding,
+        );
+        let scoped_out = staged_task_prose(
+            &root,
+            Some(&["t-alpha".to_string()]),
+            &unverified_prose_finding,
+        );
 
         // Restore before asserting, so a failure does not leave an unremovable temp tree.
         std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o755))
@@ -5321,6 +5494,20 @@ mod tests {
             "the fail-closed arm carries the door's own code, not a bare IO error",
         );
         scoped_in.expect_err("the in-scope probe fails closed on the same dir");
+        let at_task_door = at_task_door.expect_err("the task door fails closed too");
+        assert_eq!(
+            at_task_door.code, DISCARD_STAGED_PROSE,
+            "and it fails closed under the DOOR's code — an operator who ran `jigc task \
+             discard` is never sent to re-run `jigc uninstall`",
+        );
+        assert!(
+            at_task_door
+                .route
+                .as_deref()
+                .is_some_and(|route| route.contains("jigc task discard t-beta --force")),
+            "the task door's fail-closed route names its own consent; got {:?}",
+            at_task_door.route,
+        );
         assert_eq!(
             scoped_out.expect("an out-of-scope area is never probed"),
             vec![("t-alpha".to_string(), vec!["commit:t-alpha".to_string()])],
