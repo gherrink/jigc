@@ -5372,8 +5372,12 @@ impl ActiveTask {
     /// Resolve the active task from `cwd` + an optional explicit `--task <id>`
     /// (`design/write-commands.md` → The write-time `--task`-scoped barrier:
     /// active-task resolution). **Explicit `--task <id>` wins** — it resolves
-    /// `<repo>/.jigc/tasks/<id>/` directly, rejecting with the shared task-list
-    /// route (`crate::task::no_such_task`) if absent. Else: the **single** active task
+    /// `<repo>/.jigc/tasks/<id>/` directly, and answers it in **two** ways
+    /// (`design/structural-grammar.md` → Work-units and runtime identity, resolution): a
+    /// **malformed** id is refused as not-an-id before the join
+    /// (`crate::task::reject_malformed_work_unit_id`); a **well-formed** id with no such
+    /// area rejects with the shared task-list route (`crate::task::no_such_task`).
+    /// Else: the **single** active task
     /// directory under `<repo>/.jigc/tasks/`; **none** rejects with the start-a-task
     /// route, **more than one** with no `--task` rejects asking for the selector.
     fn resolve(cwd: &Path, task_id: Option<&str>) -> Result<Self> {

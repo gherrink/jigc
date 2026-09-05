@@ -26,7 +26,7 @@ The transaction is **atomic up through `git commit`**: any failure before that p
 
 Cheap rejections before any expensive work:
 
-- **Task exists.** `.jigc/tasks/<task-id>/` must exist; otherwise reject with "no task `<id>`".
+- **A valid task id that exists.** Two answers, not one. The id is first checked against the work-unit grammar — a token that is not a well-formed slug was never an id, and is refused with the blocking `work-unit.malformed-id` whose route states the grammar, never the roster ([structural-grammar.md](structural-grammar.md#work-units-and-runtime-identity) → resolution). Only a **well-formed** id reaches the existence test: `.jigc/tasks/<task-id>/` must exist, otherwise reject with "no task `<id>`" and the `jigc task list` route. Both refusals land here, before the base-pin read — the grammar check sits at the resolve seam, so nothing has joined the token onto a path yet.
 - **Base pin matches HEAD.** The task was started at base `<A>`; if HEAD ≠ `<A>`, reject with the divergence-routing prompt ("switch back to `<A>` or discard") — same philosophy as [out-of-band reconciliation](write-commands.md#out-of-band-reconciliation). The CLI never operates a task off its pinned base.
 - **Git in a committable state.** No in-progress merge/rebase/bisect. The CLI does *not* require a clean working tree (see [Dirty-tree policy](#dirty-tree-policy)).
 

@@ -801,8 +801,13 @@ struct TaskArea {
 impl TaskArea {
     /// Resolve the task `id`'s working area from `cwd`. The repo root is the nearest
     /// `.git` ancestor (the worktree); jigc_home is the main checkout, and the task dir is
-    /// `<jigc_home>/.jigc/tasks/<id>/`. A task that does not exist rejects with the
-    /// task-list route ([`no_such_task`]).
+    /// `<jigc_home>/.jigc/tasks/<id>/`.
+    ///
+    /// **Two answers, in this order** (`design/structural-grammar.md` → Work-units and
+    /// runtime identity, resolution): a **malformed** `id` is not a wrong id but *not an
+    /// id*, and is refused by [`reject_malformed_work_unit_id`] before it can become the
+    /// path component below; a **well-formed** id whose area is absent rejects with the
+    /// converged task-list route ([`no_such_task`]).
     fn resolve(cwd: &Path, id: &str) -> Result<Self> {
         // Before anything joins `id` onto a path (M50 Inc 1 / T1).
         reject_malformed_work_unit_id(id)?;

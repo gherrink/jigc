@@ -361,3 +361,54 @@ fn the_milestone_boundary_still_lands_and_removes_its_area() {
         "a landed `jigc milestone finalize` removes the milestone area (post_commit's cleanup)",
     );
 }
+
+// ───────────────────────── (g) the grammar sentence has one source ─────────────────────
+
+/// **M50 Inc 1 / T3 — the statement is the constant, checked where the statement lives.**
+///
+/// `design/structural-grammar.md` owns the minting discipline every work-unit id obeys,
+/// and until M50 it stated only the *mint* half: where ids come from and that they are
+/// frozen. The half that was missing is the one the destroying doors needed — that a
+/// caller-supplied token is checked **against the same grammar** before it is allowed to
+/// become a path component. The doc now states it, and this arm holds the statement to
+/// the bytes.
+///
+/// The chain is what makes it a fence rather than a spell-check. [`GRAMMAR`] and
+/// [`CODE`] are spelled out in this file, deliberately not imported from the production
+/// constants (see their doc-comments); every arm above asserts the **emitted** refusal
+/// carries them. So `doc == this file's literal == what the binary prints`, and a reword
+/// of `crate::task::WORK_UNIT_ID_GRAMMAR` cannot ship without reddening here — which is
+/// M45's *statement == constant* discipline applied at the design doc, the one place the
+/// rule is stated in prose that no compiler reads.
+///
+/// The two-answer form the same change put into `design/finalize.md` → 1. Preflight and
+/// `design/write-commands.md` (Task-id collision & resume · Enforcement at every `jigc
+/// task bind`) is deliberately **not** pinned here: those loci state *which of two
+/// answers a door gives*, not a literal the binary emits, so a byte-assert over them
+/// would pin editorial wording rather than a contract. They are verified by reading
+/// (`DECISIONS.md` → 2026-09-05, the stated verification command).
+#[test]
+fn the_design_doc_states_the_shipped_grammar_verbatim() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repo root sits two levels above crates/cli")
+        .to_path_buf();
+    let doc = fs::read_to_string(root.join("design/structural-grammar.md"))
+        .expect("read design/structural-grammar.md");
+
+    assert!(
+        doc.contains(GRAMMAR),
+        "design/structural-grammar.md must state the shipped work-unit id grammar \
+         VERBATIM — the sentence every refusal routes with:\n  {GRAMMAR}\n\
+         It is the same bytes `crate::task::WORK_UNIT_ID_GRAMMAR` carries and every arm \
+         in this file asserts on the wire; a doc that paraphrases it is a second source \
+         for the one rule.",
+    );
+    assert!(
+        doc.contains(CODE),
+        "design/structural-grammar.md must name the refusal's code `{CODE}` — the resolve \
+         half of the minting discipline is a *blocking finding with an identity*, not an \
+         unnamed reject, and the doc that owns the rule is where that is said.",
+    );
+}

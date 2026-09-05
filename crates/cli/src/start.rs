@@ -1897,7 +1897,10 @@ fn blanket_base_pin_refusal(
 /// view — the surface the superseding-decision context-slice reads
 /// (`worked-examples.md` → Superseding decision).
 ///
-/// A nonexistent id rejects with `no task \`<id>\``; moved history that **overlaps**
+/// A **malformed** id — not a well-formed slug — is refused before the join as not an id
+/// at all ([`crate::task::reject_malformed_work_unit_id`];
+/// `design/structural-grammar.md` → Work-units and runtime identity, resolution); a
+/// well-formed but nonexistent one rejects with `no task \`<id>\``. Moved history that **overlaps**
 /// the task's footprint rejects with the engine's routed `finalize.base-mismatch`
 /// block naming the overlapping paths, while **disjoint** moved history re-pins to
 /// HEAD in memory and composes (`write-commands.md` → Base mismatch on an existing
@@ -2020,7 +2023,10 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
 /// the fill-aware `workflow-refs` gate, and `compose_with_store`. This is the
 /// read/compose half only — provisioning the write-ready area is a later task.
 ///
-/// A nonexistent id rejects with `no task \`<id>\``; a `<W>` ≠ the recorded workflow
+/// A **malformed** id is refused before the join as not an id at all
+/// ([`crate::task::reject_malformed_work_unit_id`]; `design/structural-grammar.md` →
+/// Work-units and runtime identity, resolution); a well-formed but nonexistent one
+/// rejects with `no task \`<id>\``. A `<W>` ≠ the recorded workflow
 /// rejects with a routed `workflow-refs.workflow-mismatch` block naming both ids + the
 /// sub-task; a base mismatch rejects with the divergence-routing prompt.
 pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Composition> {

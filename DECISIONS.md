@@ -2,6 +2,21 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-05 — M50 Inc 1 / T3: the resolve half joins the minting discipline, and the grammar sentence gets one source
+
+**Shipped:** the rule T1 and T2 built now stands in the docs that own it. [structural-grammar.md](design/structural-grammar.md) → Work-units and runtime identity gains **resolution** as minting's other half — an id arriving from outside is checked against the same grammar *before it is anything else*, because `.jigc/tasks/<id>/` is built by joining that token onto a path, so it becomes a path component before any door has asked whether it is an id. [finalize.md](design/finalize.md) → 1. Preflight and [write-commands.md](design/write-commands.md) → Task-id collision & resume both specified *exists* where the rule is **a valid id that exists**, and now give the two-answer form. `write-commands.md` → Enforcement at every `jigc task bind` is the sharper of the three: its convergence rule was written for a **wrong** id, not an **invalid** one, and it now says so — converging there would route a caller to a roster the token could never appear in.
+
+**The grammar sentence is fenced where it is stated, not merely written down.** `malformed_work_unit_id::the_design_doc_states_the_shipped_grammar_verbatim` reads `design/structural-grammar.md` off the workspace root and asserts it carries the shipped literal *verbatim*, plus the code. The chain is what makes it a fence: the suite's `GRAMMAR`/`CODE` consts are spelled out rather than imported (a test comparing emitted bytes against the constant that produced them proves only that the constant equals itself), and every other arm in that file asserts the **emitted** refusal carries them — so `doc == test literal == what the binary prints`, and a reword of `crate::task::WORK_UNIT_ID_GRAMMAR` cannot ship without reddening the doc arm. That is M45's *statement == constant* discipline applied at the one place the rule is stated in prose no compiler reads.
+
+**What is deliberately not pinned, and why.** The two-answer form at the other three loci is verified by reading, not by a byte-assert: those sentences state *which of two answers a door gives*, not a literal the binary emits, so an equality test over them would pin editorial wording rather than a contract — and the answers themselves are already fenced by `work_unit_id_axis.rs`'s 25 doors × 4 cells. The stated verification command:
+
+    grep -n "work-unit.malformed-id" design/finalize.md design/write-commands.md
+    grep -n "must exist; otherwise reject with\|for a nonexistent id\|Resolve task .<id>.\." design/finalize.md design/write-commands.md
+
+The first prints the three loci (`finalize.md:29`, `write-commands.md:182`, `:305`), each carrying the malformed → grammar / well-formed-but-unknown → roster split. The second exits **1** with no output: the bare *exists* wording is gone from all three.
+
+**The four resolve seams' doc-comments moved with the rule.** `TaskArea::resolve`, `ActiveTask::resolve`, `resume_in_repo` and `reenter_in_repo` each stated the old one-answer rule (*"a task that does not exist rejects with the task-list route"*) directly above a body that now answers twice. A doc-comment that survives the change it describes is the same drift the design docs had, one layer down.
+
 ## 2026-09-05 — M50 Inc 1 / T2: the door set is the clap tree's, and the mint side becomes a fence
 
 **Shipped:** `WORK_UNIT_ID_ARG_IDS` + `WORK_UNIT_ID_DOORS` (`crates/cli/src/cli.rs`), the shipped `DOCTYPE_ARG_IDS`/`DOCTYPE_DOORS` mold applied to the second identity a caller hands jigc, and `crates/cli/tests/work_unit_id_axis.rs` — **25 doors × 4 cells** through the real binary. T1 guarded five **resolve seams**; a seam is not a door, and the seams were counted by reading the source. The ⇔ fence (`cli_parse::every_work_unit_id_door_is_registered`) makes the set the binary's: a leaf verb carries a row **iff** one of its clap arguments is `id`, `task` or `milestone_id`. Proven red by two applied mutants — a row deleted, and `task discard`'s `id` argument renamed to `task_id` — each naming the offending leaf.
