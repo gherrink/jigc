@@ -1,17 +1,27 @@
-//! Bare `jigc start` orientation (read-only) — the end-to-end handler.
+//! Bare `jigc start` orientation — the end-to-end handler.
 //!
-//! Wires the CLI-locates / engine-resolves spine for the two increment-1
-//! orientation states (`design/bootstrap.md` → Orientation output examples):
+//! Wires the CLI-locates / engine-resolves spine for the three orientation states
+//! (`design/bootstrap.md` → Orientation output examples):
 //!   1. **unset project** — no project cascade layer (`.jigc/config/` absent):
 //!      route the agent to `jigc setup`.
-//!   2. **clean, no active task** — project layer present: resolve the cascade,
-//!      build the workflow catalog from the embedded pack, and render the
-//!      provenance header + catalog + routing footer.
+//!   2. **clean, no active task** — project layer present and the active set empty:
+//!      resolve the cascade, build the workflow catalog from the embedded pack, and
+//!      render the provenance header + catalog + routing footer.
+//!   3. **active task** — project layer present and at least one task live: the
+//!      active set, one row per task, with the routes that finish or abandon it
+//!      (`bootstrap.md`'s states 3 and 4, collapsed — M50 → the Settle, D3).
 //!
-//! Read-only by construction: it locates, resolves, and renders — it never
-//! writes, composes, or shells out to git (the `.git` marker is only *read* by
-//! repo-root discovery). See `implementation/module-layout.md` → The I/O
-//! boundary (CLI locates, engine resolves).
+//! **It reports, it never acts**: it mints nothing, stages nothing and composes no
+//! side-effectful workflow. It is not, since state 3, *inert*: reporting a live task's
+//! findings runs the shipped task-scope sweep, which shells out to `git`, may spawn the
+//! `doc-code` probe, and materializes the `.jigc/index/edges.json` cache — a
+//! self-healing derived cache that is a pure function of the committed store, which is
+//! the one carve-out the read/write rule allows (`crate::cli::VerbKind`; `jigc start` is
+//! a [`VerbKind::Write`](crate::cli::VerbKind) verb regardless, since with an intent it
+//! mints). A task whose sweep cannot run is reported with its findings **unknown**,
+//! never with an error and never as clean: the bootstrap door degrades.
+//! See `implementation/module-layout.md` → The I/O boundary (CLI locates, engine
+//! resolves).
 
 use crate::locate::{self, RunContext};
 use crate::pack::make_pack;
@@ -20,7 +30,7 @@ use anyhow::{Context, Result};
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
 use engine::knobs::load_knobs;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
-use engine::result::{Catalog, NextStep, OrientationView};
+use engine::result::{ActiveTask, Catalog, NextStep, OrientationView};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -73,7 +83,8 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
         return Ok(OrientationView::unset_project());
     };
 
-    // State 2 — clean, no active task: resolve the cascade and build the catalog.
+    // States 2 and 3 both carry the provenance header, so the cascade resolves either
+    // way; only what rides beside it differs.
     let workflow_ids: Vec<String> = pack
         .list(PackResourceKind::Workflows)
         .into_iter()
@@ -103,11 +114,65 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
         .map(|(id, gist)| NextStep::new(*id, *gist))
         .collect();
 
-    Ok(OrientationView::clean(
-        compose_pack_header(pack, resolved.provenance()),
-        catalog,
-        next_steps,
-    ))
+    let header = compose_pack_header(pack, resolved.provenance());
+
+    // State 3 — at least one task is live. The active set decides the variant, so the
+    // `clean` tag can never be emitted over a repo holding work in progress (D3). The
+    // catalog rides it too: `create.gate-blocked` routes with "`jigc start` lists the
+    // catalog" and can only fire while a task is live, so dropping it here would break an
+    // existing route in exactly the state that prints it.
+    let active = active_tasks(ctx);
+    if !active.is_empty() {
+        return Ok(OrientationView::active_task(
+            header, active, catalog, next_steps,
+        ));
+    }
+
+    Ok(OrientationView::clean(header, catalog, next_steps))
+}
+
+/// Build the **active set** — one [`ActiveTask`] row per live task under the project's
+/// `.jigc/` home, in the shipped enumerator's stable (sorted-id) order.
+///
+/// Every row is assembled from enumerators that already ship
+/// ([`state::list_active_task_ids`](engine::state::list_active_task_ids) and the three
+/// working-area readers beside it, plus [`crate::task::staged_doc_ids`]), so orientation
+/// reports the same task state every other door reads rather than a second opinion about
+/// it.
+///
+/// **Nothing here can fail the door.** A working area that will not answer degrades to
+/// the absent case for that fact — an unreadable intent to the empty string, an
+/// unreadable base pin to [`None`], a sweep that cannot run to `findings: null` plus the
+/// reason. A task that exists is always named: a task you cannot see is worse than a pin
+/// you cannot read, and this door runs at every `SessionStart`.
+fn active_tasks(ctx: &RunContext) -> Vec<ActiveTask> {
+    let jigc_root = ctx.jigc_home.join(".jigc");
+    engine::state::list_active_task_ids(&jigc_root)
+        .into_iter()
+        .map(|id| {
+            let dir = jigc_root.join("tasks").join(&id);
+            let (findings, findings_unavailable) =
+                match crate::task::sweep_for_orientation(&ctx.repo_root, &id) {
+                    Ok(findings) => (Some(findings), None),
+                    Err(reason) => (None, Some(reason)),
+                };
+            ActiveTask {
+                workflow: engine::state::read_workflow_id(&dir).ok().flatten(),
+                intent: engine::state::read_intent(&dir).unwrap_or_default(),
+                // A milestone's sub-tasks are ordinary areas under `.jigc/tasks/`, so the
+                // enumerator above lists them — and a sub-task's commit boundary is the
+                // milestone door, `jigc task finalize` refusing outright. Asked here so the
+                // renderer can route to the door that runs (`design/surface-contract.md` →
+                // the route floor).
+                milestone: engine::milestone::owning_milestone(&jigc_root, &id),
+                base: engine::state::read_base_pin(&dir).ok(),
+                staged: crate::task::staged_doc_ids(&dir.join("docs")).unwrap_or_default(),
+                id,
+                findings,
+                findings_unavailable,
+            }
+        })
+        .collect()
 }
 
 /// Render the orientation provenance header with the **composed-set** `Pack:`

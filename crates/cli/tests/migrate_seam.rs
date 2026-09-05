@@ -217,8 +217,17 @@ fn migrate_mints_off_router_task_and_feeds_the_source_seam() {
         run_jigc(repo.path(), home.path(), &pack, &["start"]),
         "jigc start",
     );
+    // Scoped to the **catalog block**, not the whole render: since M50 Increment 5 bare
+    // `start` also names every live task with the workflow it was minted from, and this
+    // repo holds the migration task — so `migrate-changelog` legitimately appears above,
+    // as a fact about work in progress. The claim under test is that it is not
+    // *selectable*, and the catalog (with the off-catalog next-step verbs beneath it) is
+    // where that is decided.
+    let (_, catalog) = orient
+        .split_once("Available workflows:")
+        .expect("orientation carries the catalog in every cascade-resolved state");
     assert!(
-        !orient.contains("migrate-changelog"),
+        !catalog.contains("migrate-changelog"),
         "the off-router migrate workflow must be absent from the selectable catalog; orient:\n{orient}",
     );
 

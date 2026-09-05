@@ -38,7 +38,7 @@ use engine::file_state::{self, FileStateRecord};
 use engine::finalize::{
     CarryoverBoundary, Promotion, RepinDecision, decide_base_repin, decide_carryover, plan_finalize,
 };
-use engine::finding::{Finding, Location, Severity};
+use engine::finding::{Finding, Findings, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
 use engine::schema::Schema;
@@ -451,6 +451,30 @@ fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Out
             Outcome::failure()
         }
     }
+}
+
+/// The task-scope sweep's findings for one live task, run for the **orientation** door
+/// (`crate::orient`; M50 → the Settle, D3).
+///
+/// One sweep, one answer: this is the same [`TaskArea::validate`] `jigc task validate`
+/// drives, with the previewable finalize-time gates **on**, so what bare `jigc start`
+/// reports about a task and what the route it prints beside it reports cannot diverge.
+/// The post-sweep record is dropped — orientation is a pure reader of the baseline, which
+/// advances only at a landed `finalize` (`design/reconciliation.md` → Persistence of the
+/// shifted baseline).
+///
+/// **The error is a reason, not a failure.** The sweep can genuinely fail to run — a
+/// fresh clone with no `doc-code` probe beside the binary and an anchored task, an
+/// unreadable working area — and the bootstrap door must still name the task. The whole
+/// context chain is returned as the string the caller carries as
+/// `findings_unavailable`, so *unknown* is never rendered as *clean*.
+pub(crate) fn sweep_for_orientation(cwd: &Path, id: &str) -> std::result::Result<Findings, String> {
+    let task = TaskArea::resolve(cwd, id).map_err(|err| format!("{err:#}"))?;
+    task.validate(GatePreview::On {
+        carry_staged: false,
+    })
+    .map(|(report, _record)| report.findings)
+    .map_err(|err| format!("{err:#}"))
 }
 
 /// `jigc task discard <id>` — remove the task's working area, abandoning it

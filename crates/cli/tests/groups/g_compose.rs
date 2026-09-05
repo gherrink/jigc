@@ -35,6 +35,8 @@ mod flow40_acceptance;
 mod flow45_acceptance;
 #[path = "../optional_slot_guidance.rs"]
 mod optional_slot_guidance;
+#[path = "../orientation_active_task.rs"]
+mod orientation_active_task;
 #[path = "../orphan_detection.rs"]
 mod orphan_detection;
 #[path = "../prd_batch_author.rs"]

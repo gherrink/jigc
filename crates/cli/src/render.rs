@@ -18,7 +18,9 @@ use crate::task::TaskListRow;
 use engine::finding::{Finding, Findings, Route, Severity};
 use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
-use engine::result::{NextStep, Orientation, OrientationView, ResolutionTree, ValidationReport};
+use engine::result::{
+    ActiveTask, NextStep, Orientation, OrientationView, ResolutionTree, ValidationReport,
+};
 use engine::state::BasePin;
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -48,8 +50,155 @@ pub fn orientation(format: Format, view: &OrientationView) -> String {
                 next_steps,
                 ..
             } => orientation_clean(header, &Orientation::new(workflows.clone()), next_steps),
+            OrientationView::ActiveTask {
+                header,
+                tasks,
+                workflows,
+                next_steps,
+                ..
+            } => orientation_active(
+                header,
+                tasks,
+                &Orientation::new(workflows.clone()),
+                next_steps,
+            ),
         },
     }
+}
+
+/// Render the **active-task** orientation (`design/bootstrap.md` → Orientation output
+/// examples, states 3 and 4 collapsed; M50 → the Settle, D3): the cascade/provenance
+/// `header`, then one block per live task — what it is, what it holds, what the sweep
+/// found — then the [`catalog_block`] the clean view also renders, then the universal
+/// routing footer.
+///
+/// **Four `Run:` directives per task**, delivering the routing inside the push channel
+/// the agent is already reading: resume, preview, commit, abandon. Two of the four are
+/// **state-dependent, not shape-dependent**, because a route this binary's own guard
+/// blocks is a route-floor defect: the commit directive names the milestone door for a
+/// sub-task (`jigc task finalize <sub>` refuses outright), and the abandon directive
+/// carries the `--force` consent exactly when the staged set makes the door demand it
+/// (M50 → the Settle, D1/B9). The printed argv is the one that runs, in every state this
+/// view can render.
+///
+/// **The findings render through [`finding_line`]** — the house shape, `severity ·
+/// code — message` with its `at:` locus and its `route:` — so this surface gains no
+/// private finding renderer to drift from the others.
+fn orientation_active(
+    header: &str,
+    tasks: &[ActiveTask],
+    orientation: &Orientation,
+    next_steps: &[NextStep],
+) -> String {
+    let mut out = String::from("jigc — orientation\n\n");
+    out.push_str(header);
+    out.push('\n');
+    for task in tasks {
+        let id = &task.id;
+        out.push_str(&format!("\nActive task: {id}\n"));
+        out.push_str(&format!(
+            "  workflow: {}\n",
+            task.workflow.as_deref().unwrap_or(NO_RECORDED_WORKFLOW)
+        ));
+        // Each fact is omitted rather than printed empty when the working area does not
+        // answer for it: an omitting context stays inert, and a blank value beside a
+        // label reads as a value.
+        if !task.intent.trim().is_empty() {
+            out.push_str(&format!("  intent:   {}\n", task.intent.trim()));
+        }
+        if let Some(base) = &task.base {
+            out.push_str(&format!("  base:     {}\n", base.short));
+        }
+        out.push_str(&format!("  staged:   {}\n", staged_summary(&task.staged)));
+        out.push_str(&format!("  findings: {}\n", findings_summary(task)));
+        for finding in task.findings.iter().flat_map(|f| f.iter()) {
+            out.push_str(&finding_line(finding, false));
+        }
+        out.push('\n');
+        out.push_str(&format!(
+            "Run: `jigc start --task {id}`   — resume: re-composes this task's own workflow where it left off\n"
+        ));
+        out.push_str(&format!(
+            "Run: `jigc task validate {id}`   — {}\n",
+            crate::gate_coverage::whats_left_coverage()
+        ));
+        // The commit boundary is the milestone door for a sub-task, and `jigc task
+        // finalize <sub>` refuses outright there — so the directive names the door that
+        // runs rather than the one that matches the shape of the others.
+        match task.milestone.as_deref() {
+            Some(milestone) => out.push_str(&format!(
+                "Run: `jigc milestone finalize {milestone}`   — validate + commit: this is a sub-task of milestone `{milestone}`, whose door is its only commit boundary — `jigc task finalize {id}` refuses here\n"
+            )),
+            None => out.push_str(&format!(
+                "Run: `jigc task finalize {id}`   — validate + commit\n"
+            )),
+        }
+        // The abandon directive is **B9's disjunction taken per row**: the consent is
+        // printed exactly when the door needs it. A task staging a doc no commit has a
+        // copy of is refused without `--force` (M50 → the Settle, D1), so omitting it
+        // there would print a route this binary's own guard blocks; a task staging
+        // nothing is not, so printing it there would train the flag into a reflex over a
+        // door that never asked for it.
+        if task.staged.is_empty() {
+            out.push_str(&format!(
+                "Run: `jigc task discard {id}`   — abandon: removes the working area\n"
+            ));
+        } else {
+            out.push_str(&format!(
+                "Run: `jigc task discard {id} --force`   — abandon: removes the working area and the doc(s) staged in it, which no commit has a copy of; `--force` is the consent this door refuses without\n"
+            ));
+        }
+    }
+    // The catalog, beneath the work in progress: the shipped `create.gate-blocked`
+    // refusal routes at "`jigc start` lists the catalog" and can fire ONLY while a task
+    // is live, so a view that dropped it here would break that route in exactly the state
+    // that prints it — and several open tasks are legal, so the set is still a live
+    // affordance rather than noise.
+    out.push('\n');
+    catalog_block(&mut out, orientation, next_steps);
+    out.push_str(ROUTING_FOOTER);
+    out
+}
+
+/// What the `workflow:` line says for a task whose working area records none — the
+/// genuine absent case, never a silent fall-through to the cascade default.
+const NO_RECORDED_WORKFLOW: &str = "none recorded";
+
+/// The `staged:` value: the task's staged doc identities, or the stated empty case.
+fn staged_summary(staged: &[String]) -> String {
+    if staged.is_empty() {
+        return String::from("nothing staged yet");
+    }
+    staged.join(", ")
+}
+
+/// The `findings:` tally — by severity, in descending severity order — or the stated
+/// **unknown** case carrying why the sweep could not run. *Unknown* is never rendered as
+/// *none*: that substitution is the lie this whole variant exists to retire.
+fn findings_summary(task: &ActiveTask) -> String {
+    let Some(findings) = &task.findings else {
+        let reason = task
+            .findings_unavailable
+            .as_deref()
+            .unwrap_or("the task-scope sweep did not run");
+        return format!("unknown — {reason}");
+    };
+    let count = |severity: Severity| findings.iter().filter(|f| f.severity == severity).count();
+    let tally: Vec<String> = [
+        (Severity::Blocking, "blocking"),
+        (Severity::Warning, "warning"),
+        (Severity::Advisory, "advisory"),
+    ]
+    .into_iter()
+    .filter_map(|(severity, label)| match count(severity) {
+        0 => None,
+        n => Some(format!("{n} {label}")),
+    })
+    .collect();
+    if tally.is_empty() {
+        return String::from("none");
+    }
+    tally.join(", ")
 }
 
 /// Render any `Serialize` result type to pretty JSON — the **generic** JSON
@@ -92,8 +241,11 @@ pub fn orientation_agent_text(orientation: &Orientation) -> String {
 /// inert (the dev-only floor omits `planning`).
 ///
 /// Branch/HEAD and the "Recent: …" finalization line from the design example are
-/// deferred — they need git-HEAD inspection and task state, neither of which
-/// exists in increment 1 (bare `start` is read-only, no task store yet).
+/// still deferred — each needs a git-HEAD read this view does not make. The premise
+/// that once stood here (*"no task store yet"*) has been false since M1 and was the
+/// reason a whole orientation state went unbuilt for 49 milestones; the remainder is
+/// keyed to its trigger in `implementation/decisions-pending.md` instead of resting on
+/// an expired claim about what exists (M50 Increment 5 / T2).
 pub fn orientation_clean(
     header: &str,
     orientation: &Orientation,
@@ -101,7 +253,19 @@ pub fn orientation_clean(
 ) -> String {
     let mut out = String::from("jigc — orientation\n\n");
     out.push_str(header);
-    out.push_str("\n\nAvailable workflows:\n");
+    out.push_str("\n\n");
+    catalog_block(&mut out, orientation, next_steps);
+    out.push_str(ROUTING_FOOTER);
+    out
+}
+
+/// The **catalog block** — `Available workflows:` through the off-catalog next-step
+/// lines — appended to `out`. One home, two callers: the clean view and the active-task
+/// view, which carries the same block beneath its active set because
+/// `create.gate-blocked` routes at *"`jigc start` lists the catalog"* and can only fire
+/// while a task is live.
+fn catalog_block(out: &mut String, orientation: &Orientation, next_steps: &[NextStep]) {
+    out.push_str("Available workflows:\n");
     for entry in orientation.workflows.entries() {
         out.push_str("  - ");
         out.push_str(entry.id.as_str());
@@ -138,8 +302,6 @@ pub fn orientation_clean(
         out.push_str(&step.gist);
         out.push('\n');
     }
-    out.push_str(ROUTING_FOOTER);
-    out
 }
 
 /// Render a composed workflow to the surface `format` selects: `agent` / `human`

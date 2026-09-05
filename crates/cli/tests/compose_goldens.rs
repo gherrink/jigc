@@ -74,9 +74,8 @@ const COMPOSITE: &str = "composite";
 /// non-deterministic (a leaked absolute non-repo path, a stamped date), never one
 /// that merely errors — an error is a valid, stable golden (exit code + stderr).
 ///
-/// An empty state (`""`) matches every state. The first full generation found none:
-/// every swept combination is deterministic, so this list stands empty as the record
-/// of that fact rather than the assumption of it.
+/// An empty state (`""`) matches every state. The first full generation found none;
+/// M50 found the first two, together — see [`EXCLUSIONS`].
 struct Exclusion {
     surface: &'static str,
     member: &'static str,
@@ -85,7 +84,42 @@ struct Exclusion {
     reason: &'static str,
 }
 
-const EXCLUSIONS: &[Exclusion] = &[];
+/// **The bare-orientation surface over the one state that holds a live task** (M50
+/// Increment 5 / T2). Since `design/bootstrap.md`'s state 3 ships, bare `jigc start`
+/// over a live task reports the task's **base pin** — the commit it was minted on —
+/// and a fixture corpus's commits are minted at wall-clock time, so that one token is
+/// per-run. **Measured, not assumed**: two consecutive `refs-post-hoc` sweeps differ on
+/// exactly one line, `base:     2d53728` vs `base:     bced2e5`, with all 27 other
+/// lines byte-identical (and two independent builds of `State::Fresh` gave HEADs
+/// `08b1086` / `5b20483`).
+///
+/// **Excluded rather than normalized**: `implementation/pinning.md` §1 fixes the
+/// harness's normalization at absolute repo paths and *nothing else*, precisely so a
+/// second rule cannot quietly mask a value that varies for a reason nobody checked. A
+/// declared exclusion says the same thing out loud and reaches no other surface.
+///
+/// **What replaces the pin**: `crates/cli/tests/orientation_active_task.rs` asserts the
+/// whole active-task render **byte-for-byte** from `Active task:` onward, with the base
+/// pin read out of the fixture's own `base.json` — so these bytes are pinned harder
+/// than a golden pins them, by the one suite that can supply the varying token. The
+/// other five states keep both goldens, so the *clean* render's blast radius is
+/// unchanged.
+const EXCLUSIONS: &[Exclusion] = &[
+    Exclusion {
+        surface: "start-orient",
+        member: "start-orient",
+        state: "refs-post-hoc",
+        reason: "bare orientation over a live task prints the task's base pin, a per-run \
+                 commit sha; pinned byte-for-byte by orientation_active_task.rs instead",
+    },
+    Exclusion {
+        surface: "start-orient-json",
+        member: "start-orient-json",
+        state: "refs-post-hoc",
+        reason: "the same base pin rides the `active-task` envelope's `base` key; pinned \
+                 by orientation_active_task.rs instead",
+    },
+];
 
 fn is_excluded(surface: &str, member: &str, state: State) -> bool {
     EXCLUSIONS.iter().any(|e| {

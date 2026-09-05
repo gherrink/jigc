@@ -26,7 +26,9 @@ The front door is also where a **task is born**: `jigc start "<intent>"` compose
 
 ### Orientation output examples
 
-Concrete shapes the four orientation states render to. All are read-only — bare `jigc start` never mints, never stages, never composes a side-effectful workflow. The CLI prints orientation as plain text; the `Run:` directives below follow the [emitted format](workflow-dialect.md#emitted-format) so the agent can spot next-step commands without parsing structure.
+Concrete shapes the orientation states render to. Bare `jigc start` never mints, never stages, never composes a side-effectful workflow — it reports. (Reporting a live task's findings runs the task-scope sweep, so it is not *inert*: it reads git and materializes the derived edge-index cache. See [validation.md](validation.md).) The CLI prints orientation as plain text; the `Run:` directives below follow the [emitted format](workflow-dialect.md#emitted-format) so the agent can spot next-step commands without parsing structure.
+
+**Three states ship, not four.** States 3 and 4 below differ only by whether the findings a task carries are blocking, so one **active-task** view renders both — it carries the *active set*, one block per live task, each with its findings as data (M50 → the Settle, D3). Two live tasks are two blocks under one state, which is legal ([write-commands.md](write-commands.md) → Task origination). **The workflow catalog rides the active state too**, beneath the work in progress and elided from the examples below for length: the `create.gate-blocked` refusal routes with *"`jigc start` lists the catalog"* and can only ever fire while a task is live, so a state that dropped the catalog would break that route in exactly the state that prints it.
 
 **1. Unset project** — no pack installed, no cascade resolved:
 
@@ -61,37 +63,53 @@ Run: `jigc start "<intent>"`   — presents the workflows above; pick one, then 
 ```text
 jigc — orientation
 
-Pack: dev/v0.3.0 · Project config: .jigc/config/ · Branch: main (HEAD a3f9c2)
+Pack: dev/v0.3.0 · Project config: .jigc/config/
 
 Active task: add-rate-limiter
-  workflow: single-task · step 2/3 (implement) · base: a3f9c2
-  staged:   commit:add-rate-limiter#type, commit:add-rate-limiter#summary
+  workflow: single-task
+  intent:   add a rate limiter to the ingest endpoint
+  base:     a3f9c2
+  staged:   commit:add-rate-limiter
   findings: none
 
+Run: `jigc start --task add-rate-limiter`   — resume
 Run: `jigc task validate add-rate-limiter`   — preview the blockers this side of the commit
 Run: `jigc task finalize add-rate-limiter`   — validate + commit
-Run: `jigc task discard add-rate-limiter`    — abandon
+Run: `jigc task discard add-rate-limiter --force`   — abandon
 ```
+
+The abandon directive carries its **consent** here because the mint stages the task's commit doc, and `jigc task discard` refuses over staged docs no commit has a copy of ([write-commands.md](write-commands.md) → Lifecycle). Over a task staging nothing — a milestone sub-task before its first write — the flag is *not* printed: a route this binary's own guard blocks is a route-floor defect, and so is teaching a consent flag at a door that never asks for it, so the printed argv is the one that runs in each state.
+
+**A milestone sub-task's commit directive names the milestone door.** Its area is an ordinary `.jigc/tasks/<id>/`, so it rides the active set like any other task — but `jigc task finalize <sub>` refuses outright, the milestone boundary being its only commit boundary ([team-ready-state.md](team-ready-state.md) → The lifecycle), so the block routes to `jigc milestone finalize <m>` and says why.
 
 **4. Blocked task** — a task with a blocking finding:
 
 ```text
 jigc — orientation
 
-Pack: dev/v0.3.0 · Project config: .jigc/config/ · Branch: main (HEAD a3f9c2)
+Pack: dev/v0.3.0 · Project config: .jigc/config/
 
 Active task: add-rate-limiter
-  workflow: single-task · step 3/3 (finalize) · base: a3f9c2
+  workflow: single-task
+  intent:   add a rate limiter to the ingest endpoint
+  base:     a3f9c2
+  staged:   commit:add-rate-limiter
   findings: 1 blocking
 
-> workflow-refs · blocking
-> {{ task.spec#criteria }} resolves to no spec — task.spec binding missing.
+blocking · workflow-refs.binding-present — {{ task.spec#criteria }} resolves to no spec — task.spec binding missing.
+  route: `jigc task bind spec spec:auth-flow add-rate-limiter` to set the binding
 
-Run: `jigc task bind spec spec:auth-flow add-rate-limiter` — set the binding
-Run: `jigc task discard add-rate-limiter`                 — abandon
+Run: `jigc start --task add-rate-limiter`   — resume
+Run: `jigc task validate add-rate-limiter`   — preview the blockers this side of the commit
+Run: `jigc task finalize add-rate-limiter`   — validate + commit
+Run: `jigc task discard add-rate-limiter --force`   — abandon
 ```
 
-The four shapes share a header (pack/cascade summary or active-task line), a status block, and at most a small set of `Run:` directives for next steps. The blockquoted finding in example 4 is Content-class — the engine's voice. Author-class (`<<author: …>>`) never appears — orientation never asks the agent to write.
+State 4 is state 3 with findings, which is why one view renders both: a blocking finding changes what the block *says*, never which directives are reachable — and orientation reports it at **exit 0**, because orientation is not a gate. The findings render through the same finding renderer every other surface uses, so this surface grows no private finding shape ([command-output-contract.md](command-output-contract.md) → findings-as-data). A task whose sweep cannot run — no `doc-code` probe beside the binary on a fresh clone, say — reads `findings: unknown — <reason>`: the bootstrap door degrades, and *unknown* is never printed as *none*.
+
+The shapes share a header (pack/cascade summary), a status block, and at most a small set of `Run:` directives for next steps. Content-class findings are the engine's voice. Author-class (`<<author: …>>`) never appears — orientation never asks the agent to write.
+
+**Not yet built, keyed to their trigger** ([decisions-pending.md](../implementation/decisions-pending.md)): the header's `Branch: main (HEAD …)` segment, the clean state's `Recent: N finalizations …` line, and the active block's `step N/M (<step>)` progress. Each needs a read this view does not make (git HEAD, the finalize history, a per-task step cursor).
 
 ## Benefit detection — why it advertises, not just instructs
 

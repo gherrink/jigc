@@ -17,10 +17,12 @@ use crate::finding::{Finding, Findings, Severity};
 /// The result-contract schema version. Bumped only when the JSON projection of a
 /// public result type changes in a way an external consumer must notice.
 ///
-/// **3** since M50 Increment 5: `describe`'s per-definition `origin_pack`
-/// ([`crate::introspect::DefinitionProse::origin_pack`]). One integer governs every
-/// result envelope — orientation, `describe`, the validation report, the block/error
-/// envelope and the probe wire — so one bump covers every projection change a wave lands
+/// **3** since M50 Increment 5, carrying **two** projection changes: `describe`'s
+/// per-definition `origin_pack` ([`crate::introspect::DefinitionProse::origin_pack`], T1)
+/// and orientation's third state, [`OrientationView::ActiveTask`] (T2). One integer
+/// governs every result envelope — orientation, `describe`, the validation report, the
+/// block/error envelope and the probe wire — so one bump covers every projection change a
+/// wave lands, which is why the second did not owe a second bump
 /// (`design/doc-read-surface.md` → The version/posture map).
 pub const SCHEMA_VERSION: u32 = 3;
 
@@ -90,9 +92,20 @@ impl Orientation {
 }
 
 /// The full orientation result of bare `jigc start` — the versioned contract a
-/// renderer maps over. A `state`-tagged sum of the two increment-1 orientation
-/// states (`design/bootstrap.md` → Orientation output examples): `unset-project`
-/// (no project cascade layer) and `clean` (cascade resolved, no active task).
+/// renderer maps over. A `state`-tagged sum of the three orientation states
+/// (`design/bootstrap.md` → Orientation output examples): `unset-project` (no
+/// project cascade layer), `clean` (cascade resolved, **no** active task) and
+/// `active-task` (cascade resolved, at least one task live).
+///
+/// **`clean` means what it says** (M50 → the Settle, D3). Until this variant existed
+/// the tag was emitted over a repo holding a live task, so a machine contract stated
+/// *no active task* about a state that had one — and the `refs-post-hoc` compose
+/// golden pinned that as expected output. The third variant carries the **active
+/// set**, not one task: two live tasks are two [`ActiveTask`] rows under one tag,
+/// which is legal (`design/write-commands.md` → Task origination) and needed a shape
+/// rather than a guess. It **collapses** `bootstrap.md`'s states 3 and 4 — they differ
+/// only by whether the findings a task carries are blocking — so the contract takes
+/// one variant, not two.
 ///
 /// Presentation-free by construction: it carries the *data* each state renders
 /// from (the clean state's provenance `header` + workflow catalog), never the
@@ -131,6 +144,83 @@ pub enum OrientationView {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         next_steps: Vec<NextStep>,
     },
+    /// Cascade resolved, and **at least one task is live** — carry the provenance
+    /// `header`, the active set (one [`ActiveTask`] row per live task, in the
+    /// enumerator's stable sorted-id order) **and** the clean state's catalog data.
+    ///
+    /// **The catalog rides this state too, and that is load-bearing, not symmetry.**
+    /// The shipped `create.gate-blocked` refusal routes with *"`jigc start` lists the
+    /// catalog"*, and that refusal can only ever fire **while a task is live** — so a
+    /// variant that dropped the catalog would make an existing route stop answering in
+    /// exactly the state it is printed from (`design/surface-contract.md` → the route
+    /// floor). Several open tasks are legal too (`design/write-commands.md` → Task
+    /// origination), so a reader with one open task still has a reason to read the set.
+    ActiveTask {
+        /// The result-contract schema version (see [`SCHEMA_VERSION`]).
+        schema_version: u32,
+        /// The cascade/provenance header line (`Pack: … · Project config: …`) — the
+        /// same header the clean view carries, so orienting into work in progress
+        /// still says which packs composed the answer.
+        header: String,
+        /// The live tasks, in the active-task enumerator's order. Never empty: an
+        /// empty active set **is** the clean state, and a `tasks: []` here would be a
+        /// document contradicting its own tag.
+        tasks: Vec<ActiveTask>,
+        /// Available workflows, in display order — the same catalog the clean state
+        /// carries, under the same key.
+        workflows: Catalog,
+        /// The off-catalog next-step verbs the composed pack-set provides, under the
+        /// clean state's key and with its omitting-context rule (empty renders nothing).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        next_steps: Vec<NextStep>,
+    },
+}
+
+/// One live task, as bare `jigc start` reports it (`design/bootstrap.md` →
+/// Orientation output examples, states 3 and 4).
+///
+/// Seven facts, every one of them read from the task's own working area, from the
+/// milestone roster beside it, or produced by the shipped task-scope sweep — the engine
+/// assembles, it never infers. Carries no presentation: the `Active task:` block and the
+/// four `Run:` directives are `cli::render`'s. Two of those directives are decided by
+/// [`milestone`](Self::milestone) and [`staged`](Self::staged) rather than by shape,
+/// which is why both are on the wire (`design/surface-contract.md` → the route floor).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveTask {
+    /// The task's frozen slug id — the `--task <id>` every route below takes.
+    pub id: String,
+    /// The workflow the task was minted from, as its working area recorded it.
+    /// [`None`] is the genuine absent case (no recorded workflow), never a silent
+    /// fall-through to the cascade default.
+    pub workflow: Option<String>,
+    /// The intent the task was minted with, verbatim.
+    pub intent: String,
+    /// The milestone this task is a **sub-task** of, when it is one — [`None`] for an
+    /// ordinary top-level task. Always projected (never skipped): every task either
+    /// belongs to a milestone or does not, and which it is decides where the task's
+    /// commit boundary lives, so a driver reads the fact rather than a missing key.
+    /// A sub-task's `jigc task finalize` refuses outright — the milestone door is its
+    /// only commit boundary (`design/team-ready-state.md` → The lifecycle) — so the
+    /// routes rendered beside it differ.
+    pub milestone: Option<String>,
+    /// The commit the task is pinned to. [`None`] only when the pin could not be read
+    /// (it is written at mint, so its absence is a real fault) — the task is still
+    /// named, because a task the reader cannot see is worse than a pin it cannot read.
+    pub base: Option<crate::state::BasePin>,
+    /// The `<type>:<slug>` identities the task stages in its working area, sorted —
+    /// the docs a `jigc task discard` would take with it.
+    pub staged: Vec<String>,
+    /// The task-scope sweep's findings, as data. **[`None`] means the sweep could not
+    /// run** — not that the task is clean: a fresh clone with no `doc-code` probe
+    /// beside the binary leaves an anchored task's findings genuinely unknown, and the
+    /// bootstrap door degrades rather than failing (`design/bootstrap.md`). The reason
+    /// then rides [`findings_unavailable`](Self::findings_unavailable), so the absence
+    /// is never silent.
+    pub findings: Option<Findings>,
+    /// Why the sweep could not run, when it could not. Present **iff**
+    /// [`findings`](Self::findings) is [`None`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub findings_unavailable: Option<String>,
 }
 
 /// One off-catalog next-step verb named in the clean-state orientation prose: the
@@ -172,6 +262,27 @@ impl OrientationView {
         Self::Clean {
             schema_version: SCHEMA_VERSION,
             header: header.into(),
+            workflows,
+            next_steps,
+        }
+    }
+
+    /// The **active-task** orientation view over its provenance header, the live tasks,
+    /// and the clean state's catalog data, stamping the current [`SCHEMA_VERSION`].
+    pub fn active_task(
+        header: impl Into<String>,
+        tasks: Vec<ActiveTask>,
+        workflows: Catalog,
+        next_steps: Vec<NextStep>,
+    ) -> Self {
+        debug_assert!(
+            !tasks.is_empty(),
+            "the active-task view's tag claims a live task; an empty set is the clean state",
+        );
+        Self::ActiveTask {
+            schema_version: SCHEMA_VERSION,
+            header: header.into(),
+            tasks,
             workflows,
             next_steps,
         }
@@ -738,10 +849,11 @@ mod tests {
         );
     }
 
-    /// The two `OrientationView` states project to a `state`-tagged JSON shape:
+    /// The three `OrientationView` states project to a `state`-tagged JSON shape:
     /// `unset-project` carries only the version marker; `clean` carries the
-    /// provenance header + the catalog under `workflows`. The discriminator and
-    /// keys are the stable contract a renderer / JSON consumer binds to.
+    /// provenance header + the catalog under `workflows`; `active-task` carries the
+    /// header + the active set under `tasks`. The discriminator and keys are the stable
+    /// contract a renderer / JSON consumer binds to.
     #[test]
     fn orientation_view_state_tagged_projection_is_the_stable_contract() {
         let unset = serde_json::to_value(OrientationView::unset_project()).expect("serializes");
@@ -771,6 +883,79 @@ mod tests {
                     { "id": "single-task", "when": "Implement one well-scoped change." }
                 ]
             })
+        );
+
+        // The third state — a live task — tags as `active-task` and projects the active
+        // SET, so N > 1 is two rows rather than an ambiguity. The keys here are the
+        // contract a driver binds to; `clean` must never appear over this state (M50 →
+        // the Settle, D3).
+        let active = serde_json::to_value(OrientationView::active_task(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            vec![ActiveTask {
+                id: "add-rate-limiter".to_owned(),
+                workflow: Some("single-task".to_owned()),
+                intent: "add a rate limiter".to_owned(),
+                milestone: None,
+                base: Some(crate::state::BasePin::new("a3f9c2d", "a3f9c2")),
+                staged: vec!["commit:add-rate-limiter".to_owned()],
+                findings: Some(Findings::default()),
+                findings_unavailable: None,
+            }],
+            Catalog::new(vec![CatalogEntry::new(
+                "single-task",
+                "Implement one well-scoped change.",
+            )]),
+            Vec::new(),
+        ))
+        .expect("serializes");
+        assert_eq!(
+            active,
+            serde_json::json!({
+                "state": "active-task",
+                "schema_version": SCHEMA_VERSION,
+                "header": "Pack: dev/v0.3.0 · Project config: .jigc/config",
+                "tasks": [{
+                    "id": "add-rate-limiter",
+                    "workflow": "single-task",
+                    "intent": "add a rate limiter",
+                    "milestone": null,
+                    "base": { "sha": "a3f9c2d", "short": "a3f9c2" },
+                    "staged": ["commit:add-rate-limiter"],
+                    "findings": []
+                }],
+                "workflows": [
+                    { "id": "single-task", "when": "Implement one well-scoped change." }
+                ]
+            })
+        );
+
+        // A sweep that could not run projects `findings: null` **plus** the reason, so
+        // *unknown* is distinguishable from *clean* — the substitution this whole variant
+        // exists to retire, one level down.
+        let unknown = serde_json::to_value(OrientationView::active_task(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            vec![ActiveTask {
+                id: "add-rate-limiter".to_owned(),
+                workflow: None,
+                intent: String::new(),
+                milestone: Some("m-alpha".to_owned()),
+                base: None,
+                staged: Vec::new(),
+                findings: None,
+                findings_unavailable: Some("`doc-code` probe not found".to_owned()),
+            }],
+            Catalog::new(Vec::new()),
+            Vec::new(),
+        ))
+        .expect("serializes");
+        assert_eq!(
+            unknown["tasks"][0]["milestone"],
+            serde_json::json!("m-alpha")
+        );
+        assert_eq!(unknown["tasks"][0]["findings"], serde_json::Value::Null);
+        assert_eq!(
+            unknown["tasks"][0]["findings_unavailable"],
+            serde_json::json!("`doc-code` probe not found")
         );
 
         // A clean view carrying off-catalog next-step verbs projects them under

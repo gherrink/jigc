@@ -129,13 +129,22 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (
         &["start"],
         Tier::Judgment(
-            "the orientation / composed-workflow surface — prose, pinned as {task, text}",
+            "the orientation / composed-workflow surface — prose; composed output pinned as \
+             {task, text}, orientation projected as OrientationView",
             Disposition::DeclaredOut(
-                "the composed envelope is PINNED at exactly `{task, text}` \
-                 (`command-output-contract.md` §1), which declares the agent surface's mint \
-                 announcement, task-state affordances and create-gate list to be presentation \
-                 that adds no key — a prior contract decision the window does not reopen; the \
-                 composed text itself rides `text` whole",
+                "TWO surfaces, declared out for two different reasons. (1) The COMPOSED arm's \
+                 envelope is PINNED at exactly `{task, text}` (`command-output-contract.md` §1), \
+                 which declares the agent surface's mint announcement, task-state affordances and \
+                 create-gate list to be presentation that adds no key — a prior contract decision \
+                 the window does not reopen; the composed text itself rides `text` whole. (2) The \
+                 bare-ORIENTATION arm renders from `engine::result::OrientationView`, whose every \
+                 variant already carries on the wire each fact its text prints — the provenance \
+                 header, the catalog, the off-catalog next steps, and (M50) the active set's id, \
+                 workflow, intent, base pin, staged ids and findings-as-data. What the text adds \
+                 and the envelope withholds is the `Run:` directives and the routing footer, which \
+                 are routes rather than values and are presentation by the same declaration. There \
+                 is no gap to close, which is why this stays DeclaredOut rather than becoming a \
+                 Closed entry",
             ),
         ),
     ),
