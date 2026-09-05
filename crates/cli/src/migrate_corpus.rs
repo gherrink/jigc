@@ -727,12 +727,12 @@ pub(crate) fn migrate_committed_corpus(
                         // be a lie, and folding it (the pre-M42 direction-blind behaviour)
                         // restamps the doc past the gate. The route names the schema-authoring
                         // repair, not a doc instruction.
-                        if let Some(SchemaChange::NarrowedCardinality { section, field }) = diff
+                        if let Some(SchemaChange::NarrowedCardinality { locus, field }) = diff
                             .iter()
                             .find(|c| matches!(c, SchemaChange::NarrowedCardinality { .. }))
                         {
                             report.blocked.push(narrowed_cardinality_finding(
-                                &rel_key, &dt.ty, section, field, k, dt.version,
+                                &rel_key, &dt.ty, locus, field, k, dt.version,
                             ));
                             continue;
                         }
@@ -742,12 +742,12 @@ pub(crate) fn migrate_committed_corpus(
                         // an operator can do to *this doc*, so the fold's halt route would be a
                         // lie, and the repair is a schema-authoring one. The committed value stays
                         // on disk — **No-data-loss** is a declared property of this pair.
-                        if let Some(SchemaChange::RemovedField { section, field }) = diff
+                        if let Some(SchemaChange::RemovedField { locus, field }) = diff
                             .iter()
                             .find(|c| matches!(c, SchemaChange::RemovedField { .. }))
                         {
                             report.blocked.push(removed_field_finding(
-                                &rel_key, &dt.ty, section, field, k, dt.version,
+                                &rel_key, &dt.ty, locus, field, k, dt.version,
                             ));
                             continue;
                         }
@@ -755,12 +755,12 @@ pub(crate) fn migrate_committed_corpus(
                         // routed separately because what it names is a **prose slot**, not a
                         // field line: telling an author to restore a field they never declared
                         // is a route that cannot be followed.
-                        if let Some(SchemaChange::RemovedItemSlot { section, leaf }) = diff
+                        if let Some(SchemaChange::RemovedItemSlot { locus, leaf }) = diff
                             .iter()
                             .find(|c| matches!(c, SchemaChange::RemovedItemSlot { .. }))
                         {
                             report.blocked.push(removed_item_slot_finding(
-                                &rel_key, &dt.ty, section, leaf, k, dt.version,
+                                &rel_key, &dt.ty, locus, leaf, k, dt.version,
                             ));
                             continue;
                         }
@@ -1092,9 +1092,14 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
                 stamp_absent
             }
             // THE HEADING-MINTING KINDS — dropped iff the doc already carries the heading.
-            SchemaChange::AddedOptionalSection { section }
-            | SchemaChange::AddedRepeatableSection { section }
-            | SchemaChange::ProseNeeding { section, .. } => !has_section_heading(source, section),
+            // A nested-locus `ProseNeeding` mints no `## Heading` either — its section is
+            // already there by construction — so the probe keys on the locus's SECTION, which
+            // is what a heading collision is about at every depth.
+            SchemaChange::AddedOptionalSection { locus }
+            | SchemaChange::AddedRepeatableSection { locus }
+            | SchemaChange::ProseNeeding { locus, .. } => {
+                !has_section_heading(source, locus.section())
+            }
             // Every other kind splices inside an existing section (or no bytes at all), so it
             // has no heading to collide with and is always kept. `AddedItemField` mints no
             // heading either — it splices a field bullet **into each item of an existing
@@ -1142,17 +1147,9 @@ fn enrich_value_remaps(changes: Vec<SchemaChange>, ty: &str) -> Vec<SchemaChange
     changes
         .into_iter()
         .map(|change| match change {
-            SchemaChange::ValueRemapped {
-                section,
-                field,
-                map,
-            } if map.is_empty() => {
-                let map = authored_remap(ty, &section, &field).unwrap_or(map);
-                SchemaChange::ValueRemapped {
-                    section,
-                    field,
-                    map,
-                }
+            SchemaChange::ValueRemapped { locus, field, map } if map.is_empty() => {
+                let map = authored_remap(ty, locus.section(), &field).unwrap_or(map);
+                SchemaChange::ValueRemapped { locus, field, map }
             }
             other => other,
         })
@@ -1346,7 +1343,7 @@ fn unfilled_set_field_finding(
     path: &str,
     leaf: &engine::schema_diff::UnfilledSetLeaf<'_>,
 ) -> Finding {
-    let section = leaf.section;
+    let section = &leaf.locus;
     let field = leaf.field;
     let id = &field.id;
     let set = field.set.as_deref().unwrap_or_default();
@@ -1355,7 +1352,7 @@ fn unfilled_set_field_finding(
             "no action needed — `{id}` is machine-maintained (`set: {set}`): jigc derives its \
              value and no `jigc doc` write may set it"
         ))
-    } else if leaf.item_locus {
+    } else if leaf.locus.is_item() {
         Route::human(format!(
             "`{id}` is author-overridable (`set: {set}`) and is declared per **item** of \
              `{section}`, so a write names the item: read the items back with `jigc doc show \
@@ -1370,7 +1367,7 @@ fn unfilled_set_field_finding(
              --task <task-id>`; this report holds no task id, so it composes no runnable command"
         ))
     };
-    let message = if leaf.item_locus {
+    let message = if leaf.locus.is_item() {
         format!(
             "`{path}` migrated with `{section}`'s **item** field `{id}` left unfilled — the \
              field declares `set: {set}` and no `default:`, so the migration placed no `{id}` in \
@@ -1476,7 +1473,7 @@ fn unclassifiable_change_finding(rel_key: &str, ty: &str, from: u32, to: u32) ->
 fn narrowed_cardinality_finding(
     rel_key: &str,
     ty: &str,
-    section: &str,
+    locus: &engine::schema_diff::Locus,
     field: &str,
     from: u32,
     to: u32,
@@ -1485,7 +1482,7 @@ fn narrowed_cardinality_finding(
         "migrate-corpus.narrowed-cardinality",
         rel_key,
         format!(
-            "`{ty}` narrows the cardinality of `{section}.{field}` between schema-version {from} \
+            "`{ty}` narrows the cardinality of `{locus}.{field}` between schema-version {from} \
              and {to}, so `{rel_key}` cannot be migrated: a narrowing is content-affecting, not a \
              no-op (a committed instance may carry more values than the new bound admits, or lack \
              one it now demands), and no transform kind adjudicates it — migrating would stamp \
@@ -1493,7 +1490,7 @@ fn narrowed_cardinality_finding(
              gap, not a doc problem"
         ),
         format!(
-            "restore the wider bound on `{section}.{field}`, or build the narrowing arm (validate \
+            "restore the wider bound on `{locus}.{field}`, or build the narrowing arm (validate \
              every committed instance against the new bound) in \
              `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then re-run \
              `jigc migrate-corpus`"
@@ -1514,7 +1511,7 @@ fn narrowed_cardinality_finding(
 fn removed_field_finding(
     rel_key: &str,
     ty: &str,
-    section: &str,
+    locus: &engine::schema_diff::Locus,
     field: &str,
     from: u32,
     to: u32,
@@ -1523,14 +1520,14 @@ fn removed_field_finding(
         "migrate-corpus.removed-field",
         rel_key,
         format!(
-            "`{ty}` drops the declared field `{section}.{field}` between schema-version {from} \
+            "`{ty}` drops the declared field `{locus}.{field}` between schema-version {from} \
              and {to}, so `{rel_key}` cannot be migrated: committed instances still carry the \
              field, and the migration never strips a value (no data loss) — migrating would stamp \
              the doc {to} while it keeps a field the schema no longer declares. This is a \
              schema-authoring gap, not a doc problem"
         ),
         format!(
-            "restore `{section}.{field}` to the schema, or build the field-removal (strip) arm \
+            "restore `{locus}.{field}` to the schema, or build the field-removal (strip) arm \
              with a deliberate data-loss opt-in in `crates/engine/src/schema_diff.rs` + \
              `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
         ),
@@ -1552,7 +1549,7 @@ fn removed_field_finding(
 fn removed_item_slot_finding(
     rel_key: &str,
     ty: &str,
-    section: &str,
+    locus: &engine::schema_diff::Locus,
     leaf: &str,
     from: u32,
     to: u32,
@@ -1561,7 +1558,7 @@ fn removed_item_slot_finding(
         "migrate-corpus.removed-item-slot",
         rel_key,
         format!(
-            "`{ty}` drops the declared prose slot `{section}.{leaf}` from its repeatable item \
+            "`{ty}` drops the declared prose slot `{locus}.{leaf}` from its repeatable item \
              block between schema-version {from} and {to}, so `{rel_key}` cannot be migrated: \
              committed items still carry their prose under that slot, and the migration never \
              strips authored prose (no data loss) — migrating would stamp the doc {to} while it \
@@ -1569,7 +1566,7 @@ fn removed_item_slot_finding(
              doc problem"
         ),
         format!(
-            "restore the `{section}.{leaf}` slot to the schema, or build the item-slot removal \
+            "restore the `{locus}.{leaf}` slot to the schema, or build the item-slot removal \
              (strip) arm with a deliberate data-loss opt-in in \
              `crates/engine/src/schema_diff.rs` + `crates/engine/src/transform.rs`, then re-run \
              `jigc migrate-corpus`"
@@ -1710,27 +1707,50 @@ fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
             // The one refusal whose repair is a **migration input**, not an arm: the old→new map
             // for an enum rename is unrecoverable from the schema pair, so the CLI authors it —
             // and a committed value the map does not cover is a gap in *that table*.
-            TransformError::Unsupported { kind, section }
-                if *kind == SchemaChangeKind::ValueRemapped.as_str() =>
+            TransformError::Unsupported { kind, locus }
+                if *kind == SchemaChangeKind::ValueRemapped.as_str() && !locus.is_nested() =>
             {
                 fold_refused_finding(
                     rel_key,
                     format!(
-                        "the migration renames the enum members of a field in `{section}`, and \
+                        "the migration renames the enum members of a field in `{locus}`, and \
                          this doc carries a committed value the authored old→new map does not \
                          cover, so no deterministic rewrite of it exists"
                     ),
                     format!(
-                        "declare the missing old→new value mapping for `{section}` in \
+                        "declare the missing old→new value mapping for `{locus}` in \
                          `crates/cli/src/migrate_corpus.rs` → `authored_remap`, then re-run \
                          `jigc migrate-corpus`"
                     ),
                 )
             }
-            TransformError::Unsupported { kind, section } => fold_refused_finding(
+            // THE THIRD LOCUS SAYS SO (M50 Increment 6 / T2). A nested-locus refusal shares the
+            // shipped `migrate-corpus.fold-refused` code — this increment mints none — but it
+            // must not inherit that code's *dead end* silently: what is un-built is the arm at a
+            // **nested** item block, not the kind, and `{locus}` renders the path
+            // (`releases/changes`) rather than the outer block a bare section id would name.
+            TransformError::Unsupported { kind, locus } if locus.is_nested() => {
+                fold_refused_finding(
+                    rel_key,
+                    format!(
+                        "the migration classifies a `{kind}` change at `{locus}` — a leaf of a \
+                         **nested** repeatable item block — and the transform driver's arm for \
+                         that kind is built at the item locus only, so folding it here would \
+                         splice at the wrong depth"
+                    ),
+                    format!(
+                        "build the nested-item-block arm of `{kind}` in \
+                         `crates/engine/src/transform.rs` (the classifier already names \
+                         `{locus}`), or move the leaf up to `{}`'s own item block, then re-run \
+                         `jigc migrate-corpus`",
+                        locus.section()
+                    ),
+                )
+            }
+            TransformError::Unsupported { kind, locus } => fold_refused_finding(
                 rel_key,
                 format!(
-                    "the migration classifies a `{kind}` change in `{section}` that the transform \
+                    "the migration classifies a `{kind}` change in `{locus}` that the transform \
                      driver does not apply — an un-built arm, or one refused by design"
                 ),
                 format!(

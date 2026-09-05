@@ -10,10 +10,13 @@
 //! - a **removed** item slot — the item-locus twin of `RemovedField`, whose
 //!   recorded pick is *refuse, not strip*, and whose message must name a **slot**: the prose it
 //!   would destroy is not a field line;
-//! - a **nested repeatable** leaf added, removed, or reshaped — no kind is built for it (T1-2's
-//!   `AddedNestedRepeatable` stays deferred, its trigger untouched), so all this change does is
-//!   make the delta **name itself**: it emits the backstop kind explicitly instead of vanishing
-//!   into a non-empty diff;
+//! - a **nested repeatable** leaf added or removed *as a whole block* — no kind is built for
+//!   it (T1-2's `AddedNestedRepeatable` stays deferred, its trigger untouched), so all this
+//!   change does is make the delta **name itself**: it emits the backstop kind explicitly
+//!   instead of vanishing into a non-empty diff. **A *reshape* of a block present on both sides
+//!   left this set at M50 Increment 6 / T2**: the classifier now recurses into it, so the third
+//!   arm below asserts the classification rather than the backstop
+//!   (`crates/cli/tests/migrate_locus_axis.rs` carries that locus's whole axis);
 //! - an item slot's own **`optional:`** delta — the leaf-kind the shared rule never reached,
 //!   which is what made `doctype-authoring.md`'s `OptionalRelaxed` row ("at both loci … and at
 //!   the slot level") false.
@@ -498,13 +501,26 @@ fn a_removed_nested_repeatable_leaf_blocks_the_run() {
     );
 }
 
-/// **A reshaped nested repeatable leaf blocks** — the leaf is present on both sides and its own
-/// block moved inside the conformance-relevant projection (its inner item block gains a field),
-/// which is a change no committed nested item satisfies by accident.
+/// **A reshaped nested repeatable leaf no longer rides the backstop — it classifies, and this
+/// corpus therefore migrates.** The leaf is present on both sides, so M50 Increment 6 / T2
+/// recurses into it: the added required field classifies `ProseNeeding` at the **third** locus
+/// (`findings/notes`) instead of `Unclassified`, the section heading it names already exists so
+/// nothing is minted, and the per-doc gate adjudicates the result. This record carries **zero**
+/// nested notes, so nothing is missing a required leaf and the doc is conformant at v2 — the
+/// stamp is the run's only byte delta.
+///
+/// **Inverted deliberately, and the blocking half moved rather than vanished**: a corpus that
+/// *does* carry a nested item collects `migrate-corpus.prose-needed` with a route naming the
+/// doc, driven on the shipped `changelog` in
+/// `crates/cli/tests/migrate_locus_axis.rs::a_required_nested_leaf_routes_the_author_not_the_source_tree`.
+/// Asserting *blocking* here would have gone green on the old cause — the backstop, routed at a
+/// file no adopter can edit — which is why the assertion is on the migrated bytes.
 #[test]
-fn a_reshaped_nested_repeatable_leaf_blocks_the_run() {
-    assert_nested_delta_blocks(
+fn a_reshaped_nested_repeatable_leaf_classifies_instead_of_riding_the_backstop() {
+    let home = TempDir::new("home");
+    let pack = pack_bumping(
         "nested-reshaped",
+        "completion-record",
         |shipped| with_nested_notes(shipped, ""),
         |shipped| {
             with_companion_field(
@@ -513,6 +529,16 @@ fn a_reshaped_nested_repeatable_leaf_blocks_the_run() {
             )
         },
     );
+    let repo = record_corpus();
+
+    let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
+    assert_eq!(sole_migrated(&report, ok), "completions/m1.md");
+    assert_eq!(
+        on_disk(repo.path(), "completions/m1.md"),
+        RECORD_V1.replace("schema-version: 1", "schema-version: 2"),
+        "no nested item is missing the new leaf, so the stamp is the migration's only delta",
+    );
+    assert_validates_clean(repo.path(), home.path(), pack.path());
 }
 
 // ---------------------------------------------------------------------------------------------

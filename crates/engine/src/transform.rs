@@ -103,7 +103,9 @@ use crate::field_block::{Field, Value};
 use crate::finding::Finding;
 use crate::parse::parse_sections;
 use crate::schema::{Leaf, Schema, SectionBody};
-use crate::schema_diff::{SchemaChange, SchemaChangeKind};
+use crate::schema_diff::{
+    Locus, LocusDisposition, SchemaChange, SchemaChangeKind, locus_disposition,
+};
 use crate::validate::schema_conformance;
 use crate::write::{self, GenerateError, ItemSlotError, SpliceError};
 use std::collections::BTreeMap;
@@ -130,8 +132,10 @@ pub enum TransformError {
         /// (`crates/cli/tests/schema_change_kind_registry.rs` fences every construction
         /// site in this module's production source).
         kind: &'static str,
-        /// The section the change concerns.
-        section: String,
+        /// The **locus** the change concerns — `releases` at the section and item loci,
+        /// `releases/changes` at the nested one, so a refusal one level down says which
+        /// level ([`crate::schema_diff::Locus`]).
+        locus: Locus,
     },
     /// The `added-item-slot` fold found an item whose **committed bytes the parse does not
     /// model** — prose after its `<!-- fields -->` group is the reachable instance — so the
@@ -192,11 +196,26 @@ pub fn transform(
 ) -> Result<String, TransformError> {
     let mut out = source.to_string();
     for change in changes {
+        // THE `kind x locus` CELL, asked before the fold (M50 Increment 6 / T2). A cell whose
+        // byte-writing arm is not built at this locus refuses here — naming the kind and the
+        // locus path — rather than reaching a per-variant arm that would splice an item-locus
+        // primitive at the wrong depth. Every other cell falls through to its own arm, which is
+        // where a zero-byte fold, a splice, and a by-design refusal are decided.
+        if let Some(locus) = change.locus()
+            && locus_disposition(SchemaChangeKind::from(change), locus.index())
+                == LocusDisposition::Unbuilt
+        {
+            return Err(TransformError::Unsupported {
+                kind: SchemaChangeKind::from(change).as_str(),
+                locus: locus.clone(),
+            });
+        }
         match change {
-            SchemaChange::FixedSlotToRepeatable { section } => {
+            SchemaChange::FixedSlotToRepeatable { locus } => {
                 // The default first item's title is the section id (deterministic,
                 // domain-empty, always slug-able). The primitive carries the old slot
                 // prose verbatim as that item's body.
+                let section = locus.section();
                 out = write::promote_slot_to_repeatable(
                     old_schema, new_schema, &out, section, section,
                 )?;
@@ -205,7 +224,7 @@ pub fn transform(
                 // Instance-byte identity: the existing value is still valid under the
                 // widened cardinality, so no splice is needed.
             }
-            SchemaChange::NarrowedCardinality { section, .. } => {
+            SchemaChange::NarrowedCardinality { locus, .. } => {
                 // THE NARROWING PICK — refuse (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T3;
                 // `corpus-migration.md` → The two silent-classification holes). A narrowing is
                 // **content-affecting**: a committed instance may carry more values than the new
@@ -217,10 +236,10 @@ pub fn transform(
                 // arm's door open.
                 return Err(TransformError::Unsupported {
                     kind: SchemaChangeKind::NarrowedCardinality.as_str(),
-                    section: section.clone(),
+                    locus: locus.clone(),
                 });
             }
-            SchemaChange::RemovedField { section, .. } => {
+            SchemaChange::RemovedField { locus, .. } => {
                 // THE REMOVAL PICK — refuse, not strip (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T5;
                 // `corpus-migration.md` → The two silent-classification holes, which left the
                 // shape open). A strip arm would splice the committed field line away
@@ -231,10 +250,10 @@ pub fn transform(
                 // driver appears.
                 return Err(TransformError::Unsupported {
                     kind: SchemaChangeKind::RemovedField.as_str(),
-                    section: section.clone(),
+                    locus: locus.clone(),
                 });
             }
-            SchemaChange::RemovedItemSlot { section, .. } => {
+            SchemaChange::RemovedItemSlot { locus, .. } => {
                 // THE REMOVAL PICK, at the item locus — refuse, not strip, on the same recorded
                 // reasoning as [`SchemaChange::RemovedField`] and one sharper than it: the bytes
                 // a strip arm would splice away here are the item's **authored prose**, so the
@@ -243,7 +262,7 @@ pub fn transform(
                 // backstop) at zero risk, and leaves the opt-in strip arm additive.
                 return Err(TransformError::Unsupported {
                     kind: SchemaChangeKind::RemovedItemSlot.as_str(),
-                    section: section.clone(),
+                    locus: locus.clone(),
                 });
             }
             SchemaChange::OptionalRelaxed { .. } => {
@@ -258,7 +277,7 @@ pub fn transform(
                 // declared member — nothing to remap, no authored map needed (the
                 // widened-cardinality sibling; `corpus-migration.md` → the `EnumWidened` kind).
             }
-            SchemaChange::AddedOptionalSection { section } => {
+            SchemaChange::AddedOptionalSection { locus } => {
                 // Splice the empty `## Heading` slot-section at its schema-ordered home —
                 // the same block-insert path the required-slot `ProseNeeding` arm uses,
                 // but an **optional** empty slot *conforms* instead of blocking, so this
@@ -267,9 +286,9 @@ pub fn transform(
                 // it is non-canonical; the empty-slot section canonicalizes to exactly the
                 // v2 writer shape (byte-stable — `render(parse(out)) == out`; proven by the
                 // byte-stability test), leaving every prior section's bytes untouched.
-                out = write::generate_section(new_schema, &out, section, Some(""), &[])?;
+                out = write::generate_section(new_schema, &out, locus.section(), Some(""), &[])?;
             }
-            SchemaChange::AddedRepeatableSection { section } => {
+            SchemaChange::AddedRepeatableSection { locus } => {
                 // Mint the empty `## Heading` at its schema-ordered home through the **same**
                 // block-insert the added-optional-section arm uses — the section body's shape
                 // (repeatable vs simple) is not the *insert's* concern: with no slot prose and
@@ -279,12 +298,9 @@ pub fn transform(
                 // store advisory, not a conformance break), so this is the migration's final
                 // byte-stable form — not a mint-then-author handoff, and the CLI invents no items
                 // (`corpus-migration.md` → The classifier's holes: `AddedRepeatableSection`).
-                out = write::generate_section(new_schema, &out, section, None, &[])?;
+                out = write::generate_section(new_schema, &out, locus.section(), None, &[])?;
             }
-            SchemaChange::ProseNeeding {
-                section,
-                leaf: None,
-            } => {
+            SchemaChange::ProseNeeding { locus, leaf: None } => {
                 // Framing A — the prose-routing branch (T4). A new **required section
                 // slot** has no deterministic default, so the CLI mints it **empty** at
                 // its schema-ordered home and stops: the reused conformance gate then
@@ -293,10 +309,10 @@ pub fn transform(
                 // prose — the determinism boundary (`corpus-migration.md` → Prose
                 // routing). The minted block is byte-stable by construction
                 // (`generate_section`), and `set_slot` fills it byte-stably once authored.
-                out = write::generate_section(new_schema, &out, section, Some(""), &[])?;
+                out = write::generate_section(new_schema, &out, locus.section(), Some(""), &[])?;
             }
             SchemaChange::ProseNeeding {
-                section,
+                locus,
                 leaf: Some(_),
             } => {
                 // A new required **field** with no default is also prose-needing, but the
@@ -307,16 +323,16 @@ pub fn transform(
                 // branch must block the migration rather than drop the change).
                 return Err(TransformError::Unsupported {
                     kind: SchemaChangeKind::ProseNeeding.as_str(),
-                    section: section.clone(),
+                    locus: locus.clone(),
                 });
             }
-            SchemaChange::AddedOptionalField { section, field } => {
-                out = apply_added_field(new_schema, &out, section, field)?;
+            SchemaChange::AddedOptionalField { locus, field } => {
+                out = apply_added_field(new_schema, &out, locus, field)?;
             }
-            SchemaChange::AddedItemField { section, field } => {
-                out = apply_added_item_field(new_schema, &out, section, field)?;
+            SchemaChange::AddedItemField { locus, field } => {
+                out = apply_added_item_field(new_schema, &out, locus, field)?;
             }
-            SchemaChange::AddedItemSlot { section, leaf } => {
+            SchemaChange::AddedItemSlot { locus, leaf } => {
                 // The item block gains a prose leaf. The primitive re-keys every committed
                 // item's slot prose onto the new template's leaf order and mints the added
                 // leaf **empty** at its schema-ordered offset — reading through `old_schema`,
@@ -327,20 +343,16 @@ pub fn transform(
                 // here — it mints empty and the per-doc conformance gate adjudicates it, so the
                 // doc collects the doc-authorable Framing-A route instead of a build
                 // instruction (`design/corpus-migration.md` → Prose routing).
-                out = write::insert_item_slot(old_schema, new_schema, &out, section, leaf)?;
+                out = write::insert_item_slot(old_schema, new_schema, &out, locus.section(), leaf)?;
             }
-            SchemaChange::ValueRemapped {
-                section,
-                field,
-                map,
-            } => {
+            SchemaChange::ValueRemapped { locus, field, map } => {
                 // The first **parameterized** transform kind: remap each committed value of
                 // the enum `field` through the authored old→new `map` (an enum rename is
                 // unrecoverable from the schema pair, so the CLI supplies the map — the
                 // determinism boundary holds: a deterministic input, not an LLM call). A
                 // committed value the map does not cover blocks loudly (`Unsupported`),
                 // never a silent no-op (`corpus-migration.md` → the value-remap kind).
-                out = apply_value_remap(new_schema, &out, section, field, map)?;
+                out = apply_value_remap(new_schema, &out, locus, field, map)?;
             }
             SchemaChange::Relocated { .. } => {
                 // A file move, not a content edit: the instance bytes are byte-identical
@@ -404,12 +416,13 @@ pub fn transform(
 fn apply_added_field(
     new_schema: &Schema,
     source: &str,
-    section: &str,
+    locus: &Locus,
     field: &str,
 ) -> Result<String, TransformError> {
+    let section = locus.section();
     let unsupported = || TransformError::Unsupported {
         kind: SchemaChangeKind::AddedOptionalField.as_str(),
-        section: section.to_string(),
+        locus: locus.clone(),
     };
     let sec = new_schema
         .sections
@@ -470,12 +483,13 @@ fn apply_added_field(
 fn apply_added_item_field(
     new_schema: &Schema,
     source: &str,
-    section: &str,
+    locus: &Locus,
     field: &str,
 ) -> Result<String, TransformError> {
+    let section = locus.section();
     let unsupported = || TransformError::Unsupported {
         kind: SchemaChangeKind::AddedItemField.as_str(),
-        section: section.to_string(),
+        locus: locus.clone(),
     };
     let sec = new_schema
         .sections
@@ -485,8 +499,22 @@ fn apply_added_item_field(
     let SectionBody::Repeatable { repeatable } = &sec.body else {
         return Err(unsupported());
     };
-    let decl = repeatable
-        .block
+    // THE DECLARATION IS RESOLVED AT THE CHANGE'S OWN LOCUS, never by section id alone (M50
+    // Increment 6 / T2). A nested leaf whose id also exists in the outer block — `date` on
+    // `changelog.releases` is the shipped collision — otherwise resolves to the *outer*
+    // declaration and takes its branch: it reads that field's `set:`-without-`default:` no-op,
+    // writes nothing, and lets the doc restamp with the declared value never placed.
+    let mut block = &repeatable.block;
+    for hop in locus.nested() {
+        let Some(Leaf::Repeatable { repeatable, .. }) = block
+            .iter()
+            .find(|leaf| matches!(leaf, Leaf::Repeatable { id, .. } if id == hop))
+        else {
+            return Err(unsupported());
+        };
+        block = &repeatable.block;
+    }
+    let decl = block
         .iter()
         .find_map(|leaf| match leaf {
             Leaf::Field(f) if f.id == field => Some(f.as_ref()),
@@ -497,10 +525,18 @@ fn apply_added_item_field(
     let value = match &decl.default {
         Some(default) => default.clone(),
         // The simple locus's rule, verbatim: an absence the conformance gate accepts writes no
-        // bytes on any item.
+        // bytes on any item — at **every** locus, which is why a nested add of a leaf the gate
+        // never asks for migrates instead of blocking.
         None if !crate::validate::is_author_required(decl) => return Ok(source.to_string()),
         None => return Err(unsupported()),
     };
+    // THE UN-BUILT HALF OF THE CELL. The deterministic-value arm places a bullet on every item
+    // through a primitive that addresses an item at the **second** locus only. Rather than
+    // splice at the wrong depth it refuses, naming the kind and the locus path (M50 Increment 7
+    // builds the nested splice).
+    if locus.is_nested() {
+        return Err(unsupported());
+    }
 
     // Collect the target item ids from the initial parse, then splice each in turn. Item ids are
     // stable under a field insert (the id-from leaf is untouched), so a fresh
@@ -540,23 +576,24 @@ fn apply_added_item_field(
 fn apply_value_remap(
     schema: &Schema,
     source: &str,
-    section: &str,
+    locus: &Locus,
     field: &str,
     map: &BTreeMap<String, String>,
 ) -> Result<String, TransformError> {
-    fn unsupported(section: &str) -> TransformError {
+    fn unsupported(locus: &Locus) -> TransformError {
         TransformError::Unsupported {
             kind: SchemaChangeKind::ValueRemapped.as_str(),
-            section: section.to_string(),
+            locus: locus.clone(),
         }
     }
+    let section = locus.section();
     let sec = schema
         .sections
         .iter()
         .find(|s| s.id == section)
-        .ok_or_else(|| unsupported(section))?;
+        .ok_or_else(|| unsupported(locus))?;
 
-    let doc = parse_sections(schema, source).map_err(|_| unsupported(section))?;
+    let doc = parse_sections(schema, source).map_err(|_| unsupported(locus))?;
     let Some(parsed) = doc.sections.iter().find(|s| s.id == section) else {
         // The instance omits the section — nothing to remap.
         return Ok(source.to_string());
@@ -568,7 +605,7 @@ fn apply_value_remap(
                 // The field is absent in this instance — nothing to remap.
                 return Ok(source.to_string());
             };
-            let new_value = remap_value(&f.value, map).ok_or_else(|| unsupported(section))?;
+            let new_value = remap_value(&f.value, map).ok_or_else(|| unsupported(locus))?;
             Ok(write::set_field(
                 schema, source, section, field, &new_value,
             )?)
@@ -582,8 +619,7 @@ fn apply_value_remap(
             let mut edits: Vec<(String, String)> = Vec::new();
             for item in &parsed.items {
                 if let Some(f) = item.fields.iter().find(|f| f.key == field) {
-                    let new_value =
-                        remap_value(&f.value, map).ok_or_else(|| unsupported(section))?;
+                    let new_value = remap_value(&f.value, map).ok_or_else(|| unsupported(locus))?;
                     edits.push((item.id.clone(), new_value));
                 }
             }
@@ -768,6 +804,13 @@ mod tests {
     use crate::validate::schema_conformance;
     use crate::write::{Instance, ItemContent, SectionContent, instance_from_source, render};
 
+    /// A repeatable section's **item block** — locus 2, where every item-locus expectation
+    /// below sits. Spelled out rather than `.into()` (which builds the section's own locus, 1)
+    /// because the classifier now says which of the two a change was found at.
+    fn item_locus(section: &str) -> crate::schema_diff::Locus {
+        crate::schema_diff::Locus::at_item_block(section)
+    }
+
     /// Parse `out` against `schema` and assert it carries **zero** conformance
     /// findings — the `conformance_for` clean half of the done-criterion.
     fn assert_conforms(schema: &Schema, out: &str) {
@@ -874,7 +917,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::FixedSlotToRepeatable {
-                section: "requirements".to_string()
+                locus: "requirements".into()
             }]
         );
 
@@ -988,7 +1031,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::WidenedCardinality {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 field: "derived-from".to_string()
             }]
         );
@@ -1086,7 +1129,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::ProseNeeding {
-                section: "rationale".to_string(),
+                locus: "rationale".into(),
                 leaf: None,
             }]
         );
@@ -1175,7 +1218,7 @@ sections:
         assert_eq!(
             note_diff,
             vec![SchemaChange::ProseNeeding {
-                section: "rationale".to_string(),
+                locus: "rationale".into(),
                 leaf: None,
             }]
         );
@@ -1405,7 +1448,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedOptionalField {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 field: "schema-version".to_string(),
             }]
         );
@@ -1534,7 +1577,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedOptionalField {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 field: "schema-version".to_string(),
             }]
         );
@@ -1604,7 +1647,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedOptionalField {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 field: "link".to_string(),
             }]
         );
@@ -1691,7 +1734,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedOptionalSection {
-                section: "options".to_string(),
+                locus: "options".into(),
             }]
         );
 
@@ -1834,7 +1877,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedRepeatableSection {
-                section: "tasks".to_string(),
+                locus: "tasks".into(),
             }],
             "a wholly-new repeatable names itself (never the empty diff, never the backstop)"
         );
@@ -2195,7 +2238,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::ValueRemapped {
-                section: "entries".to_string(),
+                locus: item_locus("entries"),
                 field: "kind".to_string(),
                 map: BTreeMap::new(),
             }]
@@ -2205,7 +2248,7 @@ sections:
             ("I".to_string(), "Idea".to_string()),
         ]);
         let changes = vec![SchemaChange::ValueRemapped {
-            section: "entries".to_string(),
+            locus: item_locus("entries"),
             field: "kind".to_string(),
             map,
         }];
@@ -2328,7 +2371,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::ValueRemapped {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 field: "status".to_string(),
                 map: BTreeMap::new(),
             }]
@@ -2338,7 +2381,7 @@ sections:
             ("closed".to_string(), "archived".to_string()),
         ]);
         let changes = vec![SchemaChange::ValueRemapped {
-            section: "meta".to_string(),
+            locus: "meta".into(),
             field: "status".to_string(),
             map,
         }];
@@ -2385,7 +2428,7 @@ sections:
         // The map covers `closed` but NOT the committed `open` value.
         let map = BTreeMap::from([("closed".to_string(), "archived".to_string())]);
         let changes = vec![SchemaChange::ValueRemapped {
-            section: "meta".to_string(),
+            locus: "meta".into(),
             field: "status".to_string(),
             map,
         }];
@@ -2394,7 +2437,7 @@ sections:
             transform(&v1, &v2, &src, &changes),
             Err(TransformError::Unsupported {
                 kind: "value-remapped",
-                section: "meta".to_string(),
+                locus: "meta".into(),
             }),
             "an uncovered committed value blocks loudly"
         );
@@ -2430,7 +2473,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::EnumWidened {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 field: "status".to_string(),
             }],
             "a widening names itself — it is not a rename, and needs no authored map"
@@ -2501,7 +2544,7 @@ prose, and no `## Body` heading at all
         );
 
         let changes = [SchemaChange::WidenedCardinality {
-            section: "body".to_string(),
+            locus: "body".into(),
             field: "rel".to_string(),
         }];
         assert_eq!(
@@ -2557,7 +2600,7 @@ prose, and no `## Body` heading at all
         assert_eq!(
             diff,
             vec![SchemaChange::NarrowedCardinality {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 field: "derived-from".to_string(),
             }],
             "a narrowing names itself — it is not the widening no-op"
@@ -2567,7 +2610,7 @@ prose, and no `## Body` heading at all
             transform(&v1, &v2, &src, &diff),
             Err(TransformError::Unsupported {
                 kind: "narrowed-cardinality",
-                section: "meta".to_string(),
+                locus: "meta".into(),
             }),
             "the driver refuses a narrowing (it is content-affecting, never a no-op)"
         );
@@ -2685,7 +2728,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::OptionalRelaxed {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 leaf: Some("derived-from".to_string()),
             }],
             "the relaxation names itself (never the empty diff, never the backstop)"
@@ -2799,7 +2842,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::RemovedField {
-                section: "meta".to_string(),
+                locus: "meta".into(),
                 field: "derived-from".to_string(),
             }],
             "a dropped leaf names itself — it is not invisible, and not the backstop's residual"
@@ -2809,7 +2852,7 @@ sections:
             transform(&v1, &v2, &src, &diff),
             Err(TransformError::Unsupported {
                 kind: "removed-field",
-                section: "meta".to_string(),
+                locus: "meta".into(),
             }),
             "the driver refuses a removal (stripping the value would lose committed data)"
         );
@@ -2843,14 +2886,14 @@ sections:
         let v1 = prd_v1();
         let (src, _) = prd_v0_doc();
         let prose_needing_field = vec![SchemaChange::ProseNeeding {
-            section: "vision".to_string(),
+            locus: "vision".into(),
             leaf: Some("owner".to_string()),
         }];
         assert_eq!(
             transform(&v1, &v1, &src, &prose_needing_field),
             Err(TransformError::Unsupported {
                 kind: "prose-needing",
-                section: "vision".to_string()
+                locus: "vision".into()
             })
         );
     }
@@ -2966,7 +3009,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedItemField {
-                section: "entries".to_string(),
+                locus: item_locus("entries"),
                 field: "kind".to_string(),
             }]
         );
@@ -3035,7 +3078,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedItemField {
-                section: "entries".to_string(),
+                locus: item_locus("entries"),
                 field: "owner".to_string(),
             }]
         );
@@ -3078,7 +3121,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::ProseNeeding {
-                section: "entries".to_string(),
+                locus: item_locus("entries"),
                 leaf: Some("owner".to_string()),
             }]
         );
@@ -3219,7 +3262,7 @@ sections:
             assert_eq!(
                 diff,
                 vec![SchemaChange::AddedOptionalField {
-                    section: "meta".to_string(),
+                    locus: "meta".into(),
                     field: field.to_string(),
                 }],
                 "{label}: an absence that already conforms is placeable, not prose-needing"
@@ -3298,7 +3341,7 @@ sections:
             assert_eq!(
                 diff,
                 vec![SchemaChange::AddedItemField {
-                    section: "entries".to_string(),
+                    locus: item_locus("entries"),
                     field: field.to_string(),
                 }],
                 "{label}: the item locus classifies exactly as its simple-section twin"
@@ -3437,7 +3480,7 @@ sections:
         assert_eq!(
             schema_diff(&one, &two),
             vec![SchemaChange::AddedItemSlot {
-                section: "milestones".to_string(),
+                locus: item_locus("milestones"),
                 leaf: "detail".to_string(),
             }],
             "1→2: the added slot leaf classifies"
@@ -3474,7 +3517,7 @@ sections:
         assert_eq!(
             schema_diff(&none, &first),
             vec![SchemaChange::AddedItemSlot {
-                section: "milestones".to_string(),
+                locus: item_locus("milestones"),
                 leaf: "proves".to_string(),
             }],
             "0→1: the added slot leaf classifies too — the arity the report's `detail` needs"
@@ -3610,7 +3653,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedItemSlot {
-                section: "milestones".to_string(),
+                locus: item_locus("milestones"),
                 leaf: "risk".to_string(),
             }]
         );
@@ -3658,7 +3701,7 @@ sections:
         assert_eq!(
             diff,
             vec![SchemaChange::AddedItemSlot {
-                section: "milestones".to_string(),
+                locus: item_locus("milestones"),
                 leaf: "detail".to_string(),
             }],
             "requiredness does not split the kind — the relabel is the same byte work"

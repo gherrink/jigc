@@ -18,6 +18,275 @@
 use crate::schema::{Field, Leaf, Schema, SectionBody};
 use std::collections::{BTreeMap, HashMap};
 
+/// **Where a classified change sits** — the section it concerns, plus the chain of nested
+/// repeatable leaves hopped into to reach it.
+///
+/// The classifier has three loci, not the two it iterated until M50 Increment 6: a section's
+/// own fields and slot (**1**), its repeatable item block's leaves (**2**), and a *nested*
+/// repeatable item block's leaves (**3**). The count is [`LOCI`], derived from
+/// [`crate::schema::MAX_NESTING_DEPTH`] rather than written down — a literal here would
+/// re-enact M45's *statement == constant* failure one layer up.
+///
+/// Before this type the item-locus variants carried a flat `section: String`, which cannot
+/// say *which* block inside the section a leaf belongs to. Two costs followed, and the second
+/// is the sharp one: the classifier could not descend at all (a nested `Leaf::Repeatable` was
+/// compared wholesale and named the backstop), and the driver resolved an added leaf **by
+/// section id alone** — so a nested leaf whose id also exists in the outer block (`date` on
+/// `changelog.releases` is the shipped collision) resolved to the *outer* declaration and took
+/// its branch.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Locus {
+    /// The section id.
+    section: String,
+    /// The nested repeatable leaf ids hopped into, outermost first. Empty at loci 1 and 2;
+    /// one entry at locus 3.
+    nested: Vec<String>,
+    /// Whether the change sits inside a repeatable **item block** rather than the section's
+    /// own fields/slot. A nested hop is always into an item block, so `nested` is empty
+    /// whenever this is `false`.
+    item: bool,
+}
+
+impl Locus {
+    /// The section's **own** fields and slot — locus 1.
+    pub fn at_section(section: &str) -> Self {
+        Locus {
+            section: section.to_owned(),
+            nested: Vec::new(),
+            item: false,
+        }
+    }
+
+    /// A section's repeatable **item block** — locus 2.
+    pub fn at_item_block(section: &str) -> Self {
+        Locus {
+            section: section.to_owned(),
+            nested: Vec::new(),
+            item: true,
+        }
+    }
+
+    /// This locus's **nested** repeatable leaf `id` — one level deeper, and always an item
+    /// block (a nested repeatable has no fields of its own outside its block).
+    pub fn nested_in(&self, id: &str) -> Self {
+        let mut nested = self.nested.clone();
+        nested.push(id.to_owned());
+        Locus {
+            section: self.section.clone(),
+            nested,
+            item: true,
+        }
+    }
+
+    /// The section id — what a store lookup and a `## Heading` presence probe key on.
+    pub fn section(&self) -> &str {
+        &self.section
+    }
+
+    /// The nested repeatable leaf ids hopped into, outermost first.
+    pub fn nested(&self) -> &[String] {
+        &self.nested
+    }
+
+    /// Whether the change sits in a repeatable item block (locus 2 or deeper).
+    pub fn is_item(&self) -> bool {
+        self.item
+    }
+
+    /// Whether the change sits in a **nested** repeatable item block (locus 3).
+    pub fn is_nested(&self) -> bool {
+        !self.nested.is_empty()
+    }
+
+    /// The **locus index**, `1..=LOCI`: the section itself is 1, its item block 2, a nested
+    /// item block 3. The index a [`locus_disposition`] cell is looked up by.
+    pub fn index(&self) -> usize {
+        usize::from(self.item) + 1 + self.nested.len()
+    }
+}
+
+/// Rendered as the path a reader follows — `releases` at loci 1 and 2, `releases/changes` at
+/// locus 3. Every refusal message and route that used to interpolate a bare section id
+/// interpolates this, so a locus-3 refusal says *where* rather than naming the outer block.
+impl std::fmt::Display for Locus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.section)?;
+        for hop in &self.nested {
+            write!(f, "/{hop}")?;
+        }
+        Ok(())
+    }
+}
+
+impl From<&str> for Locus {
+    fn from(section: &str) -> Self {
+        Locus::at_section(section)
+    }
+}
+
+impl From<String> for Locus {
+    fn from(section: String) -> Self {
+        Locus {
+            section,
+            nested: Vec::new(),
+            item: false,
+        }
+    }
+}
+
+/// The number of **loci** the classifier can emit a change at — derived from
+/// [`crate::schema::MAX_NESTING_DEPTH`], never written down.
+///
+/// A repeatable may nest to `MAX_NESTING_DEPTH` levels, and each level is a block whose
+/// leaves the classifier reads; the section's own fields and slot are the level above them.
+/// So the loci are `MAX_NESTING_DEPTH + 1` — today **3**, and one more the day the address
+/// grammar grows a hop pair.
+pub const LOCI: usize = crate::schema::MAX_NESTING_DEPTH + 1;
+
+/// One `kind × locus` cell's **disposition** — the table
+/// `completions/artifacts/M50/settle-record.md` → D6 requires of this increment, in code
+/// rather than in prose, because *"4 refuse, zero bytes"* and *"the locus closes with no
+/// refusal cells"* cannot both stand and a count is not a set.
+///
+/// The table is [`locus_disposition`], and it is **load-bearing**: [`crate::transform::transform`]
+/// asks it before folding, so an [`Unbuilt`](LocusDisposition::Unbuilt) cell refuses — naming
+/// the kind and the locus path — instead of splicing at the wrong depth.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocusDisposition {
+    /// A **doctype-level** change ([`SchemaChange::Relocated`],
+    /// [`SchemaChange::DisplayTitleChanged`]): it belongs to no locus at all, at every index.
+    DoctypeLevel,
+    /// The classifier never emits this kind at this locus — another kind covers the shape
+    /// here (a section add at the item locus, an item field at the section locus), or the
+    /// shape is unreachable (a nested repeatable inside a nested repeatable is refused at
+    /// schema load by the [`crate::schema::MAX_NESTING_DEPTH`] cap).
+    Unreachable,
+    /// Reachable, and the driver's arm for this cell **decides**: it folds to zero bytes,
+    /// splices, or refuses a sub-shape it names. The refusals by design
+    /// ([`SchemaChange::NarrowedCardinality`], the two removals) are
+    /// [`Refused`](LocusDisposition::Refused) instead, because they are the same verdict at
+    /// every locus and their codes are the pick, not an arm's absence.
+    Applied,
+    /// Reachable, and **refused by design at every locus** — the recorded M42 picks (refuse a
+    /// narrowing rather than restamp unchecked; refuse a removal rather than strip committed
+    /// values). Each keeps its shipped `migrate-corpus.*` code; only the locus path it names
+    /// moves.
+    Refused,
+    /// Reachable, and the **byte-writing** arm at this locus is not built (M50 Increment 7).
+    /// The fold refuses, naming the kind and the locus path, rather than splicing at the
+    /// wrong depth — the transient shape a still-building arm takes, never a permanent
+    /// surface.
+    Unbuilt,
+}
+
+/// The disposition of one `kind × locus` cell — the 18 × `LOCI` table, exhaustive over
+/// [`SchemaChangeKind`] so a nineteenth kind cannot compile without being dispositioned at
+/// every locus.
+///
+/// **The claim it encodes**: the locus-3 column is the locus-2 column *minus the backstop*.
+/// Every kind the item locus carries, the nested item locus carries too — which is exactly
+/// what "no cell reads [`SchemaChange::Unclassified`] for a kind that has one" means, and it
+/// is checked mechanically rather than asserted (`crates/cli/tests/migrate_locus_axis.rs`).
+///
+/// Two cells are [`LocusDisposition::Unbuilt`], both byte-writing and both M50 Increment 7's:
+/// splicing an added slot leaf into a nested item, and remapping a nested enum value.
+/// [`SchemaChange::AddedItemField`] is [`Applied`](LocusDisposition::Applied) at locus 3
+/// because its **zero-byte** arm — an absence the conformance gate accepts, which is every
+/// nested add the shipped corpus needs — folds there today; its `default:`-carrying arm
+/// refuses inside [`crate::transform::transform`], naming itself and the locus.
+///
+/// A `locus` outside `1..=LOCI` has no cell and answers [`LocusDisposition::Unreachable`].
+pub const fn locus_disposition(kind: SchemaChangeKind, locus: usize) -> LocusDisposition {
+    use LocusDisposition::{Applied, DoctypeLevel, Refused, Unbuilt, Unreachable};
+    // The three loci, as booleans a `const fn` can branch on.
+    let section = locus == 1;
+    let item = locus == 2;
+    let nested = locus == 3 && locus <= LOCI;
+    match kind {
+        // Section-locus only: the item locus's twin of an added field is `AddedItemField`,
+        // and a section is not a thing an item block can gain.
+        SchemaChangeKind::AddedOptionalField
+        | SchemaChangeKind::AddedOptionalSection
+        | SchemaChangeKind::AddedRepeatableSection
+        | SchemaChangeKind::FixedSlotToRepeatable => {
+            if section {
+                Applied
+            } else {
+                Unreachable
+            }
+        }
+        // The shared existing-leaf rules — one rule, every locus (`diff_leaf`).
+        SchemaChangeKind::WidenedCardinality
+        | SchemaChangeKind::EnumWidened
+        | SchemaChangeKind::OptionalRelaxed
+        | SchemaChangeKind::ProseNeeding
+        | SchemaChangeKind::PresentationOnly => {
+            if section || item || nested {
+                Applied
+            } else {
+                Unreachable
+            }
+        }
+        SchemaChangeKind::NarrowedCardinality | SchemaChangeKind::RemovedField => {
+            if section || item || nested {
+                Refused
+            } else {
+                Unreachable
+            }
+        }
+        // Item-locus kinds: reachable at 2 and 3, never at the section's own leaves.
+        SchemaChangeKind::AddedItemField => {
+            if item || nested {
+                Applied
+            } else {
+                Unreachable
+            }
+        }
+        SchemaChangeKind::RemovedItemSlot => {
+            if item || nested {
+                Refused
+            } else {
+                Unreachable
+            }
+        }
+        // The two byte-writing cells Increment 7 builds. Refusing here is what keeps the
+        // fold from splicing an item-locus primitive at the wrong depth.
+        SchemaChangeKind::AddedItemSlot => {
+            if item {
+                Applied
+            } else if nested {
+                Unbuilt
+            } else {
+                Unreachable
+            }
+        }
+        SchemaChangeKind::ValueRemapped => {
+            if section || item {
+                Applied
+            } else if nested {
+                Unbuilt
+            } else {
+                Unreachable
+            }
+        }
+        // Doctype-level: `location` / `placement` / `display-title` are `Schema` fields the
+        // section diff never inspects, so they sit at no locus.
+        SchemaChangeKind::Relocated | SchemaChangeKind::DisplayTitleChanged => DoctypeLevel,
+        // The backstop, at the two loci a shape can escape the table: a section-level delta
+        // no kind classifies, and — at the item locus — a nested repeatable **block** added,
+        // dropped, or re-keyed (`id-from`), all outside the approved table and deliberately
+        // left on the residual. It is unreachable at locus 3 because the schema loader
+        // refuses a repeatable nested inside a nested repeatable.
+        SchemaChangeKind::Unclassified => {
+            if section || item {
+                Refused
+            } else {
+                Unreachable
+            }
+        }
+    }
+}
+
 /// One classified change between an old and a new [`Schema`], by kind.
 ///
 /// Each variant names the section (and, where applicable, the leaf) it concerns —
@@ -32,8 +301,8 @@ pub enum SchemaChange {
     /// M34 Inc-3 (the live stamp dogfood — the branch-split); only the
     /// *classification* lives here.
     AddedOptionalField {
-        /// The section the field was added to.
-        section: String,
+        /// The **locus** the field was added to (locus 1 — a section's own fields).
+        locus: Locus,
         /// The added field's id.
         field: String,
     },
@@ -49,8 +318,8 @@ pub enum SchemaChange {
     /// direction is classified, never assumed (`design/corpus-migration.md` → The two silent-
     /// classification holes).
     WidenedCardinality {
-        /// The section carrying the field.
-        section: String,
+        /// The locus carrying the field.
+        locus: Locus,
         /// The field whose cardinality changed.
         field: String,
     },
@@ -69,8 +338,8 @@ pub enum SchemaChange {
     /// is strictly better than the pre-M42 behaviour, which classified **any** `card` delta as a
     /// widening and folded a narrowing to zero bytes, restamping the corpus **past the gate**.
     NarrowedCardinality {
-        /// The section carrying the field.
-        section: String,
+        /// The locus carrying the field.
+        locus: Locus,
         /// The field whose cardinality was narrowed.
         field: String,
     },
@@ -87,8 +356,8 @@ pub enum SchemaChange {
     /// value — with no map to author, because nothing was renamed
     /// (`design/corpus-migration.md` → The classifier's holes).
     EnumWidened {
-        /// The section carrying the enum field.
-        section: String,
+        /// The locus carrying the enum field.
+        locus: Locus,
         /// The enum field whose member set grew.
         field: String,
     },
@@ -106,8 +375,8 @@ pub enum SchemaChange {
     /// value-remap kind, the structural-auto vs value-semantic-authored distinction). The
     /// determinism *boundary* holds — the map is a deterministic CLI input, not an LLM call.
     ValueRemapped {
-        /// The section carrying the enum field.
-        section: String,
+        /// The locus carrying the enum field.
+        locus: Locus,
         /// The enum field whose member set was renamed.
         field: String,
         /// The authored old→new value map (**empty** as emitted by the classifier; the CLI
@@ -143,8 +412,8 @@ pub enum SchemaChange {
     /// declared `default:` silently never landed), a required one was a **permanent mutual dead
     /// end** (`validate` said *run the migration*, `migrate-corpus` said *author the prose*).
     AddedItemField {
-        /// The repeatable section whose item block gained the field.
-        section: String,
+        /// The locus whose item block gained the field (2, or 3 when nested).
+        locus: Locus,
         /// The added field's id.
         field: String,
     },
@@ -175,8 +444,8 @@ pub enum SchemaChange {
     /// [`Self::RemovedField`] records: the backstop is a **residual**, so an added slot arriving
     /// alongside any classified change would leave the diff non-empty and be silently dropped.
     AddedItemSlot {
-        /// The repeatable section whose item block gained the slot leaf.
-        section: String,
+        /// The locus whose item block gained the slot leaf (2, or 3 when nested).
+        locus: Locus,
         /// The added slot leaf's id.
         leaf: String,
     },
@@ -190,8 +459,8 @@ pub enum SchemaChange {
     /// (`design/corpus-migration.md` → The deterministic transform, 2. added-optional-
     /// section).
     AddedOptionalSection {
-        /// The added optional slot section's id.
-        section: String,
+        /// The added optional slot section's locus.
+        locus: Locus,
     },
 
     /// A wholly-new **repeatable** section in `v2` — an added `## Heading` whose body is an
@@ -208,8 +477,8 @@ pub enum SchemaChange {
     /// residual and the migration refused — a doctype could not grow a repeatable section at all
     /// (`design/corpus-migration.md` → The classifier's holes).
     AddedRepeatableSection {
-        /// The added repeatable section's id.
-        section: String,
+        /// The added repeatable section's locus.
+        locus: Locus,
     },
 
     /// A section that was a simple `<<slot>>` becoming a repeatable item-block —
@@ -217,8 +486,8 @@ pub enum SchemaChange {
     /// first item; `design/corpus-migration.md`). Only emitted when the old
     /// section actually carried a slot (the physical prose to promote).
     FixedSlotToRepeatable {
-        /// The section promoted from simple-slot to repeatable.
-        section: String,
+        /// The locus promoted from simple-slot to repeatable.
+        locus: Locus,
     },
 
     /// A new **required** slot or field with **no deterministic default** — the
@@ -227,8 +496,8 @@ pub enum SchemaChange {
     /// section-level slot is anonymous, so `leaf` is `None` for it and
     /// `Some(<field-id>)` for a required-without-default field.
     ProseNeeding {
-        /// The section the new required prose belongs to.
-        section: String,
+        /// The locus the new required prose belongs to.
+        locus: Locus,
         /// The leaf id for a required field; `None` for a section's own slot.
         leaf: Option<String>,
     },
@@ -276,8 +545,8 @@ pub enum SchemaChange {
     /// render a currently-conformant doc non-conformant, so it classifies [`Self::ProseNeeding`]
     /// (or, when the leaf is not thereby author-required, [`Self::PresentationOnly`]).
     OptionalRelaxed {
-        /// The section carrying the leaf.
-        section: String,
+        /// The locus carrying the leaf.
+        locus: Locus,
         /// The field id; `None` for a section's own (anonymous) slot.
         leaf: Option<String>,
     },
@@ -301,8 +570,8 @@ pub enum SchemaChange {
     /// leaves the diff non-empty, so the backstop never fires and the removal would be **silently
     /// dropped**.
     RemovedField {
-        /// The section that declared the dropped leaf.
-        section: String,
+        /// The locus that declared the dropped leaf.
+        locus: Locus,
         /// The dropped leaf's field id.
         field: String,
     },
@@ -326,8 +595,8 @@ pub enum SchemaChange {
     /// dropped** — the doc restamped while every item still carries prose under a sub-label the
     /// schema no longer declares.
     RemovedItemSlot {
-        /// The repeatable section whose item block dropped the slot leaf.
-        section: String,
+        /// The locus whose item block dropped the slot leaf (2, or 3 when nested).
+        locus: Locus,
         /// The dropped slot leaf's id.
         leaf: String,
     },
@@ -367,6 +636,43 @@ pub enum SchemaChange {
     /// move that rides **alongside** a classified kind is not caught here — which is why each
     /// named shape gets its own kind rather than relying on this signal.
     Unclassified,
+}
+
+impl SchemaChange {
+    /// **Where this change sits**, for the fourteen kinds that sit anywhere.
+    ///
+    /// `None` for the two doctype-level kinds ([`SchemaChange::Relocated`],
+    /// [`SchemaChange::DisplayTitleChanged`] — `location` / `placement` / `display-title` are
+    /// `Schema` fields no section carries) and for the two locus-free residuals
+    /// ([`SchemaChange::PresentationOnly`], [`SchemaChange::Unclassified`], both of which name
+    /// a delta rather than a place). Exhaustive by construction, so a nineteenth variant does
+    /// not compile without deciding whether it has one.
+    ///
+    /// [`crate::transform::transform`] asks this before folding, so the `kind × locus` cell a
+    /// change lands in is read from the change itself rather than inferred from the schema it
+    /// was classified against.
+    pub fn locus(&self) -> Option<&Locus> {
+        match self {
+            SchemaChange::AddedOptionalField { locus, .. }
+            | SchemaChange::WidenedCardinality { locus, .. }
+            | SchemaChange::NarrowedCardinality { locus, .. }
+            | SchemaChange::EnumWidened { locus, .. }
+            | SchemaChange::ValueRemapped { locus, .. }
+            | SchemaChange::AddedItemField { locus, .. }
+            | SchemaChange::AddedItemSlot { locus, .. }
+            | SchemaChange::AddedOptionalSection { locus }
+            | SchemaChange::AddedRepeatableSection { locus }
+            | SchemaChange::FixedSlotToRepeatable { locus }
+            | SchemaChange::ProseNeeding { locus, .. }
+            | SchemaChange::OptionalRelaxed { locus, .. }
+            | SchemaChange::RemovedField { locus, .. }
+            | SchemaChange::RemovedItemSlot { locus, .. } => Some(locus),
+            SchemaChange::Relocated { .. }
+            | SchemaChange::DisplayTitleChanged { .. }
+            | SchemaChange::PresentationOnly
+            | SchemaChange::Unclassified => None,
+        }
+    }
 }
 
 /// The **discriminant** of a [`SchemaChange`] — the classifier's kind space as an
@@ -659,7 +965,7 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
         // supported `fixed-slot→repeatable-with-default` transform.
         (SectionBody::Simple { slot: Some(_), .. }, SectionBody::Repeatable { .. }) => {
             out.push(SchemaChange::FixedSlotToRepeatable {
-                section: id.to_owned(),
+                locus: Locus::at_section(id),
             });
         }
         (
@@ -677,7 +983,7 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
                 // `leaf: None`). An added *optional* slot leaves existing docs conformant, so it
                 // needs no transform.
                 (None, Some(s)) if !s.optional => out.push(SchemaChange::ProseNeeding {
-                    section: id.to_owned(),
+                    locus: Locus::at_section(id),
                     leaf: None,
                 }),
                 // THE SLOT-LEVEL `optional` FLAG DELTA (the sixth hole), through the **one**
@@ -686,11 +992,11 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
                 // fell through to the backstop's residual; before M49 Inc-4 T2 the *item* locus
                 // still was, which is what made the rule worth having one home.
                 (Some(old), Some(new)) if old.optional != new.optional => {
-                    out.push(slot_flag_change(id, None, new.optional));
+                    out.push(slot_flag_change(&Locus::at_section(id), None, new.optional));
                 }
                 _ => {}
             }
-            diff_fields(id, old_fields, new_fields, out);
+            diff_fields(&Locus::at_section(id), old_fields, new_fields, out);
         }
         // Both repeatable: the item locus, whose whole leaf surface [`diff_item_fields`]
         // classifies — an added or removed field or slot, an existing leaf's `card` / `of` /
@@ -703,7 +1009,12 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
                 repeatable: new_rep,
             },
         ) => {
-            diff_item_fields(id, &old_rep.block, &new_rep.block, out);
+            diff_item_fields(
+                &Locus::at_item_block(id),
+                &old_rep.block,
+                &new_rep.block,
+                out,
+            );
         }
         // Any other shape change (repeatable→simple, slotless simple→repeatable,
         // removed leaves) is breaking/unsupported — not classified here.
@@ -718,20 +1029,20 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
 /// one read `card` direction-blind, the item one read neither — which is why the rule lives in
 /// one function now (`design/corpus-migration.md` → The two silent-classification holes: *both
 /// loops iterate `new`'s leaves and inspect only `card` + `of`*).
-fn diff_leaf(section: &str, old: &Field, new: &Field, out: &mut Vec<SchemaChange>) {
-    let (id, field) = (section.to_owned(), new.id.clone());
+fn diff_leaf(locus: &Locus, old: &Field, new: &Field, out: &mut Vec<SchemaChange>) {
+    let field = new.id.clone();
     if old.optional != new.optional {
-        out.push(optional_flag_change(section, new));
+        out.push(optional_flag_change(locus, new));
     }
     if old.card != new.card {
         out.push(if widens_card(old.card.as_deref(), new.card.as_deref()) {
             SchemaChange::WidenedCardinality {
-                section: id.clone(),
+                locus: locus.clone(),
                 field: field.clone(),
             }
         } else {
             SchemaChange::NarrowedCardinality {
-                section: id.clone(),
+                locus: locus.clone(),
                 field: field.clone(),
             }
         });
@@ -743,10 +1054,13 @@ fn diff_leaf(section: &str, old: &Field, new: &Field, out: &mut Vec<SchemaChange
         // a byte no-op). Anything else (a rename, a member drop) is value-semantic: the CLI
         // authors the old→new map.
         out.push(if old_of.iter().all(|member| new_of.contains(member)) {
-            SchemaChange::EnumWidened { section: id, field }
+            SchemaChange::EnumWidened {
+                locus: locus.clone(),
+                field,
+            }
         } else {
             SchemaChange::ValueRemapped {
-                section: id,
+                locus: locus.clone(),
                 field,
                 map: BTreeMap::new(),
             }
@@ -771,15 +1085,15 @@ fn diff_leaf(section: &str, old: &Field, new: &Field, out: &mut Vec<SchemaChange
 ///   conformance gate's absent-field arm consults* — so the classifier's verdict and the gate's
 ///   can never drift (the design's flat "a tighten is prose-needing" rule, refined against the
 ///   gate that actually adjudicates it).
-fn optional_flag_change(section: &str, new: &Field) -> SchemaChange {
+fn optional_flag_change(locus: &Locus, new: &Field) -> SchemaChange {
     if new.optional {
         SchemaChange::OptionalRelaxed {
-            section: section.to_owned(),
+            locus: locus.clone(),
             leaf: Some(new.id.clone()),
         }
     } else if crate::validate::is_author_required(new) {
         SchemaChange::ProseNeeding {
-            section: section.to_owned(),
+            locus: locus.clone(),
             leaf: Some(new.id.clone()),
         }
     } else {
@@ -845,20 +1159,27 @@ fn card_bounds(card: Option<&str>) -> Option<(u32, Option<u32>)> {
 /// `new` drops ([`removed_fields`] — the removal rule stays *shared* with the simple locus
 /// rather than re-implemented here), then its slots ([`SchemaChange::RemovedItemSlot`]).
 ///
-/// A **nested repeatable** leaf — added, dropped, or reshaped inside the conformance-relevant
-/// projection — has no transform kind built for it, so it emits [`SchemaChange::Unclassified`]
-/// **explicitly**. That is the whole of its handling and deliberately so (M49 Inc-4 T2): the
-/// backstop is a *residual*, which fires only over an otherwise-empty diff, so a nested delta
-/// riding alongside any classified change was **silently dropped** and the doc restamped. Naming
-/// itself makes it refuse in every diff, and building `AddedNestedRepeatable` stays a separate,
-/// still-deferred decision (`completions/artifacts/M49/settle-record.md` → T1-2). The comparison
-/// is over the **erased projection** ([`projected_leaf`]), so a hint reword inside a nested block
-/// stays the out-of-projection no-op it is instead of becoming a false refusal.
+/// A **nested repeatable** leaf present on both sides is **recursed into** at
+/// `locus.nested_in(id)` — the third locus (M50 Increment 6 / T2). Until then it was compared
+/// wholesale and named the backstop, so every one of the ten kinds this function classifies
+/// answered `migrate-corpus.unclassified-change` one level down: a route into the jigc source
+/// tree over the one shape a `changelog`-like doctype actually evolves in. The recursion is the
+/// same code at every depth, so the two loci cannot drift the way the item and simple loops did
+/// before M42.
 ///
-/// Nothing is dropped on the floor here any more — every leaf kind, in both directions, either
-/// classifies a kind or names the backstop (`design/corpus-migration.md`:188 — *the kind must
-/// exist rather than ride the backstop*).
-fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<SchemaChange>) {
+/// Three nested deltas stay on [`SchemaChange::Unclassified`], **deliberately and explicitly**
+/// — a whole nested block added, a whole nested block dropped, and a nested block's own
+/// `id-from` re-keyed. None has a transform kind (`AddedNestedRepeatable` stays deferred with
+/// its trigger untouched, and nothing re-slugs a nested item), and none may fall through
+/// silently: the backstop is a *residual* that fires only over an otherwise-empty diff, so a
+/// nested delta riding alongside any classified change would be **dropped** and the doc
+/// restamped. `id-from` in particular is a non-leaf key **inside** the projection, which a
+/// leaf-only recursion would never see.
+///
+/// Nothing is dropped on the floor here — every leaf kind, in both directions and at every
+/// depth, either classifies a kind or names the backstop (`design/corpus-migration.md`:188 —
+/// *the kind must exist rather than ride the backstop*).
+fn diff_item_fields(locus: &Locus, old: &[Leaf], new: &[Leaf], out: &mut Vec<SchemaChange>) {
     let old_fields: Vec<&Field> = old.iter().filter_map(item_field).collect();
     let old_by_id: HashMap<&str, &Field> = old_fields.iter().map(|f| (f.id.as_str(), *f)).collect();
     let old_slots: HashMap<&str, &Leaf> = old
@@ -872,37 +1193,49 @@ fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<Sch
     for leaf in new {
         match leaf {
             Leaf::Field(field) => match old_by_id.get(field.id.as_str()) {
-                Some(prev) => diff_leaf(section, prev, field.as_ref(), out),
-                None => out.push(classify_added_item_field(section, field.as_ref())),
+                Some(prev) => diff_leaf(locus, prev, field.as_ref(), out),
+                None => out.push(classify_added_item_field(locus, field.as_ref())),
             },
             Leaf::Slot { id, slot } => match old_slots.get(id.as_str()) {
                 Some(Leaf::Slot { slot: prev, .. }) => {
                     if prev.optional != slot.optional {
-                        out.push(slot_flag_change(section, Some(id.clone()), slot.optional));
+                        out.push(slot_flag_change(locus, Some(id.clone()), slot.optional));
                     }
                 }
                 _ => out.push(SchemaChange::AddedItemSlot {
-                    section: section.to_owned(),
+                    locus: locus.clone(),
                     leaf: id.clone(),
                 }),
             },
-            Leaf::Repeatable { id, .. } => {
-                let unchanged = old_nested
-                    .get(id.as_str())
-                    .is_some_and(|prev| projected_leaf(prev) == projected_leaf(leaf));
-                if !unchanged {
-                    out.push(SchemaChange::Unclassified);
+            Leaf::Repeatable { id, repeatable } => {
+                match old_nested.get(id.as_str()) {
+                    Some(Leaf::Repeatable {
+                        repeatable: prev, ..
+                    }) => {
+                        // The block's own `id-from` is inside the projection (it names every
+                        // nested item's anchor) and is not a leaf, so the recursion below can
+                        // never see it. Nothing re-slugs a nested item, so it rides the
+                        // backstop — explicitly, before the leaves, so the order is
+                        // deterministic.
+                        if prev.id_from != repeatable.id_from {
+                            out.push(SchemaChange::Unclassified);
+                        }
+                        diff_item_fields(&locus.nested_in(id), &prev.block, &repeatable.block, out);
+                    }
+                    // A wholly-new nested block: outside the approved table by design (the
+                    // deferred `AddedNestedRepeatable`), named rather than dropped.
+                    _ => out.push(SchemaChange::Unclassified),
                 }
             }
         }
     }
     let new_fields: Vec<&Field> = new.iter().filter_map(item_field).collect();
-    removed_fields(section, old_fields.into_iter(), new_fields.into_iter(), out);
+    removed_fields(locus, old_fields.into_iter(), new_fields.into_iter(), out);
     for leaf in old {
         match leaf {
             Leaf::Slot { id, .. } if !new.iter().any(|l| item_slot_id(l) == Some(id.as_str())) => {
                 out.push(SchemaChange::RemovedItemSlot {
-                    section: section.to_owned(),
+                    locus: locus.clone(),
                     leaf: id.clone(),
                 });
             }
@@ -930,22 +1263,13 @@ fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<Sch
 /// projection, so either direction must name itself or the backstop refuses it
 /// (`design/corpus-migration.md` → The structural projection: the two flag deltas get named
 /// kinds).
-fn slot_flag_change(section: &str, leaf: Option<String>, new_optional: bool) -> SchemaChange {
-    let section = section.to_owned();
+fn slot_flag_change(locus: &Locus, leaf: Option<String>, new_optional: bool) -> SchemaChange {
+    let locus = locus.clone();
     if new_optional {
-        SchemaChange::OptionalRelaxed { section, leaf }
+        SchemaChange::OptionalRelaxed { locus, leaf }
     } else {
-        SchemaChange::ProseNeeding { section, leaf }
+        SchemaChange::ProseNeeding { locus, leaf }
     }
-}
-
-/// One leaf with its **out-of-projection keys erased** — [`erase_out_of_projection`]'s per-leaf
-/// form, built on [`erase_block`] so the erasure recurses to any nesting depth. Two leaves'
-/// projections compare equal exactly when no committed doc's bytes can tell them apart.
-fn projected_leaf(leaf: &Leaf) -> Leaf {
-    let mut one = vec![leaf.clone()];
-    erase_block(&mut one);
-    one.remove(0)
 }
 
 /// The id of an item block's **nested repeatable** leaf, if this leaf is one — [`item_slot_id`]'s
@@ -985,7 +1309,7 @@ fn item_field(leaf: &Leaf) -> Option<&Field> {
 /// doc restamped while it still carries a field line the new schema no longer declares. The driver
 /// then **refuses** it (the recorded pick: refuse, not strip — see [`SchemaChange::RemovedField`]).
 fn removed_fields<'a>(
-    section: &str,
+    locus: &Locus,
     old: impl Iterator<Item = &'a Field>,
     new: impl Iterator<Item = &'a Field>,
     out: &mut Vec<SchemaChange>,
@@ -994,7 +1318,7 @@ fn removed_fields<'a>(
     for field in old {
         if !new_ids.contains(&field.id.as_str()) {
             out.push(SchemaChange::RemovedField {
-                section: section.to_owned(),
+                locus: locus.clone(),
                 field: field.id.clone(),
             });
         }
@@ -1009,16 +1333,16 @@ fn added_section(id: &str, new: &SectionBody, out: &mut Vec<SchemaChange>) {
                 // An added **optional** slot section is deterministically mintable (empty
                 // slot conforms) — the added-optional-section transform.
                 Some(s) if s.optional => out.push(SchemaChange::AddedOptionalSection {
-                    section: id.to_owned(),
+                    locus: Locus::at_section(id),
                 }),
                 // A new **required** slot needs prose (the slot is anonymous → `leaf: None`).
                 Some(_) => out.push(SchemaChange::ProseNeeding {
-                    section: id.to_owned(),
+                    locus: Locus::at_section(id),
                     leaf: None,
                 }),
                 None => {}
             }
-            diff_fields(id, &[], fields, out);
+            diff_fields(&Locus::at_section(id), &[], fields, out);
         }
         // A wholly-new **repeatable** section: mint its empty `## Heading` — a zero-item
         // repeatable conforms, so the same block-insert the added-optional-section arm uses
@@ -1030,7 +1354,7 @@ fn added_section(id: &str, new: &SectionBody, out: &mut Vec<SchemaChange>) {
         // the (zero) items, not spliced into existing ones — an added leaf on a *pre-existing*
         // item block is [`SchemaChange::AddedOptionalField`]'s item-locus twin, its own kind.
         SectionBody::Repeatable { .. } => out.push(SchemaChange::AddedRepeatableSection {
-            section: id.to_owned(),
+            locus: Locus::at_section(id),
         }),
     }
 }
@@ -1038,15 +1362,15 @@ fn added_section(id: &str, new: &SectionBody, out: &mut Vec<SchemaChange>) {
 /// Diff a simple section's field list: classify added fields, the existing-leaf deltas through the
 /// shared [`diff_leaf`] rule (matching by field id; field document order is `v2`'s), and — after
 /// that pass — the leaves `new` **drops**, through the shared [`removed_fields`] rule.
-fn diff_fields(section: &str, old: &[Field], new: &[Field], out: &mut Vec<SchemaChange>) {
+fn diff_fields(locus: &Locus, old: &[Field], new: &[Field], out: &mut Vec<SchemaChange>) {
     let old_by_id: HashMap<&str, &Field> = old.iter().map(|f| (f.id.as_str(), f)).collect();
     for field in new {
         match old_by_id.get(field.id.as_str()) {
-            Some(prev) => diff_leaf(section, prev, field, out),
-            None => out.push(classify_added_field(section, field)),
+            Some(prev) => diff_leaf(locus, prev, field, out),
+            None => out.push(classify_added_field(locus, field)),
         }
     }
-    removed_fields(section, old.iter(), new.iter(), out);
+    removed_fields(locus, old.iter(), new.iter(), out);
 }
 
 /// Classify a field present only in `v2`, on the one rule that governs every added leaf: **a
@@ -1063,15 +1387,15 @@ fn diff_fields(section: &str, old: &[Field], new: &[Field], out: &mut Vec<Schema
 /// **optional `ref`** and a **pack-declared type**. Classifying those `ProseNeeding` was a
 /// permanent dead end — the route says *author the prose, then re-run*, and neither authoring nor
 /// re-running can change a leaf the gate never asks for.
-fn classify_added_field(section: &str, field: &Field) -> SchemaChange {
+fn classify_added_field(locus: &Locus, field: &Field) -> SchemaChange {
     if !crate::validate::is_author_required(field) {
         SchemaChange::AddedOptionalField {
-            section: section.to_owned(),
+            locus: locus.clone(),
             field: field.id.clone(),
         }
     } else {
         SchemaChange::ProseNeeding {
-            section: section.to_owned(),
+            locus: locus.clone(),
             leaf: Some(field.id.clone()),
         }
     }
@@ -1087,15 +1411,15 @@ fn classify_added_field(section: &str, field: &Field) -> SchemaChange {
 /// value into) → a byte no-op, since an item lacking the bullet already conforms and inventing
 /// one would fabricate a value; author-required with no default → [`SchemaChange::ProseNeeding`]
 /// `{ leaf: Some }`, which blocks and routes to the agent.
-fn classify_added_item_field(section: &str, field: &Field) -> SchemaChange {
+fn classify_added_item_field(locus: &Locus, field: &Field) -> SchemaChange {
     if !crate::validate::is_author_required(field) {
         SchemaChange::AddedItemField {
-            section: section.to_owned(),
+            locus: locus.clone(),
             field: field.id.clone(),
         }
     } else {
         SchemaChange::ProseNeeding {
-            section: section.to_owned(),
+            locus: locus.clone(),
             leaf: Some(field.id.clone()),
         }
     }
@@ -1103,24 +1427,16 @@ fn classify_added_item_field(section: &str, field: &Field) -> SchemaChange {
 
 /// One added leaf a fold left **unfilled** — the subject of the migration report's loudness
 /// rider ([`unfilled_set_leaves`]).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct UnfilledSetLeaf<'a> {
-    /// The id of the section the leaf was added to, borrowed from the **new** schema (never
-    /// from the change list), so the address a caller composes names a section that exists.
-    pub section: &'a str,
+    /// The **locus** the leaf was added to, rebuilt from the **new** schema's own ids (never
+    /// carried over from the change list), so the address a caller composes names a section —
+    /// and, at the third locus, a nested block — that exists.
+    pub locus: Locus,
     /// The declared field itself — the caller routes on its `set:` kind
     /// ([`crate::schema::is_machine_maintained_absolute`]: an absolute nothing may write reads
     /// differently from an author-overridable `on-create`).
     pub field: &'a Field,
-    /// Whether the leaf was added to the section's **item block**
-    /// ([`SchemaChange::AddedItemField`]) rather than to a simple/header section's `fields`
-    /// ([`SchemaChange::AddedOptionalField`]) — the discrimination a caller *must* carry into
-    /// what it says, because the two loci have different write addresses: a simple leaf is
-    /// written at `#<section>/<field>`, an item leaf only at `#<section>/<item-id>/<field>`.
-    /// Kept on the leaf rather than re-derived, because the change kind is the only place the
-    /// locus is stated and it is discarded here (M46 completion audit, finding F2: one
-    /// locus-blind renderer composed the simple form for both).
-    pub item_locus: bool,
 }
 
 /// The added leaves of `changes` whose declaration in `to` carries a **`set:` deriver with no
@@ -1145,48 +1461,64 @@ pub fn unfilled_set_leaves<'a>(
 ) -> Vec<UnfilledSetLeaf<'a>> {
     let mut out = Vec::new();
     for change in changes {
-        let (section, field, item_locus) = match change {
-            SchemaChange::AddedOptionalField { section, field } => (section, field, false),
-            SchemaChange::AddedItemField { section, field } => (section, field, true),
+        let (locus, field) = match change {
+            SchemaChange::AddedOptionalField { locus, field }
+            | SchemaChange::AddedItemField { locus, field } => (locus, field),
             _ => continue,
         };
-        let Some((section, decl)) = declared_added_leaf(to, section, field, item_locus) else {
+        let Some((locus, decl)) = declared_added_leaf(to, locus, field) else {
             continue;
         };
         if decl.set.is_some() && decl.default.is_none() {
-            out.push(UnfilledSetLeaf {
-                section,
-                field: decl,
-                item_locus,
-            });
+            out.push(UnfilledSetLeaf { locus, field: decl });
         }
     }
     out
 }
 
-/// The declaration of an added leaf in the **new** schema, at the locus its change kind names —
-/// a simple/header section's `fields` for [`SchemaChange::AddedOptionalField`], a repeatable
-/// section's item block for [`SchemaChange::AddedItemField`]. Returns the section's own id
-/// alongside, so the borrow is the schema's rather than the change list's. `None` when the
-/// section or the leaf is not declared where the kind says it is (a caller pairing a change list
-/// with a schema it did not come from).
+/// The declaration of an added leaf in the **new** schema, at the locus its change names — a
+/// simple/header section's `fields` at locus 1, a repeatable item block's at locus 2, and a
+/// **nested** item block's at locus 3, reached by walking the locus's nested chain. Returns the
+/// locus rebuilt from the schema's own ids alongside, so nothing a caller renders is borrowed
+/// from the change list. `None` when the section, a nested hop, or the leaf is not declared
+/// where the locus says it is (a caller pairing a change list with a schema it did not come
+/// from).
+///
+/// **Resolving through the chain is the point, not tidiness.** Resolved by section id alone, a
+/// nested leaf whose id also exists in the outer block — `date` on `changelog.releases` is the
+/// shipped collision — answers with the *outer* declaration and every caller reads the wrong
+/// field's `set:` / `default:`.
 fn declared_added_leaf<'a>(
     to: &'a Schema,
-    section: &str,
+    locus: &Locus,
     field: &str,
-    item_locus: bool,
-) -> Option<(&'a str, &'a Field)> {
-    let sec = to.sections.iter().find(|s| s.id == section)?;
-    let decl = match (&sec.body, item_locus) {
-        (SectionBody::Simple { fields, .. }, false) => fields.iter().find(|f| f.id == field),
-        (SectionBody::Repeatable { repeatable }, true) => repeatable
-            .block
+) -> Option<(Locus, &'a Field)> {
+    let sec = to.sections.iter().find(|s| s.id == locus.section())?;
+    let block = match (&sec.body, locus.is_item()) {
+        (SectionBody::Simple { fields, .. }, false) => {
+            let decl = fields.iter().find(|f| f.id == field)?;
+            return Some((Locus::at_section(sec.id.as_str()), decl));
+        }
+        (SectionBody::Repeatable { repeatable }, true) => &repeatable.block,
+        _ => return None,
+    };
+    let mut here = Locus::at_item_block(sec.id.as_str());
+    let mut block = block;
+    for hop in locus.nested() {
+        let Some(Leaf::Repeatable { id, repeatable }) = block
             .iter()
-            .filter_map(item_field)
-            .find(|f| f.id == field),
-        _ => None,
-    }?;
-    Some((sec.id.as_str(), decl))
+            .find(|leaf| item_nested_id(leaf) == Some(hop.as_str()))
+        else {
+            return None;
+        };
+        here = here.nested_in(id);
+        block = &repeatable.block;
+    }
+    let decl = block
+        .iter()
+        .filter_map(item_field)
+        .find(|f| f.id == field)?;
+    Some((here, decl))
 }
 
 #[cfg(test)]
@@ -1196,6 +1528,14 @@ mod tests {
 
     fn load(yaml: &[u8]) -> Schema {
         load_schema(yaml).expect("fixture schema loads")
+    }
+
+    /// A repeatable section's **item block** — locus 2, the home of every expectation below
+    /// that names a leaf inside `entries`. Spelled out rather than `.into()` (which builds the
+    /// section's own locus, 1) because the two are different places and the classifier now
+    /// says which.
+    fn item_locus(section: &str) -> Locus {
+        Locus::at_item_block(section)
     }
 
     /// An identical pair (a non-trivial schema with a header field group and a
@@ -1247,7 +1587,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedOptionalField {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "link".to_owned(),
             }]
         );
@@ -1283,7 +1623,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedOptionalField {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "kind".to_owned(),
             }]
         );
@@ -1319,7 +1659,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::WidenedCardinality {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "rel".to_owned(),
             }]
         );
@@ -1357,7 +1697,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedOptionalSection {
-                section: "options".to_owned(),
+                locus: "options".into(),
             }]
         );
     }
@@ -1400,7 +1740,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedRepeatableSection {
-                section: "tasks".to_owned(),
+                locus: "tasks".into(),
             }]
         );
     }
@@ -1433,7 +1773,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::FixedSlotToRepeatable {
-                section: "requirements".to_owned(),
+                locus: "requirements".into(),
             }]
         );
     }
@@ -1468,7 +1808,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::ProseNeeding {
-                section: "rationale".to_owned(),
+                locus: "rationale".into(),
                 leaf: None,
             }]
         );
@@ -1503,7 +1843,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::ProseNeeding {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 leaf: Some("owner".to_owned()),
             }]
         );
@@ -1646,7 +1986,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::ValueRemapped {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "status".to_owned(),
                 map: BTreeMap::new(),
             }]
@@ -1687,7 +2027,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::ValueRemapped {
-                section: "entries".to_owned(),
+                locus: item_locus("entries"),
                 field: "kind".to_owned(),
                 map: BTreeMap::new(),
             }]
@@ -1902,7 +2242,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedOptionalSection {
-                section: "options".to_owned(),
+                locus: "options".into(),
             }]
         );
     }
@@ -1939,7 +2279,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::EnumWidened {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "status".to_owned(),
             }]
         );
@@ -1977,7 +2317,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::EnumWidened {
-                section: "entries".to_owned(),
+                locus: item_locus("entries"),
                 field: "kind".to_owned(),
             }]
         );
@@ -2013,7 +2353,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::ValueRemapped {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "status".to_owned(),
                 map: BTreeMap::new(),
             }]
@@ -2050,7 +2390,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::NarrowedCardinality {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "rel".to_owned(),
             }]
         );
@@ -2084,7 +2424,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::NarrowedCardinality {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "rel".to_owned(),
             }]
         );
@@ -2123,7 +2463,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::WidenedCardinality {
-                section: "entries".to_owned(),
+                locus: item_locus("entries"),
                 field: "rel".to_owned(),
             }]
         );
@@ -2161,7 +2501,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::NarrowedCardinality {
-                section: "entries".to_owned(),
+                locus: item_locus("entries"),
                 field: "rel".to_owned(),
             }]
         );
@@ -2197,7 +2537,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::WidenedCardinality {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "rel".to_owned(),
             }]
         );
@@ -2237,7 +2577,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::OptionalRelaxed {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 leaf: Some("owner".to_owned()),
             }]
         );
@@ -2266,7 +2606,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::OptionalRelaxed {
-                section: "rationale".to_owned(),
+                locus: "rationale".into(),
                 leaf: None,
             }]
         );
@@ -2298,7 +2638,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::ProseNeeding {
-                section: "notes".to_owned(),
+                locus: "notes".into(),
                 leaf: None,
             }]
         );
@@ -2332,7 +2672,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::ProseNeeding {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 leaf: Some("owner".to_owned()),
             }]
         );
@@ -2404,11 +2744,11 @@ sections:
             schema_diff(&v1, &v2),
             vec![
                 SchemaChange::OptionalRelaxed {
-                    section: "entries".to_owned(),
+                    locus: item_locus("entries"),
                     leaf: Some("link".to_owned()),
                 },
                 SchemaChange::ProseNeeding {
-                    section: "entries".to_owned(),
+                    locus: item_locus("entries"),
                     leaf: Some("owner".to_owned()),
                 },
             ]
@@ -2448,7 +2788,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::RemovedField {
-                section: "meta".to_owned(),
+                locus: "meta".into(),
                 field: "owner".to_owned(),
             }]
         );
@@ -2484,7 +2824,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::RemovedField {
-                section: "entries".to_owned(),
+                locus: item_locus("entries"),
                 field: "owner".to_owned(),
             }]
         );
@@ -2524,11 +2864,11 @@ sections:
             schema_diff(&v1, &v2),
             vec![
                 SchemaChange::AddedOptionalField {
-                    section: "meta".to_owned(),
+                    locus: "meta".into(),
                     field: "link".to_owned(),
                 },
                 SchemaChange::RemovedField {
-                    section: "meta".to_owned(),
+                    locus: "meta".into(),
                     field: "owner".to_owned(),
                 },
             ]
@@ -2563,7 +2903,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedItemField {
-                section: "entries".to_owned(),
+                locus: item_locus("entries"),
                 field: "kind".to_owned(),
             }]
         );
@@ -2593,7 +2933,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedItemField {
-                section: "entries".to_owned(),
+                locus: item_locus("entries"),
                 field: "owner".to_owned(),
             }]
         );
@@ -2624,7 +2964,7 @@ sections:
         assert_eq!(
             schema_diff(&v1, &v2),
             vec![SchemaChange::ProseNeeding {
-                section: "entries".to_owned(),
+                locus: item_locus("entries"),
                 leaf: Some("owner".to_owned()),
             }]
         );
@@ -2695,12 +3035,50 @@ sections:
         assert_eq!(schema_diff(&v1, &v2), vec![SchemaChange::PresentationOnly]);
     }
 
-    /// **A nested-repeatable delta names itself beside a classified change.** The added optional
-    /// item field leaves the diff non-empty, so the [`SchemaChange::Unclassified`] *residual*
-    /// never fires — which is exactly why the delta must emit the kind itself, or the doc
-    /// restamps at a version whose nested shape it does not carry.
+    /// **A wholly-new nested repeatable *block* still names the backstop, beside a classified
+    /// change.** The nested-leaf recursion (M50 Increment 6 / T2) descends into a block present
+    /// on **both** sides; a block that exists on one side only is a shape the approved
+    /// `kind × locus` table does not carry (`AddedNestedRepeatable` stays deferred), so it emits
+    /// [`SchemaChange::Unclassified`] explicitly. The added optional item field beside it leaves
+    /// the diff non-empty, so the *residual* never fires — which is exactly why the delta must
+    /// emit the kind itself, or the doc restamps at a version whose nested shape it lacks.
     #[test]
-    fn a_nested_repeatable_delta_names_the_backstop_beside_a_classified_change() {
+    fn a_wholly_new_nested_repeatable_block_names_the_backstop_beside_a_classified_change() {
+        let flat = NESTED
+            .replace("HINT", "why")
+            .split("        - id: notes\n")
+            .next()
+            .expect("the fixture carries the nested leaf")
+            .to_owned();
+        let v1 = load(flat.as_bytes());
+        let v2 = load(
+            NESTED
+                .replace("HINT", "why")
+                .replace(
+                    "        - id: notes\n",
+                    "        - { id: owner, type: string, optional: true }\n        - id: notes\n",
+                )
+                .as_bytes(),
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![
+                SchemaChange::AddedItemField {
+                    locus: item_locus("entries"),
+                    field: "owner".into(),
+                },
+                SchemaChange::Unclassified,
+            ],
+        );
+    }
+
+    /// **A leaf reshape *inside* a nested repeatable classifies at the third locus** — the
+    /// change this increment is for. The same fixture that used to answer `[Unclassified]`
+    /// (a required leaf added to the nested block, beside a classified item-locus change) now
+    /// answers with the kind AND the locus path `entries/notes`, so the doc collects the
+    /// doc-authorable route instead of one into this workspace.
+    #[test]
+    fn a_leaf_added_inside_a_nested_repeatable_classifies_at_the_third_locus() {
         let v1 = load(NESTED.replace("HINT", "why").as_bytes());
         let v2 = load(
             NESTED
@@ -2719,10 +3097,13 @@ sections:
             schema_diff(&v1, &v2),
             vec![
                 SchemaChange::AddedItemField {
-                    section: "entries".into(),
+                    locus: item_locus("entries"),
                     field: "owner".into(),
                 },
-                SchemaChange::Unclassified,
+                SchemaChange::ProseNeeding {
+                    locus: item_locus("entries").nested_in("notes"),
+                    leaf: Some("weight".into()),
+                },
             ],
         );
     }

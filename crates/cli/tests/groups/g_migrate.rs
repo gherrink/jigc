@@ -47,6 +47,8 @@ mod migrate_corpus_log_completeness;
 mod migrate_corpus_set_fields;
 #[path = "../migrate_corpus_value_remap.rs"]
 mod migrate_corpus_value_remap;
+#[path = "../migrate_locus_axis.rs"]
+mod migrate_locus_axis;
 #[path = "../migrate_methodology.rs"]
 mod migrate_methodology;
 #[path = "../migrate_prd.rs"]

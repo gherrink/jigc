@@ -94,40 +94,40 @@ fn every_schema_change_kind_is_declared() {
 /// names it).
 #[test]
 fn every_change_names_its_kind() {
-    let section = || "notes".to_string();
+    let section = || engine::schema_diff::Locus::at_section("notes");
     let cases: Vec<(SchemaChangeKind, SchemaChange)> = vec![
         (
             SchemaChangeKind::AddedOptionalField,
             SchemaChange::AddedOptionalField {
-                section: section(),
+                locus: section(),
                 field: "status".into(),
             },
         ),
         (
             SchemaChangeKind::WidenedCardinality,
             SchemaChange::WidenedCardinality {
-                section: section(),
+                locus: section(),
                 field: "status".into(),
             },
         ),
         (
             SchemaChangeKind::NarrowedCardinality,
             SchemaChange::NarrowedCardinality {
-                section: section(),
+                locus: section(),
                 field: "status".into(),
             },
         ),
         (
             SchemaChangeKind::EnumWidened,
             SchemaChange::EnumWidened {
-                section: section(),
+                locus: section(),
                 field: "status".into(),
             },
         ),
         (
             SchemaChangeKind::ValueRemapped,
             SchemaChange::ValueRemapped {
-                section: section(),
+                locus: section(),
                 field: "status".into(),
                 map: BTreeMap::new(),
             },
@@ -135,33 +135,33 @@ fn every_change_names_its_kind() {
         (
             SchemaChangeKind::AddedItemField,
             SchemaChange::AddedItemField {
-                section: section(),
+                locus: section(),
                 field: "status".into(),
             },
         ),
         (
             SchemaChangeKind::AddedItemSlot,
             SchemaChange::AddedItemSlot {
-                section: section(),
+                locus: section(),
                 leaf: "detail".into(),
             },
         ),
         (
             SchemaChangeKind::AddedOptionalSection,
-            SchemaChange::AddedOptionalSection { section: section() },
+            SchemaChange::AddedOptionalSection { locus: section() },
         ),
         (
             SchemaChangeKind::AddedRepeatableSection,
-            SchemaChange::AddedRepeatableSection { section: section() },
+            SchemaChange::AddedRepeatableSection { locus: section() },
         ),
         (
             SchemaChangeKind::FixedSlotToRepeatable,
-            SchemaChange::FixedSlotToRepeatable { section: section() },
+            SchemaChange::FixedSlotToRepeatable { locus: section() },
         ),
         (
             SchemaChangeKind::ProseNeeding,
             SchemaChange::ProseNeeding {
-                section: section(),
+                locus: section(),
                 leaf: None,
             },
         ),
@@ -181,21 +181,21 @@ fn every_change_names_its_kind() {
         (
             SchemaChangeKind::OptionalRelaxed,
             SchemaChange::OptionalRelaxed {
-                section: section(),
+                locus: section(),
                 leaf: Some("status".into()),
             },
         ),
         (
             SchemaChangeKind::RemovedField,
             SchemaChange::RemovedField {
-                section: section(),
+                locus: section(),
                 field: "status".into(),
             },
         ),
         (
             SchemaChangeKind::RemovedItemSlot,
             SchemaChange::RemovedItemSlot {
-                section: section(),
+                locus: section(),
                 leaf: "detail".into(),
             },
         ),
@@ -224,8 +224,13 @@ fn every_change_names_its_kind() {
 /// **The wire names come off the registry, at every production construction site.**
 ///
 /// Reads `crates/engine/src/transform.rs` above its `#[cfg(test)]` line and requires every
-/// `kind:` field initializer to be `SchemaChangeKind::<Variant>.as_str()`, with `<Variant>`
-/// a declared member. Before this task the same read found five hand-written literals
+/// `kind:` field initializer to name the registry: either `SchemaChangeKind::<Variant>.as_str()`
+/// with `<Variant>` a declared member, or the **projection** form
+/// `SchemaChangeKind::from(<change>).as_str()`, which reads the kind off the change itself. The
+/// projection is admitted because it is the *stronger* of the two — `From<&SchemaChange>` is
+/// exhaustive by construction, so it can neither be a literal nor name an undeclared kind — and
+/// it is what the driver's `kind × locus` guard uses, where the variant is not known statically.
+/// Before this task the same read found five hand-written literals
 /// (`"narrowed-cardinality"`, `"removed-field"`, `"removed-item-slot"`, `"prose-needing"`,
 /// `"added-optional-field"`, `"added-item-field"`) plus a parallel `VALUE_REMAP_KIND`
 /// const — six spellings the classifier's variants had no mechanical relation to, so a
@@ -248,18 +253,25 @@ fn every_unsupported_wire_name_comes_off_the_registry() {
          not the code",
     );
     for site in &sites {
-        let variant = site
+        let named = site
             .strip_prefix("SchemaChangeKind::")
             .and_then(|rest| rest.strip_suffix(".as_str()"))
             .unwrap_or_else(|| {
                 panic!(
                     "`kind: {site}` is not read off the registry — every `Unsupported` wire name \
-                     must be a `SchemaChangeKind::<Variant>.as_str()` output",
+                     must be a `SchemaChangeKind::<Variant>.as_str()` or \
+                     `SchemaChangeKind::from(<change>).as_str()` output",
                 )
             });
+        // The projection form carries no variant name to check: it reads the kind off the
+        // change, and `From<&SchemaChange>` is exhaustive, so there is nothing it could name
+        // that `ALL` does not hold.
+        if named.starts_with("from(") && named.ends_with(')') {
+            continue;
+        }
         assert!(
-            by_variant.contains_key(variant),
-            "`kind: {site}` names `{variant}`, which is not a declared `SchemaChangeKind`",
+            by_variant.contains_key(named),
+            "`kind: {site}` names `{named}`, which is not a declared `SchemaChangeKind`",
         );
     }
 }
