@@ -28,7 +28,9 @@
 //! blocks whenever any task working area *or* milestone is in-flight ([DECISIONS.md] 2026-06-28,
 //! pins I2/I4); a **placement-singleton** reslug rejects with the real rule (identity fixed to
 //! the type; retitle-only) and a **milestone-record** reslug refuses always — between milestones
-//! too (M40 A4). The advisory prose/unmanaged-mention report is T5.
+//! too (M40 A4); and a **`--slug` override that is not a slug** blocks before the destination
+//! path is built, the sixth and last of the mint doors to ask that question (M50 Inc 2 / T2).
+//! The advisory prose/unmanaged-mention report is T5.
 //!
 //! Every one of those refusals is declared and disposed in one place — [`RefusalKind`], which
 //! carries the finding code each raises and whether its route is a command or a judgment
@@ -46,7 +48,10 @@ use engine::slug::slugify;
 
 use crate::ingest::{load_schemas, require_project_layer};
 use crate::pack::make_pack;
-use crate::task::{git_capture, git_commit, git_head, git_run, git_status_entries, path_at_head};
+use crate::task::{
+    WORK_UNIT_ID_GRAMMAR, git_capture, git_commit, git_head, git_run, git_status_entries,
+    path_at_head,
+};
 
 /// **The refusal axis of `jigc rename`** — every state this door declines *before it has
 /// mutated anything*, declared once so the sites cannot drift from the sweep that drives
@@ -102,6 +107,9 @@ pub enum RefusalKind {
     WorkUnitIdentity,
     /// The destination identity is already answered by a different committed doc.
     OccupiedDestination,
+    /// A `--slug` override that is not a well-formed slug — the value drives the new
+    /// identity **verbatim**, so it is a path component, not a hint.
+    MalformedSlug,
 }
 
 /// How a refusal's route repairs the state — the disposition every member owes, and the
@@ -134,12 +142,13 @@ impl RefusalKind {
         RefusalKind::FixedIdentity,
         RefusalKind::WorkUnitIdentity,
         RefusalKind::OccupiedDestination,
+        RefusalKind::MalformedSlug,
     ];
 
     /// The finding code this refusal carries — its identity on the printed surface **and**
     /// in the invocation log's `finding_codes`.
     ///
-    /// Seven of the nine reuse a **shipped** code rather than minting a door-private one:
+    /// Seven of the ten reuse a **shipped** code rather than minting a door-private one:
     /// the fault is the same fault the read and in-task write paths already name, and one
     /// fault owes one code (the M49 Increment 11 / T1 rule, applied to refusals). In
     /// particular [`RefusalKind::FixedIdentity`] and [`RefusalKind::WorkUnitIdentity`]
@@ -147,9 +156,15 @@ impl RefusalKind {
     /// refusals — the two verbs differ in *what identity they may move*, never in what
     /// kind of fault a fixed one is.
     ///
-    /// The two mints are the states no other door can be in: only this verb refuses over
-    /// the **working tree** it is about to commit in place, and only this verb refuses
-    /// over an in-flight **fan-out** whose join key it would change.
+    /// Two of the three mints are the states no other door can be in: only this verb
+    /// refuses over the **working tree** it is about to commit in place, and only this
+    /// verb refuses over an in-flight **fan-out** whose join key it would change. The
+    /// third, [`RefusalKind::MalformedSlug`]'s `write.malformed-slug`, is the family's
+    /// code rather than this door's: the five sibling `--slug` doors
+    /// (`crate::cli::SLUG_DOORS`) refuse the identical value with a bare `anyhow` that
+    /// carries no code at all, so there was none to reuse — the code is minted here, and
+    /// it is the one those doors join when they are converged (M50 Increment 2, declared
+    /// bound vi: *that* they refuse is in scope, *how they render* is not).
     pub fn code(self) -> &'static str {
         match self {
             RefusalKind::UnknownDoctype => "store.unknown-type",
@@ -160,6 +175,7 @@ impl RefusalKind {
             RefusalKind::InFlight => "rename.in-flight",
             RefusalKind::FixedIdentity | RefusalKind::WorkUnitIdentity => "write.identity-change",
             RefusalKind::OccupiedDestination => "write.already-present",
+            RefusalKind::MalformedSlug => "write.malformed-slug",
         }
     }
 
@@ -188,6 +204,9 @@ impl RefusalKind {
             ),
             RefusalKind::OccupiedDestination => Repair::Judgment(
                 "a free slug is the agent's to pick, the same reason `jigc doc rename`'s own destination-occupancy guard routes `Human`",
+            ),
+            RefusalKind::MalformedSlug => Repair::Judgment(
+                "the id is the caller's to name: jigc cannot compose the slug the caller meant, and a mechanical argv may carry only a declared placeholder (`engine::finding::ROUTE_PLACEHOLDERS`), which a slug is not",
             ),
         }
     }
@@ -314,6 +333,35 @@ pub(crate) fn run(
     let old_source = std::fs::read_to_string(&old_abs)
         .with_context(|| format!("could not read the doc to rename at {old_rel}"))?;
 
+    // A `--slug` override drives the new identity **verbatim**, and a doc's slug IS its
+    // path component (`<docs-root>/<location>/<slug>.md`) — so a value that is not a slug
+    // names a file the store cannot address. Asked **before** the destination path is
+    // built and before the empty-slug arm below, because both of those answer about the
+    // *title*: driven at `b32def1`, `--slug '../../src/pwned'` exited 0 and committed
+    // `docs/decisions/keeper.md => src/pwned.md` (after which no `doc list` row, no
+    // `doc show` and no `validate` finding could name the doc), and `--slug ''` answered
+    // `write.unslugable-title` — "`--to "New Title"` slugs to nothing" — about a title
+    // that slugs fine, routing the caller to repeat what had just failed.
+    //
+    // This is the **sixth and last** `--slug` door to ask the question its five siblings
+    // have asked since M39 (`crate::start`'s mint, `crate::migrate`'s adoption, and
+    // `crate::doc::reject_malformed_slug`'s three); the door set is derived from the clap
+    // tree at [`crate::cli::SLUG_DOORS`] and driven whole by
+    // `crates/cli/tests/slug_override_axis.rs`. The grammar sentence is the one shipped
+    // literal, reused rather than respelled (`design/surface-contract.md` → law 1).
+    if let Some(slug) = slug_override
+        && !engine::slug::is_slug(slug)
+    {
+        return Err(refuse(
+            RefusalKind::MalformedSlug,
+            &old_id,
+            format!("`--slug {slug:?}` is not a valid slug — {WORK_UNIT_ID_GRAMMAR}"),
+            Route::human(
+                "the id a rename mints is taken verbatim, so name one that fits the \
+                 grammar, or drop the override and let the title mint it",
+            ),
+        ));
+    }
     let new_slug = match slug_override {
         Some(s) => s.to_string(),
         None => slugify(title),

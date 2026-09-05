@@ -512,6 +512,66 @@ fn rename_onto_a_different_existing_slug_blocks() {
     );
 }
 
+/// **M50 Inc 2 / T2 — `--slug ""` stops blaming the title.** Driven at `b32def1`, an empty
+/// override answered `write.unslugable-title` with `` `--to "New Title"` slugs to
+/// nothing ``, which is false — that title slugs fine, and the emptiness came from the
+/// override — and routed the caller to *"name the id yourself: `--slug <new-slug>`"*, i.e.
+/// to repeat exactly what had just failed. Both halves of the law-1 lie are asserted gone:
+/// the refusal must be the **override's**, and it must not tell the caller the title is
+/// the problem. The whole-axis sweep is `every_slug_door_refuses_a_malformed_override`
+/// (`crates/cli/tests/slug_override_axis.rs`); this arm is the one that pins the *text*
+/// the sixth door used to print.
+#[test]
+fn an_empty_slug_override_does_not_claim_the_title_slugs_to_nothing() {
+    let repo = TempDir::new("empty-override");
+    seed_store(repo.path());
+    let before_count = commit_count(repo.path());
+
+    // "New Title" slugs to `new-title` — the title is not the fault here.
+    let out = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "New Title",
+            "--slug",
+            "",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "an empty `--slug` names no doc — the door must block; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!("· {} — ", RefusalKind::MalformedSlug.code())),
+        "the refusal must be the override's own `{}` identity; stderr:\n{stderr}",
+        RefusalKind::MalformedSlug.code(),
+    );
+    assert!(
+        !stderr.contains("slugs to nothing"),
+        "the title slugs fine — blaming it is the law-1 lie this arm exists to keep \
+         gone; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!("{:?}", "")),
+        "the refusal must name the token the caller typed; stderr:\n{stderr}",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count,
+        "a blocked rename must land no commit",
+    );
+    assert!(
+        repo.path()
+            .join("docs/decisions/single-node-cache.md")
+            .is_file(),
+        "the target must keep its slug",
+    );
+}
+
 /// No-op reslug → retitle-only: a new title that slugs to the doc's **own** current slug
 /// (`single-node-cache`) rewrites the H1 + commits once, with **no** `git mv` and **no**
 /// referrer edit (identity unchanged, so nothing dangles).
@@ -1701,6 +1761,21 @@ fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
             vec!["rename", "adr:single-node-cache", "--to", "Keeper"],
             &nothing,
         )],
+        // The title slugs fine; the override is the fault, and the refusal must say so.
+        // The whole six-door axis is `slug_override_axis.rs`; this scene is the member's
+        // seat in the identity-and-exit sweep.
+        RefusalKind::MalformedSlug => vec![plain(
+            "axis-malformed-slug",
+            vec![
+                "rename",
+                "adr:single-node-cache",
+                "--to",
+                "Distributed",
+                "--slug",
+                "../../src/pwned",
+            ],
+            &nothing,
+        )],
         RefusalKind::FixedIdentity => {
             let repo = TempDir::new("axis-fixed-identity");
             seed_placement_store(repo.path());
@@ -1899,12 +1974,13 @@ fn every_refusal_kind_is_declared() {
             | RefusalKind::InFlight
             | RefusalKind::FixedIdentity
             | RefusalKind::WorkUnitIdentity
-            | RefusalKind::OccupiedDestination => {}
+            | RefusalKind::OccupiedDestination
+            | RefusalKind::MalformedSlug => {}
         }
     }
     assert_eq!(
         RefusalKind::ALL.len(),
-        9,
+        10,
         "a new `RefusalKind` joins `ALL` (and the axis suite gains the scene that drives it)",
     );
 }

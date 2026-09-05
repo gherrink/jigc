@@ -283,7 +283,10 @@ pub enum Command {
         #[arg(long)]
         to: String,
 
-        /// Override the derived slug (only valid alongside `--to`).
+        /// Override the derived slug (only valid alongside `--to`). Taken **verbatim**
+        /// and validated as a well-formed slug — a malformed value is rejected before
+        /// the destination path is built, never silently re-slugified (the discipline
+        /// `jigc start` / `jigc migrate` / `jigc doc create` already state).
         #[arg(long, requires = "to")]
         slug: Option<String>,
     },
@@ -1818,6 +1821,140 @@ pub const WORK_UNIT_ID_DOORS: &[WorkUnitIdDoor] = &[
     },
 ];
 
+/// The token a [`SlugDoor`] row's `argv` carries **in place of** the `--slug` value, so
+/// one row serves every cell of the axis instead of three hand-written argvs per door.
+pub const SLUG_OVERRIDE_SLOT: &str = "<slug>";
+
+/// The clap **argument ids** that carry a **mint-time slug override** — the vocabulary
+/// [`SLUG_DOORS`] is *derived* from rather than remembered.
+///
+/// One member. A `--slug` value drives a minted identity **verbatim** — it is never
+/// re-slugified — and a doc's slug *is* its path component (`<docs-root>/<location>/
+/// <slug>.md`), so an override that is not a slug names a file nobody addressed. Six
+/// leaves carry it, and no leaf carries a mint slug under any other name: `old_slug` on
+/// `jigc rename` is a doctype **address**, already a [`DOCTYPE_ARG_IDS`] member and
+/// guarded as the address family's slug head.
+pub const SLUG_ARG_IDS: &[&str] = &["slug"];
+
+/// The foreign source path the `jigc migrate` row of [`SLUG_DOORS`] names.
+///
+/// That row must carry a source that is *not itself* a fault, or the door could answer
+/// about a missing file instead of about the override. The literal lives beside the table
+/// rather than in the suite that runs it, so the argv a row declares and the file the
+/// suite plants cannot drift apart — [`WORK_UNIT_ID_DOOR_PAYLOAD`]'s rule, one family
+/// over.
+pub const SLUG_DOOR_SOURCE: &str = "foreign-changelog.md";
+
+/// **One door that takes a `--slug` override** — a leaf verb, the argument the override
+/// arrives through, and a runnable argv carrying [`SLUG_OVERRIDE_SLOT`] where the value
+/// goes.
+pub struct SlugDoor {
+    /// The leaf verb path, as an operator types it after `jigc`.
+    pub door: &'static [&'static str],
+    /// The clap argument id the override arrives through — a member of [`SLUG_ARG_IDS`],
+    /// fenced against what `argv` actually parses into, so a renamed argument reddens
+    /// rather than reading as documentation.
+    pub arg: &'static str,
+    /// A **runnable** argv for this door with [`SLUG_OVERRIDE_SLOT`] standing in for the
+    /// override — every other argument present and well-formed, so the override is the
+    /// only thing the door can fault on. The `doc` rows carry no `--task`: they run under
+    /// the shipped single-active-task default, which the suite's fixture provides.
+    pub argv: &'static [&'static str],
+}
+
+/// **Every leaf verb that takes a `--slug` override** — derived from the clap tree by
+/// [`SLUG_ARG_IDS`] and fenced ⇔ against it (`cli_parse::every_slug_door_is_registered`),
+/// so the set is the binary's, not a remembered one.
+///
+/// Six doors. Five of them refused a malformed override byte-identically from M39
+/// onward; the sixth — `jigc rename` — did not, and driven at `b32def1`
+/// `jigc rename adr:keeper --to "New Title" --slug '../../src/pwned'` exited **0** and
+/// committed `docs/decisions/keeper.md => src/pwned.md`, after which no `doc list` row,
+/// no `doc show` and no `validate` finding could name the doc again. `crates/cli/tests/
+/// slug_override_axis.rs` drives every row over the whole malformed-token axis.
+///
+/// The `start` row is the **minting** form on purpose: driven, bare
+/// `jigc start "<intent>" --slug '../../x'` exits 0 with the override inert, because the
+/// cascade default composes the router and mints nothing — a row written that way would
+/// pass while proving nothing (`DECISIONS.md` → 2026-09-05 M50 Increment 2 planning).
+pub const SLUG_DOORS: &[SlugDoor] = &[
+    SlugDoor {
+        door: &["start"],
+        arg: "slug",
+        argv: &[
+            "start",
+            "--workflow",
+            "single-task",
+            "axis intent",
+            "--slug",
+            SLUG_OVERRIDE_SLOT,
+        ],
+    },
+    SlugDoor {
+        door: &["migrate"],
+        arg: "slug",
+        argv: &[
+            "migrate",
+            SLUG_DOOR_SOURCE,
+            "--as",
+            "changelog",
+            "--slug",
+            SLUG_OVERRIDE_SLOT,
+        ],
+    },
+    SlugDoor {
+        door: &["rename"],
+        arg: "slug",
+        argv: &[
+            "rename",
+            "adr:keeper",
+            "--to",
+            "Axis",
+            "--slug",
+            SLUG_OVERRIDE_SLOT,
+        ],
+    },
+    SlugDoor {
+        door: &["doc", "create"],
+        arg: "slug",
+        argv: &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Axis",
+            "--slug",
+            SLUG_OVERRIDE_SLOT,
+        ],
+    },
+    SlugDoor {
+        door: &["doc", "add-item"],
+        arg: "slug",
+        argv: &[
+            "doc",
+            "add-item",
+            "adr:keeper#entries",
+            "--title",
+            "Axis",
+            "--slug",
+            SLUG_OVERRIDE_SLOT,
+        ],
+    },
+    SlugDoor {
+        door: &["doc", "rename"],
+        arg: "slug",
+        argv: &[
+            "doc",
+            "rename",
+            "adr:keeper",
+            "--to",
+            "Axis",
+            "--slug",
+            SLUG_OVERRIDE_SLOT,
+        ],
+    },
+];
+
 /// The [`VerbKind`] of a leaf verb path — `None` for a path that names no leaf verb
 /// (a parent node, an unknown token, clap's builtin `help`).
 pub fn verb_kind<S: AsRef<str>>(path: &[S]) -> Option<VerbKind> {
@@ -2601,6 +2738,84 @@ mod cli_parse {
                 leaf.get_one::<String>(row.arg).map(String::as_str),
                 Some(SENTINEL),
                 "`jigc {shown}`: the argv must deliver the id through `{}`",
+                row.arg,
+            );
+        }
+    }
+
+    /// **The `--slug` door set is derived from the clap tree, not remembered.**
+    ///
+    /// The same ⇔ that fences the doctype and work-unit-id doors, applied to the third
+    /// token a caller hands jigc: a leaf verb carries a [`SLUG_DOORS`] row **iff** one of
+    /// its clap arguments is named in [`SLUG_ARG_IDS`]. Without it *"every `--slug` door
+    /// refuses a value that is not a slug"* would be a claim about the five doors M39
+    /// happened to build plus the sixth this increment fixed — and the sixth is precisely
+    /// what a remembered list missed.
+    ///
+    /// Three assertions, the second being the one a renamed argument trips: the ⇔ over
+    /// every leaf; each row's `argv` actually parsing against the real CLI, landing on the
+    /// leaf the row names and delivering [`SLUG_OVERRIDE_SLOT`]'s stand-in into the row's
+    /// declared `arg`; and every declared `arg` being a member of [`SLUG_ARG_IDS`].
+    #[test]
+    fn every_slug_door_is_registered() {
+        // (1) The ⇔ over every leaf of the real clap tree.
+        for (path, args) in clap_leaves_with_args() {
+            let carries = args.iter().any(|id| SLUG_ARG_IDS.contains(&id.as_str()));
+            let registered = SLUG_DOORS.iter().any(|row| row.door.iter().eq(path.iter()));
+            assert_eq!(
+                carries,
+                registered,
+                "`jigc {}` carries a `--slug` argument ({carries}) but its SLUG_DOORS \
+                 membership is {registered} — its arguments are [{}]",
+                path.join(" "),
+                args.join(", "),
+            );
+        }
+
+        // (2) + (3) Each row's argv reaches the leaf it names, through the arg it names.
+        const SENTINEL: &str = "fence-slug";
+        for row in SLUG_DOORS {
+            let shown = row.door.join(" ");
+            assert!(
+                SLUG_ARG_IDS.contains(&row.arg),
+                "`jigc {shown}` declares `{}`, which is not a slug-override argument",
+                row.arg,
+            );
+            assert_eq!(
+                row.argv
+                    .iter()
+                    .filter(|token| **token == SLUG_OVERRIDE_SLOT)
+                    .count(),
+                1,
+                "`jigc {shown}`: the argv must carry the slug slot exactly once",
+            );
+            let mut argv: Vec<String> = vec!["jigc".to_string()];
+            argv.extend(row.argv.iter().map(|token| {
+                if *token == SLUG_OVERRIDE_SLOT {
+                    SENTINEL.to_string()
+                } else {
+                    (*token).to_string()
+                }
+            }));
+            let matches = <Cli as clap::CommandFactory>::command()
+                .try_get_matches_from(&argv)
+                .unwrap_or_else(|err| panic!("`jigc {shown}`: the row's argv must parse: {err}"));
+            let mut leaf = &matches;
+            let mut reached: Vec<String> = Vec::new();
+            while let Some((name, sub)) = leaf.subcommand() {
+                reached.push(name.to_string());
+                leaf = sub;
+            }
+            assert_eq!(
+                reached,
+                row.door,
+                "`jigc {shown}`: the row's argv lands on `jigc {}`",
+                reached.join(" "),
+            );
+            assert_eq!(
+                leaf.get_one::<String>(row.arg).map(String::as_str),
+                Some(SENTINEL),
+                "`jigc {shown}`: the argv must deliver the override through `{}`",
                 row.arg,
             );
         }

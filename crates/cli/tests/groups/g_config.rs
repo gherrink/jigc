@@ -70,6 +70,8 @@ mod read_back_fence;
 mod set_kind_vocabulary;
 #[path = "../slug_override.rs"]
 mod slug_override;
+#[path = "../slug_override_axis.rs"]
+mod slug_override_axis;
 #[path = "../stated_at_fence.rs"]
 mod stated_at_fence;
 #[path = "../untrackable_home_axis.rs"]
