@@ -2,6 +2,20 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-05 — M50 Inc 4 / T3: a root the store cannot describe is refused before it is written
+
+The home rule asks *whose* directory a root-knob value names; this asks whether the value is a usable root at all. Three shapes are not, all three driven at HEAD on a `committed-singletons` rig, and blocking **`config.unusable-root`** now refuses each at every `ROOT_KNOBS` member in the step-2b position — after `check_value`, before anything moves and before the knob lands, for the reason 2b and 2c already state.
+
+- **File-shaped** (`README.md`) — the knob lands at **exit 0 with every move failed**, and `jigc doc list` then drops the re-rooted docs from the store surface **entirely**. That is worse than the Settle's N5 records (*"every move failed"*), and it is the exact state `run_set`'s own rationale says must not exist, produced by the door that states it.
+- **Absolute** (`/tmp/elsewhere`) — silently reinterpreted as repo-relative by `trackable.rs`'s `trim_matches('/')`: the mover stages `R docs/roadmap.md -> tmp/elsewhere/roadmap.md` while `jigc config get` echoes `/tmp/elsewhere` back, so the knob and the store name different homes for one doc.
+- **Through a symlink** (`linked`) — git records the link, never a path through it, so the move stages `RD`: an index entry the worktree has no path for, leaving `doc list` and git permanently disagreeing.
+
+**Two elaborations the shapes force.** The symlink subject is **every existing component of the value, not its leaf** — a symlinked *ancestor* (`linked/sub`) reaches the identical `RD` state, driven separately. And the walk starts at the repository root and **never canonicalizes the root itself**: a repo legitimately sits under a symlinked ancestor (every macOS temp corpus lives under `/var` → `private/var`), so an ancestor-canonicalizing form would refuse every root in every such repo. A value naming no component at all (`""`, `.`) is the repo root and stays admitted — the flat layout both knobs document, and what `docs_root::` / `placement_override::` / `corpus_migration_backstop::` require.
+
+**One code for all three, with the reason in the message** — `config.untrackable-root`'s five-reasons-one-code shape, on the ground that the operator's fix is identical in each case: supply a different root. Neither this code nor `config.workbench-root` joins a registry, following its precedent.
+
+**The refusing arm ships with an admitting arm, and that is not decoration:** a predicate that refuses everything satisfies "refuse three shapes", so `ROOT_KNOBS ×` {unset, the repo root, an existing directory, one jigc must create} is driven to exit 0 on its own corpus per cell, asserting the knob reads back **and** that the store still describes both managed docs — the property the file-shaped cell broke.
+
 ## 2026-09-05 — M50 Inc 4 / T2: jigc's own workbench is not a home for managed docs
 
 Both root knobs took `.jigc` and moved the committed docs there at exit 0 — driven on a `committed-singletons` rig, `docs-root .jigc` staged `R docs/research/root-knob-probe.md -> .jigc/research/root-knob-probe.md`, and `placement-root .jigc` reaches the same state — into the one tree `jigc uninstall` removes **whole** (`setup::uninstall` step 1 is `remove_dir_all(.jigc)`). Blocking **`config.workbench-root`** now refuses it at every `ROOT_KNOBS` member, in the shipped step-2b position: after `check_value`, before anything moves and before the knob lands, because a warn-and-proceed loses the bytes at exit 0 and a landed knob with no move leaves the store pointing at a home no doc is at ([storage.md](design/storage.md) → Placement gains the rule's home, where `untrackable` had none).

@@ -270,6 +270,18 @@ impl Corpus {
         self.git(&["ls-files"]).lines().map(str::to_owned).collect()
     }
 
+    /// Plant the on-disk shapes [`UNUSABLE_VALUES`] names: a symlink `linked` → the real
+    /// directory `real/`, which also carries `sub/` so the **ancestor** cell addresses an
+    /// existing path through the link. `README.md` is already committed by [`Corpus::new`],
+    /// and the absolute cell needs nothing on disk.
+    ///
+    /// Deliberately left untracked: what the refusal is about is the *destination shape*, and
+    /// `git add`-ing the link would only add a second reason git dislikes it.
+    fn plant_unusable_shapes(&self) {
+        fs::create_dir_all(self.repo.path().join("real").join("sub")).expect("create real/sub");
+        std::os::unix::fs::symlink("real", self.repo.path().join("linked")).expect("link real");
+    }
+
     /// The project manifest's raw bytes (`.jigc/config/manifest.yaml`), or `""`.
     fn manifest(&self) -> String {
         fs::read_to_string(
@@ -287,20 +299,25 @@ impl Corpus {
 /// finding is raised, **nothing moved** (both docs still at their homes and still tracked —
 /// the index is the assertion, since the loss shape is a staged move), and the knob did not
 /// land (a landed knob with no move leaves the store pointing at a home no doc is at).
-fn assert_refused_and_inert(corpus: &Corpus, key: &str, value: &str) {
+///
+/// `code` is the caller's, because each root rule asks a **different question about the same
+/// path** and therefore carries its own code (`design/storage.md` → Placement) — asserting a
+/// shape is refused without saying *which* rule refused it would let either rule cover for the
+/// other's absence.
+fn assert_refused_and_inert(corpus: &Corpus, key: &str, value: &str, code: &str) {
     let before = corpus.manifest();
     let out = corpus.jigc(&["config", "set", key, value]);
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
 
     assert!(
         !out.status.success(),
-        "`jigc config set {key} {value}` must NOT exit 0 — jigc's own workbench is not a home \
-         for managed docs; stdout:\n{}\nstderr:\n{stderr}",
+        "`jigc config set {key} {value}` must NOT exit 0 — a root that leaves the store lying \
+         is refused before it is written; stdout:\n{}\nstderr:\n{stderr}",
         String::from_utf8_lossy(&out.stdout),
     );
     assert!(
-        stderr.contains("config.workbench-root"),
-        "the refusal carries its finding code; stderr:\n{stderr}",
+        stderr.contains(code),
+        "the refusal carries `{code}`, the rule that refused it; stderr:\n{stderr}",
     );
     assert!(
         stderr.contains(value),
@@ -338,7 +355,112 @@ fn no_root_knob_accepts_jigcs_own_workbench_as_a_home() {
     let corpus = Corpus::new("workbench");
     for key in cli::config::ROOT_KNOBS {
         for value in WORKBENCH_VALUES {
-            assert_refused_and_inert(&corpus, key, value);
+            assert_refused_and_inert(&corpus, key, value, "config.workbench-root");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// T3 — **a root the store cannot describe is refused before it is written.**
+//
+// The home rule above asks *whose* directory the value names. This one asks whether the value
+// is a **usable root at all** — a repo-relative directory the store can go on describing after
+// the re-point. Three shapes are not, all three driven at HEAD on a `committed-singletons` rig:
+//
+// ```text
+// $ jigc config set placement-root README.md
+//   - docs/decisions-log.md: could not relocate (creating the destination dir for
+//     README.md/decisions-log.md: File exists (os error 17)) — move it by hand
+//   - docs/roadmap.md: could not relocate (…) — move it by hand
+// config: set `placement-root` = `README.md`  … $? = 0
+// $ jigc doc list          # both re-rooted docs are GONE from the store surface
+// changelog:changelog  CHANGELOG.md  managed
+// vision:vision        VISION.md     managed
+// ```
+//
+// …which is worse than N5 records: the knob lands with every move failed **and** the store stops
+// listing the docs at all. The absolute value is silently reinterpreted (N6) — `placement-root
+// /tmp/elsewhere` stages `R docs/roadmap.md -> tmp/elsewhere/roadmap.md` while `jigc config get`
+// echoes `/tmp/elsewhere`, so the knob and the store name different homes. And a symlinked root
+// (N7) stages `RD`: `git status` after `placement-root linked` reports
+// `RD docs/roadmap.md -> linked/roadmap.md` — the index records a path the worktree does not
+// have, because git records the link and not a path through it, so `jigc doc list`'s path and
+// git's recorded path disagree permanently.
+//
+// The **symlink subject is every existing component of the value, not its leaf**: a symlinked
+// ANCESTOR (`linked/sub`) reaches the identical `RD` state. The walk therefore starts at the
+// repo root and steps the value's components — it must NOT canonicalize the root itself, since
+// macOS corpora live under a symlinked `/var` and an ancestor-canonicalizing form would refuse
+// every fixture. `""` and `.` carry no named components at all and stay admitted, which
+// `docs_root::` / `placement_override::` / `corpus_migration_backstop::` all require.
+//
+// Two sets, each named: the refusing arm iterates the code-side registry
+// `cli::config::ROOT_KNOBS` × the four shapes; the admitting arm iterates the same registry ×
+// the four values a root legitimately takes (unset, the repo root, an existing directory, and
+// one jigc must create) — the over-refusal guard, without which "refuse three shapes" is
+// satisfied by refusing everything.
+// ---------------------------------------------------------------------------------------
+
+/// The four values that are not usable roots — a file, an absolute path, a symlinked leaf, and
+/// a symlinked ancestor. Planted by [`Corpus::plant_unusable_shapes`].
+const UNUSABLE_VALUES: [&str; 4] = [
+    "README.md",
+    "/tmp/jigc-root-knob-elsewhere",
+    "linked",
+    "linked/sub",
+];
+
+/// The four values a root legitimately takes: unset (`""`, canonicalized to `.`), the repo root,
+/// an existing directory, and one that does not exist yet (jigc creates it on the move).
+const USABLE_VALUES: [&str; 4] = ["", ".", "docs", "notes"];
+
+/// **The eight refusing cells.** Every [`cli::config::ROOT_KNOBS`] member × every shape the store
+/// cannot describe, each refused before anything moves and before the knob lands.
+///
+/// One corpus for all eight, on the same reasoning as the workbench arm: a refused cell leaves
+/// the store byte-identical, so the eighth cell adjudicates the corpus the first one did.
+#[test]
+fn no_root_knob_accepts_a_root_the_store_cannot_describe() {
+    let corpus = Corpus::new("unusable");
+    corpus.plant_unusable_shapes();
+    for key in cli::config::ROOT_KNOBS {
+        for value in UNUSABLE_VALUES {
+            assert_refused_and_inert(&corpus, key, value, "config.unusable-root");
+        }
+    }
+}
+
+/// **The eight admitting cells — the over-refusal guard.** A predicate that refuses everything
+/// satisfies the arm above, so each legitimate root is driven to exit 0 on its own corpus, the
+/// knob reads back the value it was set to, and **the store still describes both managed docs**
+/// — the property N5 broke.
+#[test]
+fn every_usable_root_is_still_admitted_and_the_store_still_describes_its_docs() {
+    for key in cli::config::ROOT_KNOBS {
+        for (cell, value) in USABLE_VALUES.iter().enumerate() {
+            let corpus = Corpus::new(&format!("usable-{key}-{cell}"));
+            corpus.ok(&["config", "set", key, value]);
+
+            // `""` is canonicalized to the flat sentinel `.` before it lands (both knobs).
+            let expected = if value.is_empty() { "." } else { *value };
+            let reading = corpus.ok(&["config", "get", key]);
+            assert!(
+                // The whole `<key> = <value>` reading, never a substring of it: `docs-root`
+                // contains `docs`, so a bare `contains(expected)` would pass on a knob that
+                // never landed at all.
+                reading.contains(&format!("{key} = {expected}")),
+                "`jigc config set {key} {value:?}` must read back as `{expected}`; got:\n{reading}",
+            );
+
+            let listing = corpus.ok(&["doc", "list"]);
+            for id in ["roadmap:roadmap", "research:root-knob-probe"] {
+                assert!(
+                    listing.contains(id),
+                    "the store still describes `{id}` after `{key}` = {value:?} — a root the \
+                     store cannot describe is exactly what the refusing arm exists to catch; \
+                     listing:\n{listing}",
+                );
+            }
         }
     }
 }

@@ -431,6 +431,41 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
         )));
     }
 
+    // Step 2d — **a root the store cannot describe is refused before it is written** (M50
+    // Increment 4 / T3; `settle-record.md` → D8, the value rule; `design/storage.md` → Placement).
+    // 2b and 2c ask *where* the value points; this asks whether the value is a usable root at
+    // all. Three shapes are not, all three driven at HEAD:
+    //
+    //   - **file-shaped** (`README.md`): the knob landed at exit 0 with EVERY move failed
+    //     (`creating the destination dir …: File exists`), and `jigc doc list` then dropped both
+    //     re-rooted docs from the store surface entirely — the exact state step 2b's own
+    //     rationale says must not exist, produced by the door that states it.
+    //   - **absolute** (`/tmp/elsewhere`): silently reinterpreted as repo-relative — the mover
+    //     staged `R docs/roadmap.md -> tmp/elsewhere/roadmap.md` (`crate::trackable` trims the
+    //     leading `/`) while `jigc config get` echoed back `/tmp/elsewhere`, so the knob and the
+    //     store named different homes for the same doc.
+    //   - **symlinked** (`linked`, or `linked/sub`): the move staged `RD` — git records the link,
+    //     not a path through it, so the index holds a path the worktree does not have and
+    //     `jigc doc list`'s path and git's recorded path disagree permanently.
+    //
+    // One code with the reason in the message, on `config.untrackable-root`'s five-reasons-one-code
+    // precedent: the operator's fix is the same in all three cases — supply a different root.
+    //
+    // Same position and posture as 2b/2c, and for the same reason: before anything moves and
+    // before the knob lands.
+    if ROOT_KNOBS.contains(&key)
+        && let Some(repo_root) = project_config.parent().and_then(Path::parent)
+        && let Some(reason) = unusable_root_reason(repo_root, value)
+    {
+        return Err(finding_to_err(Finding::block(
+            "config.unusable-root",
+            format!("`{value}` cannot be the `{key}`: {reason}"),
+            "re-run with a repo-relative directory — an existing one, or one jigc should create; \
+             never a file, an absolute path, or a path through a symlink; `jigc config list` \
+             shows the value in force and the layer it wins from",
+        )));
+    }
+
     // docs-root re-point: detect + route + MOVE the committed docs the change would strand at
     // the *prior* resolved root (M39 inc-5 T3, replacing the M36 warn-then-strand). This is
     // `run_set`'s first read of the committed doc surface — a store-access seam that resolves
@@ -488,6 +523,85 @@ fn is_workbench_root(value: &str) -> bool {
         }
     }
     false
+}
+
+/// Why `value` is a root the store **cannot describe** — `None` when it can (M50 Increment 4 /
+/// T3). Asked of both root knobs, of the value as typed, before anything moves.
+///
+/// The three shapes, each driven at HEAD before the guard existed and each leaving the store
+/// lying in its own way (the repros are in `crates/cli/tests/root_knob_rules.rs`):
+///
+///   - **absolute** — the value is resolved against the repository root by everything
+///     downstream ([`crate::trackable`] trims the leading `/`), so `/tmp/elsewhere` moves docs
+///     to `tmp/elsewhere/` while `jigc config get` echoes the absolute form back. Purely
+///     lexical, and asked first: an absolute value's components are not this repo's to walk.
+///   - **through a symlink** — git records the link itself, never a path through it, so the
+///     move stages `RD`: an index entry the worktree has no path for. The subject is **every
+///     existing component of the value**, not its leaf — a symlinked *ancestor* (`linked/sub`)
+///     reaches the identical state.
+///   - **file-shaped** — an existing non-directory. Every move into it fails
+///     (`File exists` / `Not a directory`) while the knob lands anyway, and the docs then vanish
+///     from `jigc doc list` because the store resolves them to homes nothing is at.
+///
+/// **The walk starts at `repo_root` and never canonicalizes it.** Only the value's own
+/// components are probed: a repository legitimately sits under a symlinked ancestor (every
+/// macOS temp corpus lives under `/var` → `private/var`), and canonicalizing the root — or
+/// comparing the canonical form of the whole join against it — would refuse every root in every
+/// such repo. A value with no named components (`""`, `.`) is the repo root itself and is
+/// always usable; that is the flat layout both knobs document.
+fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
+    use std::path::Component;
+
+    if Path::new(value).is_absolute() {
+        return Some(format!(
+            "an absolute path — every door resolves a root against the repository root, so the \
+             docs would move to `{}` while `jigc config get` reads back `{value}`",
+            value.trim_start_matches('/'),
+        ));
+    }
+
+    let mut probe = repo_root.to_path_buf();
+    let mut shown = String::new();
+    for component in Path::new(value).components() {
+        match component {
+            // A leading `./` is the same path, and `..` is `crate::trackable`'s question
+            // (it either stays inside the repo or is refused there) — neither names a
+            // component to probe.
+            Component::CurDir => continue,
+            Component::ParentDir => {
+                probe.pop();
+                shown.clear();
+                continue;
+            }
+            Component::Normal(part) => {
+                probe.push(part);
+                if !shown.is_empty() {
+                    shown.push('/');
+                }
+                shown.push_str(&part.to_string_lossy());
+            }
+            // Refused above; a root or prefix component cannot appear in a relative value.
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+        if std::fs::symlink_metadata(&probe).is_ok_and(|meta| meta.is_symlink()) {
+            return Some(format!(
+                "`{shown}` is a symlink — git records the link, not a path through it, so the \
+                 moved docs would stage as index entries the worktree has no path for (`RD`) \
+                 and `jigc doc list` would name a home git does not"
+            ));
+        }
+    }
+
+    if shown.is_empty() {
+        return None; // the repo root itself — the flat layout both knobs document.
+    }
+    if std::fs::metadata(&probe).is_ok_and(|meta| !meta.is_dir()) {
+        return Some(format!(
+            "`{shown}` is a file, not a directory — every move into it fails while the knob \
+             lands anyway, and the store then resolves its docs to homes nothing is at"
+        ));
+    }
+    None
 }
 
 /// On a `docs-root` re-point to `new_value`, **detect + route + move** the committed docs the
