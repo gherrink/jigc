@@ -36,6 +36,24 @@ use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+/// **The two root knobs** — the keys that re-point where every managed doc lives, and whose
+/// re-point then *moves* the committed docs it strands (`docs-root` over every `location:`
+/// doctype, `placement-root` over every nested `placement:` home).
+///
+/// One home, because every rule that binds one binds the other: the empty-value
+/// canonicalization below and M49's untrackable-home refusal both read it rather than
+/// re-spelling the pair per call site, and every further root rule joins them here.
+/// Two hand-written `matches!` over these keys is exactly the shape M45's complete-fix lens is
+/// named for — a rule applied at one arm and not the other is a rule that is not applied at
+/// all — so `crates/cli/tests/root_knob_rules.rs` fences the pair literal out of this file and
+/// asserts each member is a **declared** knob in the pack's `config/knobs.yaml`.
+///
+/// It is deliberately *not* the subject of the two per-knob re-point movers further down
+/// (`route_docs_root_repoint_orphans`, `route_placement_root_repoint_strands`): those dispatch
+/// each knob to its **own** floor, so they are a per-knob switch by design, not a duplicated
+/// pair rule.
+pub const ROOT_KNOBS: [&str; 2] = ["docs-root", "placement-root"];
+
 /// The `jigc config <verb>` subcommand tree — `set`, the structural-op verbs
 /// `insert-step` / `replace-step` / `remove-step`, the `fill` verb, and `fork`.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -316,7 +334,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // every declared placement home stands — while `.` is the repo root, so an empty set
     // that landed verbatim would read back as "never set" and silently do nothing
     // (`crate::start::placement_root`).
-    let value = if matches!(key, "docs-root" | "placement-root") && value.is_empty() {
+    let value = if ROOT_KNOBS.contains(&key) && value.is_empty() {
         "."
     } else {
         value
@@ -365,7 +383,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // Scoped to what git cannot record, never to roots that merely look unusual: a
     // **gitignored** root (`placement-root .jigc`) is a path git tracks perfectly well and has
     // only been told to skip — it stages a real `R` rename — and it keeps working.
-    if matches!(key, "docs-root" | "placement-root")
+    if ROOT_KNOBS.contains(&key)
         && let Some(repo_root) = project_config.parent().and_then(Path::parent)
         && let Some(reason) = crate::trackable::untrackable_reason(repo_root, value)
     {

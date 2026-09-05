@@ -66,6 +66,8 @@ mod placement_override;
 mod planning_checklist_sanction;
 #[path = "../read_back_fence.rs"]
 mod read_back_fence;
+#[path = "../root_knob_rules.rs"]
+mod root_knob_rules;
 #[path = "../set_kind_vocabulary.rs"]
 mod set_kind_vocabulary;
 #[path = "../slug_override.rs"]
