@@ -29,7 +29,11 @@
 //! pins I2/I4); a **placement-singleton** reslug rejects with the real rule (identity fixed to
 //! the type; retitle-only) and a **milestone-record** reslug refuses always — between milestones
 //! too (M40 A4); and a **`--slug` override that is not a slug** blocks before the destination
-//! path is built, the sixth and last of the mint doors to ask that question (M50 Inc 2 / T2).
+//! path is built, the sixth and last of the mint doors to ask that question (M50 Inc 2 / T2);
+//! and a **destination git cannot record** — the doctype's home inside a submodule, an
+//! embedded repo or git's own directory — is refused *here* rather than from inside the
+//! transaction, so the arm carries an identity, a route and a log entry instead of the
+//! shared move primitive's bare bail printing the host's filesystem (M50 Inc 2 / T3).
 //! The advisory prose/unmanaged-mention report is T5.
 //!
 //! Every one of those refusals is declared and disposed in one place — [`RefusalKind`], which
@@ -110,6 +114,10 @@ pub enum RefusalKind {
     /// A `--slug` override that is not a well-formed slug — the value drives the new
     /// identity **verbatim**, so it is a path component, not a hint.
     MalformedSlug,
+    /// The destination the new identity resolves to is a path **git cannot record** in
+    /// this repository — inside another repository (a submodule or an embedded repo),
+    /// inside git's own directory, or outside the repository root altogether.
+    UntrackableDestination,
 }
 
 /// How a refusal's route repairs the state — the disposition every member owes, and the
@@ -143,12 +151,13 @@ impl RefusalKind {
         RefusalKind::WorkUnitIdentity,
         RefusalKind::OccupiedDestination,
         RefusalKind::MalformedSlug,
+        RefusalKind::UntrackableDestination,
     ];
 
     /// The finding code this refusal carries — its identity on the printed surface **and**
     /// in the invocation log's `finding_codes`.
     ///
-    /// Seven of the ten reuse a **shipped** code rather than minting a door-private one:
+    /// Seven of the eleven reuse a **shipped** code rather than minting a door-private one:
     /// the fault is the same fault the read and in-task write paths already name, and one
     /// fault owes one code (the M49 Increment 11 / T1 rule, applied to refusals). In
     /// particular [`RefusalKind::FixedIdentity`] and [`RefusalKind::WorkUnitIdentity`]
@@ -156,15 +165,18 @@ impl RefusalKind {
     /// refusals — the two verbs differ in *what identity they may move*, never in what
     /// kind of fault a fixed one is.
     ///
-    /// Two of the three mints are the states no other door can be in: only this verb
+    /// Two of the four mints are the states no other door can be in: only this verb
     /// refuses over the **working tree** it is about to commit in place, and only this
     /// verb refuses over an in-flight **fan-out** whose join key it would change. The
-    /// third, [`RefusalKind::MalformedSlug`]'s `write.malformed-slug`, is the family's
-    /// code rather than this door's: the five sibling `--slug` doors
-    /// (`crate::cli::SLUG_DOORS`) refuse the identical value with a bare `anyhow` that
-    /// carries no code at all, so there was none to reuse — the code is minted here, and
-    /// it is the one those doors join when they are converged (M50 Increment 2, declared
-    /// bound vi: *that* they refuse is in scope, *how they render* is not).
+    /// other two are the **family's** code rather than this door's, minted here because
+    /// the siblings that share the fault refuse it with a bare `anyhow` carrying no code
+    /// to reuse: [`RefusalKind::MalformedSlug`]'s `write.malformed-slug` (the five other
+    /// `--slug` doors, `crate::cli::SLUG_DOORS`) and
+    /// [`RefusalKind::UntrackableDestination`]'s `write.untrackable-destination` (the
+    /// other three callers of [`crate::relocate::move_doc`] — `jigc relocate`,
+    /// `migrate-corpus`'s relocation arm, `finalize`'s promote/retire). Both are the code
+    /// those doors join when they are converged (M50 Increment 2, declared bounds vi and
+    /// vii: *that* they refuse is in scope, *how they render* is not).
     pub fn code(self) -> &'static str {
         match self {
             RefusalKind::UnknownDoctype => "store.unknown-type",
@@ -176,6 +188,7 @@ impl RefusalKind {
             RefusalKind::FixedIdentity | RefusalKind::WorkUnitIdentity => "write.identity-change",
             RefusalKind::OccupiedDestination => "write.already-present",
             RefusalKind::MalformedSlug => "write.malformed-slug",
+            RefusalKind::UntrackableDestination => "write.untrackable-destination",
         }
     }
 
@@ -207,6 +220,9 @@ impl RefusalKind {
             ),
             RefusalKind::MalformedSlug => Repair::Judgment(
                 "the id is the caller's to name: jigc cannot compose the slug the caller meant, and a mechanical argv may carry only a declared placeholder (`engine::finding::ROUTE_PLACEHOLDERS`), which a slug is not",
+            ),
+            RefusalKind::UntrackableDestination => Repair::Judgment(
+                "the destination is the doctype's home plus the new slug, and jigc cannot tell which of the two the operator meant to change — nor whether the home itself (a submodule, an embedded repo, git's own directory) is the thing to move",
             ),
         }
     }
@@ -489,6 +505,45 @@ pub(crate) fn run(
                  meant to work on, read it with `jigc doc show {new_id}` and rename that \
                  one instead",
                 crate::task::shell_token(title),
+            )),
+        ));
+    }
+
+    // (g) **unmovable destination** — the destination must be a path git can *record*.
+    //     `git mv <src> <dst>` into a path it cannot (inside another repository, inside
+    //     git's own directory, outside the root) prints `error: invalid path`, moves the
+    //     file on disk, drops the source from the index, adds nothing — and **exits 0**
+    //     (M49's completion-triage HIGH; `crate::trackable::untrackable_reason` is the
+    //     predicate that replaced reading that exit code as a verdict).
+    //
+    //     The shared move primitive already refuses it, and keeps doing so for its other
+    //     callers — but it refuses from *inside* the transaction and as a bare `anyhow`:
+    //     no code for the invocation log, no route, and (the predicate composes three of
+    //     its five reasons from absolute paths) the host's filesystem on the surface,
+    //     which is neither repo-real nor a typed identity
+    //     (`design/surface-contract.md` → law 1). Asked **here**, at this door's own
+    //     pre-check, the arm carries an identity, a route and a log entry like its ten
+    //     siblings; the message is composed from repo-relative parts only, so no host
+    //     path can reach either channel by construction rather than by wording.
+    //
+    //     Scoped exactly like the primitive's own check — to a run that actually moves. A
+    //     retitle-only rewrites the doc at the path it already occupies, and a path the
+    //     store is already reading from is not this gate's to relitigate.
+    if !is_retitle && crate::trackable::untrackable_reason(&repo_root, &new_rel).is_some() {
+        return Err(refuse(
+            RefusalKind::UntrackableDestination,
+            &new_id,
+            format!(
+                "cannot rename `{old_id}` to `{new_id}` — git cannot record `{new_rel}` in \
+                 this repository, so the move would take the doc off disk and leave it \
+                 surviving only in history"
+            ),
+            Route::human(format!(
+                "`{new_rel}` is `{ty}`'s home plus the new slug: check whether that home is \
+                 inside another repository (a submodule or an embedded repo), inside git's \
+                 own directory, or outside the repository root — then rename to a slug this \
+                 repository can record, or move the home; `jigc config list` shows the roots \
+                 in force and the layer each wins from"
             )),
         ));
     }

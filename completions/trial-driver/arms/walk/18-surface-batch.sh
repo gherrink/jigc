@@ -9,9 +9,14 @@
 #       take a doctype; flow50 iterates all 15. This arm drives 8 of them: the two
 #       create-gate doors (`create.unknown-doctype`) and six existence doors
 #       (`store.unknown-type`). Subset, said to be one.
-#   (d) `RefusalKind::ALL` — 9 members (`crates/cli/src/rename.rs`); flow50 iterates
-#       all 9 with their repairs. This arm REACHES all nine through the real binary
-#       from a store it builds, and records the order the door checks them in.
+#   (d) `RefusalKind::ALL` — 11 members since M50 Increment 2 (`crates/cli/src/rename.rs`);
+#       `flow37_rename::every_rename_refusal_carries_an_identity_and_an_exit` iterates all
+#       11 with their repairs. This arm REACHES nine of them through the real binary from
+#       a store it builds, and records the order the door checks them in. Subset, said to
+#       be one: `write.malformed-slug` is driven whole by `slug_override_axis.rs` over its
+#       six doors, and `write.untrackable-destination` needs an embedded repository
+#       planted at the doctype's home — a corpus mutation that would poison every cell
+#       after it in this arm.
 #   (b)(c)(e)(f)(g)(h) — hand-enumerated: the non-git-dir answer over two verbs; the
 #       `write.unknown-section` cell over four write verbs; the non-UTF-8 argv byte;
 #       `describe --commands` in both formats; S-1 and S-4; the changelog gate.
@@ -184,7 +189,7 @@ bar "S-4 · …and its tip names jigc doc rename with the argv shape" \
     "printf '%s' \"\$S4\" | grep -q 'jigc doc rename <address> --to <title> --task <task-id>'"
 bar "S-4 · …and says WHY rename takes no --task (task-less, self-committing)" "printf '%s' \"\$S4\" | grep -q 'task-less'"
 
-say "(d) · jigc rename — the nine refusals, reached from the store the fixture built"
+say "(d) · jigc rename — nine of the eleven refusals, reached from the store the fixture built"
 # In-flight first: the task S-1 minted is still open, which is the state the guard
 # names — on an EXISTING doc, because `store.not-found` is checked before the guard.
 refusal "in-flight (task $TX open)" "rename.in-flight" jigc rename "$A1" --to "Drop the newest sample"
@@ -232,7 +237,7 @@ bar "…at exit 0 — advisory, not a block"            "test $HRC -eq 0"
 jigc task discard "$TS" >/dev/null 2>&1
 
 say "SUMMARY"
-echo "  8 of DOCTYPE_DOORS' 15 · all 9 of RefusalKind::ALL (+ the no-op) · the non-git pair ·"
+echo "  8 of DOCTYPE_DOORS' 15 · 9 of RefusalKind::ALL's 11 (+ the no-op) · the non-git pair ·"
 echo "  the four-verb section miss · non-UTF-8 argv · describe in both formats · S-1 · S-4 · the"
 echo "  M46 changelog gate. Both registries are fenced in full by flow50; this arm drives a stated subset."
 if [ "$FAIL" -eq 0 ]; then echo "ARM 18 PASS"; else echo "ARM 18 FAIL"; fi

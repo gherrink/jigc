@@ -2,6 +2,30 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-05 — M50 Inc 2 / T3: the unmovable destination stops being a code-less bail that prints the host's filesystem
+
+**Shipped.** `jigc rename` asks the trackability question at **its own** pre-check — gate (g), beside the dirty-tree, in-flight, fixed-identity and collision arms — through a new `RefusalKind::UntrackableDestination` carrying **`write.untrackable-destination`** (namespace verified free) and a `Repair::Judgment`: the destination is the doctype's home plus the new slug, and jigc cannot tell which of the two the operator meant to change, nor whether the *home* (a submodule, an embedded repo, git's own directory) is the thing to move. `RefusalKind::ALL` is **eleven**, and the M49 axis sweep drives the new row through `drive_refusal`'s `prepare` closure rather than asserting it.
+
+**The defect reproduced first, driven at `7f0899d`** (T2's commit, so the reproduction is of the tree this task starts from). With `git init docs/decisions` — the adr doctype's own home turned into an embedded repository, reached with a **well-formed** slug and a **well-formed** address, so the arm survives T1's and T2's guards and is not dead code — `jigc rename adr:single-node-cache --to "Distributed"` answered from *inside* the transaction with `relocate::move_doc`'s bare `anyhow`:
+
+    refusing to move `docs/decisions/single-node-cache.md` to a destination git cannot track:
+    `docs/decisions/distributed.md` is inside another repository
+    (/private/var/folders/nj/…/jigc-rename-…/docs/decisions) — a submodule or an embedded repo…
+
+No finding code (so the invocation log recorded one more exit-1-with-nothing), no route, and the **host's absolute filesystem** on the surface — neither repo-real nor a typed identity, which is law 1's own clause ([surface-contract.md](design/surface-contract.md)).
+
+**The message is composed from repo-relative parts, not sanitized.** Three of `trackable::untrackable_reason`'s five branches build their prose from an absolute path (the canonicalized root, the git dir, the owning toplevel), so interpolating the reason and scrubbing it afterwards would leave the leak one branch-edit away. This door states the fault at its own altitude instead — the destination, repo-relative, and what the move would cost — and the *shapes* to check move into the route, where they are a reading list rather than a claim about which one fired. No host path can reach either channel by construction rather than by wording, and the new arm proves it by searching for **the fixture's own root in both spellings** a macOS temp dir answers to (`/var/folders/…` as handed out, `/private/var/folders/…` once canonicalized), on the text surface **and** inside the `--format json` `{"error": …}` envelope — not for a spelling of the leak, which a reworded leak would slip past.
+
+**`write.untrackable-destination` is a mint, not a reuse, and it is the family's code rather than this door's** — the same disposition T2 took for `write.malformed-slug`. The three other callers of `relocate::move_doc` (`jigc relocate`, `migrate-corpus`'s relocation arm, `finalize`'s promote/retire) refuse the identical fault with the shared bare bail carrying no code, so there was none to reuse; the code is minted here and is the one those doors join when they converge. `config set docs-root|placement-root`'s `config.untrackable-root` is **not** that code and is not reused: its subject is a knob value, not a doc destination.
+
+**The primitive's guard stays, and is not now dead.** `move_doc` still asks — for its other three callers, and for `rename` as the layer under the gate. Declared bound (vii) of the decomposition is discharged as written: the same fault at those callers stays code-less, and this task neither closed nor widened that gap.
+
+**Scoped to a run that actually moves**, exactly like the primitive's own check: `!is_retitle`, so a retitle-only — which rewrites the doc at the path it already occupies — is not asked to relitigate a path the store is already reading from.
+
+**Carried from T2 and discharged here:** `completions/trial-driver/arms/walk/18-surface-batch.sh` claimed *"all 9 of `RefusalKind::ALL`"*. It is now eleven, and the arm states the subset it reaches (nine) with the reason for each member it does not: `write.malformed-slug` is driven whole by `slug_override_axis.rs`'s six-door sweep, and `write.untrackable-destination` needs an embedded repository planted at the doctype's home — a corpus mutation that would poison every cell after it. Counts corrected, no cell added: a walk arm is an echo of the fences, not one.
+
+[write-commands.md](design/write-commands.md): *"ten states"* → **eleven**, the mint list names both family codes with their reasons, the judgment list gains this one's, and step 2 states the unrecordable-destination check with the exit-0 `git mv` mechanism it exists for and the declared bound beside it.
+
 ## 2026-09-05 — M50 Inc 2 / T2: the sixth `--slug` door refuses, and the door set becomes the clap tree's own
 
 **Shipped.** `jigc rename`'s `--slug` override is validated where `new_slug` is derived — **above** the `doc_path` that builds the destination and above the empty-slug arm — through a new `RefusalKind::MalformedSlug` carrying **`write.malformed-slug`** (namespace re-verified free) and a `Repair::Judgment`: the id is the caller's to name, and a mechanical argv may carry only a declared `engine::finding::ROUTE_PLACEHOLDERS` member, which a slug is not. The message reuses `crate::task::WORK_UNIT_ID_GRAMMAR`'s **one** shipped spelling, so six doors state one grammar rather than six.

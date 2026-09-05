@@ -1683,7 +1683,7 @@ impl Scene {
 }
 
 /// Drive one [`RefusalKind`] through the **real binary**, in a fixture built to reach that
-/// arm and no other. The match is **exhaustive**, so a tenth refusal cannot compile
+/// arm and no other. The match is **exhaustive**, so an eleventh refusal cannot compile
 /// without a scene that provokes it; [`RefusalKind::InFlight`] yields **two** scenes,
 /// because the guard keys on two markers (a task working area and a milestone) and one
 /// green marker would leave the other unswept.
@@ -1776,6 +1776,17 @@ fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
             ],
             &nothing,
         )],
+        // The slug is faultless and the address well formed — the *home* is the fault:
+        // `git init docs/decisions` makes the adr doctype's home an embedded repository,
+        // whose paths this index cannot record. Driven through `prepare` like the
+        // dirty-tree and in-flight rows, so the arm is reached rather than asserted.
+        RefusalKind::UntrackableDestination => vec![plain(
+            "axis-untrackable",
+            vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
+            &|repo: &Path| {
+                git(&repo.join("docs/decisions"), &["init", "-q"]);
+            },
+        )],
         RefusalKind::FixedIdentity => {
             let repo = TempDir::new("axis-fixed-identity");
             seed_placement_store(repo.path());
@@ -1857,7 +1868,7 @@ fn route_command(route: &str) -> String {
 /// fence panic's 101, never a silent 0), the declared finding code on the printed surface,
 /// exactly one route — run **verbatim at exit 0** where the declaration says a command is
 /// the repair — and the same code in the invocation log's `finding_codes`, so a refused
-/// rename is distinguishable there from the other eight ways this door says no.
+/// rename is distinguishable there from the other ten ways this door says no.
 ///
 /// The occupancy arm is PT-A's own report and was the reddest: `` cannot rename to `X` —
 /// a different doc already exists at … `` shipped code-less and route-less while the same
@@ -1959,7 +1970,7 @@ fn every_rename_refusal_carries_an_identity_and_an_exit() {
 }
 
 /// The declaration is closed over the enum: every variant is in [`RefusalKind::ALL`], so
-/// the axis above cannot silently skip one. The match is exhaustive, so a tenth variant
+/// the axis above cannot silently skip one. The match is exhaustive, so an eleventh variant
 /// does not compile without an author coming here; the count is what catches a variant
 /// that compiles but never joined `ALL`.
 #[test]
@@ -1975,12 +1986,13 @@ fn every_refusal_kind_is_declared() {
             | RefusalKind::FixedIdentity
             | RefusalKind::WorkUnitIdentity
             | RefusalKind::OccupiedDestination
-            | RefusalKind::MalformedSlug => {}
+            | RefusalKind::MalformedSlug
+            | RefusalKind::UntrackableDestination => {}
         }
     }
     assert_eq!(
         RefusalKind::ALL.len(),
-        10,
+        11,
         "a new `RefusalKind` joins `ALL` (and the axis suite gains the scene that drives it)",
     );
 }
@@ -1997,4 +2009,113 @@ fn the_unknown_doctype_row_reads_the_shipped_code() {
         engine::store::unknown_doctype("nosuch").code,
         "the declared code must be the shipped constructor's",
     );
+}
+
+/// **The unmovable destination names itself, and prints no host filesystem**
+/// (M50 Increment 2 / T3).
+///
+/// Reached with a **well-formed** slug and a well-formed address — `git init
+/// docs/decisions` makes the adr doctype's own home an embedded repository, whose paths
+/// this index cannot record — so the arm survives Increment 2's address guard (T1) and
+/// `--slug` guard (T2) and is not dead code.
+///
+/// Before this task the fault surfaced from *inside* the transaction, as
+/// `relocate::move_doc`'s bare `anyhow`: no finding code, no route, and the host's
+/// absolute filesystem path in the message (`is inside another repository
+/// (/private/var/folders/…/docs/decisions)`) — neither repo-real nor a typed identity
+/// (`design/surface-contract.md` → law 1, the M45 repo-real-path rule).
+///
+/// The host-path assertion searches for **this fixture's own root**, in both spellings a
+/// macOS temp dir answers to (`/var/folders/…` as handed out, `/private/var/folders/…`
+/// once canonicalized), rather than for a spelling of the leak — so a differently-worded
+/// leak of the same bytes cannot satisfy it. Both channels are searched, because the
+/// refusal reaches `--format json` inside the `{"error": …}` envelope (the declared bound
+/// this door already carries) and a leak there is as real as one on the text surface.
+#[test]
+fn an_unmovable_destination_names_itself_and_prints_no_host_path() {
+    let repo = TempDir::new("untrackable-destination");
+    seed_store(repo.path());
+    git(&repo.path().join("docs/decisions"), &["init", "-q"]);
+    let before = commit_count(repo.path());
+
+    let argv = ["rename", "adr:single-node-cache", "--to", "Distributed"];
+    let out = jigc(repo.path(), &argv);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an unmovable destination is a clean refusal at exit 1; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!(
+            "· {} — ",
+            RefusalKind::UntrackableDestination.code()
+        )),
+        "the refusal must carry its declared identity; stderr:\n{stderr}",
+    );
+    assert_eq!(
+        route_lines(&stderr).len(),
+        1,
+        "the refusal carries exactly one route; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("docs/decisions/distributed.md"),
+        "the refusal must name the destination it declined, repo-relative; stderr:\n{stderr}",
+    );
+
+    // Nothing moved and nothing was committed: the refusal is the *door's*, taken before
+    // the transaction that would have run `git mv` into a path git cannot record.
+    let decisions = repo.path().join("docs/decisions");
+    assert!(
+        decisions.join("single-node-cache.md").is_file(),
+        "the doc must still hold its own identity",
+    );
+    assert!(
+        !decisions.join("distributed.md").exists(),
+        "nothing may land at the destination the door declined",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before,
+        "a refused rename commits nothing",
+    );
+
+    // The same refusal through the machine surface — same door, other channel.
+    let json_argv = [
+        "rename",
+        "adr:single-node-cache",
+        "--to",
+        "Distributed",
+        "--format",
+        "json",
+    ];
+    let json_out = jigc(repo.path(), &json_argv);
+    let json_stderr = String::from_utf8_lossy(&json_out.stderr).into_owned();
+    let envelope: serde_json::Value = serde_json::from_str(json_stderr.trim())
+        .unwrap_or_else(|_| panic!("the refusal renders a JSON envelope; stderr:\n{json_stderr}"));
+    assert!(
+        envelope["error"].as_str().is_some_and(|e| {
+            e.contains(RefusalKind::UntrackableDestination.code())
+                && e.contains("docs/decisions/distributed.md")
+        }),
+        "the JSON envelope carries the identity and the repo-relative destination; \
+         envelope:\n{envelope:#}",
+    );
+
+    // Neither channel prints the host's filesystem.
+    let mut roots = vec![repo.path().display().to_string()];
+    if let Ok(real) = fs::canonicalize(repo.path()) {
+        roots.push(real.display().to_string());
+    }
+    for (channel, text) in [
+        ("the text surface", &stderr),
+        ("the --format json envelope", &json_stderr),
+    ] {
+        for root in &roots {
+            assert!(
+                !text.contains(root.as_str()),
+                "{channel} must print no absolute host path — it leaked `{root}`:\n{text}",
+            );
+        }
+    }
 }
