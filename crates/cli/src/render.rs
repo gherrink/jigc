@@ -336,8 +336,15 @@ pub fn composed(format: Format, view: &Composition) -> String {
             let header = minted_header(view);
             let state = task_state_lines(view);
             let gates = create_gates_line(&view.gates);
+            let also_open = also_open_block(&view.also_open);
             let mut out = String::with_capacity(
-                header.len() + text.len() + state.len() + gates.len() + ROUTING_FOOTER.len() + 1,
+                header.len()
+                    + text.len()
+                    + state.len()
+                    + gates.len()
+                    + also_open.len()
+                    + ROUTING_FOOTER.len()
+                    + 1,
             );
             out.push_str(&header);
             out.push_str(text);
@@ -346,6 +353,7 @@ pub fn composed(format: Format, view: &Composition) -> String {
             }
             out.push_str(&state);
             out.push_str(&gates);
+            out.push_str(&also_open);
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -508,6 +516,56 @@ fn create_gates_line(gates: &[String]) -> String {
         "create-gates: {}   — the doc-types this task is allowed to create; any other type is refused\n",
         gates.join(", ")
     )
+}
+
+/// The `also open:` block a **work-starting** `jigc start` form appends when other tasks
+/// were already live when it ran (M50 Increment 5 / T3 — the trial's F-5: both forms that
+/// start work were silent about the work already open, and one of them changes the repo).
+///
+/// One lead line carrying the count and the legality claim once, then **one row per task**
+/// — the active *set*, never a singular claim that reports one and hides the rest (Settle
+/// B8). Each row names the id, the workflow that minted it, and the door that re-composes
+/// it, so the reader can act on the row without a second lookup.
+///
+/// It states plainly that **this call left them alone**: the block is an addition to what
+/// the surface says, never a change to what it did. The mint is not suppressed — the
+/// [`task_state_lines`] `task scope:` line just above composes *"several open tasks are
+/// legal … you can run them in parallel"* into every task, and a refusal here would
+/// contradict it.
+///
+/// The routes are backticked, not `Run:` directives: a `Run:` here would read as the next
+/// step of *this* task and send the agent off to resume a different one.
+///
+/// An **empty** set renders no bytes at all — omitted, never printed as `none`, the same
+/// inert-omitting-context mold as [`create_gates_line`]. That is every context but the two
+/// filling forms, plus those two over a repo holding no other live task.
+fn also_open_block(open: &[crate::start::OpenTask]) -> String {
+    if open.is_empty() {
+        return String::new();
+    }
+    let lead = if open.len() == 1 {
+        String::from("1 other task was already open before this call — nothing here touched it")
+    } else {
+        format!(
+            "{} other tasks were already open before this call — nothing here touched them",
+            open.len(),
+        )
+    };
+    let mut out = format!(
+        "also open: {lead}; several open tasks are legal, each addressed by its own \
+         `--task`:\n"
+    );
+    for task in open {
+        let workflow = match &task.workflow {
+            Some(id) => format!(" (workflow `{id}`)"),
+            None => String::new(),
+        };
+        out.push_str(&format!(
+            "  - `{id}`{workflow} — resume it with `jigc start --task {id}`\n",
+            id = task.id,
+        ));
+    }
+    out
 }
 
 /// Render the `--explain` [`ResolutionTree`] to the surface `format` selects:
@@ -4736,6 +4794,7 @@ mod tests {
             gates: vec!["adr".to_string(), "changelog".to_string()],
             minted: true,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
 
         let agent = composed(Format::Agent, &granting);
@@ -4758,6 +4817,7 @@ mod tests {
             gates: Vec::new(),
             minted: true,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
         let bare = composed(Format::Agent, &gateless);
         assert!(!bare.contains("create-gates"), "got:\n{bare}");
@@ -4825,6 +4885,7 @@ mod tests {
             gates: Vec::new(),
             minted: true,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
 
         let agent = composed(Format::Agent, &minted);
@@ -4844,6 +4905,7 @@ mod tests {
             gates: Vec::new(),
             minted: false,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
         let re = composed(Format::Agent, &resumed);
         assert!(!re.contains("task minted"), "got:\n{re}");
@@ -4855,6 +4917,7 @@ mod tests {
             gates: Vec::new(),
             minted: false,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
         let routed = composed(Format::Agent, &router);
         assert!(!routed.contains("task minted"), "got:\n{routed}");
@@ -4884,6 +4947,7 @@ mod tests {
             gates: vec!["adr".to_string()],
             minted: true,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
 
         let agent = composed(Format::Agent, &minted);
@@ -4948,6 +5012,7 @@ mod tests {
             gates: Vec::new(),
             minted: false,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
         let re = composed(Format::Agent, &resumed);
         assert!(!re.contains("task minted"), "got:\n{re}");
@@ -4969,6 +5034,7 @@ mod tests {
             gates: Vec::new(),
             minted: false,
             sub_task_of: Some("rework".to_string()),
+            also_open: Vec::new(),
         };
         let sub_agent = composed(Format::Agent, &sub);
         let sub_scope = sub_agent
@@ -5001,6 +5067,7 @@ mod tests {
             gates: Vec::new(),
             minted: false,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
         let routed = composed(Format::Agent, &router);
         for needle in ["resume:", "what's-left:", "task scope:"] {
@@ -5039,6 +5106,7 @@ mod tests {
             gates: Vec::new(),
             minted: true,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
         let agent = composed(Format::Agent, &minted);
         let line = agent
@@ -5082,6 +5150,7 @@ mod tests {
             gates: Vec::new(),
             minted: false,
             sub_task_of: None,
+            also_open: Vec::new(),
         };
         let routed = composed(Format::Agent, &router);
         assert!(!routed.contains("what's-left:"), "got:\n{routed}");

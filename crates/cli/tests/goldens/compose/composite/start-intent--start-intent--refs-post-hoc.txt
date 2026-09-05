@@ -24,5 +24,7 @@ That catalog is the selectable subset. A workflow outside it is reached by name
 with the same `--workflow` form — `jigc describe --workflows` lists every
 workflow, the ones the catalog leaves out included, and each of those carries
 the reason it is hidden from the catalog.
+also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:
+  - `ground-the-vision-in-research` (workflow `form-vision`) — resume it with `jigc start --task ground-the-vision-in-research`
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

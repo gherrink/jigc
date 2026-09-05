@@ -134,8 +134,9 @@ const REGISTRY: &[(&[&str], Tier)] = &[
             Disposition::DeclaredOut(
                 "TWO surfaces, declared out for two different reasons. (1) The COMPOSED arm's \
                  envelope is PINNED at exactly `{task, text}` (`command-output-contract.md` §1), \
-                 which declares the agent surface's mint announcement, task-state affordances and \
-                 create-gate list to be presentation that adds no key — a prior contract decision \
+                 which declares the agent surface's mint announcement, task-state affordances, \
+                 create-gate list and (M50) already-open block to be presentation that adds no \
+                 key — a prior contract decision \
                  the window does not reopen; the composed text itself rides `text` whole. (2) The \
                  bare-ORIENTATION arm renders from `engine::result::OrientationView`, whose every \
                  variant already carries on the wire each fact its text prints — the provenance \

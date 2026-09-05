@@ -50,5 +50,7 @@ its full membership instead.
 This is bounded to three rounds. If blocking findings remain after the
 fix-round cap, stop and surface it: thrash is a signal for a human, not for
 another round. Advisories are surfaced, not gated.
+also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:
+  - `ground-the-vision-in-research` (workflow `form-vision`) — resume it with `jigc start --task ground-the-vision-in-research`
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

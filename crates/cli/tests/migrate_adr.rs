@@ -1539,7 +1539,12 @@ fn a_non_migration_resume_stays_source_free() {
 
     // A live migration task WITH a staged source — the bleed hazard.
     let rel = commit_foreign_adr(repo.path(), "0010-bystander", FOREIGN_POSTGRES);
-    migrate(repo.path(), home.path(), &pack, &rel);
+    let migrating = migrate(repo.path(), home.path(), &pack, &rel);
+    let migration_task = migrating
+        .lines()
+        .find_map(|line| line.strip_prefix("task minted: "))
+        .expect("the migrate compose names the task it minted")
+        .to_owned();
 
     // An ordinary work task in the same repo.
     let minted = ok_stdout(
@@ -1567,11 +1572,35 @@ fn a_non_migration_resume_stays_source_free() {
         "a non-migration resume feeds the seam nothing — no foreign bytes bleed \
          across tasks:\n{resumed}",
     );
+
+    // The mint carries ONE frontend block the resume does not, and it is true of the mint
+    // alone: M50 Increment 5 / T3's `also open:` block, naming the migration task that was
+    // already live when the work-starting form ran. It is **pinned here**, not trimmed
+    // blind, so the equality below stays a whole-body comparison with a stated exception
+    // rather than a hole a second divergence could slip through.
+    let also_open = [
+        "also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:".to_owned(),
+        format!(
+            "  - `{migration_task}` (workflow `migrate-adr`) — resume it with \
+             `jigc start --task {migration_task}`"
+        ),
+        String::new(),
+    ]
+    .join("\n");
+    assert!(
+        minted.contains(&also_open),
+        "the work-starting form names the migration task already open; got:\n{minted}",
+    );
+    assert!(
+        !resumed.contains("also open"),
+        "the resume door renders no such block — its reader is already in the task it \
+         re-composes; got:\n{resumed}",
+    );
     assert_eq!(
-        minted,
+        minted.replace(&also_open, ""),
         format!("task minted: add-a-thing\n\n{resumed}"),
-        "the non-migration resume stays byte-identical to its minting compose \
-         minus the `task minted:` header",
+        "with the mint's `task minted:` header and its `also open:` block accounted for, \
+         the non-migration resume stays byte-identical to its minting compose",
     );
 }
 

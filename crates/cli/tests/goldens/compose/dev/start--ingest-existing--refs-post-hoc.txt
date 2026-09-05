@@ -19,5 +19,7 @@ Read the triage verdicts:
 
 Do not rewrite any prose. Route the needs-reconcile findings; adopt nothing that
 was not schema-checked.
+also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:
+  - `ground-the-vision-in-research` (workflow `form-vision`) — resume it with `jigc start --task ground-the-vision-in-research`
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

@@ -635,6 +635,40 @@ pub struct Composition {
     /// for an id-less compose, which is what every *minting* door produces: a task joins a
     /// milestone only through `jigc milestone add-task`, never at the mint that composes.
     pub sub_task_of: Option<String>,
+    /// The tasks that were **already open** when a work-starting `jigc start` form ran —
+    /// every live task under the project's `.jigc/` home except the one *this* invocation
+    /// minted (M50 Increment 5 / T3, the trial's F-5). The `also open:` presentation block
+    /// the renderer appends to agent/human text only; the pinned `{task, text}` JSON is
+    /// untouched.
+    ///
+    /// Filled at exactly the two forms that **start work from an intent**
+    /// ([`compose_in_repo`] and [`compose_named_in_repo`]) — the doors an agent reaches
+    /// for when it does not know what is in flight, and the pair the Settle's B8
+    /// disposed. Every other construction site leaves it empty, so a resume, a sub-agent
+    /// re-entry, a `--preview`, a `jigc migrate` compose and the milestone feed all render
+    /// **no bytes**: the omitting context stays inert.
+    ///
+    /// It **suppresses nothing**. The mint proceeds exactly as before — `render.rs`'s own
+    /// `task scope:` line composes *"several open tasks are legal … you can run them in
+    /// parallel"* into every task, so refusing the second mint here would contradict the
+    /// same binary's own surface (Settle B8).
+    pub also_open: Vec<OpenTask>,
+}
+
+/// One row of [`Composition::also_open`] — a task that was live before this call.
+///
+/// Two facts only: the **id** (the handle every subsequent door takes) and the
+/// **workflow** that minted it (the answer to *what is that task*). The intent is not
+/// carried: the id is slugged from it, so the row would restate it, and a composed
+/// surface pays for every line it prints.
+#[derive(Debug)]
+pub struct OpenTask {
+    /// The task id — the `--task <id>` handle, and what `jigc start --task <id>` resumes.
+    pub id: String,
+    /// The workflow the task was minted from, read from its working area. [`None`] for a
+    /// task minted before that file existed, or whose area will not answer — the row is
+    /// still named, because a task you cannot see is worse than a workflow you cannot read.
+    pub workflow: Option<String>,
 }
 
 /// The composing workflow's create-gate doctypes, in declaration order — the source of the
@@ -682,7 +716,7 @@ pub fn compose_in_repo(
         .map(str::to_owned)
         .map_err(anyhow::Error::from)?;
     let source = CascadeStepSource::new(pack, &resolved, &project_config);
-    compose_drained(
+    let composed = compose_drained(
         &repo_root,
         intent,
         pack,
@@ -693,7 +727,41 @@ pub fn compose_in_repo(
         None,
         slug_override,
         false,
-    )
+    )?;
+    with_also_open(composed, start)
+}
+
+/// Attach the **already-open** set to a composition produced by one of the two
+/// work-starting `jigc start` forms (M50 Increment 5 / T3).
+///
+/// Enumerated **after** the compose, from
+/// [`state::list_active_task_ids`](engine::state::list_active_task_ids) — the single
+/// enumeration source of truth `jigc task list`, the active-task resolution and bare-`start`
+/// orientation all read, so no two doors disagree about which tasks are live — minus
+/// [`ComposedWorkflow::task`], the id *this* invocation just minted. Filtering by that id
+/// rather than by a pre-compose snapshot is what makes the freshly minted task unnameable
+/// to itself by construction, on the minting arm and on the `creates-task: false` router
+/// arm (where nothing was minted, so nothing is filtered) alike.
+///
+/// The jigc home is resolved through the same seam the caller's
+/// [`require_project_config`] already went through, so the `?` here cannot fire after that
+/// call succeeded — no degraded arm renders an unknown set as an empty one. A working area
+/// whose `workflow` file will not answer degrades to [`None`] on that row alone; the task
+/// is still named.
+fn with_also_open(mut composed: Composition, start: &Path) -> Result<Composition> {
+    let jigc_root = jigc_home_or_repo(start)?.join(".jigc");
+    let minted = composed.view.task.clone();
+    composed.also_open = engine::state::list_active_task_ids(&jigc_root)
+        .into_iter()
+        .filter(|id| Some(id) != minted.as_ref())
+        .map(|id| {
+            let workflow = engine::state::read_workflow_id(&jigc_root.join("tasks").join(&id))
+                .ok()
+                .flatten();
+            OpenTask { id, workflow }
+        })
+        .collect();
+    Ok(composed)
 }
 
 /// Compose the workflow named by `workflow_id` from `intent` — the explicit
@@ -719,7 +787,7 @@ pub fn compose_named_in_repo(
     // override or slot-fill applies to a `--workflow <X>`-composed workflow too.
     let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
     let source = CascadeStepSource::new(pack, &resolved, &project_config);
-    compose_drained(
+    let composed = compose_drained(
         &repo_root,
         intent,
         pack,
@@ -730,7 +798,8 @@ pub fn compose_named_in_repo(
         None,
         slug_override,
         false,
-    )
+    )?;
+    with_also_open(composed, start)
 }
 
 /// Compose the explicitly-named `workflow_id` with **no `<intent>` positional** —
@@ -1018,6 +1087,9 @@ pub(crate) fn compose_migrate_in_repo(
         minted: true,
         // A just-minted task belongs to no milestone (membership is `add-task`'s alone).
         sub_task_of: None,
+        // `jigc migrate` is not one of the two work-starting `start` forms — the omitting
+        // context renders no `also open:` bytes.
+        also_open: Vec::new(),
     })
 }
 
@@ -1344,6 +1416,10 @@ fn compose_core(
         // either way this compose is never a milestone sub-task's (membership is
         // `jigc milestone add-task`'s alone, and it does not compose).
         sub_task_of: None,
+        // The shared compose spine fills nothing here: the two work-starting `start`
+        // forms attach the already-open set on the way out ([`with_also_open`]), so a
+        // `--preview`, a no-intent compose and the milestone feed all stay inert.
+        also_open: Vec::new(),
     })
 }
 
@@ -2298,6 +2374,9 @@ fn compose_task_workflow(
         // "resuming or finalizing here blocks and names the overlapping paths" would be a
         // law-1 lie there (M47 Inc 8 / N7; `design/surface-contract.md` → law 1).
         sub_task_of: engine::milestone::owning_milestone(&jigc_root, id),
+        // A re-compose door (resume / sub-agent re-entry) already names its task: the
+        // reader is *in* the work, not looking for it.
+        also_open: Vec::new(),
     })
 }
 

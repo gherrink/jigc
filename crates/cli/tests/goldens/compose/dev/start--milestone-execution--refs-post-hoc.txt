@@ -29,5 +29,7 @@ and the code it `git add`-staged, folded from that worktree's staged index —
 a sub-task's unstaged code edits never reach the commit:
 
 Run: `jigc milestone finalize <MILESTONE_ID>`
+also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:
+  - `ground-the-vision-in-research` (workflow `form-vision`) — resume it with `jigc start --task ground-the-vision-in-research`
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

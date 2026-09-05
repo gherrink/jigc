@@ -2251,3 +2251,233 @@ fn overlapping_parallel_work_blocks_and_names_the_path() {
          exactly that; got:\n{stderr}",
     );
 }
+
+/// The `also open:` block's lead line and its one row, for the fixture below — pinned
+/// byte for byte, because the whole deliverable of M50 Increment 5 / T3 is *these bytes
+/// exist*. The row names the id, the workflow that minted it, and the door that
+/// re-composes it; the lead line carries the legality claim once (`design/
+/// surface-contract.md` → law 2: nothing hides) and states that this call left it alone.
+const ALSO_OPEN_ONE: &str = "\
+also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:
+  - `fix-alpha` (workflow `quick-fix`) — resume it with `jigc start --task fix-alpha`
+";
+
+/// Slice the `also open:` block out of a composed agent-text render: the lead line
+/// through the last row, i.e. everything from `also open:` up to the routing footer.
+/// Panics when the block is absent, so a caller asserting its *content* can never pass
+/// over an empty haystack.
+fn also_open_block(composed: &str) -> String {
+    let start = composed
+        .find("also open:")
+        .unwrap_or_else(|| panic!("an `also open:` block renders; got:\n{composed}"));
+    let rest = &composed[start..];
+    let end = rest
+        .find(ROUTING_FOOTER)
+        .unwrap_or_else(|| panic!("the composed text ends with the routing footer; got:\n{rest}"));
+    rest[..end].to_string()
+}
+
+/// M50 Increment 5 / T3 (F-5): `jigc start --workflow <X> "<intent>"` — the explicit
+/// work-starting form — **names the task already open** and **still mints its own**.
+///
+/// The silence was the finding: a worker whose session had lost context re-ran the front
+/// door, got a clean compose, and learned nothing about the task already in flight — the
+/// one door on F-5's axis that *changes the repo* while staying silent. Suppressing the
+/// second mint was rejected at the Settle (B8): `render.rs`'s own `task scope:` line
+/// composes *"several open tasks are legal … you can run them in parallel"* into every
+/// task, so a refusal here would contradict the same binary's own surface.
+#[test]
+fn the_named_workflow_form_names_the_open_task_and_still_mints() {
+    let repo = TempDir::new("also-open-form-d");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // The FIRST call runs over a task-less repo: the omitting context renders no bytes,
+    // and the task it just minted is not named to itself.
+    let alpha = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "quick-fix", "fix alpha"],
+    );
+    assert_ok(&alpha, "`jigc start --workflow quick-fix \"fix alpha\"`");
+    let first = String::from_utf8(alpha.stdout).expect("utf-8 composed stdout");
+    assert!(
+        !first.contains("also open"),
+        "over a repo with no other live task the block renders NO bytes — never `none`, \
+         and never the freshly minted task named to itself; got:\n{first}",
+    );
+
+    // The SECOND call, with `fix-alpha` live.
+    let beta = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "quick-fix", "fix beta"],
+    );
+    assert_ok(&beta, "`jigc start --workflow quick-fix \"fix beta\"`");
+    let second = String::from_utf8(beta.stdout).expect("utf-8 composed stdout");
+    assert_eq!(
+        also_open_block(&second),
+        ALSO_OPEN_ONE,
+        "the `also open:` block names the open task, its workflow and its resume door; \
+         got:\n{second}",
+    );
+    assert!(
+        !also_open_block(&second).contains("fix-beta"),
+        "the task THIS call minted is not named to itself; got:\n{second}",
+    );
+
+    // And it still minted: two ids, at exit 0.
+    let list = run_jigc(repo.path(), home.path(), &["task", "list"]);
+    assert_ok(&list, "`jigc task list`");
+    let roster = String::from_utf8(list.stdout).expect("utf-8 roster");
+    assert!(
+        roster.contains("fix-alpha") && roster.contains("fix-beta"),
+        "naming the open task must not suppress the mint — both ids stay live; \
+         got:\n{roster}",
+    );
+}
+
+/// M50 Increment 5 / T3: the **cascade-default** form — `jigc start "<intent>"`, which
+/// composes the `creates-task: false` router and mints nothing — names the open task too.
+/// It is the door an agent reaches for first, and the one that produces no task id of its
+/// own to anchor the state on, so its silence was the more complete one.
+#[test]
+fn the_router_form_names_the_task_already_open() {
+    let repo = TempDir::new("also-open-router");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    assert_ok(
+        &run_start(
+            repo.path(),
+            home.path(),
+            &["--workflow", "quick-fix", "fix alpha"],
+        ),
+        "`jigc start --workflow quick-fix \"fix alpha\"`",
+    );
+
+    let router = run_start(repo.path(), home.path(), &["add a second thing"]);
+    assert_ok(&router, "`jigc start \"<intent>\"`");
+    let composed = String::from_utf8(router.stdout).expect("utf-8 composed stdout");
+    assert_eq!(
+        also_open_block(&composed),
+        ALSO_OPEN_ONE,
+        "the router form names the open task in the same block; got:\n{composed}",
+    );
+
+    // The router still mints nothing — the block is an addition to the read, not a door.
+    let list = run_jigc(repo.path(), home.path(), &["task", "list"]);
+    assert_ok(&list, "`jigc task list`");
+    let roster = String::from_utf8(list.stdout).expect("utf-8 roster");
+    assert!(
+        !roster.contains("add-a-second-thing"),
+        "the router composes without minting; got:\n{roster}",
+    );
+}
+
+/// M50 Increment 5 / T3 (Settle B8, the N>1 shape): the block carries the active **set**,
+/// so two already-open tasks are two rows under one lead line — never a singular claim
+/// that reports one and hides the rest.
+#[test]
+fn two_already_open_tasks_render_as_two_rows() {
+    let repo = TempDir::new("also-open-two");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    for intent in ["fix alpha", "fix beta"] {
+        assert_ok(
+            &run_start(
+                repo.path(),
+                home.path(),
+                &["--workflow", "quick-fix", intent],
+            ),
+            "`jigc start --workflow quick-fix`",
+        );
+    }
+
+    let third = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "single-task", "add a rate limiter"],
+    );
+    assert_ok(&third, "`jigc start --workflow single-task`");
+    let composed = String::from_utf8(third.stdout).expect("utf-8 composed stdout");
+    assert_eq!(
+        also_open_block(&composed),
+        "\
+also open: 2 other tasks were already open before this call — nothing here touched them; several open tasks are legal, each addressed by its own `--task`:
+  - `fix-alpha` (workflow `quick-fix`) — resume it with `jigc start --task fix-alpha`
+  - `fix-beta` (workflow `quick-fix`) — resume it with `jigc start --task fix-beta`
+",
+        "two open tasks render as two rows under one lead line; got:\n{composed}",
+    );
+}
+
+/// M50 Increment 5 / T3: the block is **presentation** and reaches no tooling consumer —
+/// `--format json` stays exactly the pinned `{task, text}` projection
+/// (`design/command-output-contract.md` §1), with the block absent from `text` too.
+///
+/// This is the arm the `staged_listing_hint` stderr precedent would have failed: a
+/// surface whose text says one thing and whose JSON says another in one invocation is the
+/// gap `command-output-contract.md` names, so the addition is proven inert on the
+/// contract side rather than assumed to be.
+#[test]
+fn the_composed_json_is_unchanged_while_a_task_is_already_open() {
+    let repo = TempDir::new("also-open-json");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    assert_ok(
+        &run_start(
+            repo.path(),
+            home.path(),
+            &["--workflow", "quick-fix", "fix alpha"],
+        ),
+        "`jigc start --workflow quick-fix \"fix alpha\"`",
+    );
+
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "--workflow", "quick-fix", "fix beta"],
+    );
+    assert_ok(&out, "`jigc start --format json --workflow quick-fix`");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let value: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("must be valid JSON ({e}); got:\n{stdout}"));
+    let obj = value.as_object().expect("the composed JSON is an object");
+    let keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        vec!["task", "text"],
+        "the composed JSON key set stays exactly `{{task, text}}`; got:\n{stdout}",
+    );
+    assert_eq!(value["task"].as_str(), Some("fix-beta"));
+    assert!(
+        !value["text"]
+            .as_str()
+            .expect("`text` is a string")
+            .contains("also open"),
+        "the block is frontend-appended presentation and never joins the composed text; \
+         got:\n{stdout}",
+    );
+
+    // And the router form's JSON, over the same live task, is equally untouched.
+    let router = run_start(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "add a second thing"],
+    );
+    assert_ok(&router, "`jigc start --format json \"<intent>\"`");
+    let router_out = String::from_utf8(router.stdout).expect("utf-8 stdout");
+    let router_value: serde_json::Value = serde_json::from_str(&router_out)
+        .unwrap_or_else(|e| panic!("must be valid JSON ({e}); got:\n{router_out}"));
+    let router_keys: Vec<&str> = router_value
+        .as_object()
+        .expect("object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(router_keys, vec!["task", "text"]);
+    assert!(!router_out.contains("also open"), "got:\n{router_out}",);
+}

@@ -113,5 +113,7 @@ resume: `jigc start --task sweep-the-compose-surface`   — re-composes this wor
 what's-left: `jigc task validate sweep-the-compose-surface`   — previews part of the finalize gate: this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
 task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
 create-gates: research   — the doc-types this task is allowed to create; any other type is refused
+also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:
+  - `ground-the-vision-in-research` (workflow `form-vision`) — resume it with `jigc start --task ground-the-vision-in-research`
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 --- stderr ---

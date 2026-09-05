@@ -885,8 +885,26 @@ fn flow17_consolidated_acceptance_over_the_real_dev_x_methodology_pair() {
         "(3) methodology dev-task compose must exit 0"
     );
     let meth_dt_out = String::from_utf8(meth_dt.stdout).expect("utf-8 stdout");
+    // This compose runs with the `single-task` mint above still open, so it carries one
+    // frontend block the pack-local golden (captured over a fresh repo, and asserted there
+    // unchanged) does not: M50 Increment 5 / T3's `also open:` block. It is **pinned by
+    // content** — it must name that task and the workflow that minted it — and only then
+    // subtracted, so this stays a whole-output comparison with a stated exception rather
+    // than a hole. The block is presentation appended after the composed text; the
+    // body-reference resolution this assertion is about is untouched by it.
+    let also_open = [
+        "also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:".to_owned(),
+        "  - `add-a-thing` (workflow `single-task`) — resume it with `jigc start --task add-a-thing`".to_owned(),
+        String::new(),
+    ]
+    .join("\n");
+    assert!(
+        meth_dt_out.contains(&also_open),
+        "(3) the second compose names the task the first one minted; got:\n{meth_dt_out}",
+    );
     assert_eq!(
-        meth_dt_out, METHODOLOGY_DEV_TASK_GOLDEN,
+        meth_dt_out.replace(&also_open, ""),
+        METHODOLOGY_DEV_TASK_GOLDEN,
         "(3) methodology's dev-task must keep METHODOLOGY's pack-local test-first implement",
     );
 
