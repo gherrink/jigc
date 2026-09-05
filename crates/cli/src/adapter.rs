@@ -1526,6 +1526,11 @@ mod tests {
             - "Bash(cat ./**/credentials:*)"
             - "Read(./**/.npmrc)"
             - "Bash(cat ./**/.npmrc:*)"
+            # The two human-owned destroying doors (M50): each deletes bytes that exist in
+            # no object DB, and the `--force` past their refusal is the human's consent to
+            # spend them, not the agent's.
+            - "Bash(jigc uninstall:*)"
+            - "Bash(jigc milestone discard:*)"
         spawn:
           template: "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`"
         # The adapter's own owned artifact: the shipped guides, installed as a Claude Code
@@ -1540,6 +1545,50 @@ mod tests {
             name: jigc
             description: How to work in a jigc-managed repository — the setup/start/finalize loop, adopting an existing project, and upgrading a corpus.
         "###);
+    }
+
+    /// The floor's **two human-owned destroyers** (M50 Increment 3, Settle D9). This
+    /// increment gives `jigc task discard` and `jigc uninstall` the same staged-prose
+    /// refusal — but a refusal an agent can consent past with `--force` is not a floor.
+    /// Both doors delete bytes that exist in no object DB, so spending them is the
+    /// **human's** call, and the profile's `deny` list is the one surface that can say
+    /// so: `deny` **blocks**, it does not prompt (the profile has no prompt key), and
+    /// [`inject_deny`] is append-if-absent, so this reaches already-installed repos on
+    /// their next `setup` — whereas narrowing the `permit` (a prefix pattern, injected
+    /// purely additively) would have reached zero installs without pruning a
+    /// user-owned file.
+    ///
+    /// `jigc milestone provision` is deliberately **absent**: M48's fail-closed
+    /// leftover classifier already guards it behind `--force`, and denying it would
+    /// park an unattended fan-out on a decision nobody is watching.
+    ///
+    /// Asserted against the **loaded** profile rather than the golden bytes above, so
+    /// a later profile edit that reshuffles or rewrites the floor cannot drop either
+    /// pattern silently — the golden would simply be re-accepted.
+    #[test]
+    fn the_deny_floor_carries_the_two_human_owned_destroyers() {
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+
+        for pattern in ["Bash(jigc uninstall:*)", "Bash(jigc milestone discard:*)"] {
+            assert!(
+                profile.allowlist.deny.iter().any(|p| p == pattern),
+                "the deny floor must carry `{pattern}` — a destroying door whose consent \
+                 belongs to the human, not the agent; got:\n{:#?}",
+                profile.allowlist.deny,
+            );
+        }
+
+        assert!(
+            !profile
+                .allowlist
+                .deny
+                .iter()
+                .any(|p| p.contains("milestone provision")),
+            "`jigc milestone provision` must stay OFF the floor — M48's fail-closed \
+             classifier already guards it, and denying it would park the unattended \
+             fan-out; got:\n{:#?}",
+            profile.allowlist.deny,
+        );
     }
 
     /// The loader deserializes the shipped profile and exposes its surfaces: the
@@ -2630,7 +2679,9 @@ mod tests {
               "Read(./**/credentials)",
               "Bash(cat ./**/credentials:*)",
               "Read(./**/.npmrc)",
-              "Bash(cat ./**/.npmrc:*)"
+              "Bash(cat ./**/.npmrc:*)",
+              "Bash(jigc uninstall:*)",
+              "Bash(jigc milestone discard:*)"
             ]
           }
         }

@@ -29,6 +29,11 @@ allowlist:
     - "Bash(cat ./**/credentials:*)"
     - "Read(./**/.npmrc)"
     - "Bash(cat ./**/.npmrc:*)"
+    # The two human-owned destroying doors (M50): each deletes bytes that exist in
+    # no object DB, and the `--force` past their refusal is the human's consent to
+    # spend them, not the agent's.
+    - "Bash(jigc uninstall:*)"
+    - "Bash(jigc milestone discard:*)"
 spawn:
   template: "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`"
 # The adapter's own owned artifact: the shipped guides, installed as a Claude Code
