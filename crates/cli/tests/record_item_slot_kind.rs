@@ -296,7 +296,13 @@ fn the_new_row_states_what_the_suite_drives() {
 fn the_rows_t2_touched_say_what_t2_shipped() {
     let body = read_doc("implementation/doctype-authoring.md");
 
-    let nested = line_with(&body, "| **Edit a nested repeatable**");
+    // M50 Inc-6 T3 split this row in two: a leaf edit one level down took its own kind, and
+    // the M49 fact below — the delta names the backstop kind explicitly — is now the **block**
+    // row's (`record_two_loci_retired.rs`).
+    let nested = line_with(
+        &body,
+        "| **Add**, **drop** or **re-key** a nested repeatable *block*",
+    );
     assert!(
         nested.contains("⛔") && nested.contains("names itself"),
         "the nested row stays unbuilt but the delta now names the backstop kind explicitly, so \

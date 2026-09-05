@@ -198,7 +198,7 @@ pub enum LocusDisposition {
 /// A `locus` outside `1..=LOCI` has no cell and answers [`LocusDisposition::Unreachable`].
 pub const fn locus_disposition(kind: SchemaChangeKind, locus: usize) -> LocusDisposition {
     use LocusDisposition::{Applied, DoctypeLevel, Refused, Unbuilt, Unreachable};
-    // The three loci, as booleans a `const fn` can branch on.
+    // One boolean per locus, so a `const fn` can branch on them.
     let section = locus == 1;
     let item = locus == 2;
     let nested = locus == 3 && locus <= LOCI;
@@ -272,11 +272,11 @@ pub const fn locus_disposition(kind: SchemaChangeKind, locus: usize) -> LocusDis
         // Doctype-level: `location` / `placement` / `display-title` are `Schema` fields the
         // section diff never inspects, so they sit at no locus.
         SchemaChangeKind::Relocated | SchemaChangeKind::DisplayTitleChanged => DoctypeLevel,
-        // The backstop, at the two loci a shape can escape the table: a section-level delta
-        // no kind classifies, and — at the item locus — a nested repeatable **block** added,
-        // dropped, or re-keyed (`id-from`), all outside the approved table and deliberately
-        // left on the residual. It is unreachable at locus 3 because the schema loader
-        // refuses a repeatable nested inside a nested repeatable.
+        // The backstop, at loci 1 and 2 — the only places a shape can escape the table: a
+        // section-level delta no kind classifies, and — at the item locus — a nested repeatable
+        // **block** added, dropped, or re-keyed (`id-from`), all outside the approved table and
+        // deliberately left on the residual. It is unreachable at locus 3 because the schema
+        // loader refuses a repeatable nested inside a nested repeatable.
         SchemaChangeKind::Unclassified => {
             if section || item {
                 Refused
@@ -309,10 +309,10 @@ pub enum SchemaChange {
 
     /// A field present in both schemas whose `card` (forward cardinality) was **widened** —
     /// the new bound admits every value the old one did (`0..1` → `0..*`), so every committed
-    /// instance is still conformant and the fold is a **byte no-op**. Fired at **both loci** —
-    /// a simple/header section's fields *and* a repeatable item block's (M42: the item locus
-    /// classified nothing at all, so the authoring matrix's ✅ for an item-block widen was a
-    /// promise the classifier never honoured).
+    /// instance is still conformant and the fold is a **byte no-op**. Fired at **every locus** —
+    /// a simple/header section's fields, a repeatable item block's, and (M50) a nested item
+    /// block's (M42: the item locus classified nothing at all, so the authoring matrix's ✅ for
+    /// an item-block widen was a promise the classifier never honoured).
     ///
     /// A `card` delta in the **other** direction is [`Self::NarrowedCardinality`], not this:
     /// direction is classified, never assumed (`design/corpus-migration.md` → The two silent-
@@ -551,9 +551,10 @@ pub enum SchemaChange {
         leaf: Option<String>,
     },
 
-    /// A leaf **declared in the old schema and dropped in the new one** — at either locus (a
-    /// simple/header section's fields, a repeatable item block's). Every committed instance may
-    /// still carry the field line, which the new schema no longer declares.
+    /// A leaf **declared in the old schema and dropped in the new one** — at every locus (a
+    /// simple/header section's fields, a repeatable item block's, a nested item block's). Every
+    /// committed instance may still carry the field line, which the new schema no longer
+    /// declares.
     ///
     /// **Refused, and that is the recorded pick** (`DECISIONS.md` → 2026-07-13 M42 Inc-5 T5;
     /// `design/corpus-migration.md` → The two silent-classification holes, which left the shape
@@ -987,7 +988,7 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
                     leaf: None,
                 }),
                 // THE SLOT-LEVEL `optional` FLAG DELTA (the sixth hole), through the **one**
-                // slot rule both loci now share ([`slot_flag_change`]) — a section's slot is
+                // slot rule every locus now shares ([`slot_flag_change`]) — a section's slot is
                 // anonymous, so it names no leaf. Before T4 the delta was invisible here and
                 // fell through to the backstop's residual; before M49 Inc-4 T2 the *item* locus
                 // still was, which is what made the rule worth having one home.
@@ -1024,11 +1025,12 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
 
 /// Classify the deltas of a **leaf present in both schemas** — the `card` direction and the
 /// enum `of:` direction — in document order (`card` first, then `of`). The **one** existing-leaf
-/// rule, shared by both loci: a simple/header section's fields ([`diff_fields`]) *and* a
-/// repeatable item block's ([`diff_item_fields`]). Pre-M42 the two loops disagreed — the simple
-/// one read `card` direction-blind, the item one read neither — which is why the rule lives in
-/// one function now (`design/corpus-migration.md` → The two silent-classification holes: *both
-/// loops iterate `new`'s leaves and inspect only `card` + `of`*).
+/// rule, shared by every locus: a simple/header section's fields ([`diff_fields`]), a
+/// repeatable item block's ([`diff_item_fields`]) and — through that function's recursion — a
+/// nested item block's. Pre-M42 the two loops disagreed — the simple one read `card`
+/// direction-blind, the item one read neither — which is why the rule lives in one function now
+/// (`design/corpus-migration.md` → The two silent-classification holes: *both loops iterate
+/// `new`'s leaves and inspect only `card` + `of`*).
 fn diff_leaf(locus: &Locus, old: &Field, new: &Field, out: &mut Vec<SchemaChange>) {
     let field = new.id.clone();
     if old.optional != new.optional {
@@ -1155,7 +1157,7 @@ fn card_bounds(card: Option<&str>) -> Option<(u32, Option<u32>)> {
 /// ([`SchemaChange::AddedItemSlot`]), a leaf present in both under the same existing-leaf rule
 /// the simple locus applies ([`diff_leaf`] for a field's `card`/`of` direction, and
 /// [`slot_flag_change`] for a slot's `optional:` delta — the one rule, at the one place, for
-/// both loci). The removed pass then walks `old`'s document order, kind by kind: the fields
+/// every locus). The removed pass then walks `old`'s document order, kind by kind: the fields
 /// `new` drops ([`removed_fields`] — the removal rule stays *shared* with the simple locus
 /// rather than re-implemented here), then its slots ([`SchemaChange::RemovedItemSlot`]).
 ///
@@ -1164,7 +1166,7 @@ fn card_bounds(card: Option<&str>) -> Option<(u32, Option<u32>)> {
 /// wholesale and named the backstop, so every one of the ten kinds this function classifies
 /// answered `migrate-corpus.unclassified-change` one level down: a route into the jigc source
 /// tree over the one shape a `changelog`-like doctype actually evolves in. The recursion is the
-/// same code at every depth, so the two loci cannot drift the way the item and simple loops did
+/// same code at every depth, so the loci cannot drift the way the item and simple loops did
 /// before M42.
 ///
 /// Three nested deltas stay on [`SchemaChange::Unclassified`], **deliberately and explicitly**
@@ -1250,7 +1252,7 @@ fn diff_item_fields(locus: &Locus, old: &[Leaf], new: &[Leaf], out: &mut Vec<Sch
 }
 
 /// Classify an `optional`-flag delta on a **slot** present in both schemas — [`optional_flag_change`]'s
-/// leaf-kind twin, and the **one** rule for both loci: a section's own anonymous slot
+/// leaf-kind twin, and the **one** rule for every locus: a section's own anonymous slot
 /// (`leaf: None`) and a repeatable item block's named slot leaf (`leaf: Some(id)`).
 ///
 /// A slot carries **no value source** — no `default:`, no `set:`, no pack-declared type — so
@@ -1299,9 +1301,9 @@ fn item_field(leaf: &Leaf) -> Option<&Field> {
 }
 
 /// Classify every leaf `old` declares that `new` **drops** as a [`SchemaChange::RemovedField`] —
-/// the one removal rule, shared by both loci (a simple/header section's fields and a repeatable
-/// item block's), emitted after the `new`-leaf pass in **`old`'s** document order (deterministic:
-/// the same pair always diffs identically).
+/// the one removal rule, shared by every locus (a simple/header section's fields, a repeatable
+/// item block's and a nested item block's), emitted after the `new`-leaf pass in **`old`'s**
+/// document order (deterministic: the same pair always diffs identically).
 ///
 /// The removal needs a kind of its own precisely because the [`SchemaChange::Unclassified`]
 /// backstop is a **residual**: a removal riding *alongside* any classified change leaves the diff
@@ -1403,7 +1405,7 @@ fn classify_added_field(locus: &Locus, field: &Field) -> SchemaChange {
 
 /// Classify a leaf present only in `v2`'s **repeatable item block** — the item-locus twin of
 /// [`classify_added_field`], consulting the **same** [`crate::validate::is_author_required`] so
-/// the two loci cannot drift (the M42 lesson: the two item/simple loops disagreeing is what
+/// the loci cannot drift (the M42 lesson: the two item/simple loops disagreeing is what
 /// produced the holes). The **same two arms**, and the driver splits the placeable one
 /// (`design/corpus-migration.md` → The classifier's holes: `AddedItemField`):
 /// `default:` → the value is spliced into every item lacking it; every other not-author-required
@@ -1440,8 +1442,10 @@ pub struct UnfilledSetLeaf<'a> {
 }
 
 /// The added leaves of `changes` whose declaration in `to` carries a **`set:` deriver with no
-/// `default:`** — exactly what the fold placed no bytes for, at **both** loci
-/// ([`SchemaChange::AddedOptionalField`] and [`SchemaChange::AddedItemField`]), in change order.
+/// `default:`** — exactly what the fold placed no bytes for, at **every** locus
+/// ([`SchemaChange::AddedOptionalField`] at a section's own leaves,
+/// [`SchemaChange::AddedItemField`] at an item block's and, since M50, a nested item block's),
+/// in change order.
 ///
 /// **The one derivation, and it exists so there is not a fourth private one** (M46 Inc-4 T2).
 /// Since T1 an absence the conformance gate accepts folds to zero bytes rather than blocking the
@@ -2326,7 +2330,7 @@ sections:
     /// A **non-superset** `of:` delta — a genuine member rename (`[D, I]` → `[Decision, Idea]`,
     /// the shipped `deferral-ledger` bump) — still classifies `[ValueRemapped]`: the widening
     /// kind narrows the rename kind's extent, it does not replace it. (The two rename tests
-    /// above pin both loci; this one pins that a *member drop* — also a non-superset — lands
+    /// above pin loci 1 and 2; this one pins that a *member drop* — also a non-superset — lands
     /// here rather than being mistaken for a widening.)
     #[test]
     fn a_dropped_enum_member_is_not_a_widening_and_stays_value_remapped() {

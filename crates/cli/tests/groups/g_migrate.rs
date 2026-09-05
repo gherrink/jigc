@@ -77,6 +77,8 @@ mod record_nesting_cap;
 mod record_set_splice_retired;
 #[path = "../record_stale_reasons.rs"]
 mod record_stale_reasons;
+#[path = "../record_two_loci_retired.rs"]
+mod record_two_loci_retired;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
 #[path = "../schema_change_kind_registry.rs"]
