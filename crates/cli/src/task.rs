@@ -510,7 +510,7 @@ fn discard_rejection_frame(id: &str) -> RejectionFrame {
 /// here" for every task that ever existed.
 ///
 /// `Ok(vec![])` for an absent dir; an unreadable *present* dir is an `Err`, so a caller
-/// that must fail closed can (`crate::setup::staged_task_prose`, the `uninstall` guard —
+/// that must fail closed can ([`staged_task_prose`], the destroying doors' guard —
 /// enumerating nothing must never be indistinguishable from finding nothing). Callers
 /// for whom the list is decoration take `.unwrap_or_default()`.
 pub(crate) fn staged_doc_ids(docs_dir: &Path) -> std::io::Result<Vec<String>> {
@@ -526,6 +526,96 @@ pub(crate) fn staged_doc_ids(docs_dir: &Path) -> std::io::Result<Vec<String>> {
     }
     ids.sort();
     Ok(ids)
+}
+
+/// The **open tasks whose staged docs exist only in the workbench** — each task id paired
+/// with the sorted `<type>:<slug>` identities staged in its `.jigc/tasks/<id>/docs/`.
+/// [`crate::setup::uninstall`]'s second WIP guard, and the reproduced pre-1.0.0 loss:
+/// `setup` → `start` → `doc set-slot` → `uninstall` removed `.jigc/` at exit 0 and the
+/// authored summary was in no object DB (`DECISIONS.md` 2026-08-13 → the Settle, F3).
+///
+/// **One probe, one home, for every door that destroys a task area** (M50 → the Settle, D1).
+/// It lives here rather than in `crate::setup` because its subject is a task's working
+/// area, and two doors that answer about the same bytes from two copies of one probe are
+/// two doors that will eventually disagree — which is exactly the contradiction `uninstall`
+/// refusing over bytes `jigc task discard` destroyed in silence already was.
+///
+/// `only` scopes the enumeration to the task ids the caller's removal actually reaches —
+/// `None` for a door that takes the whole workbench (`uninstall`), `Some(&[id])` for a door
+/// that takes one area. A door must neither claim nor refuse over prose it will not touch,
+/// so an out-of-scope area is skipped before it is probed at all: its readability is not
+/// this call's business.
+///
+/// **It measures staging, not authorship.** A staged `*.md` is a doc no commit has a copy
+/// of; whether a human or the mint wrote its bytes is not something this probe (or any
+/// other) can tell, and the guard deliberately fires either way — the pristine skeleton
+/// `jigc start` leaves behind is refused exactly like typed prose, because "the binary
+/// cannot prove these bytes are disposable" is the whole basis of the refusal. What the
+/// probe cannot distinguish, its findings must not claim
+/// ([`crate::setup::staged_prose_finding`]).
+///
+/// **The subject is the staged `*.md` set** ([`staged_doc_ids`]), never
+/// directory-non-emptiness — `docs/` always also holds `provenance.json` — and it does
+/// **not** filter on the transient mark: the doc destroyed in the reproduced loss is the
+/// task's `commit:<id>`, a transient doctype whose prose is exactly what the operator wrote.
+///
+/// Fail-closed like its sibling: a present-but-unreadable `tasks/` or `docs/` dir refuses
+/// rather than reporting an empty set, because "enumerated nothing" and "there is nothing"
+/// are the same bytes to the caller and only one of them is safe.
+pub(crate) fn staged_task_prose(
+    repo_root: &Path,
+    only: Option<&[String]>,
+) -> Result<Vec<(String, Vec<String>)>, Finding> {
+    let tasks_root = repo_root.join(".jigc").join("tasks");
+    if !tasks_root.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut staged = Vec::new();
+    let entries = std::fs::read_dir(&tasks_root).map_err(unverified_prose_finding)?;
+    for entry in entries {
+        let entry = entry.map_err(unverified_prose_finding)?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let task = entry.file_name().to_string_lossy().into_owned();
+        // Scope BEFORE probing: an area this door will not remove is neither named nor
+        // refused over, and its readability is not this call's business either.
+        if only.is_some_and(|only| !only.contains(&task)) {
+            continue;
+        }
+        let docs = staged_doc_ids(&path.join("docs")).map_err(|err| {
+            unverified_prose_finding(std::io::Error::other(format!(
+                "{}: {err}",
+                path.join("docs").display()
+            )))
+        })?;
+        if !docs.is_empty() {
+            staged.push((task, docs));
+        }
+    }
+    // Sorted by task id — the refusal's listing is byte-reproducible.
+    staged.sort();
+    Ok(staged)
+}
+
+/// The fail-closed half of [`staged_task_prose`]: the staged set could not be enumerated,
+/// so the teardown refuses rather than remove `.jigc/` with the staged docs' existence
+/// unknown. Same code as the refusal it stands in for
+/// ([`crate::setup::staged_prose_finding`]) — the operator's next action is identical, and
+/// the same claim discipline binds: the probe never ran, so it can name only what it was
+/// looking for (staged docs), never what they contain.
+pub(crate) fn unverified_prose_finding(err: std::io::Error) -> Finding {
+    Finding::block(
+        "uninstall.staged-prose",
+        format!(
+            "cannot check `.jigc/tasks/` for open tasks' staged docs, so removing `.jigc/` \
+             could destroy work no commit has a copy of: {err}"
+        ),
+        "make sure `.jigc/tasks/` is readable, then re-run `jigc uninstall` — or, once you \
+         have confirmed the open tasks hold nothing you need, `jigc uninstall --force` \
+         deletes them with the install",
+    )
 }
 
 /// Enumerate the staged docs a `task discard` is about to throw away — the working
@@ -5126,5 +5216,117 @@ mod tests {
              `--source=HEAD` would destroy the user's uncommitted modification"
         );
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// A workbench for the staged-prose probe: `<root>/.jigc/tasks/<id>/docs/` per entry,
+    /// each carrying the named `<type>:<slug>.md` staged docs plus the `provenance.json`
+    /// every real working area holds (so an emptiness probe over the *directory* would
+    /// answer "prose here" for every one of them).
+    fn staged_workbench(tag: &str, tasks: &[(&str, &[&str])]) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "jigc-staged-prose-{tag}-{}-{}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        for (task, docs) in tasks {
+            let dir = root.join(".jigc").join("tasks").join(task).join("docs");
+            std::fs::create_dir_all(&dir).expect("mk task docs dir");
+            std::fs::write(dir.join("provenance.json"), "{}\n").expect("write provenance");
+            for doc in *docs {
+                std::fs::write(dir.join(format!("{doc}.md")), "# staged\n").expect("write doc");
+            }
+        }
+        root
+    }
+
+    /// The **scope** half of the shared probe (M50 → the Settle, D1): a door that removes
+    /// one task's area must be able to ask about *that* area's staged prose and nothing
+    /// else. Until the probe carried `only`, the single-task question could only be asked
+    /// after the fact, by the narration filtering a whole-workbench enumeration — which is
+    /// no use to a guard that has to refuse *before* the removal.
+    ///
+    /// So: over a two-task workbench, the scoped call returns exactly the named task's
+    /// sorted `<type>:<slug>` identities and nothing of the sibling's, while the unscoped
+    /// call (the `uninstall` door, which takes the whole workbench) still returns both.
+    /// A door that named the sibling's prose would be claiming a destruction it does not
+    /// perform — the same law-1 lie as performing one it never named.
+    #[test]
+    fn the_staged_prose_probe_answers_for_one_task_without_naming_its_sibling() {
+        let root = staged_workbench(
+            "scope",
+            &[
+                ("t-alpha", &["commit:t-alpha", "adr:cache-rework"][..]),
+                ("t-beta", &["commit:t-beta"][..]),
+            ],
+        );
+
+        let scoped = staged_task_prose(&root, Some(&["t-alpha".to_string()])).expect("scoped");
+        assert_eq!(
+            scoped,
+            vec![(
+                "t-alpha".to_string(),
+                vec!["adr:cache-rework".to_string(), "commit:t-alpha".to_string()],
+            )],
+            "the scoped probe answers for the named task alone, sorted, and says nothing \
+             about `t-beta`",
+        );
+
+        let whole = staged_task_prose(&root, None).expect("unscoped");
+        assert_eq!(
+            whole
+                .iter()
+                .map(|(task, _)| task.as_str())
+                .collect::<Vec<_>>(),
+            vec!["t-alpha", "t-beta"],
+            "the whole-workbench door still sees both tasks",
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The **fail-closed** half, unpinned until now: a present-but-unreadable `docs/` dir
+    /// inside the scope must be an `Err`, never an empty set. "Enumerated nothing" and
+    /// "there is nothing" are the same bytes to a caller about to `remove_dir_all` the
+    /// area, and only one of them is safe — so the probe refuses and the door renders the
+    /// refusal ([`unverified_prose_finding`]).
+    ///
+    /// Out of scope, the same unreadable dir is *not* the caller's business: a door that
+    /// will not touch that area must not be blocked by it either.
+    #[test]
+    fn an_unreadable_docs_dir_refuses_in_scope_and_is_none_of_the_doors_business_outside_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = staged_workbench(
+            "unreadable",
+            &[
+                ("t-alpha", &["commit:t-alpha"][..]),
+                ("t-beta", &["commit:t-beta"][..]),
+            ],
+        );
+        let sealed = root.join(".jigc/tasks/t-beta/docs");
+        std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o000))
+            .expect("seal t-beta's docs dir");
+
+        let whole = staged_task_prose(&root, None);
+        let scoped_in = staged_task_prose(&root, Some(&["t-beta".to_string()]));
+        let scoped_out = staged_task_prose(&root, Some(&["t-alpha".to_string()]));
+
+        // Restore before asserting, so a failure does not leave an unremovable temp tree.
+        std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o755))
+            .expect("unseal t-beta's docs dir");
+
+        let unverified = whole.expect_err("the whole-workbench probe fails closed");
+        assert_eq!(
+            unverified.code, "uninstall.staged-prose",
+            "the fail-closed arm carries the door's own code, not a bare IO error",
+        );
+        scoped_in.expect_err("the in-scope probe fails closed on the same dir");
+        assert_eq!(
+            scoped_out.expect("an out-of-scope area is never probed"),
+            vec![("t-alpha".to_string(), vec!["commit:t-alpha".to_string()])],
+            "a door that will not touch `t-beta` is not blocked by `t-beta`",
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
