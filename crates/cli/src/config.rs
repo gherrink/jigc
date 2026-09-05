@@ -381,8 +381,13 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // finalize-promote would write to the same unrecordable home.
     //
     // Scoped to what git cannot record, never to roots that merely look unusual: a
-    // **gitignored** root (`placement-root .jigc`) is a path git tracks perfectly well and has
-    // only been told to skip — it stages a real `R` rename — and it keeps working.
+    // **gitignored** root is a path git tracks perfectly well and has only been told to skip —
+    // it stages a real `R` rename — and it keeps working (driven: with `ignored-notes/` in
+    // `.gitignore`, `placement-root ignored-notes` still moves and stages `R`). The workbench
+    // `.jigc` is refused one step below, for a different reason and under its own code: jigc
+    // owns that tree, which is not git's inability to record it — and it was never the
+    // gitignored exemplar this comment used to name, since `.jigc/.gitignore` lists only the
+    // transient subdirs (`.jigc/roadmap.md` is not ignored at all; `.jigc/displaced/x.md` is).
     if ROOT_KNOBS.contains(&key)
         && let Some(repo_root) = project_config.parent().and_then(Path::parent)
         && let Some(reason) = crate::trackable::untrackable_reason(repo_root, value)
@@ -392,6 +397,37 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
             format!("`{value}` cannot be the `{key}`: {reason}"),
             "re-run with a root git can record — a path under the repository root and outside \
              `.git/`; `jigc config list` shows the value in force and the layer it wins from",
+        )));
+    }
+
+    // Step 2c — **jigc's own workbench is not a home for managed docs** (M50 Increment 4 / T2;
+    // `settle-record.md` → D8; `design/storage.md` → Placement). Both root knobs re-point where
+    // every managed doc lives and then move the committed docs the re-point strands, so
+    // `jigc config set docs-root .jigc` staged `docs/research/x.md → .jigc/research/x.md` and
+    // exited 0 — driven, on both knobs. That home is the tree `jigc uninstall` removes **whole**
+    // ([`crate::setup`]'s teardown step 1 is `remove_dir_all(.jigc)`), so a managed doc homed
+    // there is one teardown away from bytes no index has a copy of.
+    //
+    // It is a **third** predicate, not a widening of step 2b: the workbench is a path git tracks
+    // perfectly well, and 2b must keep saying so — a gitignored destination stays permitted, on
+    // which `relocate`'s squatter displacement into `.jigc/displaced/` depends
+    // ([`crate::trackable`]'s own stated bound). The two answer different questions about the
+    // same path, so they carry different codes and sit one after the other.
+    //
+    // Same position and same posture as 2b: before anything moves and before the knob lands,
+    // because the alternatives are the ones that lose bytes — a warn-and-proceed moves the docs
+    // into the workbench anyway, and a landed knob with no move leaves the store pointing at a
+    // home no doc is at.
+    if ROOT_KNOBS.contains(&key) && is_workbench_root(value) {
+        return Err(finding_to_err(Finding::block(
+            "config.workbench-root",
+            format!(
+                "`{value}` is inside jigc's own workbench (`.jigc/`) — `{key}` cannot home \
+                 managed docs in the tree `jigc uninstall` removes whole"
+            ),
+            "re-run with a root outside `.jigc/` — the workbench holds jigc's own state, not \
+             your documents; `jigc config list` shows the value in force and the layer \
+             it wins from",
         )));
     }
 
@@ -422,6 +458,36 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
         key: key.to_owned(),
         value: value.to_owned(),
     })
+}
+
+/// Whether `value` names **jigc's own workbench** — the repo-root `.jigc/` directory itself,
+/// or a path inside it — and is therefore no home for either root knob to point managed docs
+/// at (M50 Increment 4 / T2).
+///
+/// Only the value's **first** component is asked, because the workbench is exactly one
+/// directory: every door computes it as `repo_root.join(".jigc")`. A nested `docs/.jigc` is
+/// somebody else's directory that happens to share the name, and refusing it would refuse a
+/// home jigc has no claim on.
+///
+/// The comparison is case-**insensitive**, and that is driven rather than defensive: on a
+/// case-insensitive filesystem `jigc config set placement-root .JIGC` stages
+/// `docs/roadmap.md -> .JIGC/roadmap.md` while the bytes land in the real `.jigc/`, so the
+/// index and the worktree name different directories for one file, permanently. It is the rule
+/// [`crate::trackable`] already applies to `.git` for git's own reason
+/// (`core.protectHFS`/`protectNTFS`), asked here of the one directory jigc owns.
+fn is_workbench_root(value: &str) -> bool {
+    use std::path::Component;
+    for component in Path::new(value).components() {
+        match component {
+            // A leading `./` is the same path; keep looking.
+            Component::CurDir => continue,
+            // The first named component decides, in both directions.
+            Component::Normal(part) => return part.eq_ignore_ascii_case(".jigc"),
+            // A root, prefix or `..` leads somewhere the workbench is not.
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// On a `docs-root` re-point to `new_value`, **detect + route + move** the committed docs the

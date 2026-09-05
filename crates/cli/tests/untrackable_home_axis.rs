@@ -22,9 +22,16 @@
 //! doors (`docs-root`, the M39 mover; `placement-root`, this milestone's) through the
 //! two shapes git cannot record — a path inside its own directory, and a path outside
 //! the repository — and pin the **bound the auditor measured**: a *gitignored*
-//! destination is a perfectly trackable path git has merely been told to skip, so
-//! `placement-root .jigc` still stages a real rename and must keep working. Refusing
+//! destination is a perfectly trackable path git has merely been told to skip, so such a
+//! root still stages a real rename and must keep working. Refusing
 //! "unusual" roots would have broken that; refusing untrackable ones does not.
+//!
+//! That bound's exemplar is **re-based at M50 Increment 4 / T2**, and the re-base is itself a
+//! correction: it used to be `placement-root .jigc`, which is not a gitignored path at all —
+//! `.jigc/.gitignore` lists only the transient subdirs, so `.jigc/roadmap.md` is ignored by
+//! nothing (driven; `.jigc/displaced/x.md` *is*). The workbench is now refused at the same
+//! door under its own `config.workbench-root` code, for jigc's own reason rather than git's,
+//! so the bound below is pinned on a root that is genuinely ignored and genuinely moves.
 //!
 //! Each refusal is asserted on three things at once, because a door that refuses but
 //! half-acts is the same defect wearing a different exit code: the finding is raised,
@@ -158,6 +165,18 @@ impl Corpus {
         self.repo.path().join(rel).exists()
     }
 
+    /// Whether `rel` is covered by a gitignore pattern. `--no-index` because the interesting
+    /// paths are the ones a move is about to track, and `check-ignore` stays silent about a
+    /// tracked path otherwise — which would report "not ignored" for a path that is.
+    fn is_ignored(&self, rel: &str) -> bool {
+        Command::new("git")
+            .args(["check-ignore", "-q", "--no-index", rel])
+            .current_dir(self.repo.path())
+            .status()
+            .expect("run git check-ignore")
+            .success()
+    }
+
     /// Every path `git` currently tracks in the index — the set a clone would receive.
     fn tracked(&self) -> Vec<String> {
         self.git(&["ls-files"]).lines().map(str::to_owned).collect()
@@ -265,23 +284,33 @@ fn a_root_outside_the_repository_is_refused_on_both_knobs() {
 }
 
 /// **The bound, pinned.** A *gitignored* destination is a path git can record perfectly
-/// well and has merely been told to skip: `.jigc` stages a real `R` rename and loses
-/// nothing. The fix refuses destinations git **cannot track**, never roots that merely
-/// look unusual — so this arm is what separates the two, and it must keep passing.
+/// well and has merely been told to skip: it stages a real `R` rename and loses nothing. The
+/// fix refuses destinations git **cannot track**, never roots that merely look unusual — so
+/// this arm is what separates the two, and it must keep passing.
+///
+/// The exemplar is a root the repo's own `.gitignore` covers, **asserted ignored here** rather
+/// than assumed: the `.jigc` this arm used to name was never ignored (module header), so the
+/// bound it claimed to pin was pinned on nothing.
 #[test]
 fn a_gitignored_root_still_relocates_because_ignoring_is_not_untrackable() {
     let corpus = Corpus::new("ignored");
-    corpus.ok(&["config", "set", "placement-root", ".jigc"]);
+    corpus.commit_file(".gitignore", "ignored-notes/\n");
+    assert!(
+        corpus.is_ignored("ignored-notes/roadmap.md"),
+        "the exemplar is genuinely gitignored — otherwise this arm pins nothing",
+    );
+
+    corpus.ok(&["config", "set", "placement-root", "ignored-notes"]);
 
     assert!(
-        corpus.exists(".jigc/roadmap.md") && !corpus.exists("docs/roadmap.md"),
+        corpus.exists("ignored-notes/roadmap.md") && !corpus.exists("docs/roadmap.md"),
         "the move lands — a gitignored home is trackable, just ignored",
     );
     let status = corpus.git(&["status", "--porcelain"]);
     assert!(
         status
             .lines()
-            .any(|l| l.starts_with('R') && l.contains(".jigc/roadmap.md")),
+            .any(|l| l.starts_with('R') && l.contains("ignored-notes/roadmap.md")),
         "and it stages as a real rename, not a bare deletion; status:\n{status}",
     );
 }
