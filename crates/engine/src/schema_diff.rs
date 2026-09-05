@@ -369,6 +369,149 @@ pub enum SchemaChange {
     Unclassified,
 }
 
+/// The **discriminant** of a [`SchemaChange`] — the classifier's kind space as an
+/// enumerable set.
+///
+/// Every [`SchemaChange`] variant carries data (the section, the leaf, the authored map),
+/// so `SchemaChange` can never have an `ALL` of its own: the kind space was, until M50
+/// Increment 6, not enumerable at all. Nothing could iterate it, and the wire names the
+/// transform driver puts on its refusal surface were hand-written string literals with no
+/// mechanical relation to the variants they claimed to name — a renamed kind kept its old
+/// spelling on the surface at exit 0.
+///
+/// This is the [`crate::schema::SetKind`] / `RefusalKind` house pattern one layer over: a
+/// unit enum, an [`ALL`](SchemaChangeKind::ALL) the compiler fences through an exhaustive
+/// match, a single `as_str` home for every wire name, and an exhaustive
+/// `From<&SchemaChange>` so a nineteenth kind cannot compile without being dispositioned.
+/// The registry is what a **completeness fence** iterates — `kind × locus`, with the locus
+/// count derived rather than written down (`completions/artifacts/M50/settle-record.md` →
+/// D6; *Ordering constraints* #2).
+///
+/// **The spellings are the variant names, mechanically kebab-cased.** That is the property
+/// worth having: a reader can go from a printed wire name to the variant that produced it
+/// without a lookup table, and the four spellings the driver already shipped
+/// (`narrowed-cardinality`, `removed-field`, `removed-item-slot`, `prose-needing`) are
+/// preserved byte-for-byte by it, so no surface text moves. Where a design doc's prose name
+/// is prettier than the mechanical one (`fixed-slot→repeatable-with-default`), the
+/// mechanical spelling wins here: this is a wire name, not a heading.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchemaChangeKind {
+    /// [`SchemaChange::AddedOptionalField`].
+    AddedOptionalField,
+    /// [`SchemaChange::WidenedCardinality`].
+    WidenedCardinality,
+    /// [`SchemaChange::NarrowedCardinality`].
+    NarrowedCardinality,
+    /// [`SchemaChange::EnumWidened`].
+    EnumWidened,
+    /// [`SchemaChange::ValueRemapped`].
+    ValueRemapped,
+    /// [`SchemaChange::AddedItemField`].
+    AddedItemField,
+    /// [`SchemaChange::AddedItemSlot`].
+    AddedItemSlot,
+    /// [`SchemaChange::AddedOptionalSection`].
+    AddedOptionalSection,
+    /// [`SchemaChange::AddedRepeatableSection`].
+    AddedRepeatableSection,
+    /// [`SchemaChange::FixedSlotToRepeatable`].
+    FixedSlotToRepeatable,
+    /// [`SchemaChange::ProseNeeding`].
+    ProseNeeding,
+    /// [`SchemaChange::Relocated`].
+    Relocated,
+    /// [`SchemaChange::DisplayTitleChanged`].
+    DisplayTitleChanged,
+    /// [`SchemaChange::OptionalRelaxed`].
+    OptionalRelaxed,
+    /// [`SchemaChange::RemovedField`].
+    RemovedField,
+    /// [`SchemaChange::RemovedItemSlot`].
+    RemovedItemSlot,
+    /// [`SchemaChange::PresentationOnly`].
+    PresentationOnly,
+    /// [`SchemaChange::Unclassified`] — the empty-diff backstop.
+    Unclassified,
+}
+
+impl SchemaChangeKind {
+    /// Every classified kind, in [`SchemaChange`]'s own declaration order.
+    pub const ALL: [SchemaChangeKind; 18] = [
+        SchemaChangeKind::AddedOptionalField,
+        SchemaChangeKind::WidenedCardinality,
+        SchemaChangeKind::NarrowedCardinality,
+        SchemaChangeKind::EnumWidened,
+        SchemaChangeKind::ValueRemapped,
+        SchemaChangeKind::AddedItemField,
+        SchemaChangeKind::AddedItemSlot,
+        SchemaChangeKind::AddedOptionalSection,
+        SchemaChangeKind::AddedRepeatableSection,
+        SchemaChangeKind::FixedSlotToRepeatable,
+        SchemaChangeKind::ProseNeeding,
+        SchemaChangeKind::Relocated,
+        SchemaChangeKind::DisplayTitleChanged,
+        SchemaChangeKind::OptionalRelaxed,
+        SchemaChangeKind::RemovedField,
+        SchemaChangeKind::RemovedItemSlot,
+        SchemaChangeKind::PresentationOnly,
+        SchemaChangeKind::Unclassified,
+    ];
+
+    /// The kind's **wire name** — the one home for the spelling every surface prints:
+    /// [`crate::transform::TransformError::Unsupported`]'s `kind`, and the CLI's
+    /// `migrate-corpus` route that discriminates the value-remap refusal from its siblings.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SchemaChangeKind::AddedOptionalField => "added-optional-field",
+            SchemaChangeKind::WidenedCardinality => "widened-cardinality",
+            SchemaChangeKind::NarrowedCardinality => "narrowed-cardinality",
+            SchemaChangeKind::EnumWidened => "enum-widened",
+            SchemaChangeKind::ValueRemapped => "value-remapped",
+            SchemaChangeKind::AddedItemField => "added-item-field",
+            SchemaChangeKind::AddedItemSlot => "added-item-slot",
+            SchemaChangeKind::AddedOptionalSection => "added-optional-section",
+            SchemaChangeKind::AddedRepeatableSection => "added-repeatable-section",
+            SchemaChangeKind::FixedSlotToRepeatable => "fixed-slot-to-repeatable",
+            SchemaChangeKind::ProseNeeding => "prose-needing",
+            SchemaChangeKind::Relocated => "relocated",
+            SchemaChangeKind::DisplayTitleChanged => "display-title-changed",
+            SchemaChangeKind::OptionalRelaxed => "optional-relaxed",
+            SchemaChangeKind::RemovedField => "removed-field",
+            SchemaChangeKind::RemovedItemSlot => "removed-item-slot",
+            SchemaChangeKind::PresentationOnly => "presentation-only",
+            SchemaChangeKind::Unclassified => "unclassified",
+        }
+    }
+}
+
+/// The kind a classified change **is** — the projection that makes the data-carrying
+/// [`SchemaChange`] enumerable. Exhaustive by construction: a nineteenth variant does not
+/// compile without an arm here, and so cannot escape [`SchemaChangeKind::ALL`].
+impl From<&SchemaChange> for SchemaChangeKind {
+    fn from(change: &SchemaChange) -> Self {
+        match change {
+            SchemaChange::AddedOptionalField { .. } => SchemaChangeKind::AddedOptionalField,
+            SchemaChange::WidenedCardinality { .. } => SchemaChangeKind::WidenedCardinality,
+            SchemaChange::NarrowedCardinality { .. } => SchemaChangeKind::NarrowedCardinality,
+            SchemaChange::EnumWidened { .. } => SchemaChangeKind::EnumWidened,
+            SchemaChange::ValueRemapped { .. } => SchemaChangeKind::ValueRemapped,
+            SchemaChange::AddedItemField { .. } => SchemaChangeKind::AddedItemField,
+            SchemaChange::AddedItemSlot { .. } => SchemaChangeKind::AddedItemSlot,
+            SchemaChange::AddedOptionalSection { .. } => SchemaChangeKind::AddedOptionalSection,
+            SchemaChange::AddedRepeatableSection { .. } => SchemaChangeKind::AddedRepeatableSection,
+            SchemaChange::FixedSlotToRepeatable { .. } => SchemaChangeKind::FixedSlotToRepeatable,
+            SchemaChange::ProseNeeding { .. } => SchemaChangeKind::ProseNeeding,
+            SchemaChange::Relocated { .. } => SchemaChangeKind::Relocated,
+            SchemaChange::DisplayTitleChanged { .. } => SchemaChangeKind::DisplayTitleChanged,
+            SchemaChange::OptionalRelaxed { .. } => SchemaChangeKind::OptionalRelaxed,
+            SchemaChange::RemovedField { .. } => SchemaChangeKind::RemovedField,
+            SchemaChange::RemovedItemSlot { .. } => SchemaChangeKind::RemovedItemSlot,
+            SchemaChange::PresentationOnly => SchemaChangeKind::PresentationOnly,
+            SchemaChange::Unclassified => SchemaChangeKind::Unclassified,
+        }
+    }
+}
+
 /// Classify every supported change from `v1` to `v2` into a deterministic,
 /// document-order list of [`SchemaChange`]s. An identical pair yields an empty
 /// diff. Output order follows `v2`'s section/leaf document order (a stable

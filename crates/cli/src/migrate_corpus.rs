@@ -52,10 +52,9 @@ use engine::file_state::{FileStateRecord, hash_bytes};
 use engine::finding::{Finding, Findings, Location, Route, Severity};
 use engine::packsource::PackSource;
 use engine::schema::{SCHEMA_VERSION_FIELD, Schema, SectionBody};
-use engine::schema_diff::{SchemaChange, schema_diff};
+use engine::schema_diff::{SchemaChange, SchemaChangeKind, schema_diff};
 use engine::transform::{
-    CorpusDoc, CorpusMigration, DocOutcome, HaltReason, TransformError, VALUE_REMAP_KIND,
-    migrate_corpus,
+    CorpusDoc, CorpusMigration, DocOutcome, HaltReason, TransformError, migrate_corpus,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -1711,7 +1710,9 @@ fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
             // The one refusal whose repair is a **migration input**, not an arm: the old→new map
             // for an enum rename is unrecoverable from the schema pair, so the CLI authors it —
             // and a committed value the map does not cover is a gap in *that table*.
-            TransformError::Unsupported { kind, section } if *kind == VALUE_REMAP_KIND => {
+            TransformError::Unsupported { kind, section }
+                if *kind == SchemaChangeKind::ValueRemapped.as_str() =>
+            {
                 fold_refused_finding(
                     rel_key,
                     format!(

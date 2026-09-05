@@ -103,17 +103,10 @@ use crate::field_block::{Field, Value};
 use crate::finding::Finding;
 use crate::parse::parse_sections;
 use crate::schema::{Leaf, Schema, SectionBody};
-use crate::schema_diff::SchemaChange;
+use crate::schema_diff::{SchemaChange, SchemaChangeKind};
 use crate::validate::schema_conformance;
 use crate::write::{self, GenerateError, ItemSlotError, SpliceError};
 use std::collections::BTreeMap;
-
-/// The wire name [`TransformError::Unsupported`] carries for a **value remap** whose authored
-/// old→new map does not cover a committed value — the one refusal whose repair is a *migration
-/// input* (the map the CLI threads in) rather than a transform arm, which is why the CLI routes
-/// it differently from its siblings (M46 Inc-4 T3). Named at its construction site so that route
-/// cannot drift off the kind it claims to match.
-pub const VALUE_REMAP_KIND: &str = "value-remapped";
 
 /// A failure applying a classified diff to one instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,7 +125,10 @@ pub enum TransformError {
     /// pick is to refuse rather than strip committed values away). Surfaced, never silently
     /// skipped, so neither an un-built branch nor a refused kind can drop a change.
     Unsupported {
-        /// The classified kind's wire name.
+        /// The classified kind's wire name — always a
+        /// [`SchemaChangeKind::as_str`] output, never a literal typed here
+        /// (`crates/cli/tests/schema_change_kind_registry.rs` fences every construction
+        /// site in this module's production source).
         kind: &'static str,
         /// The section the change concerns.
         section: String,
@@ -220,7 +216,7 @@ pub fn transform(
                 // past the gate, silently; refusing is strictly better, and leaves the validating
                 // arm's door open.
                 return Err(TransformError::Unsupported {
-                    kind: "narrowed-cardinality",
+                    kind: SchemaChangeKind::NarrowedCardinality.as_str(),
                     section: section.clone(),
                 });
             }
@@ -234,7 +230,7 @@ pub fn transform(
                 // defect, and refusing closes it at zero risk. Additive to build later if a real
                 // driver appears.
                 return Err(TransformError::Unsupported {
-                    kind: "removed-field",
+                    kind: SchemaChangeKind::RemovedField.as_str(),
                     section: section.clone(),
                 });
             }
@@ -246,7 +242,7 @@ pub fn transform(
                 // silent hole (a removal riding alongside a classified change never reaches the
                 // backstop) at zero risk, and leaves the opt-in strip arm additive.
                 return Err(TransformError::Unsupported {
-                    kind: "removed-item-slot",
+                    kind: SchemaChangeKind::RemovedItemSlot.as_str(),
                     section: section.clone(),
                 });
             }
@@ -310,7 +306,7 @@ pub fn transform(
                 // driver branch is unbuilt — surfaced, never silently dropped (an un-built
                 // branch must block the migration rather than drop the change).
                 return Err(TransformError::Unsupported {
-                    kind: "prose-needing",
+                    kind: SchemaChangeKind::ProseNeeding.as_str(),
                     section: section.clone(),
                 });
             }
@@ -412,7 +408,7 @@ fn apply_added_field(
     field: &str,
 ) -> Result<String, TransformError> {
     let unsupported = || TransformError::Unsupported {
-        kind: "added-optional-field",
+        kind: SchemaChangeKind::AddedOptionalField.as_str(),
         section: section.to_string(),
     };
     let sec = new_schema
@@ -478,7 +474,7 @@ fn apply_added_item_field(
     field: &str,
 ) -> Result<String, TransformError> {
     let unsupported = || TransformError::Unsupported {
-        kind: "added-item-field",
+        kind: SchemaChangeKind::AddedItemField.as_str(),
         section: section.to_string(),
     };
     let sec = new_schema
@@ -550,7 +546,7 @@ fn apply_value_remap(
 ) -> Result<String, TransformError> {
     fn unsupported(section: &str) -> TransformError {
         TransformError::Unsupported {
-            kind: VALUE_REMAP_KIND,
+            kind: SchemaChangeKind::ValueRemapped.as_str(),
             section: section.to_string(),
         }
     }

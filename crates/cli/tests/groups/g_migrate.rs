@@ -77,6 +77,8 @@ mod record_set_splice_retired;
 mod record_stale_reasons;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
+#[path = "../schema_change_kind_registry.rs"]
+mod schema_change_kind_registry;
 #[path = "../setup.rs"]
 mod setup;
 #[path = "../snapshot_store_two_snapshots.rs"]
