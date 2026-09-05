@@ -669,7 +669,11 @@ fn is_workbench_root(value: &str) -> bool {
 ///     reaches the identical state.
 ///   - **file-shaped** — an existing non-directory. Every move into it fails
 ///     (`File exists` / `Not a directory`) while the knob lands anyway, and the docs then vanish
-///     from `jigc doc list` because the store resolves them to homes nothing is at.
+///     from `jigc doc list` because the store resolves them to homes nothing is at. Its subject
+///     is **every existing component of the value** too, for the same reason and not merely by
+///     symmetry: a file-shaped *ancestor* (`README.md/sub`) reaches that identical state, since
+///     the destination directory cannot be created *under* a file any more than the leaf itself
+///     can be one. The two on-disk shapes are therefore asked in one walk, of one subject.
 ///
 /// **The walk starts at `repo_root` and never canonicalizes it.** Only the value's own
 /// components are probed: a repository legitimately sits under a symlinked ancestor (every
@@ -711,6 +715,10 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
             // Refused above; a root or prefix component cannot appear in a relative value.
             Component::RootDir | Component::Prefix(_) => return None,
         }
+        // Both on-disk shapes are asked of **this** component, so the subject of each is every
+        // existing component of the value rather than its leaf. Symlink first: a link *to* a
+        // file is git's problem before it is the mover's, and the two reasons route the
+        // operator to the same fix anyway.
         if std::fs::symlink_metadata(&probe).is_ok_and(|meta| meta.is_symlink()) {
             return Some(format!(
                 "`{shown}` is a symlink — git records the link, not a path through it, so the \
@@ -718,17 +726,17 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
                  and `jigc doc list` would name a home git does not"
             ));
         }
+        if std::fs::metadata(&probe).is_ok_and(|meta| !meta.is_dir()) {
+            return Some(format!(
+                "`{shown}` is a file, not a directory — every move into it fails while the knob \
+                 lands anyway, and the store then resolves its docs to homes nothing is at"
+            ));
+        }
     }
 
-    if shown.is_empty() {
-        return None; // the repo root itself — the flat layout both knobs document.
-    }
-    if std::fs::metadata(&probe).is_ok_and(|meta| !meta.is_dir()) {
-        return Some(format!(
-            "`{shown}` is a file, not a directory — every move into it fails while the knob \
-             lands anyway, and the store then resolves its docs to homes nothing is at"
-        ));
-    }
+    // Every named component walked and none of them refused — including the case of no named
+    // component at all (`""`, `.`), which is the repo root and the flat layout both knobs
+    // document.
     None
 }
 

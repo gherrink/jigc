@@ -292,7 +292,9 @@ impl Corpus {
     /// Plant the on-disk shapes [`UNUSABLE_VALUES`] names: a symlink `linked` → the real
     /// directory `real/`, which also carries `sub/` so the **ancestor** cell addresses an
     /// existing path through the link. `README.md` is already committed by [`Corpus::new`],
-    /// and the absolute cell needs nothing on disk.
+    /// which is what makes `README.md/sub` — the file-shaped **ancestor** cell — a value whose
+    /// leaf exists nowhere while a component of it is a file; and the absolute cell needs
+    /// nothing on disk.
     ///
     /// Deliberately left untracked: what the refusal is about is the *destination shape*, and
     /// `git add`-ing the link would only add a second reason git dislikes it.
@@ -406,28 +408,45 @@ fn no_root_knob_accepts_jigcs_own_workbench_as_a_home() {
 // have, because git records the link and not a path through it, so `jigc doc list`'s path and
 // git's recorded path disagree permanently.
 //
-// The **symlink subject is every existing component of the value, not its leaf**: a symlinked
-// ANCESTOR (`linked/sub`) reaches the identical `RD` state. The walk therefore starts at the
-// repo root and steps the value's components — it must NOT canonicalize the root itself, since
-// macOS corpora live under a symlinked `/var` and an ancestor-canonicalizing form would refuse
-// every fixture. `""` and `.` carry no named components at all and stay admitted, which
-// `docs_root::` / `placement_override::` / `corpus_migration_backstop::` all require.
+// **The positional subject of both on-disk shapes is every existing component of the value,
+// not its leaf.** A symlinked ANCESTOR (`linked/sub`) reaches the identical `RD` state, and a
+// file-shaped ANCESTOR (`README.md/sub`) reaches the identical vanished-store state — driven at
+// `c231a6d`, when the file-shaped arm was asked once, after the walk, of the leaf alone:
+//
+// ```text
+// $ jigc config set placement-root README.md/sub
+//   - docs/decisions-log.md: could not relocate (creating the destination dir for
+//     README.md/sub/decisions-log.md: Not a directory (os error 20)) — move it by hand
+//   - docs/roadmap.md: could not relocate (…) — move it by hand
+// config: set `placement-root` = `README.md/sub`  … $? = 0
+// $ jigc doc list          # both re-rooted docs are GONE from the store surface
+// ```
+//
+// So the two shapes are asked of the same subject, in the same walk, and this arm iterates
+// {leaf, ancestor} × {symlink, file} rather than the symlink half of that axis alone. The walk
+// starts at the repo root and steps the value's components — it must NOT canonicalize the root
+// itself, since macOS corpora live under a symlinked `/var` and an ancestor-canonicalizing form
+// would refuse every fixture. `""` and `.` carry no named components at all and stay admitted,
+// which `docs_root::` / `placement_override::` / `corpus_migration_backstop::` all require.
 //
 // Two sets, each named: the refusing arm iterates the code-side registry
-// `cli::config::ROOT_KNOBS` × the four shapes; the admitting arm iterates the same registry ×
+// `cli::config::ROOT_KNOBS` × the five shapes; the admitting arm iterates the same registry ×
 // the five values a root legitimately takes (unset, the repo root, an existing directory, one
 // jigc must create, and one spelled through a `..` hop that reaches none of the refused homes)
 // — the over-refusal guard, without which "refuse three shapes" is satisfied by refusing
 // everything.
 // ---------------------------------------------------------------------------------------
 
-/// The four values that are not usable roots — a file, an absolute path, a symlinked leaf, and
-/// a symlinked ancestor. Planted by [`Corpus::plant_unusable_shapes`].
-const UNUSABLE_VALUES: [&str; 4] = [
-    "README.md",
+/// The five values that are not usable roots — an absolute path, and each of the two on-disk
+/// shapes at each of the two positions the walk can meet it: a symlinked leaf, a symlinked
+/// ancestor, a file-shaped leaf, a file-shaped ancestor. Planted by
+/// [`Corpus::plant_unusable_shapes`].
+const UNUSABLE_VALUES: [&str; 5] = [
     "/tmp/jigc-root-knob-elsewhere",
     "linked",
     "linked/sub",
+    "README.md",
+    "README.md/sub",
 ];
 
 /// The five values a root legitimately takes, each paired with **the value that lands**: unset
@@ -448,11 +467,11 @@ const USABLE_VALUES: [(&str, &str); 5] = [
     ("docs/../notes", "notes"),
 ];
 
-/// **The eight refusing cells.** Every [`cli::config::ROOT_KNOBS`] member × every shape the store
+/// **The ten refusing cells.** Every [`cli::config::ROOT_KNOBS`] member × every shape the store
 /// cannot describe, each refused before anything moves and before the knob lands.
 ///
-/// One corpus for all eight, on the same reasoning as the workbench arm: a refused cell leaves
-/// the store byte-identical, so the eighth cell adjudicates the corpus the first one did.
+/// One corpus for all ten, on the same reasoning as the workbench arm: a refused cell leaves
+/// the store byte-identical, so the tenth cell adjudicates the corpus the first one did.
 #[test]
 fn no_root_knob_accepts_a_root_the_store_cannot_describe() {
     let corpus = Corpus::new("unusable");
