@@ -334,10 +334,26 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // every declared placement home stands — while `.` is the repo root, so an empty set
     // that landed verbatim would read back as "never set" and silently do nothing
     // (`crate::start::placement_root`).
-    let value = if ROOT_KNOBS.contains(&key) && value.is_empty() {
+    //
+    // **Both canonicalizations happen before anything else looks at the value** — the fold
+    // first, so `docs/..` reaches the empty branch and lands as `.` rather than as a root no
+    // reader folds. See [`normalize_root_value`] for why the fold is here and not in each
+    // reader.
+    //
+    // `typed` survives the fold because a **refusal names what the operator typed**: the three
+    // root rules below adjudicate the folded value (that is what makes them un-evadable) but
+    // quote `typed`, so `docs/../.jigc` is refused as `docs/../.jigc` and not as a `.jigc` the
+    // operator never wrote. The *ack* prints the folded value, which is the one that landed.
+    let typed = value;
+    let folded = if ROOT_KNOBS.contains(&key) {
+        normalize_root_value(value)
+    } else {
+        value.to_owned()
+    };
+    let value: &str = if ROOT_KNOBS.contains(&key) && folded.is_empty() {
         "."
     } else {
-        value
+        &folded
     };
 
     // Step 1 — the key must be a declared knob (the closed surface).
@@ -394,7 +410,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     {
         return Err(finding_to_err(Finding::block(
             "config.untrackable-root",
-            format!("`{value}` cannot be the `{key}`: {reason}"),
+            format!("`{typed}` cannot be the `{key}`: {reason}"),
             "re-run with a root git can record — a path under the repository root and outside \
              `.git/`; `jigc config list` shows the value in force and the layer it wins from",
         )));
@@ -422,7 +438,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
         return Err(finding_to_err(Finding::block(
             "config.workbench-root",
             format!(
-                "`{value}` is inside jigc's own workbench (`.jigc/`) — `{key}` cannot home \
+                "`{typed}` is inside jigc's own workbench (`.jigc/`) — `{key}` cannot home \
                  managed docs in the tree `jigc uninstall` removes whole"
             ),
             "re-run with a root outside `.jigc/` — the workbench holds jigc's own state, not \
@@ -459,7 +475,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     {
         return Err(finding_to_err(Finding::block(
             "config.unusable-root",
-            format!("`{value}` cannot be the `{key}`: {reason}"),
+            format!("`{typed}` cannot be the `{key}`: {reason}"),
             "re-run with a repo-relative directory — an existing one, or one jigc should create; \
              never a file, an absolute path, or a path through a symlink; `jigc config list` \
              shows the value in force and the layer it wins from",
@@ -495,6 +511,82 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     })
 }
 
+/// Fold a root-knob value to the **one spelling every reader resolves** — `./` segments
+/// dropped, `..` hops applied, redundant separators collapsed — so the value that lands is the
+/// value the store renders (M50 Increment 4 validation, N8).
+///
+/// **Why the fold is here and not in each reader.** Every root rule already folds privately to
+/// find the home a value *reaches* ([`is_workbench_root`], [`unusable_root_reason`],
+/// [`crate::trackable::untrackable_reason`]), and the two move floors and every read surface
+/// then resolved the value **as typed** — a spelling no fold had touched. Driven at `71c8f7a`,
+/// on a corpus whose docs are homed under `docs/`:
+///
+///   - `jigc config set placement-root docs/../docs` — a value naming byte-for-byte the home
+///     the docs are already at — was admitted at exit 0 **as a re-point**. The destination was
+///     the source, so [`crate::relocate::relocate_stranded`] read both committed docs as
+///     foreign squatters, displaced them into the gitignored `.jigc/displaced/` and then could
+///     not move them back: two staged deletions with no matching adds, the knob landed, and
+///     `jigc doc list` stopped naming the docs at all — the exact state step 2b's own rationale
+///     says must never exist. Five spellings of that one home reach it on **both** knobs
+///     (`./docs`, `docs/./`, `docs/../docs`, `.jigc/../docs`, and every multi-hop fold of them);
+///     only the trailing-slash form escaped, because `trim_matches('/')` was the single fold the
+///     storage path already did.
+///   - `jigc config set docs-root docs/../notes` — a genuine move — staged
+///     `R docs/research/x.md -> notes/research/x.md` while `jigc doc list` printed
+///     `docs/../notes/research/x.md`: the knob and git naming different homes for one doc,
+///     which is the state the absolute-value reason in [`unusable_root_reason`] is refused for.
+///
+/// One fold at the **authoring** door answers both, and answers them for every reader at once —
+/// the move floors, `apply_docs_root`/`apply_placement_root`, `doc list`'s path column,
+/// `validate`'s orphan probe and `config get`'s echo all read one canonical string. It is not a
+/// silent rewrite: the ack prints the value that landed, so `docs/../docs` acks as `docs`.
+///
+/// **Two shapes are deliberately returned unfolded, because a sibling rule owns them and its
+/// message quotes the typed form:** an *absolute* value (refused by [`unusable_root_reason`] —
+/// folding it would only produce a second absolute path), and a `..` with nothing left to pop,
+/// which climbs above the repository root and is kept so
+/// [`crate::trackable::untrackable_reason`] can refuse the value the operator actually named.
+///
+/// **Bound: this is the write door, not the cascade.** A value hand-written into
+/// `.jigc/config/manifest.yaml`, or supplied by a team layer or a pack default, reaches the
+/// readers unfolded exactly as before — the readers' private folds still find the right *home*,
+/// but the rendered path is the layer's spelling. Every value jigc itself writes comes through
+/// here.
+fn normalize_root_value(value: &str) -> String {
+    use std::ffi::OsStr;
+    use std::path::Component;
+
+    if Path::new(value).is_absolute() {
+        return value.to_owned();
+    }
+    let parent = OsStr::new("..");
+    let mut parts: Vec<&OsStr> = Vec::new();
+    for component in Path::new(value).components() {
+        match component {
+            // A leading or interior `./` is the same path; it names nothing to keep.
+            Component::CurDir => continue,
+            Component::ParentDir => match parts.last() {
+                // Pop the component the hop cancels.
+                Some(last) if *last != parent => {
+                    parts.pop();
+                }
+                // Nothing left to cancel: the value climbs above the repository root. Keep the
+                // hop so step 2b refuses the path the operator named.
+                _ => parts.push(parent),
+            },
+            Component::Normal(part) => parts.push(part),
+            // Unreachable for a relative value; returning it untouched keeps the sibling
+            // rules' messages quoting what was typed.
+            Component::RootDir | Component::Prefix(_) => return value.to_owned(),
+        }
+    }
+    parts
+        .iter()
+        .map(|part| part.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Whether `value` names **jigc's own workbench** — the repo-root `.jigc/` directory itself,
 /// or a path inside it — and is therefore no home for either root knob to point managed docs
 /// at (M50 Increment 4 / T2).
@@ -515,9 +607,18 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
 /// somebody else's directory that happens to share the name, and refusing it would refuse a
 /// home jigc has no claim on. By the same token a value that climbs back **out** of the
 /// workbench (`.jigc/../docs`) reaches an ordinary home and is not refused here — this rule
-/// is about where the value lands, and the two sibling root rules still answer for the rest of
-/// it. A value that climbs above the repository root (`../.jigc`) does not reach *this* repo's
-/// workbench either, and step 2b has already refused it as a path git cannot record.
+/// is about where the value lands. A value that climbs above the repository root (`../.jigc`)
+/// does not reach *this* repo's workbench either, and step 2b has already refused it as a path
+/// git cannot record.
+///
+/// **What answers for the rest of it is [`normalize_root_value`], not "the two sibling root
+/// rules"** — the claim this comment carried until M50's validation drove it. `.jigc/../docs`
+/// does reach an ordinary home, and neither sibling rule had anything to say about a value that
+/// reaches the home the docs are *already at*: it was admitted as a re-point and the move floor
+/// destroyed the store surface (the driven repro is on [`normalize_root_value`]). The value now
+/// arrives here already folded, so this predicate sees `docs` and the question does not come up;
+/// the private fold below stays because the predicate must be correct about its own subject
+/// whoever calls it.
 ///
 /// The comparison is case-**insensitive**, and that is driven rather than defensive: on a
 /// case-insensitive filesystem `jigc config set placement-root .JIGC` stages

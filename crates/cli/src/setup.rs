@@ -2240,6 +2240,16 @@ fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
 /// subject and prints the wrong route, so they are excluded by construction and answered
 /// by the doors that own them.
 ///
+/// **`displaced/` is the one excluded prefix no door owns** — stated here rather than left
+/// to be rediscovered (M50 Increment 4 validation, N8). It is in `ENTRIES`, so the relocation
+/// workbench sits outside this subject exactly as `tasks/` and `worktrees/` do; unlike them,
+/// nothing else refuses or narrates over it, so a file parked there by
+/// [`crate::relocate::relocate_stranded`] is taken by the teardown at exit 0 and named by
+/// nothing. The re-point that could park a **managed committed** doc there is closed at its
+/// own door ([`crate::config`]'s root-value fold, M50 Inc 4 validation), leaving reachable
+/// only a *foreign* file whose displacement was printed when it happened — narrow enough to
+/// declare rather than guard, and declared so the next reader need not derive the gap again.
+///
 /// **Every child that is not a directory**, symlinks included (M49's lesson at
 /// [`fanout_worktree_paths`]): `remove_dir_all(.jigc/)` takes them all, so the shape of a
 /// path is a reason to recurse into it, never a reason to drop it from the set. Recursion

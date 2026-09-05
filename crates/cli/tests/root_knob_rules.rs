@@ -430,12 +430,23 @@ const UNUSABLE_VALUES: [&str; 4] = [
     "linked/sub",
 ];
 
-/// The five values a root legitimately takes: unset (`""`, canonicalized to `.`), the repo root,
-/// an existing directory, one that does not exist yet (jigc creates it on the move) — and one
-/// spelled **through a `..` hop that does not reach the workbench**, the over-refusal guard on
-/// the home rule's normalization: folding `..` must not turn every hopping value into a
-/// refusal, only the ones that land in `.jigc/`.
-const USABLE_VALUES: [&str; 5] = ["", ".", "docs", "notes", "docs/../notes"];
+/// The five values a root legitimately takes, each paired with **the value that lands**: unset
+/// (`""`, canonicalized to `.`), the repo root, an existing directory, one that does not exist
+/// yet (jigc creates it on the move) — and one spelled **through a `..` hop that does not reach
+/// the workbench**, the over-refusal guard on the home rule's normalization: folding `..` must
+/// not turn every hopping value into a refusal, only the ones that land in `.jigc/`.
+///
+/// The pair is spelled out per cell rather than computed, so this arm cannot re-implement the
+/// fold it is checking (M49's *statement == constant* lesson): `docs/../notes` lands as `notes`
+/// because the write door folds a root value once, so that one spelling reaches every reader
+/// and the store renders the path git recorded (`cli::config::normalize_root_value`).
+const USABLE_VALUES: [(&str, &str); 5] = [
+    ("", "."),
+    (".", "."),
+    ("docs", "docs"),
+    ("notes", "notes"),
+    ("docs/../notes", "notes"),
+];
 
 /// **The eight refusing cells.** Every [`cli::config::ROOT_KNOBS`] member × every shape the store
 /// cannot describe, each refused before anything moves and before the knob lands.
@@ -460,12 +471,10 @@ fn no_root_knob_accepts_a_root_the_store_cannot_describe() {
 #[test]
 fn every_usable_root_is_still_admitted_and_the_store_still_describes_its_docs() {
     for key in cli::config::ROOT_KNOBS {
-        for (cell, value) in USABLE_VALUES.iter().enumerate() {
+        for (cell, (value, expected)) in USABLE_VALUES.iter().enumerate() {
             let corpus = Corpus::new(&format!("usable-{key}-{cell}"));
             corpus.ok(&["config", "set", key, value]);
 
-            // `""` is canonicalized to the flat sentinel `.` before it lands (both knobs).
-            let expected = if value.is_empty() { "." } else { *value };
             let reading = corpus.ok(&["config", "get", key]);
             assert!(
                 // The whole `<key> = <value>` reading, never a substring of it: `docs-root`
@@ -485,5 +494,160 @@ fn every_usable_root_is_still_admitted_and_the_store_still_describes_its_docs() 
                 );
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// T4 — **a root value is stored in the one spelling the store renders** (M50 Increment 4
+// validation, N8).
+//
+// Every rule above asks a question about the home a value *reaches*, and each folds `..`
+// and `./` privately to find it. The value itself was then stored **as typed**, so the
+// move floors and the read surfaces resolved a spelling no rule had folded — and a value
+// naming byte-for-byte the CURRENT home was admitted at exit 0 as a re-point. Driven at
+// `71c8f7a`, on a `committed-singletons` rig:
+//
+// ```
+// $ jigc config set placement-root 'docs/../docs'
+// relocating the committed doc(s) stranded by the `placement-root` re-point to `docs/../docs`:
+//   - docs/decisions-log.md: could not relocate (reading the stranded doc …: No such file …)
+//   - docs/roadmap.md: could not relocate (…) — move it by hand
+// config: set `placement-root` = `docs/../docs`                                       rc=0
+// $ ls docs            -> (empty)
+// $ ls .jigc/displaced -> decisions-log.md  roadmap.md
+// $ git status --porcelain -> D docs/decisions-log.md ; D docs/roadmap.md
+// $ jigc doc list      -> roadmap + decisions-log GONE from the store surface
+// ```
+//
+// The destination *was* the source, so the mover read both committed docs as foreign
+// squatters, displaced them into the gitignored `.jigc/displaced/` and then could not move
+// them back — two staged deletions with no matching adds, the knob landed, and the bytes
+// then sat in the one tree `jigc uninstall` removes whole. Five spellings of the identical
+// home reach that state on **both** knobs (`./docs`, `docs/./`, `docs/../docs`,
+// `.jigc/../docs`, and every multi-hop fold of them); only the trailing-slash form escaped,
+// because `trim_matches('/')` is the one fold the storage path already did.
+//
+// The softer half of the same class is the **admitted** re-point: `docs-root docs/../notes`
+// moved the doc and staged `R docs/research/x.md -> notes/research/x.md` while `jigc doc
+// list` printed `docs/../notes/research/x.md` — the knob and git naming different homes for
+// one doc, which is exactly the state the absolute-value rule (N6) is refused for. The
+// shipped admitting arm did not catch it because it asserts the doc **id** is still listed
+// and never the path it is listed at.
+//
+// Two sets, each named:
+//
+//   * **A manufactured shape space** — [`cli::config::ROOT_KNOBS`] × the five ways one home
+//     is spelled non-canonically (a leading `./`, a trailing separator, an interior `./`, a
+//     `..` hop back onto itself, a `..` hop in from a sibling tree). Manufactured rather
+//     than enumerated because no registry of spellings exists to read: the class is the
+//     *grammar* of a path, and the shipped corpus populates it not at all.
+//   * **The store's own rendering** — the path column `jigc doc list` prints for each
+//     planted doc, asked of the canonical form after a genuine hop-spelled move.
+// ---------------------------------------------------------------------------------------
+
+/// The five non-canonical spellings of the corpus's **current** home (`docs`, the home both
+/// knobs already resolve every planted doc to). Setting a root to any of them names the home
+/// the docs are already at, so the only correct outcome is a no-op.
+const HOP_SPELLINGS: [&str; 5] = [
+    "./docs",
+    "docs/",
+    "docs/./",
+    "docs/../docs",
+    ".jigc/../docs",
+];
+
+/// The path `jigc doc list` prints for `id` — the second whitespace-separated field of its
+/// row. Read as a field rather than with `contains`, because `docs/roadmap.md` is a
+/// **substring** of `./docs/roadmap.md`, so a substring assertion passes on exactly the
+/// un-normalized rendering this arm exists to catch.
+fn listed_path(listing: &str, id: &str) -> String {
+    listing
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some(id))
+        .unwrap_or_else(|| panic!("`jigc doc list` has no row for `{id}`; listing:\n{listing}"))
+        .split_whitespace()
+        .nth(1)
+        .expect("a path column")
+        .to_owned()
+}
+
+/// **The ten identity cells.** A root spelled non-canonically that names the home the docs
+/// are already at is a **no-op**: nothing moves, nothing is staged, git tracks the same set,
+/// and the store still renders both docs at the paths they are committed at.
+#[test]
+fn a_root_respelled_onto_its_own_home_moves_nothing() {
+    for key in cli::config::ROOT_KNOBS {
+        for (cell, value) in HOP_SPELLINGS.iter().enumerate() {
+            let corpus = Corpus::new(&format!("identity-{key}-{cell}"));
+            let before = corpus.tracked();
+
+            corpus.ok(&["config", "set", key, value]);
+
+            assert_eq!(
+                corpus.tracked(),
+                before,
+                "`jigc config set {key} {value:?}` names the home both docs are already at — \
+                 it must move nothing; the tracked set changed",
+            );
+            let status = corpus.git(&["status", "--porcelain"]);
+            assert!(
+                !status.lines().any(|line| line.contains(".md")),
+                "`jigc config set {key} {value:?}` must leave no staged move or deletion of a \
+                 managed doc; `git status --porcelain`:\n{status}",
+            );
+            let listing = corpus.ok(&["doc", "list"]);
+            for (rel, _) in MANAGED {
+                let id = if rel.contains("roadmap") {
+                    "roadmap:roadmap"
+                } else {
+                    "research:root-knob-probe"
+                };
+                assert_eq!(
+                    listed_path(&listing, id),
+                    rel,
+                    "the store still renders `{id}` at `{rel}` after `{key}` = {value:?}; \
+                     listing:\n{listing}",
+                );
+            }
+        }
+    }
+}
+
+/// **The two moving cells — the over-refusal guard's other half.** A hop-spelled root that
+/// reaches a *different* home still moves, once, and the store then renders the moved doc at
+/// the **canonical** path git recorded — never at the spelling the operator typed.
+#[test]
+fn a_hop_spelled_move_lands_the_canonical_path_in_the_store() {
+    // Each knob's own subject, and where a `notes` root puts it: `docs-root` re-roots the
+    // located `research` doc, `placement-root` re-roots the placement `roadmap`.
+    for (key, id, moved_to) in [
+        (
+            "docs-root",
+            "research:root-knob-probe",
+            "notes/research/root-knob-probe.md",
+        ),
+        ("placement-root", "roadmap:roadmap", "notes/roadmap.md"),
+    ] {
+        let corpus = Corpus::new(&format!("hop-move-{key}"));
+        corpus.ok(&["config", "set", key, "docs/../notes"]);
+
+        let status = corpus.git(&["status", "--porcelain"]);
+        assert!(
+            status.contains(&format!("-> {moved_to}")),
+            "`{key} docs/../notes` stages the move to `{moved_to}`; \
+             `git status --porcelain`:\n{status}",
+        );
+        let listing = corpus.ok(&["doc", "list"]);
+        assert_eq!(
+            listed_path(&listing, id),
+            moved_to,
+            "the store renders `{id}` at the path git recorded, never at the typed spelling; \
+             listing:\n{listing}",
+        );
+        let reading = corpus.ok(&["config", "get", key]);
+        assert!(
+            reading.contains(&format!("{key} = notes")),
+            "`jigc config get {key}` reads back the value that landed; got:\n{reading}",
+        );
     }
 }
