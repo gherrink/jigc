@@ -499,10 +499,25 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
 /// or a path inside it — and is therefore no home for either root knob to point managed docs
 /// at (M50 Increment 4 / T2).
 ///
-/// Only the value's **first** component is asked, because the workbench is exactly one
+/// The value is **normalized lexically first** — a `./` folded, a `..` applied against the
+/// components accumulated so far — and only then is its first component asked. Asking the value
+/// *as typed* is what the first cut did, and it left the rule evadable by one hop: at `6551d49`
+/// the three literal spellings were refused (`config.workbench-root`, rc=1, both knobs) while
+/// `jigc config set placement-root docs/../.jigc` exited **0** and staged
+/// `R docs/decisions-log.md -> .jigc/decisions-log.md`, because git normalizes the path it
+/// records even when this predicate does not. The subject is the destination the value
+/// *reaches*, never the prefix it is typed with. Both sibling root rules already fold `..`
+/// ([`unusable_root_reason`] pops on `Component::ParentDir`; [`crate::trackable`] resolves the
+/// value before it asks), which is why this predicate was the only evadable one.
+///
+/// Only the **first normalized** component is asked, because the workbench is exactly one
 /// directory: every door computes it as `repo_root.join(".jigc")`. A nested `docs/.jigc` is
 /// somebody else's directory that happens to share the name, and refusing it would refuse a
-/// home jigc has no claim on.
+/// home jigc has no claim on. By the same token a value that climbs back **out** of the
+/// workbench (`.jigc/../docs`) reaches an ordinary home and is not refused here — this rule
+/// is about where the value lands, and the two sibling root rules still answer for the rest of
+/// it. A value that climbs above the repository root (`../.jigc`) does not reach *this* repo's
+/// workbench either, and step 2b has already refused it as a path git cannot record.
 ///
 /// The comparison is case-**insensitive**, and that is driven rather than defensive: on a
 /// case-insensitive filesystem `jigc config set placement-root .JIGC` stages
@@ -512,17 +527,29 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
 /// (`core.protectHFS`/`protectNTFS`), asked here of the one directory jigc owns.
 fn is_workbench_root(value: &str) -> bool {
     use std::path::Component;
+
+    let mut normalized: Vec<&std::ffi::OsStr> = Vec::new();
     for component in Path::new(value).components() {
         match component {
-            // A leading `./` is the same path; keep looking.
+            // A leading (or interior) `./` is the same path; it names nothing to keep.
             Component::CurDir => continue,
-            // The first named component decides, in both directions.
-            Component::Normal(part) => return part.eq_ignore_ascii_case(".jigc"),
-            // A root, prefix or `..` leads somewhere the workbench is not.
-            _ => return false,
+            Component::ParentDir => {
+                if normalized.pop().is_none() {
+                    // Climbs above the repository root — whatever is up there, it is not this
+                    // repo's workbench (and step 2b refuses the value before this is asked).
+                    return false;
+                }
+            }
+            Component::Normal(part) => normalized.push(part),
+            // An absolute value: refused one step below as a root the store cannot describe,
+            // and never this repo's workbench.
+            Component::RootDir | Component::Prefix(_) => return false,
         }
     }
-    false
+    // The first component of the normalized value decides, in both directions.
+    normalized
+        .first()
+        .is_some_and(|part| part.eq_ignore_ascii_case(".jigc"))
 }
 
 /// Why `value` is a root the store **cannot describe** — `None` when it can (M50 Increment 4 /
@@ -2060,6 +2087,59 @@ mod tests {
                     base_hash: expected_hash.clone(),
                 }],
                 "{verb}: the recorded basis must round-trip keyed by the target\n{text}",
+            );
+        }
+    }
+
+    /// **The home rule reads the destination, not the typed prefix** (M50 Increment 4 / T2,
+    /// completed over its `..` axis).
+    ///
+    /// `crates/cli/tests/root_knob_rules.rs` drives the refusing half through the real binary
+    /// at both knobs; this pins the predicate's *other* direction as well, which no corpus arm
+    /// can reach cheaply — a value that merely contains `.jigc` somewhere, and a value that
+    /// starts in the workbench and climbs back out, are both ordinary homes and must stay
+    /// admitted, or the fold that closed the hop would have bought its refusals by refusing
+    /// paths jigc has no claim on.
+    #[test]
+    fn workbench_home_rule_asks_where_the_value_lands() {
+        // Reaches the workbench — as typed, and behind every hop shape.
+        for value in [
+            ".jigc",
+            ".jigc/displaced",
+            ".JIGC",
+            "./.jigc",
+            "docs/../.jigc",
+            "./docs/../.jigc",
+            "docs/../.jigc/displaced",
+            "docs/../.JIGC",
+            "notes/deep/../../.jigc",
+        ] {
+            assert!(
+                is_workbench_root(value),
+                "`{value}` reaches jigc's own workbench and is no home for a root knob",
+            );
+        }
+
+        // Lands somewhere else — someone else's nested directory of the same name, a value
+        // that climbs back out of the workbench, one that climbs above the repository
+        // altogether (step 2b's question, not this one), an absolute path (step 2d's), and the
+        // roots that carry no named component at all.
+        for value in [
+            "docs/.jigc",
+            "docs/../docs/.jigc",
+            ".jigc/../docs",
+            ".jigc/displaced/../../notes",
+            "../.jigc",
+            "/tmp/.jigc",
+            "",
+            ".",
+            "docs",
+            "docs/../notes",
+        ] {
+            assert!(
+                !is_workbench_root(value),
+                "`{value}` does not land in jigc's own workbench — refusing it here would \
+                 refuse a home jigc has no claim on, under a message that would not be true",
             );
         }
     }

@@ -117,9 +117,28 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The three spellings that reach jigc's own workbench: the directory itself, a path inside
-/// it, and the case-folded form a case-insensitive filesystem resolves onto it.
-const WORKBENCH_VALUES: [&str; 3] = [".jigc", ".jigc/displaced", ".JIGC"];
+/// Every spelling that **reaches** jigc's own workbench: the directory itself, a path inside
+/// it, the case-folded form a case-insensitive filesystem resolves onto it — and each of those
+/// again behind a `..` hop, which is where the first cut of the rule was evadable.
+///
+/// The hop cells are driven, not imagined: at `6551d49` the literal three were refused
+/// (`config.workbench-root`, rc=1, both knobs) while
+/// `jigc config set placement-root docs/../.jigc` exited **0** and staged
+/// `R docs/decisions-log.md -> .jigc/decisions-log.md` — git normalizes the path it records,
+/// so the hop reached the identical directory the literal spelling is refused for. The set is
+/// therefore the *resolved destination*, not the typed prefix: `{the workbench, a child of it}`
+/// × `{as typed, behind a hop}` × `{as spelled, case-folded}`, plus the leading `./` and the
+/// multi-hop forms that fold the same way.
+const WORKBENCH_VALUES: [&str; 8] = [
+    ".jigc",
+    ".jigc/displaced",
+    ".JIGC",
+    "docs/../.jigc",
+    "./docs/../.jigc",
+    "docs/../.jigc/displaced",
+    "docs/../.JIGC",
+    "notes/deep/../../.jigc",
+];
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -344,11 +363,11 @@ fn assert_refused_and_inert(corpus: &Corpus, key: &str, value: &str, code: &str)
     );
 }
 
-/// **The six cells.** Every [`cli::config::ROOT_KNOBS`] member × every spelling that reaches
-/// the workbench, each refused before anything moves and before the knob lands.
+/// **The sixteen cells.** Every [`cli::config::ROOT_KNOBS`] member × every spelling that
+/// reaches the workbench, each refused before anything moves and before the knob lands.
 ///
-/// One corpus for all six: a refused cell leaves the store byte-identical, so reuse is not a
-/// shortcut but a further assertion — the sixth cell adjudicates the same untouched corpus the
+/// One corpus for all sixteen: a refused cell leaves the store byte-identical, so reuse is not
+/// a shortcut but a further assertion — the last cell adjudicates the same untouched corpus the
 /// first one did.
 #[test]
 fn no_root_knob_accepts_jigcs_own_workbench_as_a_home() {
@@ -396,9 +415,10 @@ fn no_root_knob_accepts_jigcs_own_workbench_as_a_home() {
 //
 // Two sets, each named: the refusing arm iterates the code-side registry
 // `cli::config::ROOT_KNOBS` × the four shapes; the admitting arm iterates the same registry ×
-// the four values a root legitimately takes (unset, the repo root, an existing directory, and
-// one jigc must create) — the over-refusal guard, without which "refuse three shapes" is
-// satisfied by refusing everything.
+// the five values a root legitimately takes (unset, the repo root, an existing directory, one
+// jigc must create, and one spelled through a `..` hop that reaches none of the refused homes)
+// — the over-refusal guard, without which "refuse three shapes" is satisfied by refusing
+// everything.
 // ---------------------------------------------------------------------------------------
 
 /// The four values that are not usable roots — a file, an absolute path, a symlinked leaf, and
@@ -410,9 +430,12 @@ const UNUSABLE_VALUES: [&str; 4] = [
     "linked/sub",
 ];
 
-/// The four values a root legitimately takes: unset (`""`, canonicalized to `.`), the repo root,
-/// an existing directory, and one that does not exist yet (jigc creates it on the move).
-const USABLE_VALUES: [&str; 4] = ["", ".", "docs", "notes"];
+/// The five values a root legitimately takes: unset (`""`, canonicalized to `.`), the repo root,
+/// an existing directory, one that does not exist yet (jigc creates it on the move) — and one
+/// spelled **through a `..` hop that does not reach the workbench**, the over-refusal guard on
+/// the home rule's normalization: folding `..` must not turn every hopping value into a
+/// refusal, only the ones that land in `.jigc/`.
+const USABLE_VALUES: [&str; 5] = ["", ".", "docs", "notes", "docs/../notes"];
 
 /// **The eight refusing cells.** Every [`cli::config::ROOT_KNOBS`] member × every shape the store
 /// cannot describe, each refused before anything moves and before the knob lands.
@@ -430,7 +453,7 @@ fn no_root_knob_accepts_a_root_the_store_cannot_describe() {
     }
 }
 
-/// **The eight admitting cells — the over-refusal guard.** A predicate that refuses everything
+/// **The ten admitting cells — the over-refusal guard.** A predicate that refuses everything
 /// satisfies the arm above, so each legitimate root is driven to exit 0 on its own corpus, the
 /// knob reads back the value it was set to, and **the store still describes both managed docs**
 /// — the property N5 broke.
