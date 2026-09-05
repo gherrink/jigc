@@ -112,8 +112,44 @@ fn run_jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
         .expect("run the jigc binary")
 }
 
-/// Run `jigc uninstall` with `cwd = repo` and `$HOME = home`.
+/// Commit what a real `jigc setup` would already have committed: the non-transient
+/// `.jigc/` files this suite's fixtures hand-write or let a jigc verb create — the
+/// `.gitignore` `crate::gitignore::ensure` seeds and the `config/` layer
+/// [`set_squash_false`] writes.
+///
+/// Since M50 Increment 4 the teardown carries a **third** sole-copy guard beside this
+/// suite's own: a file under `.jigc/` outside the transient `ENTRIES` prefixes that no
+/// index has a copy of blocks with `uninstall.untracked-workbench-file`. These fixtures
+/// skip `jigc setup` — which is what tracks those paths in a real install — so without
+/// this the arms below would be answered by a fixture artifact instead of by the
+/// **worktree** axis they are declared on. Idempotent, and a no-op where nothing is
+/// staged.
+fn commit_workbench(repo: &Path) {
+    let mut args: Vec<&str> = vec!["add", "--force", "--"];
+    for rel in [".jigc/.gitignore", ".jigc/config"] {
+        if repo.join(rel).exists() {
+            args.push(rel);
+        }
+    }
+    if args.len() == 3 {
+        return;
+    }
+    git_ok(repo, &args);
+    let clean = Command::new("git")
+        .args(["diff", "--cached", "--quiet"])
+        .current_dir(repo)
+        .status()
+        .expect("run git diff --cached")
+        .success();
+    if !clean {
+        git_ok(repo, &["commit", "-q", "-m", "workbench"]);
+    }
+}
+
+/// Run `jigc uninstall` with `cwd = repo` and `$HOME = home`, over a workbench whose
+/// non-transient files a commit has a copy of ([`commit_workbench`]).
 fn run_uninstall(repo: &Path, home: &Path) -> std::process::Output {
+    commit_workbench(repo);
     run_jigc(repo, home, &["uninstall"])
 }
 
@@ -789,6 +825,9 @@ fn uninstall_refuses_a_non_empty_worktree_path_no_registered_probe_can_see() {
 /// `--force` makes the verb destructive on demand (the help promised your own file content
 /// "preserved byte-for-byte" unconditionally)
 /// ([surface-contract.md](../../design/surface-contract.md) → law 1, nothing lies).
+/// M50 Increment 4 falsified the count a third time: the workbench file no index has a
+/// copy of is a **third** refused state, so "Two states" joins the banned list below —
+/// a count in a help text is a claim, and this one has now been wrong twice.
 ///
 /// Asserted against the **emitted bytes** (the real `--help` render through the built
 /// binary), not the const the doc comment compiles into, so the pin binds what a reader
@@ -816,6 +855,7 @@ fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
         ".jigc/worktrees/",
         "uninstall.staged-prose",
         ".jigc/tasks/",
+        "uninstall.untracked-workbench-file",
         // … the escape hatches the findings' own routes name, the abandon one carrying the
         // condition that makes it reachable (a milestone teardown removes the worktrees this
         // repo registered and skips every other path, so an unqualified offer is a law-1 lie
@@ -824,13 +864,14 @@ fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
         "jigc milestone discard",
         "jigc task discard",
         "jigc task finalize",
+        "git add",
         // … and the one flag that turns the refusal into a deletion.
         "--force",
     ] {
         assert!(
             help.contains(needle),
-            "`uninstall --help` must state both refusals and the consent flag — missing \
-             {needle:?}; got:\n{help}",
+            "`uninstall --help` must state all three refusals and the consent flag — \
+             missing {needle:?}; got:\n{help}",
         );
     }
     // The verb is still idempotent, and still leaves the host files it edits byte-for-byte
@@ -851,6 +892,7 @@ fn uninstall_long_help_states_the_refusal_and_names_its_escape_hatch() {
         "Idempotent and non-destructive: a second run",
         "non-destructive on every state it accepts",
         "One state it refuses",
+        "Two states it refuses",
         "holds authored doc prose",
         "authored doc prose blocks",
     ] {

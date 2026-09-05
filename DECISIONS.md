@@ -2,6 +2,18 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-05 — M50 Inc 4 / T4: `uninstall` stops taking the workbench bytes no index has a copy of
+
+`jigc uninstall` opens with `remove_dir_all(<repo>/.jigc)`, guarded by two refusals — a fan-out worktree holding content (M47) and an open task's staged docs (M46/M49) — that rest on **one** ground: *no commit has a copy of these bytes*. Stated over the whole tree that ground covers a third set neither guard looks at, so blocking **`uninstall.untracked-workbench-file`** now refuses over it: a path under `.jigc/` outside the transient `gitignore::ENTRIES` prefixes that no index carries.
+
+**Added, never substituted.** `tasks/` and `worktrees/` are *inside* `ENTRIES`, so the literal reading — *everything untracked under `.jigc/`* — would have swallowed the two subjects M46 Inc 2, M47 Inc 3 and M49 built guards for and answered them with the wrong code and the wrong route. They are excluded by construction, and the acceptance drives that separation: a staged task doc still draws `uninstall.staged-prose`, never the new code.
+
+**In the index is the line, not committed.** `git ls-files --cached` lists a staged add, and a staged add is `git checkout -- <path>`-recoverable after the teardown takes the working-tree copy — so an in-index file is **narrated, not refused**, joining the loss narration `DESTROYING_DOORS` already owes at this door. The untracked conjunct is mandatory rather than a nicety: a fresh `jigc setup` **tracks every non-transient path it writes**, so without it the guard would fire on every ordinary install.
+
+**The behaviour change is stated, not discovered.** `jigc config set` writes `.jigc/config/manifest.yaml` and tracks nothing, so an `uninstall` after any `config set` now refuses until that delta is in an index or `--force` consents — before this it destroyed the project's whole recorded cascade delta at exit 0. Not a fork: `design/project-setup.md` → G5 states the guards' one provable ground and explicitly refuses to discriminate authorship, so a file jigc itself wrote is not exempt from the rule jigc's own guards run on.
+
+**The subject is a derivation, not a registry** — a path computation over the seven `ENTRIES` prefixes plus one `git` query — so a prefix added to that constant narrows the set automatically. The probe fails closed under the same code, on the shipped `unverified_worktrees_finding` precedent. Ten fixture failures across two suites were repaired in the same commit, all one shape: corpora that hand-write `.jigc/config/*` (and let a jigc verb seed `.jigc/.gitignore`) while skipping the `jigc setup` that tracks them — an uncommitted fixture artifact must not decide a verdict on the freeze or worktree axis those arms are declared on.
+
 ## 2026-09-05 — M50 Inc 4 / T3: a root the store cannot describe is refused before it is written
 
 The home rule asks *whose* directory a root-knob value names; this asks whether the value is a usable root at all. Three shapes are not, all three driven at HEAD on a `committed-singletons` rig, and blocking **`config.unusable-root`** now refuses each at every `ROOT_KNOBS` member in the step-2b position — after `check_value`, before anything moves and before the knob lands, for the reason 2b and 2c already state.

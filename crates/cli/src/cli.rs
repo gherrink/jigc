@@ -180,21 +180,25 @@ pub enum Command {
     /// `.claude/settings.json`. Leaves the machine-global `doc-code` probe (shared
     /// across repos) in place. Idempotent: a second run is a clean no-op, and the
     /// host files it edits (`CLAUDE.md`, `.claude/settings.json`, a wrapped
-    /// `pre-commit` hook) keep your own content byte-for-byte. Two states it
+    /// `pre-commit` hook) keep your own content byte-for-byte. Three states it
     /// refuses instead of destroying, because `.jigc/` is their only copy — a
     /// fan-out sub-task path under `.jigc/worktrees/` that holds content blocks
     /// with `uninstall.dirty-worktree` (get the work out — or, for a path this
     /// repository has registered as a worktree, abandon the milestone with
-    /// `jigc milestone discard <milestone-id> --force`), and an open task
+    /// `jigc milestone discard <milestone-id> --force`), an open task
     /// under `.jigc/tasks/` holding a staged doc no commit has a copy of blocks
     /// with `uninstall.staged-prose` (throw the task away with `jigc task discard
     /// <task-id> --force`, or land it with `jigc task finalize <task-id>` once its doc
-    /// is complete). Either way it removes nothing until you re-run — or pass
-    /// `--force`, which deletes both with the install.
+    /// is complete), and any other file under `.jigc/` that no index has a copy of —
+    /// a recorded config delta among them — blocks with
+    /// `uninstall.untracked-workbench-file` (`git add <path>` is enough to make it
+    /// recoverable). Any of them removes nothing until you re-run — or pass
+    /// `--force`, which deletes all three with the install.
     Uninstall {
-        /// Remove `.jigc/` even when it holds a fan-out worktree with content or an
-        /// open task's staged docs — the explicit consent to destroy work no
-        /// commit has a copy of. Inert when both guards are already clean.
+        /// Remove `.jigc/` even when it holds a fan-out worktree with content, an
+        /// open task's staged docs, or a workbench file no index has a copy of —
+        /// the explicit consent to destroy work no commit has a copy of. Inert when
+        /// all three guards are already clean.
         #[arg(long)]
         force: bool,
     },

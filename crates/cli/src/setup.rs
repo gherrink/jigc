@@ -1847,8 +1847,9 @@ impl RemovedArtifacts {
 /// break `jigc validate` for sibling repos (design-review B2). Machine-global removal
 /// is `cargo uninstall jigc` + manual probe removal, never this per-project verb.
 ///
-/// **It refuses over the two things inside `.jigc/` that live nowhere else**, before it
-/// removes anything (`DECISIONS.md` 2026-08-13 → the Settle, F3):
+/// **It refuses over the three things inside `.jigc/` that live nowhere else**, before it
+/// removes anything (`DECISIONS.md` 2026-08-13 → the Settle, F3; 2026-09-05 → M50 Inc 4 /
+/// T4):
 ///
 /// - a **worktree-shaped path under `.jigc/worktrees/` holding content** blocks with
 ///   `uninstall.dirty-worktree` ([`dirty_fanout_worktrees`]). Since M47 Inc 3 a live
@@ -1859,9 +1860,16 @@ impl RemovedArtifacts {
 /// - an **open task's staged doc** in `.jigc/tasks/<id>/docs/*.md` blocks with
 ///   `uninstall.staged-prose` ([`crate::task::staged_task_prose`]) — bytes that are in no
 ///   object DB at all (the reproduced pre-1.0.0 loss authored them; the mint's own skeleton
-///   is refused on the same footing, since neither is provably disposable).
+///   is refused on the same footing, since neither is provably disposable);
+/// - **any other file under `.jigc/` that no index has a copy of** — the `ENTRIES`
+///   complement ([`workbench_paths`]) — blocks with
+///   `uninstall.untracked-workbench-file`. The same ground as the two above, stated over
+///   the rest of the tree: it is an **added** third subject, and the two directories those
+///   guards own are excluded from it by construction so their codes and routes keep
+///   answering for them. In the **index** is the line, not committed — a `git add`-ed file
+///   is `git checkout`-recoverable, so it is narrated rather than refused.
 ///
-/// `force` is the operator's consent to delete. It skips the two guards, and — the one
+/// `force` is the operator's consent to delete. It skips the three guards, and — the one
 /// other thing this teardown refuses on its own — takes the adapter's owned guide artifact
 /// even when the user has edited it.
 ///
@@ -1899,9 +1907,9 @@ pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Find
 /// [`run_uninstall`] (no location step). Each step is independently idempotent, so the
 /// whole teardown is a clean no-op on a re-run — but unless `force`, it removes nothing at
 /// all while `.jigc/` holds the sole copy of anything: a worktree-shaped path with content
-/// ([`dirty_fanout_worktrees`]) or an open task's staged docs
-/// ([`crate::task::staged_task_prose`]),
-/// both probed in step 0.
+/// ([`dirty_fanout_worktrees`]), an open task's staged docs
+/// ([`crate::task::staged_task_prose`]), or any other workbench file no index has a copy of
+/// ([`untracked_workbench_files`]) — all three probed in step 0.
 fn uninstall(
     repo_root: &Path,
     profile: &AdapterProfile,
@@ -1921,6 +1929,15 @@ fn uninstall(
         )?;
         if !staged.is_empty() {
             return Err(staged_prose_finding(&staged));
+        }
+        // The third subject: everything else under `.jigc/` that no index has a copy of
+        // — the two guards above stated over the rest of the tree
+        // ([`workbench_paths`]). It runs LAST so a corpus holding both a sole-copy
+        // worktree and an uncommitted config delta is still answered by the door that
+        // owns the sole copy.
+        let untracked = untracked_workbench_files(repo_root)?;
+        if !untracked.is_empty() {
+            return Err(untracked_workbench_finding(&untracked));
         }
     }
 
@@ -2200,6 +2217,157 @@ fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
+/// Every path under `<repo>/.jigc/` that lies **outside** the transient
+/// [`crate::gitignore::ENTRIES`] prefixes — repo-relative, `/`-separated and sorted.
+///
+/// This is the subject of the teardown's **third** guard
+/// ([`untracked_workbench_files`]) and of its third narration line, enumerated once so
+/// the two cannot drift into disagreeing about which paths the teardown takes — the
+/// [`fanout_worktree_paths`] convention, applied to the other half of the workbench.
+///
+/// **It is a derivation, not a registry.** Membership is a path computation over the
+/// seven `ENTRIES` prefixes plus (in the caller) one `git` query; nothing enumerates the
+/// files themselves. A prefix added to `ENTRIES` narrows this set automatically, which is
+/// the point of asking that constant rather than re-listing it here.
+///
+/// **The `ENTRIES` complement, not "everything untracked under `.jigc/`."** `tasks/` and
+/// `worktrees/` are *inside* `ENTRIES`, and both hold bytes no index has a copy of by
+/// design — the sole-copy state M46 Inc 2, M47 Inc 3 and M49 built the other two guards
+/// for. Swallowing them here would replace those guards with one that names the wrong
+/// subject and prints the wrong route, so they are excluded by construction and answered
+/// by the doors that own them.
+///
+/// **Every child that is not a directory**, symlinks included (M49's lesson at
+/// [`fanout_worktree_paths`]): `remove_dir_all(.jigc/)` takes them all, so the shape of a
+/// path is a reason to recurse into it, never a reason to drop it from the set. Recursion
+/// is decided on `symlink_metadata`, so a symlink is a leaf rather than a door out of the
+/// tree.
+fn workbench_paths(repo_root: &Path) -> std::io::Result<Vec<String>> {
+    let jigc_dir = repo_root.join(".jigc");
+    if !jigc_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let transient: Vec<&str> = crate::gitignore::ENTRIES
+        .lines()
+        .map(|entry| entry.trim_end_matches('/'))
+        .collect();
+
+    let mut stack: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(&jigc_dir)? {
+        let entry = entry?;
+        if transient
+            .iter()
+            .any(|prefix| entry.file_name() == std::ffi::OsStr::new(prefix))
+        {
+            continue;
+        }
+        stack.push(entry.path());
+    }
+
+    let mut paths: Vec<String> = Vec::new();
+    while let Some(path) = stack.pop() {
+        if std::fs::symlink_metadata(&path)?.is_dir() {
+            for entry in std::fs::read_dir(&path)? {
+                stack.push(entry?.path());
+            }
+            continue;
+        }
+        let rel = path.strip_prefix(repo_root).unwrap_or(&path);
+        paths.push(
+            rel.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/"),
+        );
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+/// The workbench paths split on the one question both shipped guards already rest on:
+/// **does any index have a copy of these bytes?** Returns `(untracked, tracked)`, each
+/// sorted.
+///
+/// **In the index is the line, not committed.** `git ls-files --cached` lists a staged
+/// add, and a staged add is `git checkout -- <path>`-recoverable after the teardown has
+/// taken the working-tree copy — so it is narrated, not refused. What no index carries is
+/// gone for good, which is exactly the ground `uninstall.dirty-worktree` and
+/// `uninstall.staged-prose` refuse on; stating it over the third subject makes the two
+/// shipped guards' grounds one ground said three times rather than three rules.
+///
+/// One `git` call for the whole tree — the clean teardown of a repo with no `.jigc/`
+/// short-circuits in [`workbench_paths`] before it.
+fn classify_workbench_paths(repo_root: &Path) -> anyhow::Result<(Vec<String>, Vec<String>)> {
+    let paths = workbench_paths(repo_root)?;
+    if paths.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let listed = crate::task::git_capture(
+        repo_root,
+        &["ls-files", "-z", "--cached", "--full-name", "--", ".jigc"],
+    )?;
+    let cached: Vec<&str> = listed.split('\0').filter(|s| !s.is_empty()).collect();
+    let (tracked, untracked): (Vec<String>, Vec<String>) = paths
+        .into_iter()
+        .partition(|path| cached.iter().any(|entry| entry == path));
+    Ok((untracked, tracked))
+}
+
+/// The teardown's **third** guard: workbench bytes no index has a copy of
+/// ([`classify_workbench_paths`]), refused before `remove_dir_all(<repo>/.jigc)` runs.
+///
+/// **Added, never substituted** — see [`workbench_paths`] for why the subject is the
+/// `ENTRIES` complement.
+///
+/// **Fails closed**, under the same code: an unreadable workbench or an unrunnable `git`
+/// leaves the recoverability of those bytes *unknown*, and removing on an unverified
+/// probe is the defect this guard closes.
+fn untracked_workbench_files(repo_root: &Path) -> Result<Vec<String>, Finding> {
+    classify_workbench_paths(repo_root)
+        .map(|(untracked, _)| untracked)
+        .map_err(unverified_workbench_finding)
+}
+
+/// The third subject's refusal: a blocking, route-bearing finding naming every workbench
+/// path no index has a copy of.
+///
+/// **The route names the cheap exit first.** `git add <path>` is enough — the guard's
+/// question is the index, not `HEAD` — so the operator is not told to commit bytes they
+/// may not want in history; deleting what they do not need is the other exit, and
+/// `--force` is the consent that proceeds anyway, the single consent every destroying
+/// door takes.
+fn untracked_workbench_finding(untracked: &[String]) -> Finding {
+    let listing: Vec<String> = untracked.iter().map(|path| format!("  {path}")).collect();
+    Finding::block(
+        "uninstall.untracked-workbench-file",
+        format!(
+            "`.jigc/` holds {} file(s) that no index has a copy of — removing `.jigc/` would \
+             destroy them:\n{}",
+            untracked.len(),
+            listing.join("\n"),
+        ),
+        "put them where they can be recovered (`git add <path>` is enough — the index keeps a \
+         copy `git checkout -- <path>` restores) or delete the ones you do not need, then \
+         re-run `jigc uninstall`; `jigc uninstall --force` deletes them with the install",
+    )
+}
+
+/// The fail-closed half of [`untracked_workbench_files`]: the probe could not run, so the
+/// teardown refuses rather than remove `.jigc/` with those bytes' recoverability unknown.
+/// Same code as the refusal — the operator's next action is identical.
+fn unverified_workbench_finding(err: anyhow::Error) -> Finding {
+    Finding::block(
+        "uninstall.untracked-workbench-file",
+        format!(
+            "cannot check `.jigc/` for files no index has a copy of, so removing it could \
+             destroy them: {err:#}"
+        ),
+        "make sure `git` is on PATH and the `.jigc/` tree is readable, then re-run \
+         `jigc uninstall` — or, once you have confirmed it holds nothing you need, \
+         `jigc uninstall --force`",
+    )
+}
+
 /// Name what `remove_dir_all(<repo>/.jigc)` is about to destroy, on stderr, **before** it
 /// runs — [`crate::milestone::DESTROYING_DOORS`]' narration law at this door
 /// (`design/surface-contract.md` → law 1: a door that exits 0 must not also have silently
@@ -2222,6 +2390,54 @@ fn narrate_teardown(repo_root: &Path) {
     // half-truth, so the set [`crate::task::staged_task_prose`] refuses on is the set named
     // here.
     narrate_staged_prose(repo_root, "removing `.jigc/`", None);
+    // The third subject ([`workbench_paths`]), in both of its halves — because both are
+    // removed. The untracked half reaches here only under `--force` (the guard refuses on
+    // it otherwise), and is the half that is gone for good; the tracked half is what the
+    // guard deliberately lets through, and law 1 owes it a name too — a teardown that took
+    // a file in silence is a half-truth whether or not the file is recoverable. Each line
+    // says which of the two it is, so the reader is not left to guess.
+    narrate_workbench_files(repo_root);
+}
+
+/// Name the workbench files `remove_dir_all(<repo>/.jigc)` is about to take that are
+/// neither a fan-out worktree nor an open task's staged prose — [`workbench_paths`]'
+/// subject, split on recoverability by [`classify_workbench_paths`].
+///
+/// Two lines because they are two claims: bytes no index has a copy of are **not
+/// recoverable**, and bytes the index carries are restored by `git checkout` after the
+/// teardown. Collapsing them into one warning would overclaim on the tracked half and
+/// underclaim on the untracked half, which is the same law-1 lie in both directions.
+///
+/// Best-effort, like every narration: an unreadable workbench or an unrunnable `git`
+/// yields no warning rather than failing a teardown the guards already cleared.
+fn narrate_workbench_files(repo_root: &Path) {
+    let Ok((untracked, tracked)) = classify_workbench_paths(repo_root) else {
+        return;
+    };
+    if !untracked.is_empty() {
+        eprintln!(
+            "warning: removing `.jigc/` destroys {} file(s) under it that no index has a copy \
+             of:\n{}\n  note: nothing has a copy of those bytes — they are not recoverable.",
+            untracked.len(),
+            untracked
+                .iter()
+                .map(|path| format!("    {path}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    if !tracked.is_empty() {
+        eprintln!(
+            "warning: removing `.jigc/` also removes {} tracked file(s) under it:\n{}\n  \
+             note: each is in the index, so `git checkout -- <path>` brings it back.",
+            tracked.len(),
+            tracked
+                .iter()
+                .map(|path| format!("    {path}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
 }
 
 /// Name the **authored task prose** a door is about to destroy — the staged `*.md` under

@@ -251,6 +251,33 @@ fn reword_research_hint(pack: &Path) {
     fs::write(&schema, reworded).expect("write the reworded research.yaml");
 }
 
+/// Commit a project-layer file this fixture hand-wrote into `.jigc/`.
+///
+/// Since M50 Increment 4 `jigc uninstall` refuses over a file under `.jigc/` that lies
+/// outside the transient `ENTRIES` prefixes and that **no index has a copy of**
+/// (`uninstall.untracked-workbench-file`) — the third sole-copy subject, beside the
+/// dirty fan-out worktree and the open task's staged prose. A real project's cascade
+/// delta and pack list are committed files; only this fixture left them dangling, so
+/// without this the `uninstall` row of [`FREEZE_DOORS`] would be answered by a fixture
+/// artifact instead of by the freeze axis it is declared on.
+fn commit_workbench_file(repo: &Path, rel: &str) {
+    for args in [
+        vec!["add", "--force", rel],
+        vec!["commit", "-q", "-m", "project layer"],
+    ] {
+        let out = Command::new("git")
+            .args(&args)
+            .current_dir(repo)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} in {repo:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+}
+
 /// Compose `[dev ▸ methodology-copy]` via the listed-pack mechanism: `packs.yaml`
 /// names the on-disk copy over the embedded dev base. `JIGC_PACK_DIR` must stay
 /// unset so the embedded base (not an env pack) anchors the composition.
@@ -260,6 +287,7 @@ fn list_pack(repo: &Path, pack: &Path) {
         format!("packs:\n  - {}\n", pack.display()),
     )
     .expect("write packs.yaml naming the methodology copy");
+    commit_workbench_file(repo, ".jigc/config/packs.yaml");
 }
 
 /// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and NO `JIGC_PACK_DIR`
@@ -431,6 +459,7 @@ fn list_packs(repo: &Path, packs: &[&Path]) {
     }
     fs::write(repo.join(".jigc").join("config").join("packs.yaml"), body)
         .expect("write packs.yaml naming the listed packs");
+    commit_workbench_file(repo, ".jigc/config/packs.yaml");
 }
 
 /// What a manifest-governed schema drift does to one door of [`FREEZE_DOORS`].
@@ -1637,6 +1666,7 @@ fn install_schema_shadow(repo: &Path, ty: &str, body: &str) -> PathBuf {
     fs::create_dir_all(&dir).expect("mk .jigc/config/schemas/");
     let path = dir.join(format!("{ty}.yaml"));
     fs::write(&path, body).expect("write the project schema shadow");
+    commit_workbench_file(repo, &format!(".jigc/config/schemas/{ty}.yaml"));
     path
 }
 
