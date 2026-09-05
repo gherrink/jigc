@@ -1282,6 +1282,87 @@ fn describe_json_carries_the_router_hidden_suppression_as_a_key() {
     );
 }
 
+/// The `pack-id` of the pack that **ships** a definition, derived from the two shipped
+/// pack trees on disk in composition precedence (`[dev ▸ methodology]`, winner first):
+/// the first tree carrying `<dir>/<id>.yaml`. `None` when neither ships it — which is
+/// the honest answer for a definition the *project layer* owns, and the reason this
+/// derivation reads the pack sources rather than a hand-typed attribution list.
+fn shipping_pack_id(dir: &str, id: &str) -> Option<String> {
+    [dev_pack(), methodology_pack()]
+        .into_iter()
+        .find(|root| root.join(dir).join(format!("{id}.yaml")).is_file())
+        .map(|root| pack_id_of(&root))
+}
+
+/// M50 Increment 5 / T1 — **every projected definition names the pack that provided it.**
+///
+/// M49 attributed the command-refs (`CommandHint.pack`) because a composed pack-set can
+/// declare the same id twice and an unattributed row cannot say which hint it carries.
+/// The **definitions** beside them are unioned by the same composition and carried no
+/// origin at all: under the ordinary `[dev ▸ methodology]` composition a reader of the
+/// menu — or of the envelope a driver parses — could not tell which pack ships
+/// `single-task` from which ships `plan-milestone`, and therefore not which pack to edit,
+/// vendor or drop. That is law 2 on the surface whose job is to name what is available.
+///
+/// Driven over the **emitted bytes** of the real binary on the composite pack-set, with
+/// the expectation **derived from both pack sources on disk** ([`shipping_pack_id`]) —
+/// never a hand-typed map, so a workflow or doctype moving between packs moves this arm
+/// with it. Non-vacuity is derived too: both pack ids must actually appear among the
+/// attributions, or a constant would satisfy the assertion.
+#[test]
+fn describe_definitions_name_the_pack_that_ships_them() {
+    let repo = TempDir::new("definition-origin");
+    set_up_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write the compose marker");
+    let home = TempDir::new("home");
+
+    let json = describe_json(repo.path(), home.path());
+    let definitions = json["definitions"]
+        .as_array()
+        .expect("the projection carries `definitions`")
+        .clone();
+
+    let mut attributed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for definition in &definitions {
+        let id = definition["id"].as_str().expect("a definition id");
+        let dir = match definition["kind"].as_str().expect("a definition kind") {
+            "workflow" => "workflows",
+            "doctype" => "schemas",
+            other => panic!("unknown definition kind `{other}`:\n{definition:#}"),
+        };
+        let origin = definition.get("origin_pack").unwrap_or_else(|| {
+            panic!(
+                "`{id}`'s projection must carry `origin_pack` — a composed pack-set unions \
+                 the definitions of every constituent, and an unattributed entry cannot say \
+                 which pack ships it. Got:\n{definition:#}"
+            )
+        });
+        let expected = shipping_pack_id(dir, id);
+        assert_eq!(
+            origin.as_str().map(str::to_owned),
+            expected,
+            "`{id}` must be attributed to the pack whose {dir}/ tree ships it. Got:\n{definition:#}",
+        );
+        if let Some(pack_id) = expected {
+            attributed.insert(pack_id);
+        }
+    }
+
+    let expected_packs: std::collections::BTreeSet<String> =
+        [pack_id_of(&dev_pack()), pack_id_of(&methodology_pack())]
+            .into_iter()
+            .collect();
+    assert_eq!(
+        attributed, expected_packs,
+        "the composed menu must attribute definitions to BOTH shipped packs — one constant \
+         answer would satisfy the per-entry assert above while saying nothing",
+    );
+}
+
 /// M48 Inc 8 / T3 — **the menu can be asked for the part it needs.**
 ///
 /// `jigc describe` is the whole menu: 33 workflows (18 of them narrating "hidden from

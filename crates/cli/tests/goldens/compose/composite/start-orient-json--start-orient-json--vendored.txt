@@ -2,7 +2,7 @@ exit: 0
 --- stdout ---
 {
   "state": "clean",
-  "schema_version": 2,
+  "schema_version": 3,
   "header": "Pack: dev/1.0.0-rc.13 | methodology/1.0.0-rc.13 · Project config: <REPO>/.jigc/config",
   "workflows": [
     {

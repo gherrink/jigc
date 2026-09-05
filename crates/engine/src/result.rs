@@ -16,7 +16,13 @@ use crate::finding::{Finding, Findings, Severity};
 
 /// The result-contract schema version. Bumped only when the JSON projection of a
 /// public result type changes in a way an external consumer must notice.
-pub const SCHEMA_VERSION: u32 = 2;
+///
+/// **3** since M50 Increment 5: `describe`'s per-definition `origin_pack`
+/// ([`crate::introspect::DefinitionProse::origin_pack`]). One integer governs every
+/// result envelope — orientation, `describe`, the validation report, the block/error
+/// envelope and the probe wire — so one bump covers every projection change a wave lands
+/// (`design/doc-read-surface.md` → The version/posture map).
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// One workflow as it appears in orientation's catalog: a stable `id` and its
 /// selection-guidance `when` line (the [`design/bootstrap.md`] orientation example
@@ -555,20 +561,29 @@ impl ResolutionTree {
 mod tests {
     use super::*;
 
-    /// The `--explain` `ResolutionTree` projects under the **bumped** schema version
-    /// (`SCHEMA_VERSION == 2`) and carries the new `rejected_demotions` field — one
-    /// entry per soft-rejected below-floor `scalar-set`, each with its `key`,
-    /// `attempted` value, `floor`, and source `layer`. The field is the stable surface
-    /// `--explain` reads (`design/workflow-dialect.md` → `--explain` output contract;
-    /// `design/overrides.md` → Soft-rejection). A tree with no rejection omits the key
-    /// entirely (`skip_serializing_if`), so the no-rejection projection is unchanged
-    /// but for the version bump.
+    /// The `--explain` `ResolutionTree` projects under the **bumped** schema version and
+    /// carries the `rejected_demotions` field — one entry per soft-rejected below-floor
+    /// `scalar-set`, each with its `key`, `attempted` value, `floor`, and source `layer`.
+    /// The field is the stable surface `--explain` reads (`design/workflow-dialect.md` →
+    /// `--explain` output contract; `design/overrides.md` → Soft-rejection). A tree with
+    /// no rejection omits the key entirely (`skip_serializing_if`), so the no-rejection
+    /// projection is unchanged but for the version bump.
+    ///
+    /// **The version assertion is the precedent this test carries forward.** M6 minted it
+    /// to say the 1→2 bump was deliberate rather than incidental, and every later bump
+    /// lands on it for the same reason. At **3** the change that earned it is `describe`'s
+    /// per-definition **`origin_pack`** (`design/introspection.md` → The authored fields;
+    /// M50 Increment 5 / T1): a new key on a public result type's JSON projection, which
+    /// is exactly what `doc-read-surface.md` → The version/posture map says an external
+    /// consumer must notice. The integer is **global** to the result contract, so a second
+    /// projection change landing in the same increment rides this one bump.
     #[test]
     fn resolution_tree_projects_rejected_demotions_under_bumped_schema_version() {
         // The bump is intentional + versioned.
         assert_eq!(
-            SCHEMA_VERSION, 2,
-            "the projection change bumps the schema version"
+            SCHEMA_VERSION, 3,
+            "the projection change (describe's per-definition `origin_pack`) bumps the \
+             schema version"
         );
 
         let tree = ResolutionTree::new(
@@ -586,7 +601,7 @@ mod tests {
         );
 
         let json = serde_json::to_value(&tree).expect("serializes");
-        assert_eq!(json["schema_version"], serde_json::json!(2));
+        assert_eq!(json["schema_version"], serde_json::json!(SCHEMA_VERSION));
         let rejected = json["rejected_demotions"]
             .as_array()
             .expect("rejected_demotions is an array");
@@ -714,7 +729,7 @@ mod tests {
         assert_eq!(
             json,
             serde_json::json!({
-                "schema_version": 2,
+                "schema_version": SCHEMA_VERSION,
                 "workflows": [
                     { "id": "single-task", "when": "Implement one well-scoped change." },
                     { "id": "project-setup", "when": "Set up the development pack on a fresh repo." }
@@ -732,7 +747,7 @@ mod tests {
         let unset = serde_json::to_value(OrientationView::unset_project()).expect("serializes");
         assert_eq!(
             unset,
-            serde_json::json!({ "state": "unset-project", "schema_version": 2 })
+            serde_json::json!({ "state": "unset-project", "schema_version": SCHEMA_VERSION })
         );
 
         let clean = serde_json::to_value(OrientationView::clean(
@@ -750,7 +765,7 @@ mod tests {
             clean,
             serde_json::json!({
                 "state": "clean",
-                "schema_version": 2,
+                "schema_version": SCHEMA_VERSION,
                 "header": "Pack: dev/v0.3.0 · Project config: .jigc/config",
                 "workflows": [
                     { "id": "single-task", "when": "Implement one well-scoped change." }
@@ -791,7 +806,7 @@ mod tests {
         assert!(!empty.has_blocking(), "empty report does not block");
         assert_eq!(
             serde_json::to_value(&empty).expect("serializes"),
-            serde_json::json!({ "schema_version": 2, "findings": [] })
+            serde_json::json!({ "schema_version": SCHEMA_VERSION, "findings": [] })
         );
 
         // Advisory-only: surfaced but does not block.

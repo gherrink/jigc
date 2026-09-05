@@ -2957,7 +2957,7 @@ mod tests {
 
         // (1) Clean store: nothing blocked, no findings, exit 0 -> silent.
         let clean =
-            "{\n  \"blocking_probes\": [],\n  \"findings\": [],\n  \"schema_version\": 2\n}";
+            "{\n  \"blocking_probes\": [],\n  \"findings\": [],\n  \"schema_version\": 3\n}";
         let jigc = write_fake_jigc(dir.path(), "jigc-clean", clean, "", 0);
         let (stderr, code) = run_rendered_hook(&jigc);
         assert_eq!(code, 0, "clean store must exit 0; stderr:\n{stderr}");
@@ -2969,7 +2969,7 @@ mod tests {
         // (2) A BLOCKING doc-code finding (exit 0, per the detect-and-report rule) ->
         // the only case that warns. `blocking_probes` is the keyed surface, and it
         // renders multi-line — the case the newline collapse exists for.
-        let drift = "{\n  \"blocking_probes\": [\n    \"doc-code\"\n  ],\n  \"findings\": [\n    {\n      \"severity\": \"blocking\",\n      \"probe\": \"doc-code\",\n      \"check\": \"symbol-exists\",\n      \"code\": \"doc-code.symbol-exists\",\n      \"message\": \"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\n      \"address\": \"decisions/cache.md\",\n      \"route\": null\n    }\n  ],\n  \"schema_version\": 2\n}";
+        let drift = "{\n  \"blocking_probes\": [\n    \"doc-code\"\n  ],\n  \"findings\": [\n    {\n      \"severity\": \"blocking\",\n      \"probe\": \"doc-code\",\n      \"check\": \"symbol-exists\",\n      \"code\": \"doc-code.symbol-exists\",\n      \"message\": \"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\n      \"address\": \"decisions/cache.md\",\n      \"route\": null\n    }\n  ],\n  \"schema_version\": 3\n}";
         let jigc = write_fake_jigc(dir.path(), "jigc-drift", drift, "", 0);
         let (stderr, code) = run_rendered_hook(&jigc);
         assert_eq!(
@@ -3006,7 +3006,7 @@ mod tests {
         // properties at once: the discipline must not warn on a meta-finding, and the
         // match must stay INSIDE the array — bounded by its own `]`, it cannot reach the
         // `"probe": "doc-code"` member that follows.
-        let meta = "{\n  \"blocking_probes\": [\n    \"pack-probe-integrity\"\n  ],\n  \"findings\": [\n    {\n      \"severity\": \"blocking\",\n      \"probe\": \"pack-probe-integrity\",\n      \"check\": \"crash\",\n      \"code\": \"pack-probe-integrity.crash\",\n      \"message\": \"the doc-code probe exited 2 without emitting JSON\",\n      \"route\": null\n    },\n    {\n      \"severity\": \"advisory\",\n      \"probe\": \"doc-code\",\n      \"check\": \"title-names-symbol\",\n      \"code\": \"doc-code.title-names-symbol\",\n      \"message\": \"component title `sessionStore` names a symbol its anchor does not implement\",\n      \"route\": null\n    }\n  ],\n  \"schema_version\": 2\n}";
+        let meta = "{\n  \"blocking_probes\": [\n    \"pack-probe-integrity\"\n  ],\n  \"findings\": [\n    {\n      \"severity\": \"blocking\",\n      \"probe\": \"pack-probe-integrity\",\n      \"check\": \"crash\",\n      \"code\": \"pack-probe-integrity.crash\",\n      \"message\": \"the doc-code probe exited 2 without emitting JSON\",\n      \"route\": null\n    },\n    {\n      \"severity\": \"advisory\",\n      \"probe\": \"doc-code\",\n      \"check\": \"title-names-symbol\",\n      \"code\": \"doc-code.title-names-symbol\",\n      \"message\": \"component title `sessionStore` names a symbol its anchor does not implement\",\n      \"route\": null\n    }\n  ],\n  \"schema_version\": 3\n}";
         let jigc = write_fake_jigc(dir.path(), "jigc-meta", meta, "", 1);
         let (stderr, code) = run_rendered_hook(&jigc);
         assert_eq!(
@@ -3038,7 +3038,7 @@ mod tests {
         // couple to the pretty-print spacing — if `jigc validate --format json` is ever
         // emitted compact (or with different spacing), the hook must still warn, not go
         // silently dead and ship drift as a false-clean.
-        let compact = "{\"blocking_probes\":[\"doc-code\"],\"findings\":[{\"severity\":\"blocking\",\"probe\":\"doc-code\",\"check\":\"symbol-exists\",\"code\":\"doc-code.symbol-exists\",\"message\":\"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\"address\":\"decisions/cache.md\",\"route\":null}],\"schema_version\":2}";
+        let compact = "{\"blocking_probes\":[\"doc-code\"],\"findings\":[{\"severity\":\"blocking\",\"probe\":\"doc-code\",\"check\":\"symbol-exists\",\"code\":\"doc-code.symbol-exists\",\"message\":\"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\"address\":\"decisions/cache.md\",\"route\":null}],\"schema_version\":3}";
         let jigc = write_fake_jigc(dir.path(), "jigc-compact", compact, "", 0);
         let (stderr, code) = run_rendered_hook(&jigc);
         assert_eq!(

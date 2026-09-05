@@ -705,7 +705,7 @@ fn blocked_json_finalize_report_rides_stdout() {
     });
     assert_eq!(
         value["schema_version"].as_u64(),
-        Some(2),
+        Some(u64::from(engine::result::SCHEMA_VERSION)),
         "the stdout report carries the schema_version envelope; got:\n{stdout}",
     );
     let findings = parse_envelope(&stdout, "blocked finalize (json, stdout)");

@@ -53,8 +53,9 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-/// The wire-contract schema version — must match the engine's `result::SCHEMA_VERSION`.
-const SCHEMA_VERSION: u32 = 2;
+/// The wire-contract schema version — must match the engine's `result::SCHEMA_VERSION`
+/// (3 since M50 Increment 5, which bumped the one integer every result envelope carries).
+const SCHEMA_VERSION: u32 = 3;
 
 /// The **request** envelope the engine writes to this probe's stdin — the re-declared
 /// projection of `engine::probe::ProbeRequest` (the locked field order).

@@ -1459,7 +1459,7 @@ fn describe_router_hidden_close() {
         commands: BTreeMap::new(),
     };
     let description = Description::assemble(
-        [("sub-task", &hidden), ("single-task", &plain)],
+        [("sub-task", &hidden, None), ("single-task", &plain, None)],
         std::iter::empty(),
         [("dev", &catalog)],
     );

@@ -435,7 +435,7 @@ mod tests {
           "config": {
             "is-a-test": "rust-first"
           },
-          "schema_version": 2
+          "schema_version": 3
         }
         "#);
     }
@@ -516,7 +516,7 @@ mod tests {
               "route": "update the citation to match the renamed/moved code, or restore the cited symbol"
             }
           ],
-          "schema_version": 2
+          "schema_version": 3
         }
         "#);
     }
@@ -538,7 +538,7 @@ mod tests {
               "route": null
             }
           ],
-          "schema_version": 2
+          "schema_version": 3
         }"#;
 
         let response: ProbeResponse =

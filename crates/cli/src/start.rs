@@ -3387,6 +3387,31 @@ impl<'a> CascadeDefs<'a> {
         })
     }
 
+    /// The `pack-id` of the pack that **actually provided** the definition `id` of
+    /// `kind`, or `None` when no pack did — the attribution `jigc describe` carries on
+    /// every projected definition (`engine::introspect::DefinitionProse::origin_pack`).
+    ///
+    /// Two ways to answer `None`, and both are real answers rather than missing ones:
+    /// the **project layer** owns the id (a whole-file shadow — the bytes the projection
+    /// narrates came from `<project_config>/`, so no pack provided them), or **no
+    /// constituent ships it** at all. The pack lookup goes through `origin_packs`, not
+    /// `origin_pack`, precisely for the second case: `origin_pack` falls back to `self`
+    /// for an id nobody owns, which would report an unowned id as pack-provided, while
+    /// `origin_packs` is empty there and non-empty **winner-first** everywhere else.
+    pub(crate) fn origin_pack_id(
+        &self,
+        pack: &dyn PackSource,
+        kind: PackResourceKind,
+        id: &str,
+    ) -> Option<String> {
+        if self.project_owns(id) {
+            return None;
+        }
+        pack.origin_packs(kind, &ResourceId::from(id))
+            .first()
+            .map(|owner| owner.own_pack_id())
+    }
+
     /// Read a named workflow's bytes through the cascade — the project
     /// `workflows/<id>.yaml` shadow when the project owns the id, else the pack
     /// definition (the Form-D unknown-`<X>` rejection rides the pack miss).

@@ -518,7 +518,7 @@ fn main() {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf).ok();
     std::thread::sleep(std::time::Duration::from_secs(120));
-    print!(r#"{{"findings":[],"schema_version":2}}"#);
+    print!(r#"{{"findings":[],"schema_version":3}}"#);
 }
 "##;
 

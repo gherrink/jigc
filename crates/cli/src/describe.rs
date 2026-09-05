@@ -115,13 +115,17 @@ pub(crate) fn run(cwd: &Path, kinds: Kinds) -> Result<Description> {
     // selectable` catalog (`introspection.md` → enumeration is over the unfiltered
     // set). Each id paired with its cascade-resolved definition, so the assembler
     // reads the authored `description:` / `usage:` fields the resolved layer carries.
-    let workflows: Vec<(String, WorkflowDef)> = load_workflow_defs(pack, &defs)?;
-    let schemas: Vec<Schema> = load_schemas(pack, &defs)?;
+    let workflows: Vec<(String, WorkflowDef, Option<String>)> = load_workflow_defs(pack, &defs)?;
+    let schemas: Vec<(Schema, Option<String>)> = load_schemas(pack, &defs)?;
     let catalogs = load_catalogs(pack)?;
 
     Ok(kinds.select(Description::assemble(
-        workflows.iter().map(|(id, def)| (id.as_str(), def)),
-        schemas.iter(),
+        workflows
+            .iter()
+            .map(|(id, def, origin)| (id.as_str(), def, origin.as_deref())),
+        schemas
+            .iter()
+            .map(|(schema, origin)| (schema, origin.as_deref())),
         catalogs
             .iter()
             .map(|(pack_id, cat)| (pack_id.as_str(), cat)),
@@ -159,26 +163,55 @@ fn load_catalogs(pack: &dyn PackSource) -> Result<Vec<(String, CommandCatalog)>>
 
 /// Load every workflow definition through the cascade — the **unfiltered** set (every
 /// workflow id the pack lists, read layer-aware via [`CascadeDefs::read_workflow`] so
-/// a project shadow wins, then parsed for its front-matter). The assembler skips any
-/// that carry neither authored field, so no filtering happens here.
+/// a project shadow wins, then parsed for its front-matter), each paired with the
+/// [`CascadeDefs::origin_pack_id`] of whatever actually provided it. The assembler skips
+/// any that carry neither authored field, so no filtering happens here.
 fn load_workflow_defs(
     pack: &dyn PackSource,
     defs: &CascadeDefs<'_>,
-) -> Result<Vec<(String, WorkflowDef)>> {
+) -> Result<Vec<(String, WorkflowDef, Option<String>)>> {
     let mut out = Vec::new();
     for id in pack.list(PackResourceKind::Workflows) {
         let bytes = defs.read_workflow(pack, id.as_str())?;
         let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
-        out.push((id.as_str().to_owned(), def));
+        let origin = defs.origin_pack_id(pack, PackResourceKind::Workflows, id.as_str());
+        out.push((id.as_str().to_owned(), def, origin));
     }
     Ok(out)
 }
 
 /// Load every doctype schema through the cascade — the full doctype set the projection
 /// narrates, read layer-aware via [`CascadeDefs::all_schemas`] so a project shadow
-/// wins (the engine stays domain-empty; the CLI feeds the cascade-resolved pack in).
-fn load_schemas(pack: &dyn PackSource, defs: &CascadeDefs<'_>) -> Result<Vec<Schema>> {
-    Ok(defs.all_schemas(pack)?.into_values().collect())
+/// wins (the engine stays domain-empty; the CLI feeds the cascade-resolved pack in) —
+/// each paired with the origin that provided it.
+///
+/// The attribution is keyed by the **resource id** a schema is read from, and paired to
+/// the loaded schema by its `ty`: everything that resolves a doctype schema addresses it
+/// by `<ty>.yaml` ([`CascadeDefs::schema`], [`crate::start::resolved_schema`]), so the two
+/// agree for every schema those surfaces can reach. A schema file whose declared `ty`
+/// diverges from its stem therefore resolves to **no attribution** rather than to the
+/// attribution of a neighbouring id — the safe half of the failure, and the only one
+/// worth having: an unattributed entry says nothing, a misattributed one lies.
+fn load_schemas(
+    pack: &dyn PackSource,
+    defs: &CascadeDefs<'_>,
+) -> Result<Vec<(Schema, Option<String>)>> {
+    let origins: std::collections::BTreeMap<String, Option<String>> = pack
+        .list(PackResourceKind::Schemas)
+        .into_iter()
+        .map(|id| {
+            let origin = defs.origin_pack_id(pack, PackResourceKind::Schemas, id.as_str());
+            (id.as_str().to_owned(), origin)
+        })
+        .collect();
+    Ok(defs
+        .all_schemas(pack)?
+        .into_values()
+        .map(|schema| {
+            let origin = origins.get(&schema.ty).cloned().flatten();
+            (schema, origin)
+        })
+        .collect())
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the same setup gate

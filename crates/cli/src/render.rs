@@ -4306,6 +4306,7 @@ mod tests {
                 id: "single-task".to_string(),
                 prose: "single-task is one end-to-end scoped change. Reach for it when the work is small enough to hold in your head.".to_string(),
                 router_hidden: None,
+                origin_pack: None,
             }],
             commands: vec![],
         };
@@ -4324,6 +4325,7 @@ mod tests {
                 id: "adr".to_string(),
                 prose: "adr is a dated architectural decision record. Reach for it when a choice is worth preserving.".to_string(),
                 router_hidden: None,
+                origin_pack: None,
             }],
             commands: vec![],
         };
@@ -4363,6 +4365,7 @@ mod tests {
                     id: "single-task".to_string(),
                     prose: "single-task is one end-to-end scoped change. Reach for it when the work is small enough to hold in your head.".to_string(),
                     router_hidden: None,
+                    origin_pack: None,
                 }],
                 commands: vec![],
             },
@@ -6046,12 +6049,14 @@ mod tests {
                     id: "single-task".to_string(),
                     prose: "single-task is one end-to-end scoped change. Reach for it when the work is one coherent change you can hold in your head.".to_string(),
                     router_hidden: None,
+                    origin_pack: None,
                 },
                 DefinitionProse {
                     kind: DefinitionKind::Doctype,
                     id: "adr".to_string(),
                     prose: "adr is a dated architectural decision record. Reach for it when a choice is worth preserving with its rationale.".to_string(),
                     router_hidden: None,
+                    origin_pack: None,
                 },
             ],
             commands: vec![CommandHint {
@@ -6133,7 +6138,10 @@ mod tests {
             commands: BTreeMap::new(),
         };
         let description = Description::assemble(
-            [("narrated", &narrated), ("silent-workflow", &silent)],
+            [
+                ("narrated", &narrated, None),
+                ("silent-workflow", &silent, None),
+            ],
             std::iter::empty(),
             [("dev", &catalog)],
         );
@@ -6216,7 +6224,7 @@ mod tests {
 
         insta::assert_snapshot!(rendered, @r#"
         {
-          "schema_version": 2,
+          "schema_version": 3,
           "workflows": [
             {
               "id": "single-task",

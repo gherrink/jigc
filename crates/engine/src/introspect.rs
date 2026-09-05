@@ -8,7 +8,9 @@
 //! definitions themselves, woven into a structured sentence here, and the
 //! command-ref `hint`s carried verbatim — one entry per **declaring pack**, so a
 //! composed pack-set's command surface is the union of its catalogs rather than the
-//! precedence winner's alone ([`CommandHint`]). The result is presentation-free: it
+//! precedence winner's alone ([`CommandHint`]). Every narrated definition carries the
+//! origin its caller resolved, so the unioned menu says which pack provided each entry
+//! ([`DefinitionProse::origin_pack`]). The result is presentation-free: it
 //! carries the woven prose, not a rendered surface (the `cli::render` free-prose
 //! renderer frames it — `module-layout.md` → CLI renders).
 //!
@@ -71,6 +73,23 @@ pub struct DefinitionProse {
     /// `description:` / `usage:` are.
     #[serde(default)]
     pub router_hidden: Option<String>,
+    /// The `pack-id` of the pack that **actually provided** this definition, or `None`
+    /// when no pack did — the caller resolves both, and the assembler carries the answer
+    /// verbatim (the engine holds no cascade and no pack-set).
+    ///
+    /// `None` is a real answer, not a missing one: the **project layer** outranks every
+    /// pack and replaces a definition file whole (`overrides.md` → Authored metadata on a
+    /// definition resolves by whole-file shadow), so a shadowed definition is provided by
+    /// the project, and naming a pack there would point the reader at a file whose prose
+    /// the projection no longer carries.
+    ///
+    /// The sibling of [`CommandHint::pack`], one definition kind over, and for the same
+    /// reason: a composed pack-set unions the definitions of every constituent
+    /// (`multi-pack.md` → Composition), so an unattributed entry cannot say which pack
+    /// ships it — which is the pack a reader has to edit, vendor or drop (M50 Increment 5
+    /// / T1; `introspection.md` → The authored fields).
+    #[serde(default)]
+    pub origin_pack: Option<String>,
 }
 
 /// One command-ref's projected `hint` — the command's `{{cli.<id>}}` id, the pack
@@ -119,24 +138,29 @@ pub struct Description {
 impl Description {
     /// Assemble the whole-menu projection from the resolved definitions.
     ///
-    /// `workflows` is the **unfiltered** set (`(id, def)` pairs — every workflow,
-    /// not the `creates-task && selectable` catalog); `schemas` is the full
-    /// doctype set; `catalogs` is one `(pack-id, catalog)` pair per **declaring
-    /// pack**, whose `hint`s are projected as their union — see [`CommandHint`] for
-    /// why the winner alone would hide reachable command-refs. Inputs may arrive in
-    /// any order — the assembler sorts every output list (commands by `(id, pack)`),
-    /// so the projection is deterministic. No LLM call: the prose is assembled from
-    /// the authored fields, never generated.
+    /// `workflows` is the **unfiltered** set (`(id, def, origin pack-id)` triples — every
+    /// workflow, not the `creates-task && selectable` catalog); `schemas` is the full
+    /// doctype set, each schema paired with its own origin pack-id; `catalogs` is one
+    /// `(pack-id, catalog)` pair per **declaring pack**, whose `hint`s are projected as
+    /// their union — see [`CommandHint`] for why the winner alone would hide reachable
+    /// command-refs. Inputs may arrive in any order — the assembler sorts every output
+    /// list (commands by `(id, pack)`), so the projection is deterministic. No LLM call:
+    /// the prose is assembled from the authored fields, never generated.
+    ///
+    /// The origin is **resolved by the caller and carried verbatim**, `None` when no pack
+    /// provided the definition ([`DefinitionProse::origin_pack`]): the engine holds
+    /// neither the cascade nor the pack-set, so it cannot compute that answer — and does
+    /// not guess one.
     pub fn assemble<'a>(
-        workflows: impl IntoIterator<Item = (&'a str, &'a WorkflowDef)>,
-        schemas: impl IntoIterator<Item = &'a Schema>,
+        workflows: impl IntoIterator<Item = (&'a str, &'a WorkflowDef, Option<&'a str>)>,
+        schemas: impl IntoIterator<Item = (&'a Schema, Option<&'a str>)>,
         catalogs: impl IntoIterator<Item = (&'a str, &'a CommandCatalog)>,
     ) -> Self {
         let mut definitions: Vec<DefinitionProse> = Vec::new();
 
         let mut workflow_proses: Vec<DefinitionProse> = workflows
             .into_iter()
-            .filter_map(|(id, def)| {
+            .filter_map(|(id, def, origin_pack)| {
                 weave_workflow(id, def).map(|prose| DefinitionProse {
                     kind: DefinitionKind::Workflow,
                     id: id.to_owned(),
@@ -144,6 +168,7 @@ impl Description {
                     // The same reason, read through the same predicate the narration uses,
                     // so the prose clause and the structured key cannot disagree.
                     router_hidden: suppression_reason(def).map(str::to_owned),
+                    origin_pack: origin_pack.map(str::to_owned),
                 })
             })
             .collect();
@@ -151,7 +176,7 @@ impl Description {
 
         let mut doctype_proses: Vec<DefinitionProse> = schemas
             .into_iter()
-            .filter_map(|schema| {
+            .filter_map(|(schema, origin_pack)| {
                 weave(
                     &schema.ty,
                     schema.description.as_deref(),
@@ -163,6 +188,7 @@ impl Description {
                     prose,
                     // A doctype has no router catalog to be hidden from.
                     router_hidden: None,
+                    origin_pack: origin_pack.map(str::to_owned),
                 })
             })
             .collect();
@@ -340,7 +366,7 @@ mod tests {
             Some("the work is one coherent change you can hold in your head."),
         );
         let description = Description::assemble(
-            [("single-task", &def)],
+            [("single-task", &def, None)],
             std::iter::empty(),
             std::iter::empty(),
         );
@@ -419,7 +445,7 @@ mod tests {
     fn description_only_narrates_is_clause() {
         let def = workflow(Some("one end-to-end scoped change."), None);
         let description = Description::assemble(
-            [("single-task", &def)],
+            [("single-task", &def, None)],
             std::iter::empty(),
             std::iter::empty(),
         );
@@ -438,8 +464,11 @@ mod tests {
     #[test]
     fn usage_only_narrates_reach_for_when_clause() {
         let def = workflow(None, Some("a decision is worth preserving."));
-        let description =
-            Description::assemble([("adr", &def)], std::iter::empty(), std::iter::empty());
+        let description = Description::assemble(
+            [("adr", &def, None)],
+            std::iter::empty(),
+            std::iter::empty(),
+        );
 
         assert_eq!(description.definitions.len(), 1);
         let prose = &description.definitions[0].prose;
@@ -457,7 +486,7 @@ mod tests {
         let narrated = workflow(Some("a narrated workflow."), None);
         let silent = workflow(None, None);
         let description = Description::assemble(
-            [("narrated", &narrated), ("silent", &silent)],
+            [("narrated", &narrated, None), ("silent", &silent, None)],
             std::iter::empty(),
             std::iter::empty(),
         );
@@ -476,7 +505,7 @@ mod tests {
     fn blank_field_is_treated_as_absent() {
         let def = workflow(Some("   "), Some("you need the menu."));
         let description =
-            Description::assemble([("x", &def)], std::iter::empty(), std::iter::empty());
+            Description::assemble([("x", &def, None)], std::iter::empty(), std::iter::empty());
 
         assert_eq!(
             description.definitions[0].prose,
@@ -500,8 +529,11 @@ mod tests {
             reason: "spawned by fan-out, never picked".to_owned(),
             expires: "never".to_owned(),
         });
-        let description =
-            Description::assemble([("sub-task", &def)], std::iter::empty(), std::iter::empty());
+        let description = Description::assemble(
+            [("sub-task", &def, None)],
+            std::iter::empty(),
+            std::iter::empty(),
+        );
 
         assert_eq!(description.definitions.len(), 1);
         assert_eq!(
@@ -520,8 +552,11 @@ mod tests {
             Some("one sub-task of a milestone."),
             Some("a milestone execution fans out."),
         );
-        let description =
-            Description::assemble([("sub-task", &def)], std::iter::empty(), std::iter::empty());
+        let description = Description::assemble(
+            [("sub-task", &def, None)],
+            std::iter::empty(),
+            std::iter::empty(),
+        );
 
         assert_eq!(
             description.definitions[0].prose,
@@ -548,7 +583,7 @@ mod tests {
             expires: "never".to_owned(),
         });
         let description = Description::assemble(
-            [("migrate-spec", &def)],
+            [("migrate-spec", &def, None)],
             std::iter::empty(),
             std::iter::empty(),
         );
@@ -626,6 +661,45 @@ mod tests {
         );
     }
 
+    /// Every narrated definition carries the origin its caller resolved — verbatim, per
+    /// definition, across both kinds — and a definition the caller attributes to **no**
+    /// pack carries `None` in the same projection, so the key discriminates rather than
+    /// merely existing (M50 Increment 5 / T1).
+    ///
+    /// The engine holds neither cascade nor pack-set: it cannot compute this answer, so
+    /// the assembler's whole obligation is to carry the caller's, unaltered and unmixed.
+    #[test]
+    fn each_definition_carries_the_origin_its_caller_resolved() {
+        let shipped = workflow(Some("a workflow the base pack ships."), None);
+        let shadowed = workflow(Some("a workflow the project layer replaced."), None);
+        let doctype = schema("adr", Some("a dated decision record."), None);
+
+        let description = Description::assemble(
+            [
+                ("shipped", &shipped, Some("dev")),
+                ("shadowed", &shadowed, None),
+            ],
+            [(&doctype, Some("methodology"))],
+            std::iter::empty(),
+        );
+
+        let origins: Vec<(&str, Option<&str>)> = description
+            .definitions
+            .iter()
+            .map(|d| (d.id.as_str(), d.origin_pack.as_deref()))
+            .collect();
+        assert_eq!(
+            origins,
+            vec![
+                ("shadowed", None),
+                ("shipped", Some("dev")),
+                ("adr", Some("methodology")),
+            ],
+            "each definition carries its OWN caller-resolved origin — the un-attributed one \
+             stays null rather than borrowing a neighbour's pack",
+        );
+    }
+
     /// The projection is deterministic across a scrambled input: the same
     /// definitions fed under two divergent orders produce byte-identical output
     /// (sorted by id within kind; workflows before doctypes).
@@ -642,14 +716,14 @@ mod tests {
 
         // Id order.
         let forward = Description::assemble(
-            [("alpha", &alpha), ("zebra", &zebra)],
-            [&bison, &yak],
+            [("alpha", &alpha, None), ("zebra", &zebra, None)],
+            [(&bison, None), (&yak, None)],
             [("dev", &dev), ("methodology", &methodology)],
         );
         // Reverse order — the same inputs scrambled, the catalogs included.
         let reverse = Description::assemble(
-            [("zebra", &zebra), ("alpha", &alpha)],
-            [&yak, &bison],
+            [("zebra", &zebra, None), ("alpha", &alpha, None)],
+            [(&yak, None), (&bison, None)],
             [("methodology", &methodology), ("dev", &dev)],
         );
 

@@ -23,7 +23,10 @@
 //!   3. Override walk: the overridden output **contains** the project `usage` prose
 //!      and **not** the pack `usage` prose for single-task; the unshadowed `adr`
 //!      doctype's pack prose is **byte-identical** to the baseline (the shadow is
-//!      inert for ids the project does not own).
+//!      inert for ids the project does not own) — and, on the envelope, the shadowed
+//!      `single-task` is attributed to **no pack** while the unshadowed `adr` still
+//!      names the pack that ships it (M50 Increment 5 / T1: `origin_pack` names what
+//!      actually provided the definition, and here that is the project layer).
 //!   4. The inc-2 **non-contractual format predicate** holds on the REAL overridden
 //!      output (ported verbatim from `tests/describe.rs` — each integration test is
 //!      its own crate, so the contract is re-stated in full, not imported).
@@ -93,6 +96,56 @@ fn describe_stdout(repo: &Path, home: &Path) -> String {
         String::from_utf8_lossy(&out.stderr),
     );
     String::from_utf8(out.stdout).expect("utf-8 stdout")
+}
+
+/// Run the built `jigc describe --format json` binary, returning the parsed projection —
+/// the envelope half of the same walk, so the shadow's effect is asserted on the surface a
+/// driver reads as well as on the prose an agent reads.
+fn describe_json(repo: &Path, home: &Path) -> serde_json::Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["describe", "--format", "json"])
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc describe --format json` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    serde_json::from_slice(&out.stdout).expect("describe --format json emits valid JSON")
+}
+
+/// The `origin_pack` a projected definition carries — the pack that actually provided it,
+/// `null` when no pack did. Panics when the id is not narrated, so a missing definition
+/// reads as a missing definition rather than as a null attribution.
+fn origin_pack_of<'a>(json: &'a serde_json::Value, id: &str) -> &'a serde_json::Value {
+    json["definitions"]
+        .as_array()
+        .expect("the projection carries `definitions`")
+        .iter()
+        .find(|d| d["id"].as_str() == Some(id))
+        .unwrap_or_else(|| panic!("`{id}` must be narrated; got:\n{json:#}"))
+        .get("origin_pack")
+        .unwrap_or_else(|| panic!("`{id}`'s projection must carry `origin_pack`; got:\n{json:#}"))
+}
+
+/// The `pack-id` the dev pack tree declares in its `config/defaults.yaml` — the same
+/// string `PackSource::own_pack_id` reads, derived from the pack source rather than typed
+/// here, so a renamed pack moves the expectation with it.
+fn dev_pack_id() -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("pack")
+        .join("config")
+        .join("defaults.yaml");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).expect("the pack defaults parse as YAML");
+    value["pack-id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{} declares no `pack-id`", path.display()))
+        .to_owned()
 }
 
 /// The pack `usage:` clause for single-task — the string that must be GONE once the
@@ -221,6 +274,32 @@ fn override_walk_project_usage_wins_pack_usage_gone_unshadowed_unchanged() {
     assert!(
         overridden_adr.contains(PACK_ADR_DESCRIPTION),
         "the unshadowed adr must keep its pack description prose; got: {overridden_adr:?}",
+    );
+
+    // (4) The same walk on the envelope (M50 Increment 5 / T1): attribution names what
+    // ACTUALLY provided the definition. The project layer outranks every pack and
+    // replaces the file whole, so the shadowed `single-task` is attributed to NO pack —
+    // reporting a pack here would name a file whose prose the reader can no longer see —
+    // while the unshadowed `adr`, which the project does not own, still names the pack
+    // that ships it. Baseline first, so the null is the shadow's doing.
+    let baseline_json = describe_json(baseline_repo.path(), baseline_home.path());
+    assert_eq!(
+        origin_pack_of(&baseline_json, "single-task").as_str(),
+        Some(dev_pack_id().as_str()),
+        "with no shadow, single-task is attributed to the pack that ships it",
+    );
+
+    let overridden_json = describe_json(repo.path(), home.path());
+    assert!(
+        origin_pack_of(&overridden_json, "single-task").is_null(),
+        "a project whole-file shadow provides the definition itself, so it is attributed \
+         to no pack; got:\n{overridden_json:#}",
+    );
+    assert_eq!(
+        origin_pack_of(&overridden_json, "adr").as_str(),
+        Some(dev_pack_id().as_str()),
+        "an unshadowed definition still names the pack that ships it (the shadow is inert \
+         for ids the project does not own)",
     );
 }
 
