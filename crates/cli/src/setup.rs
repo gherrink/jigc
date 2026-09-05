@@ -1867,7 +1867,10 @@ impl RemovedArtifacts {
 ///   the rest of the tree: it is an **added** third subject, and the two directories those
 ///   guards own are excluded from it by construction so their codes and routes keep
 ///   answering for them. In the **index** is the line, not committed — a `git add`-ed file
-///   is `git checkout`-recoverable, so it is narrated rather than refused.
+///   is `git checkout`-recoverable, so it is narrated rather than refused. The line is
+///   drawn on the **bytes**, not on the path: a tracked file the operator has edited
+///   without staging is listed in the index carrying the *old* content, so it refuses
+///   here alongside the never-tracked ones ([`classify_workbench_paths`]).
 ///
 /// `force` is the operator's consent to delete. It skips the three guards, and — the one
 /// other thing this teardown refuses on its own — takes the adapter's owned guide artifact
@@ -2288,15 +2291,39 @@ fn workbench_paths(repo_root: &Path) -> std::io::Result<Vec<String>> {
 /// **does any index have a copy of these bytes?** Returns `(untracked, tracked)`, each
 /// sorted.
 ///
+/// **The question is bytes, not path membership** — the distinction M50's own validation
+/// caught this classifier collapsing. `git ls-files --cached` answers *"is this path in
+/// the index?"*, which is a strictly weaker question: a tracked file the operator has
+/// edited without staging is listed there, yet the index carries the **old** bytes and
+/// none of the new ones, so the `git checkout -- <path>` this split licenses does not
+/// bring the edit back — it throws it away. `.jigc/config/packs.yaml` is the ordinary
+/// cell: `setup` tracks it, a human hand-edits it, and before this the teardown destroyed
+/// that edit at exit 0 while printing that it was restorable.
+///
+/// So membership is the first leg and **index-copy-equals-working-copy is the second**:
+/// `git status --porcelain` names every path under `.jigc/` whose *worktree* column is not
+/// clean — its working-tree content (or mode, which `git checkout` restores from the index
+/// too) differs from its index entry — and those join the never-tracked half. Both legs are
+/// the same predicate said once: *`git checkout -- <path>` reproduces this file*.
+///
+/// **`status`, not `diff-files`, because only `status` compares bytes.** `git diff-files`
+/// is stat-based: it reports every entry whose cached `stat` is stale as modified without
+/// opening it, so a corpus that was *copied* — a restored backup, a `cp -R`, this repo's
+/// own [`crate::gitignore`]-era fixture copies — would refuse a teardown over files whose
+/// content the index carries exactly. `status` refreshes before it answers, and
+/// `--no-optional-locks` keeps that refresh out of the on-disk index, so a probe run by a
+/// door that may yet refuse writes nothing.
+///
 /// **In the index is the line, not committed.** `git ls-files --cached` lists a staged
 /// add, and a staged add is `git checkout -- <path>`-recoverable after the teardown has
-/// taken the working-tree copy — so it is narrated, not refused. What no index carries is
-/// gone for good, which is exactly the ground `uninstall.dirty-worktree` and
+/// taken the working-tree copy — so it is narrated, not refused; the same holds for an
+/// edit that *has* been staged, whose bytes the index now carries. What no index carries
+/// is gone for good, which is exactly the ground `uninstall.dirty-worktree` and
 /// `uninstall.staged-prose` refuse on; stating it over the third subject makes the two
 /// shipped guards' grounds one ground said three times rather than three rules.
 ///
-/// One `git` call for the whole tree — the clean teardown of a repo with no `.jigc/`
-/// short-circuits in [`workbench_paths`] before it.
+/// Two `git` calls for the whole tree — the clean teardown of a repo with no `.jigc/`
+/// short-circuits in [`workbench_paths`] before either.
 fn classify_workbench_paths(repo_root: &Path) -> anyhow::Result<(Vec<String>, Vec<String>)> {
     let paths = workbench_paths(repo_root)?;
     if paths.is_empty() {
@@ -2307,10 +2334,55 @@ fn classify_workbench_paths(repo_root: &Path) -> anyhow::Result<(Vec<String>, Ve
         &["ls-files", "-z", "--cached", "--full-name", "--", ".jigc"],
     )?;
     let cached: Vec<&str> = listed.split('\0').filter(|s| !s.is_empty()).collect();
-    let (tracked, untracked): (Vec<String>, Vec<String>) = paths
-        .into_iter()
-        .partition(|path| cached.iter().any(|entry| entry == path));
+    // The second leg: of the paths the index *lists*, the ones whose bytes it does not
+    // carry. Porcelain v1 `-z` records are `XY <path>\0`; the worktree column is `Y`, and
+    // `--no-renames` keeps every record to one path so the offset is fixed.
+    let status = git_capture_untrimmed(
+        repo_root,
+        &[
+            "--no-optional-locks",
+            "status",
+            "--porcelain",
+            "-z",
+            "--no-renames",
+            "--",
+            ".jigc",
+        ],
+    )?;
+    let modified: Vec<&str> = status
+        .split('\0')
+        .filter(|record| record.len() > 3 && record.as_bytes()[1] != b' ')
+        .map(|record| &record[3..])
+        .collect();
+    let (tracked, untracked): (Vec<String>, Vec<String>) = paths.into_iter().partition(|path| {
+        cached.iter().any(|entry| entry == path) && !modified.iter().any(|entry| entry == path)
+    });
     Ok((untracked, tracked))
+}
+
+/// Run `git <args>` in `repo_root` and return stdout **verbatim**, bailing on a spawn
+/// failure or a non-zero exit — [`crate::task::git_capture`]'s fail-closed shape without
+/// its `trim()`.
+///
+/// The trim is why this exists. A `git status --porcelain -z` record is `XY <path>\0`, and
+/// `X` is a **space** for the ordinary unstaged edit — so trimming the capture eats the
+/// first record's index column and shifts every offset in it by one, silently reading the
+/// path as one byte short. Positional parsing and a trimming capture cannot both be right.
+fn git_capture_untrimmed(repo_root: &Path, args: &[&str]) -> anyhow::Result<String> {
+    use anyhow::Context;
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "`git {}` failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    String::from_utf8(out.stdout).context("`git` produced non-UTF-8 output")
 }
 
 /// The teardown's **third** guard: workbench bytes no index has a copy of

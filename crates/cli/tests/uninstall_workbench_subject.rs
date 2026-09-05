@@ -334,3 +334,77 @@ fn a_staged_add_is_narrated_not_refused() {
         "the teardown must still have removed `.jigc/`",
     );
 }
+
+/// **(f)** The question is **bytes, not path membership**: a tracked workbench file the
+/// operator has edited without staging has an index copy of the *old* bytes and none of
+/// the new ones, so `git checkout -- <path>` does not bring the edit back — it throws it
+/// away. Such a path belongs on the refusing side with the never-tracked ones, and the
+/// narration must not call it restorable.
+///
+/// `.jigc/config/packs.yaml` is the ordinary cell: a user-editable multi-pack listing
+/// `jigc setup` tracks and a human hand-edits.
+#[test]
+fn a_tracked_but_modified_workbench_file_blocks_the_teardown() {
+    let site = Installed::new("modified");
+    let packs = site.repo().join(".jigc/config/packs.yaml");
+    let before = fs::read_to_string(&packs).expect("read packs.yaml");
+    fs::write(&packs, format!("{before}# hand-edited, never staged\n")).expect("edit packs.yaml");
+
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "an unstaged edit to a tracked workbench file is in no index — the teardown must \
+         refuse; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(CODE),
+        "the refusal must carry `{CODE}`; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(".jigc/config/packs.yaml"),
+        "the refusal must name the modified path; got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("brings it back"),
+        "no surface may claim the modified path is `git checkout`-restorable; got:\n{stderr}",
+    );
+    site.assert_install_intact("modified");
+    let after = fs::read_to_string(&packs).expect("read packs.yaml after the refusal");
+    assert!(
+        after.contains("# hand-edited, never staged"),
+        "the refused teardown must leave the operator's edit standing; got:\n{after}",
+    );
+}
+
+/// **(g)** The fix's other side: when the index copy *is* the working-tree copy, the path
+/// stays on the narrated side. A tracked workbench file edited **and staged** is
+/// `git checkout`-recoverable exactly as arm (e)'s staged add is, so it must not block —
+/// otherwise the fix would trade a false green for a false refusal.
+#[test]
+fn a_tracked_workbench_file_edited_and_staged_is_still_narrated() {
+    let site = Installed::new("restaged");
+    let packs = site.repo().join(".jigc/config/packs.yaml");
+    let before = fs::read_to_string(&packs).expect("read packs.yaml");
+    fs::write(&packs, format!("{before}# edited, then staged\n")).expect("edit packs.yaml");
+    git_ok(site.repo(), &["add", "--force", ".jigc/config/packs.yaml"]);
+
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "the index carries these bytes — the teardown must not refuse; stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains(CODE),
+        "a staged edit must not draw `{CODE}`; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(".jigc/config/packs.yaml"),
+        "the narration must name the tracked workbench file it removes; got:\n{stderr}",
+    );
+    assert!(
+        !site.repo().join(".jigc").exists(),
+        "the teardown must still have removed `.jigc/`",
+    );
+}
