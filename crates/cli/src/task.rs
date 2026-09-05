@@ -719,6 +719,12 @@ pub(crate) fn no_such_task(id: &str) -> anyhow::Error {
 /// already state (`crate::start`'s mint, `crate::doc::reject_malformed_slug`,
 /// `crate::migrate`'s adoption), reused verbatim so a fourth spelling of *"what an id
 /// is"* never enters the surface (`design/surface-contract.md` → law 1).
+///
+/// Since M50 Increment 2 it also carries [`reject_malformed_slug_head`]'s route: a work-unit
+/// id and a doc slug obey the **same** grammar (both are `engine::slug::is_slug`), so the
+/// second family reuses the literal rather than spelling it again. The name still says
+/// which family minted it; it moves — it is not copied — the day a third family needs it
+/// (`DECISIONS.md` → 2026-09-05 M50 Increment 2 planning, declared bound iii).
 pub(crate) const WORK_UNIT_ID_GRAMMAR: &str =
     "use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)";
 
@@ -759,6 +765,58 @@ pub(crate) fn reject_malformed_work_unit_id(id: &str) -> Result<()> {
         format!("{id:?} is not a valid work-unit id"),
         None,
         Some(engine::finding::Route::human(WORK_UNIT_ID_GRAMMAR)),
+    )))
+}
+
+/// The blocking finding code every malformed **address slug head** carries — **one** code
+/// for the whole family, the read doors and the write doors alike, because it is one
+/// fault: the `<slug>` half of a `<type>:<slug>` address is what names the file, and a
+/// token that is not a slug names no doc anywhere.
+pub(crate) const MALFORMED_SLUG_HEAD: &str = "store.malformed-slug";
+
+/// Refuse a caller-typed address whose `<slug>` head is not a well-formed slug — the guard
+/// at the **three** user-address parse boundaries (`crate::doc::parse_verb_addr`,
+/// [`TaskArea::bind`]'s own parse, and `crate::rename::parse_addr`), covering the nine
+/// `DoctypeArg::Address` doors (`completions/artifacts/M50/settle-record.md` → D2, family
+/// 4; `DECISIONS.md` → 2026-09-05 M50 Increment 2 planning).
+///
+/// A doc's slug *is* its path component — `<docs-root>/<location>/<slug>.md` — and
+/// [`engine::address`] splits on `:` / `#` / `/` and sanitizes nothing, so until M50 the
+/// slug reached that join with no door asking whether it was a slug. Driven at
+/// `23487ab`: `jigc doc show "research:<absolute path>" --format json` served a file from
+/// **outside the repository** through the 1.0-pinned read contract at exit 0, and
+/// `jigc rename 'research:../../src/planted' --to "Captured Doc"` committed an arbitrary
+/// source file into the docs root.
+///
+/// **Not inside `engine::address::Address::parse`**, and that is measured rather than
+/// preferred: `jigc doc schema --format json` advertises **type-level** addresses whose
+/// instance parts are placeheld (`changelog:<slug>#…`), and a shipped law-1 fence asserts
+/// every advertised address parses — so the engine grammar must stay placeholder-tolerant.
+/// The guard belongs at the verb boundary, which is where a human or an agent types an
+/// address.
+///
+/// The refusal is the [`reject_malformed_work_unit_id`] shape one family over: a blocking
+/// [`Finding`] through the shared [`crate::render::finding_error`] carrier, naming the
+/// token the caller typed, and **one** route — the family's discovery verb `jigc doc list`
+/// (never `jigc describe`, which lists doctypes and answers nothing about a slug) plus the
+/// grammar in [`WORK_UNIT_ID_GRAMMAR`]'s one shipped spelling. Reused, not copied: a
+/// second spelling of *what a slug is* is exactly the drift the surface contract forbids.
+pub(crate) fn reject_malformed_slug_head(addr: &str, slug: &str) -> Result<()> {
+    if engine::slug::is_slug(slug) {
+        return Ok(());
+    }
+    Err(crate::render::finding_error(&Finding::graded(
+        Severity::Blocking,
+        MALFORMED_SLUG_HEAD,
+        format!("{slug:?} is not a valid doc slug — the `<slug>` head of address `{addr}`"),
+        None,
+        Some(engine::finding::Route::mechanical(
+            ["jigc", "doc", "list"],
+            format!(
+                " lists the committed docs and the identity each one carries; \
+                 {WORK_UNIT_ID_GRAMMAR}"
+            ),
+        )),
     )))
 }
 
@@ -1921,9 +1979,12 @@ impl TaskArea {
             bail!("role `{role}` is not a declared read-role of this task (declared: {declared})");
         };
 
-        // Parse the address (it must name a `<type>:<slug>`).
+        // Parse the address (it must name a `<type>:<slug>`), then ask whether the slug
+        // head is a slug at all — the guard the nine `DoctypeArg::Address` doors share
+        // (M50 Inc 2 / T1). This door's refusal was route-less; it gains the route with it.
         let address = Address::parse(addr)
             .map_err(|err| anyhow::anyhow!("malformed address `{addr}`: {err}"))?;
+        reject_malformed_slug_head(addr, address.slug.as_str())?;
 
         // Step 3a — an **unknown doctype** is its own fault, and it used to be folded into
         // the not-found below: `jigc task bind spec nosuch:thing <id>` answered ``no such

@@ -695,8 +695,12 @@ fn schema_conformance_store(
             // to jigc against jigc's schema produces N blocking breaks routed at a verb that
             // does nothing for it. It surfaces as exactly one adoption **advisory**, addressed
             // at its **path** (it has no managed identity to claim).
-            if is_unadopted_foreign(ty, schema, &source, versions, priors) {
-                findings.push(unadopted_instance(ty, &rel_key, migratable));
+            // The identity the enumerator derived — the `<slug>` half, never re-derived
+            // from the path (which does not round-trip for a placement doctype's literal
+            // home).
+            let slug = identity.split_once(':').map_or("", |(_, slug)| slug);
+            if let Some(cause) = unadopted_cause(ty, slug, schema, &source, versions, priors) {
+                findings.push(unadopted_instance(ty, &rel_key, migratable, cause));
                 continue;
             }
             // Parse once so the version-aware route can read the doc's stamp from the same
@@ -876,16 +880,57 @@ fn hollow_surplus_store(
 /// as managed, exactly as before).
 pub fn is_unadopted_foreign(
     ty: &str,
+    slug: &str,
     schema: &Schema,
     source: &str,
     versions: &BTreeMap<String, u32>,
     priors: &BTreeMap<String, Vec<Schema>>,
 ) -> bool {
+    unadopted_cause(ty, slug, schema, source, versions, priors).is_some()
+}
+
+/// **Why** a committed instance at a managed home is a never-adopted foreign file, or
+/// `None` when it is jigc's own — the discriminator's answer with its cause attached, so
+/// the one advisory both consumers emit can state the fault it actually found rather than
+/// one of the two verbatim (`design/surface-contract.md` → law 1).
+fn unadopted_cause(
+    ty: &str,
+    slug: &str,
+    schema: &Schema,
+    source: &str,
+    versions: &BTreeMap<String, u32>,
+    priors: &BTreeMap<String, Vec<Schema>>,
+) -> Option<UnadoptedCause> {
+    // The stated precondition, unchanged and still first: an unversioned doctype is never
+    // classified at all, so neither leg below speaks for it.
     if !versions.contains_key(ty) {
-        return false;
+        return None;
+    }
+    // **The identity leg** (M50 Inc 2 / T1). jigc's own writer names every doc it wrote
+    // `<slug>.md` — the mint, `jigc rename` and the finalize promote all derive the name
+    // from a well-formed slug — so a file at a managed home whose identity is not a slug
+    // was produced by no jigc operation, whatever bytes it carries. A hand-typed stamp is
+    // not evidence of jigc's hand; the **path** is, and the path says no. Asked before the
+    // byte legs because it is the stronger signal and the one the M50 address guard makes
+    // load-bearing: every door now refuses that identity, so a surface calling it
+    // *managed* would be claiming a doc nothing can address.
+    if !crate::slug::is_slug(slug) {
+        return Some(UnadoptedCause::UnaddressableIdentity);
     }
     let ty_priors: &[Schema] = priors.get(ty).map_or(&[], Vec::as_slice);
-    classify_provenance(schema, source, ty_priors) == Provenance::Foreign
+    (classify_provenance(schema, source, ty_priors) == Provenance::Foreign)
+        .then_some(UnadoptedCause::ForeignBytes)
+}
+
+/// The two ways a committed file at a managed home turns out never to have been adopted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UnadoptedCause {
+    /// Its **bytes** belong to no version of the schema and it carries no stamp — the M42
+    /// brownfield squatter (a real Keep-a-Changelog `CHANGELOG.md`).
+    ForeignBytes,
+    /// Its **identity** is not a doc id, so no address reaches it and no jigc operation
+    /// produced its path — the M50 hand-dropped population.
+    UnaddressableIdentity,
 }
 
 /// A committed file at a managed home is one of two things, and the fifth family must not
@@ -951,10 +996,22 @@ fn classify_provenance(schema: &Schema, source: &str, priors: &[Schema]) -> Prov
 /// forms), and a synthesized URI would name a doc that does not exist.
 ///
 /// Its route is [`adoption_route`]'s — the one the read verb also serves (below).
-fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool) -> Finding {
+fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool, cause: UnadoptedCause) -> Finding {
+    // The tail names the fault the discriminator actually found. One code, one route, two
+    // causes — stating the byte cause over an identity fault would be a law-1 lie about a
+    // file that is stamped and parses clean.
+    let tail = match cause {
+        UnadoptedCause::ForeignBytes => format!(
+            "it carries no schema-version stamp and parses against no known `{ty}` schema version"
+        ),
+        UnadoptedCause::UnaddressableIdentity => {
+            "its name is not a doc id, so no `<type>:<slug>` address reaches it — jigc names \
+             every doc it writes `<slug>.md`"
+                .to_string()
+        }
+    };
     let message = format!(
-        "committed file `{rel_key}` sits at the `{ty}` home but was never adopted by jigc — it \
-         carries no schema-version stamp and parses against no known `{ty}` schema version"
+        "committed file `{rel_key}` sits at the `{ty}` home but was never adopted by jigc — {tail}"
     );
     Finding::graded(
         Severity::Advisory,
@@ -1060,12 +1117,13 @@ impl<'a> AdoptionInputs<'a> {
     pub fn unadopted(
         &self,
         ty: &str,
+        slug: &str,
         schema: &Schema,
         source: &str,
         rel_key: &str,
     ) -> Option<Finding> {
-        is_unadopted_foreign(ty, schema, source, self.versions, self.priors)
-            .then(|| unadopted_instance(ty, rel_key, self.migratable.contains(ty)))
+        unadopted_cause(ty, slug, schema, source, self.versions, self.priors)
+            .map(|cause| unadopted_instance(ty, rel_key, self.migratable.contains(ty), cause))
     }
 
     /// The doctype's **manifest schema-version**, or `None` for an **unversioned** doctype

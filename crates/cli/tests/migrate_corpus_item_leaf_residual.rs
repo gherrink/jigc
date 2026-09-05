@@ -361,6 +361,11 @@ The loop closes.
 ";
 
 /// A conformant, **v1-stamped** `completion-record` with one finding item.
+// The committed record is seeded at `completions/m1.md` — the **slug** the mint
+// derives from the title `M1`, never the title itself. A hand-written `M1.md` is an
+// identity no jigc operation produces, and since M50 Inc 2 / T1 the store sweep says
+// so (`schema-conformance.unadopted-instance`), which is what a fixture naming it that
+// way was quietly relying on not happening.
 const RECORD_V1: &str = "\
 ---
 verdict: green
@@ -383,7 +388,7 @@ schema-version: 1
 /// The seeded `completion-record` corpus: the record plus the owned artifact its header names.
 fn record_corpus() -> TempDir {
     repo_with(&[
-        ("completions/M1.md", RECORD_V1),
+        ("completions/m1.md", RECORD_V1),
         ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
     ])
 }
@@ -464,7 +469,7 @@ fn assert_nested_delta_blocks(
          finding:\n{finding:#}",
     );
     assert_eq!(
-        on_disk(repo.path(), "completions/M1.md"),
+        on_disk(repo.path(), "completions/m1.md"),
         RECORD_V1,
         "the refusal leaves the committed bytes — and the stamp — untouched",
     );

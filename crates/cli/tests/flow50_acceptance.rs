@@ -826,7 +826,10 @@ fn the_migration_surface_expresses_the_change_the_doctypes_needed() {
         "compose-embedded-methodology: true\n",
     )
     .expect("write the compose marker");
-    let record = repo.path().join("docs").join("completions").join("M99.md");
+    // The file name is the **slug** `jigc doc create completion-record --title "M99"` would
+    // mint (`slugify("M99") == "m99"`), not the title — a hand-written `M99.md` is an
+    // identity no jigc operation produces, and since M50 Inc 2 / T1 the store sweep says so.
+    let record = repo.path().join("docs").join("completions").join("m99.md");
     fs::create_dir_all(record.parent().expect("a parent")).expect("mk completions/");
     fs::write(&record, RECORD_V1).expect("write the v1 record");
     let artifact = repo
@@ -853,7 +856,7 @@ fn the_migration_surface_expresses_the_change_the_doctypes_needed() {
         .collect();
     assert_eq!(
         migrated,
-        ["docs/completions/M99.md"],
+        ["docs/completions/m99.md"],
         "the v1 record migrates through the shipped door; report:\n{report:#}",
     );
     assert_eq!(

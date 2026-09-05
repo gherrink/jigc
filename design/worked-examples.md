@@ -3302,7 +3302,7 @@ $ jigc describe        # with .jigc/config/schemas/adr.yaml dropping four sectio
 $ jigc doc schema commit      # with a `patern:` typo inside `trailers`
 > the `commit` schema is malformed: … `patern` … in section `trailers`
 $ jigc migrate-corpus --format json     # a committed schema-version: 1 record
-> "migrated": ["docs/completions/M99.md"]   # EnumWidened + AddedItemSlot,
+> "migrated": ["docs/completions/m99.md"]   # EnumWidened + AddedItemSlot,
 #   the stamp is the fold's ONLY byte delta — and `jigc validate` is clean
 
 # ── Arm 4 · the limits are true, and the home stops dictating the layout. ──

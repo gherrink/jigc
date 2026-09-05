@@ -780,13 +780,29 @@ pub fn committed_instances(repo_root: &Path, ty: &str, schema: &Schema) -> Vec<(
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
         .filter_map(|p| {
-            p.file_stem()
-                .and_then(|s| s.to_str())
-                .map(|slug| (format!("{ty}:{slug}"), p.clone()))
+            instance_slug(ty, schema, &p).map(|slug| (format!("{ty}:{slug}"), p.clone()))
         })
         .collect();
     out.sort();
     out
+}
+
+/// The `<slug>` half of the identity a committed file carries at its managed home — the
+/// **one** rule [`committed_instances`] derives its identities with, exposed because a
+/// caller that met an instance **by path** rather than by enumeration (the corpus
+/// migration's candidate walk) has to ask the same question instead of re-deriving it.
+///
+/// The split that makes it worth a function: a `placement` singleton's slug is the **type
+/// id** (`changelog:changelog`), never the literal file's stem — `CHANGELOG` is not a slug
+/// and never was one, so a stem-derived answer would misclassify every placement doc the
+/// moment anything keys on the slug's shape (M50 Inc 2 / T1).
+pub fn instance_slug(ty: &str, schema: &Schema, path: &Path) -> Option<String> {
+    if schema.placement.is_some() {
+        return Some(ty.to_string());
+    }
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::to_owned)
 }
 
 /// An **advisory** `schema-completeness.inverse-cardinality` [`Finding`] for a target doc

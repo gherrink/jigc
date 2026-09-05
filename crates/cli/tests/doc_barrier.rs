@@ -12,6 +12,25 @@
 //! refuses the mis-directed staging write up front, so a sub-agent physically
 //! cannot stage into a sibling's area (the #7-barrier face is T5; this is the seam
 //! that the destination-containment predicate is wired into the production path).
+//!
+//! ## M50 Inc 2 / T1 — the outermost answer moved, and the barrier stays
+//!
+//! Since the address slug head is checked at the **verb boundary**
+//! (`crate::task::reject_malformed_slug_head`), the escape address both arms drive is
+//! refused one layer further out, as `store.malformed-slug`, before any destination is
+//! resolved: `engine::slug::is_slug` admits no `/` and no `.`, so **no valid slug can
+//! escape a task's `docs/` area at all**. Both arms are reconciled to that answer —
+//! the *behaviour* they assert (non-zero exit, not one byte written outside the named
+//! area, the sibling byte-identical on disk) is unchanged, and their byte assertions are
+//! untouched.
+//!
+//! **The barrier is not retired, and that is a decision** (`DECISIONS.md` → 2026-09-05,
+//! declared bound iv). Its integration-level trigger is now unreachable, which is exactly
+//! the state in which M45 retracted a guard as dead code on a false belief and left five
+//! resolve seams unguarded. It is defence in depth over the **resolved destination** — a
+//! different question from *is this token a slug* — and it keeps a **direct** proof at
+//! `cli::doc::tests::barrier_predicate_accepts_in_area_and_rejects_escaping`, which drives
+//! the containment predicate itself rather than through a verb.
 
 use std::fs;
 use std::io::Write;
@@ -235,8 +254,9 @@ fn within_area_write_succeeds_but_an_escaping_destination_is_refused() {
     );
     let stderr = String::from_utf8_lossy(&escaping.stderr);
     assert!(
-        stderr.contains("outside") && stderr.contains(sub_a),
-        "the rejection must name the barrier (destination outside the sub-area); got:\n{stderr}",
+        stderr.contains("· store.malformed-slug — ") && stderr.contains(&escape_slug),
+        "the rejection must be the outermost answer — the escaping slug is not a slug, so \
+         the verb boundary refuses it by name before any destination is resolved; got:\n{stderr}",
     );
 
     // Nothing was written outside subA's area: no escaping byte reached subB, and
@@ -357,8 +377,9 @@ fn the_barrier_face_refuses_an_out_of_bounds_write_leaving_the_sibling_unchanged
     );
     let stderr = String::from_utf8_lossy(&escaping.stderr);
     assert!(
-        stderr.contains("outside") && stderr.contains(sub_a),
-        "the blocking finding must name the barrier (destination outside `{sub_a}`'s area); got:\n{stderr}",
+        stderr.contains("· store.malformed-slug — ") && stderr.contains(&escape_slug),
+        "the blocking finding must be the outermost answer, naming the escaping slug the \
+         caller typed; got:\n{stderr}",
     );
 
     // The sibling area is byte-identical to before — the escaping write was a

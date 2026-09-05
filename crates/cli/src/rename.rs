@@ -861,6 +861,11 @@ fn parse_addr(addr: &str) -> Result<(String, String)> {
     if ty.is_empty() || slug.is_empty() {
         return Err(malformed());
     }
+    // The slug head is what names the file this verb `git mv`s, so it has to be a slug —
+    // the third of the three user-address parse boundaries the guard covers (M50 Inc 2 /
+    // T1). Driven at `23487ab`, `jigc rename 'research:../../src/planted' --to "Captured
+    // Doc"` exited 0 and committed an arbitrary source file into the docs root.
+    crate::task::reject_malformed_slug_head(addr, slug)?;
     Ok((ty.to_string(), slug.to_string()))
 }
 

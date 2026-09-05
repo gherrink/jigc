@@ -155,7 +155,10 @@ fn a_committed_v1_record_migrates_with_the_stamp_as_its_only_byte_delta() {
     let home = TempDir::new("migrate-home");
     init_repo(repo.path());
 
-    let record = repo.path().join("docs").join("completions").join("M1.md");
+    // The file name is the **slug** the mint derives from the title (`slugify("M1") == "m1"`),
+    // never the title itself — a hand-written `M1.md` is an identity no jigc operation
+    // produces, and since M50 Inc 2 / T1 the store sweep says so.
+    let record = repo.path().join("docs").join("completions").join("m1.md");
     fs::create_dir_all(record.parent().expect("a parent")).expect("mk completions/");
     fs::write(&record, RECORD_V1).expect("write the v1 record");
     let artifact = repo
@@ -185,7 +188,7 @@ fn a_committed_v1_record_migrates_with_the_stamp_as_its_only_byte_delta() {
         .collect();
     assert_eq!(
         migrated,
-        ["docs/completions/M1.md"],
+        ["docs/completions/m1.md"],
         "exactly the v1 record migrates; report:\n{report:#}"
     );
 

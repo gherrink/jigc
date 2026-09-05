@@ -448,7 +448,11 @@ pub fn reconcile_committed(
             }
             Err(cause) => {
                 let source = String::from_utf8_lossy(bytes);
-                match adoption.unadopted(&schema.ty, schema, &source, path) {
+                // The `<slug>` half of the identity this doc is reconciled under — the
+                // caller hands the identity in `from`, so it is read off that rather than
+                // re-derived from the path (M50 Inc 2 / T1).
+                let slug = from.split_once(':').map_or("", |(_, slug)| slug);
+                match adoption.unadopted(&schema.ty, slug, schema, &source, path) {
                     Some(finding) => vec![finding],
                     None => vec![conformance_advisory_finding(
                         path,
@@ -801,7 +805,7 @@ pub fn detect_committed_store(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
-        for (_identity, path) in crate::index::committed_instances(repo_root, ty, schema) {
+        for (identity, path) in crate::index::committed_instances(repo_root, ty, schema) {
             // The record key is the repo-relative path the mutating twin records the doc
             // under — for a placement doc, its case-preserved literal `placement.file`
             // (never re-derived from the path, which does not round-trip through slug
@@ -825,8 +829,10 @@ pub fn detect_committed_store(
                 // silent one.
                 None => {
                     let source = String::from_utf8_lossy(&bytes);
-                    if !crate::validate::is_unadopted_foreign(ty, schema, &source, versions, priors)
-                    {
+                    let slug = identity.split_once(':').map_or("", |(_, slug)| slug);
+                    if !crate::validate::is_unadopted_foreign(
+                        ty, slug, schema, &source, versions, priors,
+                    ) {
                         findings.push(unbaselined_finding(&key));
                     }
                 }

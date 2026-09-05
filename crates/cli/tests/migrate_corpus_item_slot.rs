@@ -320,6 +320,11 @@ fn with_optional_detail(body: &str, anchor: &str) -> String {
 
 /// A conformant, **v1-stamped** `completion-record` whose one finding item is **slot-less** —
 /// a heading, its `<!-- fields -->` group, and nothing else.
+// The committed record is seeded at `completions/m1.md` — the **slug** the mint
+// derives from the title `M1`, never the title itself. A hand-written `M1.md` is an
+// identity no jigc operation produces, and since M50 Inc 2 / T1 the store sweep says
+// so (`schema-conformance.unadopted-instance`), which is what a fixture naming it that
+// way was quietly relying on not happening.
 const RECORD_V1: &str = "\
 ---
 verdict: green
@@ -353,18 +358,18 @@ fn zero_to_one_optional_migrates_with_the_stamp_as_its_only_byte_delta() {
         shipped.to_string()
     });
     let repo = repo_with(&[
-        ("completions/M1.md", RECORD_V1),
+        ("completions/m1.md", RECORD_V1),
         ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
     ]);
 
     let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
     assert_eq!(
         sole_migrated(&report, ok),
-        "completions/M1.md",
+        "completions/m1.md",
         "the record migrates; report:\n{report:#}"
     );
 
-    let after = fs::read_to_string(repo.path().join("completions").join("M1.md"))
+    let after = fs::read_to_string(repo.path().join("completions").join("m1.md"))
         .expect("read the migrated record");
     assert_eq!(
         after,
@@ -730,14 +735,14 @@ fn one_to_two_over_a_field_bearing_item_keeps_the_field_group() {
     let home = TempDir::new("home");
     let pack = record_one_to_two("pack");
     let repo = repo_with(&[
-        ("completions/M1.md", RECORD_V1_PROSE),
+        ("completions/m1.md", RECORD_V1_PROSE),
         ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
     ]);
 
     let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
-    assert_eq!(sole_migrated(&report, ok), "completions/M1.md");
+    assert_eq!(sole_migrated(&report, ok), "completions/m1.md");
 
-    let after = fs::read_to_string(repo.path().join("completions").join("M1.md"))
+    let after = fs::read_to_string(repo.path().join("completions").join("m1.md"))
         .expect("read the migrated record");
     assert_eq!(
         after,
@@ -787,7 +792,7 @@ fn an_item_carrying_unmodelled_bytes_is_refused_never_rewritten() {
     let home = TempDir::new("home");
     let pack = record_one_to_two("pack");
     let repo = repo_with(&[
-        ("completions/M1.md", RECORD_V1_TRAILING_PROSE),
+        ("completions/m1.md", RECORD_V1_TRAILING_PROSE),
         ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
     ]);
 
@@ -808,7 +813,7 @@ fn an_item_carrying_unmodelled_bytes_is_refused_never_rewritten() {
         "the repair is in the doc, not in a file no adopter can edit; route: {route}",
     );
 
-    let after = fs::read_to_string(repo.path().join("completions").join("M1.md"))
+    let after = fs::read_to_string(repo.path().join("completions").join("m1.md"))
         .expect("read the refused record");
     assert_eq!(
         after, RECORD_V1_TRAILING_PROSE,
@@ -864,7 +869,7 @@ The rest of it.
 THE COMMITTED PROSE THAT MUST SURVIVE.
 ";
     let repo = repo_with(&[
-        ("completions/M1.md", record),
+        ("completions/m1.md", record),
         ("completions/artifacts/M1/VERDICT.md", "the verdict\n"),
     ]);
 
@@ -875,7 +880,7 @@ THE COMMITTED PROSE THAT MUST SURVIVE.
         "the same guard adjudicates the 2→3 arity; finding:\n{finding:#}",
     );
 
-    let after = fs::read_to_string(repo.path().join("completions").join("M1.md"))
+    let after = fs::read_to_string(repo.path().join("completions").join("m1.md"))
         .expect("read the refused record");
     assert_eq!(
         after, record,

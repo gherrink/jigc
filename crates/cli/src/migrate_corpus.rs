@@ -812,7 +812,18 @@ pub(crate) fn migrate_committed_corpus(
                     // second route. Reported, never silently skipped (below, and in both
                     // surfaces); it holds neither `blocked` nor `migrated` nor
                     // `already_current`, and therefore not the exit.
-                    if let Some(advisory) = adoption.unadopted(&dt.ty, &dt.to, &source, &rel_key) {
+                    // The identity the file carries at its home, by the one rule the
+                    // store enumerator uses (`engine::index::instance_slug`) — a placement
+                    // singleton's slug is its type id, never `CHANGELOG`.
+                    let slug = engine::index::instance_slug(
+                        &dt.ty,
+                        &dt.to,
+                        std::path::Path::new(&rel_key),
+                    )
+                    .unwrap_or_default();
+                    if let Some(advisory) =
+                        adoption.unadopted(&dt.ty, &slug, &dt.to, &source, &rel_key)
+                    {
                         report.unadopted.push(advisory);
                         continue;
                     }

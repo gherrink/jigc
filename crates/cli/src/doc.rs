@@ -3904,7 +3904,14 @@ fn reroute_unadopted(
     let source = String::from_utf8_lossy(&bytes);
     let versions = crate::pack::frozen_doctype_versions(pack);
     let priors = crate::pack::prior_doctype_schemas(pack, &versions);
-    if !engine::validate::is_unadopted_foreign(ty, schema, &source, &versions, &priors) {
+    if !engine::validate::is_unadopted_foreign(
+        ty,
+        address.slug.as_str(),
+        schema,
+        &source,
+        &versions,
+        &priors,
+    ) {
         return DocFailure::Block(finding);
     }
     let rel = path
@@ -4013,8 +4020,11 @@ fn run_list(
             let bytes = std::fs::read(&path)
                 .with_context(|| format!("reading the committed doc at {path:?}"))?;
             let source = String::from_utf8_lossy(&bytes);
+            // The `<slug>` half of the identity the enumerator derived — the same
+            // identity the row prints, so the state answers about the row.
+            let slug = id.split_once(':').map_or("", |(_, slug)| slug);
             let state = if engine::validate::is_unadopted_foreign(
-                ty, schema, &source, &versions, &priors,
+                ty, slug, schema, &source, &versions, &priors,
             ) {
                 "unregistered"
             } else {
@@ -5676,10 +5686,14 @@ fn parse_addr(addr: &str) -> Result<Address> {
 /// an expansion at the verb boundary — the one place a human/agent types an address.
 fn parse_verb_addr(pack: &dyn PackSource, project_config: &Path, addr: &str) -> Result<Address> {
     let expanded = expand_bare_singleton(pack, project_config, addr);
-    Address::parse(&expanded).map_err(|err| {
+    let address = Address::parse(&expanded).map_err(|err| {
         let (explanation, route) = address_parse_guidance(&err, head_doctype(&expanded));
         anyhow!("malformed address `{addr}`: {err} — {explanation}\n  route: {route}")
-    })
+    })?;
+    // The grammar accepted the shape; the **slug head** still has to be a slug, because it
+    // is what names the file (M50 Inc 2 / T1 — `crate::task::reject_malformed_slug_head`).
+    crate::task::reject_malformed_slug_head(addr, address.slug.as_str())?;
+    Ok(address)
 }
 
 /// The `<type>` hop of an address whose **head** parsed — `""` when it did not.

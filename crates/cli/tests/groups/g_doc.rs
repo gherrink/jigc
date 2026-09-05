@@ -8,6 +8,8 @@ mod support;
 #[path = "../address_parse_error_axis.rs"]
 mod address_parse_error_axis;
 
+#[path = "../address_slug_head_axis.rs"]
+mod address_slug_head_axis;
 #[path = "../author_batch_scaling.rs"]
 mod author_batch_scaling;
 #[path = "../clap_error_kind_axis.rs"]
