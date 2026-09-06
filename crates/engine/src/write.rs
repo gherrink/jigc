@@ -3234,7 +3234,12 @@ pub enum ItemSlotError {
     UnmodelledContent {
         /// The repeatable section the item sits in.
         section: String,
-        /// The item's `{#id}` anchor.
+        /// The item's **addressing chain from the section root**, rendered as the address
+        /// body a reader follows: a bare `{#id}` anchor at the item locus, and the item id,
+        /// the nested-section hop and the nested item id (`1-0-0/changes/added`) one level
+        /// down. It is the chain rather than the anchor because same-anchor nested items
+        /// under different parents are legal — two releases may each carry a `#### added`,
+        /// and a refusal naming only `added` would not say which one to repair.
         item: String,
     },
 }
@@ -3250,10 +3255,20 @@ impl From<GenerateError> for ItemSlotError {
 /// slot's prose verbatim and minting the newly declared leaf `leaf_id` **empty** at its
 /// schema-ordered offset.
 ///
-/// The reshape is a per-item **re-render + splice**, not a new renderer: [`render_item`]
-/// already emits a multi-slot item's `#### <Leaf-Title>` sub-labels in the caller's `slots`
-/// order, so the primitive's whole job is to hand it the new order with the old prose in
-/// it. [`set_item_slot`] cannot do this — it is **update-only**, refusing when
+/// **It takes a locus, not a section (M50 Increment 7 / T4).** `nested` is the chain of
+/// nested repeatable leaf ids the change sits under
+/// ([`crate::schema_diff::Locus::nested`]) — empty for the section's own item block, one
+/// entry for a nested one — and the flat form is that empty case, not a separate function.
+/// This is the `set_item_slot → set_nested_item_slot` generalization the write path already
+/// makes, arriving one call site later: without it a nested slot add refused, and
+/// `changelog.releases/changes` — the one nested repeatable the shipped doctype set carries
+/// — was frozen at its birth shape with a route into this workspace.
+///
+/// The reshape is a per-item **re-render + splice**, not a new renderer: [`render_item_at`]
+/// already emits a multi-slot item's sub-labels **one level deeper than the item** in the
+/// caller's `slots` order (`####` under a top-level item, `#####` under a nested one), so
+/// the primitive's whole job is to hand it the new order with the old prose in it.
+/// [`set_item_slot`] cannot do this — it is **update-only**, refusing when
 /// `slot_span(leaf_id)` is absent, which is every committed item by definition of this
 /// change (the `set_item_field_or_insert` split, one leaf-kind over).
 ///
@@ -3284,9 +3299,10 @@ pub fn insert_item_slot(
     new_schema: &Schema,
     source: &str,
     section_id: &str,
+    nested: &[String],
     leaf_id: &str,
 ) -> Result<String, ItemSlotError> {
-    let new_template = parse::ItemTemplate::from(item_block(new_schema, section_id)?);
+    let new_template = parse::ItemTemplate::from(item_block(new_schema, section_id, nested)?);
     if !new_template.slot_ids.iter().any(|id| id == leaf_id) {
         return Err(GenerateError::WrongShape {
             what: format!(
@@ -3300,7 +3316,7 @@ pub fn insert_item_slot(
     if !new_template.is_multi_slot() {
         return Ok(source.to_string());
     }
-    let old_template = parse::ItemTemplate::from(item_block(old_schema, section_id)?);
+    let old_template = parse::ItemTemplate::from(item_block(old_schema, section_id, nested)?);
 
     let doc = parse::parse_sections(old_schema, source).map_err(|_| {
         ItemSlotError::Generate(GenerateError::WrongShape {
@@ -3312,10 +3328,40 @@ pub fn insert_item_slot(
         return Ok(source.to_string());
     };
 
+    // THE ITEMS AT THE CHANGE'S OWN LOCUS, each carrying its addressing chain from the
+    // section root. The descent is **per parent**, which is what makes same-anchor nested
+    // items under different parents legal: two releases may each nest a `#### added`, and a
+    // walk keyed on the anchor alone would reshape one of them twice and the other never.
+    // The chain is the write path's own address shape — item id, then one nested-section hop
+    // per level, then the nested item's id (`["1-0-0", "changes", "added"]`).
+    let mut level: Vec<(Vec<String>, &parse::ParsedItem)> = parsed
+        .items
+        .iter()
+        .map(|item| (vec![item.id.clone()], item))
+        .collect();
+    for hop in nested {
+        level = level
+            .into_iter()
+            .flat_map(|(chain, item)| {
+                item.items.iter().map(move |child| {
+                    let mut chain = chain.clone();
+                    chain.push(hop.clone());
+                    chain.push(child.id.clone());
+                    (chain, child)
+                })
+            })
+            .collect();
+    }
+
     let blocks = parse::scan_blocks(source);
     let mut edits: Vec<(Range<usize>, String)> = Vec::new();
-    for item in &parsed.items {
-        let Some(region) = locate_item_path(old_schema, source, section_id, &[&item.id]) else {
+    for (chain, item) in level {
+        // The chain alternates item id and nested-section hop by construction above, so its
+        // **physical** half — the ids that own a heading, the only ones the byte locator
+        // walks — is every other segment ([`physical_item_chain`]'s reduction, without a
+        // second schema walk to disagree with).
+        let physical: Vec<&str> = chain.iter().step_by(2).map(String::as_str).collect();
+        let Some(region) = locate_item_path(old_schema, source, section_id, &physical) else {
             continue;
         };
         if carries_leaf_sub_label(source, &blocks, &region, &new_template, leaf_id) {
@@ -3338,30 +3384,33 @@ pub fn insert_item_slot(
         // ([`crate::transform`] invokes it by name to refuse `RemovedItemSlot` for exactly
         // these bytes, and a silent whole-item re-render is the larger exception).
         //
+        // **The pre-image renders at the item's own nesting depth**, which the physical
+        // chain's length *is*. At the item locus that is 1 and the bytes are the flat form's,
+        // unchanged; one level down it is 2, and rendering at 1 would emit `###` against a
+        // committed `####` — a mismatch on **every** conformant nested item, refusing the
+        // whole corpus with a message that reads like a doc problem and is a code one.
+        //
         // *Declared bound:* the check is byte equality, so a **conformant but non-canonical**
         // item region (an extra blank line, a hand-spaced field bullet) is refused rather
         // than re-canonicalized. That is the safe side of a check that cannot tell the two
         // apart, and the refusal names the item, so the repair is a followable one-item edit.
         if source[region.clone()].trim_end_matches('\n')
-            != render_item(&content).trim_end_matches('\n')
+            != render_item_at(&content, physical.len()).trim_end_matches('\n')
         {
             return Err(ItemSlotError::UnmodelledContent {
                 section: section_id.to_string(),
-                item: item.id.clone(),
+                item: chain.join("/"),
             });
         }
         content.slots =
             reshaped_item_slots(&content, &old_template.slot_ids, &new_template.slot_ids);
         content.slot = None;
-        let rendered = render_item(&content);
-        let body = rendered.trim_end_matches('\n');
-        // The separator discipline [`set_item_slot`] splices under: one blank line before
-        // a following heading, exactly one terminating `\n` at EOF.
-        let replacement = if region.end < source.len() {
-            format!("{body}\n\n")
-        } else {
-            format!("{body}\n")
-        };
+        let rendered = render_item_at(&content, physical.len());
+        // The one separator discipline every item-bytes splice shares
+        // ([`nested_replacement`], which [`set_nested_item_slot`] and
+        // [`set_nested_item_field_or_insert`] also splice under): one blank line before a
+        // following heading, exactly one terminating `\n` at EOF.
+        let replacement = nested_replacement(source, &region, &rendered);
         edits.push((region, replacement));
     }
 
@@ -3374,11 +3423,18 @@ pub fn insert_item_slot(
     Ok(out)
 }
 
-/// The declared item block of `schema`'s repeatable section `section_id` — the one lookup
-/// [`insert_item_slot`] performs against both schemas.
+/// The declared item block of `schema`'s repeatable section `section_id` **at the locus
+/// `nested` names** — the one lookup [`insert_item_slot`] performs against both schemas.
+///
+/// `nested` is the locus's chain of nested repeatable leaf ids, outermost first
+/// ([`crate::schema_diff::Locus::nested`]): empty for the section's own item block, one entry
+/// for a nested one. Resolving the block **at the change's own locus** rather than by section
+/// id alone is what keeps a nested leaf whose id also exists in the outer block from
+/// answering with the outer declaration.
 fn item_block<'a>(
     schema: &'a Schema,
     section_id: &str,
+    nested: &[String],
 ) -> Result<&'a crate::schema::Repeatable, GenerateError> {
     let section = schema
         .sections
@@ -3387,12 +3443,29 @@ fn item_block<'a>(
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
         })?;
-    match &section.body {
-        SectionBody::Repeatable { repeatable } => Ok(repeatable),
-        SectionBody::Simple { .. } => Err(GenerateError::WrongShape {
-            what: format!("section {section_id:?} is not repeatable"),
-        }),
+    let mut block = match &section.body {
+        SectionBody::Repeatable { repeatable } => repeatable,
+        SectionBody::Simple { .. } => {
+            return Err(GenerateError::WrongShape {
+                what: format!("section {section_id:?} is not repeatable"),
+            });
+        }
+    };
+    for hop in nested {
+        block = block
+            .block
+            .iter()
+            .find_map(|leaf| match leaf {
+                crate::schema::Leaf::Repeatable { id, repeatable } if id == hop => Some(repeatable),
+                _ => None,
+            })
+            .ok_or_else(|| GenerateError::WrongShape {
+                what: format!(
+                    "section {section_id:?} declares no nested repeatable {hop:?} at that locus"
+                ),
+            })?;
     }
+    Ok(block)
 }
 
 /// Whether the item at `region` already carries the sub-label of the **added** leaf
@@ -5776,6 +5849,157 @@ title: Auth flow
             render(&schema, &reparsed),
             out,
             "set_item_slot on a mint-empty item is byte-stable",
+        );
+    }
+
+    /// The **nested** schema pair the locus-3 arms of [`insert_item_slot`] run against: a
+    /// `releases` block whose items nest a `changes` block. The prior shape declares the one
+    /// `notes` slot (so a committed nested item carries its prose **bare**), the current one
+    /// adds an optional `impact` — the 1→2 arity, one locus down. `extra` joins the nested
+    /// block in **both** shapes, so it is committed structure rather than part of the delta.
+    fn nested_slot_pair(extra: &str) -> (crate::schema::Schema, crate::schema::Schema) {
+        let yaml = |slots: &str| {
+            format!(
+                "\
+type: log
+id-from: title
+sections:
+  - id: releases
+    repeatable:
+      id-from: title
+      block:
+        - {{ id: title, type: string }}
+        - id: changes
+          repeatable:
+            id-from: title
+            block:
+              - {{ id: title, type: string }}
+{extra}{slots}"
+            )
+            .into_bytes()
+        };
+        let notes = "              - { id: notes, slot: { hint: \"The notes.\" } }\n";
+        let impact =
+            "              - { id: impact, slot: { optional: true, hint: \"The impact.\" } }\n";
+        (
+            crate::schema::load_schema(&yaml(notes)).expect("the prior nested schema loads"),
+            crate::schema::load_schema(&yaml(&format!("{notes}{impact}")))
+                .expect("the current nested schema loads"),
+        )
+    }
+
+    /// **The depth swap, asserted directly (M50 Increment 7 / T4).** The reshape checks its
+    /// own pre-image — it re-renders the committed item under the OLD template and refuses
+    /// when the bytes differ, because a whole-item re-render would then destroy what the
+    /// parse does not model. That render must happen at the item's **own nesting depth**: a
+    /// nested item's heading is `####`, and rendering it at depth 1 emits `###`, so the
+    /// compare fails on **every** conformant nested item and the whole corpus is refused
+    /// with `UnmodelledContent` — a message that reads like a doc problem over bytes that
+    /// are perfectly conformant.
+    ///
+    /// So the claim is stated as the absence of that refusal, not merely as a successful
+    /// reshape: the item below models every byte of its region.
+    #[test]
+    fn a_conformant_nested_item_is_not_refused_as_unmodelled() {
+        let (old, new) = nested_slot_pair("");
+        let src = "\
+# Log
+
+## Releases
+
+### 1.1.0  {#1-1-0}
+
+#### Added  {#added}
+
+- the group-count axis
+";
+        let out = insert_item_slot(
+            &old,
+            &new,
+            src,
+            "releases",
+            &["changes".to_string()],
+            "impact",
+        );
+        assert!(
+            !matches!(out, Err(ItemSlotError::UnmodelledContent { .. })),
+            "a conformant nested item models every byte of its region — the pre-image must \
+             render at the item's own depth; got: {out:?}",
+        );
+        let out = out.expect("the nested reshape lands");
+        assert_eq!(
+            out,
+            "\
+# Log
+
+## Releases
+
+### 1.1.0  {#1-1-0}
+
+#### Added  {#added}
+
+##### Notes
+
+- the group-count axis
+
+##### Impact
+",
+            "the committed bare prose rides under `##### Notes` — the sub-labels render one \
+             level deeper than the nested item, not one level deeper than a top-level one",
+        );
+    }
+
+    /// **The refusal names the whole chain, because the anchor names two legal items.**
+    /// Same-anchor nested items under different parents are legal — two releases may each
+    /// carry a `#### Added` — so a cause that named only `added` would leave the operator
+    /// with two candidate items and no way to tell which holds the stray bytes. The chain is
+    /// the address a reader follows: item id, nested-section hop, nested item id.
+    #[test]
+    fn the_unmodelled_refusal_names_the_nested_item_by_its_chain() {
+        let (old, new) =
+            nested_slot_pair("              - { id: ticket, type: string, optional: true }\n");
+        let src = "\
+# Log
+
+## Releases
+
+### 1.1.0  {#1-1-0}
+
+#### Added  {#added}
+
+- the group-count axis
+
+<!-- fields -->
+- ticket: T-1
+
+### 1.0.0  {#1-0-0}
+
+#### Added  {#added}
+
+- the trial-shaped fixture builder
+
+<!-- fields -->
+- ticket: T-2
+
+THE COMMITTED PROSE THAT MUST SURVIVE.
+";
+        let err = insert_item_slot(
+            &old,
+            &new,
+            src,
+            "releases",
+            &["changes".to_string()],
+            "impact",
+        )
+        .expect_err("the unmodelled bytes are refused, never rewritten");
+        assert_eq!(
+            err,
+            ItemSlotError::UnmodelledContent {
+                section: "releases".to_string(),
+                item: "1-0-0/changes/added".to_string(),
+            },
+            "the refusal locates the nested item by its whole chain, not by the anchor two \
+             items share",
         );
     }
 

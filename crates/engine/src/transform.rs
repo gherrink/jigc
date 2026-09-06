@@ -146,7 +146,10 @@ pub enum TransformError {
     UnmodelledItemContent {
         /// The repeatable section the item sits in.
         section: String,
-        /// The item's `{#id}` anchor.
+        /// The item's **addressing chain from the section root** — a bare `{#id}` anchor at
+        /// the item locus, `1-0-0/changes/added` one level down, because same-anchor nested
+        /// items under different parents are legal and an anchor alone would not name one
+        /// ([`crate::write::ItemSlotError::UnmodelledContent`]).
         item: String,
     },
     /// The **empty-diff backstop** fired: the schema pair moved its conformance-relevant
@@ -343,7 +346,20 @@ pub fn transform(
                 // here — it mints empty and the per-doc conformance gate adjudicates it, so the
                 // doc collects the doc-authorable Framing-A route instead of a build
                 // instruction (`design/corpus-migration.md` → Prose routing).
-                out = write::insert_item_slot(old_schema, new_schema, &out, locus.section(), leaf)?;
+                //
+                // The primitive takes the change's **locus**, not its section id (M50
+                // Increment 7 / T4): the block whose slot layout is reshaped is the one at
+                // `locus.nested()`, the committed items are enumerated per parent along that
+                // chain, and each is re-rendered at its own nesting depth. Handed the section
+                // alone it reshaped the outer block — the wrong items, at the wrong depth.
+                out = write::insert_item_slot(
+                    old_schema,
+                    new_schema,
+                    &out,
+                    locus.section(),
+                    locus.nested(),
+                    leaf,
+                )?;
             }
             SchemaChange::ValueRemapped { locus, field, map } => {
                 // The first **parameterized** transform kind: remap each committed value of

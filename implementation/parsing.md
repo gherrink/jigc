@@ -63,10 +63,10 @@ This keys the boundary on the schema — *context taken as a fence input, never 
 
 - `write.rs:1356` (`unset_item_field`) — the splice-remove of a field bullet.
 - `write.rs:1514` (`set_item_field`) — the surgical value splice on a present bullet.
-- `write.rs:3725` (`insert_item_field`) — the append, and the cold-fill re-render when the item has no field group yet.
+- `write.rs:3798` (`insert_item_field`) — the append, and the cold-fill re-render when the item has no field group yet.
 - `parse.rs:1226` (`parse_items`) — the read seam: where the parent's leaves stop and its nested region `[leaf_end, item_end)` begins.
 
-A fifth caller **consumes** the region rather than deciding it — `write.rs:6889` (`item_field_write_target`), the confinement target of the item-field validate-after gate (below) — over the same schema-keyed region, so the guard and the writer cannot disagree about which group is the item's own.
+A fifth caller **consumes** the region rather than deciding it — `write.rs:7113` (`item_field_write_target`), the confinement target of the item-field validate-after gate (below) — over the same schema-keyed region, so the guard and the writer cannot disagree about which group is the item's own.
 
 ## Slot heading-depth ceiling
 

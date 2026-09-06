@@ -188,12 +188,13 @@ pub enum LocusDisposition {
 /// what "no cell reads [`SchemaChange::Unclassified`] for a kind that has one" means, and it
 /// is checked mechanically rather than asserted (`crates/cli/tests/migrate_locus_axis.rs`).
 ///
-/// Two cells are [`LocusDisposition::Unbuilt`], both byte-writing and both M50 Increment 7's:
-/// splicing an added slot leaf into a nested item, and remapping a nested enum value.
-/// [`SchemaChange::AddedItemField`] is [`Applied`](LocusDisposition::Applied) at locus 3 on
-/// **both** its arms: the zero-byte one — an absence the conformance gate accepts — and, since
-/// M50 Increment 7 / T3, the `default:`-carrying one, which splices the declared value onto
-/// every nested item through the depth-aware write primitive.
+/// One cell is [`LocusDisposition::Unbuilt`], byte-writing and M50 Increment 7's: remapping a
+/// nested enum value. [`SchemaChange::AddedItemField`] is
+/// [`Applied`](LocusDisposition::Applied) at locus 3 on **both** its arms: the zero-byte one —
+/// an absence the conformance gate accepts — and, since M50 Increment 7 / T3, the
+/// `default:`-carrying one, which splices the declared value onto every nested item through
+/// the depth-aware write primitive. [`SchemaChange::AddedItemSlot`] joined it at T4, taking a
+/// locus rather than a section id so the block it reshapes is the one the change names.
 ///
 /// A `locus` outside `1..=LOCI` has no cell and answers [`LocusDisposition::Unreachable`].
 pub const fn locus_disposition(kind: SchemaChangeKind, locus: usize) -> LocusDisposition {
@@ -249,17 +250,19 @@ pub const fn locus_disposition(kind: SchemaChangeKind, locus: usize) -> LocusDis
                 Unreachable
             }
         }
-        // The two byte-writing cells Increment 7 builds. Refusing here is what keeps the
-        // fold from splicing an item-locus primitive at the wrong depth.
+        // The item-block slot reshape, applied wherever an item block exists — a section's
+        // own and every nested one — since M50 Increment 7 / T4: the primitive takes the
+        // change's locus, enumerates the committed items along it per parent, and re-renders
+        // each at its own nesting depth.
         SchemaChangeKind::AddedItemSlot => {
-            if item {
+            if item || nested {
                 Applied
-            } else if nested {
-                Unbuilt
             } else {
                 Unreachable
             }
         }
+        // The one byte-writing cell Increment 7 has left to build. Refusing here is what
+        // keeps the fold from splicing an item-locus primitive at the wrong depth.
         SchemaChangeKind::ValueRemapped => {
             if section || item {
                 Applied
