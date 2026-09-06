@@ -458,14 +458,20 @@ fn apply_added_field(
     }
 }
 
-/// Splice an `added-item-field` change: place the new leaf `field` of the **repeatable** section
-/// `section` on every committed item, carrying its **deterministic** value.
+/// Splice an `added-item-field` change: place the new leaf `field` on every committed item **at
+/// the change's own locus** — the repeatable section's own item block, or a nested one — carrying
+/// its **deterministic** value.
 ///
-/// The splice runs through [`write::set_item_field_or_insert`] — the **insert-capable** primitive,
-/// which generates the absent `- key: value` bullet (and adjudicates the value against its declared
-/// type before touching bytes). [`write::set_item_field`] is *update-only*: it refuses an absent
-/// bullet with `SpliceError::NotPresent`, i.e. on **every item, by definition of this kind** (it is
-/// the right primitive for [`SchemaChange::ValueRemapped`], which overwrites an *existing* bullet).
+/// The splice runs through the **insert-capable** primitive for the locus's depth — at the item
+/// locus [`write::set_item_field_or_insert`], below it the depth-aware
+/// [`write::set_nested_item_field_or_insert`] — which is the dispatch
+/// [`write::set_item_field_validated`] already makes at the CLI seam, copied here so the migration
+/// and the write path cannot disagree about what "nested" means (M50 Increment 7). Either way the
+/// primitive generates the absent `- key: value` bullet and adjudicates the value against its
+/// declared type before touching bytes. [`write::set_item_field`] is *update-only*: it refuses an
+/// absent bullet with `SpliceError::NotPresent`, i.e. on **every item, by definition of this kind**
+/// (it is the right primitive for [`SchemaChange::ValueRemapped`], which overwrites an *existing*
+/// bullet).
 ///
 /// An item that **already carries** the bullet is **skipped**, never overwritten: its value is
 /// authored and conformant, so re-writing it would destroy committed data (**No-data-loss**) — and
@@ -530,32 +536,59 @@ fn apply_added_item_field(
         None if !crate::validate::is_author_required(decl) => return Ok(source.to_string()),
         None => return Err(unsupported()),
     };
-    // THE UN-BUILT HALF OF THE CELL. The deterministic-value arm places a bullet on every item
-    // through a primitive that addresses an item at the **second** locus only. Rather than
-    // splice at the wrong depth it refuses, naming the kind and the locus path (M50 Increment 7
-    // builds the nested splice).
-    if locus.is_nested() {
-        return Err(unsupported());
-    }
-
-    // Collect the target item ids from the initial parse, then splice each in turn. Item ids are
-    // stable under a field insert (the id-from leaf is untouched), so a fresh
-    // `set_item_field_or_insert` re-locates each item after the prior splice.
+    // Collect the addressing chain of every item AT THE CHANGE'S OWN LOCUS from the initial
+    // parse, then splice each in turn. Item ids are stable under a field insert (the id-from
+    // leaf is untouched), so a fresh write re-locates each item after the prior splice.
     let doc = parse_sections(new_schema, source).map_err(|_| unsupported())?;
     let Some(parsed) = doc.sections.iter().find(|s| s.id == section) else {
         // The instance omits the section — no items, nothing to place.
         return Ok(source.to_string());
     };
-    let targets: Vec<String> = parsed
+    // The chain is the write path's own address shape: item id, then one nested-section hop
+    // per level, then the nested item's id (`["1-0-0", "changes", "added"]`). Descending it
+    // **per parent** is what makes same-anchor nested items under different parents legal —
+    // two releases may each carry a `#### added`, and addressing one by its anchor alone
+    // would write one of them twice and the other never.
+    let mut level: Vec<(Vec<String>, &crate::parse::ParsedItem)> = parsed
         .items
         .iter()
-        .filter(|item| !item.fields.iter().any(|f| f.key == field))
-        .map(|item| item.id.clone())
+        .map(|item| (vec![item.id.clone()], item))
+        .collect();
+    for hop in locus.nested() {
+        level = level
+            .into_iter()
+            .flat_map(|(chain, item)| {
+                item.items.iter().map(move |nested| {
+                    let mut chain = chain.clone();
+                    chain.push(hop.clone());
+                    chain.push(nested.id.clone());
+                    (chain, nested)
+                })
+            })
+            .collect();
+    }
+    let targets: Vec<Vec<String>> = level
+        .into_iter()
+        // An item that already carries the bullet keeps its authored value — the skip that
+        // makes the fold idempotent and **No-data-loss** hold, at every locus.
+        .filter(|(_, item)| !item.fields.iter().any(|f| f.key == field))
+        .map(|(chain, _)| chain)
         .collect();
 
     let mut out = source.to_string();
-    for item_id in targets {
-        out = write::set_item_field_or_insert(new_schema, &out, section, &item_id, field, &value)?;
+    for chain in targets {
+        let chain: Vec<&str> = chain.iter().map(String::as_str).collect();
+        // The dispatch [`write::set_item_field_validated`] already makes at the CLI seam, so
+        // the migration and the write path cannot disagree about what "nested" means: a
+        // single-hop chain is a top-level item, a deeper one takes the depth-aware primitive.
+        out = match chain.as_slice() {
+            [item_id] => {
+                write::set_item_field_or_insert(new_schema, &out, section, item_id, field, &value)?
+            }
+            _ => write::set_nested_item_field_or_insert(
+                new_schema, &out, section, &chain, field, &value,
+            )?,
+        };
     }
     Ok(out)
 }
@@ -800,7 +833,7 @@ mod tests {
     use crate::field_block::{Field, Value};
     use crate::parse::parse_sections;
     use crate::schema::load_schema;
-    use crate::schema_diff::schema_diff;
+    use crate::schema_diff::{LOCI, schema_diff};
     use crate::validate::schema_conformance;
     use crate::write::{Instance, ItemContent, SectionContent, instance_from_source, render};
 
@@ -3190,6 +3223,367 @@ sections:
         // bullet, so there is nothing to insert).
         let again = transform(&v1, &v2, &out, &diff).expect("re-fold succeeds");
         assert_eq!(again, out, "the item-field fold converges");
+    }
+
+    // ---- (g') the same cell-set ONE LOCUS DOWN — `AddedItemField` at the nested item block ----
+
+    /// v1 of a **nested** `deferrals`: each `entries` item carries a `trigger` field and nests
+    /// a repeatable `notes` block — the shipped `changelog.releases/changes` shape, which is
+    /// the only place the third locus exists in a real corpus. No leading bare-prose slot on
+    /// the outer item: a slot there would swallow the nested headings.
+    const NESTED_DEFERRALS_V1: &str = "\
+type: deferrals
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - id: notes
+          repeatable:
+            id-from: title
+            block:
+              - { id: title, type: string }
+              - { id: body, slot: { hint: \"the note\" } }
+";
+
+    /// The block line a cell's added leaf is appended after, per locus: the outer item block's
+    /// last field at locus 2, the nested block's last leaf at the deepest one. Two anchors over
+    /// **one** schema text, so the two loci differ by nothing but where the leaf lands.
+    fn nested_deferrals_anchor(locus: usize) -> &'static str {
+        if locus == LOCI {
+            "              - { id: body, slot: { hint: \"the note\" } }\n"
+        } else {
+            "        - { id: trigger, type: string }\n"
+        }
+    }
+
+    /// The [`crate::schema_diff::Locus`] a leaf appended at `locus` must be classified at.
+    fn nested_deferrals_locus(locus: usize) -> crate::schema_diff::Locus {
+        if locus == LOCI {
+            item_locus("entries").nested_in("notes")
+        } else {
+            item_locus("entries")
+        }
+    }
+
+    /// [`NESTED_DEFERRALS_V1`] with the leaf line `decl` appended at `locus`.
+    fn nested_deferrals_v2(locus: usize, decl: &str) -> Schema {
+        let anchor = nested_deferrals_anchor(locus);
+        // The indentation is READ off the anchor, never restated: a literal run of spaces
+        // here would drift the day the fixture is re-indented, and land the leaf at the
+        // other locus while still asserting this one.
+        let indent = &anchor[..anchor.len() - anchor.trim_start().len()];
+        let yaml = NESTED_DEFERRALS_V1.replacen(anchor, &format!("{anchor}{indent}- {decl}\n"), 1);
+        assert_ne!(
+            yaml, NESTED_DEFERRALS_V1,
+            "the fixture must declare the locus-{locus} anchor `{anchor}`",
+        );
+        load_schema(yaml.as_bytes())
+            .unwrap_or_else(|err| panic!("the locus-{locus} v2 schema loads: {err}\n{yaml}"))
+    }
+
+    /// A canonical nested `deferrals`: **two** entries, each nesting **two** notes — so
+    /// *every item at the locus* is a real claim at both loci, and the items at the *other*
+    /// locus are the control that catches a splice sprayed at the wrong depth.
+    /// `preauthored` puts `(key, value)` on the **first** item at `locus` (the
+    /// already-carries fixture), and is rendered under the schema that declares it.
+    fn nested_deferrals_doc(
+        schema: &Schema,
+        locus: usize,
+        preauthored: Option<(&str, &str)>,
+    ) -> String {
+        let bullet = |carried: bool| match preauthored {
+            Some((key, value)) if carried => vec![Field {
+                key: key.to_string(),
+                value: Value::Scalar(value.to_string()),
+            }],
+            _ => Vec::new(),
+        };
+        let note = |id: &str, title: &str, body: &str, carried: bool| ItemContent {
+            id: id.to_string(),
+            title: title.to_string(),
+            slot: Some(body.to_string()),
+            fields: bullet(carried),
+            ..Default::default()
+        };
+        let entry =
+            |id: &str, title: &str, trigger: &str, carried: bool, notes: Vec<ItemContent>| {
+                let mut fields = vec![Field {
+                    key: "trigger".to_string(),
+                    value: Value::Scalar(trigger.to_string()),
+                }];
+                fields.extend(bullet(carried));
+                ItemContent {
+                    id: id.to_string(),
+                    title: title.to_string(),
+                    fields,
+                    items: notes,
+                    ..Default::default()
+                }
+            };
+        let deep = locus == LOCI;
+        let inst = Instance {
+            title: "Deferral Ledger".to_string(),
+            sections: vec![SectionContent {
+                id: "entries".to_string(),
+                items: vec![
+                    entry(
+                        "the-freeze-exempt-floor",
+                        "The freeze-exempt floor",
+                        "M39",
+                        !deep,
+                        vec![
+                            note(
+                                "the-owed-floor",
+                                "The owed floor",
+                                "Owed: a detect+route floor.",
+                                deep,
+                            ),
+                            note(
+                                "the-route",
+                                "The route",
+                                "Routed at the migrate door.",
+                                false,
+                            ),
+                        ],
+                    ),
+                    entry(
+                        "the-abandon-path",
+                        "The abandon path",
+                        "M42",
+                        false,
+                        vec![
+                            note(
+                                "the-record",
+                                "The record",
+                                "Parked: what abandon commits.",
+                                false,
+                            ),
+                            note(
+                                "the-gate",
+                                "The gate",
+                                "Parked: which gate adjudicates.",
+                                false,
+                            ),
+                        ],
+                    ),
+                ],
+                ..Default::default()
+            }],
+        };
+        render(schema, &inst)
+    }
+
+    /// Every item at `locus`, in document order, paired with the value of the field `key`
+    /// where that item carries it — so *every item* and *no other item* are both readable
+    /// off one list.
+    fn nested_deferrals_values(
+        inst: &Instance,
+        locus: usize,
+        key: &str,
+    ) -> Vec<(String, Option<String>)> {
+        let entries = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "entries")
+            .expect("entries present");
+        let of = |item: &ItemContent| {
+            (
+                item.id.clone(),
+                item.fields
+                    .iter()
+                    .find(|f| f.key == key)
+                    .map(|f| match &f.value {
+                        Value::Scalar(v) => v.clone(),
+                        other => panic!("a scalar bullet; got {other:?}"),
+                    }),
+            )
+        };
+        if locus == LOCI {
+            entries
+                .items
+                .iter()
+                .flat_map(|entry| entry.items.iter().map(of))
+                .collect()
+        } else {
+            entries.items.iter().map(of).collect()
+        }
+    }
+
+    /// What the fold owes for one cell of the `AddedItemField` cell-set.
+    enum Cell {
+        /// A `default:`-carrying leaf: **every** item at the locus gains the bullet.
+        Splices(&'static str),
+        /// A leaf whose absence already conforms: **zero** bytes.
+        ZeroBytes,
+        /// A leaf with no deterministic value that the gate does ask for: the corpus fold
+        /// halts and the doc stays byte-identical.
+        Blocks,
+        /// A `default:`-carrying leaf over a doc where the **first** item at the locus was
+        /// hand-authored ahead of the bump: `(authored, default)` — the authored value
+        /// survives, the rest get the default, and the fold converges.
+        Preserves(&'static str, &'static str),
+    }
+
+    /// **The `AddedItemField` cell-set holds one locus down.** (M50 Increment 7 / T3.)
+    ///
+    /// The set is the one the shipped locus-2 suite above names — the deterministic-value
+    /// splice, the conformance-clean zero-byte absence, the required-leaf block, and the
+    /// already-carries no-data-loss/idempotency cell — and each cell is driven **at both
+    /// loci in the same loop**, over one fixture that differs only in which block the leaf
+    /// is appended to. Two claims a per-locus pair of tests could not make: the outcome at
+    /// the deepest locus is the *same* outcome, and the items at the **other** locus are
+    /// untouched — the control that catches a splice landing at the wrong depth.
+    ///
+    /// Red at HEAD on the two byte-writing cells: `apply_added_item_field` refused any
+    /// nested locus outright (`Unsupported { kind: "added-item-field" }`), because the
+    /// primitive it splices through addresses an item at the second locus only.
+    #[test]
+    fn the_added_item_field_cell_set_holds_one_locus_down() {
+        let v1 = load_schema(NESTED_DEFERRALS_V1.as_bytes()).expect("the nested v1 loads");
+        let cells: [(&str, &str, Cell); 4] = [
+            (
+                "defaulted",
+                "{ id: kind, type: enum, of: [Decision, Idea], default: Decision }",
+                Cell::Splices("Decision"),
+            ),
+            (
+                "optional-no-default",
+                "{ id: owner, type: string, optional: true }",
+                Cell::ZeroBytes,
+            ),
+            (
+                "required-no-default",
+                "{ id: owner, type: string }",
+                Cell::Blocks,
+            ),
+            (
+                "already-carries",
+                "{ id: kind, type: enum, of: [Decision, Idea], default: Decision }",
+                Cell::Preserves("Idea", "Decision"),
+            ),
+        ];
+
+        for (label, decl, cell) in cells {
+            for locus in [2, LOCI] {
+                let at = format!("{label} at locus {locus}");
+                let v2 = nested_deferrals_v2(locus, decl);
+                let src = match cell {
+                    Cell::Preserves(authored, _) => {
+                        nested_deferrals_doc(&v2, locus, Some(("kind", authored)))
+                    }
+                    _ => nested_deferrals_doc(&v1, locus, None),
+                };
+
+                // The real classifier emits the kind AND the locus; the driver is exercised on
+                // the emitted classification, never a hand-built list.
+                let diff = schema_diff(&v1, &v2);
+                let expected = match cell {
+                    Cell::Blocks => SchemaChange::ProseNeeding {
+                        locus: nested_deferrals_locus(locus),
+                        leaf: Some("owner".to_string()),
+                    },
+                    _ => SchemaChange::AddedItemField {
+                        locus: nested_deferrals_locus(locus),
+                        field: match cell {
+                            Cell::ZeroBytes => "owner".to_string(),
+                            _ => "kind".to_string(),
+                        },
+                    },
+                };
+                assert_eq!(diff, vec![expected], "{at}: classification");
+
+                if let Cell::Blocks = cell {
+                    let corpus = [CorpusDoc {
+                        id: "deferrals-a",
+                        old_schema: &v1,
+                        new_schema: &v2,
+                        source: &src,
+                        changes: &diff,
+                    }];
+                    let result = migrate_corpus(&corpus);
+                    assert_eq!(result.halted_at, Some(0), "{at}: the fold halts");
+                    assert_eq!(
+                        result.docs,
+                        vec![DocOutcome::Untouched {
+                            id: "deferrals-a".to_string(),
+                            v0: src.clone(),
+                        }],
+                        "{at}: the blocked doc stays byte-identical",
+                    );
+                    continue;
+                }
+
+                let out = transform(&v1, &v2, &src, &diff)
+                    .unwrap_or_else(|err| panic!("{at}: the fold must not refuse; got {err:?}"));
+                assert_conforms(&v2, &out);
+                assert_byte_stable(&v2, &out);
+                assert_eq!(
+                    transform(&v1, &v2, &src, &diff).expect("re-run"),
+                    out,
+                    "{at}: the fold is deterministic",
+                );
+                assert_eq!(
+                    transform(&v1, &v2, &out, &diff).expect("re-fold"),
+                    out,
+                    "{at}: the fold converges",
+                );
+
+                let inst = instance_from_source(&v2, &out).expect("re-parse under v2");
+                let other = if locus == LOCI { 2 } else { LOCI };
+                match cell {
+                    Cell::ZeroBytes => {
+                        assert_eq!(out, src, "{at}: no item gains a fabricated bullet");
+                    }
+                    Cell::Splices(value) => {
+                        for (id, got) in nested_deferrals_values(&inst, locus, "kind") {
+                            assert_eq!(
+                                got.as_deref(),
+                                Some(value),
+                                "{at}: every item at the locus carries the default; {id} does not",
+                            );
+                        }
+                        // The byte claim: undo the added bullet and the source comes back.
+                        // An item that carried NO fields gains the `<!-- fields -->` sentinel
+                        // with it — a field group cannot exist without one — which is why the
+                        // group form is undone first and the bare bullet second.
+                        let group = format!("\n<!-- fields -->\n- kind: {value}\n");
+                        let bullet = format!("- kind: {value}\n");
+                        assert_eq!(
+                            out.replace(&group, "").replace(&bullet, ""),
+                            src,
+                            "{at}: the defaulted field group is the migration's ONLY delta",
+                        );
+                    }
+                    Cell::Preserves(authored, value) => {
+                        let seen = nested_deferrals_values(&inst, locus, "kind");
+                        assert_eq!(
+                            seen.first().and_then(|(_, v)| v.as_deref()),
+                            Some(authored),
+                            "{at}: the hand-authored value survives; got {seen:?}",
+                        );
+                        for (id, got) in seen.iter().skip(1) {
+                            assert_eq!(
+                                got.as_deref(),
+                                Some(value),
+                                "{at}: the item that lacked the bullet gets the default; {id}",
+                            );
+                        }
+                    }
+                    Cell::Blocks => unreachable!("handled above"),
+                }
+
+                // The control: a splice at the wrong depth would land here too.
+                for (id, got) in nested_deferrals_values(&inst, other, "kind") {
+                    assert_eq!(
+                        got, None,
+                        "{at}: no item at locus {other} may gain the leaf; {id} did",
+                    );
+                }
+            }
+        }
     }
 
     // ---- (h) the conformance-clean-absence axis: ONE predicate, at BOTH loci ----

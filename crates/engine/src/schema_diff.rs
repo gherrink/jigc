@@ -190,10 +190,10 @@ pub enum LocusDisposition {
 ///
 /// Two cells are [`LocusDisposition::Unbuilt`], both byte-writing and both M50 Increment 7's:
 /// splicing an added slot leaf into a nested item, and remapping a nested enum value.
-/// [`SchemaChange::AddedItemField`] is [`Applied`](LocusDisposition::Applied) at locus 3
-/// because its **zero-byte** arm — an absence the conformance gate accepts, which is every
-/// nested add the shipped corpus needs — folds there today; its `default:`-carrying arm
-/// refuses inside [`crate::transform::transform`], naming itself and the locus.
+/// [`SchemaChange::AddedItemField`] is [`Applied`](LocusDisposition::Applied) at locus 3 on
+/// **both** its arms: the zero-byte one — an absence the conformance gate accepts — and, since
+/// M50 Increment 7 / T3, the `default:`-carrying one, which splices the declared value onto
+/// every nested item through the depth-aware write primitive.
 ///
 /// A `locus` outside `1..=LOCI` has no cell and answers [`LocusDisposition::Unreachable`].
 pub const fn locus_disposition(kind: SchemaChangeKind, locus: usize) -> LocusDisposition {

@@ -17,11 +17,15 @@
 //!    consults, and the locus-3 column is driven kind by kind against a manufactured
 //!    nested schema pair — so *no cell reads `Unclassified` for a kind that has one*
 //!    is a measurement, not a claim.
-//! 2. **The fold resolves a nested leaf at its own locus.** A nested leaf whose id also
-//!    exists in the outer block is the shipped collision (`date` on `changelog.releases`),
-//!    and a locus-blind fold resolves it against the **outer** declaration — takes that
-//!    field's no-op branch, writes nothing, and restamps the doc. Driven on exactly that
-//!    pair through the shipped binary.
+//! 2. **The fold resolves a nested leaf at its own locus — and writes there.** A nested leaf
+//!    whose id also exists in the outer block is the shipped collision (`date` on
+//!    `changelog.releases`), and there are two ways to get it wrong: a locus-blind fold
+//!    resolves it against the **outer** declaration, takes that field's no-op branch, writes
+//!    nothing and restamps the doc (Increment 6); and a fold that resolves it correctly but
+//!    splices through the second-locus primitive lands the bullet on the **release**, over
+//!    the release's own committed `date` (Increment 7 / T3). Driven on exactly that pair
+//!    through the shipped binary, over a corpus whose two releases each nest two
+//!    change-groups — two of them sharing an anchor.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -480,9 +484,9 @@ schema-version: 2
 - the trial-shaped fixture builder
 ";
 
-/// A real git repo carrying the project cascade layer, one commit, and [`CHANGELOG_V2`] at
-/// its literal placement home.
-fn repo_with_changelog() -> TempDir {
+/// A real git repo carrying the project cascade layer, one commit, and `changelog` at the
+/// `changelog` doctype's literal placement home.
+fn repo_with(changelog: &str) -> TempDir {
     let dir = TempDir::new("repo");
     let root = dir.path();
     git(root, &["init", "-q"]);
@@ -490,10 +494,15 @@ fn repo_with_changelog() -> TempDir {
     git(root, &["config", "user.name", "Test"]);
     fs::write(root.join("README.md"), "hello\n").expect("write file");
     fs::create_dir_all(root.join(".jigc").join("config")).expect("create project layer");
-    fs::write(root.join("CHANGELOG.md"), CHANGELOG_V2).expect("write the committed changelog");
+    fs::write(root.join("CHANGELOG.md"), changelog).expect("write the committed changelog");
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "seed the corpus"]);
     dir
+}
+
+/// [`repo_with`] over the one-release [`CHANGELOG_V2`] fixture.
+fn repo_with_changelog() -> TempDir {
+    repo_with(CHANGELOG_V2)
 }
 
 /// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, `JIGC_PACK_DIR = pack`.
@@ -605,47 +614,211 @@ fn a_required_nested_leaf_routes_the_author_not_the_source_tree() {
     );
 }
 
-/// **A nested leaf whose id also exists in the outer block is resolved at its own locus.**
+/// A conformant, **v2-stamped** `CHANGELOG.md` carrying **two** releases, each nesting **two**
+/// change-groups — so *every nested change-group* is a real claim rather than a sample of one,
+/// and the two releases make the outer hop of the walk real too. The staging section's own
+/// change-group is the control: it is an item block at locus **2 of another section**, so a
+/// locus-3 fold that sprayed by section-shape rather than by locus path would land there.
+///
+/// `#### added` appears under **both** releases on purpose: same-anchor nested items under
+/// different parents are legal, and a walk that addressed a nested item by its anchor alone
+/// would write one of them twice and the other never.
+const CHANGELOG_V2_NESTED: &str = "\
+---
+schema-version: 2
+---
+
+# Changelog
+
+## Unreleased Changes
+
+### changed  {#changed}
+
+- the fixture builder gained shape-class coverage
+
+## Releases
+
+### 1.1.0  {#1-1-0}
+
+<!-- fields -->
+- date: 2026-07-01
+
+#### added  {#added}
+
+- the group-count axis
+
+#### fixed  {#fixed}
+
+- the anchor-collision arm
+
+### 1.0.0  {#1-0-0}
+
+<!-- fields -->
+- date: 2026-06-14
+- link: https://example.com/compare/0.9.0...1.0.0
+
+#### added  {#added}
+
+- the trial-shaped fixture builder
+
+#### changed  {#changed}
+
+- a nested group under the older release
+";
+
+/// The value the nested `date` leaf declares as its `default:` — the deterministic bytes the
+/// fold owes every nested change-group.
+const NESTED_DEFAULT: &str = "1970-01-01";
+
+/// The canonical **v3** form of [`CHANGELOG_V2_NESTED`]: the stamp, and one
+/// `- date: 1970-01-01` field group on each of the four nested change-groups. Pinned as bytes
+/// because *where* the bullet lands is the claim — a group's field group renders after its
+/// prose, one level inside the group, and nowhere near the release's own.
+const CHANGELOG_V3_NESTED: &str = "\
+---
+schema-version: 3
+---
+
+# Changelog
+
+## Unreleased Changes
+
+### changed  {#changed}
+
+- the fixture builder gained shape-class coverage
+
+## Releases
+
+### 1.1.0  {#1-1-0}
+
+<!-- fields -->
+- date: 2026-07-01
+
+#### added  {#added}
+
+- the group-count axis
+
+<!-- fields -->
+- date: 1970-01-01
+
+#### fixed  {#fixed}
+
+- the anchor-collision arm
+
+<!-- fields -->
+- date: 1970-01-01
+
+### 1.0.0  {#1-0-0}
+
+<!-- fields -->
+- date: 2026-06-14
+- link: https://example.com/compare/0.9.0...1.0.0
+
+#### added  {#added}
+
+- the trial-shaped fixture builder
+
+<!-- fields -->
+- date: 1970-01-01
+
+#### changed  {#changed}
+
+- a nested group under the older release
+
+<!-- fields -->
+- date: 1970-01-01
+";
+
+/// **A nested leaf whose id also exists in the outer block is resolved — and SPLICED — at its
+/// own locus.** (M50 Increment 7 / T3.)
 ///
 /// `changelog.releases` declares `date` (`set: on-create`, no `default:`); this bump adds a
-/// **nested** `date` that *does* carry a `default:`. A locus-blind fold resolves the leaf by
-/// section id alone, finds the **outer** declaration, takes its no-default branch, writes
-/// nothing — and restamps the doc: silent corruption at exit 0, a corpus stamped 3 whose
-/// nested items never got the value the schema declares.
+/// **nested** `date` that *does* carry a `default:`. Two ways to get this wrong, and the arm
+/// catches both: a locus-blind fold resolves the leaf by section id alone, finds the **outer**
+/// declaration, takes its no-default branch, writes nothing and restamps the doc (M50
+/// Increment 6 closed that half); and a fold that resolves the declaration correctly but
+/// splices through the second-locus primitive writes the bullet onto the **release**, over the
+/// release's own committed `date`.
 ///
-/// Resolved at its own locus the declaration carries a `default:`, so the cell is the
-/// byte-writing one — un-built at the third locus (M50 Increment 7) — and the fold refuses,
-/// naming the kind and the locus path instead of splicing at the wrong depth.
+/// Red at HEAD: `0 migrated / 1 blocked`, exit 1, `migrate-corpus.fold-refused` naming
+/// `added-item-field` at `releases/changes` — the byte-writing arm the third locus did not have.
 #[test]
-fn a_nested_leaf_colliding_with_an_outer_id_resolves_at_its_own_locus() {
+fn a_nested_leaf_colliding_with_an_outer_id_splices_at_its_own_locus() {
     let home = TempDir::new("home");
     let pack = pack_adding_a_nested_leaf(
         "collision",
-        "{ id: date, type: date, default: \"1970-01-01\" }",
+        &format!("{{ id: date, type: date, default: \"{NESTED_DEFAULT}\" }}"),
     );
-    let repo = repo_with_changelog();
+    let repo = repo_with(CHANGELOG_V2_NESTED);
+    let changelog = repo.path().join("CHANGELOG.md");
 
     let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
-    let finding = sole_blocked(&report, ok);
-    let message = finding["message"].as_str().expect("a message");
+    assert!(ok, "the locus-3 fold migrates cleanly; report:\n{report:#}");
     assert_eq!(
-        finding["code"], "migrate-corpus.fold-refused",
-        "the nested declaration carries a value source, so the cell is the byte-writing one; \
-         finding:\n{finding:#}",
+        report["migrated"].as_array().map(|m| m.len()),
+        Some(1),
+        "the changelog migrates; report:\n{report:#}",
     );
-    assert!(
-        message.contains("added-item-field") && message.contains("releases/changes"),
-        "the refusal names the kind AND the locus path it sits at; message: {message}",
-    );
-    let route = finding["route"].as_str().expect("a route");
-    assert!(
-        route.contains("releases/changes"),
-        "the route names the locus path too; route: {route}",
-    );
+
+    let migrated = fs::read_to_string(&changelog).expect("read the migrated changelog");
+
+    // (a) EVERY nested change-group gained the declared default — four of them, under two
+    //     releases, two of which share an anchor.
+    let nested_groups = CHANGELOG_V2_NESTED.matches("\n#### ").count();
+    assert_eq!(nested_groups, 4, "the fixture nests four change-groups");
     assert_eq!(
-        fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read the changelog"),
-        CHANGELOG_V2,
-        "the refusal leaves the committed bytes — and the stamp — untouched",
+        migrated
+            .matches(&format!("- date: {NESTED_DEFAULT}\n"))
+            .count(),
+        nested_groups,
+        "every nested change-group gains the declared default; migrated:\n{migrated}",
+    );
+
+    // (b) The RELEASE's own `date` — the colliding outer leaf — is byte-identical. A splice
+    //     at the second locus would have overwritten it with the nested declaration's default.
+    for release_date in ["- date: 2026-07-01\n", "- date: 2026-06-14\n"] {
+        assert!(
+            migrated.contains(release_date),
+            "the release's own committed date survives; `{release_date:?}` is gone from:\n{migrated}",
+        );
+    }
+
+    // (c) The staging section is an item block too, at locus 2 of another section — untouched.
+    let staging = |doc: &str| {
+        let start = doc
+            .find("## Unreleased Changes")
+            .expect("the staging section");
+        let end = doc.find("## Releases").expect("the releases section");
+        doc[start..end].to_string()
+    };
+    assert_eq!(
+        staging(&migrated),
+        staging(CHANGELOG_V2_NESTED),
+        "the staging change-group is at another locus and gains nothing",
+    );
+
+    // (d) …and the whole file, byte for byte: the four bullets and the stamp are the ONLY delta.
+    assert_eq!(
+        migrated, CHANGELOG_V3_NESTED,
+        "the migrated bytes are the canonical v3 form",
+    );
+
+    // (e) The migrated corpus validates clean at its new stamp.
+    let validated = jigc(repo.path(), home.path(), pack.path(), &["validate"]);
+    assert!(
+        validated.status.success(),
+        "the migrated corpus validates clean; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&validated.stdout),
+        String::from_utf8_lossy(&validated.stderr),
+    );
+
+    // (f) …and a second run is a byte no-op: the fold converges rather than re-splicing.
+    let (again, ok_again) = migrate_report(repo.path(), home.path(), pack.path());
+    assert!(ok_again, "the second run exits 0; report:\n{again:#}");
+    assert_eq!(
+        fs::read_to_string(&changelog).expect("read the changelog"),
+        migrated,
+        "a second `migrate-corpus` writes no bytes; report:\n{again:#}",
     );
 }
 
