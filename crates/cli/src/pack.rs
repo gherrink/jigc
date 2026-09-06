@@ -416,6 +416,170 @@ fn assert_project_schema_shadows(
     Ok(())
 }
 
+/// The **ref-target fence** — every `type: ref` field the assembled composite declares
+/// carries a `to:`, and that `to:` names a doctype the **composed** schema set actually
+/// contains (M50 Increment 8 / T1; `design/document-type-schema.md` → Cross-references —
+/// the `to:` row, required *and* enforced; `design/multi-pack.md` → A ref target is
+/// composition-scoped).
+///
+/// **Why it is a pack-load fence and not a validation probe.** A `ref` field is a write
+/// address the schema advertises: `doc schema` projects it, `set-field` accepts a
+/// `<type>:<slug>` value for it, and `schema-conformance.ref-resolves` blocks a finalize
+/// over it with a route that says *create the target*. When the declared target is a
+/// doctype the loaded composition does not contain, **every one of those surfaces is
+/// honest about a thing that cannot exist** — the blocking route's `jigc doc create
+/// <target>` arm answers `create.unknown-doctype`, so the author is inside M43's route
+/// floor with no exit. That is a pack-authoring fault, so it is refused where a
+/// pack-authoring fault belongs: at the factory, before any door reads a schema.
+///
+/// **Scope, stated (the D7 obligation).** Three properties, each a decision:
+///
+/// 1. **The subject is the COMPOSED set, never a constituent in isolation.** Membership
+///    is the `ty` of every schema the composite lists, read at its precedence winner —
+///    so a listed project pack whose doctype refs `to: adr` over the embedded dev base
+///    loads clean. Were it checked per-constituent — the [`assert_schema_freeze`]
+///    posture, which records what each pack *ships* — that ref would be refused, and the
+///    cross-pack relation a composition legitimately supports would be foreclosed.
+/// 2. **It is NOT manifest-gated.** Every other pack-load fence iterates
+///    [`origin_packs`](PackSource::origin_packs) over `config/schema-manifest.yaml`,
+///    because the *freeze* is an opt-in about shape stability. This is not shape
+///    stability, it is **composition closure**: a manifest-less project pack (the M49
+///    PB-1 shape) whose ref dangles produces the identical unfollowable route on an
+///    adopter's machine, and the fence this one mirrors —
+///    `workflow-refs.schema-ref-resolves`, which asks the same composed-set-membership
+///    question for a `{{schema:<doctype>}}` placeholder — is not manifest-gated either.
+/// 3. **A `to:` that resolves in one composition and not another blocks every door of
+///    the composition that lacks it.** That is the mechanism, not a defect of it: the
+///    dev pack composes alone (`compose-embedded-methodology: false`, `JIGC_PACK_DIR`),
+///    so a dev-pack ref to a methodology doctype is *unloadable* there — which is why
+///    `design/methodology-docs.md`'s universe rule (*"a managed `ref: {to: adr}` would
+///    point at a doctype outside the composed schema universe"*) is now mechanically
+///    held rather than remembered, and why the `adr —supersedes→ research` edge M50
+///    considered stays refused.
+///
+/// **Every locus, not header fields alone.** The walk descends a repeatable section's
+/// item block and each nested repeatable inside it ([`ref_field_loci`]), because
+/// `engine::index`'s edge extraction lifts a `ref` from a `Leaf::Field` too — an
+/// item-level ref is a real shape, and a fence that swept only header fields would ship
+/// the incomplete sweep this wave exists to refuse. The locus is rendered through
+/// [`engine::schema_diff::Locus`], the one type that already spells a section + nested
+/// hop path, so a refusal here and a migration refusal say *where* in the same words.
+///
+/// **Declared bound.** The subject is the **pack layer's** composed set. A project-layer
+/// whole-file schema shadow (`.jigc/config/schemas/<ty>.yaml`) is outside this fence as
+/// a project-layer forked step is outside [`assert_named_facts_stated`] — every
+/// pack-load fence reads packs. The gap is narrow rather than open: a shadow of a
+/// manifest-governed doctype cannot change a `ref` at all, because `to:` is inside the
+/// `schema-hash` and [`assert_project_schema_shadows`] hashes the shadow as resolved.
+fn assert_ref_targets_resolve(pack: &dyn PackSource) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let mut schemas = Vec::new();
+    for id in pack.list(PackResourceKind::Schemas) {
+        let bytes = pack
+            .read(PackResourceKind::Schemas, &id)
+            .with_context(|| format!("the `{}` schema is unreadable", id.as_str()))?;
+        // Field types resolve against the pack that OWNS the definition, never the
+        // merged surface (`design/multi-pack.md` → Pack-local body-reference
+        // resolution) — the same anchor `CascadeDefs::all_schemas` reads through.
+        let origin = pack.origin_pack(PackResourceKind::Schemas, &id);
+        let schema = load_pack_schema(origin, &bytes)
+            .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
+        schemas.push(schema);
+    }
+    let members: std::collections::BTreeSet<&str> = schemas.iter().map(|s| s.ty.as_str()).collect();
+
+    let mut dangling: Vec<String> = Vec::new();
+    for schema in &schemas {
+        for (locus, field) in ref_field_loci(schema) {
+            let at = if locus.is_item() {
+                format!("`{}`'s `#{locus}` item field `{}`", schema.ty, field.id)
+            } else {
+                format!("`{}`'s `#{locus}/{}` field", schema.ty, field.id)
+            };
+            match field.to.as_deref() {
+                None => dangling.push(format!(
+                    "{at} is a `type: ref` declaring no `to:` (the target type is required)"
+                )),
+                Some(target) if !members.contains(target) => dangling.push(format!(
+                    "{at} declares `to: {target}`, which no doctype of the loaded pack-set provides"
+                )),
+                Some(_) => {}
+            }
+        }
+    }
+    if dangling.is_empty() {
+        return Ok(());
+    }
+
+    let pack_set = pack
+        .provenance_segments()
+        .into_iter()
+        .map(|(id, version)| format!("{id}/{version}"))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let available = members.into_iter().collect::<Vec<_>>().join(", ");
+    anyhow::bail!(
+        "pack-load ref-target fence failed: {defects} — loaded pack-set: {pack_set}; \
+         the doctypes it composes are: {available}. A `ref` advertises a write address \
+         at every surface that projects the schema, so a target outside the composed set \
+         is an address whose value can never resolve and whose blocking route cannot be \
+         run (`design/document-type-schema.md` → Cross-references; `design/multi-pack.md` \
+         → A ref target is composition-scoped)\n  \
+         route: point `to:` at a doctype of the loaded set, compose the pack that ships \
+         the target alongside this one, or drop the field — a relation whose ends live in \
+         packs that do not compose together belongs in prose, not in a `ref`",
+        defects = dangling.join("; "),
+    );
+}
+
+/// Every `type: ref` field a schema declares, paired with the
+/// [`Locus`](engine::schema_diff::Locus) it sits at — a simple section's field group
+/// (locus 1), a repeatable section's item block (locus 2), and each nested repeatable
+/// inside one (locus 3 and deeper, by recursion rather than by a depth literal).
+fn ref_field_loci(schema: &Schema) -> Vec<(engine::schema_diff::Locus, &engine::schema::Field)> {
+    use engine::schema::{FieldType, SectionBody};
+    use engine::schema_diff::Locus;
+
+    fn walk_block<'a>(
+        locus: &Locus,
+        block: &'a [engine::schema::Leaf],
+        out: &mut Vec<(Locus, &'a engine::schema::Field)>,
+    ) {
+        for leaf in block {
+            match leaf {
+                engine::schema::Leaf::Field(field) if field.ty == FieldType::Ref => {
+                    out.push((locus.clone(), field.as_ref()));
+                }
+                engine::schema::Leaf::Repeatable { id, repeatable } => {
+                    walk_block(&locus.nested_in(id), &repeatable.block, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    for section in &schema.sections {
+        match &section.body {
+            SectionBody::Simple { fields, .. } => {
+                let locus = Locus::at_section(&section.id);
+                for field in fields.iter().filter(|f| f.ty == FieldType::Ref) {
+                    out.push((locus.clone(), field));
+                }
+            }
+            SectionBody::Repeatable { repeatable } => {
+                walk_block(
+                    &Locus::at_item_block(&section.id),
+                    &repeatable.block,
+                    &mut out,
+                );
+            }
+        }
+    }
+    out
+}
+
 /// The `anyhow` error a pack-load fence raises when a definition it must read does not parse
 /// — **one funnel for the family**, so all five sweeps name the resource, relay the loader's
 /// diagnosis, and carry its locus in the same words (M49 Increment 8 / T4).
@@ -1359,6 +1523,11 @@ pub fn read_compose_marker(project_config_dir: &std::path::Path) -> anyhow::Resu
 /// "packs are ever loaded from the filesystem in production", fired when the M14
 /// multi-pack surface started reading pack *directories* from `packs.yaml`). Inert
 /// for a manifest-less pack.
+///
+/// **The ref-target fence fires here too** ([`assert_ref_targets_resolve`], M50): every
+/// `type: ref` the assembled set declares must name a target doctype that set contains.
+/// It is the freeze's composition-closure sibling and, unlike the freeze, it is **not**
+/// manifest-gated — a manifest-less pack's dangling ref is the same unfollowable route.
 pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     // Discovered **once** and threaded to all three consumers (the `packs:` list, the
     // compose marker, and the project-layer freeze arm) — one walk, one answer.
@@ -1384,6 +1553,11 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     let embedded_only = listed.is_empty() && pack_dir.as_ref().is_none_or(|dir| dir.is_empty());
     let pack = make_pack_from_marker(pack_dir, listed, compose_methodology)?;
     assert_schema_freeze(pack.as_ref(), project_config.as_deref())?;
+    // The composition-closure fence beside the shape-stability one: a `ref` whose
+    // `to:` names no doctype of the assembled set advertises a write address that
+    // cannot resolve at any door ([`assert_ref_targets_resolve`]). Unlike the freeze it
+    // is **not** manifest-gated — see its own scope statement.
+    assert_ref_targets_resolve(pack.as_ref())?;
 
     // The eager front-matter sweeps (M43, `design/surface-contract.md` → The
     // fences): the workflow sweep (suppression + catalog shape) and the step

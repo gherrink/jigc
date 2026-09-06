@@ -47,6 +47,8 @@ mod prd_inverse_cardinality;
 mod precommit_hook_acceptance;
 #[path = "../read_surface_naming.rs"]
 mod read_surface_naming;
+#[path = "../ref_target_fence.rs"]
+mod ref_target_fence;
 #[path = "../relocate.rs"]
 mod relocate;
 #[path = "../schema_conformance_routing.rs"]
