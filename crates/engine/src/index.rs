@@ -522,7 +522,27 @@ pub fn inverse_cardinality_store(
                 if min == 0 {
                     continue; // `0..*` / `0..1` impose no completeness floor.
                 }
-                let Some(target_schema) = schemas.get(target_ty) else {
+                let target_schema = schemas.get(target_ty);
+                // **Unreachable through any production door, and it says so.** The pack-load
+                // ref-target fence (`cli::pack::assert_ref_targets_resolve`, M50) refuses a
+                // `to:` naming a doctype the loaded composition does not contain, so every
+                // schema map a door hands this sweep is closed under its own ref targets.
+                // Stated here rather than minted as a store finding: the fault is a
+                // pack-authoring one the pack door already refuses, and a store code would be
+                // a second answer to a question already answered. Debug-only, the
+                // [`crate::finding::debug_assert_keys_discriminate`] posture — in release the
+                // skip stands, because a pack-authoring fault must never panic on an adopter's
+                // read path, and this sweep is store-scope `jigc validate`.
+                debug_assert!(
+                    target_schema.is_some(),
+                    "`{}`'s `{}` field declares `to: {target_ty}`, which the schema map does \
+                     not contain — the pack-load ref-target fence \
+                     (`cli::pack::assert_ref_targets_resolve`) refuses that composition at the \
+                     factory, so no production door can hand this sweep an open ref target",
+                    schema.ty,
+                    field.id,
+                );
+                let Some(target_schema) = target_schema else {
                     continue; // unknown target type: no committed docs to enumerate.
                 };
                 // Enumerate the target type's committed instances — a located type's
@@ -1415,6 +1435,28 @@ The product must do the thing.
             !route.contains("no action needed"),
             "a dangling mention is a real fix, never the informational 'no action needed': {route:?}",
         );
+    }
+    /// The **one silent skip on an unresolvable ref target says what holds it** (M50 Inc-8).
+    /// `spec.derived-from` declares `to: prd` with a `1..*` inverse-card obligation while the
+    /// schema map carries no `prd` — the shape this sweep swallowed with a bare `continue`,
+    /// the only site in the engine that answered an unresolvable `to:` by returning quietly.
+    ///
+    /// T1's pack-load ref-target fence (`assert_ref_targets_resolve`) closes the composed set,
+    /// so no production door can hand this function an open ref target: the branch states its
+    /// holder rather than minting a store finding for a fault the pack door already refuses.
+    /// Debug-only by the same rule the finding-key seam follows — in release the skip stands,
+    /// because a pack-authoring fault must not panic on an adopter's read path, and this
+    /// sweep is store-scope `jigc validate`.
+    #[test]
+    #[should_panic(expected = "pack-load ref-target fence")]
+    fn unresolvable_ref_target_states_the_fence_that_holds_it() {
+        let root = TempRoot::new("open-ref-target");
+        let mut schemas = route_floor_schemas();
+        schemas
+            .remove("prd")
+            .expect("the fixture ships the `derived-from` target this test removes");
+
+        let _ = inverse_cardinality_store(&EdgeIndex::default(), root.path(), &schemas);
     }
 }
 
