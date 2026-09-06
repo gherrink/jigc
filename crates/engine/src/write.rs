@@ -1459,62 +1459,77 @@ fn field_sentinel_in(blocks: &[Block], region: Range<usize>) -> Option<Range<usi
 }
 
 /// `set-item-field` (item field present): replace the **value** bytes of `field_key`
-/// on the repeatable item `item_id` in `section_id`, scoped to that item's OWN byte
-/// region — so neither a sibling item's identically-keyed field (the wrong-item write
-/// bug) nor a nested child's field block (the parent-region-swallows-child bug) is
-/// matched. Not a wrapper over [`set_field`]: that scans globally and would hit the
-/// first matching key. Re-parses for conformance, asserts the item and its `field_key`
-/// are present, then locates the value span *within* the item's own leaf region
-/// ([`locate_item_path`] narrowed by [`item_own_leaf_region`]) via
+/// on the repeatable item addressed by `item_ids` — its section-qualified id chain
+/// (`["1-2-0"]` for a top-level item, `["1-2-0", "changes", "added"]` for a nested one) —
+/// scoped to that item's OWN byte region, so neither a sibling item's identically-keyed
+/// field (the wrong-item write bug) nor a nested child's field block (the
+/// parent-region-swallows-child bug) is matched. Not a wrapper over [`set_field`]: that
+/// scans globally and would hit the first matching key. Re-parses for conformance, asserts
+/// the item and its `field_key` are present, then locates the value span *within* the
+/// item's own leaf region ([`locate_item_path`] narrowed by [`item_own_leaf_region`]) via
 /// [`field_value_in_lines`] over the item's sentinelled `- key: value` bullets
 /// (`bullet = true`). An absent item / field → [`SpliceError::NotPresent`].
+///
+/// **One function, the flat form as the single-segment chain** (M50 Increment 7 / T5, the
+/// shape [`insert_item_slot`] took at T4). The alternative — a depth-aware dual — already
+/// exists as [`set_nested_item_field_or_insert`], and it is the *wrong* primitive for a
+/// present-field value rewrite: it re-renders the item's **whole committed region** from
+/// what the parse modelled, so bytes the parse does not model (a paragraph hand-appended
+/// after the `<!-- fields -->` group) are destroyed by it. This splices the value span, so
+/// what is around it cannot move at any depth — which is why
+/// [`crate::transform`]'s value-remap arm splices through **this** at every locus.
 pub(crate) fn set_item_field(
     schema: &Schema,
     source: &str,
     section_id: &str,
-    item_id: &str,
+    item_ids: &[&str],
     field_key: &str,
     new_value: &str,
 ) -> Result<String, SpliceError> {
     let doc = parse::parse_sections(schema, source)
         .map_err(|findings| SpliceError::NotConformant { findings })?;
-    let section = doc
-        .sections
-        .iter()
-        .find(|s| s.id == section_id)
-        .ok_or_else(|| SpliceError::NotPresent {
+    if !doc.sections.iter().any(|s| s.id == section_id) {
+        return Err(SpliceError::NotPresent {
             what: format!("section {section_id:?}"),
-        })?;
-    let item = section
-        .items
-        .iter()
-        .find(|i| i.id == item_id)
-        .ok_or_else(|| SpliceError::NotPresent {
-            what: format!("item {item_id:?} in section {section_id:?}"),
-        })?;
+        });
+    }
+    // The chain rendered as the **address path** a reader follows (`1-0-0/changes/added`),
+    // never `Debug` of the slice: at the flat locus that is the single id these messages
+    // always named, so widening the parameter did not widen the message.
+    let at = item_ids.join("/");
+    let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {at:?} in section {section_id:?}"),
+        }
+    })?;
     if !item.fields.iter().any(|f| f.key == field_key) {
         return Err(SpliceError::NotPresent {
-            what: format!("field {field_key:?} on item {item_id:?}"),
+            what: format!("field {field_key:?} on item {at:?}"),
         });
     }
 
-    // The item's byte region — resolved through the parent-scoped path locator (a
-    // single-element chain), then narrowed to the item's OWN leaf region so a nested
-    // child's identically-keyed bullet is out of range (the parent's field swallowed by
-    // its child's field block — the corruption bug) just as a sibling item's is. The
-    // narrowing is schema-keyed: the item's own multi-slot sub-labels are deeper
-    // headings too, and stopping at one would put the item's own field group out of
-    // range ([`item_own_leaf_region`]).
+    // The item's byte region — resolved through the parent-scoped path locator (which walks
+    // the **physical** half of the chain, the segments that own a heading), then narrowed to
+    // the item's OWN leaf region so a nested child's identically-keyed bullet is out of range
+    // (the parent's field swallowed by its child's field block — the corruption bug) just as
+    // a sibling item's is. The narrowing is schema-keyed and takes the **logical** chain: the
+    // item's own multi-slot sub-labels are deeper headings too, and stopping at one would put
+    // the item's own field group out of range ([`item_own_leaf_region`]).
     let blocks = parse::scan_blocks(source);
-    let region = locate_item_path(schema, source, section_id, &[item_id]).ok_or_else(|| {
+    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
         SpliceError::NotPresent {
-            what: format!("item {item_id:?} block"),
+            what: format!("item {at:?} in section {section_id:?} not addressable"),
         }
     })?;
-    let region = item_own_leaf_region(schema, source, &blocks, section_id, &[item_id], region);
+    let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {at:?} block"),
+        }
+    })?;
+    let region = item_own_leaf_region(schema, source, &blocks, section_id, item_ids, region);
     let value_span = field_value_in_lines(source, region, field_key, true).ok_or_else(|| {
         SpliceError::NotPresent {
-            what: format!("field {field_key:?} value line on item {item_id:?}"),
+            what: format!("field {field_key:?} value line on item {at:?}"),
         }
     })?;
     Ok(splice(source, value_span, new_value))
@@ -3903,7 +3918,7 @@ pub(crate) fn set_item_field_or_insert(
             }
         }
     }
-    match set_item_field(schema, source, section_id, item_id, field_key, new_value) {
+    match set_item_field(schema, source, section_id, &[item_id], field_key, new_value) {
         Ok(edited) => Ok(edited),
         // The field bullet is absent on a present item ⇒ generate it. (`set_item_field`
         // returns `NotPresent` both for an absent field *and* an absent item;
@@ -4478,7 +4493,7 @@ A short burst is tolerated.
             &schema,
             TWO_ITEM_SPEC,
             "criteria",
-            "burst-allowance",
+            &["burst-allowance"],
             "implemented-by",
             "src/burst_v2.rs",
         )
@@ -4511,7 +4526,7 @@ A short burst is tolerated.
             &schema,
             TWO_ITEM_SPEC,
             "criteria",
-            "rate-limit",
+            &["rate-limit"],
             "implemented-by",
             "src/gateway_v2.rs",
         )
@@ -4540,7 +4555,7 @@ A short burst is tolerated.
             &schema,
             TWO_ITEM_SPEC,
             "criteria",
-            "ghost",
+            &["ghost"],
             "implemented-by",
             "x",
         )
@@ -4550,7 +4565,7 @@ A short burst is tolerated.
             &schema,
             TWO_ITEM_SPEC,
             "criteria",
-            "rate-limit",
+            &["rate-limit"],
             "nonesuch",
             "x",
         )

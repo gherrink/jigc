@@ -43,6 +43,8 @@ mod migrate_corpus_item_leaf_residual;
 mod migrate_corpus_item_slot;
 #[path = "../migrate_corpus_log_completeness.rs"]
 mod migrate_corpus_log_completeness;
+#[path = "../migrate_corpus_map_gap.rs"]
+mod migrate_corpus_map_gap;
 #[path = "../migrate_corpus_nested_item_slot.rs"]
 mod migrate_corpus_nested_item_slot;
 #[path = "../migrate_corpus_set_fields.rs"]

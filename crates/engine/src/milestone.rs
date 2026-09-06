@@ -1426,7 +1426,7 @@ fn flip_record_status_to_joined(
             schema,
             &body,
             RECORD_TASKS_SECTION,
-            item_id,
+            &[item_id],
             RECORD_STATUS_FIELD,
             RECORD_STATUS_JOINED,
         )?;
@@ -1517,7 +1517,7 @@ pub fn discard_sub_task_item(
         schema,
         &source,
         RECORD_TASKS_SECTION,
-        task_id,
+        &[task_id],
         RECORD_STATUS_FIELD,
         RECORD_STATUS_DISCARDED,
     )
@@ -1566,7 +1566,7 @@ fn flip_record_status_to_discarded(
             schema,
             &body,
             RECORD_TASKS_SECTION,
-            item_id,
+            &[item_id],
             RECORD_STATUS_FIELD,
             RECORD_STATUS_DISCARDED,
         )?;
@@ -5152,7 +5152,7 @@ schema-version: 1
                     schema,
                     &body,
                     RECORD_TASKS_SECTION,
-                    task_id,
+                    &[task_id],
                     RECORD_STATUS_FIELD,
                     status,
                 )

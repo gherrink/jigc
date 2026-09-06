@@ -188,17 +188,17 @@ pub enum LocusDisposition {
 /// what "no cell reads [`SchemaChange::Unclassified`] for a kind that has one" means, and it
 /// is checked mechanically rather than asserted (`crates/cli/tests/migrate_locus_axis.rs`).
 ///
-/// One cell is [`LocusDisposition::Unbuilt`], byte-writing and M50 Increment 7's: remapping a
-/// nested enum value. [`SchemaChange::AddedItemField`] is
-/// [`Applied`](LocusDisposition::Applied) at locus 3 on **both** its arms: the zero-byte one —
-/// an absence the conformance gate accepts — and, since M50 Increment 7 / T3, the
-/// `default:`-carrying one, which splices the declared value onto every nested item through
-/// the depth-aware write primitive. [`SchemaChange::AddedItemSlot`] joined it at T4, taking a
-/// locus rather than a section id so the block it reshapes is the one the change names.
+/// The three byte-writing cells M50 Increment 7 built are all [`Applied`](LocusDisposition::Applied)
+/// at locus 3. [`SchemaChange::AddedItemField`] on **both** its arms: the zero-byte one — an
+/// absence the conformance gate accepts — and, since T3, the `default:`-carrying one, which
+/// splices the declared value onto every nested item through the depth-aware write primitive.
+/// [`SchemaChange::AddedItemSlot`] joined it at T4, taking a locus rather than a section id so
+/// the block it reshapes is the one the change names. [`SchemaChange::ValueRemapped`] joined it
+/// at T5, locating the same value span one item deeper.
 ///
 /// A `locus` outside `1..=LOCI` has no cell and answers [`LocusDisposition::Unreachable`].
 pub const fn locus_disposition(kind: SchemaChangeKind, locus: usize) -> LocusDisposition {
-    use LocusDisposition::{Applied, DoctypeLevel, Refused, Unbuilt, Unreachable};
+    use LocusDisposition::{Applied, DoctypeLevel, Refused, Unreachable};
     // One boolean per locus, so a `const fn` can branch on them.
     let section = locus == 1;
     let item = locus == 2;
@@ -261,13 +261,15 @@ pub const fn locus_disposition(kind: SchemaChangeKind, locus: usize) -> LocusDis
                 Unreachable
             }
         }
-        // The one byte-writing cell Increment 7 has left to build. Refusing here is what
-        // keeps the fold from splicing an item-locus primitive at the wrong depth.
+        // The value-semantic rewrite, at every locus a value can be committed at — a
+        // section's own field, a repeatable item's, and, since M50 Increment 7 / T5, a
+        // nested item's. The splice is the **value span** at every one of them, so the
+        // committed bytes around it (an item's prose, and content the parse does not model)
+        // cannot move: the depth changes which item the span is located in, never how much
+        // of that item is rewritten.
         SchemaChangeKind::ValueRemapped => {
-            if section || item {
+            if section || item || nested {
                 Applied
-            } else if nested {
-                Unbuilt
             } else {
                 Unreachable
             }

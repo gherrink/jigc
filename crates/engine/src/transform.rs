@@ -560,30 +560,7 @@ fn apply_added_item_field(
         // The instance omits the section — no items, nothing to place.
         return Ok(source.to_string());
     };
-    // The chain is the write path's own address shape: item id, then one nested-section hop
-    // per level, then the nested item's id (`["1-0-0", "changes", "added"]`). Descending it
-    // **per parent** is what makes same-anchor nested items under different parents legal —
-    // two releases may each carry a `#### added`, and addressing one by its anchor alone
-    // would write one of them twice and the other never.
-    let mut level: Vec<(Vec<String>, &crate::parse::ParsedItem)> = parsed
-        .items
-        .iter()
-        .map(|item| (vec![item.id.clone()], item))
-        .collect();
-    for hop in locus.nested() {
-        level = level
-            .into_iter()
-            .flat_map(|(chain, item)| {
-                item.items.iter().map(move |nested| {
-                    let mut chain = chain.clone();
-                    chain.push(hop.clone());
-                    chain.push(nested.id.clone());
-                    (chain, nested)
-                })
-            })
-            .collect();
-    }
-    let targets: Vec<Vec<String>> = level
+    let targets: Vec<Vec<String>> = items_at_locus(parsed, locus)
         .into_iter()
         // An item that already carries the bullet keeps its authored value — the skip that
         // makes the fold idempotent and **No-data-loss** hold, at every locus.
@@ -607,6 +584,42 @@ fn apply_added_item_field(
         };
     }
     Ok(out)
+}
+
+/// Every committed item **at `locus`** inside the already-parsed section `parsed`, paired with
+/// the addressing chain the write path takes to reach it.
+///
+/// The chain is the write path's own address shape: item id, then one nested-section hop per
+/// level, then the nested item's id (`["1-0-0", "changes", "added"]`). Descending it **per
+/// parent** is what makes same-anchor nested items under different parents legal — two releases
+/// may each carry a `#### added`, and addressing one by its anchor alone would write one of them
+/// twice and the other never.
+///
+/// One walk, shared by every item-locus arm ([`apply_added_item_field`], [`apply_value_remap`]),
+/// so two kinds cannot come to disagree about which items a locus names.
+fn items_at_locus<'a>(
+    parsed: &'a crate::parse::ParsedSection,
+    locus: &Locus,
+) -> Vec<(Vec<String>, &'a crate::parse::ParsedItem)> {
+    let mut level: Vec<(Vec<String>, &crate::parse::ParsedItem)> = parsed
+        .items
+        .iter()
+        .map(|item| (vec![item.id.clone()], item))
+        .collect();
+    for hop in locus.nested() {
+        level = level
+            .into_iter()
+            .flat_map(|(chain, item)| {
+                item.items.iter().map(move |nested| {
+                    let mut chain = chain.clone();
+                    chain.push(hop.clone());
+                    chain.push(nested.id.clone());
+                    (chain, nested)
+                })
+            })
+            .collect();
+    }
+    level
 }
 
 /// Apply a `value-remapped` change: remap every committed value of the enum `field` in
@@ -660,21 +673,31 @@ fn apply_value_remap(
             )?)
         }
         SectionBody::Repeatable { .. } => {
-            // Collect (item id, remapped value) from the initial parse, then splice each via
-            // the present-field item write path. Item ids are stable under a value-span
-            // splice (the enum field is never the id-from — an enum id-from item is
-            // reslug-refused), so a fresh `set_item_field` locates each item after the prior
-            // splice.
-            let mut edits: Vec<(String, String)> = Vec::new();
-            for item in &parsed.items {
+            // Collect (item chain, remapped value) for every item AT THE CHANGE'S OWN LOCUS
+            // from the initial parse, then splice each via the present-field item write path.
+            // Item ids are stable under a value-span splice (the enum field is never the
+            // id-from — an enum id-from item is reslug-refused), so a fresh write locates each
+            // item after the prior splice.
+            //
+            // An item that does not carry the bullet is skipped, at every locus: the field is
+            // absent in that instance and there is nothing to remap.
+            let mut edits: Vec<(Vec<String>, String)> = Vec::new();
+            for (chain, item) in items_at_locus(parsed, locus) {
                 if let Some(f) = item.fields.iter().find(|f| f.key == field) {
                     let new_value = remap_value(&f.value, map).ok_or_else(|| unsupported(locus))?;
-                    edits.push((item.id.clone(), new_value));
+                    edits.push((chain, new_value));
                 }
             }
             let mut out = source.to_string();
-            for (item_id, new_value) in edits {
-                out = write::set_item_field(schema, &out, section, &item_id, field, &new_value)?;
+            for (chain, new_value) in edits {
+                let chain: Vec<&str> = chain.iter().map(String::as_str).collect();
+                // ONE primitive at every locus — the present-field **value-span** splice,
+                // whose depth is carried by the chain. The insert-capable dual
+                // ([`write::set_nested_item_field_or_insert`], which
+                // [`apply_added_item_field`] must use because its bullet is absent by
+                // definition) re-renders the item's whole committed region, and this kind
+                // has no need of that: it overwrites a bullet that is already there.
+                out = write::set_item_field(schema, &out, section, &chain, field, &new_value)?;
             }
             Ok(out)
         }
@@ -4138,6 +4161,331 @@ sections:
                 v0: src.clone(),
             }],
             "the doc rolls back byte-identical — the stamp never moves"
+        );
+    }
+
+    // ---- (h') the same cell-set ONE LOCUS DOWN — `ValueRemapped` at the nested item block ----
+
+    /// v1 of a **nested** `ledger`: the enum `kind` is declared at **both** item loci — the
+    /// outer `entries` block and the nested `notes` one. That is the shipped
+    /// `changelog.releases` collision (`date` declared outside and, in the nested-`changes`
+    /// reshapes, inside) turned onto the kind this arm folds, and it is what makes the
+    /// *other* locus a control: a remap that resolved its declaration by section id, or
+    /// sprayed by field key over the whole section, rewrites values it does not own and the
+    /// assertions below read it off the bytes.
+    ///
+    /// The section/nesting shape is [`NESTED_DEFERRALS_V1`]'s (`entries` → `notes`), so
+    /// [`nested_deferrals_locus`] and [`nested_deferrals_values`] address this fixture too —
+    /// one reader per question, not one per fixture.
+    const NESTED_LEDGER_V1: &str = "\
+type: ledger
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: kind, type: enum, of: [D, I] }
+        - id: notes
+          repeatable:
+            id-from: title
+            block:
+              - { id: title, type: string }
+              - { id: kind, type: enum, of: [D, I] }
+              - { id: body, slot: { hint: \"the note\" } }
+";
+
+    /// The `kind` declaration line the rename is made in, per locus — the outer block's at
+    /// locus 2, the nested block's at the deepest one. The two differ **only** by
+    /// indentation, so the pair of v2 schemas differ by nothing but which block moved.
+    fn nested_ledger_anchor(locus: usize) -> &'static str {
+        if locus == LOCI {
+            "              - { id: kind, type: enum, of: [D, I] }\n"
+        } else {
+            "        - { id: kind, type: enum, of: [D, I] }\n"
+        }
+    }
+
+    /// [`NESTED_LEDGER_V1`] with the `kind` enum members **renamed** at `locus` and left
+    /// alone at the other one.
+    fn nested_ledger_v2(locus: usize) -> Schema {
+        let anchor = nested_ledger_anchor(locus);
+        let yaml =
+            NESTED_LEDGER_V1.replacen(anchor, &anchor.replace("[D, I]", "[Decision, Idea]"), 1);
+        assert_ne!(
+            yaml, NESTED_LEDGER_V1,
+            "the fixture must declare the locus-{locus} anchor `{anchor}`",
+        );
+        assert_eq!(
+            yaml.matches("[Decision, Idea]").count(),
+            1,
+            "exactly one of the two declarations may move; got:\n{yaml}",
+        );
+        load_schema(yaml.as_bytes())
+            .unwrap_or_else(|err| panic!("the locus-{locus} v2 schema loads: {err}\n{yaml}"))
+    }
+
+    /// A canonical nested `ledger`: **two** entries, each carrying its own `kind` and nesting
+    /// **two** notes carrying theirs — so *every item at the locus* is a real claim at both
+    /// loci, both committed members are exercised at both, and the items at the *other* locus
+    /// are the control that catches a splice landing at the wrong depth.
+    fn nested_ledger_doc(schema: &Schema) -> String {
+        let kind = |v: &str| Field {
+            key: "kind".to_string(),
+            value: Value::Scalar(v.to_string()),
+        };
+        let note = |id: &str, title: &str, body: &str, k: &str| ItemContent {
+            id: id.to_string(),
+            title: title.to_string(),
+            slot: Some(body.to_string()),
+            fields: vec![kind(k)],
+            ..Default::default()
+        };
+        let entry = |id: &str, title: &str, k: &str, notes: Vec<ItemContent>| ItemContent {
+            id: id.to_string(),
+            title: title.to_string(),
+            fields: vec![kind(k)],
+            items: notes,
+            ..Default::default()
+        };
+        let inst = Instance {
+            title: "Deferral Ledger".to_string(),
+            sections: vec![SectionContent {
+                id: "entries".to_string(),
+                items: vec![
+                    entry(
+                        "cache-the-index",
+                        "Cache the index",
+                        "D",
+                        vec![
+                            note(
+                                "the-owed-floor",
+                                "The owed floor",
+                                "Owed: a detect+route floor.",
+                                "D",
+                            ),
+                            note("the-route", "The route", "Routed at the migrate door.", "I"),
+                        ],
+                    ),
+                    entry(
+                        "a-plugin-surface",
+                        "A plugin surface",
+                        "I",
+                        vec![
+                            note(
+                                "the-record",
+                                "The record",
+                                "Parked: what abandon commits.",
+                                "I",
+                            ),
+                            note(
+                                "the-gate",
+                                "The gate",
+                                "Parked: which gate adjudicates.",
+                                "D",
+                            ),
+                        ],
+                    ),
+                ],
+                ..Default::default()
+            }],
+        };
+        render(schema, &inst)
+    }
+
+    /// The authored old→new map covering **both** committed members.
+    fn ledger_full_map() -> BTreeMap<String, String> {
+        BTreeMap::from([
+            ("D".to_string(), "Decision".to_string()),
+            ("I".to_string(), "Idea".to_string()),
+        ])
+    }
+
+    /// Undo the remapped value tokens in `out`. Equality with the source after this is the
+    /// whole-document byte claim: the fold moved the value bytes and **nothing else**.
+    fn undo_ledger_remap(out: &str) -> String {
+        out.replace("kind: Decision", "kind: D")
+            .replace("kind: Idea", "kind: I")
+    }
+
+    /// **The `ValueRemapped` cell-set holds one locus down.** (M50 Increment 7 / T5.)
+    ///
+    /// The set is the one the shipped locus-1/locus-2 tests above name — the map that covers
+    /// every committed value remaps **every** item byte-faithfully, an **uncovered** value
+    /// blocks loudly, and the fold is deterministic — and each cell is driven **at both item
+    /// loci in the same loop**, over one fixture whose two v2 schemas differ by nothing but
+    /// which block the rename was made in. Two claims a per-locus pair of tests could not
+    /// make: the outcome at the deepest locus is the *same* outcome, and the items at the
+    /// **other** locus are untouched — the control that catches a splice at the wrong depth.
+    ///
+    /// Red at HEAD: `locus_disposition(ValueRemapped, 3)` was `Unbuilt`, so `transform`
+    /// refused the nested cell before reaching the arm at all.
+    #[test]
+    fn the_value_remap_cell_set_holds_one_locus_down() {
+        let v1 = load_schema(NESTED_LEDGER_V1.as_bytes()).expect("the nested v1 loads");
+        let src = nested_ledger_doc(&v1);
+        let before = instance_from_source(&v1, &src).expect("the v1 source parses");
+        let full = ledger_full_map();
+
+        for locus in [2, LOCI] {
+            let v2 = nested_ledger_v2(locus);
+            let at = nested_deferrals_locus(locus);
+            let other = if locus == LOCI { 2 } else { LOCI };
+
+            // The **real classifier** names the block the rename was made in — the premise
+            // the arm below rests on, asserted rather than assumed.
+            assert_eq!(
+                schema_diff(&v1, &v2),
+                vec![SchemaChange::ValueRemapped {
+                    locus: at.clone(),
+                    field: "kind".to_string(),
+                    map: BTreeMap::new(),
+                }],
+                "locus {locus}: the rename classifies at exactly the block it was made in",
+            );
+
+            // The fixture is a real claim at this locus: more than one item, and both
+            // committed members present, so a map exercised one way only cannot pass.
+            let committed = nested_deferrals_values(&before, locus, "kind");
+            assert_eq!(
+                committed.len(),
+                if locus == LOCI { 4 } else { 2 },
+                "locus {locus}: every-item is a claim over more than one item",
+            );
+            assert_eq!(
+                committed
+                    .iter()
+                    .filter_map(|(_, v)| v.clone())
+                    .collect::<std::collections::BTreeSet<_>>(),
+                std::collections::BTreeSet::from(["D".to_string(), "I".to_string()]),
+                "locus {locus}: both committed members are exercised",
+            );
+
+            // ---- cell 1: a covering map remaps every item at the locus, byte-faithfully.
+            let changes = vec![SchemaChange::ValueRemapped {
+                locus: at.clone(),
+                field: "kind".to_string(),
+                map: full.clone(),
+            }];
+            let out = transform(&v1, &v2, &src, &changes)
+                .unwrap_or_else(|err| panic!("locus {locus}: the remap folds; got {err:?}"));
+            assert_conforms(&v2, &out);
+            assert_byte_stable(&v2, &out);
+            assert_ne!(
+                out, src,
+                "locus {locus}: the fold rewrites the committed values",
+            );
+            // THE WHOLE-DOCUMENT BYTE CLAIM, not the field line's: undoing the value tokens
+            // must restore the source byte-for-byte. A primitive that re-renders the item
+            // (rather than splicing the value span) can pass a field-line assertion while
+            // dropping, re-ordering or re-canonicalizing everything around it.
+            assert_eq!(
+                undo_ledger_remap(&out),
+                src,
+                "locus {locus}: the value bytes are the only bytes the fold may move",
+            );
+
+            let inst = instance_from_source(&v2, &out).expect("the migrated bytes re-parse");
+            assert_eq!(
+                nested_deferrals_values(&inst, locus, "kind"),
+                committed
+                    .iter()
+                    .map(|(id, v)| (id.clone(), v.as_ref().map(|v| full[v].clone())))
+                    .collect::<Vec<_>>(),
+                "locus {locus}: every item at the locus carries its remapped value",
+            );
+            assert_eq!(
+                nested_deferrals_values(&inst, other, "kind"),
+                nested_deferrals_values(&before, other, "kind"),
+                "locus {locus}: no item at locus {other} is touched",
+            );
+
+            // ---- cell 2: an uncovered committed value blocks loudly, naming this locus.
+            let partial = BTreeMap::from([("D".to_string(), "Decision".to_string())]);
+            assert_eq!(
+                transform(
+                    &v1,
+                    &v2,
+                    &src,
+                    &[SchemaChange::ValueRemapped {
+                        locus: at.clone(),
+                        field: "kind".to_string(),
+                        map: partial,
+                    }]
+                ),
+                Err(TransformError::Unsupported {
+                    kind: "value-remapped",
+                    locus: at.clone(),
+                }),
+                "locus {locus}: a value the authored map does not cover blocks, naming the \
+                 locus the map has to be keyed at",
+            );
+
+            // ---- cell 3: determinism.
+            assert_eq!(
+                transform(&v1, &v2, &src, &changes).expect("the re-run folds"),
+                out,
+                "locus {locus}: the value-remap fold is deterministic",
+            );
+        }
+    }
+
+    /// **A nested item's committed bytes the parse does not model survive the remap.**
+    /// (M50 Increment 7 / T5 — the plan's red-step assumption 2, proven rather than trusted.)
+    ///
+    /// jigc's canonical item order is slots-then-fields, so *"append a sentence to this
+    /// note"* lands **after** the `<!-- fields -->` group, where the parse carries nothing —
+    /// reachable by hand, and reachable at this locus precisely because a nested block that
+    /// declares a field is what a value remap needs. The item-locus arm splices the **value
+    /// span**, so those bytes cannot move; a nested arm that re-rendered the whole item from
+    /// what the parse modelled would delete them at exit 0, on a *migration*, which is the
+    /// No-data-loss property the pair declares.
+    #[test]
+    fn a_nested_value_remap_keeps_committed_bytes_the_parse_does_not_model() {
+        let v1 = load_schema(NESTED_LEDGER_V1.as_bytes()).expect("the nested v1 loads");
+        let v2 = nested_ledger_v2(LOCI);
+        let clean = nested_ledger_doc(&v1);
+
+        // Hand-append an aside to the FIRST nested item, immediately after its field group
+        // and before the next `#### ` heading — the one spot the canonical form leaves for it.
+        let head = clean
+            .find("{#the-owed-floor}")
+            .expect("the first nested item is present");
+        let next = head
+            + clean[head..]
+                .find("\n#### ")
+                .expect("a following nested item bounds the first");
+        let aside = "A hand-appended aside the schema does not model.\n";
+        // Separated from the group by a blank line: glued straight onto it the parser reads
+        // it as a malformed field bullet, which is a *malformed* doc, not an unmodelled one.
+        let src = format!("{}\n{aside}{}", &clean[..next], &clean[next..]);
+        assert!(
+            parse_sections(&v1, &src).is_ok(),
+            "the aside parses — it is unmodelled, not malformed; got {:?}\nsrc:\n{src}",
+            parse_sections(&v1, &src).err(),
+        );
+
+        let out = transform(
+            &v1,
+            &v2,
+            &src,
+            &[SchemaChange::ValueRemapped {
+                locus: nested_deferrals_locus(LOCI),
+                field: "kind".to_string(),
+                map: ledger_full_map(),
+            }],
+        )
+        .expect("the nested remap folds over a doc carrying unmodelled bytes");
+
+        assert!(
+            out.contains(aside),
+            "the hand-appended aside must survive the fold; got:\n{out}",
+        );
+        assert_eq!(
+            undo_ledger_remap(&out),
+            src,
+            "the value bytes are the only bytes the fold may move — including around \
+             content the parse does not model",
         );
     }
 }

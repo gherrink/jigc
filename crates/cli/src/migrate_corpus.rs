@@ -1148,7 +1148,13 @@ fn enrich_value_remaps(changes: Vec<SchemaChange>, ty: &str) -> Vec<SchemaChange
         .into_iter()
         .map(|change| match change {
             SchemaChange::ValueRemapped { locus, field, map } if map.is_empty() => {
-                let map = authored_remap(ty, locus.section(), &field).unwrap_or(map);
+                // Keyed by the locus **path**, which is what the map-gap refusal's route
+                // names (M50 Increment 7 / T5). Keyed by `locus.section()` the lookup asked
+                // a question the route did not: a nested block's rename resolved to the
+                // *outer* block's authored entry — `changelog.releases` declares `date`
+                // outside and inside — so one map would silently answer for two different
+                // fields, and the key the operator was told to declare was not a key at all.
+                let map = authored_remap(ty, &locus.to_string(), &field).unwrap_or(map);
                 SchemaChange::ValueRemapped { locus, field, map }
             }
             other => other,
@@ -1157,15 +1163,21 @@ fn enrich_value_remaps(changes: Vec<SchemaChange>, ty: &str) -> Vec<SchemaChange
 }
 
 /// The CLI-authored old→new value maps for enum-member renames — keyed by
-/// `(doctype, section, field)`. An enum rename is a semantic choice the schema pair cannot
+/// `(doctype, locus path, field)`. An enum rename is a semantic choice the schema pair cannot
 /// recover, so the mapping is declared here (the migration input the classifier emits
-/// blank), not derived. Returns `None` for any (doctype, section, field) with no authored
+/// blank), not derived. Returns `None` for any (doctype, locus, field) with no authored
 /// rename, leaving the classifier's empty map — the driver then blocks that doc loudly.
+///
+/// **The key is the locus path** ([`engine::schema_diff::Locus`]'s `Display` — `entries` at a
+/// section or its item block, `releases/changes` one level down), never the bare section id,
+/// so it discriminates the block the rename was made in and matches, byte for byte, the key
+/// the map-gap refusal's route tells the operator to declare (M50 Increment 7 / T5). At loci
+/// 1 and 2 the two spellings coincide, which is why the entry below is unchanged.
 ///
 /// The one authored entry: the M41 F4 `deferral-ledger` `entries.kind` rename `D`→`Decision`
 /// / `I`→`Idea` (the first methodology v1→v2 migration).
-fn authored_remap(ty: &str, section: &str, field: &str) -> Option<BTreeMap<String, String>> {
-    match (ty, section, field) {
+fn authored_remap(ty: &str, locus: &str, field: &str) -> Option<BTreeMap<String, String>> {
+    match (ty, locus, field) {
         ("deferral-ledger", "entries", "kind") => Some(BTreeMap::from([
             ("D".to_string(), "Decision".to_string()),
             ("I".to_string(), "Idea".to_string()),
@@ -1771,8 +1783,15 @@ fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
             // The one refusal whose repair is a **migration input**, not an arm: the old→new map
             // for an enum rename is unrecoverable from the schema pair, so the CLI authors it —
             // and a committed value the map does not cover is a gap in *that table*.
+            //
+            // AT EVERY LOCUS (M50 Increment 7 / T5). The arm was guarded `&& !locus.is_nested()`
+            // while the nested one was un-built, so a nested uncovered value fell through to the
+            // un-built-arm text below. Once the arm exists that text is a **lie** (the arm is
+            // built) and **unfollowable** (the operator has no jigc workspace), so the guard goes
+            // with the cell it was describing. `{locus}` renders the path, which is exactly the
+            // key `enrich_value_remaps` looks the map up by — the route names a real key.
             TransformError::Unsupported { kind, locus }
-                if *kind == SchemaChangeKind::ValueRemapped.as_str() && !locus.is_nested() =>
+                if *kind == SchemaChangeKind::ValueRemapped.as_str() =>
             {
                 fold_refused_finding(
                     rel_key,
@@ -2255,6 +2274,49 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// **The authored remap table is keyed by the locus path, not the bare section id.**
+    /// (M50 Increment 7 / T5.)
+    ///
+    /// A section's own item block and a nested one inside it are two different blocks that can
+    /// declare the same leaf id — `changelog.releases` declares `date` outside its nested
+    /// `changes` block and, in the reshapes M50 ships, inside it too. Keyed by
+    /// `locus.section()` the lookup asked only *which section*, so a map authored for one
+    /// block would silently be handed to the other's rename; and the refusal's route, which
+    /// interpolates `{locus}`, named a key the table was not keyed by.
+    ///
+    /// The one shipped entry is the probe, and no entry is added to test it: it must fill the
+    /// **locus-2** `entries` change and leave the **locus-3** `entries/notes` one empty — an
+    /// empty map being exactly what makes the driver block that doc loudly.
+    #[test]
+    fn the_authored_remap_is_keyed_by_the_locus_path_not_the_section() {
+        let at_item = engine::schema_diff::Locus::at_item_block("entries");
+        let nested = at_item.nested_in("notes");
+        let change = |locus: engine::schema_diff::Locus| SchemaChange::ValueRemapped {
+            locus,
+            field: "kind".to_string(),
+            map: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            enrich_value_remaps(vec![change(at_item.clone())], "deferral-ledger"),
+            vec![SchemaChange::ValueRemapped {
+                locus: at_item,
+                field: "kind".to_string(),
+                map: BTreeMap::from([
+                    ("D".to_string(), "Decision".to_string()),
+                    ("I".to_string(), "Idea".to_string()),
+                ]),
+            }],
+            "the shipped entry fills the block it was authored for",
+        );
+        assert_eq!(
+            enrich_value_remaps(vec![change(nested.clone())], "deferral-ledger"),
+            vec![change(nested)],
+            "a nested block's rename is a different key: it keeps the empty map, so the \
+             driver blocks the doc rather than being handed the outer block's semantics",
+        );
     }
 
     /// M42 inc 10, the migration engine's own arm: [`has_section_heading`] — the guard that
