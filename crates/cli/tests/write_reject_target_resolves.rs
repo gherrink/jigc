@@ -24,10 +24,21 @@
 //! which is every break raised inside a section, i.e. nearly all of them. The one shape that
 //! emitted the contract's form was the break `prefix_hop` never touches. So this suite
 //! iterates the **hop depths the outward assembly produces** — the section hop, the section +
-//! field-key hop, the section + item hop — crossed with the write verbs that funnel through
-//! the seam, and asserts of every cell that the emitted target is the write's own address and
-//! that **pasting it back into a read verb resolves**. What the read then says about a
-//! genuinely broken doc is not this suite's business; that it can be *addressed at all* is.
+//! field-key hop, the section + item hop, and the nested depth *inside* a repeatable-in-a
+//! -repeatable — crossed with the write verbs that funnel through the seam, and asserts of
+//! every cell that the emitted target is the write's own address, that it **round-trips
+//! through the grammar the write verbs enforce**, and that **pasting it back into a read verb
+//! resolves**. What the read then says about a genuinely broken doc is not this suite's
+//! business; that it can be *addressed at all* is.
+//!
+//! **The nested depth needed a second doctype (N29).** The axis was declared over the hop
+//! depths `prefix_hop` assembles and enumerated three of the four: the fixture was a `commit`
+//! doc, and `commit` does not nest, so no cell could reach a break inside a nested repeatable
+//! or a write addressed at 5 hops. The task now stages the shipped `changelog` beside its
+//! commit doc, and each corruption names which staged doc it plants in. The *composition* of
+//! a nested finding's own address is a different claim with its own home
+//! (`nested_finding_address.rs`); what this suite owes the nested cell is that the **write's**
+//! address survives the reject at that depth.
 //!
 //! The locus the carry existed for is pinned too: `line` still points at the offending line.
 //! Dropping the address must not cost the coordinate.
@@ -84,15 +95,50 @@ fn git_ok(cwd: &Path, args: &[&str]) {
 /// The task the fixture mints — `jigc start` slugs the intent.
 const TASK: &str = "add-a-cache";
 
-/// A repo with one task open, its transient `commit:<task>` doc staged in the workbench.
+/// Which staged doc a corruption plants in, and a write addresses. The `commit` doctype is
+/// flat, so the nested hop depth is only reachable through a doctype that declares a
+/// repeatable inside a repeatable — `changelog` is the one that ships.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Doc {
+    Commit,
+    Changelog,
+}
+
+/// One staged working copy: where it lives, and the bytes to restore before each corruption.
+struct Staged {
+    path: PathBuf,
+    pristine: String,
+}
+
+impl Staged {
+    /// A placeholder for the two-phase construction below — the paths only exist once the
+    /// binary has staged the docs.
+    fn empty() -> Self {
+        Staged {
+            path: PathBuf::new(),
+            pristine: String::new(),
+        }
+    }
+
+    fn read(path: PathBuf) -> Self {
+        let pristine = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("the staged doc {path:?} must exist ({e})"));
+        Staged { path, pristine }
+    }
+}
+
+/// The nested change-group's prose leaf — a 5-hop address, the deepest a write can name over
+/// the shipped corpus, and the one no `commit`-doc cell could reach.
+const NESTED_SLOT: &str = "changelog:changelog#releases/1-0-0/changes/added/notes";
+
+/// A repo with one task open, staging its transient `commit:<task>` doc **and** a
+/// `changelog:changelog` carrying a release with one nested change-group.
 struct Fixture {
     _root: TempDir,
     home: TempDir,
     repo: PathBuf,
-    /// The staged `commit:<task>` working copy every corruption is applied to.
-    staged: PathBuf,
-    /// The pristine bytes, restored before each corruption.
-    pristine: String,
+    commit_doc: Staged,
+    changelog_doc: Staged,
 }
 
 impl Fixture {
@@ -113,8 +159,8 @@ impl Fixture {
             _root: root,
             home,
             repo,
-            staged: PathBuf::new(),
-            pristine: String::new(),
+            commit_doc: Staged::empty(),
+            changelog_doc: Staged::empty(),
         };
         let setup = fx.run(&["setup"], None);
         assert!(
@@ -122,24 +168,76 @@ impl Fixture {
             "`jigc setup` must install the cascade; stderr:\n{}",
             String::from_utf8_lossy(&setup.stderr),
         );
-        let started = fx.run(&["start", "--workflow", "quick-fix", "Add a cache"], None);
+        // `record-change` is the workflow whose create-gate admits the `changelog` — the one
+        // shipped doctype that nests, and therefore the only way this suite reaches the
+        // nested hop depth. It stages the same transient `commit:<task>` doc `quick-fix` did.
+        let started = fx.run(
+            &["start", "--workflow", "record-change", "Add a cache"],
+            None,
+        );
         assert!(
             started.status.success(),
             "`jigc start` must mint the task; stderr:\n{}",
             String::from_utf8_lossy(&started.stderr),
         );
-        let staged = fx
-            .repo
-            .join(".jigc")
-            .join("tasks")
-            .join(TASK)
-            .join("docs")
-            .join(format!("commit:{TASK}.md"));
-        let pristine = fs::read_to_string(&staged).expect("the commit doc is staged");
+        // The nested corpus, authored through the binary: a release carrying one change-group
+        // with prose. Every address below is the one the binary itself minted for it.
+        for argv in [
+            vec!["doc", "create", "changelog", "--title", "Changelog"],
+            vec![
+                "doc",
+                "add-item",
+                "changelog:changelog#releases",
+                "--title",
+                "1.0.0",
+            ],
+            vec![
+                "doc",
+                "add-item",
+                "changelog:changelog#releases/1-0-0/changes",
+                "--title",
+                "added",
+            ],
+        ] {
+            let out = fx.run(&argv, None);
+            assert!(
+                out.status.success(),
+                "`jigc {}` must exit 0; stderr:\n{}",
+                argv.join(" "),
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+        let noted = fx.run(
+            &[
+                "doc",
+                "set-slot",
+                NESTED_SLOT,
+                "--from-file",
+                "-",
+                "--task",
+                TASK,
+            ],
+            Some(b"- OAuth device-code flow\n"),
+        );
+        assert!(
+            noted.status.success(),
+            "the nested change-group's prose must land; stderr:\n{}",
+            String::from_utf8_lossy(&noted.stderr),
+        );
+
+        let docs = fx.repo.join(".jigc").join("tasks").join(TASK).join("docs");
         Fixture {
-            staged,
-            pristine,
+            commit_doc: Staged::read(docs.join(format!("commit:{TASK}.md"))),
+            changelog_doc: Staged::read(docs.join("changelog:changelog.md")),
             ..fx
+        }
+    }
+
+    /// The staged working copy a corruption plants in / a write addresses.
+    fn staged(&self, doc: Doc) -> &Staged {
+        match doc {
+            Doc::Commit => &self.commit_doc,
+            Doc::Changelog => &self.changelog_doc,
         }
     }
 
@@ -175,14 +273,15 @@ impl Fixture {
     /// line the reject is expected to point at — **read back off the written bytes**, so the
     /// locus assertion is derived from the fixture rather than hand-counted.
     fn corrupt_with(&self, corrupt: &Corruption) -> usize {
-        let broken = (corrupt.apply)(&self.pristine);
+        let staged = self.staged(corrupt.doc);
+        let broken = (corrupt.apply)(&staged.pristine);
         assert!(
             broken.contains(corrupt.planted),
             "corruption `{}` must plant `{}`; got:\n{broken}",
             corrupt.name,
             corrupt.planted,
         );
-        fs::write(&self.staged, &broken).expect("write the corrupted staged doc");
+        fs::write(&staged.path, &broken).expect("write the corrupted staged doc");
         broken
             .lines()
             .position(|line| line.starts_with(corrupt.locus_prefix))
@@ -201,6 +300,8 @@ impl Fixture {
 struct Corruption {
     /// The hop depth, as the outward assembly builds it.
     name: &'static str,
+    /// The staged doc this break is planted in — and, with it, the writes it can block.
+    doc: Doc,
     /// Pristine bytes in, broken bytes out.
     apply: fn(&str) -> String,
     /// A marker proving the corruption landed in the written bytes.
@@ -219,6 +320,7 @@ const CORRUPTIONS: &[Corruption] = &[
     Corruption {
         // `conformance.section-renamed` — addressed at the bare section hop (`body`).
         name: "section hop",
+        doc: Doc::Commit,
         apply: |src| src.replace("## Body", "## Bodyz"),
         planted: "## Bodyz",
         locus_prefix: "## Bodyz",
@@ -227,6 +329,7 @@ const CORRUPTIONS: &[Corruption] = &[
         // `conformance.unknown-field` — the field-key hop under the section (`header/bogus`).
         // Located at the field group's base line, which is the first field bullet.
         name: "section + field-key hop",
+        doc: Doc::Commit,
         apply: |src| src.replacen("scope:", "bogus: x\nscope:", 1),
         planted: "bogus: x",
         locus_prefix: "type:",
@@ -235,14 +338,29 @@ const CORRUPTIONS: &[Corruption] = &[
         // `conformance.item-anchor-malformed` — the item hop under the section
         // (`trailers/BadAnchor`): an uppercase anchor is not a slug.
         name: "section + item hop",
+        doc: Doc::Commit,
         apply: |src| format!("{src}\n### Co-Authored-By  {{#BadAnchor}}\n"),
         planted: "{#BadAnchor}",
         locus_prefix: "### Co-Authored-By",
+    },
+    Corruption {
+        // The fourth depth, and the one the `commit` doctype cannot reach:
+        // `conformance.unknown-field` raised INSIDE a nested repeatable, whose own composed
+        // address carries the nested section's hop (`releases/1-0-0/changes/added/bogus`,
+        // N29). The change-group template declares no bullet fields at all, so any key in a
+        // stray sentinel group is unknown; the finding locates at the group's base line.
+        name: "section + item + nested-section + nested-item hop",
+        doc: Doc::Changelog,
+        apply: |src| format!("{src}\n<!-- fields -->\n- bogus: x\n"),
+        planted: "- bogus: x",
+        locus_prefix: "- bogus: x",
     },
 ];
 
 /// One write verb that funnels through `splice_error_finding`, with the address it names.
 struct Write {
+    /// The staged doc this write addresses — paired with the corruptions planted in it.
+    doc: Doc,
     argv: &'static [&'static str],
     /// The write's own address, `{task}`-templated — what the contract declares the target
     /// to be.
@@ -252,14 +370,32 @@ struct Write {
 
 const WRITES: &[Write] = &[
     Write {
+        doc: Doc::Commit,
         argv: &["doc", "set-slot", "{addr}", "--from-file", "-"],
         address: "commit:{task}#summary",
         stdin: Some(b"A subject line.\n"),
     },
     Write {
+        doc: Doc::Commit,
         argv: &["doc", "set-field", "{addr}", "--value", "feat"],
         address: "commit:{task}#header/type",
         stdin: None,
+    },
+    // The nested cell: a 5-hop slot write, so the reject's target is checked at the deepest
+    // address the shipped corpus can name.
+    //
+    // Only `set-slot` here, and for a stated reason rather than by omission: a `set-field`
+    // over the *same* broken nested source does not reach `splice_error_finding` at all —
+    // resolving `#releases/1-0-0/link` needs the item located in a doc that no longer parses,
+    // so it rejects earlier as `write.wrong-shape` (target still the write's own address).
+    // That code is outside this suite's declared subject; the misdiagnosis its message and
+    // route carry there ("re-run the write at a declared address", over an address that *is*
+    // declared) is a separate class with no home yet.
+    Write {
+        doc: Doc::Changelog,
+        argv: &["doc", "set-slot", "{addr}", "--from-file", "-"],
+        address: NESTED_SLOT,
+        stdin: Some(b"- a later note.\n"),
     },
 ];
 
@@ -278,7 +414,7 @@ fn every_break_shape_targets_the_writes_own_address_and_it_resolves() {
     for corrupt in CORRUPTIONS {
         let break_line = fx.corrupt_with(corrupt);
 
-        for write in WRITES {
+        for write in WRITES.iter().filter(|w| w.doc == corrupt.doc) {
             let address = write.address.replace("{task}", TASK);
             let argv: Vec<String> = write
                 .argv
@@ -324,11 +460,25 @@ fn every_break_shape_targets_the_writes_own_address_and_it_resolves() {
                 corrupt.name,
             );
 
-            // And the whole point of a stable key: it can be pasted back into a read verb.
+            // And the whole point of a stable key: it parses against the grammar the write
+            // verbs enforce, byte-identically, and can be pasted back into a read verb.
             let target = finding["key"]["target"]
                 .as_str()
                 .expect("the target is a string")
                 .to_owned();
+            let parsed = engine::address::Address::parse(&target).unwrap_or_else(|e| {
+                panic!(
+                    "[{} / {address}] the emitted target must parse as an address; \
+                     `{target}` said: {e:?}",
+                    corrupt.name,
+                )
+            });
+            assert_eq!(
+                parsed.to_string(),
+                target,
+                "[{} / {address}] the emitted target round-trips through the grammar",
+                corrupt.name,
+            );
             let read = fx.run(&["doc", "show", &target, "--task", TASK], None);
             let read_err = String::from_utf8_lossy(&read.stderr).into_owned();
             assert!(

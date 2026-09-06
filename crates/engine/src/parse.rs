@@ -1285,7 +1285,19 @@ fn parse_items(
         // the depth at H6, so the recursion terminates. Nested items render in document
         // order (the recursive scan), each carrying its own parent-scoped `seen` set.
         let mut nested_items = Vec::new();
-        for nested in &item_template.nested {
+        for (nested_id, nested) in &item_template.nested {
+            // The nested repeatable's findings are collected APART so its own leaf id can
+            // be prefixed before they join the parent's set. That hop is what makes the
+            // composed address the canonical `<section>/<item>/<nested>/<child>/<leaf>` the
+            // write verbs accept and `validate::check_item_leaves` already builds on the
+            // adjudication side (`command-output-contract.md` → the parse-conformance
+            // sub-table). Without it a break inside a change-group composed
+            // `#releases/1-0-0/added/bogus`, which parses as a grammar but names nothing —
+            // the address the tool printed could not be pasted back into the tool (N29).
+            // Prefixing HERE, at the recursion site, is what makes the repair hold at every
+            // nesting depth and for every declared nested leaf rather than for the one
+            // nesting doctype that ships.
+            let mut nested_findings: Vec<Finding> = Vec::new();
             nested_items.extend(parse_items(
                 source,
                 scan,
@@ -1293,12 +1305,15 @@ fn parse_items(
                 item_end,
                 nested,
                 depth + 1,
-                &mut item_findings,
+                &mut nested_findings,
             ));
+            prefix_hop(&mut nested_findings, nested_id);
+            item_findings.append(&mut nested_findings);
         }
 
         // This item's hop, prefixed onto everything its body raised (a nested item's own
-        // hop is already inside, so the address nests: `<item>/<nested>/<leaf>`).
+        // hop and its nested section's are already inside, so the address nests:
+        // `<item>/<nested>/<child>/<leaf>`).
         prefix_hop(&mut item_findings, &id);
         findings.append(&mut item_findings);
 
@@ -1520,9 +1535,11 @@ pub(crate) struct ItemTemplate {
     pub(crate) slot_ids: Vec<String>,
     field_keys: Vec<String>,
     /// The block's nested repeatables, in schema block order (the M22 multi-level
-    /// lift). Each parses its own items one level deeper within the parent item's
-    /// region; empty for a flat single-level template.
-    nested: Vec<crate::schema::Repeatable>,
+    /// lift), each paired with **its own leaf id** — the nested section's stable id,
+    /// which is a hop in every address that reaches into it. Each parses its own items
+    /// one level deeper within the parent item's region; empty for a flat single-level
+    /// template.
+    nested: Vec<(String, crate::schema::Repeatable)>,
 }
 
 impl ItemTemplate {
@@ -1542,8 +1559,9 @@ impl ItemTemplate {
                 // A nested repeatable: its items parse one level deeper, within the
                 // parent item's region (the depth-aware parse lift, M22 inc-1 T2).
                 crate::schema::Leaf::Repeatable {
-                    repeatable: inner, ..
-                } => nested.push(inner.clone()),
+                    id,
+                    repeatable: inner,
+                } => nested.push((id.clone(), inner.clone())),
             }
         }
         ItemTemplate {
@@ -3032,8 +3050,9 @@ Body three.
             .expect_err("three #added within one release blocks");
         assert_eq!(
             fragments(&findings, "conformance.item-anchor-duplicate"),
-            [Some("releases/1-2-0/added")],
-            "the nested duplicate collapses per (parent, id) too: {findings:#?}",
+            [Some("releases/1-2-0/changes/added")],
+            "the nested duplicate collapses per (parent, id) too, at the nested \
+             repeatable's own hop (N29): {findings:#?}",
         );
         assert_seam_passes(&findings);
     }

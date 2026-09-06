@@ -344,13 +344,16 @@ mod tests {
     /// variable-depth [`Fragment::Deep`] path and round-trip parse → Display
     /// byte-identical; the pre-extension 1–3-hop forms still parse to their original
     /// variants (the lift is additive). The parser is purely structural — it splits by
-    /// hop count without consulting any schema, so both nested-address conventions (the
-    /// T4 `section/item/child/leaf` form and the design's `section/item/nested/child/leaf`
-    /// form) parse identically.
+    /// hop count without consulting any schema, so both nested-address shapes (the bare
+    /// `section/item/child/leaf` form and the design's `section/item/nested/child/leaf`
+    /// form) parse identically. That is the *grammar*, not the convention: no producer
+    /// emits the hop-less form any more — [`crate::validate`] always addressed a nested
+    /// locus with the nested repeatable's own hop, and since N29 the parse path does too.
     #[test]
     fn nested_deep_fragments_round_trip_and_are_additive() {
-        // The 4-hop nested form T4's validate emits + the worked binary drives
-        // (`#section/release/change-group/leaf`, no nested-section hop).
+        // The bare 4-hop shape (`#section/release/change-group/leaf`, no nested-section
+        // hop). It stays legal grammar — which is exactly why the hop being absent from a
+        // composed address went unnoticed until it was pasted back into a read verb.
         let four = "changelog:cl#releases/1-2-0/added/notes";
         let addr = Address::parse(four).expect("4-hop nested address parses");
         assert_eq!(

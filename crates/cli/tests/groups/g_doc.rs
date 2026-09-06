@@ -60,6 +60,9 @@ mod flow31_acceptance;
 mod implement_from_spec;
 #[path = "../increment_workflow_compose.rs"]
 mod increment_workflow_compose;
+
+#[path = "../nested_finding_address.rs"]
+mod nested_finding_address;
 #[path = "../roadmap_batch_author.rs"]
 mod roadmap_batch_author;
 #[path = "../roundtrip_registry_fence.rs"]
