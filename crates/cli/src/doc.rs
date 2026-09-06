@@ -425,7 +425,7 @@ pub enum DocCommand {
     /// Injected stamp field included — the third read surface, next to `describe`
     /// (the non-contractual menu) and `doc show` (the committed-content read).
     /// `--format json` is the separately-pinned, explicitly versioned contract
-    /// (`contract-version: 5` — `design/doc-read-surface.md` → Why json is a contract
+    /// (`contract-version: 6` — `design/doc-read-surface.md` → Why json is a contract
     /// here); plain text is a non-contractual human listing. Task-less — a schema
     /// projection is never task-scoped.
     Schema {
@@ -4273,10 +4273,12 @@ struct DocRow {
 /// as they evolve. Golden-pinned at ship (`crates/cli/tests/doc_schema.rs`).
 #[derive(serde::Serialize)]
 struct SchemaContract<'a> {
-    /// The projection's own version — 4 since M45 (the three settability states: an
-    /// id-from leaf's `add-item`/`retitle-item` pair, a `set: on-create` stamp's
-    /// `set-field`; 3 was the M43 rc.7 write-verb address join, 2 the M41 rc.5
-    /// `of`/`section` join; bumps on any structural change to these keys).
+    /// The projection's own version — 6 since M50 (a `ref` field's `to`, the target
+    /// doctype it references); 5 was the M48 id-source `write-key`, 4 the M45 three
+    /// settability states (an id-from leaf's `add-item`/`retitle-item` pair, a
+    /// `set: on-create` stamp's `set-field`), 3 the M43 rc.7 write-verb address join,
+    /// 2 the M41 rc.5 `of`/`section` join; bumps on any structural change to these
+    /// keys — **no additive carve-out** (`design/doc-read-surface.md`).
     #[serde(rename = "contract-version")]
     contract_version: u32,
     /// The doctype id.
@@ -4293,14 +4295,21 @@ struct SchemaContract<'a> {
     sections: Vec<ContractSection<'a>>,
 }
 
-/// One field of the pinned projection: `{id, type, of?, required, author-required,
+/// One field of the pinned projection: `{id, type, of?, to?, required, author-required,
 /// default?, set?, section?, set-field? | (add-item? + retitle-item?)}`. `required` is
 /// presence-in-a-conformant-instance — the author must supply it OR the CLI stamps it
 /// (`default:`/`set:`); `author-required` is the shared engine predicate
 /// ([`engine::validate::is_author_required`]) — the same authority the create
 /// skeleton pre-stamps from, so the mint and this projection can never drift apart
 /// (M40 Settle #4). `of` carries an `enum`'s legal members (universal across
-/// depths, so an agent reads the legal values without a failed-write probe);
+/// depths, so an agent reads the legal values without a failed-write probe); `to`
+/// carries a **`ref`**'s target doctype (M50 Inc 8 — `contract-version` 5 → 6): the
+/// projection named an enum's members but withheld the one structural fact a ref has,
+/// while `write.malformed-value` — which rejects a value precisely for *targeting the
+/// wrong type* — routes the author to this read to learn the field's declared type
+/// (`engine::write::write_route`). Ref fields only: a non-ref field carries no key at
+/// all. `card:` is deliberately out of scope — the compose seam carries the
+/// cardinality, this projection carries the target;
 /// `section` names the field's owning simple-section — **top-level only** (an item
 /// field carries its section structurally, under `sections[].item`) (M41 rc.5,
 /// V3+V6+V11 the `doc author` discoverability cluster).
@@ -4341,6 +4350,8 @@ struct ContractField<'a> {
     ty: &'a FieldType,
     #[serde(skip_serializing_if = "Option::is_none")]
     of: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to: Option<&'a str>,
     required: bool,
     #[serde(rename = "author-required")]
     author_required: bool,
@@ -4482,7 +4493,7 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
         }
     }
     SchemaContract {
-        contract_version: 5,
+        contract_version: 6,
         ty: &schema.ty,
         schema_version,
         fields,
@@ -4519,6 +4530,15 @@ fn contract_field(
         id: &field.id,
         ty: &field.ty,
         of: field.of.as_deref(),
+        // A `ref`'s target doctype — the type half of `<type>:<slug>`, and the fact
+        // `write.malformed-value`'s route sends the reader here for. Read off the
+        // declaration and **gated on the type**, like every other consumer of `to:`
+        // (`engine::write::check_ref_shape`, `index.rs`'s edge lift, the compose seam):
+        // the key is absent — never null — on every non-ref field, a stray declared
+        // `to:` on one included.
+        to: (field.ty == FieldType::Ref)
+            .then_some(field.to.as_deref())
+            .flatten(),
         required: author_required || field.default.is_some() || field.set.is_some(),
         author_required,
         default: field.default.as_deref(),
@@ -4663,6 +4683,13 @@ fn schema_listing(schema: &Schema, schema_version: Option<u32>) -> String {
 fn push_field_line(out: &mut String, field: &ContractField<'_>, depth: usize) {
     out.push_str(&"  ".repeat(depth));
     out.push_str(&format!("- {}: {}", field.id, field.ty_name()));
+    // A ref's target doctype, mirrored from the pinned json's `to` in the vocabulary
+    // the compose seam already prints the same fact in — `ref -> <to>`
+    // (`engine::compose::field_type_text`) — so the surfaces that name a ref's target
+    // do not each invent a spelling. Absent on every non-ref field: inert, not wrong.
+    if let Some(to) = field.to {
+        out.push_str(&format!(" -> {to}"));
+    }
     if let Some(members) = field.of {
         out.push_str(&format!(" [{}]", members.join("|")));
     }

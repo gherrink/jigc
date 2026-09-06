@@ -1,13 +1,14 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "vision",
   "schema-version": 1,
   "fields": [
     {
       "id": "grounded-in",
       "type": "ref",
+      "to": "research",
       "required": false,
       "author-required": false,
       "section": "meta",

@@ -1,13 +1,14 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "spec",
   "schema-version": 1,
   "fields": [
     {
       "id": "derived-from",
       "type": "ref",
+      "to": "prd",
       "required": false,
       "author-required": false,
       "section": "meta",

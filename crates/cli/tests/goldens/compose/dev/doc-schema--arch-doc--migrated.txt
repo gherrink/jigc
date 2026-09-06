@@ -3,7 +3,7 @@ exit: 0
 doctype: arch-doc (schema-version 1)
 * = author-required
 fields:
-  - cites: ref (section: meta) (set-field: arch-doc:<slug>#meta/cites)
+  - cites: ref -> adr (section: meta) (set-field: arch-doc:<slug>#meta/cites)
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - overview: slot (set-slot: arch-doc:<slug>#overview)

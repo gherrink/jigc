@@ -1,13 +1,14 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "arch-doc",
   "schema-version": 1,
   "fields": [
     {
       "id": "cites",
       "type": "ref",
+      "to": "adr",
       "required": false,
       "author-required": false,
       "section": "meta",

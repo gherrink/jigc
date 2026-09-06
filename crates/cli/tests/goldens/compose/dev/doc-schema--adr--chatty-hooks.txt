@@ -4,7 +4,7 @@ doctype: adr (schema-version 2)
 fields:
   - status: enum [proposed|accepted|superseded] (section: status) (default: proposed) (set-field: adr:<slug>#status/status)
   - date: date (section: status) (set: on-create) (set-field: adr:<slug>#status/date)
-  - supersedes: ref (section: status) (set-field: adr:<slug>#status/supersedes)
+  - supersedes: ref -> adr (section: status) (set-field: adr:<slug>#status/supersedes)
   - cites-code: code-anchor (section: status) (set-field: adr:<slug>#status/cites-code)
   - schema-version: int (section: status) (set: schema-version)
 sections:

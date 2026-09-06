@@ -2,7 +2,7 @@ exit: 0
 --- stdout ---
 doctype: vision (schema-version 1)
 fields:
-  - grounded-in: ref (section: meta) (set-field: vision:<slug>#meta/grounded-in)
+  - grounded-in: ref -> research (section: meta) (set-field: vision:<slug>#meta/grounded-in)
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - thesis: slot (set-slot: vision:<slug>#thesis)

@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "adr",
   "schema-version": 2,
   "fields": [
@@ -31,6 +31,7 @@ exit: 0
     {
       "id": "supersedes",
       "type": "ref",
+      "to": "adr",
       "required": false,
       "author-required": false,
       "section": "status",

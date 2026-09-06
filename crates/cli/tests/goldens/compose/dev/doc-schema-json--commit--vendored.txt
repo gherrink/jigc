@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "commit",
   "schema-version": 1,
   "fields": [
@@ -37,6 +37,7 @@ exit: 0
     {
       "id": "implements",
       "type": "ref",
+      "to": "spec",
       "required": false,
       "author-required": false,
       "section": "header",

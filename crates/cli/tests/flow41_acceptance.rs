@@ -24,8 +24,9 @@
 //!       lands, and finalize re-commits the doc with its inbound addresses intact.
 //!
 //!   (4) **`doc schema` (F1).** The read surface returns the separately-pinned
-//!       contract json shape for a frozen doctype (contract-version 5 since M48 —
-//!       the id-source write key; 4 was the M45 settability states) — versioned, fields with the injected stamp, the
+//!       contract json shape for a frozen doctype (contract-version 6 since M50 —
+//!       a ref's `to` target; 5 was the M48 id-source write key, 4 the M45
+//!       settability states) — versioned, fields with the injected stamp, the
 //!       optional `options` slot flagged.
 //!
 //!   (5) **a methodology migration (F2).** `jigc migrate old-vision.md --as vision`
@@ -621,9 +622,9 @@ fn retitle_item_round_trips_with_the_anchor_and_inbound_addresses_intact() {
 // ─────────────────── Arm 4 — the pinned `doc schema` contract ───────────────────
 
 /// **Arm 4 (F1).** `jigc doc schema adr --format json` returns the separately-pinned
-/// contract shape (contract-version 5 since M48 — the id-source `write-key`; 4 was the
-/// M45 three settability states, 3 the M43 rc.7 write-verb addresses, 2 the M41 rc.5
-/// `of`/`section` join): the
+/// contract shape (contract-version 6 since M50 — a `ref`'s `to` target; 5 was the M48
+/// id-source `write-key`, 4 the M45 three settability states, 3 the M43 rc.7 write-verb
+/// addresses, 2 the M41 rc.5 `of`/`section` join): the
 /// contract version stamped,
 /// the doctype's frozen `schema-version` carried, the loader-injected
 /// `schema-version` stamp field rendered non-author-required, and the optional
@@ -646,7 +647,7 @@ fn doc_schema_returns_the_pinned_contract_shape() {
         serde_json::from_str(&stdout_of(&out)).expect("the emitted contract parses as json");
 
     assert_eq!(
-        value["contract-version"], 5,
+        value["contract-version"], 6,
         "the projection carries the pinned contract version",
     );
     assert_eq!(value["type"], "adr", "the projection names the doctype");

@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "dogfood-record",
   "schema-version": 1,
   "fields": [

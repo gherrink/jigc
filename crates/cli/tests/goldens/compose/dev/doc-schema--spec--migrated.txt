@@ -3,7 +3,7 @@ exit: 0
 doctype: spec (schema-version 1)
 * = author-required
 fields:
-  - derived-from: ref (section: meta) (set-field: spec:<slug>#meta/derived-from)
+  - derived-from: ref -> prd (section: meta) (set-field: spec:<slug>#meta/derived-from)
   - schema-version: int (section: meta) (set: schema-version)
 sections:
   - goal: slot (set-slot: spec:<slug>#goal)

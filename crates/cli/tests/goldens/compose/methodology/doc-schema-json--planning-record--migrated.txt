@@ -1,7 +1,7 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "planning-record",
   "schema-version": 1,
   "fields": [

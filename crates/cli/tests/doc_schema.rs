@@ -6,15 +6,18 @@
 //! 2026-07-10 → M40 Settle #3).
 //!
 //! The load-bearing contract this pins is the **separately-pinned, explicitly
-//! versioned `--format json` shape** — `contract-version: 5` (the M48 bump: the
+//! versioned `--format json` shape** — `contract-version: 6` (the M50 bump: a `ref`
+//! field's `to:`, the target doctype it references; 5 was the M48
 //! id-source's `write-key`; 4 was the M45 three settability states — an id-from leaf
 //! carries `add-item` [+ `retitle-item` iff its type is string], a `set: on-create`
 //! stamp carries `set-field`, a machine-maintained absolute carries none; 3 was the
 //! M43 rc.7 write-address join, 2 the M41 rc.5 `of`/`section` join), golden-pinned at
 //! ship: `{ contract-version, type, schema-version-or-null, fields, sections }` with
-//! per-field `{id, type, of?, required, author-required, default?, set?, section?,
+//! per-field `{id, type, of?, to?, required, author-required, default?, set?, section?,
 //! set-field? | (add-item? + retitle-item? + write-key)}` (`of` = the enum members,
-//! universal across depths; `section` = the owning simple-section id, top-level fields
+//! universal across depths; `to` = a `ref`'s target doctype, the one thing
+//! `write.malformed-value`'s own route sends the author here to read;
+//! `section` = the owning simple-section id, top-level fields
 //! only; `set-field` = the concrete `jigc doc set-field` address of a directly settable
 //! field — **absent** on a machine-maintained absolute [`set: schema-version` /
 //! `on-transition`] and on a block's `id-from` leaf, which instead carries
@@ -109,6 +112,21 @@ fn init_repo(repo: &Path) {
     .expect("write packs.yaml naming the methodology pack");
 }
 
+/// A repo with the same `[dev ▸ methodology]` project layer **plus a real
+/// `jigc setup`** — the state a task can be minted and a doc staged in (the plain
+/// `init_repo` above is enough for the read-only `doc schema` arms, which need no
+/// workbench).
+fn init_repo_with_setup(repo: &Path, home: &Path) {
+    init_repo(repo);
+    git(repo, &["config", "user.email", "doc-schema@example.com"]);
+    git(repo, &["config", "user.name", "Doc Schema Suite"]);
+    fs::write(repo.join("README.md"), "doc schema suite\n").expect("write README");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+    let out = jigc(repo, home, &["setup"]);
+    assert_ok(&out, "`jigc setup`");
+}
+
 /// Run `jigc <args>` with `cwd = repo` and `$HOME = home`.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
@@ -143,7 +161,7 @@ fn stdout_of(out: &std::process::Output) -> String {
 /// (no default, no set, no optional/pack exemption) and each carries its
 /// `set-field` write address (the stamp, `set:`-derived, carries none).
 const DOGFOOD_RECORD_JSON: &str = r#"{
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "dogfood-record",
   "schema-version": 1,
   "fields": [
@@ -296,7 +314,7 @@ const DOGFOOD_RECORD_JSON: &str = r#"{
 /// and carries `set-field`; the optional `link` carries `set-field`; every item
 /// slot `set-slot`; and every repeatable — nested included — its section `add-item`.
 const CHANGELOG_JSON: &str = r#"{
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "changelog",
   "schema-version": 2,
   "fields": [
@@ -420,7 +438,7 @@ const CHANGELOG_JSON: &str = r#"{
 /// section (its `set-slot` address carried like its required siblings).
 /// Schema-version 2: the M36 `options`-slot migration bumped adr past v1.
 const ADR_JSON: &str = r#"{
-  "contract-version": 5,
+  "contract-version": 6,
   "type": "adr",
   "schema-version": 2,
   "fields": [
@@ -450,6 +468,7 @@ const ADR_JSON: &str = r#"{
     {
       "id": "supersedes",
       "type": "ref",
+      "to": "adr",
       "required": false,
       "author-required": false,
       "section": "status",
@@ -517,7 +536,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     assert_eq!(
         dogfood.trim_end(),
         DOGFOOD_RECORD_JSON,
-        "the dogfood-record schema json is the pinned contract-version-5 shape",
+        "the dogfood-record schema json is the pinned contract-version-6 shape",
     );
 
     // (2) dogfood-record — the Proves line, asserted behaviorally (not just bytes):
@@ -525,7 +544,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     //     fields plus the injected stamp, every meta field author-required.
     let value: serde_json::Value =
         serde_json::from_str(&dogfood).expect("the emitted contract parses as json");
-    assert_eq!(value["contract-version"], 5, "the contract is versioned");
+    assert_eq!(value["contract-version"], 6, "the contract is versioned");
     assert_eq!(
         value["schema-version"], 1,
         "a manifest-frozen methodology doctype reports schema-version 1",
@@ -963,7 +982,7 @@ fn doc_schema_id_source_names_its_write_key() {
     assert_ok(&out, "`jigc doc schema changelog --format json`");
     let value: serde_json::Value =
         serde_json::from_str(&stdout_of(&out)).expect("the changelog contract parses as json");
-    assert_eq!(value["contract-version"], 5, "the contract is versioned");
+    assert_eq!(value["contract-version"], 6, "the contract is versioned");
 
     // The three id-source leaves, at both nesting depths and both id-from types.
     let sections = value["sections"]
@@ -1133,7 +1152,7 @@ fn doc_schema_milestone_record_advertises_no_write_address() {
     // schema shape: the contract version, and the `tasks` repeatable (address-less).
     let value: serde_json::Value =
         serde_json::from_str(&json).expect("the milestone-record contract parses as json");
-    assert_eq!(value["contract-version"], 5, "the contract is versioned");
+    assert_eq!(value["contract-version"], 6, "the contract is versioned");
     let section_ids: Vec<&str> = value["sections"]
         .as_array()
         .expect("`sections` is an array")
@@ -1169,5 +1188,173 @@ fn doc_schema_unknown_doctype_routes_a_block() {
     assert!(
         stderr.contains("jigc describe"),
         "the block routes to the doctype catalog (`jigc describe`); got:\n{stderr}",
+    );
+}
+
+/// A `ref` field's **target doctype** is named on **both** arms (M50 Inc 8 / T3 —
+/// `contract-version` 5 → 6; `design/doc-read-surface.md` → the pinned `doc schema`
+/// shape). The projection carried an enum's legal members (`of`) since rc.5 but never
+/// a ref's `to:`, so the one structural fact a ref field *has* was withheld by the
+/// surface an agent is told to consult — law 2's *nothing hides*
+/// (`design/surface-contract.md`).
+///
+/// The plain arm renders it in the vocabulary the compose seam already uses for the
+/// same fact — `ref -> <to>` (`engine::compose::field_type_text`) — so the three
+/// surfaces that print a ref's target do not invent three spellings. `card:` is
+/// deliberately out of scope: the compose seam carries it, this projection does not.
+#[test]
+fn doc_schema_names_a_ref_target_in_both_arms() {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // (1) json — `to` rides the ref field beside its `type`.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "adr", "--format", "json"],
+    );
+    assert_ok(&out, "`jigc doc schema adr --format json`");
+    let json = stdout_of(&out);
+    let value: serde_json::Value =
+        serde_json::from_str(&json).expect("the adr contract parses as json");
+    let fields = value["fields"].as_array().expect("`fields` is an array");
+    let supersedes = fields
+        .iter()
+        .find(|f| f["id"] == "supersedes")
+        .expect("the adr projection carries the `supersedes` ref");
+    assert_eq!(
+        supersedes["to"], "adr",
+        "a ref field names the doctype it references; got:\n{json}",
+    );
+
+    // (2) The omitting context — a non-ref field carries no `to` at all (absent, not
+    //     null): the enum, the date, the pack-declared `code-anchor`, the stamp.
+    for id in ["status", "date", "cites-code", "schema-version"] {
+        let field = fields
+            .iter()
+            .find(|f| f["id"] == id)
+            .unwrap_or_else(|| panic!("the adr projection carries `{id}`"));
+        assert!(
+            field.get("to").is_none(),
+            "a non-ref field carries no `to` key; `{id}` got:\n{field}",
+        );
+    }
+
+    // (3) plain — the same fact in the compose seam's own vocabulary.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "adr", "--format", "agent"],
+    );
+    assert_ok(&out, "`jigc doc schema adr --format agent`");
+    let listing = stdout_of(&out);
+    let line = field_line(&listing, "supersedes");
+    assert!(
+        line.contains("ref -> adr"),
+        "the plain listing names a ref's target in the compose seam's vocabulary; \
+         got:\n{line}",
+    );
+    assert!(
+        field_line(&listing, "cites-code").contains("code-anchor")
+            && !field_line(&listing, "cites-code").contains("->"),
+        "a non-ref field's line grows no arrow; got:\n{listing}",
+    );
+}
+
+/// **The loop closes: the route a wrong-typed ref write prints can answer the
+/// question the rejection raised** (M50 Inc 8 / T3). `write.malformed-value` blames a
+/// ref value for targeting the wrong doctype and routes at `jigc doc schema
+/// <doctype>` *"to see the field's declared type"* (`engine::write::write_route`) —
+/// and until this increment that read named `supersedes: ref` and stopped, so the
+/// followable route could not tell the author which type was expected.
+///
+/// The route is **run verbatim, as emitted**: the argv is extracted from the
+/// rejection's own printed route line and executed, never reconstructed here — the
+/// emitted bytes are the contract (`design/surface-contract.md` → the `Route` value).
+#[test]
+fn doc_schema_answers_the_route_a_wrong_typed_ref_write_prints() {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    init_repo_with_setup(repo.path(), home.path());
+
+    // A task holding a staged adr — the state a wrong-typed ref write is made from.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "record-decision",
+            "decide something",
+            "--format",
+            "json",
+        ],
+    );
+    assert_ok(&out, "`jigc start --workflow record-decision`");
+    let composed: serde_json::Value =
+        serde_json::from_str(&stdout_of(&out)).expect("composed output is json");
+    let task = composed["task"]
+        .as_str()
+        .expect("the compose minted a task");
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Some choice",
+            "--task",
+            task,
+        ],
+    );
+    assert_ok(&out, "`jigc doc create adr`");
+
+    // The reject: a ref value naming the wrong doctype.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            "adr:some-choice#status/supersedes",
+            "--value",
+            "spec:other-thing",
+            "--task",
+            task,
+        ],
+    );
+    assert!(
+        !out.status.success(),
+        "a wrong-typed ref value must be rejected; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    let rejection = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        rejection.contains("write.malformed-value")
+            && rejection.contains("references type \"adr\""),
+        "the reject blames the value for targeting the wrong doctype; got:\n{rejection}",
+    );
+
+    // Its own route, run as emitted — the argv is read out of the printed line.
+    let route = rejection
+        .lines()
+        .find(|line| line.trim_start().starts_with("route: `jigc "))
+        .unwrap_or_else(|| panic!("the reject carries a mechanical route; got:\n{rejection}"));
+    let argv_text = route
+        .split('`')
+        .nth(1)
+        .expect("the route's argv is backtick-delimited");
+    let argv: Vec<&str> = argv_text.split_whitespace().collect();
+    assert_eq!(argv[0], "jigc", "the route names the jigc binary");
+    let out = jigc(repo.path(), home.path(), &argv[1..]);
+    assert_ok(&out, "the route the reject printed, run verbatim");
+    let answer = stdout_of(&out);
+    assert!(
+        field_line(&answer, "supersedes").contains("ref -> adr"),
+        "the route the rejection printed names the type it blamed the value for \
+         missing; ran `{argv_text}`, got:\n{answer}",
     );
 }

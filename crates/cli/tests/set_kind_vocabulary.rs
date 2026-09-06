@@ -10,7 +10,7 @@
 //!     alone, so `set: on-creat` **permanently exempts the field from
 //!     `required-field-present`** — the doctype author's stated obligation deleted by
 //!     a typo, at exit 0;
-//!   * the pinned `jigc doc schema --format json` contract (contract-version 5)
+//!   * the pinned `jigc doc schema --format json` contract
 //!     serializes the typo back as a real deriver (`"set": "on-creat"`,
 //!     `"author-required": false`), so a driver reading the contract is told the CLI
 //!     fills a field nothing fills;
