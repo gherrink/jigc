@@ -389,48 +389,64 @@ impl Drop for TempDir {
 /// change-group include from the staging one, which is the same text six columns out.
 const NESTED_INCLUDE: &str = "              - include: change-group\n";
 
-/// A dev-pack copy bumping `changelog` **2 → 3** with `added` appended to its **nested**
-/// `changes` block: `schema-snapshots/changelog.v2.yaml` is the shipped shape (the prior),
-/// `schemas/changelog.yaml` carries the added leaf, and the manifest carries version 3 with
-/// its `schema-hash` re-pinned through the production loader.
-fn pack_adding_a_nested_leaf(tag: &str, added: &str) -> TempDir {
-    let dir = TempDir::new(tag);
-    frozen_pack::copy_dev_pack(dir.path());
-
-    let schema_path = dir.path().join("schemas").join("changelog.yaml");
-    let shipped = fs::read_to_string(&schema_path).expect("read the copied changelog.yaml");
-    fs::write(
-        dir.path()
-            .join("schema-snapshots")
-            .join("changelog.v2.yaml"),
-        &shipped,
-    )
-    .expect("write the changelog.v2 snapshot");
-
-    // The nested block's indentation is READ off the anchor rather than restated: a literal
-    // run of spaces here is both a fence violation and a fact that would drift the day the
-    // schema is re-indented.
+/// [`shipped`] with `leaves` appended to the **nested** `changes` block, in order, right
+/// after its `include`. The block's indentation is READ off the anchor rather than restated:
+/// a literal run of spaces here is both a fence violation and a fact that would drift the
+/// day the schema is re-indented.
+fn nested_block_with(shipped: &str, leaves: &[&str]) -> String {
+    if leaves.is_empty() {
+        return shipped.to_string();
+    }
     let indent = &NESTED_INCLUDE[..NESTED_INCLUDE.len() - NESTED_INCLUDE.trim_start().len()];
-    let reshaped = shipped.replacen(
-        NESTED_INCLUDE,
-        &format!("{NESTED_INCLUDE}{indent}- {added}\n"),
-        1,
-    );
+    let mut block = String::from(NESTED_INCLUDE);
+    for leaf in leaves {
+        block.push_str(&format!("{indent}- {leaf}\n"));
+    }
+    let out = shipped.replacen(NESTED_INCLUDE, &block, 1);
     assert_ne!(
-        reshaped, shipped,
+        out, shipped,
         "changelog.yaml must declare a nested change-group include",
     );
     // The staging block's include is the FIRST occurrence at its own indentation and must
-    // stay untouched: the whole point of the arm is a leaf that exists at locus 3 only.
+    // stay untouched: the whole point of these arms is a leaf that exists at locus 3 only.
     assert_eq!(
-        reshaped
-            .lines()
+        out.lines()
             .filter(|line| *line == "        - include: change-group")
             .count(),
         1,
         "the staging include must be left alone",
     );
-    fs::write(&schema_path, &reshaped).expect("write the reshaped changelog.yaml");
+    out
+}
+
+/// A dev-pack copy bumping `changelog` **2 → 3** with `added` appended to its **nested**
+/// `changes` block: `schema-snapshots/changelog.v2.yaml` is the prior shape and
+/// `schemas/changelog.yaml` carries the added leaf, with the manifest at version 3 and its
+/// `schema-hash` re-pinned through the production loader.
+///
+/// `committed` is the nested structure that exists in **both** shapes — declared in the
+/// snapshot as well as the current schema, so it is committed structure the corpus may
+/// already carry rather than part of the delta. A caller needing none passes `&[]`.
+fn pack_adding_a_nested_leaf_over(tag: &str, committed: &[&str], added: &str) -> TempDir {
+    let dir = TempDir::new(tag);
+    frozen_pack::copy_dev_pack(dir.path());
+
+    let schema_path = dir.path().join("schemas").join("changelog.yaml");
+    let shipped = fs::read_to_string(&schema_path).expect("read the copied changelog.yaml");
+
+    let prior = nested_block_with(&shipped, committed);
+    fs::write(
+        dir.path()
+            .join("schema-snapshots")
+            .join("changelog.v2.yaml"),
+        &prior,
+    )
+    .expect("write the changelog.v2 snapshot");
+
+    let mut current: Vec<&str> = committed.to_vec();
+    current.push(added);
+    fs::write(&schema_path, nested_block_with(&shipped, &current))
+        .expect("write the reshaped changelog.yaml");
 
     let manifest_path = dir.path().join("config").join("schema-manifest.yaml");
     let manifest = fs::read_to_string(&manifest_path).expect("read the copied manifest");
@@ -446,6 +462,12 @@ fn pack_adding_a_nested_leaf(tag: &str, added: &str) -> TempDir {
     fs::write(&manifest_path, bumped).expect("write the bumped manifest");
     frozen_pack::repin_manifest_hash(dir.path(), "changelog");
     dir
+}
+
+/// [`pack_adding_a_nested_leaf_over`] with no extra committed structure — the delta is the
+/// one added leaf.
+fn pack_adding_a_nested_leaf(tag: &str, added: &str) -> TempDir {
+    pack_adding_a_nested_leaf_over(tag, &[], added)
 }
 
 /// Run a `git` command in `repo`, asserting success.
@@ -617,6 +639,133 @@ fn a_required_nested_leaf_routes_the_author_not_the_source_tree() {
         fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read the changelog"),
         CHANGELOG_V2,
         "the refused doc rolls back byte-identical, its stamp unmoved",
+    );
+}
+
+/// **A conformant, v2-stamped `CHANGELOG.md` carrying bytes the parse does not model.**
+///
+/// jigc's canonical item order is slots-then-fields, so *"append a sentence to this entry"*
+/// lands **after** the nested change-group's `<!-- fields -->` group, where the parse
+/// carries nothing. The doc conforms — `jigc validate` raises no finding about the aside —
+/// which is exactly why a fold that re-rendered the item from what the parse modelled
+/// deleted it at exit 0 and committed the deletion.
+const CHANGELOG_V2_UNMODELLED: &str = "\
+---
+schema-version: 2
+---
+
+# Changelog
+
+## Unreleased Changes
+
+### changed  {#changed}
+
+- the fixture builder gained shape-class coverage
+
+## Releases
+
+### 1.0.0  {#1-0-0}
+
+<!-- fields -->
+- date: 2026-06-14
+- link: https://example.com/compare/0.9.0...1.0.0
+
+#### added  {#added}
+
+- the trial-shaped fixture builder
+
+<!-- fields -->
+- ticket: JIG-9
+
+An aside a human appended by hand.
+";
+
+/// The one line of [`CHANGELOG_V2_UNMODELLED`] the parse does not model.
+const UNMODELLED_ASIDE: &str = "An aside a human appended by hand.";
+
+/// **The fold must not delete committed bytes the parse does not model — driven through the
+/// binary.** (M50 Increment 7 fix.)
+///
+/// The locus-2 arm splices the bullet **into** the item's own field group and moves nothing
+/// else; the locus-3 arm dispatched to a primitive that re-rendered the nested item's whole
+/// committed region, so the hand-appended aside was gone at `Ok`, `migrate-corpus` reported
+/// `1 migrated`, exited 0, and **committed the deletion**. That is the No-data-loss property
+/// the migration pair declares by name — the same bytes [`engine`]'s `insert_item_slot`
+/// refuses to destroy one leaf-kind over.
+///
+/// Driven end to end rather than at the engine seam because the loss was *committed*: the
+/// claim is about what the corpus holds after the verb returns, and the git object is where
+/// that is readable.
+#[test]
+fn a_nested_field_add_keeps_committed_bytes_the_parse_does_not_model() {
+    let home = TempDir::new("home");
+    let pack = pack_adding_a_nested_leaf_over(
+        "fidelity",
+        &["{ id: ticket, type: string, optional: true }"],
+        "{ id: severity, type: string, default: minor }",
+    );
+    let repo = repo_with(CHANGELOG_V2_UNMODELLED);
+    let changelog = repo.path().join("CHANGELOG.md");
+
+    // The premise: the aside is UNMODELLED, not malformed — the tool itself says nothing
+    // about it, which is why nothing warned before the bytes were lost. The corpus's ONE
+    // blocking finding is the stamp being below the current version, i.e. *migrate me*.
+    let validated = jigc(repo.path(), home.path(), pack.path(), &["validate"]);
+    let sweep = String::from_utf8_lossy(&validated.stdout).to_string();
+    assert_eq!(
+        sweep.matches("blocking · ").count(),
+        1,
+        "the aside raises no finding of its own — it is unmodelled, not malformed; \
+         sweep:\n{sweep}",
+    );
+    assert!(
+        sweep.contains("blocking · schema-conformance.schema-version-current"),
+        "the one blocking finding is the stamp, not the aside; sweep:\n{sweep}",
+    );
+
+    let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
+    assert!(ok, "the locus-3 fold migrates cleanly; report:\n{report:#}");
+    assert_eq!(
+        report["migrated"].as_array().map(|m| m.len()),
+        Some(1),
+        "the changelog migrates; report:\n{report:#}",
+    );
+
+    let migrated = fs::read_to_string(&changelog).expect("read the migrated changelog");
+    assert!(
+        migrated.contains(UNMODELLED_ASIDE),
+        "the hand-appended aside must survive the fold; migrated:\n{migrated}",
+    );
+    assert!(
+        migrated.contains("- ticket: JIG-9"),
+        "the committed bullet survives too; migrated:\n{migrated}",
+    );
+    assert_eq!(
+        migrated.matches("- severity: minor").count(),
+        1,
+        "the nested change-group gains the declared default; migrated:\n{migrated}",
+    );
+    // The whole-document claim: the stamp and the generated bullet are the ONLY byte runs
+    // the fold moved.
+    assert_eq!(
+        migrated
+            .replace("- severity: minor\n", "")
+            .replace("schema-version: 3", "schema-version: 2"),
+        CHANGELOG_V2_UNMODELLED,
+        "the stamp and the generated bullet are the fold's only byte delta; \
+         migrated:\n{migrated}",
+    );
+
+    // The loss was COMMITTED, so the committed object is where the claim is read.
+    let committed = Command::new("git")
+        .args(["show", "HEAD:CHANGELOG.md"])
+        .current_dir(repo.path())
+        .output()
+        .expect("run git show");
+    assert!(
+        String::from_utf8_lossy(&committed.stdout).contains(UNMODELLED_ASIDE),
+        "the aside is in the commit the migration landed; git show:\n{}",
+        String::from_utf8_lossy(&committed.stdout),
     );
 }
 

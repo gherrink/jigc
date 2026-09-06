@@ -1471,13 +1471,13 @@ fn field_sentinel_in(blocks: &[Block], region: Range<usize>) -> Option<Range<usi
 /// (`bullet = true`). An absent item / field → [`SpliceError::NotPresent`].
 ///
 /// **One function, the flat form as the single-segment chain** (M50 Increment 7 / T5, the
-/// shape [`insert_item_slot`] took at T4). The alternative — a depth-aware dual — already
-/// exists as [`set_nested_item_field_or_insert`], and it is the *wrong* primitive for a
-/// present-field value rewrite: it re-renders the item's **whole committed region** from
-/// what the parse modelled, so bytes the parse does not model (a paragraph hand-appended
-/// after the `<!-- fields -->` group) are destroyed by it. This splices the value span, so
-/// what is around it cannot move at any depth — which is why
-/// [`crate::transform`]'s value-remap arm splices through **this** at every locus.
+/// shape [`insert_item_slot`] took at T4). This splices the **value span**, so what is
+/// around it cannot move at any depth — which is why [`crate::transform`]'s value-remap arm
+/// splices through **this** at every locus, and why both `…_or_insert` entry points now
+/// reach it first. The alternative a depth-aware dual used to take — re-rendering the
+/// item's **whole committed region** from what the parse modelled — destroyed the bytes the
+/// parse does not model (a paragraph hand-appended after the `<!-- fields -->` group), and
+/// that re-render is retired.
 pub(crate) fn set_item_field(
     schema: &Schema,
     source: &str,
@@ -1868,8 +1868,10 @@ fn set_nested_item_slot(
 
 /// `set-item-field`-or-insert for a (possibly nested) repeatable item, addressed by its
 /// parent-scoped id chain `item_ids`. The depth-aware dual of
-/// [`set_item_field_or_insert`]: it re-derives the nested item, sets/overwrites the
-/// field, re-renders at the item's nesting depth, and splices canonically. Like its
+/// [`set_item_field_or_insert`], and since M50 Increment 7 the *same* pair of splices: the
+/// present bullet's **value span** ([`set_item_field`], depth-aware since T5), else the
+/// in-group bullet insert ([`insert_item_field`], depth-aware since this fix) — never the
+/// whole-item re-render, which destroyed the bytes the parse does not model. Like its
 /// top-level dual it **adjudicates the value's declared type before touching bytes**
 /// (closing the 2026-06-07 item-field parity gap) — a malformed value is rejected as
 /// [`GenerateError::MalformedValue`], an **undeclared** field leaf as
@@ -1907,44 +1909,46 @@ pub(crate) fn set_nested_item_field_or_insert(
             }
         }
     }
-    let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
-        what: format!("source does not conform to schema for section {section_id:?}"),
-    })?;
-    // Shape before presence ([`physical_item_chain`] fails **only** on a schema-shape
-    // defect — an undeclared or non-repeatable section, or a chain segment naming no
-    // declared nested repeatable), so a section miss keeps its shape question and only a
-    // genuinely absent item reaches [`GenerateError::NotPresent`].
-    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
-        GenerateError::WrongShape {
-            what: format!("item {item_ids:?} in section {section_id:?} not addressable"),
+    // **The same splice-or-insert the flat dual makes** ([`set_item_field_or_insert`]),
+    // which is what this arm owes at depth: the present bullet takes the surgical
+    // **value-span** splice and the absent one the in-group bullet insert, so the bytes
+    // around the write cannot move. The whole-item re-render this used to perform destroyed
+    // them — a paragraph hand-appended after a nested item's `<!-- fields -->` group is
+    // unmodelled by the parse (clean under `parse_sections`, no `jigc validate` finding),
+    // and re-rendering the region from what the parse modelled deleted it at `Ok`
+    // (M50 Increment 7 fix — **No-data-loss**, the property [`insert_item_slot`]'s
+    // pre-image guard defends for the same bytes one leaf-kind over).
+    match set_item_field(schema, source, section_id, item_ids, field_key, new_value) {
+        Ok(edited) => Ok(edited),
+        // The field bullet is absent on a present item ⇒ generate it. (`set_item_field`
+        // returns `NotPresent` both for an absent field *and* an absent item;
+        // [`insert_item_field`] re-locates the item and routes a truly-absent item to a
+        // `GenerateError::NotPresent`, so the item miss reaches the agent as the item miss
+        // it is — the flat dual's split, verbatim.)
+        Err(SpliceError::NotPresent { .. }) => {
+            let new_field = Field {
+                key: field_key.to_string(),
+                value: Value::Scalar(new_value.to_string()),
+            };
+            insert_item_field(schema, source, section_id, item_ids, &new_field)
         }
-    })?;
-    let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
-        GenerateError::NotPresent {
-            what: format!("item {item_ids:?} in section {section_id:?} not present"),
+        // The buffer is broken: carry the parse break's own diagnosis through, so the
+        // shape reject names *what* broke rather than only its class.
+        Err(e @ SpliceError::NotConformant { .. }) => Err(GenerateError::WrongShape {
+            what: format!("{e}, for section {section_id:?}"),
+        }),
+        // An undeclared section is a shape miss, not a broken buffer.
+        Err(SpliceError::UndeclaredSection { section }) => {
+            Err(GenerateError::UnknownSection { id: section })
         }
-    })?;
-    let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
-        GenerateError::WrongShape {
-            what: format!("item {item_ids:?} block not locatable"),
+        // The undeclared-leaf reject is the slot writers' ([`undeclared_slot_reject`]);
+        // [`set_item_field`] addresses field bullets and constructs none. The mapping is the
+        // total one the two error types already agree on — same class, same
+        // `write.unknown-field` code.
+        Err(SpliceError::UnknownLeaf { leaf, at }) => {
+            Err(GenerateError::UnknownField { key: leaf, at })
         }
-    })?;
-
-    let mut content = item_content_from_parsed(item, source);
-    if let Some(existing) = content.fields.iter_mut().find(|f| f.key == field_key) {
-        existing.value = Value::Scalar(new_value.to_string());
-    } else {
-        content.fields.push(Field {
-            key: field_key.to_string(),
-            value: Value::Scalar(new_value.to_string()),
-        });
     }
-    let rendered = render_item_at(&content, physical.len());
-    Ok(splice(
-        source,
-        region.clone(),
-        &nested_replacement(source, &region, &rendered),
-    ))
 }
 
 /// `add-item` into a (possibly nested) repeatable, addressed by the **parent** item id
@@ -3423,7 +3427,7 @@ pub fn insert_item_slot(
         let rendered = render_item_at(&content, physical.len());
         // The one separator discipline every item-bytes splice shares
         // ([`nested_replacement`], which [`set_nested_item_slot`] and
-        // [`set_nested_item_field_or_insert`] also splice under): one blank line before a
+        // [`insert_item_field`]'s cold-fill arm also splice under): one blank line before a
         // following heading, exactly one terminating `\n` at EOF.
         let replacement = nested_replacement(source, &region, &rendered);
         edits.push((region, replacement));
@@ -3765,9 +3769,9 @@ pub fn insert_field(
 }
 
 /// `set-item-field` (field **absent**, item present): insert the field bullet for
-/// `field` into the repeatable item `item_id`'s trailing field group, materializing
-/// the `<!-- fields -->` sentinel **once** if the item has no field group yet (the
-/// "first field into a freshly-minted empty item" case — [`add_item`] mints items
+/// `field` into the repeatable item addressed by `item_ids`'s trailing field group,
+/// materializing the `<!-- fields -->` sentinel **once** if the item has no field group yet
+/// (the "first field into a freshly-minted empty item" case — [`add_item`] mints items
 /// empty, so the item-leaf write path needs this insert half just as the header path
 /// has [`insert_front_matter_field`]). The field-group scan is confined to the item's
 /// OWN leaf region ([`locate_item_path`] narrowed by [`item_own_leaf_region`]), so
@@ -3776,11 +3780,20 @@ pub fn insert_field(
 /// bullet is appended
 /// after the item's present bullets, mirroring [`insert_field`]. A field key already
 /// present on the item → [`GenerateError::AlreadyPresent`] (route to [`set_item_field`]).
+///
+/// **One function, the flat form as the single-segment chain** (M50 Increment 7 fix — the
+/// shape [`set_item_field`] took at T5 and [`insert_item_slot`] at T4). `item_ids` is the
+/// section-qualified id chain (`["1-2-0"]` for a top-level item, `["1-2-0", "changes",
+/// "added"]` for a nested one), and the cold-fill re-render below renders the item at the
+/// depth its **physical** chain length names, so a nested item's `####` heading is not
+/// re-emitted as `###`. Generalizing this — rather than leaving the nested seam on a
+/// whole-item re-render — is what makes the nested field write **No-data-loss**: the
+/// present-group arm inserts one line and moves nothing else, at any depth.
 pub(crate) fn insert_item_field(
     schema: &Schema,
     source: &str,
     section_id: &str,
-    item_id: &str,
+    item_ids: &[&str],
     field: &Field,
 ) -> Result<String, GenerateError> {
     let section = schema
@@ -3796,18 +3809,27 @@ pub(crate) fn insert_item_field(
         });
     }
 
-    // The item's byte region, resolved through the parent-scoped path locator (a
-    // single-element chain). The field-group scan is bounded to the item's OWN leaf
-    // region (before its first nested item heading — NOT before its first deeper
-    // heading, which on a multi-slot template is the item's own `#### <Leaf-Title>`
-    // sub-label; [`item_own_leaf_region`]) so a nested child's field group is never
-    // matched — without this the parent's field is appended INTO a child's group (the
-    // corruption) or the child's same key triggers a false `AlreadyPresent`. The
+    // The chain rendered as the **address path** a reader follows (`1-0-0/changes/added`),
+    // never `Debug` of the slice: at the flat locus that is the single id these messages
+    // always named, so widening the parameter did not widen the message.
+    let at = item_ids.join("/");
+    // The item's byte region, resolved through the parent-scoped path locator over the
+    // chain's **physical** half (the ids that own a heading). The field-group scan is
+    // bounded to the item's OWN leaf region (before its first nested item heading — NOT
+    // before its first deeper heading, which on a multi-slot template is the item's own
+    // `#### <Leaf-Title>` sub-label; [`item_own_leaf_region`]) so a nested child's field
+    // group is never matched — without this the parent's field is appended INTO a child's
+    // group (the corruption) or the child's same key triggers a false `AlreadyPresent`. The
     // cold-fill re-render below uses the FULL sub-tree region (children preserved).
     let blocks = parse::scan_blocks(source);
-    let region = locate_item_path(schema, source, section_id, &[item_id]).ok_or_else(|| {
+    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("item {at:?} in section {section_id:?} not addressable"),
+        }
+    })?;
+    let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
         GenerateError::NotPresent {
-            what: format!("item {item_id:?} in section {section_id:?} not present"),
+            what: format!("item {at:?} in section {section_id:?} not present"),
         }
     })?;
     let leaf_region = item_own_leaf_region(
@@ -3815,7 +3837,7 @@ pub(crate) fn insert_item_field(
         source,
         &blocks,
         section_id,
-        &[item_id],
+        item_ids,
         region.clone(),
     );
 
@@ -3827,7 +3849,7 @@ pub(crate) fn insert_item_field(
             // A present key is a surgical set-item-field, not a generation.
             if field_key_in_list(&blocks, source, &items, &field.key) {
                 return Err(GenerateError::AlreadyPresent {
-                    what: format!("field {:?} on item {item_id:?}", field.key),
+                    what: format!("field {:?} on item {at:?}", field.key),
                 });
             }
             // Append the bullet right after the last present bullet (the list end).
@@ -3835,39 +3857,42 @@ pub(crate) fn insert_item_field(
         }
         None => {
             // No field group yet (the freshly-minted empty item): re-render the whole
-            // item via [`render_item`] with the new field appended, then splice it over
+            // item via [`render_item_at`] with the new field appended, then splice it over
             // the item's located block. Re-rendering (not a bullet-group splice at the
             // slot-prose end) is what makes this **byte-stable** on a mint-empty item:
             // an empty slot's canonical form (`### …{#id}\n\n<!-- fields -->`, the M26
-            // one-blank form) is the writer's, and `render_item` is that writer — so `render(parse(out)) == out`
-            // holds, where a slot-prose-end bullet insert would mis-space the blank lines.
-            let item = parse::parse_sections(schema, source)
-                .ok()
-                .and_then(|doc| {
-                    doc.sections
-                        .into_iter()
-                        .find(|s| s.id == section_id)
-                        .and_then(|s| s.items.into_iter().find(|i| i.id == item_id))
-                })
-                .ok_or_else(|| GenerateError::NotPresent {
-                    what: format!("item {item_id:?} in section {section_id:?} not present"),
+            // one-blank form) is the writer's, and `render_item_at` is that writer — so
+            // `render(parse(out)) == out` holds, where a slot-prose-end bullet insert would
+            // mis-space the blank lines.
+            //
+            // **This arm cannot destroy unmodelled bytes, by construction of the shape it
+            // fires on**: the one spot the canonical item form leaves for a hand-append is
+            // *after* the `<!-- fields -->` group, and an item with no group has no such
+            // spot — trailing prose is inside the slot span, which the parse carries. The
+            // present-group arm above, which is where a hand-append can sit, moves nothing.
+            let doc =
+                parse::parse_sections(schema, source).map_err(|_| GenerateError::NotPresent {
+                    what: format!("item {at:?} in section {section_id:?} not present"),
                 })?;
-            let mut content = item_content_from_parsed(&item, source);
+            let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
+                GenerateError::NotPresent {
+                    what: format!("item {at:?} in section {section_id:?} not present"),
+                }
+            })?;
+            let mut content = item_content_from_parsed(item, source);
             content.fields.push(field.clone());
-            // Re-render the item, then re-attach the **canonical** inter-block separator
-            // (not the recorded one): the located region may carry non-canonical trailing
-            // blank-line debris, so we recompute the gap from the canonical form — one
-            // blank line. [`render_section`] joins full
-            // `render_item`s (each ending in one `\n`) with a single `\n`, so a following
-            // `###`/`##` heading gets `body\n\n`; a trailing item gets `body\n` (EOF).
-            let rendered = render_item(&content);
-            let body = rendered.trim_end_matches('\n');
-            let replacement = if region.end < source.len() {
-                format!("{body}\n\n")
-            } else {
-                format!("{body}\n")
-            };
-            Ok(splice(source, region, &replacement))
+            // Re-render the item **at its own nesting depth**, then re-attach the
+            // **canonical** inter-block separator (not the recorded one): the located region
+            // may carry non-canonical trailing blank-line debris, so the gap is recomputed
+            // from the canonical form — one blank line before a following heading, exactly
+            // one terminating `\n` at EOF ([`nested_replacement`], the one separator
+            // discipline every item-bytes splice shares).
+            let rendered = render_item_at(&content, physical.len());
+            Ok(splice(
+                source,
+                region.clone(),
+                &nested_replacement(source, &region, &rendered),
+            ))
         }
     }
 }
@@ -3931,7 +3956,7 @@ pub(crate) fn set_item_field_or_insert(
                 key: field_key.to_string(),
                 value: Value::Scalar(new_value.to_string()),
             };
-            insert_item_field(schema, source, section_id, item_id, &new_field)
+            insert_item_field(schema, source, section_id, &[item_id], &new_field)
         }
         // The buffer is broken: carry the parse break's own diagnosis through, so the
         // shape reject names *what* broke rather than only its class.
@@ -6018,6 +6043,86 @@ THE COMMITTED PROSE THAT MUST SURVIVE.
         );
     }
 
+    /// **A nested item-field write keeps the committed bytes the parse does not model.**
+    /// (M50 Increment 7 fix — the write seam of the `set_nested_item_field_or_insert`
+    /// class.)
+    ///
+    /// jigc's canonical item order is slots-then-fields, so *"append a sentence to this
+    /// entry"* lands **after** the `<!-- fields -->` group, where the parse carries nothing:
+    /// it is unmodelled, not malformed — `parse_sections` is clean over it and `jigc
+    /// validate` raises no finding. The **top-level** field write splices the value span or
+    /// inserts the bullet after the present group, so those bytes cannot move; the nested
+    /// dual re-rendered the item's whole region from what the parse modelled and deleted them
+    /// at `Ok`. Both the update half (a bullet already present) and the insert half (an
+    /// absent bullet) are driven, because they are two different splices.
+    #[test]
+    fn a_nested_item_field_write_keeps_committed_bytes_the_parse_does_not_model() {
+        let (schema, _) = nested_slot_pair(
+            "              - { id: ticket, type: string, optional: true }\n              - { id: severity, type: string, optional: true }\n",
+        );
+        let src = "\
+# Log
+
+## Releases
+
+### 1.0.0  {#1-0-0}
+
+#### Added  {#added}
+
+- the group-count axis
+
+<!-- fields -->
+- ticket: T-2
+
+An aside a human appended by hand.
+";
+        assert!(
+            parse::parse_sections(&schema, src).is_ok(),
+            "the aside parses — it is unmodelled, not malformed; got {:?}",
+            parse::parse_sections(&schema, src).err(),
+        );
+
+        // ---- the update half: the bullet is present, only its value may move.
+        let out = set_item_field_validated(
+            &schema,
+            src,
+            "releases",
+            &["1-0-0", "changes", "added"],
+            "ticket",
+            "T-9",
+        )
+        .expect("the nested field update lands");
+        assert!(
+            out.contains("An aside a human appended by hand."),
+            "the hand-appended aside must survive a nested field update; got:\n{out}",
+        );
+        assert_eq!(
+            out.replace("ticket: T-9", "ticket: T-2"),
+            src,
+            "the value bytes are the only bytes a present-bullet write may move",
+        );
+
+        // ---- the insert half: the bullet is absent and is generated into the group.
+        let out = set_item_field_validated(
+            &schema,
+            src,
+            "releases",
+            &["1-0-0", "changes", "added"],
+            "severity",
+            "minor",
+        )
+        .expect("the nested field insert lands");
+        assert!(
+            out.contains("An aside a human appended by hand."),
+            "the hand-appended aside must survive a nested field insert; got:\n{out}",
+        );
+        assert_eq!(
+            out.replace("- severity: minor\n", ""),
+            src,
+            "the generated bullet is the only byte run a nested insert may add",
+        );
+    }
+
     /// Regression (M13 Increment 3): two **empty** `add_item`s with no fill must be
     /// byte-stable. `add_item`'s inter-item join rendered the pair `### A\n\n### B`, but
     /// [`render_item`]'s empty-item form then re-rendered the (now non-trailing) empty item A
@@ -7058,8 +7163,8 @@ fn locate_item_region(
 /// * an **absent** bullet with **no** field group yet re-renders the whole item
 ///   ([`insert_item_field`]'s cold-fill arm), so the target is the **item region** — the
 ///   shape `parsing.md` warns must never be leaf-narrowed;
-/// * the **nested** path always re-renders the addressed item, so its target is the item
-///   region too.
+/// * the **nested** path asks the identical question — it takes the same splice-or-insert
+///   as the flat one, so it takes the same target.
 ///
 /// Clause (a) — the re-parse — rides every arm, and it is load-bearing only because T3
 /// landed first: a duplicate declared bullet is now a parse-level
@@ -7115,15 +7220,14 @@ fn item_field_write_target(
     item_ids: &[&str],
 ) -> Option<Range<usize>> {
     let region = locate_item_region(schema, source, section_id, item_ids)?;
-    // The nested path re-renders the addressed item whole, so nothing narrower than its
-    // region bounds the bytes it legitimately rewrites.
-    if item_ids.len() > 1 {
-        return Some(region);
-    }
-    // A top-level write edits a bullet **inside the item's own field group** — the same
-    // group [`insert_item_field`] scans for, over the same schema-keyed leaf region, so
-    // the guard and the writer cannot disagree about which group is the item's own. With
-    // no group yet, the write is the cold-fill re-render and the region is the target.
+    // **One rule at every depth** (M50 Increment 7 fix). A write edits a bullet **inside
+    // the item's own field group** — the same group [`insert_item_field`] scans for, over
+    // the same schema-keyed leaf region, so the guard and the writer cannot disagree about
+    // which group is the item's own. With no group yet, the write is the cold-fill
+    // re-render and the region is the target. The nested path used to be carved out here
+    // because it re-rendered the addressed item whole; it no longer does — it takes the
+    // flat dual's splice-or-insert — so the carve-out is gone with the re-render, and the
+    // confinement is the tighter one at both loci.
     let blocks = parse::scan_blocks(source);
     let leaf = item_own_leaf_region(
         schema,

@@ -695,8 +695,9 @@ fn apply_value_remap(
                 // whose depth is carried by the chain. The insert-capable dual
                 // ([`write::set_nested_item_field_or_insert`], which
                 // [`apply_added_item_field`] must use because its bullet is absent by
-                // definition) re-renders the item's whole committed region, and this kind
-                // has no need of that: it overwrites a bullet that is already there.
+                // definition) reaches this same splice first and falls through to an
+                // in-group bullet insert; this kind never needs that fall-through, because
+                // it overwrites a bullet that is already there.
                 out = write::set_item_field(schema, &out, section, &chain, field, &new_value)?;
             }
             Ok(out)
@@ -4486,6 +4487,89 @@ sections:
             src,
             "the value bytes are the only bytes the fold may move — including around \
              content the parse does not model",
+        );
+    }
+
+    /// **A nested item's committed bytes the parse does not model survive the field add.**
+    /// (M50 Increment 7 fix — the sibling of
+    /// [`a_nested_value_remap_keeps_committed_bytes_the_parse_does_not_model`], on the kind
+    /// that actually *inserts* a bullet.)
+    ///
+    /// The 4-cell `the_added_item_field_cell_set_holds_one_locus_down` loop feeds only
+    /// canonical, fully-modelled item bodies, so it could not see this: the nested arm
+    /// dispatched to a primitive that re-rendered the item's whole committed region from
+    /// what the parse modelled, and a paragraph hand-appended after a nested item's
+    /// `<!-- fields -->` group was gone at `Ok` — on a *migration*, at exit 0, with the
+    /// deletion committed. That is the **No-data-loss** property this pair declares by name.
+    ///
+    /// The fixture is the ledger's, because the shape needs a nested block that already
+    /// carries a field bullet: only then is there a `<!-- fields -->` group for a hand-append
+    /// to land after, which is the one spot the canonical form leaves unmodelled.
+    #[test]
+    fn a_nested_added_item_field_keeps_committed_bytes_the_parse_does_not_model() {
+        let v1 = load_schema(NESTED_LEDGER_V1.as_bytes()).expect("the nested v1 loads");
+        // The added leaf joins the NESTED block — the locus this arm reaches, appended after
+        // its last declared leaf exactly as `nested_deferrals_v2` does.
+        let anchor = nested_deferrals_anchor(LOCI);
+        let indent = &anchor[..anchor.len() - anchor.trim_start().len()];
+        let yaml = NESTED_LEDGER_V1.replacen(
+            anchor,
+            &format!("{anchor}{indent}- {{ id: owner, type: string, default: unassigned }}\n"),
+            1,
+        );
+        assert_ne!(
+            yaml, NESTED_LEDGER_V1,
+            "the fixture must declare the nested anchor `{anchor}`",
+        );
+        let v2 = load_schema(yaml.as_bytes()).expect("the nested v2 loads");
+
+        // Hand-append an aside to the FIRST nested item, after its field group and before
+        // the next `#### ` heading — separated by a blank line, so it is unmodelled rather
+        // than a malformed field bullet.
+        let clean = nested_ledger_doc(&v1);
+        let head = clean
+            .find("{#the-owed-floor}")
+            .expect("the first nested item is present");
+        let next = head
+            + clean[head..]
+                .find("\n#### ")
+                .expect("a following nested item bounds the first");
+        let aside = "An aside a human appended by hand.\n";
+        let src = format!("{}\n{aside}{}", &clean[..next], &clean[next..]);
+        assert!(
+            parse_sections(&v1, &src).is_ok(),
+            "the aside parses — it is unmodelled, not malformed; got {:?}\nsrc:\n{src}",
+            parse_sections(&v1, &src).err(),
+        );
+
+        // The real classifier, never a hand-built list.
+        let changes = crate::schema_diff::schema_diff(&v1, &v2);
+        assert_eq!(
+            changes,
+            vec![SchemaChange::AddedItemField {
+                locus: nested_deferrals_locus(LOCI),
+                field: "owner".to_string(),
+            }],
+            "the fixture pair classifies as the nested added-item-field",
+        );
+
+        let out = transform(&v1, &v2, &src, &changes)
+            .expect("the nested field add folds over a doc carrying unmodelled bytes");
+
+        assert!(
+            out.contains(aside),
+            "the hand-appended aside must survive the fold; got:\n{out}",
+        );
+        assert_eq!(
+            out.replace("- owner: unassigned\n", ""),
+            src,
+            "the generated bullets are the only bytes the fold may add — including around \
+             content the parse does not model",
+        );
+        assert_eq!(
+            out.matches("- owner: unassigned").count(),
+            4,
+            "every nested item at the locus gains the bullet; got:\n{out}",
         );
     }
 }
