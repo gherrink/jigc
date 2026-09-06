@@ -1315,21 +1315,44 @@ fn blocked_finding(code: &str, path: &str, message: String, route: String) -> Fi
 /// **Advisory, never blocking**, and it rides [`CorpusMigrationReport::unfilled`] rather than
 /// `blocked`: the doc migrated, and the run's exit is the refusal set's emptiness ([`run`]).
 ///
-/// **Targeted at `<path>#<section>/<field>` at BOTH loci** — the file-path form every
-/// `migrate-corpus.*` finding takes (never the doc's URI, so it resolves through no verb in
-/// either locus), carrying the **declared leaf's schema locus** as its fragment so two unfilled
-/// leaves in one doc discriminate rather than collapsing onto one `(code, target)`. It is a key
-/// naming *the file to open and the leaf to look at*, not a write address — which is why the
-/// item locus keeps it rather than growing a form the key cannot fill (below).
+/// **Targeted at `<path>#<locus-path>/<field>` at EVERY locus** — the file-path form every
+/// `migrate-corpus.*` finding takes (the path is not a doc URI, so the target parses as no
+/// address and resolves through no verb at any locus), carrying the **declared leaf's schema
+/// locus** as its fragment so two unfilled leaves in one doc discriminate rather than collapsing
+/// onto one `(code, target)`. It is a key naming *the file to open and the leaf to look at*, not
+/// a write address — which is why the item loci keep it rather than growing id-hop placeholders
+/// the key cannot fill (below).
 ///
-/// **The locus is carried into what the finding SAYS, because the two loci have different write
-/// addresses** (M46 completion audit, finding F2). A simple/header leaf is written at
-/// `#<section>/<field>`; an item leaf only at `#<section>/<item-id>/<field>`, and this report
-/// holds **no item id**. It must not mint one per item either: a repeatable section carrying
+/// **The locus is carried into what the finding SAYS, because the loci have different write
+/// addresses** (M46 completion audit, finding F2; M50 Increment 6 audit for the third). A
+/// simple/header leaf is written at `#<section>/<field>`; an item leaf only at
+/// `#<section>/<item-id>/<field>`; and a **nested** item leaf only at
+/// `#<section>/<item-id>/<nested-section>/<nested-block-item-id>/<field>` — the alternation
+/// [`engine::address::MAX_FRAGMENT_HOPS`] states, **one id hop per level**, each hole spelled by
+/// [`item_write_fragment`]. This report holds **no**
+/// item id, at any depth. It must not mint one per item either: a repeatable section carrying
 /// **zero** items still has an unfilled leaf, and a per-item finding would go silent on exactly
 /// the corpus a doctype author most needs to hear about — so the finding stays **one per leaf**
-/// and the route names the item-qualified *form* plus the read that enumerates the real ids
-/// (`jigc doc show`), the [`engine::store`] no-such-section precedent. It fabricates no address.
+/// and the route names the item-qualified *form* ([`item_write_fragment`]) plus the read that
+/// enumerates the real ids (`jigc doc show`), the [`engine::store`] no-such-section precedent. It
+/// fabricates no address.
+///
+/// **The locus's `Display` is prose, never an address** (M50 Increment 6 audit). At locus 3 it
+/// renders the diagnostic path `releases/changes`, which *omits the outer item hop* — so
+/// interpolated into a verb position it composes a command that answers `store.no-such-item` no
+/// matter which id a reader substitutes. The emitted read therefore names
+/// [`engine::schema_diff::Locus::section`] (whose one render hands back every anchor the write
+/// needs) and the emitted write names the hop-complete form; only the *prose* keeps the path.
+///
+/// **The emitted commands are bytes a reader runs, so they are held to running.** Driving them
+/// verbatim found two more breaks shipped since M46, neither in any finding: the write passed its
+/// value as a bare positional at **every** locus (`jigc doc set-field` answers `error: unexpected
+/// argument`), and at **both item** loci the read carried `--task <task-id>` against a doc this
+/// very run had just **committed** and no task had staged (`store.not-staged`, whose own route
+/// says to drop the flag). A [`Route::human`] escapes the argv fence a [`Route::mechanical`] is held to —
+/// which is exactly why they survived — so the fence here is the acceptance arm, which fills only
+/// the reader's own values into the route's bytes and **runs them**, at both item loci
+/// (`crates/cli/tests/migrate_locus_axis.rs`).
 ///
 /// **The route splits on the `set:` kind**, through the one authority
 /// ([`engine::schema::is_machine_maintained_absolute`]): a **machine-maintained absolute** (the
@@ -1343,7 +1366,7 @@ fn unfilled_set_field_finding(
     path: &str,
     leaf: &engine::schema_diff::UnfilledSetLeaf<'_>,
 ) -> Finding {
-    let section = &leaf.locus;
+    let locus = &leaf.locus;
     let field = leaf.field;
     let id = &field.id;
     let set = field.set.as_deref().unwrap_or_default();
@@ -1352,30 +1375,47 @@ fn unfilled_set_field_finding(
             "no action needed — `{id}` is machine-maintained (`set: {set}`): jigc derives its \
              value and no `jigc doc` write may set it"
         ))
-    } else if leaf.locus.is_item() {
+    } else if locus.is_item() {
+        // The two verb positions take the ADDRESS forms, never the locus path: the read at the
+        // section the ids are read out of, the write at the hop-complete item chain.
+        let section = locus.section();
+        let write = item_write_fragment(locus, id);
+        // A nested leaf's read and write differ by more than an id hop — the read is one level
+        // out — so the route says how the two relate rather than leaving the reader to infer it.
+        let through = if locus.is_nested() {
+            format!(
+                "; each item of `{locus}` sits **inside** a `{section}` item, so the write \
+                 address carries one id hop per level and that one read renders every anchor it \
+                 needs"
+            )
+        } else {
+            String::new()
+        };
         Route::human(format!(
             "`{id}` is author-overridable (`set: {set}`) and is declared per **item** of \
-             `{section}`, so a write names the item: read the items back with `jigc doc show \
-             <doc-address>#{section} --task <task-id>`, then set one with `jigc doc set-field \
-             <doc-address>#{section}/<item-id>/{id} <value> --task <task-id>`; this report holds \
-             no task id, so it composes no runnable command"
+             `{locus}`, so a write names the item: read the items back with `jigc doc show \
+             <doc-address>#{section}` — the task-less read, since the doc this run just migrated \
+             is committed and no task has staged it — then set one with `jigc doc set-field \
+             <doc-address>#{write} --value <value> --task <task-id>`{through}; this report holds \
+             no task id, so the write is a form to fill, not a runnable command"
         ))
     } else {
         Route::human(format!(
             "`{id}` is author-overridable (`set: {set}`) — if this record warrants a value, set \
-             it inside a task with `jigc doc set-field <doc-address>#{section}/{id} <value> \
-             --task <task-id>`; this report holds no task id, so it composes no runnable command"
+             it inside a task with `jigc doc set-field <doc-address>#{locus}/{id} --value \
+             <value> --task <task-id>`; this report holds no task id, so it composes no runnable \
+             command"
         ))
     };
-    let message = if leaf.locus.is_item() {
+    let message = if locus.is_item() {
         format!(
-            "`{path}` migrated with `{section}`'s **item** field `{id}` left unfilled — the \
+            "`{path}` migrated with `{locus}`'s **item** field `{id}` left unfilled — the \
              field declares `set: {set}` and no `default:`, so the migration placed no `{id}` in \
-             any item of `{section}` and invented none; their absence conforms"
+             any item of `{locus}` and invented none; their absence conforms"
         )
     } else {
         format!(
-            "`{path}` migrated with `{section}/{id}` left unfilled — the field declares \
+            "`{path}` migrated with `{locus}/{id}` left unfilled — the field declares \
              `set: {set}` and no `default:`, so the migration had no deterministic value to \
              place and invented none; its absence conforms"
         )
@@ -1384,9 +1424,33 @@ fn unfilled_set_field_finding(
         Severity::Advisory,
         "migrate-corpus.set-field-unfilled",
         message,
-        Some(Location::addressed(format!("{path}#{section}/{id}"), 1, 1)),
+        Some(Location::addressed(format!("{path}#{locus}/{id}"), 1, 1)),
         Some(route),
     )
+}
+
+/// The **write-address fragment** of a leaf declared inside a repeatable item block, as a *form*:
+/// the section, then one `<…item-id>` hole per item hop, alternating with the nested-section id
+/// that declares the next block, then the leaf.
+///
+/// `releases` + `date` → `releases/<item-id>/date`; `releases/changes` + `stamped` →
+/// `releases/<item-id>/changes/<changes-item-id>/stamped`. The alternation is the address
+/// grammar's own ([`engine::address::MAX_FRAGMENT_HOPS`]: *section / item / nested-section / item
+/// / … / leaf*), and the chain is walked off [`engine::schema_diff::Locus::nested`] rather than
+/// counted, so a deeper locus composes correctly the day the nesting cap rises — the locus path's
+/// `Display` cannot, because it omits every item hop.
+///
+/// **No two holes are spelled the same.** A nested hole is named for the block it indexes
+/// (`<changes-item-id>`), so a reader filling the form knows which id goes where; two bare
+/// `<item-id>`s at different depths would be a form nobody can fill unambiguously.
+fn item_write_fragment(locus: &engine::schema_diff::Locus, field: &str) -> String {
+    let mut out = format!("{}/<item-id>", locus.section());
+    for hop in locus.nested() {
+        out.push_str(&format!("/{hop}/<{hop}-item-id>"));
+    }
+    out.push('/');
+    out.push_str(field);
+    out
 }
 
 /// An **above-current** stamped doc (2026-07-24, the confidence-audit sibling-hunt item 1):

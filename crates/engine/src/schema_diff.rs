@@ -1432,8 +1432,16 @@ fn classify_added_item_field(locus: &Locus, field: &Field) -> SchemaChange {
 #[derive(Clone, Debug)]
 pub struct UnfilledSetLeaf<'a> {
     /// The **locus** the leaf was added to, rebuilt from the **new** schema's own ids (never
-    /// carried over from the change list), so the address a caller composes names a section —
-    /// and, at the third locus, a nested block — that exists.
+    /// carried over from the change list), so every id a caller renders — the section, and at
+    /// the third locus the nested block — is one the new schema declares.
+    ///
+    /// **That is a guarantee about the ids, not about an address.** [`Locus`]'s `Display` is a
+    /// *diagnostic path* (`releases/changes`) and omits every item hop, so a caller composing a
+    /// jigc address walks [`Locus::section`] and [`Locus::nested`] and puts an id hop between
+    /// them (`cli::migrate_corpus`'s `item_write_fragment`). Interpolating the path into an
+    /// address position yields one no substitution can resolve — the M50 Increment 6 audit
+    /// finding, which this comment's earlier wording ("the address a caller composes names a
+    /// section … that exists") had licensed.
     pub locus: Locus,
     /// The declared field itself — the caller routes on its `set:` kind
     /// ([`crate::schema::is_machine_maintained_absolute`]: an absolute nothing may write reads

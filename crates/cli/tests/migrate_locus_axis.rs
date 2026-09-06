@@ -648,3 +648,289 @@ fn a_nested_leaf_colliding_with_an_outer_id_resolves_at_its_own_locus() {
         "the refusal leaves the committed bytes — and the stamp — untouched",
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// The unfilled advisory at the ITEM LOCI — a route whose emitted commands RUN.
+// ---------------------------------------------------------------------------------------------
+
+/// The doc identity the corpus's one `changelog` answers to.
+const DOC_ADDRESS: &str = "changelog:changelog";
+/// The value a reader supplies where the emitted write says `<value>`.
+const READER_VALUE: &str = "v1";
+/// The leaf both arms add — `set:`-derived with no `default:`, which is exactly what the fold
+/// places no bytes for and the loudness rider reports.
+const UNFILLED_LEAF: &str = "{ id: stamped, type: string, set: on-create, optional: true }";
+
+/// The shipped `changelog` **outer** item block's optional-field line — the anchor a locus-2 leaf
+/// is appended after. Its indentation, six columns *shallower* than the nested block's, is what
+/// makes the appended leaf land at locus 2 rather than 3.
+const OUTER_ANCHOR: &str = "        - { id: link, type: string, optional: true }\n";
+
+/// A dev-pack copy bumping `changelog` **2 → 3** with `added` appended to its **outer** `releases`
+/// item block — [`pack_adding_a_nested_leaf`]'s locus-2 twin, so the two arms below differ only in
+/// the locus the leaf lands at.
+fn pack_adding_an_outer_leaf(tag: &str, added: &str) -> TempDir {
+    let dir = TempDir::new(tag);
+    frozen_pack::copy_dev_pack(dir.path());
+
+    let schema_path = dir.path().join("schemas").join("changelog.yaml");
+    let shipped = fs::read_to_string(&schema_path).expect("read the copied changelog.yaml");
+    fs::write(
+        dir.path()
+            .join("schema-snapshots")
+            .join("changelog.v2.yaml"),
+        &shipped,
+    )
+    .expect("write the changelog.v2 snapshot");
+
+    let indent = &OUTER_ANCHOR[..OUTER_ANCHOR.len() - OUTER_ANCHOR.trim_start().len()];
+    let reshaped = shipped.replacen(
+        OUTER_ANCHOR,
+        &format!("{OUTER_ANCHOR}{indent}- {added}\n"),
+        1,
+    );
+    assert_ne!(
+        reshaped, shipped,
+        "changelog.yaml must declare the outer block's optional `link` field",
+    );
+    // The anchor must name exactly one line: a second match would put the leaf somewhere the arm
+    // does not claim, and the whole point of the pair is a leaf at a KNOWN locus.
+    assert_eq!(
+        shipped
+            .lines()
+            .filter(|line| format!("{line}\n") == OUTER_ANCHOR)
+            .count(),
+        1,
+        "the outer-block anchor must be unique",
+    );
+    fs::write(&schema_path, &reshaped).expect("write the reshaped changelog.yaml");
+
+    let manifest_path = dir.path().join("config").join("schema-manifest.yaml");
+    let manifest = fs::read_to_string(&manifest_path).expect("read the copied manifest");
+    let bumped = manifest.replacen(
+        "- type: changelog\n    schema-version: 2",
+        "- type: changelog\n    schema-version: 3",
+        1,
+    );
+    assert_ne!(
+        manifest, bumped,
+        "the manifest must carry `changelog` at schema-version 2",
+    );
+    fs::write(&manifest_path, bumped).expect("write the bumped manifest");
+    frozen_pack::repin_manifest_hash(dir.path(), "changelog");
+    dir
+}
+
+/// The backtick-closed span of `route` that starts at `verb` — the emitted command, exactly as a
+/// reader copies it out.
+fn emitted_command<'a>(route: &'a str, verb: &str) -> &'a str {
+    let start = route
+        .find(verb)
+        .unwrap_or_else(|| panic!("the route emits a `{verb}` command; route: {route}"));
+    let rest = &route[start..];
+    let end = rest.find('`').unwrap_or_else(|| {
+        panic!("the emitted `{verb}` command is backtick-closed; route: {route}")
+    });
+    &rest[..end]
+}
+
+/// One emitted address, with **every hole a reader fills in** replaced by this corpus's real
+/// values: `<doc-address>` by the doc identity, and each item-id hole — whatever it is spelled —
+/// by the next real id in `ids`, outermost first.
+///
+/// The item substitution is **positional**, not name-keyed: the claim is *a reader who fills each
+/// id hole reaches something*, which must hold for whatever placeholder vocabulary the route
+/// picks, not only the one shipped today.
+fn reader_filled_address(address: &str, ids: &mut std::slice::Iter<'_, &str>) -> String {
+    let raw = address.replace("<doc-address>", DOC_ADDRESS);
+    let (head, fragment) = raw
+        .split_once('#')
+        .unwrap_or_else(|| panic!("the emitted address carries a fragment; address: {raw}"));
+    let hops: Vec<String> = fragment
+        .split('/')
+        .map(|hop| {
+            if hop.starts_with('<') && hop.ends_with('>') && hop.contains("item-id") {
+                (*ids
+                    .next()
+                    .expect("the route names no more id hops than the corpus has"))
+                .to_string()
+            } else {
+                hop.to_string()
+            }
+        })
+        .collect();
+    format!("{head}#{}", hops.join("/"))
+}
+
+/// An emitted `jigc …` command turned into the argv a reader actually runs: the leading `jigc`
+/// dropped, every placeholder filled from this corpus. **Nothing else is rewritten** — the verb,
+/// the flags and their order are the route's own bytes, which is the only way an argv the CLI
+/// does not accept can be caught.
+fn reader_filled_argv(command: &str, ids: &[&str], task: &str) -> Vec<String> {
+    let mut ids = ids.iter();
+    command
+        .split_whitespace()
+        .skip(1)
+        .map(|token| match token {
+            "<task-id>" => task.to_string(),
+            "<value>" => READER_VALUE.to_string(),
+            _ if token.contains('#') => reader_filled_address(token, &mut ids),
+            _ => token.to_string(),
+        })
+        .collect()
+}
+
+/// Run `jigc <argv>` — the owned-`String` form of [`jigc`], for an argv assembled at runtime.
+fn jigc_argv(repo: &Path, home: &Path, pack: &Path, argv: &[String]) -> std::process::Output {
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    jigc(repo, home, pack, &args)
+}
+
+/// Install the adapter and mint one task, returning its id — the `--task <task-id>` the emitted
+/// write needs, which the migration report itself does not hold.
+fn task_in(repo: &Path, home: &Path, pack: &Path) -> String {
+    let setup = jigc(repo, home, pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "setup installs; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&setup.stdout),
+        String::from_utf8_lossy(&setup.stderr),
+    );
+    let started = jigc(
+        repo,
+        home,
+        pack,
+        &[
+            "start",
+            "stamp the change group",
+            "--workflow",
+            "single-task",
+        ],
+    );
+    let out = String::from_utf8_lossy(&started.stdout);
+    assert!(
+        started.status.success(),
+        "a work-workflow mints a task; stdout:\n{out}\nstderr:\n{}",
+        String::from_utf8_lossy(&started.stderr),
+    );
+    let marker = "task minted: ";
+    let start = out
+        .find(marker)
+        .unwrap_or_else(|| panic!("the mint acks its id; stdout:\n{out}"))
+        + marker.len();
+    out[start..]
+        .split_whitespace()
+        .next()
+        .expect("the ack names an id")
+        .to_string()
+}
+
+/// Drive the unfilled advisory's emitted route over `pack`: fill each id hole from `ids` and run
+/// **the whole argv**, then read the value back at `read_back`.
+fn the_emitted_route_runs(pack: &TempDir, ids: &[&str], read_back: &str) {
+    let home = TempDir::new("home");
+    let repo = repo_with_changelog();
+
+    let (report, ok) = migrate_report(repo.path(), home.path(), pack.path());
+    assert!(
+        ok,
+        "an unfilled `set:` leaf is reported, never blocking; report:\n{report:#}"
+    );
+    let unfilled = report["unfilled"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the envelope carries `unfilled[]`; got:\n{report:#}"));
+    assert_eq!(
+        unfilled.len(),
+        1,
+        "exactly one leaf was left unfilled; report:\n{report:#}",
+    );
+    let finding = &unfilled[0];
+    assert_eq!(finding["code"], "migrate-corpus.set-field-unfilled");
+    let route = finding["route"].as_str().expect("a route");
+
+    let task = task_in(repo.path(), home.path(), pack.path());
+
+    // The read: the reader's only source of the ids the write needs, so it must both run and
+    // render every anchor the write address asks for.
+    let show = reader_filled_argv(emitted_command(route, "jigc doc show "), ids, &task);
+    let read = jigc_argv(repo.path(), home.path(), pack.path(), &show);
+    let read_out = String::from_utf8_lossy(&read.stdout);
+    assert!(
+        read.status.success(),
+        "the emitted read must run; `{show:?}` gave:\n{read_out}\n{}",
+        String::from_utf8_lossy(&read.stderr),
+    );
+    for id in ids {
+        assert!(
+            read_out.contains(&format!("{{#{id}}}")),
+            "the emitted read hands back every id hop the write needs — `{id}` is missing from \
+             `{show:?}`'s render:\n{read_out}",
+        );
+    }
+
+    // The write: run it verbatim, its id holes filled from the read above.
+    let set = reader_filled_argv(emitted_command(route, "jigc doc set-field "), ids, &task);
+    let wrote = jigc_argv(repo.path(), home.path(), pack.path(), &set);
+    assert!(
+        wrote.status.success(),
+        "the emitted write must run; `{set:?}` gave:\n{}\n{}",
+        String::from_utf8_lossy(&wrote.stdout),
+        String::from_utf8_lossy(&wrote.stderr),
+    );
+
+    // And it landed on the item the advisory said the leaf was missing from.
+    let back = jigc(
+        repo.path(),
+        home.path(),
+        pack.path(),
+        &["doc", "show", read_back, "--task", &task],
+    );
+    let back_out = String::from_utf8_lossy(&back.stdout);
+    assert!(
+        back.status.success() && back_out.contains(&format!("stamped: {READER_VALUE}")),
+        "the value lands on the item the advisory named; read-back of `{read_back}`:\n{back_out}\n{}",
+        String::from_utf8_lossy(&back.stderr),
+    );
+}
+
+/// **The unfilled advisory's emitted commands RUN at the deepest item locus** — verbatim, with
+/// only the reader's own values filled in. (M50 Increment 6 audit.)
+///
+/// The cell is new: before this increment `diff_item_fields` pushed the backstop for any nested
+/// delta, so no nested `set:` leaf ever reached the loudness rider. Reaching it, the route
+/// interpolated the locus's **`Display` path** (`releases/changes`) into both verb positions — and
+/// that path is a *diagnostic* locus, not an address: it omits the outer item hop, so no
+/// substitution of the single `<item-id>` it offered could make either command resolve.
+///
+/// Red at HEAD, on the bytes themselves: the emitted read exits 1 on `store.no-such-item`
+/// (`changes` read as an item of `releases`); with the read's address hand-repaired, the emitted
+/// write's address exits 1 on `store.no-such-section`.
+///
+/// Green: the read names the **resolvable outer section**, whose one render hands the reader both
+/// anchors (`{#1-0-0}` and `{#added}`); the write carries **one id hole per item hop**, so filling
+/// them addresses the leaf's own home and the value lands there.
+#[test]
+fn the_nested_unfilled_advisory_emits_commands_that_run() {
+    the_emitted_route_runs(
+        &pack_adding_a_nested_leaf("unfilled-nested", UNFILLED_LEAF),
+        &["1-0-0", "added"],
+        "changelog:changelog#releases/1-0-0/changes/added",
+    );
+}
+
+/// **The same claim at the item locus above it** — the axis, not the reported repro.
+///
+/// The advisory's route is one code path over both item loci, so the two breaks the nested arm
+/// exposed were never nested-only: the emitted write passed its value as a **bare positional**
+/// (`jigc doc set-field` answers `error: unexpected argument`), and the emitted read carried
+/// `--task <task-id>` against a doc the run had just **committed** and no task had staged
+/// (`store.not-staged`). Both were shipped at this locus since M46 and reported by nobody; a test
+/// that iterated only the locus the finding named would have shipped them again.
+#[test]
+fn the_item_locus_unfilled_advisory_emits_commands_that_run() {
+    the_emitted_route_runs(
+        &pack_adding_an_outer_leaf("unfilled-outer", UNFILLED_LEAF),
+        &["1-0-0"],
+        "changelog:changelog#releases/1-0-0",
+    );
+}
