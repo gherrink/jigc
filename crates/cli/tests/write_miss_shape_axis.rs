@@ -164,13 +164,36 @@
 //! field of that id — is not a cell: it names no section, so *undeclared section* is not
 //! what it got wrong, and it keeps the resolver's own sentence.
 //!
-//! **Declared bound, one level down (M49).** The nested form with **no trailing item
-//! hop** splits by verb, and only one arm is a cell here. At `set-slot` / `set-field`,
+//! **Declared bound, one level down (M49), narrowed at M50.** The nested form with **no
+//! trailing item hop** splits by verb. At `set-slot` / `set-field`,
 //! `#releases/1-3-0/bogus` names a **leaf** on a live item — `write.unknown-field` is the
-//! right answer and is left standing. At `remove-item` the same string names no item at
-//! all, and the CLI address resolver emits the bare `{"error": …}` envelope before any
-//! write door is reached — the same target-resolution seam as the bound above, one level
-//! down, and left as it is. Only `add-item`, whose destination is a *section*, is a row.
+//! right answer and is left standing. At `remove-item` / `retitle-item` the same string
+//! names no item at all, and used to bottom out in the CLI address resolver as a bare
+//! `{"error": …}` envelope before any write door was reached; that half of the bound is
+//! **no longer a bound** — the address-shape column below is exactly that seam, and the
+//! string now earns `write.wrong-shape` at both verbs (the *leading* hop `releases` is
+//! declared, so rank 1 has nothing to say and what is left is the form the verb takes).
+//! `add-item`, whose destination is a *section*, keeps its own row above.
+//!
+//! **M50 adds the address-shape column.** Every column above reaches a write door;
+//! thirteen cells never did. `add-item` resolves its destination through
+//! `add_item_target` and `remove-item` / `retitle-item` theirs through
+//! `remove_item_target`, and an address whose **shape** those resolvers cannot map — a
+//! bare `<type>:<slug>` with no fragment at all, an `add-item` at an item, a
+//! `remove-item` / `retitle-item` at a section or at a leaf — fell out as `None` and was
+//! dressed by a bare `with_context`: exit 1 carrying `{"error": "no section addressed by
+//! …"}`, **code-less, route-less, outside the finding envelope**, at three of the five
+//! `doc` write verbs. The column has two dimensions, because the answer is not a property
+//! of the address shape alone: rank 1 asks whether the **leading** hop names a declared
+//! section at all (`engine::write::undeclared_section_splice`, the predicate the six
+//! item-addressing doors and M49's section-level resolvers already ask), so an undeclared
+//! leading hop is `write.unknown-section` whatever shape the rest of the address takes,
+//! and only over a declared one is what is left a genuine declared-shape defect,
+//! `write.wrong-shape`. `write.not-present` earns **no** row here: nothing has been looked
+//! for in the corpus yet, so naming an item absent would be a law-1 lie about a document
+//! the resolver has not read. Engine-side there is no fix at all — the escape is closed at
+//! the **type** level, by the two resolvers returning `Result<_, Finding>`, an error type
+//! `DocFailure`'s blanket `From<anyhow::Error>` cannot reach.
 
 use cli::cli::{VERB_KINDS, VerbKind};
 use std::fs;
@@ -1016,6 +1039,146 @@ const CELLS: &[Cell] = &[
         args: &["doc", "add-item", "{addr}#overview", "--title", "Added"],
         stdin: None,
         code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    // ---- The **address-shape** column (M50 Increment 9, T1). Every column above reaches a
+    // write door; these thirteen never did. `add-item` resolves its destination through
+    // `add_item_target` and `remove-item` / `retitle-item` theirs through
+    // `remove_item_target`, and an address whose *shape* the resolver cannot map — a bare
+    // `<type>:<slug>` with no fragment at all, an `add-item` at an item, a `remove-item` /
+    // `retitle-item` at a section or at a leaf — fell out of the resolver as `None` and was
+    // dressed by a bare `with_context`: exit 1 carrying `{"error": "no section addressed by
+    // …"}`, **code-less, route-less, outside the finding envelope**, exactly the shape M49's
+    // section-level arm closed one seam over. A driver keying on `(code, target)` saw
+    // nothing and the agent was handed no recovery, at three of the five `doc` write verbs.
+    //
+    // The column has **two dimensions**, because the right answer is not a property of the
+    // address shape alone: rank 1 asks whether the *leading* hop names a declared section at
+    // all (`engine::write::undeclared_section_splice`, the same rank-1 predicate the six
+    // item-addressing doors and M49's section-level resolvers already ask), so an
+    // undeclared leading hop is `write.unknown-section` whatever shape the rest of the
+    // address takes, and only a **declared** one leaves a genuine declared-shape defect:
+    // `write.wrong-shape`, whose sentence names the form the verb takes and never claims an
+    // absence. `write.not-present` earns no row here at all — nothing has been looked for in
+    // the corpus yet, so naming an item absent would be a law-1 lie about a document the
+    // resolver has not read.
+    //
+    // Both codes route the same `jigc doc schema <doctype>` read, which is the point: a
+    // shape question and a declaredness question are both answered by the schema, and it is
+    // the *code* a driver keys on that had to stop being absent.
+    Cell {
+        what: "add-item at a bare doc address (no section hop at all)",
+        args: &["doc", "add-item", "{addr}", "--title", "Added"],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "add-item at an item in a declared section",
+        args: &["doc", "add-item", "{addr}#releases/1-3-0", "--title", "Added"],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "add-item at an item in an undeclared section",
+        args: &[
+            "doc",
+            "add-item",
+            "{addr}#no-such-section/1-3-0",
+            "--title",
+            "Added",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "remove-item at a bare doc address (no item hop at all)",
+        args: &["doc", "remove-item", "{addr}"],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "remove-item at a declared section",
+        args: &["doc", "remove-item", "{addr}#releases"],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "remove-item at an undeclared section",
+        args: &["doc", "remove-item", "{addr}#no-such-section"],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "remove-item at a leaf on a live item in a declared section",
+        args: &["doc", "remove-item", "{addr}#releases/1-3-0/summary"],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "remove-item at a leaf on an item in an undeclared section",
+        args: &["doc", "remove-item", "{addr}#no-such-section/9-9-9/summary"],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "retitle-item at a bare doc address (no item hop at all)",
+        args: &["doc", "retitle-item", "{addr}", "--title", "Fixed"],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "retitle-item at a declared section",
+        args: &["doc", "retitle-item", "{addr}#releases", "--title", "Fixed"],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "retitle-item at an undeclared section",
+        args: &[
+            "doc",
+            "retitle-item",
+            "{addr}#no-such-section",
+            "--title",
+            "Fixed",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "retitle-item at a leaf on a live item in a declared section",
+        args: &[
+            "doc",
+            "retitle-item",
+            "{addr}#releases/1-3-0/summary",
+            "--title",
+            "Fixed",
+        ],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "retitle-item at a leaf on an item in an undeclared section",
+        args: &[
+            "doc",
+            "retitle-item",
+            "{addr}#no-such-section/9-9-9/summary",
+            "--title",
+            "Fixed",
+        ],
+        stdin: None,
+        code: "write.unknown-section",
         route: RouteCheck::Schema,
     },
     // ---- The **title-miss** column (M48 Increment 2, T2). The matrix's other columns are

@@ -1381,8 +1381,7 @@ fn run_add_item(
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "add-item", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let target =
-        add_item_target(&address).with_context(|| format!("no section addressed by `{addr}`"))?;
+    let target = add_item_target(&schema, &address).map_err(DocFailure::block)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
     let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
@@ -2028,14 +2027,34 @@ enum AddItemTarget {
 /// top-level mint; `#section/parent/nested-section` (3-hop) and deeper name a nested
 /// repeatable inside a parent item chain. The CLI only extracts the hops; the engine
 /// `add_item` / `add_nested_item` adjudicate the *shape* (repeatability, presence).
-fn add_item_target(address: &Address) -> Option<AddItemTarget> {
-    match address.fragment.as_ref()? {
-        Fragment::Unit(u) => Some(AddItemTarget::TopLevel {
+///
+/// **An address whose shape maps to no destination is a [`Finding`], never a bare
+/// `anyhow`** (M50 Increment 9, T1): the error type is what closes the escape, because
+/// [`DocFailure`]'s blanket `From<anyhow::Error>` would otherwise let any caller dress
+/// this reject as `{"error": …}` again — code-less, route-less and outside the finding
+/// envelope, the shape M49 closed one seam over at the section-level resolvers. The
+/// reject is ranked exactly as every other write door ranks: rank 1 asks whether the
+/// **leading** hop names a declared section at all ([`unmappable_address`]).
+fn add_item_target(schema: &Schema, address: &Address) -> Result<AddItemTarget, Finding> {
+    let unmappable = || {
+        unmappable_address(
+            schema,
+            address,
+            "add-item",
+            "mints into a section — address it as `#<section>`, or \
+             `#<section>/<item>/…/<nested-section>` for a nested repeatable",
+        )
+    };
+    let Some(fragment) = address.fragment.as_ref() else {
+        return Err(unmappable());
+    };
+    match fragment {
+        Fragment::Unit(u) => Ok(AddItemTarget::TopLevel {
             section: u.as_str().to_string(),
         }),
         // `#section/parent/nested-section`: one parent item, the nested repeatable named
         // by the trailing hop.
-        Fragment::UnitItemLeaf(section, parent, nested) => Some(AddItemTarget::Nested {
+        Fragment::UnitItemLeaf(section, parent, nested) => Ok(AddItemTarget::Nested {
             section: section.as_str().to_string(),
             parents: vec![parent.as_str().to_string()],
             nested_section: nested.as_str().to_string(),
@@ -2043,12 +2062,16 @@ fn add_item_target(address: &Address) -> Option<AddItemTarget> {
         // `#section/parent/.../nested-section`: the leading hop is the section, the
         // trailing hop names the nested repeatable, the hops between are the parent chain.
         Fragment::Deep(hops) => {
-            let (section, rest) = hops.split_first()?;
-            let (nested_section, parents) = rest.split_last()?;
+            let Some((section, rest)) = hops.split_first() else {
+                return Err(unmappable());
+            };
+            let Some((nested_section, parents)) = rest.split_last() else {
+                return Err(unmappable());
+            };
             if parents.is_empty() {
-                return None;
+                return Err(unmappable());
             }
-            Some(AddItemTarget::Nested {
+            Ok(AddItemTarget::Nested {
                 section: section.clone(),
                 parents: parents.to_vec(),
                 nested_section: nested_section.clone(),
@@ -2056,8 +2079,53 @@ fn add_item_target(address: &Address) -> Option<AddItemTarget> {
         }
         // A bare `#section/item` (no nested-section hop) addresses no repeatable to mint
         // into; a `#section/leaf` 2-hop likewise names no section to add to.
-        Fragment::UnitLeaf(_, _) | Fragment::UnitItem(_, _) => None,
+        Fragment::UnitLeaf(_, _) | Fragment::UnitItem(_, _) => Err(unmappable()),
     }
+}
+
+/// The **leading section hop** of an address's fragment — the hop every item-addressing
+/// form starts with, whichever depth it reaches. `None` for a bare `<type>:<slug>`, which
+/// names no section at any hop.
+fn leading_section_hop(address: &Address) -> Option<&str> {
+    match address.fragment.as_ref()? {
+        Fragment::Unit(u)
+        | Fragment::UnitLeaf(u, _)
+        | Fragment::UnitItem(u, _)
+        | Fragment::UnitItemLeaf(u, _, _) => Some(u.as_str()),
+        Fragment::Deep(hops) => hops.first().map(String::as_str),
+    }
+}
+
+/// **The reject an item-addressing resolver returns for an address whose *shape* maps to
+/// no destination**, ranked the way every write door ranks (`design/write-commands.md` →
+/// Every write resolves its address before it moves bytes: shape → item presence → leaf
+/// declaration).
+///
+/// Rank 1 is the same question the six item-addressing doors ask in the engine and M49's
+/// section-level resolvers ask here: **is the leading hop a declared section at all?** If
+/// it is not, the address is wrong whatever the corpus holds and whatever shape the rest
+/// of it takes — `write.unknown-section`, from the engine's own predicate and sentence, so
+/// one miss keeps one code across every door. Only over a *declared* leading hop is what
+/// is left a genuine declared-shape defect: `write.wrong-shape`, whose sentence names the
+/// **form the verb takes** and never claims an absence — nothing has been looked for in
+/// the corpus yet, so `write.not-present` here would be a law-1 lie about a document the
+/// resolver has not read (`design/validation.md` → The `write.*` route split).
+///
+/// Both codes route the one `jigc doc schema <doctype>` read through the engine's own
+/// per-code map, which is the point: a shape question and a declaredness question are both
+/// answered by the schema, and what a driver keying on `(code, target)` had was neither.
+fn unmappable_address(schema: &Schema, address: &Address, verb: &str, form: &str) -> Finding {
+    let uri = address.to_string();
+    let undeclared = leading_section_hop(address)
+        .and_then(|section| engine::write::undeclared_section_splice(schema, section));
+    let mut finding = match undeclared {
+        Some(err) => engine::write::splice_error_finding(&err),
+        None => engine::write::generate_error_finding(&engine::write::GenerateError::WrongShape {
+            what: format!("{verb} {form}; `{uri}` is not that form"),
+        }),
+    };
+    stamp_target(&mut finding, &uri);
+    finding
 }
 
 /// `jigc doc remove-item <addr>` — remove a repeatable item without discarding the
@@ -2078,8 +2146,7 @@ fn run_remove_item(
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "remove-item", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let target =
-        remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
+    let target = remove_item_target(&schema, &address, "remove-item").map_err(DocFailure::block)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
     let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
@@ -2144,31 +2211,56 @@ enum RemoveItemTarget {
 }
 
 /// Resolve the item a `remove-item` address targets (shared verbatim by
-/// `retitle-item`, whose addresses are the same item forms). The two-hop `#section/id`
+/// `retitle-item`, whose addresses are the same item forms — hence the `verb` the reject
+/// names). The two-hop `#section/id`
 /// ([`Fragment::UnitLeaf`]) is a top-level item; a deeper section-qualified chain
 /// ([`Fragment::Deep`]) is a nested item — the leading hop is the section, every hop
 /// after it is the parent-scoped id chain down to the removed item. The CLI only
 /// extracts the hops; the engine `remove_item` / `remove_nested_item` adjudicate
 /// presence (an absent item / wrong-parent chain → `SpliceError::NotPresent`).
-fn remove_item_target(address: &Address) -> Option<RemoveItemTarget> {
-    match address.fragment.as_ref()? {
-        Fragment::UnitLeaf(section, item) => Some(RemoveItemTarget::TopLevel {
+///
+/// **An address whose shape maps to no item is a [`Finding`], never a bare `anyhow`** —
+/// the [`add_item_target`] rule, for the same reason and through the same ranked
+/// [`unmappable_address`].
+fn remove_item_target(
+    schema: &Schema,
+    address: &Address,
+    verb: &str,
+) -> Result<RemoveItemTarget, Finding> {
+    let unmappable = || {
+        unmappable_address(
+            schema,
+            address,
+            verb,
+            "addresses a repeatable item — address it as `#<section>/<id>`, or \
+             `#<section>/<id>/…/<nested-section>/<id>` for a nested one",
+        )
+    };
+    let Some(fragment) = address.fragment.as_ref() else {
+        return Err(unmappable());
+    };
+    match fragment {
+        Fragment::UnitLeaf(section, item) => Ok(RemoveItemTarget::TopLevel {
             section: section.as_str().to_string(),
             item: item.as_str().to_string(),
         }),
         Fragment::Deep(hops) => {
-            let (section, items) = hops.split_first()?;
+            let Some((section, items)) = hops.split_first() else {
+                return Err(unmappable());
+            };
             if items.is_empty() {
-                return None;
+                return Err(unmappable());
             }
-            Some(RemoveItemTarget::Nested {
+            Ok(RemoveItemTarget::Nested {
                 section: section.clone(),
                 items: items.to_vec(),
             })
         }
         // A bare `#section` (no item hop) names no item to remove; a `#section/item/leaf`
         // mix without the section-qualified chain is not a remove target.
-        Fragment::Unit(_) | Fragment::UnitItem(_, _) | Fragment::UnitItemLeaf(_, _, _) => None,
+        Fragment::Unit(_) | Fragment::UnitItem(_, _) | Fragment::UnitItemLeaf(_, _, _) => {
+            Err(unmappable())
+        }
     }
 }
 
@@ -2205,7 +2297,7 @@ fn run_retitle_item(
     let uri = address.to_string();
     let schema = task.schema(address.r#type.as_str())?;
     let target =
-        remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
+        remove_item_target(&schema, &address, "retitle-item").map_err(DocFailure::block)?;
 
     // The **milestone-record refusal** (the A4.4 doc-level reslug guard's item-level
     // mirror; `design/write-commands.md` → `jigc doc retitle-item` / Milestone-record
@@ -3666,8 +3758,7 @@ fn apply_leaf(
         Leaf::AddItem { fragment, title } => {
             let addr = format!("{head}#{fragment}");
             let address = parse_addr(&addr)?;
-            let target = add_item_target(&address)
-                .with_context(|| format!("no section addressed by `{addr}`"))?;
+            let target = add_item_target(schema, &address).map_err(DocFailure::block)?;
             // No `slug_override`: the batch payload grammar carries no `slug:` key —
             // `--slug` is the per-leaf `add-item` flag, and a payload collision is
             // routed at it rather than silently overridden here.
