@@ -659,7 +659,7 @@ fn run_set_field(
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "set-field", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let target = field_target(&schema, &address)?;
+    let target = field_target(&schema, &address).map_err(DocFailure::block)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
     let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
@@ -792,7 +792,7 @@ fn run_unset_field(
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "set-field --unset", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let target = field_target(&schema, &address)?;
+    let target = field_target(&schema, &address).map_err(DocFailure::block)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
     let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
@@ -1275,7 +1275,7 @@ fn run_set_slot(
     let uri = address.to_string();
     machine_maintained_guard(address.r#type.as_str(), "set-slot", &uri)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let target = slot_target(&schema, &address)?;
+    let target = slot_target(&schema, &address).map_err(DocFailure::block)?;
 
     let prose = read_handoff(from_file)?;
 
@@ -2096,8 +2096,10 @@ fn leading_section_hop(address: &Address) -> Option<&str> {
     }
 }
 
-/// **The reject an item-addressing resolver returns for an address whose *shape* maps to
-/// no destination**, ranked the way every write door ranks (`design/write-commands.md` →
+/// **The reject an address resolver returns for an address whose *shape* maps to no
+/// destination** — the item-addressing pair (T1) and, for the shapes that name no
+/// destination at all, the section-level pair (T2) — ranked the way every write door ranks
+/// (`design/write-commands.md` →
 /// Every write resolves its address before it moves bytes: shape → item presence → leaf
 /// declaration).
 ///
@@ -2116,12 +2118,33 @@ fn leading_section_hop(address: &Address) -> Option<&str> {
 /// answered by the schema, and what a driver keying on `(code, target)` had was neither.
 fn unmappable_address(schema: &Schema, address: &Address, verb: &str, form: &str) -> Finding {
     let uri = address.to_string();
+    ranked_shape_reject(
+        schema,
+        address,
+        format!("{verb} {form}; `{uri}` is not that form"),
+    )
+}
+
+/// [`unmappable_address`] with the shape sentence supplied whole — the form the
+/// **section-level** resolvers need (M50 Increment 9, T2), where the defect is not the
+/// address *form* but the declared shape it lands on: a `set-slot` at `#<section>` whose
+/// section hosts no prose slot IS the form the verb takes, so saying otherwise would be a
+/// law-1 lie about an address that is shaped correctly.
+///
+/// The ranking is the shared half and stays here: rank 1 asks the engine's own
+/// `undeclared_section_splice` about the **leading** hop, so an undeclared section is one
+/// predicate, one code (`write.unknown-section`) and one sentence at every door; only over
+/// a declared hop is what is left a genuine declared-shape defect (`write.wrong-shape`).
+/// So is the [`stamp_target`] stamp, which is what gives a driver keying on
+/// `(code, target)` the write address it asked at.
+fn ranked_shape_reject(schema: &Schema, address: &Address, what: String) -> Finding {
+    let uri = address.to_string();
     let undeclared = leading_section_hop(address)
         .and_then(|section| engine::write::undeclared_section_splice(schema, section));
     let mut finding = match undeclared {
         Some(err) => engine::write::splice_error_finding(&err),
         None => engine::write::generate_error_finding(&engine::write::GenerateError::WrongShape {
-            what: format!("{verb} {form}; `{uri}` is not that form"),
+            what,
         }),
     };
     stamp_target(&mut finding, &uri);
@@ -3778,13 +3801,13 @@ fn apply_leaf(
         Leaf::SetField { fragment, value } => {
             let addr = format!("{head}#{fragment}");
             let address = parse_addr(&addr)?;
-            let target = field_target(schema, &address)?;
+            let target = field_target(schema, &address).map_err(DocFailure::block)?;
             apply_field_target(schema, source, target, &addr, value)
         }
         Leaf::SetSlot { fragment, prose } => {
             let addr = format!("{head}#{fragment}");
             let address = parse_addr(&addr)?;
-            let target = slot_target(schema, &address)?;
+            let target = slot_target(schema, &address).map_err(DocFailure::block)?;
             apply_slot_target(schema, source, target, &addr, prose)
         }
     }
@@ -6154,13 +6177,13 @@ pub(crate) fn read_handoff(from_file: &str) -> Result<String> {
 /// `jigc doc schema <doctype>` read — asked here at rank 1, from the engine's own predicate,
 /// rather than inferred from the absent leaf below (M49 Increment 11 / T3, closing M47
 /// increment 6's advisory 2; `design/validation.md` → The `write.*` route split).
-fn undeclared_section_guard(schema: &Schema, section: &str, uri: &str) -> Result<(), DocFailure> {
+fn undeclared_section_guard(schema: &Schema, section: &str, uri: &str) -> Result<(), Finding> {
     match engine::write::undeclared_section_splice(schema, section) {
         None => Ok(()),
         Some(err) => {
             let mut finding = engine::write::splice_error_finding(&err);
             stamp_target(&mut finding, uri);
-            Err(DocFailure::block(finding))
+            Err(finding)
         }
     }
 }
@@ -6197,16 +6220,29 @@ enum FieldTarget {
 /// `#<section>/<field>`, and the item-leaf three-hop `#<section>/<item>/<field>`
 /// (M13 Increment 3 — the per-item field, addressed through the item id).
 ///
-/// Returns a [`DocFailure`] rather than `None` since M49 Increment 11 / T3, so the one
-/// resolver answers every door that consumes it identically: the two-hop form's
-/// [`undeclared_section_guard`] mints a located, routed `write.unknown-section`, and the
-/// address that genuinely names no declared field keeps the resolver's own sentence — in
-/// the URI normal form the write-path findings key at, not the raw argument.
-fn field_target(schema: &Schema, address: &Address) -> Result<FieldTarget, DocFailure> {
+/// Returns a [`Finding`] rather than `None`, so the one resolver answers every door that
+/// consumes it identically, in the URI normal form the write-path findings key at rather
+/// than the raw argument: the two-hop form's [`undeclared_section_guard`] mints a located,
+/// routed `write.unknown-section` (M49 Increment 11 / T3), and since M50 Increment 9 / T2
+/// **every remaining arm is adjudicated too** — an unmatched single hop is an undeclared
+/// **leaf** (`write.unknown-field`, never `write.unknown-section`: this form names no
+/// section at any hop), and an address whose shape maps to no field at all is
+/// `write.wrong-shape` through the ranked [`unmappable_address`]. The error *type* is what
+/// closes the escape: a bare `anyhow` cannot inhabit it, so no caller can dress this reject
+/// as the code-less, route-less `{"error": …}` envelope it used to be.
+fn field_target(schema: &Schema, address: &Address) -> Result<FieldTarget, Finding> {
     let uri = address.to_string();
-    let no_field = || -> DocFailure { anyhow::anyhow!("no field addressed by `{uri}`").into() };
+    let unmappable = || {
+        unmappable_address(
+            schema,
+            address,
+            "set-field",
+            "addresses a declared field — address it as `#<field>`, `#<section>/<field>`, \
+             or `#<section>/<item>/…/<field>` for a per-item one",
+        )
+    };
     let Some(fragment) = address.fragment.as_ref() else {
-        return Err(no_field());
+        return Err(unmappable());
     };
     match fragment {
         Fragment::Unit(field) => {
@@ -6223,20 +6259,38 @@ fn field_target(schema: &Schema, address: &Address) -> Result<FieldTarget, DocFa
                     }
                     _ => None,
                 })
-                .ok_or_else(no_field)
+                // **The single hop names no section, so it cannot have got one wrong**
+                // (M50 Increment 9, T2). This form searches every declared section for a
+                // field of that id, so `write.unknown-section` here would be a law-1 lie
+                // about sections that all exist — the declared bound `design/validation.md`
+                // carried, now narrowed there rather than left standing: what the address
+                // got wrong is a **leaf**, and an undeclared leaf is `write.unknown-field`
+                // at every write verb, whichever leaf kind it named.
+                .ok_or_else(|| {
+                    let mut finding = engine::write::generate_error_finding(
+                        &engine::write::GenerateError::UnknownField {
+                            key: field.to_string(),
+                            at: format!(
+                                "any section of `{}` (the single-hop `#<field>` form \
+                                 searches every declared section)",
+                                address.r#type.as_str(),
+                            ),
+                        },
+                    );
+                    stamp_target(&mut finding, &uri);
+                    finding
+                })
         }
         Fragment::UnitLeaf(section, field) => {
             let (section, field) = (section.as_str(), field.as_str());
             undeclared_section_guard(schema, section, &uri)?;
-            schema
-                .sections
-                .iter()
-                .find(|s| s.id == section)
-                .map(|s| FieldTarget::Section {
-                    section: s.id.clone(),
-                    field: field.to_string(),
-                })
-                .ok_or_else(no_field)
+            // The guard passed, so the section **is** declared — the lookup that used to
+            // follow could not miss, and its `None` arm was the resolver's bare
+            // `no field addressed by` sentence standing over an unreachable state.
+            Ok(FieldTarget::Section {
+                section: section.to_string(),
+                field: field.to_string(),
+            })
         }
         // The item-leaf field hop. The CLI only extracts the `(section, item, field)`
         // triple; the engine `set_item_field_or_insert` adjudicates shape (item/section
@@ -6252,19 +6306,19 @@ fn field_target(schema: &Schema, address: &Address) -> Result<FieldTarget, DocFa
             field: field.as_str().to_string(),
         }),
         // A bare item hop (`#<section>/<item>`) addresses no field leaf.
-        Fragment::UnitItem(_, _) => Err(no_field()),
+        Fragment::UnitItem(_, _) => Err(unmappable()),
         // A **nested** path (`#section/item/child/.../field`): the leading hop is the
         // section, the trailing hop is the field leaf, and the hops between are the
         // parent-scoped item id chain the engine locator walks (review finding S1).
         Fragment::Deep(hops) => {
             let Some((section, rest)) = hops.split_first() else {
-                return Err(no_field());
+                return Err(unmappable());
             };
             let Some((field, items)) = rest.split_last() else {
-                return Err(no_field());
+                return Err(unmappable());
             };
             if items.is_empty() {
-                return Err(no_field());
+                return Err(unmappable());
             }
             Ok(FieldTarget::NestedItem {
                 section: section.clone(),
@@ -6314,11 +6368,19 @@ enum SlotTarget {
 /// is unnamed — the grammar's `unit/leaf` depth reaches only its *fields* today. If
 /// sub-labelled section slots are ever added, this arm is where they are declared
 /// resolvable; the guard would then admit a declared sub-label rather than reject it.)
-fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFailure> {
+fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, Finding> {
     let uri = address.to_string();
-    let no_slot = || -> DocFailure { anyhow::anyhow!("no slot addressed by `{uri}`").into() };
+    let unmappable = || {
+        unmappable_address(
+            schema,
+            address,
+            "set-slot",
+            "addresses a prose slot — address it as `#<section>` for a section's own slot, \
+             or `#<section>/<item>/…/<slot>` for a per-item one",
+        )
+    };
     let Some(fragment) = address.fragment.as_ref() else {
-        return Err(no_slot());
+        return Err(unmappable());
     };
     let section_id = match fragment {
         Fragment::Unit(u) => u.as_str(),
@@ -6336,7 +6398,17 @@ fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFail
                 .iter()
                 .find(|s| s.id == section && matches!(s.body, SectionBody::Simple { .. }))
             else {
-                return Err(no_slot());
+                // Declared, and **repeatable**: the address stops at an item, so it names
+                // no slot leaf at all. A genuine declared-shape defect, not an absence —
+                // nothing has been looked for in the corpus yet (M50 Increment 9, T2).
+                return Err(ranked_shape_reject(
+                    schema,
+                    address,
+                    format!(
+                        "section {section:?} is repeatable — a per-item prose slot carries \
+                         its leaf hop, addressed `#{section}/<item>/<slot>`"
+                    ),
+                ));
             };
             // Where the prose *does* have a home, name it — an agent that reached here was
             // aiming at something real. Where the section declares no slot at all, say so
@@ -6349,14 +6421,13 @@ fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFail
             } else {
                 format!("section {section:?} (which declares no prose slot)")
             };
-            return Err(block(
-                &engine::write::splice_error_finding(&engine::write::SpliceError::UnknownLeaf {
+            let mut finding =
+                engine::write::splice_error_finding(&engine::write::SpliceError::UnknownLeaf {
                     leaf: leaf.as_str().to_string(),
                     at,
-                }),
-                "set-slot",
-                &uri,
-            ));
+                });
+            stamp_target(&mut finding, &uri);
+            return Err(finding);
         }
         Fragment::UnitItemLeaf(section, item, leaf) => {
             return Ok(SlotTarget::Item {
@@ -6370,13 +6441,13 @@ fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFail
         // item id chain.
         Fragment::Deep(hops) => {
             let Some((section, rest)) = hops.split_first() else {
-                return Err(no_slot());
+                return Err(unmappable());
             };
             let Some((leaf, items)) = rest.split_last() else {
-                return Err(no_slot());
+                return Err(unmappable());
             };
             if items.is_empty() {
-                return Err(no_slot());
+                return Err(unmappable());
             }
             return Ok(SlotTarget::NestedItem {
                 section: section.clone(),
@@ -6384,7 +6455,7 @@ fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFail
                 leaf: leaf.clone(),
             });
         }
-        _ => return Err(no_slot()),
+        _ => return Err(unmappable()),
     };
     // The bare `#<section>` form's rank-1 declaredness check — the [`Fragment::Unit`] arm
     // is the only one that falls through to here, and it is the form the batch lowering
@@ -6399,7 +6470,27 @@ fn slot_target(schema: &Schema, address: &Address) -> Result<SlotTarget, DocFail
             }
             _ => None,
         })
-        .ok_or_else(no_slot)
+        // **Declared, and hosting no slot** (M50 Increment 9, T2) — the address is the
+        // form the verb takes, so the defect is the declared shape, never the form: the
+        // sentence says which of the two shapes refused it, and the `jigc doc schema`
+        // read the code routes at names what the doctype does declare. The section is
+        // declared by construction here (the guard above passed), so the split is total.
+        .ok_or_else(|| {
+            let repeatable = schema
+                .sections
+                .iter()
+                .any(|s| s.id == section_id && matches!(s.body, SectionBody::Repeatable { .. }));
+            let what = if repeatable {
+                format!(
+                    "section {section_id:?} is repeatable — it declares no section-level \
+                     prose slot (a per-item slot is addressed \
+                     `#{section_id}/<item>/<slot>`)"
+                )
+            } else {
+                format!("section {section_id:?} declares no prose slot")
+            };
+            ranked_shape_reject(schema, address, what)
+        })
 }
 
 /// Wrap a blocking [`Finding`] as a [`DocFailure::Block`], ensuring it carries a

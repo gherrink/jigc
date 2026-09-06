@@ -264,11 +264,24 @@ fn copy_tree(from: &Path, to: &Path) {
 /// *transient sink* — so a home-less fixture would emit a route it cannot follow, and the
 /// new column would green on a dead end. The nine shipped slug-identity doctypes those
 /// rows model all declare one.
+///
+/// **The slotless `meta` section is the M50 T2 ingredient**, and it is a **header**
+/// section because that is the shape the corpus actually has: every fields-only section
+/// in both shipped packs (`adr` `status`, `spec`/`commit`/`arch-doc` headers) declares
+/// `header: true`. `set-slot` at a declared section that hosts no prose slot is a cell of
+/// the address-shape column with no ingredient anywhere else in this fixture —
+/// `overview` declares a slot, `staged` / `releases` are repeatable — so a fixture
+/// without it would leave that cell driven nowhere, which is how a column ships over part
+/// of itself.
 const CHANGELOG_SCHEMA: &str = "\
 type: changelog
 location: changelogs/
 id-from: title
 sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: owner, type: string, optional: true }
   - id: overview
     slot: { hint: \"What this changelog covers.\", optional: true }
   - id: staged
@@ -1179,6 +1192,80 @@ const CELLS: &[Cell] = &[
         ],
         stdin: None,
         code: "write.unknown-section",
+        route: RouteCheck::Schema,
+    },
+    // ---- The address-shape column's **section-level** arm (M50 Increment 9, T2). The
+    // thirteen rows above are the *item*-addressing resolvers; these seven are the other
+    // two, `field_target` and `slot_target` — the resolvers M49 reached for the
+    // undeclared-**section** miss alone. Their remaining bare arms answered every other
+    // unmappable shape with the same code-less, route-less `{"error": "no field addressed
+    // by …"}` / `{"error": "no slot addressed by …"}` envelope: a bare `<type>:<slug>`
+    // with no fragment at all at either verb, a single-hop `#<name>` matching no declared
+    // field at BOTH `set-field` flags, and — at `set-slot` — a declared section that hosts
+    // no prose slot, whether because it is repeatable or because it declares none, plus an
+    // item address with no slot leaf. `jigc doc author` inherits every one of them through
+    // `apply_leaf`'s `SetField` / `SetSlot` arms, so this is seven cells at three doors.
+    //
+    // The declaredness dimension crosses this arm **once**, not twice: the rank-1
+    // `undeclared_section_guard` M49 installed already answers the undeclared leading hop
+    // at both hop-bearing forms, so what is left here is the declared side alone —
+    // `write.wrong-shape`, the genuine declared-shape defect. The one exception is the
+    // **single-hop** `#<name>` at `set-field`, which names no section at any hop: it is a
+    // field-id search across every declared section, so `write.unknown-section` would be a
+    // law-1 lie about sections that all exist. It is an undeclared **leaf** —
+    // `write.unknown-field`, the contract's one member for *the schema declares no such
+    // leaf here* — and the bound `validation.md` carried over it (*"it keeps the
+    // resolver's own no field addressed by sentence"*) is rewritten there rather than
+    // left standing false.
+    Cell {
+        what: "set-field at a bare doc address (no field hop at all)",
+        args: &["doc", "set-field", "{addr}", "--value", "x"],
+        stdin: None,
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-field --value at a single hop no section declares as a field",
+        args: &["doc", "set-field", "{addr}#no-such-leaf", "--value", "x"],
+        stdin: None,
+        code: "write.unknown-field",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-field --unset at a single hop no section declares as a field",
+        args: &["doc", "set-field", "{addr}#no-such-leaf", "--unset"],
+        stdin: None,
+        code: "write.unknown-field",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-slot at a bare doc address (no section hop at all)",
+        args: &["doc", "set-slot", "{addr}", "--from-file", "-"],
+        stdin: Some(b"Prose.\n"),
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-slot at a repeatable section (no section-level prose slot)",
+        args: &["doc", "set-slot", "{addr}#releases", "--from-file", "-"],
+        stdin: Some(b"Prose.\n"),
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        // The ingredient cell: a **declared** section that hosts no prose slot at all —
+        // the shipped fields-only shape (a header section), which no other row reaches.
+        what: "set-slot at a declared section that declares no prose slot",
+        args: &["doc", "set-slot", "{addr}#meta", "--from-file", "-"],
+        stdin: Some(b"Prose.\n"),
+        code: "write.wrong-shape",
+        route: RouteCheck::Schema,
+    },
+    Cell {
+        what: "set-slot at a live item with no slot leaf hop",
+        args: &["doc", "set-slot", "{addr}#releases/1-3-0", "--from-file", "-"],
+        stdin: Some(b"Prose.\n"),
+        code: "write.wrong-shape",
         route: RouteCheck::Schema,
     },
     // ---- The **title-miss** column (M48 Increment 2, T2). The matrix's other columns are
