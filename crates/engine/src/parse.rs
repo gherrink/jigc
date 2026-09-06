@@ -1380,8 +1380,17 @@ fn parse_item_slots(
         else {
             findings.push(Finding::blocking(
                 "conformance.item-slot-label-missing",
+                // The heading is spelled at **`label_level`** — the depth this matcher
+                // binds and `write::render_item_at` emits its `leaf_hashes` at — never a
+                // global `####`. At a nested multi-slot item the writer emits `#####`, so
+                // a message naming `####` instructed the author to write a heading at the
+                // schema-reserved item depth, which `conformance.item-heading-unanchored`
+                // then blocks and `write::slot_ceiling` refuses on the write path: the
+                // instruction left this finding standing AND minted a second one (N30, the
+                // un-swept sibling of the shadow guard's depth repair below).
                 format!(
-                    "multi-slot item is missing its `#### {}` sub-heading",
+                    "multi-slot item is missing its `{} {}` sub-heading",
+                    "#".repeat(label_level),
                     title_case(leaf_id)
                 ),
                 // The **leaf hop** — several declared leaves can be missing from one item,

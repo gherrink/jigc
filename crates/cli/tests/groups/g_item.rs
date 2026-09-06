@@ -39,6 +39,8 @@ mod item_region_shape_space;
 mod item_slot_ceiling_axis;
 #[path = "../item_slot_corruption_acceptance.rs"]
 mod item_slot_corruption_acceptance;
+#[path = "../item_slot_label_depth.rs"]
+mod item_slot_label_depth;
 #[path = "../no_such_task_route.rs"]
 mod no_such_task_route;
 #[path = "../probe_invoker.rs"]
