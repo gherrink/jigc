@@ -292,8 +292,12 @@ fn reachable_at(locus: usize) -> BTreeSet<&'static str> {
 ///   of them;
 /// - **doctype-level is all-or-nothing** — a kind that sits at no locus says so at every
 ///   index, so `Relocated` can never be half a locus kind;
-/// - **loci 1 and 2 are fully built** — no `Unbuilt` cell there; the un-built arms this wave
-///   leaves behind are the nested ones and only those;
+/// - **no locus has a half-built cell** — the `Unbuilt` set is empty over the whole of
+///   `1..=LOCI`, asserted rather than remarked. Increment 6 left three byte-writing arms open
+///   at locus 3 and this loop covered loci 1 and 2 only, so the exemption lived in a comment;
+///   M50 Increment 7 folded all three (T3–T5), and with the range widened it is the *test*
+///   that refuses the next half-built cell rather than a reader noticing the comment went
+///   stale ([`engine::schema_diff::LocusDisposition::Unbuilt`] is kept for that next kind);
 /// - **the locus-3 column is the locus-2 column minus the backstop** — which is precisely
 ///   what *"no cell reads `Unclassified` for a kind that has one"* means: every kind the item
 ///   locus carries, the nested item locus carries too, and only the backstop drops out (a
@@ -322,7 +326,7 @@ fn every_kind_x_locus_cell_is_dispositioned() {
         );
     }
 
-    for locus in [1, 2] {
+    for locus in 1..=LOCI {
         let unbuilt: Vec<&str> = SchemaChangeKind::ALL
             .iter()
             .filter(|k| locus_disposition(**k, locus) == LocusDisposition::Unbuilt)
@@ -330,7 +334,9 @@ fn every_kind_x_locus_cell_is_dispositioned() {
             .collect();
         assert!(
             unbuilt.is_empty(),
-            "locus {locus} is fully built; got un-built cells {unbuilt:?}",
+            "locus {locus} has a half-built cell: {unbuilt:?}. Every `kind × locus` cell folds \
+             or refuses by design at HEAD, so a cell landing back on `Unbuilt` means an arm was \
+             removed, or a kind was added without one — build it before the bump ships.",
         );
     }
 

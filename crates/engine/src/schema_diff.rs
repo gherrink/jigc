@@ -172,10 +172,16 @@ pub enum LocusDisposition {
     /// values). Each keeps its shipped `migrate-corpus.*` code; only the locus path it names
     /// moves.
     Refused,
-    /// Reachable, and the **byte-writing** arm at this locus is not built (M50 Increment 7).
-    /// The fold refuses, naming the kind and the locus path, rather than splicing at the
-    /// wrong depth — the transient shape a still-building arm takes, never a permanent
-    /// surface.
+    /// Reachable, and this cell's **byte-writing** arm does not exist yet. The fold refuses,
+    /// naming the kind and the locus path, rather than splicing at the wrong depth — the
+    /// transient shape a still-building arm takes, never a permanent surface.
+    ///
+    /// **No cell reads this at HEAD**, and that emptiness is a fence rather than a remark:
+    /// `crates/cli/tests/migrate_locus_axis.rs` → `every_kind_x_locus_cell_is_dispositioned`
+    /// asserts the empty set over **every** locus in `1..=LOCI`. The variant is kept for the
+    /// next kind that arrives half-built — [`crate::transform::transform`] asking the table
+    /// before folding is what stops one splicing at the wrong depth — so it must not acquire
+    /// an occupant quietly.
     Unbuilt,
 }
 

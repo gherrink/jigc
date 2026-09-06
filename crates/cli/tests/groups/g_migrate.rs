@@ -83,6 +83,8 @@ mod record_set_splice_retired;
 mod record_stale_reasons;
 #[path = "../record_two_loci_retired.rs"]
 mod record_two_loci_retired;
+#[path = "../record_unbuilt_cells_retired.rs"]
+mod record_unbuilt_cells_retired;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
 #[path = "../schema_change_kind_registry.rs"]

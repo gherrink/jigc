@@ -441,11 +441,16 @@ fn the_new_matrix_rows_state_what_shipped() {
     let owed: &[(&str, &[&str])] = &[
         ("the leaf's own kind at the nested locus", &["nested locus"]),
         ("the locus path the refusal names", &["releases/changes"]),
+        // T3 owed this row the two `kind × locus` cells whose byte work was NOT Increment 6's,
+        // and the row said so. M50 Increment 7 folded them, so the owed fact inverts rather
+        // than lapses: the row must now say every cell at this locus folds, and still name the
+        // increment — `record_unbuilt_cells_retired.rs` owns the retirement and this arm keeps
+        // the row honest about what replaced it.
         (
-            "the two cells whose byte work is NOT this increment's",
-            &["not yet folded", "not yet built"],
+            "that no cell at this locus is left half-built",
+            &["cell at this locus is left half-built"],
         ),
-        ("the increment that folds them", &["Increment 7"]),
+        ("the increment that folded them", &["Increment 7"]),
         ("the suite that drives the claim", &["migrate_locus_axis"]),
     ];
     for (fact, wordings) in owed {

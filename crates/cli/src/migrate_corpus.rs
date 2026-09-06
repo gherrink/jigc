@@ -1763,6 +1763,30 @@ fn docs_root_free(schema: &Schema, docs_root: &str) -> Schema {
 ///   route: the same treatment the pre-fold refusals (`unclassified-change`,
 ///   `narrowed-cardinality`, `removed-field`) already get, on the same recorded reason — the
 ///   fold's *"author the prose, then re-run"* route "would be a lie".
+///
+/// **The nested-locus branch is gone, and the callers it would have caught are named (M50
+/// Increment 7 / T6).** M50 Increment 6 added a branch here saying a nested-locus
+/// `Unsupported` meant the kind's arm existed at the item locus and nowhere deeper, and routing
+/// the reader to write the missing one — a **permanent** surface around what was then a
+/// **transient** refusal (the Settle's declared bound). With T3–T5 built, no caller reaches it
+/// for want of a nested arm, and for every caller that can still carry a nested locus the text
+/// was false:
+///
+/// - the `locus_disposition == Unbuilt` pre-check in [`engine::transform::transform`] — **no
+///   cell reads `Unbuilt` at HEAD**, fenced over `1..=LOCI` by
+///   `crates/cli/tests/migrate_locus_axis.rs`;
+/// - `ValueRemapped`'s **map gap** — taken by its own arm above, at every locus, since T5;
+/// - the by-design refusals (`narrowed-cardinality`, `removed-field`, `removed-item-slot`) —
+///   blocked **pre-fold** on the below-version path, but *reachable* here on the stamp-absent
+///   (v0) one, whose diff is the whole v0→current chain and carries no such guard. Telling that
+///   caller to build an arm would be the sharper lie: the arm is refused by design, not missing;
+/// - `ProseNeeding { leaf: Some }` (the field sub-case) and the two added-field drivers'
+///   belt-and-braces `unsupported()` — un-built or unresolvable at **every** locus, never at the
+///   nested one specifically.
+///
+/// The generic arm below is true for all of them — *"an un-built arm, or one refused by
+/// design"* — and `{locus}` already renders the path, so the *where* the branch was added for
+/// survives its removal.
 fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
     match reason {
         HaltReason::Gate(findings) => prose_needing_finding(rel_key, findings),
@@ -1804,29 +1828,6 @@ fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
                         "declare the missing old→new value mapping for `{locus}` in \
                          `crates/cli/src/migrate_corpus.rs` → `authored_remap`, then re-run \
                          `jigc migrate-corpus`"
-                    ),
-                )
-            }
-            // THE THIRD LOCUS SAYS SO (M50 Increment 6 / T2). A nested-locus refusal shares the
-            // shipped `migrate-corpus.fold-refused` code — this increment mints none — but it
-            // must not inherit that code's *dead end* silently: what is un-built is the arm at a
-            // **nested** item block, not the kind, and `{locus}` renders the path
-            // (`releases/changes`) rather than the outer block a bare section id would name.
-            TransformError::Unsupported { kind, locus } if locus.is_nested() => {
-                fold_refused_finding(
-                    rel_key,
-                    format!(
-                        "the migration classifies a `{kind}` change at `{locus}` — a leaf of a \
-                         **nested** repeatable item block — and the transform driver's arm for \
-                         that kind is built at the item locus only, so folding it here would \
-                         splice at the wrong depth"
-                    ),
-                    format!(
-                        "build the nested-item-block arm of `{kind}` in \
-                         `crates/engine/src/transform.rs` (the classifier already names \
-                         `{locus}`), or move the leaf up to `{}`'s own item block, then re-run \
-                         `jigc migrate-corpus`",
-                        locus.section()
                     ),
                 )
             }
