@@ -525,8 +525,11 @@ pub fn inverse_cardinality_store(
                 let target_schema = schemas.get(target_ty);
                 // **Unreachable through any production door, and it says so.** The pack-load
                 // ref-target fence (`cli::pack::assert_ref_targets_resolve`, M50) refuses a
-                // `to:` naming a doctype the loaded composition does not contain, so every
-                // schema map a door hands this sweep is closed under its own ref targets.
+                // `to:` naming a doctype the loaded composition does not contain — over the
+                // **cascade-resolved** schema set, project whole-file schema shadows read
+                // where they win, which is the very map a door builds and hands here — so
+                // every schema map a door hands this sweep is closed under its own ref
+                // targets.
                 // Stated here rather than minted as a store finding: the fault is a
                 // pack-authoring one the pack door already refuses, and a store code would be
                 // a second answer to a question already answered. Debug-only, the
@@ -537,8 +540,9 @@ pub fn inverse_cardinality_store(
                     target_schema.is_some(),
                     "`{}`'s `{}` field declares `to: {target_ty}`, which the schema map does \
                      not contain — the pack-load ref-target fence \
-                     (`cli::pack::assert_ref_targets_resolve`) refuses that composition at the \
-                     factory, so no production door can hand this sweep an open ref target",
+                     (`cli::pack::assert_ref_targets_resolve`) refuses that resolved schema set \
+                     at the factory, so no production door can hand this sweep an open ref \
+                     target",
                     schema.ty,
                     field.id,
                 );

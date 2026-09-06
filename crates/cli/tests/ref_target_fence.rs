@@ -30,6 +30,13 @@
 //!   other pack-load fence is gated on `config/schema-manifest.yaml` because the
 //!   *freeze* is an opt-in about shape stability; this one is composition closure, and a
 //!   manifest-less project pack (the M49 PB-1 shape) reaches the identical dead end.
+//! - **the layer axis** — the subject is the set the *doors* resolve, so a project
+//!   whole-file schema shadow (`.jigc/config/schemas/<ty>.yaml`) is read where it wins.
+//!   A shadow can dangle a ref from **either end** — its own `to:`, or the target file's
+//!   `type:`, which takes that member out of the map every door keys by the declared
+//!   type — and over a **manifest-less** pack's doctype neither freeze arm sees it at
+//!   all. Its control: a shadow whose target *is* in the resolved set loads clean, so
+//!   the arms measure resolvability rather than the presence of a shadow file.
 //!
 //! **Why a second door table beside `freeze_enforcement.rs`'s.** Its rows are
 //! fixture-shaped — the argv name this file's own `adr:probe`, `ref-probe`,
@@ -977,4 +984,148 @@ fn an_item_level_ref_target_is_fenced_at_every_locus() {
             "the refusal must name {needle:?} — the locus, not just the doctype; got:\n{stderr}",
         );
     }
+}
+
+// ── The layer axis: the project's whole-file schema shadow ───────────────────────────
+
+/// Seed a manifest-less listed pack shipping **two** doctypes — `house-note`, whose
+/// `about` ref targets `house-tag`, and `house-tag` itself — so the *target end* of a
+/// relation is a file the project layer can shadow. The single-doctype
+/// [`seed_listed_pack`] covers the `to:` end.
+fn seed_listed_pack_pair(root: &Path) {
+    seed_listed_pack(root, "house-tag");
+    fs::write(
+        root.join("schemas").join("house-tag.yaml"),
+        "type: house-tag\n\
+         location: house-tags/\n\
+         id-from: title\n\
+         sections:\n\
+         \x20 - id: body\n\
+         \x20   slot: { hint: What the tag means. }\n",
+    )
+    .expect("seed the house-tag schema");
+}
+
+/// Write a project-layer whole-file schema shadow at `.jigc/config/schemas/<ty>.yaml`
+/// (`design/overrides.md` → Authored metadata on a definition resolves by whole-file
+/// shadow) — the layer that outranks every pack, and the one every door resolves a
+/// doctype through ([`CascadeDefs::all_schemas`]).
+fn shadow_schema(repo: &Path, ty: &str, body: &str) {
+    let dir = repo.join(".jigc").join("config").join("schemas");
+    fs::create_dir_all(&dir).expect("mk the project schema shadow dir");
+    fs::write(dir.join(format!("{ty}.yaml")), body).expect("write the project schema shadow");
+}
+
+/// **The layer axis, arm 1 — the `to:` end.** The fence's subject is the schema set the
+/// **doors** resolve, not the pack composite alone: a project whole-file shadow of a
+/// **manifest-less** listed pack's doctype (the M49 PB-1 shape) is seen by neither the
+/// freeze — which is manifest-gated at both layers — nor, before this, by the ref-target
+/// fence, so it could point a `ref` at a doctype no layer provides. Every surface then
+/// advertised an address that cannot resolve: `jigc doc schema` printed `ref -> nowhere`
+/// at exit 0, and `jigc validate` reached the engine's inverse-cardinality sweep, whose
+/// `debug_assert!` states that no production door can hand it an open ref target.
+#[test]
+fn a_project_schema_shadow_cannot_dangle_a_ref_target() {
+    let repo = TempDir::new("shadow-dangle-repo");
+    let home = TempDir::new("shadow-dangle-home");
+    let pack = TempDir::new("shadow-dangle-pack");
+    init_repo(repo.path());
+    seed_listed_pack(pack.path(), "adr");
+    list_pack(repo.path(), pack.path());
+    let shipped = fs::read_to_string(pack.path().join("schemas").join("house-note.yaml"))
+        .expect("read the seeded house-note.yaml");
+    let shadowed = shipped.replace("to: adr", "to: nowhere");
+    assert_ne!(
+        shipped, shadowed,
+        "the shadow must actually move the target"
+    );
+    shadow_schema(repo.path(), "house-note", &shadowed);
+
+    for argv in [
+        &["describe"][..],
+        &["validate"][..],
+        &["doc", "schema", "house-note"][..],
+    ] {
+        let out = run_embedded(repo.path(), home.path(), argv);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success(),
+            "[{argv:?}] a project shadow that dangles a ref must be refused at pack-load; stdout:\n{}\nstderr:\n{stderr}",
+            String::from_utf8_lossy(&out.stdout),
+        );
+        for needle in [FENCE_BANNER, "house-note", "about", "to: nowhere"] {
+            assert!(
+                stderr.contains(needle),
+                "[{argv:?}] the refusal must name {needle:?}; got:\n{stderr}",
+            );
+        }
+    }
+}
+
+/// **The layer axis, arm 2 — the target end.** A ref dangles when either end moves, and
+/// the project layer can move the *other* one: a shadow of the **target** doctype that
+/// changes its `type:` takes that member out of the resolved set (the map every door
+/// reads is keyed by the declared `type:`, never by the filename), leaving the shipped
+/// `to: house-tag` pointing at nothing. Checked over the resolved set this falls out of
+/// the same membership question; checked over the pack composite it is invisible.
+#[test]
+fn a_project_schema_shadow_cannot_move_the_target_out_of_the_set() {
+    let repo = TempDir::new("shadow-target-repo");
+    let home = TempDir::new("shadow-target-home");
+    let pack = TempDir::new("shadow-target-pack");
+    init_repo(repo.path());
+    seed_listed_pack_pair(pack.path());
+    list_pack(repo.path(), pack.path());
+    let shipped = fs::read_to_string(pack.path().join("schemas").join("house-tag.yaml"))
+        .expect("read the seeded house-tag.yaml");
+    let shadowed = shipped.replace("type: house-tag", "type: house-badge");
+    assert_ne!(
+        shipped, shadowed,
+        "the shadow must actually rename the type"
+    );
+    shadow_schema(repo.path(), "house-tag", &shadowed);
+
+    let out = run_embedded(repo.path(), home.path(), &["describe"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a project shadow that renames the target doctype must be refused; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    for needle in [FENCE_BANNER, "house-note", "about", "to: house-tag"] {
+        assert!(
+            stderr.contains(needle),
+            "the refusal must name {needle:?}; got:\n{stderr}",
+        );
+    }
+}
+
+/// Its discriminating twin: the fence reads the shadow, it does not refuse shadows. The
+/// same pack with a shadow that re-points `about` at another doctype of the resolved set
+/// loads clean — so the two arms above measure resolvability, not the presence of a
+/// project schema file.
+#[test]
+fn a_project_schema_shadow_with_a_resolvable_target_loads_clean() {
+    let repo = TempDir::new("shadow-clean-repo");
+    let home = TempDir::new("shadow-clean-home");
+    let pack = TempDir::new("shadow-clean-pack");
+    init_repo(repo.path());
+    seed_listed_pack(pack.path(), "adr");
+    list_pack(repo.path(), pack.path());
+    let shipped = fs::read_to_string(pack.path().join("schemas").join("house-note.yaml"))
+        .expect("read the seeded house-note.yaml");
+    let shadowed = shipped.replace("to: adr", "to: spec");
+    assert_ne!(
+        shipped, shadowed,
+        "the shadow must actually move the target"
+    );
+    shadow_schema(repo.path(), "house-note", &shadowed);
+
+    let out = run_embedded(repo.path(), home.path(), &["describe"]);
+    assert!(
+        out.status.success(),
+        "a project shadow whose ref target IS in the resolved set must load clean; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
 }

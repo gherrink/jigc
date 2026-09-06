@@ -417,7 +417,7 @@ fn assert_project_schema_shadows(
 }
 
 /// The **ref-target fence** — every `type: ref` field the assembled composite declares
-/// carries a `to:`, and that `to:` names a doctype the **composed** schema set actually
+/// carries a `to:`, and that `to:` names a doctype the **resolved** schema set actually
 /// contains (M50 Increment 8 / T1; `design/document-type-schema.md` → Cross-references —
 /// the `to:` row, required *and* enforced; `design/multi-pack.md` → A ref target is
 /// composition-scoped).
@@ -465,26 +465,64 @@ fn assert_project_schema_shadows(
 /// [`engine::schema_diff::Locus`], the one type that already spells a section + nested
 /// hop path, so a refusal here and a migration refusal say *where* in the same words.
 ///
-/// **Declared bound.** The subject is the **pack layer's** composed set. A project-layer
-/// whole-file schema shadow (`.jigc/config/schemas/<ty>.yaml`) is outside this fence as
-/// a project-layer forked step is outside [`assert_named_facts_stated`] — every
-/// pack-load fence reads packs. The gap is narrow rather than open: a shadow of a
-/// manifest-governed doctype cannot change a `ref` at all, because `to:` is inside the
-/// `schema-hash` and [`assert_project_schema_shadows`] hashes the shadow as resolved.
-fn assert_ref_targets_resolve(pack: &dyn PackSource) -> anyhow::Result<()> {
+/// 4. **The subject is the RESOLVED set, every layer that can change a `ref` included.**
+///    The composite is read through the project layer's whole-file schema shadows
+///    (`.jigc/config/schemas/<ty>.yaml`, `design/overrides.md` → Authored metadata on a
+///    definition resolves by whole-file shadow) — the same read
+///    [`CascadeDefs::all_schemas`](crate::start::CascadeDefs) performs, because that is
+///    the schema map every *door* adjudicates a document against. The shadow can move
+///    **either end** of a relation: a shadowed `to:` (the M50 audit repro — a shadow of a
+///    **manifest-less** listed pack's doctype, which neither freeze arm governs, pointed
+///    `about` at a doctype no layer provided, so `doc schema` printed `ref -> nowhere` at
+///    exit 0 and `jigc validate` reached the engine sweep that asserts no door can hand
+///    it an open target), or a shadowed `type:` on the *target* file, which takes that
+///    member out of the map every door keys by the declared `type:`. Checked against the
+///    pack composite alone, both are invisible. The team layer needs no arm: only the
+///    project's three definition dirs shadow a definition file
+///    ([`load_project_layer`](crate::start::load_project_layer)).
+///
+/// **Declared bound.** An **unreadable or malformed** shadow falls back to the pack
+/// definition here rather than failing the fence: `CascadeDefs::read_one` propagates that
+/// fault, so every door already errors on it and none can hand a resolved schema map to
+/// anything — this fence would only restate a louder answer at a less specific place.
+fn assert_ref_targets_resolve(
+    pack: &dyn PackSource,
+    project_config: Option<&Path>,
+) -> anyhow::Result<()> {
     use anyhow::Context;
+
+    // The ids the project layer shadows — the same `pack ships it` ∧ `project owns it`
+    // proxy [`assert_project_schema_shadows`] uses, and the same one
+    // `shadowed_definition_ids` feeds `cascade::resolve`'s `file_owners` from, so the
+    // shadow honored here is the shadow every door reads.
+    let shadowed: std::collections::BTreeSet<String> = project_config
+        .map(crate::start::project_schema_ids)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
 
     let mut schemas = Vec::new();
     for id in pack.list(PackResourceKind::Schemas) {
-        let bytes = pack
-            .read(PackResourceKind::Schemas, &id)
-            .with_context(|| format!("the `{}` schema is unreadable", id.as_str()))?;
         // Field types resolve against the pack that OWNS the definition, never the
         // merged surface (`design/multi-pack.md` → Pack-local body-reference
-        // resolution) — the same anchor `CascadeDefs::all_schemas` reads through.
+        // resolution) — the same anchor `CascadeDefs::all_schemas` reads through, for
+        // the shadowed read as much as the pack one.
         let origin = pack.origin_pack(PackResourceKind::Schemas, &id);
-        let schema = load_pack_schema(origin, &bytes)
-            .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
+        let shadow = project_config
+            .filter(|_| shadowed.contains(id.as_str()))
+            .map(|config| config.join("schemas").join(format!("{}.yaml", id.as_str())))
+            .and_then(|path| std::fs::read(path).ok())
+            .and_then(|bytes| load_pack_schema(origin, &bytes).ok());
+        let schema = match shadow {
+            Some(schema) => schema,
+            None => {
+                let bytes = pack
+                    .read(PackResourceKind::Schemas, &id)
+                    .with_context(|| format!("the `{}` schema is unreadable", id.as_str()))?;
+                load_pack_schema(origin, &bytes)
+                    .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?
+            }
+        };
         schemas.push(schema);
     }
     let members: std::collections::BTreeSet<&str> = schemas.iter().map(|s| s.ty.as_str()).collect();
@@ -502,7 +540,7 @@ fn assert_ref_targets_resolve(pack: &dyn PackSource) -> anyhow::Result<()> {
                     "{at} is a `type: ref` declaring no `to:` (the target type is required)"
                 )),
                 Some(target) if !members.contains(target) => dangling.push(format!(
-                    "{at} declares `to: {target}`, which no doctype of the loaded pack-set provides"
+                    "{at} declares `to: {target}`, which no doctype of the loaded set provides"
                 )),
                 Some(_) => {}
             }
@@ -519,10 +557,27 @@ fn assert_ref_targets_resolve(pack: &dyn PackSource) -> anyhow::Result<()> {
         .collect::<Vec<_>>()
         .join(" | ");
     let available = members.into_iter().collect::<Vec<_>>().join(", ");
+    // The set is the RESOLVED one, so a project schema shadow that moved a `to:` — or the
+    // target's own `type:` — is named as the layer it came from, rather than left to read
+    // as a pack fault the operator cannot find in any pack.
+    let layer_note = if shadowed.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " The project layer shadows {ids} at `.jigc/config/schemas/`, and a whole-file \
+             shadow is the resolved schema at every door — so check those files too.",
+            ids = shadowed
+                .iter()
+                .map(|id| format!("`{id}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
     anyhow::bail!(
         "pack-load ref-target fence failed: {defects} — loaded pack-set: {pack_set}; \
-         the doctypes it composes are: {available}. A `ref` advertises a write address \
-         at every surface that projects the schema, so a target outside the composed set \
+         the doctypes it resolves to are: {available}.{layer_note} A `ref` advertises a \
+         write address at every surface that projects the schema, so a target outside \
+         the composed set \
          is an address whose value can never resolve and whose blocking route cannot be \
          run (`design/document-type-schema.md` → Cross-references; `design/multi-pack.md` \
          → A ref target is composition-scoped)\n  \
@@ -1525,12 +1580,15 @@ pub fn read_compose_marker(project_config_dir: &std::path::Path) -> anyhow::Resu
 /// for a manifest-less pack.
 ///
 /// **The ref-target fence fires here too** ([`assert_ref_targets_resolve`], M50): every
-/// `type: ref` the assembled set declares must name a target doctype that set contains.
+/// `type: ref` the **resolved** set declares must name a target doctype that set contains.
 /// It is the freeze's composition-closure sibling and, unlike the freeze, it is **not**
-/// manifest-gated — a manifest-less pack's dangling ref is the same unfollowable route.
+/// manifest-gated — a manifest-less pack's dangling ref is the same unfollowable route —
+/// and it reads the project layer's schema shadows, because the shadow is the schema
+/// every door adjudicates against.
 pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
-    // Discovered **once** and threaded to all three consumers (the `packs:` list, the
-    // compose marker, and the project-layer freeze arm) — one walk, one answer.
+    // Discovered **once** and threaded to all four consumers (the `packs:` list, the
+    // compose marker, the project-layer freeze arm, and the ref-target fence's resolved
+    // read) — one walk, one answer.
     let project_config = discover_project_config();
     let listed = discover_pack_list(project_config.as_deref()).unwrap_or_else(|err| {
         // A malformed `packs.yaml` is a real authoring fault; surface it rather
@@ -1554,10 +1612,11 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     let pack = make_pack_from_marker(pack_dir, listed, compose_methodology)?;
     assert_schema_freeze(pack.as_ref(), project_config.as_deref())?;
     // The composition-closure fence beside the shape-stability one: a `ref` whose
-    // `to:` names no doctype of the assembled set advertises a write address that
+    // `to:` names no doctype of the resolved set advertises a write address that
     // cannot resolve at any door ([`assert_ref_targets_resolve`]). Unlike the freeze it
-    // is **not** manifest-gated — see its own scope statement.
-    assert_ref_targets_resolve(pack.as_ref())?;
+    // is **not** manifest-gated, and its subject is the pack set read **through** the
+    // project's whole-file schema shadows — see its own scope statement.
+    assert_ref_targets_resolve(pack.as_ref(), project_config.as_deref())?;
 
     // The eager front-matter sweeps (M43, `design/surface-contract.md` → The
     // fences): the workflow sweep (suppression + catalog shape) and the step
