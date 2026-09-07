@@ -236,9 +236,11 @@ pub enum TaskCommand {
         /// (exit 4, nothing committed). Inert on a non-migration task.
         #[arg(long)]
         approve: bool,
-        /// Print the pre-commit manifest (the file-set the commit would carry, untracked
-        /// sweeps flagged) and stop — commit nothing, no destructive side effect (B1
-        /// dirty-tree sweep). A dry-run never requires `--approve`. It forecasts three
+        /// Print the commit's forecast subject line and the pre-commit manifest (the
+        /// file-set the commit would carry, untracked sweeps flagged) and stop — commit
+        /// nothing, no destructive side effect (B1 dirty-tree sweep). The subject is the
+        /// one jigc will hand git, not what git ends up with: a `commit-msg` hook may
+        /// still rewrite it. A dry-run never requires `--approve`. It forecasts three
         /// gates: this task's validation findings, the empty-commit guard, and the
         /// carryover gate — where an undeclared carry-over is reported (exit 3) instead of
         /// the manifest (add `--carry-staged` to forecast the carry). Every other gate —
@@ -1846,7 +1848,9 @@ impl TaskArea {
             relabel_carried(&mut included, &carried_paths);
             print!(
                 "{}",
-                render::finalize_manifest(format, &included, &left_out)
+                // The subject is the plan's OWN render (phase 3, already computed above),
+                // never a dry-run-side re-spelling — M50 Inc 12 / F-7.
+                render::finalize_manifest(format, plan.subject(), &included, &left_out)
             );
             if format != Format::Json {
                 println!();

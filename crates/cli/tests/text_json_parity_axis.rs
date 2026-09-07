@@ -70,8 +70,9 @@ use cli::render::{
     AckTarget, ConfigAck, DiscardState, DiscardedWork, DocAck, DroppedStaged, KnobReading,
     LandedCommit, ManifestEntry, ManifestKind, MilestoneLanded, RejectedSet, StagedDoc,
     SubTaskContribution, TaskAck, TaskDiffView, config_ack, config_get, config_list, describe,
-    doc_ack, freeze_exempt_relocation, ingest, milestone_finalized, milestone_join, rename,
-    setup_success, task_ack, task_diff, task_list, uninstall_success, unmanage, validation_upgrade,
+    doc_ack, finalize_manifest, freeze_exempt_relocation, ingest, milestone_finalized,
+    milestone_join, rename, setup_success, task_ack, task_diff, task_list, uninstall_success,
+    unmanage, validation_upgrade,
 };
 use cli::setup::{InstallCommit, RemovedArtifacts, SetupSummary, UninstallSummary};
 use cli::task::TaskListRow;
@@ -313,14 +314,22 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (
         &["task", "finalize"],
         Tier::Judgment(
-            "the validation report plus the landed summary — prose; its landed facts ride the \
-             whole-value `committed` object",
-            Disposition::DeclaredOut(
-                "the success section renders from `Landed` alone (hash, subject, manifest, file \
-                 count, the left-out residue) and the envelope carries that value WHOLE under \
-                 `committed` beside the report — a whole-value carry is the strongest form of \
-                 the parity rule, not an exception to it",
-            ),
+            "the verb has TWO output shapes and the census must speak for both — the LANDED \
+             one is the validation report plus the success summary (prose, its landed facts \
+             riding the whole-value `committed` object: the success section renders from \
+             `Landed` alone — hash, subject, manifest, file count, the left-out residue — and \
+             the envelope carries that value WHOLE beside the report, a whole-value carry \
+             being the strongest form of the parity rule, not an exception to it); the \
+             `--dry-run` FORECAST is a manifest block, and that arm is where the census found \
+             the gap",
+            // The forecast arm's gap, closed here (M50 Inc 12 / F-7): phase 3 renders the
+            // commit message BEFORE the `--dry-run` branch returns, and the branch printed
+            // the file manifest alone — a value computed and discarded, the parity rule's own
+            // definition of a gap.
+            Disposition::Closed {
+                keys: &["subject"],
+                proof: finalize_dry_run_subject_close,
+            },
         ),
     ),
     (&["task", "bind"], Tier::Fenced("task_ack")),
@@ -1534,6 +1543,37 @@ fn describe_router_hidden_close() {
     }
 }
 
+/// **The `task finalize --dry-run` close.** The forecast names the subject the commit will
+/// carry — `would commit — <subject>` on the text surface — and the same string reaches the
+/// envelope as `subject`. The value is [`engine::finalize::FinalizePlan::subject`], the
+/// first line of the message phase 3 already rendered, so the forecast and the landed
+/// `committed.subject` are one render seen twice, never two spellings (F-7).
+fn finalize_dry_run_subject_close() {
+    let subject = "feat: forecast the composed subject";
+    let included = vec![ManifestEntry {
+        path: "src/feature.rs".to_string(),
+        kind: ManifestKind::Added,
+    }];
+    let left_out = vec![ManifestEntry {
+        path: "scratch.txt".to_string(),
+        kind: ManifestKind::Untracked,
+    }];
+
+    let text = finalize_manifest(Format::Agent, subject, &included, &left_out);
+    let doc = envelope(
+        &finalize_manifest(Format::Json, subject, &included, &left_out),
+        "jigc task finalize --dry-run",
+    );
+    text_prints(&text, subject, "jigc task finalize --dry-run", "subject");
+    carries(
+        &doc,
+        "subject",
+        &subject,
+        "jigc task finalize --dry-run",
+        "subject",
+    );
+}
+
 /// **The `upgrade` close.** The delta count the clean line names — *"N recorded config
 /// delta(s) re-apply clean"* — reaches the envelope as `checked`, on a clean sweep (where
 /// the text prints it) and with findings present alike (where a driver still needs to know
@@ -1725,9 +1765,10 @@ fn every_judgment_member_states_a_disposition_the_census_can_stand_on() {
         }
     }
     assert!(
-        closed >= 2,
-        "the census closed two gaps (`describe`'s `router_hidden`, `upgrade`'s `checked`) — a \
-         run where neither is claimed means the closes lost their rows; got {closed}",
+        closed >= 3,
+        "the census closed three gaps (`describe`'s `router_hidden`, `upgrade`'s `checked`, and \
+         `task finalize --dry-run`'s `subject`) — a run where one is unclaimed means a close \
+         lost its row; got {closed}",
     );
 }
 

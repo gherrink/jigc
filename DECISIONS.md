@@ -2,6 +2,20 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-07 — M50 Increment 12 / T7: `--dry-run` forecasts the composed subject
+
+**Decided:** `jigc task finalize <id> --dry-run` names the commit's **subject line** above the manifest — `would commit — <subject>` on agent/human text, an additive **`subject`** key on the `--format json` forecast envelope. The value is `engine::finalize::FinalizePlan::subject()`, the first line of the message phase 3 already rendered. Design of record: [finalize.md](design/finalize.md) → Surfaced, not prevented (and the resolved `finalize --dry-run` open question); [command-output-contract.md](design/command-output-contract.md) → the pre-1.0 additive-key window.
+
+**Why:** RC-m50 → F-7, driven. The flag whose whole job is *"tell me what this finalize will do"* was silent about the commit's most-read fact, and the fact was **already computed and thrown away**: `write::render_commit_message` runs at phase 3, *before* the `--dry-run` branch returns, and the branch printed the file manifest alone. Under M48's rule that is a gap in its purest form — a value the render holds, absent from both surfaces — so it lands additively inside the still-open pre-1.0 window, declared as it ships.
+
+**Three elaborations the build settled:**
+
+- **A projection of the same render, never a second spelling.** The subject is read off `FinalizePlan::message`, so the forecast string and the landed ack's `finalized <hash> — <subject>` are one composition seen twice. The red arm authors a commit doc with `scope` **unset** (it is `optional: true`) precisely because a dry-run-side re-composition of `<type>(<scope>): <summary>` would print `feat(): …` there — the empty-scope shape is what proves the value comes from the renderer.
+- **Declared bound:** the surface claims *jigc's forecast* — the subject it will hand git — never what git ends up with; a `commit-msg` hook may still rewrite the message. That is the bound the manifest already carries, restated where the new line prints (the `--dry-run` help text and the design doc), not silently inherited.
+- **The parity registry's `task finalize` row spoke for one arm of a two-shape verb.** Its disposition was written about the *landed* section alone (`Landed` carried whole under `committed`, a whole-value carry) and was therefore true and incomplete: the forecast is a second output shape with its own envelope, and it was the one holding the gap. The row now states both shapes and closes on the forecast, with a proof that drives `render::finalize_manifest` on both surfaces — the census's third close.
+
+**Re-pinned deliberately:** `a_non_carrying_dry_run_manifest_is_byte_unchanged` pins the forecast's bytes verbatim on both surfaces, and this adds a line to each. M47's T3 claim is unaffected and still fenced by its sibling arm (the refusing and consenting forecasts stay non-identical); the pin is re-captured against the post-F-7 binary with the reason recorded at the test.
+
 ## 2026-09-07 — M50 Increment 12 / T6: one pack is named one way on every surface that names one
 
 **Decided:** the `--explain` workflow label drops its glued `v` prefix and renders `<pack-id>/<version>` — the one spelling every other pack-naming surface already used (the orientation `Pack:` header, the `collision:` lines, the `Pack input:` lines, and `design/multi-pack.md` → Provenance, which states the segment as `Pack: <id>/<version>`).

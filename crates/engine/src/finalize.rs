@@ -162,6 +162,21 @@ impl FinalizePlan {
             owner_artifacts,
         }
     }
+
+    /// The **subject line** of the rendered [`message`] — everything up to its first
+    /// newline, which is exactly what git will record as the commit's `%s` for a message
+    /// whose body is separated by the blank line [`crate::write::render_commit_message`]
+    /// always writes.
+    ///
+    /// Read by `jigc task finalize --dry-run` so the forecast names the subject the
+    /// commit will carry (M50 Inc 12 / F-7). It is a **projection of the same render**,
+    /// never a second composition: a dry-run-side re-spelling of `<type>(<scope>):
+    /// <summary>` would print `feat(): …` for the optional scope the renderer omits.
+    ///
+    /// [`message`]: FinalizePlan::message
+    pub fn subject(&self) -> &str {
+        self.message.lines().next().unwrap_or("")
+    }
 }
 
 /// Plan the `finalize` transaction for a task — the pure engine-side decision over

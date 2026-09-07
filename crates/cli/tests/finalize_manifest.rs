@@ -851,8 +851,15 @@ fn dry_run_carry_staged_forecasts_the_carry_and_diverges_from_the_refusal() {
 
 /// (viii) T3 — **the non-carrying forecast is byte-unchanged**: with no pre-mint plant the
 /// dry-run emits exactly the bytes it emitted before T3 existed, on both surfaces. Pinned
-/// verbatim (captured from the pre-fix binary) rather than probed by `contains`, because
-/// "unchanged" is a byte claim: the fix must reach the carrying state and nothing else.
+/// verbatim rather than probed by `contains`, because "unchanged" is a byte claim: the fix
+/// must reach the carrying state and nothing else.
+///
+/// **Re-pinned at M50 Inc 12 (F-7), deliberately.** The forecast gained one line — `would
+/// commit — <subject>` on the text surface, `subject` on the JSON one — which is a
+/// *different* wave's declared change to what the dry run says, not a leak from T3's
+/// carrying state. T3's claim is unaffected and still fenced by arm (vii): the refusing
+/// and consenting forecasts stay non-identical, and the `carried-over` label still appears
+/// only under a declared carry. The pin is re-captured against the post-F-7 binary.
 #[test]
 fn a_non_carrying_dry_run_manifest_is_byte_unchanged() {
     let repo = TempDir::new("t3-unchanged");
@@ -870,10 +877,12 @@ fn a_non_carrying_dry_run_manifest_is_byte_unchanged() {
     assert_eq!(text.status.code(), Some(0), "the clean forecast exits 0");
     assert_eq!(
         String::from_utf8_lossy(&text.stdout),
-        "finalize --dry-run — pre-commit manifest (nothing committed)\n  \
+        "finalize --dry-run — pre-commit manifest (nothing committed)\n\
+         would commit — feat(cache): surface the manifest\n  \
          added feature.rs\n  \
          left-out (unstaged/untracked — git add to include):\n    scratch.txt\n",
-        "the agent-text forecast is byte-unchanged for a non-carrying task",
+        "the agent-text forecast is byte-stable for a non-carrying task (F-7's subject line \
+         included)",
     );
 
     let json = run_jigc(
@@ -891,8 +900,9 @@ fn a_non_carrying_dry_run_manifest_is_byte_unchanged() {
         String::from_utf8_lossy(&json.stdout),
         "{\n  \"dry_run\": true,\n  \"left_out\": [\n    {\n      \"kind\": \"untracked\",\n      \
          \"path\": \"scratch.txt\"\n    }\n  ],\n  \"manifest\": [\n    {\n      \"kind\": \
-         \"added\",\n      \"path\": \"feature.rs\"\n    }\n  ]\n}",
-        "the JSON forecast is byte-unchanged for a non-carrying task",
+         \"added\",\n      \"path\": \"feature.rs\"\n    }\n  ],\n  \"subject\": \
+         \"feat(cache): surface the manifest\"\n}",
+        "the JSON forecast is byte-stable for a non-carrying task (F-7's `subject` included)",
     );
 
     // And it is still a pure reader.

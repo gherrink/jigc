@@ -1871,24 +1871,37 @@ fn code_fence(content: &str) -> String {
 
 /// Render the `task finalize --dry-run` pre-commit manifest to the surface `format`
 /// selects (M30 G3 — name what is **included** in the commit vs **left out** of it): `json`
-/// emits `{ "dry_run": true, "manifest": [{path,kind}…], "left_out": [{path,kind}…] }`
-/// (tooling-consumed, no footer); `agent` / `human` emit a titled block, one
-/// [`manifest_line`] per included entry, then the [`left_out_lines`] section, with **no
-/// trailing newline** — the caller's `println!` closes it, symmetric with [`landed_summary`].
+/// emits `{ "dry_run": true, "subject": "…", "manifest": [{path,kind}…], "left_out":
+/// [{path,kind}…] }` (tooling-consumed, no footer); `agent` / `human` emit a titled block,
+/// the `would commit — <subject>` forecast line, one [`manifest_line`] per included entry,
+/// then the [`left_out_lines`] section, with **no trailing newline** — the caller's
+/// `println!` closes it, symmetric with [`landed_summary`].
+///
+/// **The `subject` (M50 Inc 12 / F-7).** `subject` is
+/// [`engine::finalize::FinalizePlan::subject`] — the first line of the message phase 3
+/// already rendered, forecast on both surfaces so the flag whose job is *"tell me what
+/// this finalize will do"* names the commit's most-read fact instead of computing and
+/// discarding it. It is the same string [`Landed::subject`] carries after the commit
+/// lands. **Declared bound:** this is jigc's forecast — the subject it will hand git —
+/// never what git ends up with; a `commit-msg` hook may still rewrite the message.
 pub fn finalize_manifest(
     format: Format,
+    subject: &str,
     included: &[ManifestEntry],
     left_out: &[ManifestEntry],
 ) -> String {
     match format {
         Format::Json => json(&serde_json::json!({
             "dry_run": true,
+            "subject": subject,
             "manifest": included,
             "left_out": left_out,
         })),
         Format::Agent | Format::Human => {
-            let mut lines =
-                vec!["finalize --dry-run — pre-commit manifest (nothing committed)".to_string()];
+            let mut lines = vec![
+                "finalize --dry-run — pre-commit manifest (nothing committed)".to_string(),
+                format!("would commit — {subject}"),
+            ];
             lines.extend(included.iter().map(manifest_line));
             lines.extend(left_out_lines(left_out));
             lines.join("\n")
@@ -7340,9 +7353,10 @@ mod tests {
         );
     }
 
-    /// The dry-run manifest renders a titled block listing each entry by kind — an
-    /// untracked sweep flagged distinctly — with no trailing newline; JSON carries
-    /// `dry_run: true` and a `manifest[]` of `{path,kind}` (kebab-case kinds).
+    /// The dry-run manifest renders a titled block — the `would commit — <subject>`
+    /// forecast line (M50 Inc 12 / F-7), then each entry by kind, an untracked sweep
+    /// flagged distinctly — with no trailing newline; JSON carries `dry_run: true`, the
+    /// same `subject`, and a `manifest[]` of `{path,kind}` (kebab-case kinds).
     #[test]
     fn render_finalize_manifest_flags_untracked_and_json_carries_dry_run() {
         let included = vec![ManifestEntry {
@@ -7354,9 +7368,12 @@ mod tests {
             kind: ManifestKind::Untracked,
         }];
 
-        let agent = finalize_manifest(Format::Agent, &included, &left_out);
+        let subject = "feat(cache): forecast the subject";
+
+        let agent = finalize_manifest(Format::Agent, subject, &included, &left_out);
         insta::assert_snapshot!(agent, @r"
         finalize --dry-run — pre-commit manifest (nothing committed)
+        would commit — feat(cache): forecast the subject
           promoted docs/decisions/x.md
           left-out (unstaged/untracked — git add to include):
             scratch.txt");
@@ -7365,13 +7382,17 @@ mod tests {
             "no trailing newline — the caller closes it"
         );
         assert_eq!(
-            finalize_manifest(Format::Human, &included, &left_out),
+            finalize_manifest(Format::Human, subject, &included, &left_out),
             agent
         );
 
-        let json_out = finalize_manifest(Format::Json, &included, &left_out);
+        let json_out = finalize_manifest(Format::Json, subject, &included, &left_out);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["dry_run"], serde_json::Value::Bool(true));
+        assert_eq!(
+            value["subject"], subject,
+            "the text's forecast subject reaches the envelope (the parity rule)"
+        );
         let manifest = value["manifest"].as_array().expect("manifest array");
         assert_eq!(manifest[0]["path"], "docs/decisions/x.md");
         assert_eq!(manifest[0]["kind"], "promoted");
@@ -7390,7 +7411,7 @@ mod tests {
             kind: ManifestKind::Added,
         }];
 
-        let agent = finalize_manifest(Format::Agent, &included, &[]);
+        let agent = finalize_manifest(Format::Agent, "feat: add it", &included, &[]);
         assert!(
             agent.contains("  added src/feature.rs"),
             "a staged new file renders `added`; agent:\n{agent}",
@@ -7400,7 +7421,7 @@ mod tests {
             "the retired `swept` wording must not appear on the included path; agent:\n{agent}",
         );
 
-        let json_out = finalize_manifest(Format::Json, &included, &[]);
+        let json_out = finalize_manifest(Format::Json, "feat: add it", &included, &[]);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["manifest"][0]["kind"], "added");
     }
@@ -7417,12 +7438,12 @@ mod tests {
             kind: ManifestKind::CarriedOver,
         }];
 
-        let agent = finalize_manifest(Format::Agent, &carried, &[]);
+        let agent = finalize_manifest(Format::Agent, "feat: carry it", &carried, &[]);
         assert!(
             agent.contains("  carried-over foreign-a.txt"),
             "a carried entry renders `carried-over`; agent:\n{agent}",
         );
-        let json_out = finalize_manifest(Format::Json, &carried, &[]);
+        let json_out = finalize_manifest(Format::Json, "feat: carry it", &carried, &[]);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["manifest"][0]["kind"], "carried-over");
 
